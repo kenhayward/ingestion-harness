@@ -65,13 +65,48 @@ describe('TemplatesPage cards', () => {
     expect(within(pvp).getByText('Draft v4')).toBeInTheDocument();
     expect(within(pvp).getByText('5 sections · 9 fields · 1 table')).toBeInTheDocument();
     expect(within(pvp).getByText('Regression: 3 of 3 references match')).toBeInTheDocument();
-    expect(within(pvp).getByRole('link', { name: 'Edit draft v4' })).toHaveAttribute(
+    expect(within(pvp).getByRole('link', { name: 'Edit draft' })).toHaveAttribute(
       'href',
       '#/templates/pvp/4',
     );
     expect(
       within(pvp).getByRole('link', { name: 'Export Process Validation Protocol YAML' }),
     ).toHaveAttribute('href', '/api/templates/pvp/versions/4/export');
+  });
+
+  it('shows the card actions as icons, explained on hover', async () => {
+    render(
+      <TemplatesPage
+        api={fakeApi({ listTemplates: vi.fn(async () => list) })}
+        onNavigate={vi.fn()}
+        role="admin"
+      />,
+    );
+    const pvp = await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    const actions = pvp.querySelector('.card-actions')!;
+    // No words in the action row: the version is on the Draft pill, the rest in tooltips.
+    expect(actions).toHaveTextContent(/^$/);
+    for (const [control, title] of [
+      [within(pvp).getByRole('link', { name: 'Edit draft' }), 'Edit draft'],
+      [within(pvp).getByRole('link', { name: 'Open in workbench' }), 'Open in workbench'],
+      [
+        within(pvp).getByText('', { selector: 'label.button' }),
+        'Test run with a PDF or Word document',
+      ],
+      [
+        within(pvp).getByRole('link', { name: 'Export Process Validation Protocol YAML' }),
+        'Export YAML',
+      ],
+      [within(pvp).getByRole('button', { name: 'Rename Process Validation Protocol…' }), 'Rename…'],
+      [within(pvp).getByRole('button', { name: 'Retire Process Validation Protocol…' }), 'Retire…'],
+    ] as const) {
+      expect(control).toHaveAttribute('title', title);
+    }
+    const coa = screen.getByRole('article', { name: 'Certificate of analysis' });
+    expect(within(coa).getByRole('button', { name: 'New draft from v2' })).toHaveAttribute(
+      'title',
+      'New draft from v2',
+    );
   });
 
   it('offers a new draft for a published-only type', async () => {
@@ -164,6 +199,77 @@ describe('TemplatesPage cards', () => {
     expect(
       screen.queryByRole('article', { name: 'Process Validation Protocol' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('TemplatesPage Rename…', () => {
+  it('renames the open draft and reloads the cards', async () => {
+    const renamed = list.map((t) => (t.id === 'pvp' ? { ...t, name: 'Validation protocol' } : t));
+    const { api } = setup({
+      listTemplates: vi.fn().mockResolvedValueOnce(list).mockResolvedValue(renamed),
+      renameTemplate: vi.fn(async () =>
+        templateView({ id: 'pvp', version: 4, name: 'Validation protocol' }),
+      ),
+    });
+    const pvp = await screen.findByRole('article', { name: 'Process Validation Protocol' });
+    await userEvent.click(
+      within(pvp).getByRole('button', { name: 'Rename Process Validation Protocol…' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Rename Process Validation Protocol' });
+    expect(dialog).toHaveTextContent('Draft v4 gets the new name');
+    const input = within(dialog).getByRole('textbox', { name: 'Name' });
+    expect(input).toHaveValue('Process Validation Protocol');
+    const save = within(dialog).getByRole('button', { name: 'Rename' });
+    expect(save).toBeDisabled(); // unchanged
+    await userEvent.clear(input);
+    expect(save).toBeDisabled(); // blank
+    await userEvent.type(input, ' Validation protocol ');
+    await userEvent.click(save);
+    expect(api.renameTemplate).toHaveBeenCalledWith('pvp', 'Validation protocol');
+    expect(await screen.findByRole('article', { name: 'Validation protocol' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Renamed Process Validation Protocol to Validation protocol.',
+    );
+  });
+
+  it('says a published-only type gets a new draft, and names it after the rename', async () => {
+    setup({
+      renameTemplate: vi.fn(async () =>
+        templateView({ id: 'coa', version: 3, name: 'Certificate' }),
+      ),
+    });
+    const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
+    await userEvent.click(
+      within(coa).getByRole('button', { name: 'Rename Certificate of analysis…' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Rename Certificate of analysis' });
+    expect(dialog).toHaveTextContent('starts draft v3 from v2');
+    const input = within(dialog).getByRole('textbox', { name: 'Name' });
+    await userEvent.clear(input);
+    await userEvent.type(input, 'Certificate');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Renamed Certificate of analysis to Certificate in draft v3: publish it for uploads to use the new name.',
+    );
+  });
+
+  it('keeps a refusal in the dialog', async () => {
+    setup({
+      renameTemplate: vi.fn(async () => {
+        throw new Error('the draft changed while renaming; try again');
+      }),
+    });
+    const coa = await screen.findByRole('article', { name: 'Certificate of analysis' });
+    await userEvent.click(
+      within(coa).getByRole('button', { name: 'Rename Certificate of analysis…' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Rename Certificate of analysis' });
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Name' }), ' (EU)');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'the draft changed while renaming; try again',
+    );
   });
 });
 

@@ -125,7 +125,7 @@ export async function linkedDataRoutes(app: FastifyInstance): Promise<void> {
           'The base IRI RDF is minted under',
           md`
             The effective base IRI, for showing example IRIs while mapping a recipe. Null until
-            an admin sets the customer on the Linked data page (RDF is skipped until then).
+            an admin sets the customer under Administration > Linked data (RDF is skipped until then).
           `,
         ),
         response: { 200: res('The effective base.', EffectiveBase) },

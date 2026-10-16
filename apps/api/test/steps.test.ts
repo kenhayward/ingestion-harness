@@ -121,7 +121,10 @@ describe('step runs and re-runs', () => {
 
 describe('re-run models (only configured models run, ADR 0010)', () => {
   it.each([
-    ['other/advertised', 'model other/advertised is not offered: add it on the Models page'],
+    [
+      'other/advertised',
+      'model other/advertised is not offered: add it under Administration > Models',
+    ],
     ['nope', 'unknown model choice nope'],
   ])('refuses %s', async (model, error) => {
     const { app, repo, job } = await seed();

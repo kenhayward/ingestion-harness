@@ -1006,6 +1006,18 @@ describe('the mapping stage in the overview (ADR 0011)', () => {
       'Not used: no vocabulary is pinned on Survey',
     ],
     [
+      'not used while RDF is off, whatever is pinned',
+      { used: true, rdf: false, state: 'accepted' },
+      'skipped',
+      'Not used: RDF is off on the Outputs tab',
+    ],
+    [
+      'RDF off is said before a missing vocabulary',
+      { used: false, rdf: false, state: 'pending' },
+      'skipped',
+      'Not used: RDF is off on the Outputs tab',
+    ],
+    [
       'optional once ontologies are chosen',
       { used: true, state: 'pending' },
       'pending',

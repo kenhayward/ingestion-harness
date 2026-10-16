@@ -18,7 +18,15 @@ from pydantic import BaseModel, ValidationError
 from .draft_changes import apply_changes
 from .normalize import ValueType
 from .specs import CopySelection, Section
-from .template import RESERVED_OUTPUT_IDS, CheckStep, ExtractStep, TableDef, Template, ValueDef
+from .template import (
+    RESERVED_OUTPUT_IDS,
+    CheckStep,
+    ExtractStep,
+    Semantics,
+    TableDef,
+    Template,
+    ValueDef,
+)
 
 Converter = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]]]
 Checker = Callable[[dict[str, Any], dict[str, Any]], list[str]]
@@ -171,10 +179,29 @@ def check_outputs(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
     return errors
 
 
+#: Why an extract step needs sections, and what to do with a value no section holds.
+EMPTY_SECTIONS = (
+    "sections is empty: an extract step reads at least one section. For a value no section "
+    "holds (a file name, a value these documents lack), fill it in the step that reads the "
+    "section it belongs with; it may come back empty."
+)
+
+
+def _chunkable(c: dict[str, Any]) -> bool:
+    """chunkPages applies only to a table step reading exactly one section (template.ExtractStep)."""
+    return bool(c.get("table")) and len(c.get("sections") or []) == 1
+
+
 def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """A chunkPages the step cannot use is dropped with a note rather than failing the stage:
+    it is a hint about long tables, and models keep setting it on every step."""
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
+    unchunked: list[str] = []
     for i, c in enumerate(data["changes"]):
+        if c["op"] == "putStep" and c.get("chunkPages") and not _chunkable(c):
+            unchunked.append(repr(c["id"]))
+            c = {**c, "chunkPages": None}
         try:
             if c["op"] == "putStep":
                 step: BaseModel
@@ -184,6 +211,11 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                         _clean({"type": "check", **{k: c.get(k) for k in keys}})
                     )
                 else:
+                    if not c.get("sections"):
+                        # Dropped as empty, it would read "sections: Field required": the model
+                        # sent the key, so it repeats itself. Say what the rule is instead.
+                        errors.append(f"changes[{i}]: step {c['id']!r}: {EMPTY_SECTIONS}")
+                        continue
                     items = c.get("context") or []
                     if any(not x.get("name") or not x.get("path") for x in items):
                         errors.append(f"changes[{i}]: context item needs name and path")
@@ -217,7 +249,26 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                 )
         except ValidationError as exc:
             errors += _errors(i, exc)
-    return {"notes": data["notes"], "changes": changes}, errors
+    notes = data["notes"]
+    if unchunked:
+        dropped = (
+            f"Ignored chunkPages on {', '.join(unchunked)}: only a table step reading one "
+            "section can be chunked."
+        )
+        notes = f"{notes}\n{dropped}" if notes else dropped
+    return {"notes": notes, "changes": changes}, errors
+
+
+def _unfinished_mapping(draft: dict[str, Any]) -> bool:
+    """The draft's ontology mapping does not parse on its own, e.g. it was started without a
+    document class yet (applyChanges' `mapping()`, the Mapping editor): the Mapping stage's job."""
+    if not draft.get("semantics"):
+        return False
+    try:
+        Semantics.model_validate(draft["semantics"])
+    except ValidationError:
+        return True
+    return False
 
 
 def check_steps(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
@@ -230,8 +281,13 @@ def check_steps(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
             s.get("id") for s in apply_changes(draft, body["changes"][:i]).get("pipeline") or []
         }
     ]
+    applied = apply_changes(draft, body["changes"])
+    if _unfinished_mapping(draft):
+        # No step or revise op can fix it, and while it fails to parse, Template's own checks
+        # (every output filled, sections known) never run: judge the pipeline without it.
+        applied = {k: v for k, v in applied.items() if k not in ("semantics", "delivery")}
     try:
-        Template.model_validate(apply_changes(draft, body["changes"]))
+        Template.model_validate(applied)
     except ValidationError as exc:
         for e in exc.errors():
             msg = str(e["msg"])
@@ -268,15 +324,23 @@ STEPS = Stage(
 Task: propose the extraction pipeline that fills every output in the current draft.
 - putStep with type extract:
   - id, and sections (ids from the current draft's sections).
+    Every extract step reads at least one section: never send an empty list.
   - Either fields (field ids) or table (one table id). Every field and table must be filled
-    by exactly one step.
+    by exactly one step. A field no section holds (the file name, a value these documents
+    lack) goes in the step that reads the section it belongs with; it may come back empty.
   - instructions: concrete guidance (where the value is, formats, what to ignore).
   - pageImages: page numbers to show as images when the text loses information, else null.
-  - chunkPages: only for a long table in one section.
+  - chunkPages: null unless the step fills a long table (table set) from exactly one section.
   - context: values from earlier steps the prompt should see, as {name, path}, where path is
-    a field id or table.column.
-- putStep with type check: values and reference are paths (field or table.column) whose values
-  must match; aliases optional.
+    a field id or table.column (that column's values from every row). Never a bare table id:
+    to show a table, add one context item per column the step needs.
+- putStep with type check: values and reference are paths (field or table.column, never a
+  bare table id) whose values must match; aliases optional.
+- Every extraction prompt states the source file name and starts each page with "[page N]":
+  a step can fill the originating file name from it, and a page number from the markers.
+- When a section covers a repeated block (the same tables per batch, item or site), a table
+  step reading it returns rows from every block and fills each row's identifying columns
+  (batch, item) from that block's heading or table caption: say so in its instructions.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in the order given; context may only use outputs filled by earlier steps.
@@ -379,7 +443,13 @@ Task: propose section anchors that split every sample the same way.
 - setCopies: when a PDF holds several copies (for example blank, then executed), anchor is the
   regex that starts each copy and copiesSelect is first or last; anchor null removes copy
   selection.
-- Every anchor is tested on every dev sample before the user sees it; misses are reported back.
+- A section starts at its anchor's first match and runs to the next section's start. When the
+  document repeats a block (the same tables per batch, item or site), do not give each part of
+  the block its own section: later blocks would all land in the last one. Propose one section
+  starting at the first block that covers every block; the steps read it and take each
+  block's identifiers from its heading or caption.
+- Every anchor is tested on every dev sample before the user sees it; misses and repeated
+  blocks are reported back.
 - Use null for keys that do not apply. reason: one sentence.
 Return JSON only.""",
     SECTIONS_SCHEMA,
@@ -471,6 +541,7 @@ def _answers(value: Any) -> list[str]:
 def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     changes: list[dict[str, Any]] = []
     errors: list[str] = []
+    notes = [data["notes"]] if data["notes"] else []
     for i, c in enumerate(data["changes"]):
         stage, key = _REVISE_GROUPS[c["op"]]
         payload = _compact(c.get(key)) if isinstance(c.get(key), dict) else None
@@ -484,9 +555,10 @@ def convert_revise(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
             {"notes": "", "changes": [{**payload, "op": c["op"], "reason": c["reason"]}]}
         )
         errors += [e.replace("changes[0]", f"changes[{i}]", 1) for e in errs]
+        notes += [body["notes"]] if body["notes"] else []
         answers = _answers(c.get("answers"))
         changes += [{**ch, "answers": answers} if answers else ch for ch in body["changes"]]
-    return {"notes": data["notes"], "changes": changes}, errors
+    return {"notes": "\n".join(notes), "changes": changes}, errors
 
 
 def check_revise(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
@@ -533,7 +605,7 @@ failures (expected vs actual values on the dev samples).
   Fill the payload objects you do not use, and keys that do not apply, with empty values:
   "" for text, [] for lists, 0 for numbers (required: true unless a section may be absent).
 - The template must stay valid: every field and table filled by exactly one step; steps only
-  use existing sections; context only from earlier steps.
+  use existing sections; context only from earlier steps, as field or table.column.
 - Prefer clearer instructions, better anchors or more precise field descriptions over adding
   outputs. reason: which feedback item or failure the change addresses.
 - answers: the labels of the feedback items the change answers (for example ["F1", "F3"]);

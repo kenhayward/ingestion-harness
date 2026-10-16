@@ -90,6 +90,18 @@
                       "type": "boolean",
                       "description": "A one-time password session: only me, the password change and sign-out work."
                     },
+                    "avatarUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The linked GitHub account's picture (`GET /api/profile`); null: none linked."
+                    },
                     "failedSinceLastSignIn": {
                       "type": "integer",
                       "description": "Failed sign-ins this success cleared: worth telling the person about."
@@ -113,6 +125,7 @@
                     "label",
                     "email",
                     "mustChangePassword",
+                    "avatarUrl",
                     "failedSinceLastSignIn",
                     "lastFailedAt"
                   ],
@@ -323,7 +336,7 @@
         "tags": [
           "Auth & sessions"
         ],
-        "description": "The role, name and email of the signed-in user, and whether the session was opened\nwith a one-time password. The web app calls this on load to choose between the\nsign-in page, the password change and the app, and to show the admin pages only to\nadmins.",
+        "description": "The role, name, email and picture of the signed-in user, and whether the session was\nopened with a one-time password. The web app calls this on load to choose between the\nsign-in page, the password change and the app, and to show the admin pages only to\nadmins.",
         "responses": {
           "200": {
             "description": "The signed-in user.",
@@ -358,6 +371,18 @@
                     "mustChangePassword": {
                       "type": "boolean",
                       "description": "A one-time password session: only me, the password change and sign-out work."
+                    },
+                    "avatarUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The linked GitHub account's picture (`GET /api/profile`); null: none linked."
                     }
                   },
                   "required": [
@@ -365,7 +390,8 @@
                     "role",
                     "label",
                     "email",
-                    "mustChangePassword"
+                    "mustChangePassword",
+                    "avatarUrl"
                   ],
                   "additionalProperties": true,
                   "description": "The signed-in user."
@@ -2837,6 +2863,1178 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "operationId": "getProfile",
+        "summary": "Get your profile",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Your name, email address, job title, company and LinkedIn name, and the GitHub account\nyou linked with the repository recipe YAML will be stored in. `githubAvailable` says\nwhether this deployment can link GitHub accounts.",
+        "responses": {
+          "200": {
+            "description": "Your profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Changed by an admin under Administration > Access."
+                    },
+                    "jobTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "company": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linkedin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The name in `linkedin.com/in/<name>`."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "login": {
+                              "type": "string",
+                              "description": "The GitHub user name."
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "description": "The account's picture: the user's picture in the app."
+                            },
+                            "linkedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "repo": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "`owner/name` of the repository recipe YAML will be stored in; null: not chosen."
+                            }
+                          },
+                          "required": [
+                            "login",
+                            "avatarUrl",
+                            "linkedAt",
+                            "repo"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "null: no GitHub account linked."
+                    },
+                    "githubAvailable": {
+                      "type": "boolean",
+                      "description": "Whether this deployment can link GitHub accounts (an OAuth app is configured)."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "email",
+                    "jobTitle",
+                    "company",
+                    "linkedin",
+                    "github",
+                    "githubAvailable"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Your profile."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateProfile",
+        "summary": "Save your details",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Saves your name, job title, company and LinkedIn name (the name in\n`linkedin.com/in/<name>`, or that address). Blank details are cleared. Your name is\nwhat jobs and changes you make record. An admin changes your email address.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Unique, whatever the case."
+                  },
+                  "jobTitle": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Blank: none."
+                  },
+                  "company": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Blank: none."
+                  },
+                  "linkedin": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The name in `linkedin.com/in/<name>`, or that address. Blank: none."
+                  }
+                },
+                "required": [
+                  "name",
+                  "jobTitle",
+                  "company",
+                  "linkedin"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Your profile, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Changed by an admin under Administration > Access."
+                    },
+                    "jobTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "company": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linkedin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The name in `linkedin.com/in/<name>`."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "login": {
+                              "type": "string",
+                              "description": "The GitHub user name."
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "description": "The account's picture: the user's picture in the app."
+                            },
+                            "linkedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "repo": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "`owner/name` of the repository recipe YAML will be stored in; null: not chosen."
+                            }
+                          },
+                          "required": [
+                            "login",
+                            "avatarUrl",
+                            "linkedAt",
+                            "repo"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "null: no GitHub account linked."
+                    },
+                    "githubAvailable": {
+                      "type": "boolean",
+                      "description": "Whether this deployment can link GitHub accounts (an OAuth app is configured)."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "email",
+                    "jobTitle",
+                    "company",
+                    "linkedin",
+                    "github",
+                    "githubAvailable"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Your profile, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Why a detail is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Why a detail is refused."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`a user with this name already exists`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`a user with this name already exists`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/connect": {
+      "get": {
+        "operationId": "connectGitHub",
+        "summary": "Start linking a GitHub account",
+        "tags": [
+          "Profile"
+        ],
+        "description": "A browser navigation: redirects to GitHub, which asks you to let CT Studio read your\nprofile and your repositories (scope `repo read:user`; the repository will receive\nrecipe YAML). GitHub then sends you to the callback. Linking again replaces the\naccount. The link must finish within 10 minutes, in the same\nbrowser.",
+        "responses": {
+          "302": {
+            "description": "To GitHub."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`GitHub linking is not set up: an admin sets GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and LLM_SECRETS_KEY`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`GitHub linking is not set up: an admin sets GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and LLM_SECRETS_KEY`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/callback": {
+      "get": {
+        "operationId": "gitHubCallback",
+        "summary": "Finish linking a GitHub account",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Where GitHub sends the browser back to. It needs no session: the `state` must be the\none Connect issued to this browser in the last 10 minutes, and\nit works once. Redirects to the app's Profile dialog with `github=` `linked`,\n`denied` (you said no on GitHub), `expired` (the state is unknown, used or not\nthis browser's), `taken` (another user linked that GitHub account) or `failed`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "description": "From GitHub: the code for the token."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "description": "From GitHub: the state Connect sent."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "description": "From GitHub, when the user said no."
+          }
+        ],
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "To the app's Profile dialog."
+          }
+        }
+      }
+    },
+    "/api/profile/github": {
+      "delete": {
+        "operationId": "unlinkGitHub",
+        "summary": "Unlink your GitHub account",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Forgets the linked account and its chosen repository, and asks GitHub to revoke the\ntoken (if GitHub cannot, the account is still unlinked here; revoke CT Studio under\nyour GitHub settings' Applications). Your picture goes back to your initials.",
+        "responses": {
+          "204": {
+            "description": "Unlinked (also when nothing was linked)."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the admin from the API log has no profile`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/repos": {
+      "get": {
+        "operationId": "listGitHubRepos",
+        "summary": "List repositories you can push to",
+        "tags": [
+          "Profile"
+        ],
+        "description": "The repositories the linked GitHub account can push to (owned, collaborator and\norganisation ones, at most 1,000), by name: the choices for the YAML repository.",
+        "responses": {
+          "200": {
+            "description": "The repositories.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fullName": {
+                        "type": "string",
+                        "description": "`owner/name`."
+                      },
+                      "private": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "fullName",
+                      "private"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The repositories."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`link a GitHub account first`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`link a GitHub account first`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "What GitHub said, e.g. that it no longer accepts the link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "What GitHub said, e.g. that it no longer accepts the link."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/github/repo": {
+      "put": {
+        "operationId": "setGitHubRepo",
+        "summary": "Choose the repository for recipe YAML",
+        "tags": [
+          "Profile"
+        ],
+        "description": "Chooses the repository recipe YAML will be stored in (`owner/name`, any case; kept\nas GitHub spells it), or none (`null`). The linked account must be able to push to\nit.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "`owner/name` of a repository the linked account can push to; null: none."
+                  }
+                },
+                "required": [
+                  "repo"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Your profile, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Changed by an admin under Administration > Access."
+                    },
+                    "jobTitle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "company": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "linkedin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The name in `linkedin.com/in/<name>`."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "login": {
+                              "type": "string",
+                              "description": "The GitHub user name."
+                            },
+                            "avatarUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "description": "The account's picture: the user's picture in the app."
+                            },
+                            "linkedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "repo": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "`owner/name` of the repository recipe YAML will be stored in; null: not chosen."
+                            }
+                          },
+                          "required": [
+                            "login",
+                            "avatarUrl",
+                            "linkedAt",
+                            "repo"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "null: no GitHub account linked."
+                    },
+                    "githubAvailable": {
+                      "type": "boolean",
+                      "description": "Whether this deployment can link GitHub accounts (an OAuth app is configured)."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "email",
+                    "jobTitle",
+                    "company",
+                    "linkedin",
+                    "github",
+                    "githubAvailable"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Your profile, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`<login> cannot push to <owner/name> on GitHub`, or a malformed name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`<login> cannot push to <owner/name> on GitHub`, or a malformed name."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`link a GitHub account first`, or `the admin from the API log has no profile`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`link a GitHub account first`, or `the admin from the API log has no profile`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "What GitHub said, e.g. that it no longer accepts the link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "What GitHub said, e.g. that it no longer accepts the link."
                 }
               }
             }
@@ -5877,6 +7075,10 @@
                                   "type": "integer",
                                   "minimum": 0
                                 },
+                                "pages": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
                                 "kind": {
                                   "type": "string",
                                   "enum": [
@@ -8127,7 +9329,7 @@
         "tags": [
           "Models"
         ],
-        "description": "The labelled model choices an admin set up on the Models page\n([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),\nas every model picker shows them: the default first, then by label. Each names the\nmodel it runs and where that runs (`location`; a local-only project cannot use an\nexternal one). Only choices whose model is offered are listed. Uploads, retries, step\nre-runs, recipe steps and Workbench evaluations name a choice by its `id`\n(`default` is the default choice).",
+        "description": "The labelled model choices an admin set up under Administration > Models\n([ADR 0010](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0010-llm-endpoints-in-the-database.md)),\nas every model picker shows them: the default first, then by label. Each names the\nmodel it runs and where that runs (`location`; a local-only project cannot use an\nexternal one). Only choices whose model is offered are listed. Uploads, retries, step\nre-runs, recipe steps and Workbench evaluations name a choice by its `id`\n(`default` is the default choice).",
         "responses": {
           "200": {
             "description": "The choices.",
@@ -8517,6 +9719,10 @@
                                       "minimum": 0
                                     },
                                     "of": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "pages": {
                                       "type": "integer",
                                       "minimum": 0
                                     },
@@ -11128,7 +12334,7 @@
             }
           },
           "400": {
-            "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it on the Models page`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).",
+            "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).",
             "content": {
               "application/json": {
                 "schema": {
@@ -11154,7 +12360,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it on the Models page`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010)."
+                  "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010)."
                 }
               }
             }
@@ -11290,17 +12496,28 @@
         }
       }
     },
-    "/api/templates": {
+    "/api/templates/{id}/versions": {
       "get": {
-        "operationId": "listTemplates",
-        "summary": "List document types",
+        "operationId": "listTemplateVersions",
+        "summary": "List the versions of a document type",
         "tags": [
           "Recipes"
         ],
-        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).\n`retired` is set for a retired document type.",
+        "description": "Every recipe version of a database document type, newest first, with its label and\nnote and without its definition (`GET …/versions/{version}` has it).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
         "responses": {
           "200": {
-            "description": "The document types.",
+            "description": "The versions, newest first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11308,184 +12525,71 @@
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id": {
+                      "version": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "draft",
+                          "published"
+                        ]
+                      },
+                      "createdAt": {
                         "type": "string"
                       },
-                      "name": {
+                      "updatedAt": {
                         "type": "string"
                       },
-                      "description": {
+                      "publishedAt": {
                         "type": [
                           "string",
                           "null"
                         ]
                       },
-                      "published": {
-                        "anyOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "null"
-                          }
+                      "label": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "description": "The latest published version."
+                        "description": "What the version is for; null when unlabelled."
                       },
-                      "draft": {
-                        "anyOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "null"
-                          }
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "description": "The open draft version."
+                        "description": "A longer comment; null when there is none."
                       },
-                      "retired": {
-                        "anyOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "retiredAt": {
-                                "type": "string",
-                                "description": "When an admin retired the document type."
-                              },
-                              "retiredBy": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "description": "The label of the token that retired it; null without access control."
-                              }
-                            },
-                            "required": [
-                              "retiredAt",
-                              "retiredBy"
-                            ],
-                            "additionalProperties": true
-                          },
-                          {
-                            "type": "null"
-                          }
+                      "labelSetBy": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "description": "Set when the document type is retired (hidden from new work); null when it is not."
+                        "description": "Who last set the label or note; null when never set or without access control."
                       },
-                      "versions": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "version": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string",
-                              "enum": [
-                                "draft",
-                                "published"
-                              ]
-                            },
-                            "updatedAt": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "version",
-                            "status",
-                            "updatedAt"
-                          ],
-                          "additionalProperties": true
-                        }
-                      },
-                      "summary": {
-                        "type": "object",
-                        "properties": {
-                          "sections": {
-                            "type": "integer"
-                          },
-                          "fields": {
-                            "type": "integer"
-                          },
-                          "tables": {
-                            "type": "integer"
-                          },
-                          "references": {
-                            "type": "integer"
-                          },
-                          "draftIssues": {
-                            "anyOf": [
-                              {
-                                "type": "integer"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ],
-                            "description": "The open draft's issue count."
-                          },
-                          "lastRegression": {
-                            "anyOf": [
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "version": {
-                                    "type": "integer"
-                                  },
-                                  "matched": {
-                                    "type": "integer",
-                                    "description": "References matched exactly."
-                                  },
-                                  "total": {
-                                    "type": "integer"
-                                  },
-                                  "at": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "version",
-                                  "matched",
-                                  "total",
-                                  "at"
-                                ],
-                                "additionalProperties": true
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
-                          },
-                          "regressionRunning": {
-                            "type": "boolean"
-                          }
-                        },
-                        "required": [
-                          "sections",
-                          "fields",
-                          "tables",
-                          "references",
-                          "draftIssues",
-                          "lastRegression",
-                          "regressionRunning"
+                      "labelSetAt": {
+                        "type": [
+                          "string",
+                          "null"
                         ],
-                        "additionalProperties": true,
-                        "description": "Of the version shown: the open draft, else the latest published version."
+                        "description": "When the label or note was last set."
                       }
                     },
                     "required": [
-                      "id",
-                      "name",
-                      "description",
-                      "published",
-                      "draft",
-                      "retired",
-                      "versions",
-                      "summary"
+                      "version",
+                      "status",
+                      "createdAt",
+                      "updatedAt",
+                      "publishedAt",
+                      "label",
+                      "note",
+                      "labelSetBy",
+                      "labelSetAt"
                     ],
                     "additionalProperties": true
                   },
-                  "description": "The document types."
+                  "description": "The versions, newest first."
                 }
               }
             }
@@ -11533,16 +12637,50 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
           }
         }
-      },
-      "post": {
-        "operationId": "createTemplate",
-        "summary": "Create a document type",
+      }
+    },
+    "/api/templates/{id}/versions/{version}": {
+      "patch": {
+        "operationId": "setVersionLabel",
+        "summary": "Set a version's label and note",
         "tags": [
           "Recipes"
         ],
-        "description": "Creates a document type as a v1 draft skeleton, to fill in with the editor (or\n`PUT` a definition). The skeleton is not valid yet, so `issues` lists what is\nmissing.",
+        "description": "Sets what a recipe version is for: a short `label` and a longer `note`. A field\nleft out keeps its value and `null` clears it. Drafts and published versions alike\n(published versions stay immutable: the label is not part of the definition), retired\ndocument types too. Not an edit of the draft: its `updatedAt` and change log are\nleft alone.",
         "requestBody": {
           "required": true,
           "content": {
@@ -11550,28 +12688,61 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9_-]*$",
-                    "description": "Lowercase: `[a-z][a-z0-9_-]*`."
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "A short name, up to 80 characters; null clears it."
                   },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "A longer comment, up to 2000 characters; null clears it."
                   }
                 },
-                "required": [
-                  "id",
-                  "name"
-                ],
                 "additionalProperties": false
               }
             }
           }
         },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
         "responses": {
-          "201": {
-            "description": "The v1 draft.",
+          "200": {
+            "description": "The version.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11609,6 +12780,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -11618,7 +12817,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -11655,13 +12858,13 @@
                     "issues"
                   ],
                   "additionalProperties": true,
-                  "description": "The v1 draft."
+                  "description": "The version."
                 }
               }
             }
           },
           "400": {
-            "description": "Zod issues for an invalid id or name.",
+            "description": "Zod issues: a blank or too long label or note, or neither sent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11687,7 +12890,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "Zod issues for an invalid id or name."
+                  "description": "Zod issues: a blank or too long label or note, or neither sent."
                 }
               }
             }
@@ -11756,8 +12959,8 @@
               }
             }
           },
-          "409": {
-            "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+          "404": {
+            "description": "`recipe not found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11783,15 +12986,13 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                  "description": "`recipe not found`."
                 }
               }
             }
           }
         }
-      }
-    },
-    "/api/templates/{id}/versions/{version}": {
+      },
       "get": {
         "operationId": "getTemplateVersion",
         "summary": "Get a recipe version",
@@ -11859,6 +13060,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -11868,7 +13097,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -12081,6 +13314,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -12090,7 +13351,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -12424,6 +13689,887 @@
         }
       }
     },
+    "/api/templates/{id}/versions/{version}/restore": {
+      "post": {
+        "operationId": "restoreVersion",
+        "summary": "Replace the draft with another version",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "Writes the definition of version `from` into the open draft `version`, replacing\nit, to go back to an earlier version. Logged in the draft's change log as a\n`restore` (nothing is written when the draft already equals it). To make an earlier\nversion the latest, restore it into the draft and publish.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "description": "The version whose definition to write."
+                  },
+                  "baseUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "The draft `updatedAt` the user saw: a draft written since is a 409."
+                  }
+                },
+                "required": [
+                  "from"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The draft."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, or `a draft cannot be restored from itself`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, or `a draft cannot be restored from itself`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{id} v{version} is not an open draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt` (or it changed while restoring).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{id} v{version} is not an open draft`, or `the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not its `updatedAt` (or it changed while restoring)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "summary": "List document types",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "One entry per database document type: its name, latest published version, open draft,\nevery version, and a summary of the version shown (the draft first): counts of\nsections, fields, tables and references, the draft's validation issues, and that\nversion's last regression (`matched` counts references reproduced exactly).\n`retired` is set for a retired document type.",
+        "responses": {
+          "200": {
+            "description": "The document types.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "published": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The latest published version."
+                      },
+                      "draft": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The open draft version."
+                      },
+                      "retired": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "retiredAt": {
+                                "type": "string",
+                                "description": "When an admin retired the document type."
+                              },
+                              "retiredBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "The label of the token that retired it; null without access control."
+                              }
+                            },
+                            "required": [
+                              "retiredAt",
+                              "retiredBy"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "Set when the document type is retired (hidden from new work); null when it is not."
+                      },
+                      "versions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "draft",
+                                "published"
+                              ]
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "What the version is for; null when unlabelled."
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "status",
+                            "updatedAt",
+                            "label"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "summary": {
+                        "type": "object",
+                        "properties": {
+                          "sections": {
+                            "type": "integer"
+                          },
+                          "fields": {
+                            "type": "integer"
+                          },
+                          "tables": {
+                            "type": "integer"
+                          },
+                          "references": {
+                            "type": "integer"
+                          },
+                          "draftIssues": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "The open draft's issue count."
+                          },
+                          "lastRegression": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "version": {
+                                    "type": "integer"
+                                  },
+                                  "matched": {
+                                    "type": "integer",
+                                    "description": "References matched exactly."
+                                  },
+                                  "total": {
+                                    "type": "integer"
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "version",
+                                  "matched",
+                                  "total",
+                                  "at"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "regressionRunning": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "sections",
+                          "fields",
+                          "tables",
+                          "references",
+                          "draftIssues",
+                          "lastRegression",
+                          "regressionRunning"
+                        ],
+                        "additionalProperties": true,
+                        "description": "Of the version shown: the open draft, else the latest published version."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "description",
+                      "published",
+                      "draft",
+                      "retired",
+                      "versions",
+                      "summary"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The document types."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createTemplate",
+        "summary": "Create a document type",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "Creates a document type as a v1 draft skeleton, to fill in with the editor (or\n`PUT` a definition). The skeleton is not valid yet, so `issues` lists what is\nmissing.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]*$",
+                    "description": "Lowercase: `[a-z][a-z0-9_-]*`."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The v1 draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The v1 draft."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid id or name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues for an invalid id or name."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`document type {id} already exists`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/templates/{id}/versions/{version}/publish": {
       "post": {
         "operationId": "publishTemplate",
@@ -12431,7 +14577,32 @@
         "tags": [
           "Recipes"
         ],
-        "description": "Publishes a valid draft. It becomes immutable and the version new uploads use by\ndefault. Workbench document types publish only through their holdout gate\n(`POST /api/workbench/projects/{id}/publish`), never here.",
+        "description": "Publishes a valid draft. It becomes immutable and the version new uploads use by\ndefault. Workbench document types publish only through their holdout gate\n(`POST /api/workbench/projects/{id}/publish`), never here. `label` and `note`,\nwhen given, are set on the version first (it keeps the draft's otherwise).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "description": "A label for the version, up to 80 characters. Default: keep the draft's."
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "description": "A note for the version, up to 2000 characters. Default: keep the draft's."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -12492,6 +14663,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -12501,7 +14700,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -12544,15 +14747,13 @@
             }
           },
           "400": {
-            "description": "The definition is not valid: `recipe is not valid`, with `issues`.",
+            "description": "Zod issues for an invalid label or note, or the definition is not valid: `recipe is not valid`, with `issues`.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
-                    },
+                    "error": {},
                     "issues": {
                       "type": "array",
                       "items": {
@@ -12580,12 +14781,8 @@
                       }
                     }
                   },
-                  "required": [
-                    "error",
-                    "issues"
-                  ],
                   "additionalProperties": true,
-                  "description": "The definition is not valid: `recipe is not valid`, with `issues`."
+                  "description": "Zod issues for an invalid label or note, or the definition is not valid: `recipe is not valid`, with `issues`."
                 }
               }
             }
@@ -12798,6 +14995,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -12807,7 +15032,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -13012,6 +15241,333 @@
         }
       }
     },
+    "/api/templates/{id}/name": {
+      "put": {
+        "operationId": "renameTemplate",
+        "summary": "Rename a document type",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "Sets the document type's name in its open draft, recorded in the draft's change log as\na hand edit. Published versions keep the name they were published with, so when no\ndraft is open one is started from the latest version (as `POST …/drafts`) and\nrenamed; the new name reaches uploads and jobs once that draft is published. A\nWorkbench project of the type is renamed at once. The same name as now changes\nnothing and starts no draft.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "The new name, trimmed; 1 to 200 characters."
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The renamed draft (or, when nothing changed, the version shown).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The renamed draft (or, when nothing changed, the version shown)."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues: a blank name or one over 200 characters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues: a blank name or one over 200 characters."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the draft changed while renaming; try again`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the draft changed while renaming; try again`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/templates/{id}/versions/{version}/export": {
       "get": {
         "operationId": "exportTemplate",
@@ -13204,6 +15760,34 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
                         }
                       },
                       "required": [
@@ -13213,7 +15797,11 @@
                         "definition",
                         "createdAt",
                         "updatedAt",
-                        "publishedAt"
+                        "publishedAt",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
                       ],
                       "additionalProperties": true
                     },
@@ -18194,6 +20782,367 @@
         }
       }
     },
+    "/api/workbench/projects/{id}/reset": {
+      "post": {
+        "operationId": "resetProject",
+        "summary": "Reset a project",
+        "tags": [
+          "Projects & data policy"
+        ],
+        "description": "Starts the project again, keeping only its samples (prepared as they are) and the\nbrief's written sections. Deleted: its proposals and stage decisions, feedback,\ntest, reference and evaluation runs with their files, every reference of the\ndocument type, survey answers and pinned ontologies. The open draft becomes an\nempty recipe of the same name and version, with a change log of one entry.\nPublished versions and the publication log stay; the data policy, threshold and\npins too. Queued and running jobs of the project are deleted with the rest.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id: the id of its document type."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project, reset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "dataPolicy": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "external"
+                          ]
+                        },
+                        "dataPolicyChangedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "dataPolicyChangedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishThreshold": {
+                          "type": "number"
+                        },
+                        "thresholdSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "thresholdSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "createdAt",
+                        "dataPolicy",
+                        "dataPolicyChangedAt",
+                        "dataPolicyChangedBy",
+                        "publishThreshold",
+                        "thresholdSetBy",
+                        "thresholdSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "draft": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "published": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "brief": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "projectId": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            },
+                            "body": {
+                              "type": "object",
+                              "properties": {
+                                "purpose": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "outputs": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "exampleOutput": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "glossary": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "variants": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "rules": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "answers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "question": {
+                                        "type": "string"
+                                      },
+                                      "answer": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "question",
+                                      "answer"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "default": []
+                                },
+                                "ontologies": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "ontologyId": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "vocabulary",
+                                          "shapes"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "ontologyId",
+                                      "version",
+                                      "role"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "maxItems": 20,
+                                  "default": []
+                                },
+                                "ontologyGuidance": {
+                                  "type": "string",
+                                  "default": ""
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "projectId",
+                            "version",
+                            "body",
+                            "createdAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retired": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "retiredAt": {
+                              "type": "string",
+                              "description": "When an admin retired the document type."
+                            },
+                            "retiredBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "The label of the token that retired it; null without access control."
+                            }
+                          },
+                          "required": [
+                            "retiredAt",
+                            "retiredBy"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "draft",
+                    "published",
+                    "brief",
+                    "retired"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The project, reset."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`project not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`project not found`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workbench/projects/{id}/publish-gate": {
       "get": {
         "operationId": "getPublishGate",
@@ -18383,7 +21332,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Publishes the open draft when it is valid. References and evaluation are optional: the\npublish gate is informational only, and its iteration and score (if any) are recorded\nwith the publication. `overrideReason` is still accepted but ignored (no override is\nneeded or recorded). If the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
+        "description": "Publishes the open draft when it is valid. References and evaluation are optional: the\npublish gate is informational only, and its iteration and score (if any) are recorded\nwith the publication. `overrideReason` is still accepted but ignored (no override is\nneeded or recorded). `label` and `note`, when given, are set on the version\n(#144; it keeps the draft's otherwise). If the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -18395,6 +21344,18 @@
                     "type": "string",
                     "minLength": 10,
                     "maxLength": 1000
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "description": "A label for the version, up to 80 characters. Default: keep the draft's."
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "description": "A note for the version, up to 2000 characters. Default: keep the draft's."
                   }
                 },
                 "additionalProperties": false
@@ -19158,6 +22119,20 @@
                           }
                         ]
                       },
+                      "prepareStatus": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "error": {
                         "type": [
                           "string",
@@ -19181,6 +22156,10 @@
                                 "minimum": 0
                               },
                               "of": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "pages": {
                                 "type": "integer",
                                 "minimum": 0
                               }
@@ -19286,6 +22265,7 @@
                       "createdAt",
                       "state",
                       "prepareJobId",
+                      "prepareStatus",
                       "error",
                       "prepare",
                       "prepareError",
@@ -19483,6 +22463,20 @@
                         }
                       ]
                     },
+                    "prepareStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "error": {
                       "type": [
                         "string",
@@ -19506,6 +22500,10 @@
                               "minimum": 0
                             },
                             "of": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "pages": {
                               "type": "integer",
                               "minimum": 0
                             }
@@ -19611,6 +22609,7 @@
                     "createdAt",
                     "state",
                     "prepareJobId",
+                    "prepareStatus",
                     "error",
                     "prepare",
                     "prepareError",
@@ -20026,6 +23025,20 @@
                         }
                       ]
                     },
+                    "prepareStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "error": {
                       "type": [
                         "string",
@@ -20049,6 +23062,10 @@
                               "minimum": 0
                             },
                             "of": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "pages": {
                               "type": "integer",
                               "minimum": 0
                             }
@@ -20154,6 +23171,7 @@
                     "createdAt",
                     "state",
                     "prepareJobId",
+                    "prepareStatus",
                     "error",
                     "prepare",
                     "prepareError",
@@ -22543,6 +25561,10 @@
                                         "chars": {
                                           "type": "integer",
                                           "minimum": 0
+                                        },
+                                        "matches": {
+                                          "type": "integer",
+                                          "minimum": 0
                                         }
                                       },
                                       "required": [
@@ -22911,6 +25933,10 @@
                                           ]
                                         },
                                         "chars": {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        "matches": {
                                           "type": "integer",
                                           "minimum": 0
                                         }
@@ -26133,6 +29159,10 @@
                                                     "chars": {
                                                       "type": "integer",
                                                       "minimum": 0
+                                                    },
+                                                    "matches": {
+                                                      "type": "integer",
+                                                      "minimum": 0
                                                     }
                                                   },
                                                   "required": [
@@ -26232,6 +29262,121 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "run": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "running"
+                              ]
+                            },
+                            "since": {
+                              "type": "string"
+                            },
+                            "progress": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "stage": {
+                                      "type": "string",
+                                      "enum": [
+                                        "survey",
+                                        "outputs",
+                                        "sections",
+                                        "steps",
+                                        "references",
+                                        "revise",
+                                        "mapping"
+                                      ]
+                                    },
+                                    "phase": {
+                                      "type": "string",
+                                      "enum": [
+                                        "reading",
+                                        "model",
+                                        "anchors",
+                                        "suggestions"
+                                      ]
+                                    },
+                                    "samples": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "attempt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "of": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "round": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "tokens": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "stage",
+                                    "phase",
+                                    "samples",
+                                    "attempt",
+                                    "of",
+                                    "round",
+                                    "at"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "since",
+                            "progress"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -26244,7 +29389,8 @@
                     "body",
                     "acceptedChanges",
                     "createdAt",
-                    "decidedAt"
+                    "decidedAt",
+                    "run"
                   ],
                   "additionalProperties": true,
                   "description": "The proposal, running."
@@ -28642,7 +31788,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Every drafting proposal, with its status (derived from its job): `running`,\n`ready` (waiting for a decision), `failed`, `accepted`,\n`partially_accepted` or `rejected`. A ready proposal's `body` is the survey's\nquestions, or the stage's notes and typed changes.",
+        "description": "Every drafting proposal, with its status (derived from its job): `running`,\n`ready` (waiting for a decision), `failed`, `accepted`,\n`partially_accepted` or `rejected`. A ready proposal's `body` is the survey's\nquestions, or the stage's notes and typed changes. While its job is queued or running,\n`run` says since when and, once the worker reports it, what it is doing (its latest\n`drafting progress` event of this attempt: reading the samples, each model call,\ntesting anchors, queuing ontology suggestions).",
         "parameters": [
           {
             "schema": {
@@ -30012,6 +33158,10 @@
                                                       "chars": {
                                                         "type": "integer",
                                                         "minimum": 0
+                                                      },
+                                                      "matches": {
+                                                        "type": "integer",
+                                                        "minimum": 0
                                                       }
                                                     },
                                                     "required": [
@@ -30111,6 +33261,121 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "run": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running"
+                                ]
+                              },
+                              "since": {
+                                "type": "string"
+                              },
+                              "progress": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "stage": {
+                                        "type": "string",
+                                        "enum": [
+                                          "survey",
+                                          "outputs",
+                                          "sections",
+                                          "steps",
+                                          "references",
+                                          "revise",
+                                          "mapping"
+                                        ]
+                                      },
+                                      "phase": {
+                                        "type": "string",
+                                        "enum": [
+                                          "reading",
+                                          "model",
+                                          "anchors",
+                                          "suggestions"
+                                        ]
+                                      },
+                                      "samples": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "attempt": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "of": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "round": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "tokens": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "stage",
+                                      "phase",
+                                      "samples",
+                                      "attempt",
+                                      "of",
+                                      "round",
+                                      "at"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "since",
+                              "progress"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -30123,7 +33388,8 @@
                       "body",
                       "acceptedChanges",
                       "createdAt",
-                      "decidedAt"
+                      "decidedAt",
+                      "run"
                     ],
                     "additionalProperties": true
                   },
@@ -31626,6 +34892,10 @@
                                                     "chars": {
                                                       "type": "integer",
                                                       "minimum": 0
+                                                    },
+                                                    "matches": {
+                                                      "type": "integer",
+                                                      "minimum": 0
                                                     }
                                                   },
                                                   "required": [
@@ -31725,6 +34995,121 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "run": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "running"
+                              ]
+                            },
+                            "since": {
+                              "type": "string"
+                            },
+                            "progress": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "stage": {
+                                      "type": "string",
+                                      "enum": [
+                                        "survey",
+                                        "outputs",
+                                        "sections",
+                                        "steps",
+                                        "references",
+                                        "revise",
+                                        "mapping"
+                                      ]
+                                    },
+                                    "phase": {
+                                      "type": "string",
+                                      "enum": [
+                                        "reading",
+                                        "model",
+                                        "anchors",
+                                        "suggestions"
+                                      ]
+                                    },
+                                    "samples": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "attempt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "of": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "round": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "tokens": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "stage",
+                                    "phase",
+                                    "samples",
+                                    "attempt",
+                                    "of",
+                                    "round",
+                                    "at"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "since",
+                            "progress"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -31737,7 +35122,8 @@
                     "body",
                     "acceptedChanges",
                     "createdAt",
-                    "decidedAt"
+                    "decidedAt",
+                    "run"
                   ],
                   "additionalProperties": true,
                   "description": "The decided proposal."
@@ -36681,7 +40067,7 @@
             }
           },
           "409": {
-            "description": "`set the customer on the Linked data page`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`.",
+            "description": "`set the customer under Administration > Linked data`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -36707,7 +40093,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`set the customer on the Linked data page`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`."
+                  "description": "`set the customer under Administration > Linked data`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`."
                 }
               }
             }
@@ -39594,13 +42980,24 @@
                             },
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "maxOutputTokens": {
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
                             "modelId",
                             "displayName",
                             "curated",
-                            "enabled"
+                            "enabled",
+                            "maxOutputTokens"
                           ],
                           "additionalProperties": true
                         }
@@ -39859,13 +43256,24 @@
                           },
                           "enabled": {
                             "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "modelId",
                           "displayName",
                           "curated",
-                          "enabled"
+                          "enabled",
+                          "maxOutputTokens"
                         ],
                         "additionalProperties": true
                       }
@@ -40202,13 +43610,24 @@
                           },
                           "enabled": {
                             "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "modelId",
                           "displayName",
                           "curated",
-                          "enabled"
+                          "enabled",
+                          "maxOutputTokens"
                         ],
                         "additionalProperties": true
                       }
@@ -40728,13 +44147,24 @@
                           },
                           "enabled": {
                             "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
                           "modelId",
                           "displayName",
                           "curated",
-                          "enabled"
+                          "enabled",
+                          "maxOutputTokens"
                         ],
                         "additionalProperties": true
                       }
@@ -40940,6 +44370,343 @@
                   ],
                   "additionalProperties": true,
                   "description": "`model choice {label} uses {ref}: point it elsewhere first`, or `the drafting model …` / `the OCR model …`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/llm/endpoints/{name}/models/{modelId}": {
+      "patch": {
+        "operationId": "setLlmModelSettings",
+        "summary": "Set a model's output limit",
+        "tags": [
+          "Models"
+        ],
+        "description": "**Admins only.** `maxOutputTokens` is the most tokens one reply of this model may\nuse where the step does not say: the Workbench drafting stages and the mapping stage\n(16,000 when null). A reply cut off at the limit fails the stage with a message that\nnames this setting. Mainly a property of the model, so set it to what the model and\nits context window allow. A model id containing `/` is URL-encoded.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxOutputTokens": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1024,
+                        "maximum": 1000000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "maxOutputTokens"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "description": "The endpoint name (model-ref prefix)."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "modelId",
+            "required": true,
+            "description": "The model id on this endpoint."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "anthropic",
+                        "openai-chat",
+                        "openai-responses"
+                      ]
+                    },
+                    "baseUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "location": {
+                      "type": "string",
+                      "enum": [
+                        "local",
+                        "external"
+                      ]
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "env",
+                        "ui"
+                      ]
+                    },
+                    "editedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "apiKeyEnv": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keySet": {
+                      "type": "boolean"
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "modelId": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "curated": {
+                            "type": "boolean"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "maxOutputTokens": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "modelId",
+                          "displayName",
+                          "curated",
+                          "enabled",
+                          "maxOutputTokens"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "kind",
+                    "baseUrl",
+                    "location",
+                    "enabled",
+                    "source",
+                    "editedAt",
+                    "updatedBy",
+                    "apiKeyEnv",
+                    "keySet",
+                    "models"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The endpoint."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`endpoint not found` or `model not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`endpoint not found` or `model not found`."
                 }
               }
             }
@@ -41506,7 +45273,7 @@
             }
           },
           "409": {
-            "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it on the Models page`.",
+            "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it under Administration > Models`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -41532,7 +45299,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it on the Models page`."
+                  "description": "`a model choice {id} already exists`, or `model {ref} is not offered: add it under Administration > Models`."
                 }
               }
             }
@@ -41796,7 +45563,7 @@
             }
           },
           "409": {
-            "description": "`model {ref} is not offered: add it on the Models page`.",
+            "description": "`model {ref} is not offered: add it under Administration > Models`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -41822,7 +45589,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`model {ref} is not offered: add it on the Models page`."
+                  "description": "`model {ref} is not offered: add it under Administration > Models`."
                 }
               }
             }
@@ -42282,7 +46049,7 @@
             }
           },
           "409": {
-            "description": "`model {ref} is not offered: add it on the Models page`.",
+            "description": "`model {ref} is not offered: add it under Administration > Models`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -42308,7 +46075,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`model {ref} is not offered: add it on the Models page`."
+                  "description": "`model {ref} is not offered: add it under Administration > Models`."
                 }
               }
             }
@@ -42323,7 +46090,7 @@
         "tags": [
           "Ontologies"
         ],
-        "description": "Every ontology in the library by name, with its newest version (whatever its\nstatus) and how many versions it has. Retired ontologies are left out unless\n`retired=include`.",
+        "description": "Every ontology in the library by name, with its newest version (whatever its\nstatus) and how many versions it has. Retired ontologies are left out unless\n`retired=include`. `embedding` is how far the worker has embedded the newest\nready version under the embedding model (Administration > Models), counted when listed; null\nwithout an embedding model or a ready version.",
         "parameters": [
           {
             "schema": {
@@ -42636,6 +46403,37 @@
                       },
                       "versionCount": {
                         "type": "integer"
+                      },
+                      "embedding": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "model": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              },
+                              "terms": {
+                                "type": "integer"
+                              },
+                              "embedded": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "model",
+                              "version",
+                              "terms",
+                              "embedded"
+                            ],
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -42648,7 +46446,8 @@
                       "createdBy",
                       "createdAt",
                       "latest",
-                      "versionCount"
+                      "versionCount",
+                      "embedding"
                     ],
                     "additionalProperties": true
                   },
@@ -47627,7 +51426,7 @@
         "tags": [
           "Linked data"
         ],
-        "description": "The effective base IRI, for showing example IRIs while mapping a recipe. Null until\nan admin sets the customer on the Linked data page (RDF is skipped until then).",
+        "description": "The effective base IRI, for showing example IRIs while mapping a recipe. Null until\nan admin sets the customer under Administration > Linked data (RDF is skipped until then).",
         "responses": {
           "200": {
             "description": "The effective base.",
@@ -47780,6 +51579,10 @@
       "description": "Sign in with an email address and a password to get a session cookie (`ih_session`).\nEvery `/api` route needs the session except sign-in, sign-out and these docs. See\n[ADR 0013](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0013-email-password-users.md)."
     },
     {
+      "name": "Profile",
+      "description": "Your own profile: name, job title, company and LinkedIn name, and a linked GitHub account\n(its picture is your picture in the app) with the repository recipe YAML will be stored in.\nThe email address is changed by an admin."
+    },
+    {
       "name": "Users",
       "description": "Admins add people with a name, an email address and a one-time password, and can edit,\ndisable, unlock or reissue them, and read recent sign-ins. The admin from the API log signs\nin as `admin` with the token the API prints on every start."
     },
@@ -47837,6 +51640,7 @@
       "name": "Administration",
       "tags": [
         "Auth & sessions",
+        "Profile",
         "Users",
         "Data-lake S3 keys",
         "Linked data",

@@ -184,7 +184,7 @@ describe('BriefTab', () => {
     const card = screen.getByRole('region', { name: 'Survey answers' });
     expect(await within(card).findByText(/the Survey has 2 open questions/)).toBeInTheDocument();
     await userEvent.click(within(card).getByRole('button', { name: 'Open Survey' }));
-    expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter/survey');
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter/survey/questions');
   });
 
   it('lists versions with CURRENT, used-by tags and what changed', async () => {
@@ -349,7 +349,7 @@ describe('BriefTab ontologies (ADR 0011): a summary, chosen on Survey', () => {
     expect(section).toHaveTextContent('2 ontologies pinned: idmp v2 · shp v1 (shapes)');
     expect(screen.queryByRole('button', { name: 'Add ontology' })).toBeNull();
     await userEvent.click(within(section).getByRole('button', { name: 'Change on Survey' }));
-    expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter/survey');
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/letter/survey/ontologies');
   });
 
   it('says when none is pinned', () => {

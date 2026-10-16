@@ -7,6 +7,7 @@ import {
   type OntologyStats,
   type OntologyPatch,
   type OntologySummary,
+  type EmbeddingProgress,
   type OntologyTerm,
   type OntologyTermKind,
   type OntologyVersionView,
@@ -93,6 +94,8 @@ export type DeleteVersionResult =
 
 export interface OntologyRepo {
   list(opts: { retired: boolean }): Promise<OntologySummary[]>;
+  /** Embedding progress of each ontology's newest ready version under `model`. */
+  embeddingProgress(model: string, ids: string[]): Promise<Map<string, EmbeddingProgress>>;
   get(id: string): Promise<OntologyDetail | null>;
   /** The version row and its `ontology` job, in one transaction. */
   createVersion(input: NewOntologyVersion): Promise<CreateVersionResult>;
@@ -271,6 +274,26 @@ export class MemoryOntologyRepo implements OntologyRepo {
   private readonly versionJobs = new Map<string, string>();
   /** The `embed` jobs queued, for assertions. */
   readonly embedJobs: { ontologyId: string; version: number; model: string }[] = [];
+  /** How many terms the worker embedded, by `id:version:model` (seedEmbedded). */
+  private readonly embedded = new Map<string, number>();
+
+  async embeddingProgress(model: string, ids: string[]): Promise<Map<string, EmbeddingProgress>> {
+    const progress = new Map<string, EmbeddingProgress>();
+    for (const id of ids) {
+      const ready = this.ontologies
+        .get(id)
+        ?.versions.find((v) => this.effective(v).status === 'ready');
+      if (!ready) continue;
+      const terms = this.termsByVersion.get(`${id}:${ready.version}`) ?? [];
+      progress.set(id, {
+        model,
+        version: ready.version,
+        terms: terms.filter((t) => t.kind !== 'shape').length,
+        embedded: this.embedded.get(`${id}:${ready.version}:${model}`) ?? 0,
+      });
+    }
+    return progress;
+  }
 
   async createEmbedJobs(
     model: string,
@@ -552,6 +575,11 @@ export class MemoryOntologyRepo implements OntologyRepo {
     Object.assign(this.version(id, version)!, { status: 'failed', error });
   }
 
+  /** Test seeder: the worker embedded `count` of the version's terms under `model`. */
+  seedEmbedded(id: string, version: number, model: string, count: number): void {
+    this.embedded.set(`${id}:${version}:${model}`, count);
+  }
+
   /** Test seeder: the terms the worker would have indexed. */
   seedTerms(id: string, version: number, terms: SeedTerm[]): void {
     this.termsByVersion.set(
@@ -730,6 +758,36 @@ export class PgOntologyRepo implements OntologyRepo {
       [opts.retired],
     );
     return rows.map(toSummary);
+  }
+
+  async embeddingProgress(model: string, ids: string[]): Promise<Map<string, EmbeddingProgress>> {
+    // The newest ready version of each; both counts use the (ontology, version) indexes.
+    const { rows } = await this.pool.query<{
+      ontology_id: string;
+      version: number;
+      terms: number;
+      embedded: number;
+    }>(
+      `WITH v AS (
+         SELECT DISTINCT ON (ontology_id) ontology_id, version FROM ontology_versions
+          WHERE status = 'ready' AND ontology_id = ANY($2::text[])
+          ORDER BY ontology_id, version DESC)
+       SELECT v.ontology_id, v.version,
+              (SELECT count(*) FROM ontology_terms t
+                WHERE t.ontology_id = v.ontology_id AND t.version = v.version
+                  AND t.kind <> 'shape')::int AS terms,
+              (SELECT count(*) FROM ontology_term_embeddings e
+                WHERE e.ontology_id = v.ontology_id AND e.version = v.version
+                  AND e.model_ref = $1)::int AS embedded
+         FROM v`,
+      [model, ids],
+    );
+    return new Map(
+      rows.map((r) => [
+        r.ontology_id,
+        { model, version: r.version, terms: r.terms, embedded: r.embedded },
+      ]),
+    );
   }
 
   private async summary(id: string): Promise<OntologySummary | null> {

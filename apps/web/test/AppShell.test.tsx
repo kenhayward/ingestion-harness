@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
-import { fakeApi, job, projectView, user } from './fake-api.js';
+import { fakeApi, job, projectView } from './fake-api.js';
 
 const SEARCH = 'Search jobs, results and document types';
 
@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe('app shell', () => {
-  it('has a top bar with search, colour mode, Upload document and the signed-in user', async () => {
+  it('has a top bar with search, colour mode and the signed-in user', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'user' as const,
@@ -26,7 +26,8 @@ describe('app shell', () => {
     const banner = await screen.findByRole('banner');
     expect(within(banner).getByRole('searchbox', { name: SEARCH })).toBeInTheDocument();
     expect(within(banner).getByRole('group', { name: 'Colour mode' })).toBeInTheDocument();
-    expect(within(banner).getByRole('button', { name: 'Upload document' })).toBeInTheDocument();
+    // Uploading is Home's (its Upload documents card): the top bar has no Upload button.
+    expect(within(banner).queryByRole('button', { name: /upload/i })).toBeNull();
     expect(
       within(banner).getByRole('button', { name: 'Ken – laptop (user): account menu' }),
     ).toHaveTextContent('KL');
@@ -121,7 +122,7 @@ describe('app shell', () => {
     render(<App api={api} pollMs={0} />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     expect(nav).toHaveClass('compact');
-    for (const name of ['Jobs', 'Results', 'Document types', 'Workbench', 'Access']) {
+    for (const name of ['Jobs', 'Results', 'Document types', 'Workbench', 'Ontologies']) {
       const link = within(nav).getByRole('link', { name });
       expect(link).toHaveAttribute('title', name);
     }
@@ -234,22 +235,6 @@ describe('search', () => {
     expect(screen.getByText('No document types match “invoice zzz”.')).toBeInTheDocument();
   });
 
-  it('filters users by name or email', async () => {
-    window.location.hash = '#/access';
-    const api = fakeApi({
-      listUsers: vi.fn(async () => [
-        user({ id: '1', name: 'Ken Hayward', email: 'ken@example.com' }),
-        user({ id: '2', name: 'Ops station', email: 'ops@example.com' }),
-      ]),
-    });
-    render(<App api={api} pollMs={0} />);
-    const users = within(await screen.findByRole('table', { name: 'Users' }));
-    await users.findByText('Ops station');
-    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'ken@');
-    expect(users.getByText('Ken Hayward')).toBeInTheDocument();
-    expect(users.queryByText('Ops station')).not.toBeInTheDocument();
-  });
-
   it('sends the search to the server as the results file name filter', async () => {
     window.location.hash = '#/results';
     const listResults = vi.fn(async (query?: { q?: string }) =>
@@ -270,31 +255,6 @@ describe('search', () => {
   });
 });
 
-describe('Upload document', () => {
-  it('goes to Jobs and opens the file picker once', async () => {
-    window.location.hash = '#/results';
-    const click = vi.spyOn(HTMLInputElement.prototype, 'click');
-    const pickerOpens = () =>
-      click.mock.contexts.filter((c) => c instanceof HTMLInputElement && c.type === 'file').length;
-    render(<App api={fakeApi()} pollMs={0} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Upload document' }));
-    const input = await screen.findByLabelText('PDF or Word files');
-    await vi.waitFor(() => expect(click.mock.contexts).toContain(input));
-    expect(window.location.hash).toBe('#/');
-    expect(pickerOpens()).toBe(1);
-    // leaving and returning to Jobs must not reopen the picker
-    window.location.hash = '#/results';
-    await screen.findByRole('heading', { name: 'Results' });
-    await vi.waitFor(() =>
-      expect(screen.queryByLabelText('PDF or Word files')).not.toBeInTheDocument(),
-    );
-    window.location.hash = '#/';
-    await screen.findByLabelText('PDF or Word files');
-    expect(pickerOpens()).toBe(1);
-    click.mockRestore();
-  });
-});
-
 describe('search scope', () => {
   it('clears the search when moving to another section', async () => {
     render(
@@ -305,8 +265,8 @@ describe('search scope', () => {
     );
     const search = await screen.findByRole('searchbox', { name: SEARCH });
     await userEvent.type(search, 'invoice');
-    window.location.hash = '#/access';
-    await screen.findByRole('table', { name: 'Users' });
+    window.location.hash = '#/templates';
+    await screen.findByRole('heading', { level: 1, name: 'Document types' });
     expect(search).toHaveValue('');
   });
 
@@ -319,19 +279,10 @@ describe('search scope', () => {
     await vi.waitFor(() => expect(window.location.hash).toBe('#/templates/x/1'));
     expect(search).toHaveValue('invoice');
   });
-
-  it('says when no users match', async () => {
-    window.location.hash = '#/access';
-    const api = fakeApi({ listUsers: vi.fn(async () => [user({ name: 'Ken Hayward' })]) });
-    render(<App api={api} pollMs={0} />);
-    await within(await screen.findByRole('table', { name: 'Users' })).findByText('Ken Hayward');
-    await userEvent.type(screen.getByRole('searchbox', { name: SEARCH }), 'zzz');
-    expect(screen.getByText('No users match “zzz”.')).toBeInTheDocument();
-  });
 });
 
 describe('the admin name menu', () => {
-  it('opens Models, Access and Sign out from the name of an admin', async () => {
+  it('opens Administration and Sign out from the name of an admin', async () => {
     const onSignOut = vi.fn();
     const api = fakeApi({
       me: vi.fn(async () => ({
@@ -353,27 +304,29 @@ describe('the admin name menu', () => {
     await userEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const menu = within(banner).getByRole('menu', { name: 'Ken (admin): account menu' });
-    expect(within(menu).getByRole('menuitem', { name: 'Models' })).toHaveAttribute(
-      'href',
-      '#/models',
-    );
-    expect(within(menu).getByRole('menuitem', { name: 'Access' })).toHaveAttribute(
-      'href',
-      '#/access',
-    );
+    // Administration first; Models, Linked data and Access are no longer links of their own.
+    const items = within(menu).getAllByRole('menuitem');
+    expect(items[0]).toHaveAccessibleName('Administration');
+    for (const gone of ['Models', 'Linked data', 'Access']) {
+      expect(within(menu).queryByRole('menuitem', { name: gone })).toBeNull();
+    }
     await userEvent.keyboard('{Escape}');
     expect(within(banner).queryByRole('menu')).toBeNull();
     expect(trigger).toHaveFocus();
     await userEvent.click(trigger);
-    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Models' }));
-    expect(window.location.hash).toBe('#/models');
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Administration' }));
     expect(within(banner).queryByRole('menu')).toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'Administration' });
+    expect(window.location.hash).toBe('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(trigger).toHaveFocus();
     await userEvent.click(trigger);
     await userEvent.click(within(banner).getByRole('menuitem', { name: 'Sign out' }));
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 
-  it('gives users a menu with Change password and Sign out only', async () => {
+  it('gives users a menu with Profile and Sign out only; Profile opens the dialog', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'user' as const,
@@ -392,19 +345,40 @@ describe('the admin name menu', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((i) => i.textContent),
-    ).toEqual(['Change password', 'Sign out']);
+    ).toEqual(['Profile', 'Sign out']);
     await userEvent.keyboard('{Escape}');
     expect(trigger).toHaveFocus();
     await userEvent.click(trigger);
-    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Change password' }));
-    expect(window.location.hash).toBe('#/account/password');
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Profile' }));
+    const dialog = screen.getByRole('dialog', { name: 'Profile' });
+    expect(within(dialog).getByRole('tab', { name: 'Personal details' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(window.location.hash).toBe('');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('still opens the Change password page at its address', async () => {
+    window.location.hash = '#/account/password';
+    const api = fakeApi({
+      me: vi.fn(async () => ({
+        role: 'user' as const,
+        label: 'Ann',
+        email: 'ann@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
+    });
+    render(<App api={api} pollMs={0} />);
     expect(
       await screen.findByRole('heading', { name: 'Change your password' }),
     ).toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Change password · CT Studio'));
   });
 
-  it('lists Change password for admin users but not for the admin from the log', async () => {
+  it('lists Profile for admin users but not for the admin from the log', async () => {
     const menuItems = async (email: string | null) => {
       const api = fakeApi({
         me: vi.fn(async () => ({
@@ -425,11 +399,51 @@ describe('the admin name menu', () => {
       unmount();
       return names;
     };
-    expect(await menuItems('ken@example.com')).toContain('Change password');
-    expect(await menuItems(null)).not.toContain('Change password');
+    expect(await menuItems('ken@example.com')).toContain('Profile');
+    expect(await menuItems(null)).not.toContain('Profile');
   });
 
-  it('lists Models in the admin nav', async () => {
+  it('shows the linked GitHub picture beside the name', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => ({
+        role: 'user' as const,
+        label: 'Ann',
+        email: 'ann@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+        avatarUrl: 'https://avatars.example/u/7',
+      })),
+    });
+    render(<App api={api} pollMs={0} />);
+    const banner = await screen.findByRole('banner');
+    const trigger = within(banner).getByRole('button', { name: 'Ann (user): account menu' });
+    expect(trigger.querySelector('img.avatar')).toHaveAttribute(
+      'src',
+      'https://avatars.example/u/7',
+    );
+    expect(trigger).not.toHaveTextContent('AN');
+  });
+
+  it('reopens Profile when GitHub sends the browser back, and re-reads who is signed in', async () => {
+    window.location.hash = '#/account/profile/github?github=linked';
+    const me = vi.fn(async () => ({
+      role: 'user' as const,
+      label: 'Ann',
+      email: 'ann@example.com',
+      mustChangePassword: false,
+      userId: 'u-test',
+    }));
+    const api = fakeApi({ me });
+    render(<App api={api} pollMs={0} />);
+    const dialog = await screen.findByRole('dialog', { name: 'Profile' });
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('GitHub account linked.');
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(me.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('has no admin links in the nav', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'admin' as const,
@@ -441,7 +455,11 @@ describe('the admin name menu', () => {
     });
     render(<App api={api} pollMs={0} />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
-    expect(within(nav).getByRole('link', { name: 'Models' })).toHaveAttribute('href', '#/models');
+    await within(nav).findByRole('link', { name: 'Workbench' });
+    for (const gone of ['Models', 'Linked data', 'Access']) {
+      expect(within(nav).queryByRole('link', { name: gone })).toBeNull();
+    }
+    expect(within(nav).queryByText('Admin')).toBeNull();
   });
 });
 

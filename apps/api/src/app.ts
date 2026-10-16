@@ -4,6 +4,8 @@ import multipart from '@fastify/multipart';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
 import type { JobWatch } from './jobs/watch.js';
+import type { GitHubOAuth } from './profile/github.js';
+import type { ProfileRepo } from './profile/repo.js';
 import { registerOpenApi } from './openapi/plugin.js';
 import { jobLiveRoutes } from './routes/job-live.js';
 import type { S3KeyService } from './s3keys/service.js';
@@ -50,9 +52,15 @@ export interface AppDeps {
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */
   access: AccessRepo | null;
+  /** Users' own profiles (docs/design/profile.md). */
+  profiles: ProfileRepo;
+  /** The GitHub OAuth app (`GITHUB_CLIENT_ID`/`_SECRET`); null/absent: GitHub cannot be linked. */
+  github?: GitHubOAuth | null;
+  /** `GITHUB_REDIRECT_URL`: the callback registered with GitHub; absent: from the request. */
+  githubRedirectUrl?: string | null;
   /** Read-only S3 keys for the data lake (ADR 0008); null when the target isn't local SeaweedFS. */
   s3Keys: S3KeyService | null;
-  /** LLM endpoints and curated models (ADR 0010), for the Models page. */
+  /** LLM endpoints and curated models (ADR 0010), for Administration > Models. */
   llm: LlmConfigRepo;
   /** The ontology library (ADR 0011): imported versions and their indexed terms. */
   ontologies: OntologyRepo;
@@ -71,7 +79,7 @@ export interface AppDeps {
    * is then SameSite=None; Secure; Partitioned. null/absent: SameSite=Strict, no framing.
    */
   frameAncestors?: string | null;
-  /** `RDF_PUBLIC_URL`: where consumers query the triple store (shown on the Linked data page). */
+  /** `RDF_PUBLIC_URL`: where consumers query the triple store (shown under Administration > Linked data). */
   rdfPublicUrl?: string | null;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
   trustProxy?: string | boolean;

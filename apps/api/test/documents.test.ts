@@ -137,7 +137,7 @@ describe('POST /api/documents', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe(
-      'model local/qwen3-32b is not offered: add it on the Models page',
+      'model local/qwen3-32b is not offered: add it under Administration > Models',
     );
   });
 

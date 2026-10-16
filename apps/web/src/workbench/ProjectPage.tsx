@@ -8,6 +8,7 @@ import { ExportPanel } from './ExportPanel.js';
 import { forgetProject, rememberProject } from './listDerive.js';
 import { EvaluateTab } from './EvaluateTab.js';
 import { OverviewTab } from './OverviewTab.js';
+import { forgetProjectDrafts } from '../ui/keptDraft.js';
 import { RETIRED_REASON } from '../ui/retired.js';
 import { RetiredBanner } from '../ui/RetiredBanner.js';
 import { ProjectHeader } from './ProjectHeader.js';
@@ -81,11 +82,61 @@ function DeleteProject({
   );
 }
 
+/** Resets the project after its id is typed (Overview tab); the caller shows a refusal. */
+function ResetProject({ projectId, onReset }: { projectId: string; onReset: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!open) {
+    return (
+      <p>
+        <button type="button" className="danger" onClick={() => setOpen(true)}>
+          Reset project…
+        </button>
+      </p>
+    );
+  }
+  return (
+    <form
+      className="card"
+      aria-label="Reset project"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (typed !== projectId || busy) return;
+        setBusy(true);
+        void onReset().finally(() => {
+          setBusy(false);
+          setOpen(false);
+          setTyped('');
+        });
+      }}
+    >
+      <p>
+        Starts the project again: keeps the samples and the brief's written sections, and deletes
+        everything else: the survey, proposals and stage decisions, test and evaluation runs,
+        references, feedback, pinned ontologies and the draft recipe, which starts again empty.
+        Published versions stay. This cannot be undone.
+      </p>
+      <label>
+        Type {projectId} to confirm
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+      </label>
+      <button type="submit" className="danger-fill" disabled={typed !== projectId || busy}>
+        Reset project
+      </button>
+      <button type="button" onClick={() => setOpen(false)}>
+        Cancel
+      </button>
+    </form>
+  );
+}
+
 /** One workbench project on the project shell: header, step rail and the current tab. */
 export function ProjectPage({
   api,
   projectId,
   tab,
+  surveyView,
   onNavigate,
   pollMs = 3000,
   role,
@@ -93,6 +144,8 @@ export function ProjectPage({
   api: Api;
   projectId: string;
   tab: ProjectTab;
+  /** The Survey tab's own tab, from the route (`survey/ontologies`). */
+  surveyView?: string;
   onNavigate: (hash: string) => void;
   /** Poll interval for the tabs, and for the overview while anything runs. */
   pollMs?: number;
@@ -101,6 +154,8 @@ export function ProjectPage({
   const [view, setView] = useState<ProjectView | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Said once an action finished (a reset). */
+  const [notice, setNotice] = useState<string | null>(null);
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   /** Bumped when a stage changes the draft, to remount editors showing it. */
   const [revision, setRevision] = useState(0);
@@ -252,7 +307,24 @@ export function ProjectPage({
         <div className="project-tab">
           {tab === 'overview' &&
             (overview ? (
-              <OverviewTab projectId={project.id} overview={overview} />
+              <>
+                <OverviewTab projectId={project.id} overview={overview} />
+                {notice && <p role="status">{notice}</p>}
+                <ResetProject
+                  projectId={project.id}
+                  onReset={() =>
+                    act(async () => {
+                      setNotice(null);
+                      await api.resetProject(project.id);
+                      forgetProjectDrafts(project.id);
+                      changed();
+                      setNotice(
+                        "Project reset: the samples and the brief's written sections were kept.",
+                      );
+                    })
+                  }
+                />
+              </>
             ) : (
               !overviewError && <p>Loading…</p>
             ))}
@@ -307,6 +379,7 @@ export function ProjectPage({
               onChanged={changed}
               item={itemOf('survey')}
               retired={retired}
+              view={surveyView}
             />
           )}
           {tab === 'mapping' && (

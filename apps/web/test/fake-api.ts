@@ -1,7 +1,8 @@
 import { vi } from 'vitest';
 import type {
+  Profile,
   OntologyDetail,
-  OntologySummary,
+  OntologyListItem,
   OntologyTerm,
   OntologyVersionView,
   TermDetail,
@@ -248,6 +249,20 @@ export const ADMIN_ME: Me = {
   mustChangePassword: false,
 };
 
+/** A profile as GET /api/profile returns it; override what the test is about. */
+export function profile(fields: Partial<Profile> = {}): Profile {
+  return {
+    name: 'Ken Hayward',
+    email: 'ken@example.com',
+    jobTitle: null,
+    company: null,
+    linkedin: null,
+    github: null,
+    githubAvailable: true,
+    ...fields,
+  };
+}
+
 /** A user as GET /api/users lists them; override what the test is about. */
 export function user(fields: Partial<User> = {}): User {
   return {
@@ -291,6 +306,14 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     login: vi.fn(async () => ({ ...ADMIN_ME, failedSinceLastSignIn: 0, lastFailedAt: null })),
     logout: vi.fn(async () => undefined),
     changePassword: vi.fn(async () => undefined),
+    getProfile: vi.fn(async () => profile()),
+    updateProfile: vi.fn(async (body) => profile(body)),
+    gitHubConnectUrl: () => '/api/profile/github/connect',
+    unlinkGitHub: vi.fn(async () => undefined),
+    listGitHubRepos: vi.fn(async () => []),
+    setGitHubRepo: vi.fn(async () => {
+      throw new Error('setGitHubRepo not stubbed');
+    }),
     listUsers: vi.fn(async () => [ADMIN_FROM_LOG]),
     addUser: vi.fn(async () => {
       throw new Error('addUser not stubbed');
@@ -377,6 +400,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     updateLlmEndpoint: vi.fn(async () => {
       throw new Error('updateLlmEndpoint not stubbed');
+    }),
+    setLlmModelSettings: vi.fn(async () => {
+      throw new Error('setLlmModelSettings not stubbed');
     }),
     setLlmEndpointModels: vi.fn(async () => {
       throw new Error('setLlmEndpointModels not stubbed');
@@ -492,6 +518,12 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     ),
     publishTemplate: vi.fn(async () => templateView({ id: 'x', version: 1 }, 'published')),
     newDraft: vi.fn(async () => templateView({ id: 'x', version: 2 })),
+    renameTemplate: vi.fn(async (id: string, name: string) =>
+      templateView({ id, version: 2, name }),
+    ),
+    listVersions: vi.fn(async () => []),
+    setVersionLabel: vi.fn(async (id: string, version: number) => templateView({ id, version })),
+    restoreVersion: vi.fn(async (id: string, version: number) => templateView({ id, version })),
     deleteDraft: vi.fn(async () => undefined),
     importTemplate: vi.fn(async () => templateView({ id: 'memo', version: 4 })),
     exportUrl: (id, version) => `/api/templates/${id}/versions/${version}/export`,
@@ -567,6 +599,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getProject: vi.fn(async () => {
       throw new Error('getProject not stubbed');
     }),
+    resetProject: vi.fn(async () => {
+      throw new Error('resetProject not stubbed');
+    }),
     deleteProject: vi.fn(async () => {
       throw new Error('deleteProject not stubbed');
     }),
@@ -616,8 +651,8 @@ export function projectOverview(overrides: Partial<ProjectOverview> = {}): Proje
       state: stage === 'template' ? ('none' as const) : ('pending' as const),
       status: stage === 'template' ? 'Draft v1' : 'Not started',
       metrics: [
-        { label: 'Figure', value: '—', at: null },
-        { label: 'Other', value: '—', at: null },
+        { label: 'Figure', value: 'â€”', at: null },
+        { label: 'Other', value: 'â€”', at: null },
       ],
     })),
     next: null,
@@ -728,6 +763,7 @@ export function sampleView(overrides: Partial<SampleView> = {}): SampleView {
     createdAt: '2026-10-12T00:00:00.000Z',
     state: 'ready',
     prepareJobId: crypto.randomUUID(),
+    prepareStatus: null,
     error: null,
     prepare: null,
     prepareError: null,
@@ -768,6 +804,7 @@ export function proposalView(overrides: Partial<ProposalView> = {}): ProposalVie
     error: null,
     briefVersion: 1,
     acceptedChanges: null,
+    run: null,
     model: 'local/qwen',
     body: {
       summary: 'Process validation protocols, blank and executed.',
@@ -885,7 +922,8 @@ export function ontologyVersion(o: Partial<OntologyVersionView> = {}): OntologyV
   };
 }
 
-export function ontologySummary(o: Partial<OntologySummary> = {}): OntologySummary {
+/** A library row (OntologyListItem); also usable as a plain summary. */
+export function ontologySummary(o: Partial<OntologyListItem> = {}): OntologyListItem {
   return {
     id: 'pv',
     label: 'Process validation',
@@ -897,6 +935,7 @@ export function ontologySummary(o: Partial<OntologySummary> = {}): OntologySumma
     createdAt: '2026-10-14T10:00:00.000Z',
     latest: ontologyVersion(),
     versionCount: 1,
+    embedding: null,
     ...o,
   };
 }

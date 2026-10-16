@@ -21,7 +21,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from .draft_stages import Stage
-from .extract import ExtractionFailedError, run_extraction
+from .extract import ExtractionFailedError, OutputTruncatedError, run_extraction
 from .llm.base import RefusalError
 from .llm.registry import ModelResolutionError
 from .pipeline import DocumentError, PipelineDeps, check_cancelled
@@ -389,7 +389,7 @@ def convert_mapping(
                 errors.append(f"{where}: {iri} is not a valid IRI")
             if local_namespace is None:
                 errors.append(
-                    f"{where}: local terms need a base IRI: set the customer on the Linked data page"
+                    f"{where}: local terms need a base IRI: set the customer under Administration > Linked data"
                 )
             elif not iri.startswith(local_namespace) or iri == local_namespace:
                 errors.append(f"{where}: local terms live under {local_namespace}, not {iri}")
@@ -740,6 +740,7 @@ def run_mapping(
         return convert_mapping(data, draft, inputs, shortlists, local_namespace=local_namespace)[1]
 
     label = "draft-mapping"
+    limit = drafting.output_limit(deps, model_ref)
     try:
         result = run_extraction(
             extraction_id=label,
@@ -748,10 +749,13 @@ def run_mapping(
             prompt=f"{context}\n\n{MAPPING_INSTRUCTIONS}",
             schema=MAPPING_SCHEMA,
             max_attempts=2,
-            max_tokens=drafting.DRAFT_MAX_TOKENS,
+            max_tokens=limit,
             system=drafting.DRAFT_SYSTEM,
             check=check,
         )
+    except OutputTruncatedError as exc:
+        drafting._audit(deps, job, label, exc.attempts)
+        raise DocumentError(drafting.truncated_reason(limit)) from exc
     except ExtractionFailedError as exc:
         drafting._audit(deps, job, label, exc.attempts)
         raise DocumentError(str(exc)) from exc

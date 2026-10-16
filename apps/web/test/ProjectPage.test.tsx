@@ -276,6 +276,43 @@ describe('ProjectPage', () => {
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('resets the project from the Overview tab once its id is typed', async () => {
+    localStorage.setItem('ih.briefDraft.letter', JSON.stringify({ base: 1, value: {} }));
+    localStorage.setItem('ih.recipeDraft.letter.1', JSON.stringify({ base: 'x', value: {} }));
+    localStorage.setItem('ih.briefDraft.letters', JSON.stringify({ base: 1, value: {} }));
+    const getProjectOverview = vi.fn(async () => projectOverview());
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      getProjectOverview,
+      resetProject: vi.fn(async () => projectView()),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="overview"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="user"
+      />,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset project…' }));
+    const form = screen.getByRole('form', { name: 'Reset project' });
+    expect(form).toHaveTextContent(/keeps the samples and the brief's written sections/);
+    const submit = within(form).getByRole('button', { name: 'Reset project' });
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(form).getByLabelText('Type letter to confirm'), 'letter');
+    const loads = getProjectOverview.mock.calls.length;
+    await userEvent.click(submit);
+    expect(api.resetProject).toHaveBeenCalledWith('letter');
+    expect(await screen.findByRole('status')).toHaveTextContent('Project reset');
+    expect(getProjectOverview.mock.calls.length).toBeGreaterThan(loads);
+    expect(localStorage.getItem('ih.briefDraft.letter')).toBeNull();
+    expect(localStorage.getItem('ih.recipeDraft.letter.1')).toBeNull();
+    expect(localStorage.getItem('ih.briefDraft.letters')).not.toBeNull();
+    localStorage.clear();
+  });
+
   it('polls the overview only while something is running', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

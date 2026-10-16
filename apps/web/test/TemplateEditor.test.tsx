@@ -238,6 +238,42 @@ describe('TemplateEditor', () => {
     expect(onNavigate).toHaveBeenCalledWith('#/templates/letter/2');
   });
 
+  it('labels a published version on the Versions tab and replaces the draft with it (#144)', async () => {
+    const draft = view({ ...validDefinition(), version: 2 });
+    draft.record.updatedAt = '2026-10-13T10:00:00.000Z';
+    const restored = view({ ...validDefinition(), name: 'From v1', version: 2 });
+    const item = (version: number, status: 'draft' | 'published') => ({
+      version,
+      status,
+      createdAt: '',
+      updatedAt: '2026-10-13T10:00:00.000Z',
+      publishedAt: status === 'published' ? '2026-10-12T10:00:00.000Z' : null,
+      label: null,
+      note: null,
+      labelSetBy: null,
+      labelSetAt: null,
+    });
+    const { api } = setup(draft, {
+      listVersions: vi.fn(async () => [item(2, 'draft'), item(1, 'published')]),
+      restoreVersion: vi.fn(async () => restored),
+    });
+    await userEvent.click(await tab(/^Versions/));
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit label of v1' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Label' }), 'First cut');
+    await userEvent.click(screen.getByRole('button', { name: 'Save label' }));
+    expect(api.setVersionLabel).toHaveBeenCalledWith('letter', 1, {
+      label: 'First cut',
+      note: null,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Replace draft v2 with v1' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Replace draft' }));
+    expect(api.restoreVersion).toHaveBeenCalledWith('letter', 2, 1, '2026-10-13T10:00:00.000Z');
+    expect(await screen.findByText('Draft v2 replaced (not published yet).')).toBeInTheDocument();
+    await userEvent.click(await tab(/^General/));
+    expect(screen.getByLabelText('Name')).toHaveValue('From v1');
+  });
+
   it('saves with the base it started from on the Templates page too', async () => {
     const record = view({ ...validDefinition(), version: 1 });
     record.record.updatedAt = '2026-10-13T10:00:00.000Z';
@@ -307,7 +343,7 @@ describe('TemplateEditor', () => {
       );
     });
 
-    it('opens on Pipeline, ordered General, Sections, Outputs, Pipeline, Mapping, YAML, without Quality', async () => {
+    it('opens on Pipeline, ordered General, Sections, Outputs, Pipeline, Mapping, YAML, Versions, without Quality', async () => {
       setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
       await screen.findByRole('heading', { level: 2, name: 'Transformation recipe · draft v1' });
       const tabs = within(screen.getByRole('tablist', { name: 'Template sections' })).getAllByRole(
@@ -320,6 +356,7 @@ describe('TemplateEditor', () => {
         'Pipeline',
         'Mapping',
         'YAML',
+        'Versions',
       ]);
       expect(screen.getByRole('tab', { name: /^Pipeline/ })).toHaveAttribute(
         'aria-selected',
@@ -955,14 +992,23 @@ describe('TemplateEditor tabs and step cards', () => {
     expect(screen.getByRole('tab', { name: 'Pipeline 2' })).toBeInTheDocument();
   });
 
-  it('orders the tabs General, Sections, Pipeline, Outputs, YAML, Quality', async () => {
+  it('orders the tabs General, Sections, Pipeline, Outputs, YAML, Quality, Versions', async () => {
     setup(view({ ...validDefinition(), version: 1 }));
     const tabs = await screen.findByRole('tablist', { name: 'Template sections' });
     expect(
       within(tabs)
         .getAllByRole('tab')
         .map((t) => t.textContent?.replace(/[\d·\s]+$/, '')),
-    ).toEqual(['General', 'Sections', 'Pipeline', 'Outputs', 'Mapping', 'YAML', 'Quality']);
+    ).toEqual([
+      'General',
+      'Sections',
+      'Pipeline',
+      'Outputs',
+      'Mapping',
+      'YAML',
+      'Quality',
+      'Versions',
+    ]);
   });
 
   it('splits Outputs into Fields and Tables sub-tabs', async () => {
@@ -1233,6 +1279,16 @@ describe('TemplateEditor embedded Pipeline (handoff §10)', () => {
     const rows = within(within(reads).getByRole('list')).getAllByRole('listitem');
     expect(rows.length).toBeGreaterThan(1);
     for (const row of rows) expect(within(row).getAllByRole('checkbox')).toHaveLength(1);
+  });
+
+  it("shows each section's anchor beside its tick box", async () => {
+    open();
+    await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
+    const reads = within(screen.getByRole('region', { name: 'Step 3' })).getByRole('group', {
+      name: 'Reads sections',
+    });
+    const row = within(reads).getByRole('checkbox', { name: 'payment' }).closest('li')!;
+    expect(within(row).getByText('^payment')).toBeInTheDocument();
   });
 
   it('removes a filled output and offers unfilled outputs first', async () => {

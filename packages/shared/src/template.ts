@@ -315,6 +315,13 @@ export const TemplateSchema = z
       if (column === undefined) return fieldIds.includes(head);
       return tables.get(head)?.columns.some((c) => c.id === column) ?? false;
     };
+    /** Why a path does not resolve, saying how to fix a bare table id (worker `_unknown_path`). */
+    const unknownPath = (path: string) => {
+      const table = tables.get(path);
+      if (!table) return `unknown field or column "${path}"`;
+      const columns = table.columns.map((c) => `${path}.${c.id}`).join(', ');
+      return `unknown field or column "${path}": "${path}" is a table, so name one of its columns: ${columns}`;
+    };
     const order = new Map(t.pipeline.map((s, i) => [s.id, i]));
     const fillerOf = (path: string) => {
       const [head, column] = path.split('.', 2) as [string, string | undefined];
@@ -323,7 +330,7 @@ export const TemplateSchema = z
     for (const step of extracts) {
       for (const [name, path] of Object.entries(step.context)) {
         if (!resolves(path)) {
-          issue(`step "${step.id}": context "${name}": unknown field or column "${path}"`);
+          issue(`step "${step.id}": context "${name}": ${unknownPath(path)}`);
           continue;
         }
         const filler = fillerOf(path);
@@ -372,7 +379,7 @@ export const TemplateSchema = z
       if (step.type !== 'check') continue;
       [step.values, step.reference, step.aliases]
         .filter((p): p is string => p !== undefined && !resolves(p))
-        .forEach((p) => issue(`check "${step.id}": unknown field or column "${p}"`));
+        .forEach((p) => issue(`check "${step.id}": ${unknownPath(p)}`));
     }
   });
 
@@ -392,4 +399,56 @@ export function stepModel(
 /** What publishing delivers. Held in step with `Template.delivery_formats` in the worker. */
 export function deliveryFormats(template: Pick<Template, 'delivery'>): DeliveryFormat[] {
   return template.delivery?.formats ?? ['csv', 'json'];
+}
+
+/**
+ * Where a recipe's outputs go, as the Workbench Outputs tab switches them: `s3` is the CSV and
+ * JSON written to the target bucket, `rdf` the graph published to the triple store.
+ */
+export const DELIVERY_TARGETS = ['s3', 'rdf'] as const;
+export type DeliveryTarget = (typeof DELIVERY_TARGETS)[number];
+
+const TARGET_FORMATS: Record<DeliveryTarget, readonly DeliveryFormat[]> = {
+  s3: ['csv', 'json'],
+  rdf: ['rdf'],
+};
+
+type LooseDefinition = Record<string, unknown>;
+
+function formatsOf(definition: LooseDefinition): DeliveryFormat[] {
+  const delivery = definition.delivery as { formats?: DeliveryFormat[] } | undefined;
+  return delivery?.formats ?? ['csv', 'json'];
+}
+
+/**
+ * Which targets a (possibly invalid) draft definition has on. RDF counts as on while the recipe
+ * has an ontology mapping it does not deliver yet, so turning it off removes that mapping.
+ */
+export function deliveryTargets(definition: LooseDefinition): Record<DeliveryTarget, boolean> {
+  const formats = formatsOf(definition);
+  return {
+    s3: formats.some((f) => TARGET_FORMATS.s3.includes(f)),
+    rdf: formats.includes('rdf') || definition.semantics !== undefined,
+  };
+}
+
+/**
+ * The definition with one target switched (pure). RDF off also deletes the ontology mapping
+ * (`semantics`); the default (CSV and JSON) is written as no `delivery` at all, as the recipe
+ * editor's General tab does. Throws rather than turn off the last target.
+ */
+export function setDeliveryTarget(
+  definition: LooseDefinition,
+  target: DeliveryTarget,
+  on: boolean,
+): LooseDefinition {
+  const targets = { ...deliveryTargets(definition), [target]: on };
+  if (!targets.s3 && !targets.rdf) throw new Error('at least one output stays on');
+  const formats = DELIVERY_FORMATS.filter((f) =>
+    f === 'rdf' ? targets.rdf : target === 's3' ? on : formatsOf(definition).includes(f),
+  );
+  const next: LooseDefinition = { ...definition };
+  delete next.delivery;
+  if (target === 'rdf' && !on) delete next.semantics;
+  return formats.join() === 'csv,json' ? next : { ...next, delivery: { formats } };
 }

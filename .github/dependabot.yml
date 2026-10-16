@@ -4,8 +4,11 @@ updates:
     directory: /
     schedule: { interval: weekly }
     groups:
+      # Minor and patch dev updates together; each major comes as its own PR so one
+      # incompatible major (e.g. TypeScript ahead of typescript-eslint) blocks nothing else.
       dev-tooling:
         dependency-type: development
+        update-types: ['minor', 'patch']
   - package-ecosystem: uv
     directory: /worker
     schedule: { interval: weekly }

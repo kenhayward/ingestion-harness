@@ -152,8 +152,12 @@ def test_pg_store_saves_terms_and_ready_is_immutable() -> None:
            VALUES ('pv-worker-test', 1, 'pv.ttl', 'text/turtle', 'abc', 10)"""
     )
     store = PgOntologyStore(conn)
-    store.start("pv-worker-test", 1)
+    assert store.start("pv-worker-test", 1)
+    assert not store.ready("pv-worker-test", 1)
     store.save("pv-worker-test", 1, parse_ontology(TTL, "text/turtle", "pv.ttl"))
+    assert store.ready("pv-worker-test", 1)
+    assert not store.start("pv-worker-test", 1)  # a retry: nothing to parse again
+    assert not store.ready("pv-worker-test", 2)  # no such version
     row = conn.execute(
         """SELECT status, kinds, stats->>'classes' FROM ontology_versions
             WHERE ontology_id = 'pv-worker-test'"""

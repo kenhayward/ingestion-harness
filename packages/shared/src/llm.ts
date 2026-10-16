@@ -15,8 +15,26 @@ export const LlmModelViewSchema = z.object({
   /** Offered in the pickers; false: discovered on the endpoint, a suggestion. */
   curated: z.boolean(),
   enabled: z.boolean(),
+  /**
+   * The most tokens one reply may use where the step does not say (Workbench drafting and
+   * mapping); null: the default, DEFAULT_MAX_OUTPUT_TOKENS.
+   */
+  maxOutputTokens: z.number().int().nullable(),
 });
 export type LlmModelView = z.infer<typeof LlmModelViewSchema>;
+
+/** A drafting or mapping reply's output budget when its model sets none (worker DRAFT_MAX_TOKENS). */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 16_000;
+export const MIN_OUTPUT_TOKENS = 1024;
+export const MAX_OUTPUT_TOKENS = 1_000_000;
+
+/** `PATCH /api/llm/endpoints/:name/models/:modelId`: a model's output limit (null: the default). */
+export const ModelSettingsBodySchema = z
+  .object({
+    maxOutputTokens: z.number().int().min(MIN_OUTPUT_TOKENS).max(MAX_OUTPUT_TOKENS).nullable(),
+  })
+  .strict();
+export type ModelSettingsBody = z.infer<typeof ModelSettingsBodySchema>;
 
 export const LlmEndpointViewSchema = z.object({
   /** The model-ref prefix: `name/model-id`. */
@@ -111,7 +129,7 @@ export function modelRefProblem(
   aliases: Record<string, string>,
   { unknownAliases = 'refuse' }: { unknownAliases?: 'refuse' | 'allow' } = {},
 ): string | null {
-  const notOffered = 'is not offered: add it on the Models page';
+  const notOffered = 'is not offered: add it under Administration > Models';
   if (ref in aliases) {
     const resolved = resolveAlias(ref, aliases);
     if (resolved === null) return `model choice ${ref} does not resolve to a model`;

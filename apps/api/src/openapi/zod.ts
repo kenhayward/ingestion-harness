@@ -26,6 +26,9 @@ export const res = <T extends z.ZodTypeAny>(description: string, schema: T): T =
 /** A documented response without a body (204). */
 export const noContent = (description: string) => ({ type: 'null', description }) as const;
 
+/** A documented redirect (302): a browser navigation's answer, with no body. */
+export const redirect = (description: string) => ({ type: 'null', description }) as const;
+
 /** A documented download: the body is a file of one of these content types. */
 export const binary = (description: string, ...contentTypes: string[]) => ({
   description,

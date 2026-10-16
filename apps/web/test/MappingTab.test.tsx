@@ -88,7 +88,36 @@ describe('MappingTab', () => {
     const { onNavigate } = show(false);
     expect(screen.getByText(/Not used: no vocabulary is pinned on Survey/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Choose ontologies on Survey' }));
-    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/survey');
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/survey/ontologies');
+    expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
+  });
+
+  it('says the stage is not used while RDF is off on the Outputs tab', async () => {
+    const unmapped: Record<string, unknown> = { ...definition };
+    delete unmapped.semantics;
+    const api = fakeApi({ listProposals: vi.fn(async () => [proposal]) });
+    const onNavigate = vi.fn();
+    render(
+      <MappingTab
+        api={api}
+        projectId="batch"
+        used
+        definition={unmapped}
+        dataPolicy="local"
+        hasDraft
+        draft={2}
+        published={1}
+        briefVersion={1}
+        pollMs={1}
+        item={null}
+        onApplied={vi.fn()}
+        onSkipped={vi.fn()}
+        onNavigate={onNavigate}
+      />,
+    );
+    expect(screen.getByText(/Not used: RDF is off on the Outputs tab/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Turn RDF on in Outputs' }));
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/outputs');
     expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
   });
 

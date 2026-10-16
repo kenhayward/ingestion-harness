@@ -13,6 +13,7 @@ from ingest_worker.config import REPO_ROOT
 from ingest_worker.draft_stages import REVISE_SCHEMA
 from ingest_worker.drafting import (
     DRAFT_MAX_TOKENS,
+    DRAFT_PROGRESS,
     MAX_CONTEXT_SAMPLES,
     MAX_SAMPLE_CHARS,
     SURVEY,
@@ -154,6 +155,47 @@ def make(
     return provider, store, deps
 
 
+@pytest.mark.parametrize(("limit", "budget"), [(None, 16_000), (48_000, 48_000)])
+def test_a_drafting_reply_may_use_its_models_output_limit(
+    fixture_specs_dir: Path, limit: int | None, budget: int
+) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    limits = {} if limit is None else {"big": limit}
+    deps = dataclasses.replace(
+        deps,
+        models=ModelRegistry(
+            {"drafter": provider},
+            {"drafter": ProviderConfig(name="drafter", kind="openai-chat", location="local",
+                                       maxOutputTokens=limits)},  # type: ignore[arg-type]
+            {"draft": "drafter/big"},
+        ),
+    )  # fmt: skip
+    provider.responses = [SURVEY_BODY]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert provider.calls[0][1].max_tokens == budget
+
+
+def test_a_drafting_reply_cut_off_at_the_limit_says_where_to_raise_it(
+    fixture_specs_dir: Path,
+) -> None:
+    from ingest_worker.llm.base import CompletionResult
+
+    provider, _, deps = make(fixture_specs_dir)
+    cut = CompletionResult(text='{"notes": "32 tables', model="big", truncated=True)
+    provider.responses = [cut]
+    queue = FakeQueue(jobs=[draft_job(stage="outputs")])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert reason == (
+        "The drafting model's reply was cut off at its output limit (16,000 tokens). "
+        "An admin can raise the model's Max output tokens under Administration > Models, or the stage "
+        "can be run again with less to propose."
+    )
+    assert "chunkPages" not in reason
+
+
 def test_survey_job_writes_the_validated_body(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [SURVEY_BODY]
@@ -221,6 +263,64 @@ def test_invalid_output_is_fed_back_then_needs_review(fixture_specs_dir: Path) -
     assert "previous response was rejected" in provider.calls[1][1].prompt
     [(_, reason)] = queue.reviewed
     assert "draft-survey" in reason
+
+
+PROGRESS_FIXTURE = REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "draft-progress.json"
+
+
+def progress(queue: FakeQueue) -> list[dict[str, Any]]:
+    return [d for _, _, msg, d in queue.event_details if msg == DRAFT_PROGRESS]
+
+
+def expected_progress(case: str) -> list[dict[str, Any]]:
+    cases: dict[str, list[dict[str, Any]]] = json.loads(PROGRESS_FIXTURE.read_text("utf-8"))
+    return cases[case]
+
+
+def test_a_survey_reports_reading_the_samples_and_each_model_call(
+    fixture_specs_dir: Path,
+) -> None:
+    """Issue #151: a running survey says what it is doing (TS DraftProgressSchema, shared
+    fixture draft-progress.json): the samples read, then each model call with its attempt."""
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = ["not json", SURVEY_BODY]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert progress(queue) == expected_progress("surveyRetried")
+
+
+def test_a_streamed_reply_reports_the_tokens_received_now_and_then(
+    fixture_specs_dir: Path,
+) -> None:
+    """The model's reply streams: its growing token count is reported on the model phase,
+    the first at once, then every 500 tokens (or 5 s), never every token."""
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [SURVEY_BODY]
+    provider.token_stream = [10, 600, 700, 1300]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert progress(queue) == expected_progress("surveyStreamed")
+
+
+def test_progress_is_advisory_a_failed_write_never_fails_the_survey(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [SURVEY_BODY]
+
+    class Flaky(FakeQueue):
+        def event(
+            self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
+        ) -> None:
+            if message == DRAFT_PROGRESS:
+                raise RuntimeError("database blip")
+            super().event(job_id, level, message, data)
+
+    queue = Flaky(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed == [("job-d", [])]
 
 
 def test_transient_provider_errors_retry_the_job(fixture_specs_dir: Path) -> None:
@@ -374,6 +474,7 @@ def test_sections_anchor_misses_are_fed_back_once_and_the_grid_is_kept(
     [row] = body["anchorCheck"]["samples"]
     assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is True
     assert store.get_optional("runs", "job-d/draft-sections-anchors/attempt-1.json") is not None
+    assert progress(queue) == expected_progress("sectionsAnchorRound")
 
 
 TIMEOUT = "preview took longer than 10s; an anchor may backtrack catastrophically"
@@ -448,6 +549,40 @@ def test_anchor_check_misses(changes: list[dict[str, Any]], expected: list[str])
         DraftSample("s2", "b.pdf", "dev", ["nothing"]),
     ]
     draft = {"document": {"sections": [{"id": "all", "anchor": "\\A"}]}}
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    assert len(misses) == len(expected)
+    assert all(e in m for m, e in zip(misses, expected, strict=True))
+
+
+REPEATED = [
+    "1. BATCH 101\nAssay Results\nrows\nDissolution Results\nrows\n",
+    "2. BATCH 102\nAssay Results\nrows\nDissolution Results\nrows\n",
+]
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected"),
+    [
+        # Two sections that each start once per batch: later batches fall into the last one.
+        (
+            [put("assay", "^Assay"), put("dissolution", "^Dissolution")],
+            [
+                'sections "assay", "dissolution" each match 2 times in a.pdf: the document '
+                "repeats a block"
+            ],
+        ),
+        # One anchor that happens to match twice is not a repeated block.
+        ([put("assay", "^Assay"), put("first", r"^1\. BATCH")], []),
+        # One section over every block is what the feedback asks for.
+        ([put("batches", r"^1\. BATCH")], []),
+    ],
+)
+def test_anchor_check_reports_repeated_blocks(
+    changes: list[dict[str, Any]], expected: list[str]
+) -> None:
+    samples = [DraftSample("s1", "a.pdf", "dev", REPEATED)]
+    draft = {"document": {"sections": [{"id": "all", "anchor": r"\A"}]}}
     grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
     assert grid is not None
     assert len(misses) == len(expected)
@@ -752,14 +887,19 @@ def test_revise_job_whose_feedback_has_no_ids_still_runs(fixture_specs_dir: Path
     assert "answers" not in body["changes"][0]
 
 
-def test_survey_job_also_writes_ontology_suggestions(fixture_specs_dir: Path) -> None:
+def test_a_survey_queues_its_ontology_suggestions_and_finishes(fixture_specs_dir: Path) -> None:
+    """The survey finishes when the model replies: matching its candidates against the library
+    (minutes on a large one) is a `suggest` job of its own, whose record is the survey's."""
+    from ingest_worker.queue import ClaimedJob
     from ingest_worker.storage import ontology_suggestions_key
 
-    from .fakes import MemoryOntologyStore
     from .test_ontology_suggest import library_store
 
     provider, store, deps = make(fixture_specs_dir)
     ontologies, _ = library_store()
+    searched: list[str] = []
+    lexical = ontologies.lexical_best
+    ontologies.lexical_best = lambda *a, **k: searched.append("x") or lexical(*a, **k)  # type: ignore[method-assign]
     deps = dataclasses.replace(deps, ontologies=ontologies)
     body = {**SURVEY_BODY, "candidates": [
         {"name": "active_substance", "description": "", "where": "", "kind": "table", "seenIn": {"n": 1, "of": 1}},
@@ -767,25 +907,71 @@ def test_survey_job_also_writes_ontology_suggestions(fixture_specs_dir: Path) ->
     ]}  # fmt: skip
     provider.responses = [body]
     library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
-    queue = FakeQueue(jobs=[draft_job(library=library, pinned=[])])
+    pinned = [{"ontologyId": "domain", "version": 1}]
+    queue = FakeQueue(jobs=[draft_job(library=library, pinned=pinned)])
     run_once(queue, deps, "w1")
-    assert queue.completed
-    record = json.loads(store.get("runs", ontology_suggestions_key("letter", "job-d")))
+
+    assert queue.completed and searched == []  # nothing matched while the survey ran
+    assert progress(queue) == expected_progress("surveyWithLibrary")
+    assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
+    [(project, params)] = queue.suggested
+    assert project == "letter"
+    assert params == {
+        "surveyProposalId": "job-d",
+        "candidates": [
+            {"name": "active_substance", "description": "", "kind": "table"},
+            {"name": "batch_number", "description": "", "kind": "field"},
+        ],
+        "library": library,
+        "pinned": pinned,
+        "dataPolicy": "local",
+    }
+
+    suggest = ClaimedJob(
+        "job-s", "", "letter", 0, "", "", None, 1, 3, task="suggest", project_id="letter",
+        params=params,
+    )  # fmt: skip
+    queue = FakeQueue(jobs=[suggest])
+    run_once(queue, deps, "w1")
+    record = json.loads(store.get("runs", ontology_suggestions_key("letter", "job-s")))
     assert record["surveyProposalId"] == "job-d"
-    assert [s["ontologyId"] for s in record["suggestions"]] == ["domain"]
-    assert isinstance(ontologies, MemoryOntologyStore)
+    assert [s["ontologyId"] for s in record["pinned"]] == ["domain"]
 
 
-def test_failed_suggestions_never_fail_the_survey(fixture_specs_dir: Path) -> None:
+def test_a_survey_replaces_the_projects_earlier_suggest_job_and_its_record(
+    fixture_specs_dir: Path,
+) -> None:
+    """One `suggest` job per project, as the API's Refresh keeps it: the one it replaces goes,
+    with its record."""
+    from ingest_worker.storage import ontology_suggestions_key
+
     from .test_ontology_suggest import library_store
 
     provider, store, deps = make(fixture_specs_dir)
     ontologies, _ = library_store()
-    ontologies.lexical_best = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("index down"))  # type: ignore[method-assign]
+    deps = dataclasses.replace(deps, ontologies=ontologies)
+    store.put("runs", ontology_suggestions_key("letter", "old-s"), b"{}", "application/json")
+    provider.responses = [SURVEY_BODY]
+    library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
+    queue = FakeQueue(jobs=[draft_job(library=library)])
+    queue.suggest_removed = ["old-s"]
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(queue.suggested) == 1
+    assert store.get_optional("runs", ontology_suggestions_key("letter", "old-s")) is None
+
+
+def test_a_survey_whose_suggestions_cannot_be_queued_still_finishes(
+    fixture_specs_dir: Path,
+) -> None:
+    from .test_ontology_suggest import library_store
+
+    provider, store, deps = make(fixture_specs_dir)
+    ontologies, _ = library_store()
     deps = dataclasses.replace(deps, ontologies=ontologies)
     provider.responses = [SURVEY_BODY]
     library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
     queue = FakeQueue(jobs=[draft_job(library=library)])
+    queue.suggest_error = ConnectionError("database went away")
     run_once(queue, deps, "w1")
     assert queue.completed
     assert store.get("runs", drafting_key("letter", "job-d"))
@@ -800,3 +986,25 @@ def test_survey_without_a_library_writes_no_suggestions(fixture_specs_dir: Path)
     queue = FakeQueue(jobs=[draft_job()])
     run_once(queue, deps, "w1")
     assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
+    assert queue.suggested == []
+
+
+@pytest.mark.parametrize(
+    ("calls", "reported"),
+    [
+        # (seconds, tokens): the first at once, then +500 tokens or 5 s later, never twice.
+        ([(0, 10), (1, 300), (2, 510), (3, 600)], [10, 510]),
+        ([(0, 10), (6, 40)], [10, 40]),
+        ([(0, 10), (6, 10)], [10]),  # no new tokens: nothing new to say
+    ],
+)
+def test_token_throttle(calls: list[tuple[float, int]], reported: list[int]) -> None:
+    from ingest_worker.drafting import TokenThrottle
+
+    now = [0.0]
+    seen: list[int] = []
+    throttle = TokenThrottle(seen.append, clock=lambda: now[0])
+    for at, tokens in calls:
+        now[0] = at
+        throttle(tokens)
+    assert seen == reported

@@ -37,8 +37,14 @@ export function LegacyTypeCard({
       </p>
       {onRetire && (
         <div className="card-actions">
-          <button type="button" aria-label={`Retire ${item.title}…`} onClick={onRetire}>
-            Retire…
+          <button
+            type="button"
+            className="icon bordered"
+            aria-label={`Retire ${item.title}…`}
+            title="Retire…"
+            onClick={onRetire}
+          >
+            <Icon name="archive" />
           </button>
         </div>
       )}

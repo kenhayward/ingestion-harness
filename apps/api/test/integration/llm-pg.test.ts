@@ -124,6 +124,36 @@ describe.skipIf(!url)('LLM endpoints SQL against Postgres', { timeout: 30_000 },
     expect(await repo.setCuratedModels(name('nope'), [], null)).toBeNull();
   });
 
+  it("sets a model's output limit, which workers reload", async () => {
+    const gpu = name('gpu');
+    await repo.createEndpoint(
+      {
+        name: gpu,
+        kind: 'openai-chat',
+        baseUrl: 'http://x/v1',
+        location: 'local',
+        apiKeyEnc: null,
+        models: ['a', 'org/b'],
+      },
+      null,
+    );
+    const before = await version();
+    const set = await repo.setModelOutputLimit(gpu, 'org/b', 32000, 'ken');
+    expect(set!.models.map((m) => [m.modelId, m.maxOutputTokens])).toEqual([
+      ['a', null],
+      ['org/b', 32000],
+    ]);
+    expect(set!.updatedBy).toBe('ken');
+    expect(await version()).toBeGreaterThan(before); // workers rebuild
+    const cleared = await repo.setModelOutputLimit(gpu, 'org/b', null, null);
+    expect(cleared!.models.find((m) => m.modelId === 'org/b')!.maxOutputTokens).toBeNull();
+    expect(await repo.setModelOutputLimit(gpu, 'missing', 8192, null)).toBeNull();
+    expect(await repo.setModelOutputLimit(name('nope'), 'a', 8192, null)).toBeNull();
+    await expect(
+      pool.query(`UPDATE llm_models SET max_output_tokens = 10 WHERE provider = $1`, [gpu]),
+    ).rejects.toThrow(/max_output_tokens/);
+  });
+
   it('deletes an endpoint added in the UI, never one from .env', async () => {
     const ui = name('ui');
     const env = name('env');

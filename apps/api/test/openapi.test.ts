@@ -177,7 +177,8 @@ describe('docs sweep', () => {
         !(op.summary && op.summary.length <= 60) && 'summary (1-60 chars)',
         !(op.description && op.description.length >= 80) && 'description (80+ chars)',
         !op.operationId && 'operationId',
-        !Object.keys(op.responses ?? {}).some((c) => c.startsWith('2')) && '2xx response',
+        // A browser navigation's success is a redirect (the GitHub link's connect and callback).
+        !Object.keys(op.responses ?? {}).some((c) => /^[23]/.test(c)) && '2xx or 3xx response',
         op.operationId && ids.has(op.operationId) && 'unique operationId',
       ].filter(Boolean);
       if (missing.length) problems.push(`${key}: ${missing.join(', ')}`);

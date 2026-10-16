@@ -181,12 +181,17 @@ describe('workbench samples', () => {
     const id = sample.prepareJobId!;
     const listed = async () =>
       ((await app.inject('/api/workbench/projects/letter/samples')).json() as SampleView[])[0]!;
-    expect(await listed()).toMatchObject({ state: 'preparing', prepare: null, prepareError: null });
+    expect(await listed()).toMatchObject({
+      state: 'preparing',
+      prepareStatus: 'queued',
+      prepare: null,
+      prepareError: null,
+    });
 
     // An event left by an earlier attempt does not count once the job is claimed again.
     repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'ocr', page: 3, of: 3 });
     repo.jobs.set(id, { ...repo.jobs.get(id)!, status: 'running', updatedAt: repo.now() });
-    expect((await listed()).prepare).toBeNull();
+    expect(await listed()).toMatchObject({ prepareStatus: 'running', prepare: null });
 
     repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'text', page: 3, of: 3 });
     expect((await listed()).prepare).toEqual({ stage: 'text', page: 3, of: 3 });
@@ -196,11 +201,14 @@ describe('workbench samples', () => {
       state: 'preparing',
       prepare: { stage: 'ocr', page: 1, of: 2 },
     });
+    // The worker names the document's page count too (#142); older events lack it.
+    repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'ocr', page: 2, of: 2, pages: 5 });
+    expect((await listed()).prepare).toEqual({ stage: 'ocr', page: 2, of: 2, pages: 5 });
     repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, { stage: 'ocr', page: 'two' });
     expect((await listed()).prepare).toBeNull(); // a malformed event shows no progress
 
     repo.jobs.set(id, { ...repo.jobs.get(id)!, status: 'succeeded' });
-    expect((await listed()).prepare).toBeNull();
+    expect(await listed()).toMatchObject({ prepareStatus: null, prepare: null });
   });
 
   it('says why a sample could not be prepared', async () => {

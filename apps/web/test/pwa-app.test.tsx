@@ -62,33 +62,39 @@ function offer(target: EventTarget) {
   return event;
 }
 
+// The top bar is read afresh each time: it re-renders while the app signs in, and a slow run
+// (coverage in CI) could otherwise hold an element that is no longer on the page.
+const signedIn = () => screen.findByLabelText('PDF or Word files'); // Home, signed in
+const installButton = () =>
+  within(screen.getByRole('banner')).queryByRole('button', { name: 'Install CT Studio' });
+const findInstallButton = async () =>
+  within(await screen.findByRole('banner')).findByRole('button', { name: 'Install CT Studio' });
+
 describe('Install CT Studio', () => {
   it('appears in the top bar only while the browser offers install', async () => {
     const target = new EventTarget();
     const install = new InstallPrompt(target);
     render(<App api={fakeApi()} pollMs={0} install={install} launched={new LaunchedFiles()} />);
-    const banner = await screen.findByRole('banner');
-    expect(within(banner).queryByRole('button', { name: 'Install CT Studio' })).toBeNull();
+    await signedIn();
+    expect(installButton()).toBeNull();
 
     const event = offer(target);
-    await userEvent.click(within(banner).getByRole('button', { name: 'Install CT Studio' }));
+    await userEvent.click(await findInstallButton());
     expect(event.prompt).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(within(banner).queryByRole('button', { name: 'Install CT Studio' })).toBeNull(),
-    );
+    await waitFor(() => expect(installButton()).toBeNull());
   });
 
   it('goes away once the app is installed', async () => {
     const target = new EventTarget();
     const install = new InstallPrompt(target);
     render(<App api={fakeApi()} pollMs={0} install={install} launched={new LaunchedFiles()} />);
-    const banner = await screen.findByRole('banner');
+    await signedIn();
     offer(target);
-    expect(within(banner).getByRole('button', { name: 'Install CT Studio' })).toBeInTheDocument();
+    expect(await findInstallButton()).toBeInTheDocument();
     act(() => {
       target.dispatchEvent(new Event('appinstalled'));
     });
-    expect(within(banner).queryByRole('button', { name: 'Install CT Studio' })).toBeNull();
+    await waitFor(() => expect(installButton()).toBeNull());
   });
 
   it("is in an admin's account menu too", async () => {

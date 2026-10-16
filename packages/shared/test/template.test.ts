@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { deliveryFormats, stepModel, TemplateSchema } from '../src/template.js';
+import {
+  deliveryFormats,
+  deliveryTargets,
+  setDeliveryTarget,
+  stepModel,
+  TemplateSchema,
+  type DeliveryTarget,
+} from '../src/template.js';
 
 const valid = {
   id: 'demo',
@@ -118,6 +125,11 @@ describe('TemplateSchema', () => {
       'unknown field or column',
     ],
     [
+      'bare table as a check path',
+      (v) => withPipeline([...v.pipeline.slice(0, 3), { ...v.pipeline[3], values: 'results' }]),
+      'is a table, so name one of its columns: results.batch, results.value',
+    ],
+    [
       'step with neither fields nor table',
       (v) => withPipeline([{ ...v.pipeline[0], fields: [] }, ...v.pipeline.slice(1)]),
       'fields or a table',
@@ -169,5 +181,87 @@ describe('recipe semantics and delivery (shared with the worker)', () => {
     const base = semanticsFixture.base as Parameters<typeof deliveryFormats>[0];
     expect(deliveryFormats(base)).toEqual(['csv', 'json']);
     expect(deliveryFormats({ ...base, delivery: { formats: ['json'] } })).toEqual(['json']);
+  });
+});
+
+describe('delivery targets (S3 and RDF)', () => {
+  const MAPPING = { document: { class: 'ex:Doc', iri: 'doc/{source}' } };
+  const plain = { id: 't', outputs: { fields: [], tables: [] } };
+
+  it.each([
+    ['the default (CSV and JSON)', plain, { s3: true, rdf: false }],
+    ['JSON only', { ...plain, delivery: { formats: ['json'] } }, { s3: true, rdf: false }],
+    ['RDF only', { ...plain, delivery: { formats: ['rdf'] } }, { s3: false, rdf: true }],
+    ['both', { ...plain, delivery: { formats: ['csv', 'json', 'rdf'] } }, { s3: true, rdf: true }],
+    // A mapping not (yet) delivered still counts as RDF: turning RDF off removes it.
+    ['a mapping without rdf delivered', { ...plain, semantics: MAPPING }, { s3: true, rdf: true }],
+  ])('%s', (_name, definition, targets) => {
+    expect(deliveryTargets(definition)).toEqual(targets);
+  });
+
+  it.each<[string, Record<string, unknown>, DeliveryTarget, boolean, Record<string, unknown>]>([
+    [
+      'RDF on adds rdf after CSV and JSON',
+      plain,
+      'rdf',
+      true,
+      { ...plain, delivery: { formats: ['csv', 'json', 'rdf'] } },
+    ],
+    [
+      'RDF off removes rdf and the mapping, back to the default',
+      { ...plain, semantics: MAPPING, delivery: { formats: ['csv', 'json', 'rdf'] } },
+      'rdf',
+      false,
+      plain,
+    ],
+    [
+      'RDF off on an undelivered mapping removes the mapping',
+      { ...plain, semantics: MAPPING },
+      'rdf',
+      false,
+      plain,
+    ],
+    [
+      'S3 off keeps only rdf',
+      { ...plain, semantics: MAPPING, delivery: { formats: ['csv', 'json', 'rdf'] } },
+      's3',
+      false,
+      { ...plain, semantics: MAPPING, delivery: { formats: ['rdf'] } },
+    ],
+    [
+      'S3 off on an undelivered mapping delivers its RDF',
+      { ...plain, semantics: MAPPING },
+      's3',
+      false,
+      { ...plain, semantics: MAPPING, delivery: { formats: ['rdf'] } },
+    ],
+    [
+      'S3 on adds CSV and JSON',
+      { ...plain, semantics: MAPPING, delivery: { formats: ['rdf'] } },
+      's3',
+      true,
+      { ...plain, semantics: MAPPING, delivery: { formats: ['csv', 'json', 'rdf'] } },
+    ],
+    [
+      'S3 on with RDF already off is the default',
+      { ...plain, delivery: { formats: ['json'] } },
+      's3',
+      true,
+      plain,
+    ],
+  ])('%s', (_name, definition, target, on, expected) => {
+    expect(setDeliveryTarget(definition, target, on)).toEqual(expected);
+  });
+
+  it('never turns off the last target', () => {
+    expect(() => setDeliveryTarget(plain, 's3', false)).toThrow(/at least one/);
+    const rdfOnly = { ...plain, semantics: MAPPING, delivery: { formats: ['rdf'] } };
+    expect(() => setDeliveryTarget(rdfOnly, 'rdf', false)).toThrow(/at least one/);
+  });
+
+  it('leaves the definition it was given alone', () => {
+    const before = { ...plain, semantics: MAPPING };
+    setDeliveryTarget(before, 'rdf', false);
+    expect(before.semantics).toBe(MAPPING);
   });
 });

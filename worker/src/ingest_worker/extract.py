@@ -86,12 +86,16 @@ def run_extraction(
     system: str = SYSTEM_PROMPT,
     check: Callable[[dict[str, Any]], list[str]] | None = None,
     on_attempt: Callable[[int], None] | None = None,
+    on_tokens: Callable[[int], None] | None = None,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out. `check` adds rules JSON Schema
     cannot express; its errors are fed back the same way. `on_attempt(n)` is called before each
-    model call (progress reporting)."""
+    model call (progress reporting). With `on_tokens` the reply streams and its estimated
+    tokens so far are reported as they arrive (providers that cannot stream answer whole)."""
     validator = Draft202012Validator(schema)
+    # Only a counting caller asks to stream: every other call is made exactly as before.
+    counting = {"on_tokens": on_tokens} if on_tokens is not None else {}
     attempts: list[Attempt] = []
     current_prompt = prompt
     for n in range(1, max_attempts + 1):
@@ -107,6 +111,7 @@ def run_extraction(
                 images=images,
                 max_tokens=max_tokens,
             ),
+            **counting,
         )
         if result.truncated:
             attempts.append(

@@ -145,6 +145,8 @@ export const SampleViewSchema = z.object({
   createdAt: z.string(),
   state: SampleStateSchema,
   prepareJobId: z.string().uuid().nullable(),
+  /** While `preparing`: waiting for a worker (`queued`) or being read (`running`); else null. */
+  prepareStatus: z.enum(['queued', 'running']).nullable(),
   error: z.string().nullable(),
   /** While the prepare job runs: its latest progress in this attempt (null before any). */
   prepare: PrepareProgressSchema.nullable(),
@@ -192,6 +194,9 @@ export const SectionCellSchema = z.object({
   line: z.string().nullable(),
   /** Characters of section text (0 when not found or empty). */
   chars: z.number().int().nonnegative(),
+  /** How often the anchor matches (only the first starts the section; >1 = a repeated block).
+   * Absent in grids from before the count. */
+  matches: z.number().int().nonnegative().optional(),
 });
 export type SectionCell = z.infer<typeof SectionCellSchema>;
 
