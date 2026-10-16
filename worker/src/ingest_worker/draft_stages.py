@@ -30,6 +30,8 @@ from .template import (
 
 Converter = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]]]
 Checker = Callable[[dict[str, Any], dict[str, Any]], list[str]]
+#: Adjusts a converted body to the draft before it is checked (drops hints that cannot apply).
+Fitter = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,7 @@ class Stage:
     schema: dict[str, Any]
     convert: Converter | None = None
     check: Checker | None = None
+    fit: Fitter | None = None
 
 
 def _object(props: dict[str, Any]) -> dict[str, Any]:
@@ -261,6 +264,43 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     return {"notes": notes, "changes": changes}, errors
 
 
+def fit_key_columns(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """A keyColumn the step's section cannot fill (no repeating section, or one with neither key
+    nor keyFrom, judged on the draft with the whole body applied) is dropped with a note rather
+    than failing the stage: like chunkPages, models keep setting it on every table step."""
+    sections = {
+        s.get("id"): s
+        for s in (apply_changes(draft, body["changes"]).get("document") or {}).get("sections") or []
+    }
+    changes: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for c in body["changes"]:
+        step = c.get("step") if c["op"] == "putStep" else None
+        if step and step.get("keyColumn"):
+            repeating = [
+                sections[i] for i in step.get("sections") or [] if sections.get(i, {}).get("repeat")
+            ]
+            why = (
+                "it fills no table"
+                if not step.get("table")
+                else "it reads no repeating section"
+                if not repeating
+                else f"section {repeating[0]['id']!r} has no key or keyFrom, so the worker "
+                "cannot fill the column; the step's instructions should say where the "
+                "identifier is"
+                if not repeating[0].get("key") and not repeating[0].get("keyFrom")
+                else None
+            )
+            if why is not None:
+                dropped.append(f"Ignored keyColumn on {step['id']!r}: {why}.")
+                c = {**c, "step": {k: v for k, v in step.items() if k != "keyColumn"}}
+        changes.append(c)
+    if not dropped:
+        return body
+    notes = "\n".join([body["notes"], *dropped] if body["notes"] else dropped)
+    return {**body, "notes": notes, "changes": changes}
+
+
 def _unfinished_mapping(draft: dict[str, Any]) -> bool:
     """The draft's ontology mapping does not parse on its own, e.g. it was started without a
     document class yet (applyChanges' `mapping()`, the Mapping editor): the Mapping stage's job."""
@@ -333,9 +373,10 @@ Task: propose the extraction pipeline that fills every output in the current dra
   - instructions: concrete guidance (where the value is, formats, what to ignore).
   - pageImages: page numbers to show as images when the text loses information, else null.
   - chunkPages: null unless the step fills a long table (table set) from exactly one section.
-  - A table step reading a repeating section (repeat true) runs once per occurrence; set
-    keyColumn to the column the occurrence key fills (for example batch), else null. A field
-    step must not read a repeating section.
+  - A table step reading a repeating section (repeat true) runs once per occurrence; when
+    that section has a key or keyFrom, set keyColumn to the column the occurrence key fills
+    (for example batch); otherwise keyColumn is null and the instructions say where the
+    identifier is (heading or caption). A field step must not read a repeating section.
   - context: values from earlier steps the prompt should see, as {name, path}, where path is
     a field id or table.column (that column's values from every row). Never a bare table id:
     to show a table, add one context item per column the step needs.
@@ -356,6 +397,7 @@ Return JSON only.""",
     STEPS_SCHEMA,
     convert_steps,
     check_steps,
+    fit_key_columns,
 )
 
 SECTIONS_SCHEMA = _body(
@@ -639,4 +681,5 @@ Return JSON only.""",
     REVISE_SCHEMA,
     convert_revise,
     check_revise,
+    fit_key_columns,
 )

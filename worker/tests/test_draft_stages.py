@@ -68,6 +68,8 @@ def run(
 ) -> tuple[dict[str, Any], list[str]]:
     assert stage.convert is not None and stage.check is not None
     body, errors = stage.convert(data)
+    if not errors and stage.fit is not None:
+        body = stage.fit(body, draft)
     return body, errors or stage.check(body, draft)
 
 
@@ -554,6 +556,81 @@ def test_steps_convert_carries_key_column() -> None:
     body, errors = run(STEPS, {"notes": "", "changes": [item]}, draft)
     assert errors == []
     assert body["changes"][0]["step"]["keyColumn"] == "batch"
+
+
+KEY_DRAFT: dict[str, Any] = {
+    **DRAFT,
+    "document": {
+        "sections": [
+            {"id": "all", "anchor": r"\A"},
+            {"id": "keyed", "anchor": "^1", "repeat": True, "key": r"BATCH (\w+)"},
+            {"id": "keyless", "anchor": "^2", "repeat": True},
+            {"id": "plain", "anchor": "^3"},
+        ]
+    },
+    "outputs": {"fields": [], "tables": [{"id": "rows", "columns": [{"id": "batch"}]}]},
+}
+
+
+@pytest.mark.parametrize(
+    ("section", "kept", "note"),
+    [
+        ("keyed", True, None),
+        (
+            "keyless",
+            False,
+            "Ignored keyColumn on 'rows_step': section 'keyless' has no key or keyFrom, so the "
+            "worker cannot fill the column; the step's instructions should say where the "
+            "identifier is.",
+        ),
+        (
+            "plain",
+            False,
+            "Ignored keyColumn on 'rows_step': it reads no repeating section.",
+        ),
+    ],
+)
+def test_steps_drop_a_key_column_the_section_cannot_fill(
+    section: str, kept: bool, note: str | None
+) -> None:
+    """The model keeps setting keyColumn; like chunkPages, an unusable one is dropped with a
+    note instead of failing the stage."""
+    item = step_item(
+        id="rows_step", fields=None, table="rows", sections=[section], keyColumn="batch"
+    )
+    body, errors = run(STEPS, {"notes": "", "changes": [item]}, KEY_DRAFT)
+    assert errors == []
+    assert ("keyColumn" in body["changes"][0]["step"]) is kept
+    assert (note in body["notes"]) if note else body["notes"] == ""
+
+
+def test_steps_keep_a_key_column_whose_section_the_same_body_gives_a_key() -> None:
+    """A revise body can add the key and the keyColumn together: fit to the draft as changed."""
+    assert REVISE.fit is not None
+    body = {
+        "notes": "",
+        "changes": [
+            {
+                "op": "putSection",
+                "section": {"id": "keyless", "anchor": "^2", "repeat": True, "key": "B (.+)"},
+                "reason": "r",
+            },
+            {
+                "op": "putStep",
+                "step": {
+                    "type": "extract",
+                    "id": "rows_step",
+                    "table": "rows",
+                    "sections": ["keyless"],
+                    "keyColumn": "batch",
+                },
+                "reason": "r",
+            },
+        ],
+    }
+    fitted = REVISE.fit(body, KEY_DRAFT)
+    assert fitted["changes"][1]["step"]["keyColumn"] == "batch"
+    assert fitted["notes"] == ""
 
 
 def test_revise_sentinels_mean_no_repeat_keys() -> None:
