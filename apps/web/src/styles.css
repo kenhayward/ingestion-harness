@@ -4604,17 +4604,28 @@ img.avatar {
 .help-button {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   min-height: 0;
   padding: 0;
   border-radius: 50%;
-  color: var(--ih-muted);
+  border: 1px solid var(--ih-ok-fg);
+  background: var(--ih-ok-bg);
+  color: var(--ih-ok-fg);
   vertical-align: middle;
 }
 .help-button:hover,
 .help-button:focus-visible {
-  color: var(--ih-accent);
+  background: var(--ih-ok-fg);
+  color: var(--ih-ok-bg);
+}
+/* 30% wider than the standard rich dialog (480px). */
+.dialog.dialog-rich.help-dialog {
+  width: min(624px, 100%);
+}
+.help-dialog .dialog-icon {
+  color: var(--ih-ok-fg);
+  background: var(--ih-ok-bg);
 }
 /* The dialog body scrolls; the topic only sets its reading width. */
 .help-body {
