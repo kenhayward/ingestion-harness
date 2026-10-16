@@ -656,6 +656,20 @@ export class PgRepo implements IngestionRepo {
     }));
   }
 
+  async firstEventAt(
+    jobId: string,
+    message: string,
+    since: string,
+    match: Record<string, unknown>,
+  ): Promise<string | null> {
+    const { rows } = await this.pool.query<{ at: Date | null }>(
+      `SELECT min(at) AS at FROM job_events
+        WHERE job_id = $1 AND message = $2 AND at >= $3 AND data @> $4::jsonb`,
+      [jobId, message, since, JSON.stringify(match)],
+    );
+    return rows[0]?.at?.toISOString() ?? null;
+  }
+
   async queueStats(): Promise<QueueStats> {
     // Document jobs only (any query bypassing JOB_SELECT must exclude document-less rows).
     // A requeued job keeps its old times until reclaimed, so the median reads finished runs only,

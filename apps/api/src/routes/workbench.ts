@@ -364,16 +364,29 @@ export async function acceptedSurvey(
  * since its claim (a claim sets `updated_at`; heartbeats do not), with its latest
  * `drafting progress` event of this attempt. Null once the job finished.
  */
-function draftRun(job: ProjectJob | null, events: readonly JobEventRecord[]): DraftRun | null {
+async function draftRun(
+  app: FastifyInstance,
+  job: ProjectJob | null,
+  events: readonly JobEventRecord[],
+): Promise<DraftRun | null> {
   if (job?.status === 'queued') return { status: 'queued', since: job.updatedAt, progress: null };
   if (job?.status !== 'running') return null;
   const latest = events.find((e) => e.jobId === job.id && e.message === DRAFT_PROGRESS_EVENT);
   const fresh = latest && Date.parse(latest.at) >= Date.parse(job.updatedAt);
   const parsed = fresh ? DraftProgressSchema.safeParse(latest.data) : null;
+  if (!parsed?.success) return { status: 'running', since: job.updatedAt, progress: null };
+  // A streamed reply reports its tokens every few seconds (issue #181): the phase and try began
+  // at their first event of this claim (a phase, round and try come once per claim).
+  const { phase, round, attempt } = parsed.data;
+  const phaseAt = await app.deps.repo.firstEventAt(job.id, DRAFT_PROGRESS_EVENT, job.updatedAt, {
+    phase,
+    round,
+    attempt,
+  });
   return {
     status: 'running',
     since: job.updatedAt,
-    progress: parsed?.success ? { ...parsed.data, at: latest!.at } : null,
+    progress: { ...parsed.data, at: latest!.at, phaseAt: phaseAt ?? latest!.at },
   };
 }
 
@@ -390,7 +403,7 @@ async function proposalView(
     createdAt: p.createdAt,
     decidedAt: p.decidedAt,
     acceptedChanges: p.acceptedChanges,
-    run: draftRun(job, events),
+    run: await draftRun(app, job, events),
   };
   const empty = { ...base, model: null, body: null };
   if (!job || job.status === 'queued' || job.status === 'running') {

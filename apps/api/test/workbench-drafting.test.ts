@@ -189,9 +189,38 @@ describe('a running stage (issue #151)', () => {
       ...event,
       attempt: 2,
       at: expect.any(String),
+      phaseAt: expect.any(String),
     });
     repo.draftJobs.set(id, { ...repo.draftJobs.get(id)!, status: 'needs_review', error: 'x' });
     expect(await listed()).toMatchObject({ status: 'failed', run: null });
+  });
+
+  it('says when the current try began, not when its latest token count came (issue #181)', async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    const { id } = (await start()).json() as ProposalView;
+    const listed = async () =>
+      (
+        (await app.inject('/api/workbench/projects/letter/proposals')).json() as ProposalView[]
+      ).find((p) => p.id === id)!.run!.progress!;
+    // The same try in an earlier claim: not this attempt's start.
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, event);
+    const claimed = repo.now();
+    repo.draftJobs.set(id, { ...repo.draftJobs.get(id)!, status: 'running', updatedAt: claimed });
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, phase: 'reading', attempt: null });
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, tokens: null });
+    const tryBegan = (await listed()).at;
+    expect((await listed()).phaseAt).toBe(tryBegan);
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, tokens: 500 });
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, tokens: 1000 });
+    const streaming = await listed();
+    expect(streaming).toMatchObject({ tokens: 1000, phaseAt: tryBegan });
+    expect(streaming.at > tryBegan).toBe(true);
+    // A second try starts its own clock.
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, attempt: 2, tokens: null });
+    const second = await listed();
+    expect(second.phaseAt).toBe(second.at);
+    expect(second.phaseAt > tryBegan).toBe(true);
   });
 });
 

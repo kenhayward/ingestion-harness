@@ -230,6 +230,7 @@ const proposal = {
       of: 2,
       round: 1,
       at,
+      phaseAt: at,
     },
   },
 };
