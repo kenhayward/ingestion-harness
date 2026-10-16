@@ -495,6 +495,40 @@ def test_anchor_check_misses(changes: list[dict[str, Any]], expected: list[str])
     assert all(e in m for m, e in zip(misses, expected, strict=True))
 
 
+REPEATED = [
+    "1. BATCH 101\nAssay Results\nrows\nDissolution Results\nrows\n",
+    "2. BATCH 102\nAssay Results\nrows\nDissolution Results\nrows\n",
+]
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected"),
+    [
+        # Two sections that each start once per batch: later batches fall into the last one.
+        (
+            [put("assay", "^Assay"), put("dissolution", "^Dissolution")],
+            [
+                'sections "assay", "dissolution" each match 2 times in a.pdf: the document '
+                "repeats a block"
+            ],
+        ),
+        # One anchor that happens to match twice is not a repeated block.
+        ([put("assay", "^Assay"), put("first", r"^1\. BATCH")], []),
+        # One section over every block is what the feedback asks for.
+        ([put("batches", r"^1\. BATCH")], []),
+    ],
+)
+def test_anchor_check_reports_repeated_blocks(
+    changes: list[dict[str, Any]], expected: list[str]
+) -> None:
+    samples = [DraftSample("s1", "a.pdf", "dev", REPEATED)]
+    draft = {"document": {"sections": [{"id": "all", "anchor": r"\A"}]}}
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    assert len(misses) == len(expected)
+    assert all(e in m for m, e in zip(misses, expected, strict=True))
+
+
 def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [sections_body("^SIGNATURES"), sections_body("^STILL WRONG")]

@@ -194,6 +194,9 @@ export const SectionCellSchema = z.object({
   line: z.string().nullable(),
   /** Characters of section text (0 when not found or empty). */
   chars: z.number().int().nonnegative(),
+  /** How often the anchor matches (only the first starts the section; >1 = a repeated block).
+   * Absent in grids from before the count. */
+  matches: z.number().int().nonnegative().optional(),
 });
 export type SectionCell = z.infer<typeof SectionCellSchema>;
 

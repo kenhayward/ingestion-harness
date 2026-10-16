@@ -3404,6 +3404,19 @@ label.inline.list-select {
   margin: 0;
   padding: 0;
 }
+/* Box and id, then the anchor in small type, wrapping under them when narrow. */
+.section-check-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  min-width: 0;
+}
+.section-anchor {
+  min-width: 0;
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
 /* `label` is a column app-wide; these rows read box, colour, id from left to right. */
 .section-check {
   display: flex;

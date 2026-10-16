@@ -315,6 +315,13 @@ export const TemplateSchema = z
       if (column === undefined) return fieldIds.includes(head);
       return tables.get(head)?.columns.some((c) => c.id === column) ?? false;
     };
+    /** Why a path does not resolve, saying how to fix a bare table id (worker `_unknown_path`). */
+    const unknownPath = (path: string) => {
+      const table = tables.get(path);
+      if (!table) return `unknown field or column "${path}"`;
+      const columns = table.columns.map((c) => `${path}.${c.id}`).join(', ');
+      return `unknown field or column "${path}": "${path}" is a table, so name one of its columns: ${columns}`;
+    };
     const order = new Map(t.pipeline.map((s, i) => [s.id, i]));
     const fillerOf = (path: string) => {
       const [head, column] = path.split('.', 2) as [string, string | undefined];
@@ -323,7 +330,7 @@ export const TemplateSchema = z
     for (const step of extracts) {
       for (const [name, path] of Object.entries(step.context)) {
         if (!resolves(path)) {
-          issue(`step "${step.id}": context "${name}": unknown field or column "${path}"`);
+          issue(`step "${step.id}": context "${name}": ${unknownPath(path)}`);
           continue;
         }
         const filler = fillerOf(path);
@@ -372,7 +379,7 @@ export const TemplateSchema = z
       if (step.type !== 'check') continue;
       [step.values, step.reference, step.aliases]
         .filter((p): p is string => p !== undefined && !resolves(p))
-        .forEach((p) => issue(`check "${step.id}": unknown field or column "${p}"`));
+        .forEach((p) => issue(`check "${step.id}": ${unknownPath(p)}`));
     }
   });
 

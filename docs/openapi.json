@@ -25561,6 +25561,10 @@
                                         "chars": {
                                           "type": "integer",
                                           "minimum": 0
+                                        },
+                                        "matches": {
+                                          "type": "integer",
+                                          "minimum": 0
                                         }
                                       },
                                       "required": [
@@ -25929,6 +25933,10 @@
                                           ]
                                         },
                                         "chars": {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        "matches": {
                                           "type": "integer",
                                           "minimum": 0
                                         }
@@ -29149,6 +29157,10 @@
                                                       ]
                                                     },
                                                     "chars": {
+                                                      "type": "integer",
+                                                      "minimum": 0
+                                                    },
+                                                    "matches": {
                                                       "type": "integer",
                                                       "minimum": 0
                                                     }
@@ -33030,6 +33042,10 @@
                                                       "chars": {
                                                         "type": "integer",
                                                         "minimum": 0
+                                                      },
+                                                      "matches": {
+                                                        "type": "integer",
+                                                        "minimum": 0
                                                       }
                                                     },
                                                     "required": [
@@ -34642,6 +34658,10 @@
                                                       ]
                                                     },
                                                     "chars": {
+                                                      "type": "integer",
+                                                      "minimum": 0
+                                                    },
+                                                    "matches": {
                                                       "type": "integer",
                                                       "minimum": 0
                                                     }
