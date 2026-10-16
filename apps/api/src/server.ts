@@ -45,17 +45,6 @@ const s3 = {
   accessKeyId: config.S3_ACCESS_KEY,
   secretAccessKey: config.S3_SECRET_KEY,
 };
-// Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
-// identity; only when the publish target is that SeaweedFS.
-const s3KeySettings = s3KeysConfig(config);
-const s3Keys =
-  s3KeySettings &&
-  new S3KeyService({
-    repo: new PgS3KeyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
-    issuer: new SeaweedIamIssuer(s3),
-    ...s3KeySettings,
-  });
-
 // One LISTEN connection for every live job stream; errors are logged once the app has a logger.
 let logWatchError: (err: unknown) => void = () => {};
 const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err));
@@ -73,6 +62,15 @@ const targetStores = new TargetStores({
   internal: s3,
   secrets: llmSecrets,
   env: process.env,
+});
+
+// Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
+// identity, granted per internal publishing target.
+const s3Keys = new S3KeyService({
+  repo: new PgS3KeyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  issuer: new SeaweedIamIssuer(s3),
+  targets,
+  ...s3KeysConfig(config),
 });
 
 const linkedData = new PgLinkedDataRepo(

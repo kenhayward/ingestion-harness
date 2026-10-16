@@ -129,13 +129,11 @@ export function targetConfig(c: Config): TargetConfig {
 }
 
 /**
- * Read-only S3 keys (ADR 0008) are issued by the local SeaweedFS, so they're only offered when
- * the publish target is that SeaweedFS. null = off.
+ * Read-only S3 keys (ADR 0008) are issued through the local SeaweedFS's IAM, for the internal
+ * publishing targets; whether any can be issued depends on whether one exists.
  */
-export function s3KeysConfig(c: Config): { bucket: string; endpoint: string | null } | null {
-  const target = targetConfig(c);
-  if (target.endpoint !== c.S3_ENDPOINT) return null;
-  return { bucket: target.bucket, endpoint: c.S3_PUBLIC_URL ?? null };
+export function s3KeysConfig(c: Config): { endpoint: string | null } {
+  return { endpoint: c.S3_PUBLIC_URL ?? null };
 }
 
 /** The GitHub OAuth app, or null when users cannot link GitHub accounts. */

@@ -160,26 +160,17 @@ describe('loadConfig', () => {
 });
 
 describe('s3KeysConfig (ADR 0008)', () => {
-  it('issues keys for the publish bucket when the target is the local SeaweedFS', () => {
-    expect(s3KeysConfig(loadConfig(base))).toEqual({ bucket: 'ingest-published', endpoint: null });
+  it('always offers the public URL, whatever the old target endpoint was', () => {
+    expect(s3KeysConfig(loadConfig(base))).toEqual({ endpoint: null });
     expect(
       s3KeysConfig(
         loadConfig({
           ...base,
-          TARGET_S3_ENDPOINT: 'http://localhost:8333',
-          TARGET_S3_BUCKET: 'published',
+          TARGET_S3_ENDPOINT: 'https://s3.eu-west-2.amazonaws.com',
           S3_PUBLIC_URL: 'https://lake-s3.example.com',
         }),
       ),
-    ).toEqual({ bucket: 'published', endpoint: 'https://lake-s3.example.com' });
-  });
-
-  it('is off when the publish target is another S3 service', () => {
-    expect(
-      s3KeysConfig(
-        loadConfig({ ...base, TARGET_S3_ENDPOINT: 'https://s3.eu-west-2.amazonaws.com' }),
-      ),
-    ).toBeNull();
+    ).toEqual({ endpoint: 'https://lake-s3.example.com' });
   });
 
   it('rejects a malformed public URL', () => {

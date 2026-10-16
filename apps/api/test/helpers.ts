@@ -95,6 +95,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
   const ontologies = new MemoryOntologyRepo();
   const usedRepo = (deps.repo ?? repo) as MemoryRepo;
   const usedTemplates = (deps.templates ?? templates) as MemoryTemplateRepo;
+  const s3KeyRepo = new MemoryS3KeyRepo();
   const targets = new MemoryPublishTargetRepo({
     publishedDefinitions: async () =>
       [...usedTemplates.records.values()]
@@ -109,7 +110,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
         .flat()
         .filter((o) => o.stage === 'published' && o.targetId === id).length +
       usedRepo.graphVersions.filter((v) => v.targetId === id).length,
-    consumerCount: async () => 0,
+    consumerCount: async (id) => s3KeyRepo.grantCount(id),
   });
   await targets.seedDefault({
     kind: 'internal',
@@ -160,9 +161,9 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     maintenance: new MemoryMaintenanceRepo(),
     llmSecrets: null,
     s3Keys: new S3KeyService({
-      repo: new MemoryS3KeyRepo(),
+      repo: s3KeyRepo,
       issuer: new MemoryS3KeyIssuer(),
-      bucket: 'published',
+      targets: deps.targets ?? targets,
       endpoint: null,
     }),
     ...deps,

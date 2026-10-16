@@ -53520,7 +53520,7 @@
         "tags": [
           "Data-lake S3 keys"
         ],
-        "description": "**Admins only.** The data-lake consumers (one read-only SeaweedFS identity\neach, `lake-{id}`) and their keys, never their secrets, with the bucket and\nendpoint the data lake is configured with. See [ADR 0008](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md).",
+        "description": "**Admins only.** The data-lake consumers (one read-only SeaweedFS identity\neach, `lake-{id}`) and their keys, never their secrets, with the bucket and\nendpoint the data lake is configured with. `internalTargets` are the internal\npublishing targets a key can be granted on (none when there is no internal\ntarget); each consumer lists its granted ids in `targets`. See\n[ADR 0008](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md).",
         "x-admin": true,
         "responses": {
           "200": {
@@ -53530,16 +53530,44 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "bucket": {
-                      "type": "string",
-                      "description": "The publish bucket the keys can read."
-                    },
                     "endpoint": {
                       "type": [
                         "string",
                         "null"
                       ],
                       "description": "The S3 endpoint the data lake uses, if configured."
+                    },
+                    "internalTargets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "internal",
+                              "external"
+                            ]
+                          },
+                          "bucket": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "kind",
+                          "bucket"
+                        ],
+                        "additionalProperties": true
+                      }
                     },
                     "consumers": {
                       "type": "array",
@@ -53607,6 +53635,13 @@
                               "additionalProperties": true
                             },
                             "description": "Newest first; at most two active."
+                          },
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "The internal publishing targets (ids) its keys may read, sorted."
                           }
                         },
                         "required": [
@@ -53614,15 +53649,16 @@
                           "label",
                           "userName",
                           "createdAt",
-                          "keys"
+                          "keys",
+                          "targets"
                         ],
                         "additionalProperties": true
                       }
                     }
                   },
                   "required": [
-                    "bucket",
                     "endpoint",
+                    "internalTargets",
                     "consumers"
                   ],
                   "additionalProperties": true,
@@ -53806,7 +53842,7 @@
         "tags": [
           "Data-lake S3 keys"
         ],
-        "description": "**Admins only.** Creates a consumer with read-only access to the publish\nbucket and its first key. The `secretAccessKey` is in this response only:\nSeaweedFS holds it and it is never shown again.",
+        "description": "**Admins only.** Creates a consumer with read-only access to the buckets and\nprefixes of the given internal publishing `targets` and its first key. The `secretAccessKey` is in this response only:\nSeaweedFS holds it and it is never shown again.",
         "requestBody": {
           "required": true,
           "content": {
@@ -53855,11 +53891,21 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "description": "Internal publishing target ids the keys may read (at least one)."
                   }
                 },
                 "required": [
                   "label",
-                  "expiresInDays"
+                  "expiresInDays",
+                  "targets"
                 ],
                 "additionalProperties": true
               }
@@ -53939,6 +53985,13 @@
                             "additionalProperties": true
                           },
                           "description": "Newest first; at most two active."
+                        },
+                        "targets": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The internal publishing targets (ids) its keys may read, sorted."
                         }
                       },
                       "required": [
@@ -53946,7 +53999,8 @@
                         "label",
                         "userName",
                         "createdAt",
-                        "keys"
+                        "keys",
+                        "targets"
                       ],
                       "additionalProperties": true
                     },
@@ -53998,10 +54052,6 @@
                       "type": "string",
                       "description": "Shown only in this response."
                     },
-                    "bucket": {
-                      "type": "string",
-                      "description": "The publish bucket the keys can read."
-                    },
                     "endpoint": {
                       "type": [
                         "string",
@@ -54014,7 +54064,6 @@
                     "consumer",
                     "key",
                     "secretAccessKey",
-                    "bucket",
                     "endpoint"
                   ],
                   "additionalProperties": true,
@@ -54024,7 +54073,7 @@
             }
           },
           "400": {
-            "description": "`label (1-100 chars) and expiresInDays are required`.",
+            "description": "`label (1-100 chars) and expiresInDays are required`, `grant at least one publishing target` or `<id> is not an internal publishing target`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -54050,7 +54099,426 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`label (1-100 chars) and expiresInDays are required`."
+                  "description": "`label (1-100 chars) and expiresInDays are required`, `grant at least one publishing target` or `<id> is not an internal publishing target`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`add an internal publishing target first`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`add an internal publishing target first`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`SeaweedFS could not be reached: …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`SeaweedFS could not be reached: …`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/access/s3-keys/{id}/targets": {
+      "put": {
+        "operationId": "setS3KeyTargets",
+        "summary": "Change the targets a consumer may read",
+        "tags": [
+          "Data-lake S3 keys"
+        ],
+        "description": "**Admins only.** Replaces the internal publishing targets the consumer's keys can\nread; its SeaweedFS policy is rewritten at once (and again by the reconciler if\nit is ever changed behind our back).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "description": "Internal publishing target ids the keys may read (at least one)."
+                  }
+                },
+                "required": [
+                  "targets"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The consumer id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The consumer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "userName": {
+                      "type": "string",
+                      "description": "The SeaweedFS identity: `lake-{id}`."
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "accessKeyId": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "revokedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "accessKeyId",
+                          "createdAt",
+                          "expiresAt",
+                          "revokedAt",
+                          "status"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Newest first; at most two active."
+                    },
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The internal publishing targets (ids) its keys may read, sorted."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "userName",
+                    "createdAt",
+                    "keys",
+                    "targets"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The consumer."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`grant at least one publishing target` or `<id> is not an internal publishing target`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`grant at least one publishing target` or `<id> is not an internal publishing target`."
                 }
               }
             }
@@ -54427,6 +54895,13 @@
                             "additionalProperties": true
                           },
                           "description": "Newest first; at most two active."
+                        },
+                        "targets": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The internal publishing targets (ids) its keys may read, sorted."
                         }
                       },
                       "required": [
@@ -54434,7 +54909,8 @@
                         "label",
                         "userName",
                         "createdAt",
-                        "keys"
+                        "keys",
+                        "targets"
                       ],
                       "additionalProperties": true
                     },
@@ -54486,10 +54962,6 @@
                       "type": "string",
                       "description": "Shown only in this response."
                     },
-                    "bucket": {
-                      "type": "string",
-                      "description": "The publish bucket the keys can read."
-                    },
                     "endpoint": {
                       "type": [
                         "string",
@@ -54502,7 +54974,6 @@
                     "consumer",
                     "key",
                     "secretAccessKey",
-                    "bucket",
                     "endpoint"
                   ],
                   "additionalProperties": true,

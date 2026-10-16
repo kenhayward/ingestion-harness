@@ -109,6 +109,33 @@ export class PgS3KeyRepo implements S3KeyRepo {
     await this.pool.query(`DELETE FROM s3_consumers WHERE id = $1`, [id]); // keys cascade
   }
 
+  async grants(consumerId: string): Promise<string[]> {
+    const { rows } = await this.pool.query<{ target_id: string }>(
+      `SELECT target_id FROM s3_consumer_targets WHERE consumer_id = $1 ORDER BY target_id`,
+      [consumerId],
+    );
+    return rows.map((r) => r.target_id);
+  }
+
+  async setGrants(consumerId: string, targetIds: string[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`DELETE FROM s3_consumer_targets WHERE consumer_id = $1`, [consumerId]);
+      await client.query(
+        `INSERT INTO s3_consumer_targets (consumer_id, target_id)
+         SELECT $1, t FROM unnest($2::text[]) AS t`,
+        [consumerId, [...new Set(targetIds)]],
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   private async consumers(where: string, params: unknown[]): Promise<S3Consumer[]> {
     const { rows } = await this.pool.query<ConsumerRow>(
       `SELECT c.* FROM s3_consumers c ${where}`,
@@ -120,12 +147,18 @@ export class PgS3KeyRepo implements S3KeyRepo {
         WHERE k.consumer_id = ANY($1::uuid[]) ORDER BY k.created_at DESC`,
       [rows.map((r) => r.id)],
     );
+    const targets = await this.pool.query<{ consumer_id: string; target_id: string }>(
+      `SELECT consumer_id, target_id FROM s3_consumer_targets
+        WHERE consumer_id = ANY($1::uuid[]) ORDER BY target_id`,
+      [rows.map((r) => r.id)],
+    );
     return rows.map((c) => ({
       id: c.id,
       label: c.label,
       userName: c.user_name,
       createdAt: c.created_at.toISOString(),
       keys: keys.rows.filter((k) => k.consumer_id === c.id).map(toKey),
+      targets: targets.rows.filter((t) => t.consumer_id === c.id).map((t) => t.target_id),
     }));
   }
 }
