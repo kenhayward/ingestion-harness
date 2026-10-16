@@ -1640,3 +1640,30 @@ describe('repeating sections in the step form', () => {
     expect(within(step).queryByRole('combobox', { name: 'Key column' })).not.toBeInTheDocument();
   });
 });
+
+describe('help on every recipe tab', () => {
+  const TITLES: [RegExp, string][] = [
+    [/General/, 'General recipe settings'],
+    [/Sections/, 'How sections work'],
+    [/Outputs/, 'Outputs: fields and tables'],
+    [/Pipeline/, 'How the pipeline runs'],
+    [/Mapping/, 'Mapping outputs to an ontology'],
+    [/YAML/, 'Editing the recipe as YAML'],
+    [/Versions/, 'Versions, labels and drafts'],
+  ];
+
+  it.each(TITLES)('the Workbench recipe tab %s has its help', async (name, title) => {
+    setup(view(skeleton), {}, { onChanged: vi.fn() });
+    await userEvent.click(await tab(name));
+    await userEvent.click(await screen.findByRole('button', { name: `Help: ${title}` }));
+    expect(screen.getByRole('dialog', { name: title })).toBeInTheDocument();
+  });
+
+  it('the Document types editor has help on Quality too', async () => {
+    setup(view(skeleton));
+    await userEvent.click(await tab(/Quality/));
+    expect(
+      await screen.findByRole('button', { name: 'Help: Reading the Quality tab' }),
+    ).toBeInTheDocument();
+  });
+});
