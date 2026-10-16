@@ -13,8 +13,16 @@ export interface Grant {
   prefix: string;
 }
 
+/** A wildcard or policy variable in a bucket or prefix would widen what a key can read. */
+export function assertLiteral(g: Grant): void {
+  if (/[*?$]/.test(g.bucket) || /[*?$]/.test(g.prefix)) {
+    throw new Error(`refusing a grant with a wildcard: ${g.bucket}/${g.prefix}`);
+  }
+}
+
 /** The inline policy for a consumer: read and list each granted bucket, limited to its prefix. */
 export function lakePolicy(grants: Grant[]) {
+  for (const g of grants) assertLiteral(g);
   return {
     Version: '2012-10-17',
     Statement: grants.flatMap((g) => {
@@ -68,6 +76,7 @@ export class MemoryS3KeyIssuer implements S3KeyIssuer {
   private readonly users = new Map<string, MemoryUser>();
 
   async createUser(userName: string, grants: Grant[]): Promise<void> {
+    grants.forEach(assertLiteral);
     if (!this.users.has(userName)) {
       this.users.set(userName, {
         grants: grants.map((g) => ({ ...g })),
@@ -78,6 +87,7 @@ export class MemoryS3KeyIssuer implements S3KeyIssuer {
   }
 
   async setGrants(userName: string, grants: Grant[]): Promise<void> {
+    grants.forEach(assertLiteral);
     const user = this.users.get(userName);
     if (!user) throw new Error(`no such user: ${userName}`);
     user.grants = grants.map((g) => ({ ...g }));

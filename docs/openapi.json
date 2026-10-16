@@ -67124,6 +67124,8 @@
                   },
                   "prefix": {
                     "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9!_.'()/-]*$",
                     "default": ""
                   },
                   "endpoint": {
@@ -67633,6 +67635,8 @@
                   },
                   "prefix": {
                     "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9!_.'()/-]*$",
                     "default": ""
                   },
                   "endpoint": {
@@ -68430,6 +68434,8 @@
                   },
                   "prefix": {
                     "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9!_.'()/-]*$",
                     "default": ""
                   },
                   "endpoint": {

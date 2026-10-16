@@ -1,5 +1,6 @@
 import { CreateUserCommand, ListAccessKeysCommand, ListUsersCommand } from '@aws-sdk/client-iam';
 import { describe, expect, it, vi } from 'vitest';
+import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { iamClientConfig, SeaweedIamIssuer } from '../src/s3keys/seaweed-iam.js';
 
 type Cmd = { input: Record<string, unknown> };
@@ -70,6 +71,18 @@ describe('SeaweedIamIssuer', () => {
       'PutUserPolicyCommand',
       'DeleteUserPolicyCommand',
     ]);
+  });
+
+  it.each([
+    { bucket: 'b', prefix: 'a*' },
+    { bucket: 'b', prefix: 'a?b/' },
+    { bucket: 'b', prefix: '${aws:username}/' },
+    { bucket: 'b*', prefix: '' },
+  ])('refuses a grant that is not literal: %j', async (grant) => {
+    const { issuer, send } = stub();
+    await expect(issuer.setGrants('lake-1', [grant])).rejects.toThrow(/wildcard/);
+    expect(send).not.toHaveBeenCalled();
+    await expect(new MemoryS3KeyIssuer().createUser('lake-1', [grant])).rejects.toThrow(/wildcard/);
   });
 
   it('treats an existing user as created (and still sets the policy)', async () => {

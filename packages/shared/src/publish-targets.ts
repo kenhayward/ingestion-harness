@@ -78,6 +78,14 @@ const BucketSchema = z
   .max(63)
   .regex(/^[a-z0-9][a-z0-9.-]+[a-z0-9]$/, 'not a valid S3 bucket name');
 
+/** S3-safe key characters only: no wildcard or policy variable can widen a consumer's access. */
+const PrefixSchema = z
+  .string()
+  .trim()
+  .max(512)
+  .regex(/^[A-Za-z0-9!_.'()/-]*$/, "prefix may use letters, digits and ! _ . ' ( ) / - only")
+  .refine((p) => !p.split('/').includes('..'), 'prefix must not contain a .. segment');
+
 const EXTERNAL_ONLY = [
   'endpoint',
   'region',
@@ -95,7 +103,7 @@ const TargetFieldsSchema = z
     label: z.string().trim().min(1).max(80),
     kind: z.enum(TARGET_KINDS),
     bucket: BucketSchema,
-    prefix: z.string().default(''),
+    prefix: PrefixSchema.default(''),
     endpoint: z.string().url().optional(),
     region: z.string().min(1).optional(),
     accessKeyId: z.string().min(1).optional(),

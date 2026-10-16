@@ -100,3 +100,19 @@ describe('target bodies', () => {
     expect(TargetTestBodySchema.safeParse({ bucket: 'my-lake' }).success).toBe(false);
   });
 });
+
+describe('target prefix', () => {
+  const body = (prefix: string) => ({ label: 'In', kind: 'internal', bucket: 'pub', prefix });
+  it.each(['a*b', 'a?b', '${aws:username}', 'a/../b', 'a b', 'x'.repeat(513)])(
+    'refuses %s',
+    (prefix) => {
+      expect(TargetCreateBodySchema.safeParse(body(prefix)).success).toBe(false);
+      expect(TargetPatchBodySchema.safeParse({ prefix }).success).toBe(false);
+      expect(TargetTestBodySchema.safeParse({ ...body(prefix), id: 'x' }).success).toBe(false);
+    },
+  );
+  it('accepts ordinary prefixes, trimmed', () => {
+    expect(TargetCreateBodySchema.parse(body(' ingest/2026_q3/ ')).prefix).toBe('ingest/2026_q3/');
+    expect(TargetCreateBodySchema.safeParse(body("it's(1)-a.b/")).success).toBe(true);
+  });
+});
