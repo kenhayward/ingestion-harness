@@ -1,3 +1,4 @@
+import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import type { RecipeFile } from '@ih/shared';
 import { definitionSha256, recipeFileYaml } from '../src/github-sync/file.js';
@@ -211,6 +212,17 @@ describe('POST /api/github/import', () => {
     expect(await c.templates.list()).toEqual([]);
   });
 
+  it.each([`${ROOT}/prod/Bad Id/v1.yaml`, `${ROOT}/Bad_Inst/invoice/v1.yaml`])(
+    'refuses a path with an invalid folder name: %s',
+    async (path) => {
+      const c = await setup();
+      const res = await c.call(c.ken.cookie, 'POST', '/api/github/import', body(c.head, { path }));
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('path must be <root>/<instance>/<type-id>/v<N>.yaml');
+      expect(await c.templates.list()).toEqual([]);
+    },
+  );
+
   it('refuses a path that is not <root>/<instance>/<type>/v<N>.yaml', async () => {
     const c = await setup();
     const res = await c.call(
@@ -220,6 +232,57 @@ describe('POST /api/github/import', () => {
       body(c.head, { path: 'invoice/v3.yaml' }),
     );
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('provenance and linking', () => {
+  it('records the origin, and a published push carries it into the file', async () => {
+    const c = await setup();
+    const res = await c.call(
+      c.admin.cookie,
+      'POST',
+      '/api/github/import',
+      body(c.head, { link: true }),
+    );
+    expect(res.json().record.importedFrom).toEqual({
+      instance: 'prod',
+      typeId: 'invoice',
+      version: 3,
+      commit: c.head,
+    });
+    const published = await c.call(
+      c.admin.cookie,
+      'POST',
+      '/api/templates/invoice/versions/1/publish',
+      {},
+    );
+    expect(published.statusCode).toBe(200);
+    expect(published.json().github).toMatchObject({ kind: 'pushed' });
+    const pushed = Object.entries(c.github.files(REPO, 'main')).find(([p]) =>
+      p.endsWith('/invoice/v1.yaml'),
+    )![1];
+    expect(parseYaml(pushed).version.importedFrom).toEqual({
+      instance: 'prod',
+      typeId: 'invoice',
+      version: 3,
+      commit: c.head,
+    });
+  });
+
+  it('still answers 201, not linked, when storing the link fails', async () => {
+    const c = await setup();
+    c.githubSync.setLink = async () => {
+      throw new Error('database is down');
+    };
+    const res = await c.call(
+      c.admin.cookie,
+      'POST',
+      '/api/github/import',
+      body(c.head, { link: true }),
+    );
+    expect(res.statusCode).toBe(201);
+    expect(res.json().linked).toBe(false);
+    expect((await c.templates.get('invoice', 1))?.status).toBe('draft');
   });
 });
 

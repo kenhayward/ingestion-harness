@@ -1,4 +1,4 @@
-import { VersionLabelBodySchema, type RecipeFile } from '@ih/shared';
+import { ID_PATTERN, VersionLabelBodySchema, type RecipeFile } from '@ih/shared';
 import type { AppDeps } from '../app.js';
 import { pinned } from '../templates/drafts.js';
 import { startedChange } from '../templates/changes.js';
@@ -7,6 +7,17 @@ import { githubAuthor } from './remote.js';
 
 /** What the user must resolve before a file can be imported (a 409). */
 export class ImportConflict extends Error {}
+
+/** Where a file came from, as the version records it (commit null for an uploaded file). */
+export const originOf = (file: RecipeFile, commit: string | null, typeId?: string) => ({
+  instance: file.instance,
+  typeId: typeId ?? (typeof file.definition.id === 'string' ? file.definition.id : ''),
+  version: file.version.number,
+  commit,
+});
+
+/** The file or the options name something that cannot be imported (a 400). */
+export class ImportInvalid extends Error {}
 
 export interface ImportOptions {
   /** The document type to create or add to; default the definition's own id. */
@@ -22,7 +33,8 @@ export interface ImportOptions {
  * Imports a CT Studio recipe file as a draft, never published: a new type becomes its v1, a type
  * that exists its next free version (refused while a draft is open). The definition takes the
  * type's id and the version it is stored under; the file's label and note are copied. The
- * file's own `importedFrom` is not kept: nothing a later push reads stores it.
+ * file's origin is recorded on the version (`importedFrom`, see `originOf`) and a later push
+ * writes it into the file.
  */
 export async function importRecipeFile(
   deps: Pick<AppDeps, 'templates'>,
@@ -30,7 +42,8 @@ export async function importRecipeFile(
   opts: ImportOptions,
 ): Promise<TemplateRecord> {
   const id = opts.id ?? (typeof file.definition.id === 'string' ? file.definition.id : undefined);
-  if (!id) throw new ImportConflict('the file names no document type: give an id');
+  if (!id) throw new ImportInvalid('the file names no document type: give an id');
+  if (!ID_PATTERN.test(id)) throw new ImportInvalid('invalid document type id');
   const versions = (await deps.templates.list()).filter((r) => r.id === id);
   if (versions.some((r) => r.status === 'draft')) {
     throw new ImportConflict('a draft already exists; edit or delete it first');
@@ -61,6 +74,8 @@ export async function importRecipeFile(
     if (err instanceof TemplateConflictError) throw new ImportConflict(err.message);
     throw err;
   }
+  record =
+    (await deps.templates.setImportedFrom(id, version, originOf(file, opts.commit))) ?? record;
   const label = VersionLabelBodySchema.safeParse({
     label: file.version.label,
     note: file.version.note,

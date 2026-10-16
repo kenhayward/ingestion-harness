@@ -12,7 +12,7 @@ import {
 } from '@ih/shared';
 import { pushAfterPublish } from '../github-sync/auto.js';
 import { parseRecipeFile } from '../github-sync/file.js';
-import { ImportConflict, importRecipeFile } from '../github-sync/import.js';
+import { ImportConflict, ImportInvalid, importRecipeFile } from '../github-sync/import.js';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import {
@@ -816,6 +816,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           });
           return reply.code(201).send(await withIssues(record));
         } catch (err) {
+          if (err instanceof ImportInvalid) return reply.code(400).send({ error: err.message });
           if (err instanceof ImportConflict) return reply.code(409).send({ error: err.message });
           throw err;
         }

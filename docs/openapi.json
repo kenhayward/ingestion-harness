@@ -5930,6 +5930,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -5944,7 +5979,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -6566,6 +6602,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -6580,7 +6651,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -6954,6 +7026,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -6968,7 +7075,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -16084,6 +16192,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16098,7 +16241,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -16371,6 +16515,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16385,7 +16564,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -16632,6 +16812,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16646,7 +16861,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -17108,6 +17324,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -17122,7 +17373,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -17688,6 +17940,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -17702,7 +17989,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -18002,6 +18290,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18016,7 +18339,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -18438,6 +18762,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18452,7 +18811,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -18772,6 +19132,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18786,7 +19181,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -19217,6 +19613,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -19231,7 +19662,8 @@
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },

@@ -291,6 +291,12 @@ describe('use a version as the draft', () => {
       note: 'from production',
       labelSetBy: 'GitHub: Pat Prod',
     });
+    expect(now.importedFrom).toEqual({
+      instance: 'prod',
+      typeId: 'invoice',
+      version: 7,
+      commit: c.head,
+    });
     const [change] = await c.templates.listChanges('invoice', 4);
     expect(change).toMatchObject({
       source: 'import',

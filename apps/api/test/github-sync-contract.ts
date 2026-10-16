@@ -110,5 +110,22 @@ export function githubSyncContract(name: string, make: MakeGitHubSync) {
       expect((await templates.publish(id, 2))?.publishedBy).toBeNull();
       expect((await templates.get(id, 1))?.publishedBy).toBe('Ken');
     });
+
+    it('records where a draft was imported from, which edits keep and published versions refuse', async () => {
+      const id = `invoice_if_${Date.now()}`;
+      const { templates } = await make();
+      await templates.create(id, 1, { id }, 'draft');
+      const from = { instance: 'prod', typeId: 'invoice', version: 3, commit: 'abc' };
+      const set = await templates.setImportedFrom(id, 1, from);
+      expect(set?.importedFrom).toEqual(from);
+      expect((await templates.get(id, 1))?.importedFrom).toEqual(from);
+      const edited = await templates.updateDraft(id, 1, { id, name: 'x' });
+      expect(edited?.importedFrom).toEqual(from);
+      expect((await templates.publish(id, 1, 'Ken'))?.importedFrom).toEqual(from);
+      expect(await templates.setImportedFrom(id, 1, null)).toBeNull();
+      expect((await templates.get(id, 1))?.importedFrom).toEqual(from);
+      await templates.create(id, 2, { id }, 'draft');
+      expect((await templates.get(id, 2))?.importedFrom).toBeNull();
+    });
   });
 }

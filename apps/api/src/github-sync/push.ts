@@ -280,7 +280,7 @@ export async function pushVersion(
     const settings = await deps.githubSync.settings();
     const file = recipeFileFor(record, settings, {
       basedOn: await basedOn(deps, typeId, version),
-      importedFrom: null,
+      importedFrom: record.importedFrom,
     });
     const content = recipeFileYaml(file);
     const previous =

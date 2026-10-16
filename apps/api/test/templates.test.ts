@@ -317,6 +317,12 @@ describe('import of a CT Studio recipe file', () => {
       note: 'third quarter',
     });
     expect(res.json().record.definition).toMatchObject({ id: 'letter', version: 1 });
+    expect(res.json().record.importedFrom).toEqual({
+      instance: 'prod',
+      typeId: 'letter',
+      version: 7,
+      commit: null,
+    });
     const [change] = await templates.listChanges('letter', 1);
     expect(change).toMatchObject({
       source: 'import',

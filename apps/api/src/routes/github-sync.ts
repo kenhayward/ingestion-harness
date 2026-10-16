@@ -22,7 +22,12 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { definitionSha256, labelSha } from '../github-sync/file.js';
-import { ImportConflict, importRecipeFile } from '../github-sync/import.js';
+import {
+  ImportConflict,
+  ImportInvalid,
+  importRecipeFile,
+  originOf,
+} from '../github-sync/import.js';
 import { cannotPush, NOT_LINKED_TO_PUSH, pushVersion, SyncConflict } from '../github-sync/push.js';
 import { compareWith, githubAuthor, listRemote, readRemoteVersion } from '../github-sync/remote.js';
 import { userToken } from '../github-sync/token.js';
@@ -533,7 +538,12 @@ export function registerGitHubSyncRoutes(app: FastifyInstance): void {
       const { repo, branch, path, commit } = body.data;
       const root = path.split('/').slice(0, -3).join('/');
       const at = SyncRootSchema.safeParse(root).success ? parseRecipePath(root, path) : null;
-      if (!at || at.draft) {
+      if (
+        !at ||
+        at.draft ||
+        !SyncNameSchema.safeParse(at.instance).success ||
+        !ID_PATTERN.test(at.typeId)
+      ) {
         return reply
           .code(400)
           .send({ error: 'path must be <root>/<instance>/<type-id>/v<N>.yaml' });
@@ -556,16 +566,22 @@ export function registerGitHubSyncRoutes(app: FastifyInstance): void {
         const record = await importRecipeFile(deps, file, { id, name: body.data.name, commit, by });
         let linked = false;
         if (body.data.link && req.auth?.role === 'admin') {
-          await sync.setLink(
-            id,
-            { repo, branch, root, alwaysPr: false, pushOnPublish: true },
-            by ?? 'admin',
-          );
-          linked = true;
+          try {
+            await sync.setLink(
+              id,
+              { repo, branch, root, alwaysPr: false, pushOnPublish: true },
+              by ?? 'admin',
+            );
+            linked = true;
+          } catch (err) {
+            // The draft exists: the import stands, the link can be made from the type's page.
+            req.log.error({ err, templateId: id }, 'linking an imported recipe failed');
+          }
         }
         req.log.info({ templateId: id, linked }, 'recipe imported from GitHub');
         return reply.code(201).send({ ...(await withIssues(record)), linked });
       } catch (err) {
+        if (err instanceof ImportInvalid) return reply.code(400).send({ error: err.message });
         if (err instanceof ImportConflict) return reply.code(409).send({ error: err.message });
         return pullFailure(reply, err);
       }
@@ -788,6 +804,12 @@ imported yet\`, \`the file does not match its path\`, also for folder names that
           });
           if (!record) return reply.code(409).send({ error: DRAFT_CHANGED });
         }
+        record =
+          (await deps.templates.setImportedFrom(
+            id,
+            record.version,
+            originOf(file, commit, typeId),
+          )) ?? record;
         if (record.label !== (label.label ?? null) || record.note !== (label.note ?? null)) {
           record =
             (await deps.templates.setLabel(id, record.version, label, githubAuthor(file))) ??

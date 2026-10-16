@@ -11,6 +11,16 @@ import {
 export const TemplateStatusSchema = z.enum(['draft', 'published']);
 export type TemplateStatus = z.infer<typeof TemplateStatusSchema>;
 
+export const ImportedFromSchema = z
+  .object({
+    instance: z.string(),
+    typeId: z.string(),
+    version: z.number().int().positive(),
+    commit: z.string().nullable(),
+  })
+  .strict();
+export type ImportedFrom = z.infer<typeof ImportedFromSchema>;
+
 export const TemplateRecordSchema = z.object({
   id: z.string(),
   version: z.number().int(),
@@ -25,6 +35,8 @@ export const TemplateRecordSchema = z.object({
   /** Who published it (migration 0046); null for older versions and unattributed publishes. */
   publishedBy: z.string().nullable(),
   ...VersionLabelSchema.shape,
+  /** Where the definition was imported from (migration 0047); null when written here. */
+  importedFrom: ImportedFromSchema.nullable(),
 });
 export type TemplateRecord = z.infer<typeof TemplateRecordSchema>;
 
@@ -71,6 +83,15 @@ export interface TemplateRepo {
     version: number,
     body: VersionLabelBody,
     by: string | null,
+  ): Promise<TemplateRecord | null>;
+  /**
+   * Records where a draft's definition came from (migration 0047), leaving `updatedAt` alone.
+   * Null unless the version exists and is a draft.
+   */
+  setImportedFrom(
+    id: string,
+    version: number,
+    value: ImportedFrom | null,
   ): Promise<TemplateRecord | null>;
   /** Deletes the draft and its change log. */
   deleteDraft(id: string, version: number): Promise<boolean>;
@@ -147,6 +168,7 @@ export class MemoryTemplateRepo implements TemplateRepo {
       note: null,
       labelSetBy: null,
       labelSetAt: null,
+      importedFrom: null,
     };
     this.records.set(this.key(id, version), record);
     if (status === 'draft') this.log(id, version, now, change);
@@ -195,6 +217,14 @@ export class MemoryTemplateRepo implements TemplateRepo {
       labelSetBy: by,
       labelSetAt: this.now(),
     };
+    this.records.set(this.key(id, version), updated);
+    return updated;
+  }
+
+  async setImportedFrom(id: string, version: number, value: ImportedFrom | null) {
+    const record = await this.get(id, version);
+    if (record?.status !== 'draft') return null;
+    const updated = { ...record, importedFrom: value };
     this.records.set(this.key(id, version), updated);
     return updated;
   }
@@ -255,6 +285,7 @@ interface Row {
   note: string | null;
   label_set_by: string | null;
   label_set_at: Date | null;
+  imported_from: ImportedFrom | null;
 }
 
 const toRecord = (r: Row): TemplateRecord => ({
@@ -270,6 +301,7 @@ const toRecord = (r: Row): TemplateRecord => ({
   note: r.note,
   labelSetBy: r.label_set_by,
   labelSetAt: r.label_set_at ? r.label_set_at.toISOString() : null,
+  importedFrom: r.imported_from,
 });
 
 interface ChangeRow {
@@ -481,6 +513,14 @@ export class PgTemplateRepo implements TemplateRepo {
         body.note ?? null,
         by,
       ],
+    );
+  }
+
+  async setImportedFrom(id: string, version: number, value: ImportedFrom | null) {
+    return this.one(
+      `UPDATE templates SET imported_from = $3::jsonb
+        WHERE id = $1 AND version = $2 AND status = 'draft' RETURNING *`,
+      [id, version, value === null ? null : JSON.stringify(value)],
     );
   }
 
