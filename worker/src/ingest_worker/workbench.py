@@ -247,7 +247,14 @@ def segment_samples(
             span = by_id.get(section.id)
             if span is None:
                 cells.append(
-                    {"id": section.id, "found": False, "page": None, "line": None, "chars": 0}
+                    {
+                        "id": section.id,
+                        "found": False,
+                        "page": None,
+                        "line": None,
+                        "chars": 0,
+                        "matches": 0,
+                    }
                 )
                 continue
             body = text[span.start : span.end].strip()
@@ -258,6 +265,8 @@ def segment_samples(
                     "page": first + bisect_right(page_starts, span.start),
                     "line": _line_at(text, span.start),
                     "chars": len(body),
+                    # Only the first match starts the section; more mean a repeated block.
+                    "matches": sum(1 for _ in re.finditer(section.anchor, text, re.MULTILINE)),
                 }
             )
         rows.append(

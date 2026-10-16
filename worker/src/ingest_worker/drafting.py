@@ -598,7 +598,33 @@ def anchor_check(
                 f'section "{sid}" is required but anchor {section["anchor"]!r} missed: '
                 f"{', '.join(missed)}"
             )
+    misses += repeated_blocks(rows, put_ids, names)
     return grid, misses
+
+
+def repeated_blocks(
+    rows: list[dict[str, Any]], put_ids: set[str], names: dict[str, str]
+) -> list[str]:
+    """Two or more proposed sections whose anchors each match several times in one sample: the
+    document repeats a block (per batch, per item), which first-match segmentation cannot split.
+    One section that matches twice is common (a "Total" line) and is not reported."""
+    out: list[str] = []
+    for row in rows:
+        repeats = [c for c in row["sections"] if c["id"] in put_ids and c.get("matches", 0) > 1]
+        if len(repeats) < 2:
+            continue
+        ids = ", ".join(f'"{c["id"]}"' for c in repeats)
+        times = max(c["matches"] for c in repeats)
+        out.append(
+            f"sections {ids} each match {times} times in "
+            f"{names.get(row['sampleId'], row['sampleId'])}: the document repeats a block "
+            "(per batch, item or similar). A section starts only at its anchor's first match "
+            "and runs to the next section, so every later block ends up in the last section. "
+            "Propose one section that starts at the first block and covers all of them "
+            "(steps then read it and take each block's identifiers from its heading or "
+            "caption); keep separate sections only for parts that occur once."
+        )
+    return out
 
 
 def _segment_document(draft: dict[str, Any], body: dict[str, Any]) -> SegmentDocument:

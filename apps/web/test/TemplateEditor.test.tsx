@@ -1281,6 +1281,16 @@ describe('TemplateEditor embedded Pipeline (handoff §10)', () => {
     for (const row of rows) expect(within(row).getAllByRole('checkbox')).toHaveLength(1);
   });
 
+  it("shows each section's anchor beside its tick box", async () => {
+    open();
+    await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
+    const reads = within(screen.getByRole('region', { name: 'Step 3' })).getByRole('group', {
+      name: 'Reads sections',
+    });
+    const row = within(reads).getByRole('checkbox', { name: 'payment' }).closest('li')!;
+    expect(within(row).getByText('^payment')).toBeInTheDocument();
+  });
+
   it('removes a filled output and offers unfilled outputs first', async () => {
     const { api } = open();
     await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
