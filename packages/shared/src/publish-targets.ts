@@ -135,9 +135,13 @@ export type TargetPatchBody = z.infer<typeof TargetPatchBodySchema>;
  * Test connection: an existing id tests its stored settings overlaid with the body; no id means
  * the body must be a full create body.
  */
-export const TargetTestBodySchema = z
-  .object({ id: TargetIdSchema.optional() })
-  .and(TargetFieldsSchema.omit({ id: true }).partial());
+export const TargetTestBodySchema = TargetFieldsSchema.partial()
+  .strict()
+  .superRefine((b, ctx) => {
+    if (b.id !== undefined) return;
+    const full = TargetCreateBodySchema.safeParse(b);
+    if (!full.success) full.error.issues.forEach((i) => ctx.addIssue({ ...i }));
+  });
 export type TargetTestBody = z.infer<typeof TargetTestBodySchema>;
 
 export const TargetTestResultSchema = z.object({

@@ -7,6 +7,7 @@ import {
   TargetCreateBodySchema,
   TargetIdSchema,
   TargetPatchBodySchema,
+  TargetTestBodySchema,
   targetInUse,
 } from '../src/publish-targets.js';
 
@@ -44,7 +45,9 @@ describe('target bodies', () => {
     secretAccessKey: 'secret',
   };
   it('accepts an internal and an external target, with defaults', () => {
-    expect(TargetCreateBodySchema.parse({ label: 'In', kind: 'internal', bucket: 'pub' })).toMatchObject({
+    expect(
+      TargetCreateBodySchema.parse({ label: 'In', kind: 'internal', bucket: 'pub' }),
+    ).toMatchObject({
       label: 'In',
       kind: 'internal',
       bucket: 'pub',
@@ -87,5 +90,13 @@ describe('target bodies', () => {
     expect(targetInUse({ ...none, consumers: 1 })).toBe(true);
     expect(targetInUse({ ...none, deliveredOutputs: 1 })).toBe(true);
     expect(targetInUse({ ...none, publishedVersions: 1 })).toBe(true);
+  });
+  it('test bodies: an id alone or with overrides, else a full create body', () => {
+    expect(TargetTestBodySchema.safeParse({ id: 'finance-lake' }).success).toBe(true);
+    expect(
+      TargetTestBodySchema.safeParse({ id: 'finance-lake', secretAccessKey: 'new' }).success,
+    ).toBe(true);
+    expect(TargetTestBodySchema.safeParse(external).success).toBe(true);
+    expect(TargetTestBodySchema.safeParse({ bucket: 'my-lake' }).success).toBe(false);
   });
 });
