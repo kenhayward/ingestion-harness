@@ -34,8 +34,9 @@ class StreamRecorder:
     """Anthropic messages stub: only streaming is allowed (large max_tokens can't be sent
     non-streaming - the SDK raises before sending)."""
 
-    def __init__(self, result: Any) -> None:
+    def __init__(self, result: Any, events: list[Any] | None = None) -> None:
         self.result = result
+        self.events = events or []
         self.kwargs: dict[str, Any] = {}
 
     def create(self, **kwargs: Any) -> Any:
@@ -44,6 +45,7 @@ class StreamRecorder:
     def stream(self, **kwargs: Any) -> Any:
         self.kwargs = kwargs
         final = self.result
+        events = self.events
 
         class _Stream:
             def __enter__(self) -> Any:
@@ -51,6 +53,9 @@ class StreamRecorder:
 
             def __exit__(self, *exc: object) -> None:
                 return None
+
+            def __iter__(self) -> Any:
+                return iter(events)
 
             def get_final_message(self) -> Any:
                 return final
@@ -401,3 +406,180 @@ def test_embedding_nothing_calls_nothing() -> None:
 
 def test_anthropic_has_no_embeddings() -> None:
     assert not hasattr(AnthropicProvider, "embed")
+
+
+# --- streamed replies, counted as they arrive (issue #151 follow-up) ------------------------
+
+
+def delta_event(kind: str, text: str) -> Any:
+    field = {"text_delta": "text", "thinking_delta": "thinking"}[kind]
+    return SimpleNamespace(
+        type="content_block_delta", delta=SimpleNamespace(**{"type": kind, field: text})
+    )
+
+
+def test_anthropic_counts_the_reply_and_its_thinking_as_they_stream() -> None:
+    events = [
+        SimpleNamespace(type="message_start"),
+        delta_event("thinking_delta", "x" * 40),
+        delta_event("text_delta", '{"a"'),
+        delta_event("text_delta", ": 1}"),
+    ]
+    messages = StreamRecorder(anthropic_message(), events)
+    client: Any = SimpleNamespace(messages=messages)
+    seen: list[int] = []
+    result = AnthropicProvider("a", client, server_fallbacks=False).complete_json(
+        "m", REQ, on_tokens=seen.append
+    )
+    assert seen == [10, 11, 12]  # characters / 4, rounded up, growing
+    assert result.text == '{"a": 1}' and result.output_tokens == 20
+
+
+def chat_chunk(
+    content: str | None = None,
+    *,
+    reasoning: str | None = None,
+    refusal: str | None = None,
+    finish: str | None = None,
+    usage: Any = None,
+) -> Any:
+    choices = (
+        []
+        if usage is not None
+        else [
+            SimpleNamespace(
+                delta=SimpleNamespace(
+                    content=content, reasoning_content=reasoning, refusal=refusal
+                ),
+                finish_reason=finish,
+            )
+        ]
+    )
+    return SimpleNamespace(id="c1", model="gpt-x", choices=choices, usage=usage)
+
+
+class StreamingRecorder(Recorder):
+    """Chat completions or responses stub: streams `chunks` when asked to, else answers whole."""
+
+    def __init__(self, result: Any, chunks: list[Any], refuse: Exception | None = None) -> None:
+        super().__init__(result)
+        self.chunks = chunks
+        self.refuse = refuse
+        self.calls: list[dict[str, Any]] = []
+
+    def create(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        self.kwargs = kwargs
+        if kwargs.get("stream"):
+            if self.refuse is not None:
+                raise self.refuse
+            return iter(self.chunks)
+        return self.result
+
+
+def test_openai_chat_streams_only_when_counting() -> None:
+    completions = StreamingRecorder(chat_response(), [])
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    OpenAIChatProvider("local", client).complete_json("m", REQ)
+    assert "stream" not in completions.kwargs  # production calls are unchanged
+
+
+def test_openai_chat_streams_and_counts_reasoning_and_content() -> None:
+    chunks = [
+        chat_chunk(reasoning="y" * 8),
+        chat_chunk('{"a"'),
+        chat_chunk(": 1}", finish="stop"),
+        chat_chunk(usage=SimpleNamespace(prompt_tokens=7, completion_tokens=3)),
+    ]
+    completions = StreamingRecorder(chat_response(), chunks)
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    seen: list[int] = []
+    result = OpenAIChatProvider("local", client).complete_json("m", REQ, on_tokens=seen.append)
+    assert completions.kwargs["stream"] is True
+    assert completions.kwargs["stream_options"] == {"include_usage": True}
+    assert completions.kwargs["response_format"]["type"] == "json_schema"
+    assert seen == [2, 3, 4]
+    assert result.text == '{"a": 1}'
+    assert (result.model, result.stop_reason, result.truncated) == ("gpt-x", "stop", False)
+    assert (result.input_tokens, result.output_tokens) == (7, 3)
+
+
+def test_openai_chat_stream_reports_truncation_and_refusal() -> None:
+    chunks = [chat_chunk('{"a"', finish="length")]
+    client: Any = SimpleNamespace(
+        chat=SimpleNamespace(completions=StreamingRecorder(chat_response(), chunks))
+    )
+    result = OpenAIChatProvider("l", client).complete_json("m", REQ, on_tokens=lambda _n: None)
+    assert result.truncated and result.output_tokens is None
+
+    chunks = [chat_chunk(refusal="I cannot"), chat_chunk(refusal=" help", finish="stop")]
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=StreamingRecorder(chat_response(), chunks))
+    )
+    with pytest.raises(RefusalError, match="I cannot help"):
+        OpenAIChatProvider("l", client).complete_json("m", REQ, on_tokens=lambda _n: None)
+
+
+def test_openai_chat_falls_back_to_one_reply_when_the_server_cannot_stream() -> None:
+    import httpx
+    import openai
+
+    refused = openai.BadRequestError(
+        "streaming is not supported with response_format",
+        response=httpx.Response(400, request=httpx.Request("POST", "http://local/v1")),
+        body=None,
+    )
+    completions = StreamingRecorder(chat_response(), [], refuse=refused)
+    client: Any = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    provider = OpenAIChatProvider("local", client)
+    result = provider.complete_json("m", REQ, on_tokens=lambda _n: None)
+    assert result.text == '{"a": 1}'
+    assert [c.get("stream", False) for c in completions.calls] == [True, False]
+    # Remembered: the next call goes straight to a whole reply.
+    provider.complete_json("m", REQ, on_tokens=lambda _n: None)
+    assert [c.get("stream", False) for c in completions.calls] == [True, False, False]
+
+
+def responses_result(status: str = "completed", text: str = '{"a": 1}') -> Any:
+    return SimpleNamespace(
+        id="r1",
+        model="gpt-x",
+        status=status,
+        output_text=text,
+        output=[],
+        usage=SimpleNamespace(input_tokens=5, output_tokens=2),
+        incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+    )
+
+
+def test_openai_responses_streams_and_counts_until_the_final_response() -> None:
+    events = [
+        SimpleNamespace(type="response.created"),
+        SimpleNamespace(type="response.reasoning_summary_text.delta", delta="z" * 4),
+        SimpleNamespace(type="response.output_text.delta", delta='{"a"'),
+        SimpleNamespace(type="response.output_text.delta", delta=": 1}"),
+        SimpleNamespace(type="response.completed", response=responses_result()),
+    ]
+    responses = StreamingRecorder(None, events)
+    client: Any = SimpleNamespace(responses=responses)
+    seen: list[int] = []
+    result = OpenAIResponsesProvider("openai", client).complete_json(
+        "gpt-x", REQ, on_tokens=seen.append
+    )
+    assert responses.kwargs["stream"] is True and "stream_options" not in responses.kwargs
+    assert seen == [1, 2, 3]
+    assert result.text == '{"a": 1}' and result.output_tokens == 2 and not result.truncated
+
+    events = [SimpleNamespace(type="response.incomplete", response=responses_result("incomplete"))]
+    client = SimpleNamespace(responses=StreamingRecorder(None, events))
+    cut = OpenAIResponsesProvider("o", client).complete_json("m", REQ, on_tokens=lambda _n: None)
+    assert cut.truncated
+
+
+def test_openai_responses_stream_without_a_final_response_is_retryable() -> None:
+    from ingest_worker.llm.base import LLMError
+
+    events = [SimpleNamespace(type="response.output_text.delta", delta="{")]
+    client: Any = SimpleNamespace(responses=StreamingRecorder(None, events))
+    with pytest.raises(LLMError, match="ended without"):
+        OpenAIResponsesProvider("o", client).complete_json("m", REQ, on_tokens=lambda _n: None)

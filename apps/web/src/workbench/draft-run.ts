@@ -42,9 +42,16 @@ function detailOf(key: string, progress: DraftProgress | null): string | null {
   if (!progress) return null;
   if (key === READING.key) return `${progress.samples} sample${progress.samples === 1 ? '' : 's'}`;
   if ((key === MODEL.key || key === MODEL_2.key) && progress.attempt !== null) {
-    return progress.attempt > 1
-      ? `The first reply did not pass the checks: asking again (try ${progress.attempt} of ${progress.of}).`
-      : 'This can take several minutes.';
+    // A streamed reply's count (an estimate: about four characters a token, thinking included).
+    const received =
+      progress.tokens != null
+        ? `~${progress.tokens.toLocaleString('en-GB')} tokens received so far.`
+        : null;
+    if (progress.attempt > 1) {
+      const again = `The first reply did not pass the checks: asking again (try ${progress.attempt} of ${progress.of}).`;
+      return received ? `${again} ${received}` : again;
+    }
+    return received ?? 'This can take several minutes.';
   }
   return null;
 }
