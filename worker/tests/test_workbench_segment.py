@@ -366,7 +366,7 @@ def test_an_inherited_key_is_marked() -> None:
 
 def test_an_invalid_key_is_an_anchor_error() -> None:
     sections = copy.deepcopy(RECIPE["document"]["sections"])
-    sections[1]["key"] = "BATCH (\w+"
+    sections[1]["key"] = r"BATCH (\w+"
     grid = segment_samples(
         [("s1", COVALIDATION)], SegmentDocument.model_validate({"sections": sections})
     )
