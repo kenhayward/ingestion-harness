@@ -9,12 +9,13 @@ that version stays lexical.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .llm.registry import ModelResolutionError
-from .pipeline import DocumentError, PipelineDeps
+from .pipeline import DocumentError, JobCancelled, PipelineDeps
 from .queue import ClaimedJob, JobQueue
 
 #: Terms per embedding call.
@@ -59,11 +60,14 @@ def embed_version(
     *,
     model_ref: str | None = None,
     strict: bool = False,
+    stop: Callable[[], bool] | None = None,
 ) -> int:
     """Embed the version's terms whose text changed under `model_ref` (default: the current
     setting); the number embedded. Policy problems skip with an event. A model that does not
     resolve skips too, unless `strict` (an `embed` job: the worker's registry may not have
-    caught up with the setting yet, so it raises and the job is retried)."""
+    caught up with the setting yet, so it raises and the job is retried). `stop` is checked
+    before every batch after the first: once its job is cancelled or taken over by another run,
+    the embedding stops (JobCancelled), keeping what it stored, which a retry skips."""
     store = deps.ontologies
     model_ref = model_ref or deps.embedding_model
     if store is None or model_ref is None:
@@ -94,6 +98,8 @@ def embed_version(
         if existing.get((term.kind, term.iri)) != sha:
             todo.append((term.kind, term.iri, sha, text))
     for start in range(0, len(todo), EMBED_BATCH):
+        if start and stop is not None and stop():
+            raise JobCancelled(job_id)
         batch = todo[start : start + EMBED_BATCH]
         vectors = provider.embed(model_id, [t[3] for t in batch])
         store.store_embeddings(
@@ -111,14 +117,19 @@ def embed_version(
 
 
 def embed_after_import(
-    deps: PipelineDeps, queue: JobQueue, job_id: str, ontology_id: str, version: int
+    deps: PipelineDeps, queue: JobQueue, job: ClaimedJob, ontology_id: str, version: int
 ) -> None:
-    """The import's last step: a failure is an event, never the import's."""
+    """The import's last step: a failure is an event, never the import's. A job that is no
+    longer this run's (cancelled, or reaped and claimed again) stops it: JobCancelled."""
     try:
-        embed_version(deps, queue, job_id, ontology_id, version)
+        embed_version(
+            deps, queue, job.id, ontology_id, version, stop=lambda: queue.is_cancelled(job)
+        )
+    except JobCancelled:
+        raise
     except Exception as exc:
         queue.event(
-            job_id,
+            job.id,
             "warn",
             EMBEDDING_SKIPPED,
             {"model": deps.embedding_model, "reason": f"{type(exc).__name__}: {exc}"},
@@ -144,5 +155,6 @@ def run_embed(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> int:
     except ValidationError as exc:
         raise DocumentError(f"invalid embed parameters: {exc}") from exc
     return embed_version(
-        deps, queue, job.id, params.ontology_id, params.version, model_ref=params.model, strict=True
-    )
+        deps, queue, job.id, params.ontology_id, params.version, model_ref=params.model,
+        strict=True, stop=lambda: queue.is_cancelled(job),
+    )  # fmt: skip

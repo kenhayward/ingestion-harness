@@ -41,8 +41,9 @@ review: { required: always | on_warnings | never }
 - JSON Schemas are generated from the definitions. Fields come back as
   `{value, evidence, page}`; values are normalised by type (`137·8` → `137.8`, `16/02/2023` →
   `2023-02-16`, enum casing). Unparseable values are kept and listed in `issues.csv`.
-- Steps use the built-in prompt (`builtin/extract.md.j2`: preamble, definitions, `instructions`,
-  section text) unless `prompt` names a custom Jinja2 file.
+- Steps use the built-in prompt (`builtin/extract.md.j2`: preamble, the source file's name,
+  definitions, `instructions`, section text with `[page N]` markers) unless `prompt` names a
+  custom Jinja2 file, which also receives `source_file` (the uploaded file name, or None).
 - Outputs: `fields.csv` (one row, one column per field), `<table>.csv`, `<check>.csv`,
   `issues.csv`, `document.json` (evidence, pages, checks, issues, review decision).
 - Review: `on_warnings` requires review when there are normalisation issues or unmatched check

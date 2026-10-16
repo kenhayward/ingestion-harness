@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { OntologySummary, OntologyVersionView } from '@ih/shared';
+import type {
+  EmbeddingProgress,
+  OntologyListItem,
+  OntologySummary,
+  OntologyVersionView,
+} from '@ih/shared';
 import { ontologySourceUrl, type Api } from '../api/client.js';
 import { matchesQuery } from '../shell/derive.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
-import { KIND_LABEL, isImporting, versionStatusText } from './derive.js';
+import { Meter } from '../ui/Meter.js';
+import {
+  KIND_LABEL,
+  embeddedPercent,
+  embeddingText,
+  isImporting,
+  versionStatusText,
+} from './derive.js';
 import { DeleteVersionDialog } from './DeleteVersionDialog.js';
 import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { ImportOntologyDialog } from './ImportOntologyDialog.js';
@@ -40,7 +52,7 @@ export function OntologiesPage({
   role: 'admin' | 'user';
   pollMs?: number;
 }) {
-  const [items, setItems] = useState<OntologySummary[] | null>(null);
+  const [items, setItems] = useState<OntologyListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [importing, setImporting] = useState(false);
@@ -205,7 +217,23 @@ function OntologyPills({ ontology: o }: { ontology: OntologySummary }) {
 
 const ontologyHref = (id: string) => `#/ontologies/${encodeURIComponent(id)}`;
 
-function OntologyCard({ ontology: o }: { ontology: OntologySummary }) {
+/**
+ * How far the newest ready version's embeddings are, as the list read them (no polling): a
+ * meter while some are missing.
+ */
+function EmbeddingLine({ embedding }: { embedding: EmbeddingProgress | null }) {
+  const text = embeddingText(embedding);
+  if (!embedding || !text) return null;
+  const done = embedding.embedded >= embedding.terms;
+  return (
+    <p className="ontology-embedding muted" title={`Embedding model: ${embedding.model}`}>
+      {!done && <Meter label="Embeddings" value={embeddedPercent(embedding) / 100} tone="warn" />}
+      <span>{text}</span>
+    </p>
+  );
+}
+
+function OntologyCard({ ontology: o }: { ontology: OntologyListItem }) {
   return (
     <section className="ontology-card" aria-label={`Ontology ${o.label}`}>
       <span className="ontology-card-icon" aria-hidden="true">
@@ -223,6 +251,7 @@ function OntologyCard({ ontology: o }: { ontology: OntologySummary }) {
           <OntologyPills ontology={o} />
         </div>
         <VersionLine version={o.latest} count={o.versionCount} />
+        <EmbeddingLine embedding={o.embedding} />
       </div>
     </section>
   );
@@ -311,7 +340,7 @@ function OntologyTable({
   onEdit,
   onDelete,
 }: {
-  ontologies: readonly OntologySummary[];
+  ontologies: readonly OntologyListItem[];
   admin: boolean;
   onEdit: (o: OntologySummary) => void;
   onDelete: (o: OntologySummary) => void;
@@ -326,6 +355,7 @@ function OntologyTable({
             <th scope="col">Format and tags</th>
             <th scope="col">Version</th>
             <th scope="col">Contents</th>
+            <th scope="col">Embeddings</th>
             <th scope="col">
               <span className="visually-hidden">Actions</span>
             </th>
@@ -374,6 +404,9 @@ function OntologyTable({
                   >
                     {contents}
                   </span>
+                </td>
+                <td>
+                  <EmbeddingLine embedding={o.embedding} />
                 </td>
                 <td>
                   <RowActions ontology={o} admin={admin} onEdit={onEdit} onDelete={onDelete} />

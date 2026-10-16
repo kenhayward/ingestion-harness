@@ -20,6 +20,7 @@ from .embeddings import run_embed
 from .graph_preview import run_graph_preview
 from .graph_registry import PgGraphRegistry
 from .graph_store import graph_store_from_env
+from .heartbeat import HEARTBEAT_S, JobHeartbeat, PgJobHeartbeat, beating
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import load_llm_config
@@ -62,14 +63,41 @@ CONFIG_CHECK_S = 5.0
 FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save as a reference"
 
 
-def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
+def run_once(
+    queue: JobQueue,
+    deps: PipelineDeps,
+    worker_id: str,
+    heartbeat: JobHeartbeat | None = None,
+    heartbeat_s: float = HEARTBEAT_S,
+) -> bool:
     """Claim and run one job (process, publish, rerun, prepare, segment, draft, export or
-    ontology).
+    ontology), beating its heartbeat while it runs (heartbeat.py).
     Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
         return False
     log.info("claimed %s job %s (attempt %d/%d)", job.task, job.id, job.attempts, job.max_attempts)
+    if job.attempts > job.max_attempts:
+        # Only the reaper does this: a job whose worker stopped (e.g. a redeploy) is re-queued
+        # whatever its attempts, so a long job is never lost to restarts.
+        log.warning(
+            "job %s is on attempt %d of %d: its worker stopped while running it and it was "
+            "re-queued",
+            job.id, job.attempts, job.max_attempts,
+        )  # fmt: skip
+    if heartbeat is None:
+        _run_claimed(job, queue, deps)
+        return True
+
+    def lost() -> None:
+        log.warning("job %s is no longer this worker's: it stops at its next check", job.id)
+
+    with beating(lambda: heartbeat.beat(job), heartbeat_s, on_lost=lost):
+        _run_claimed(job, queue, deps)
+    return True
+
+
+def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
     try:
         if job.task == "publish":
             check_cancelled(job, queue)
@@ -85,10 +113,10 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
                 queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
                 queue.await_review(job, [], deps.buckets.outputs, refused.reasons)
                 log.info("job %s publish refused: %s", job.id, "; ".join(refused.reasons))
-                return True
+                return
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s published %d outputs", job.id, len(published))
-            return True
+            return
         if job.task == "rerun":
             loaded = load_definition(job, deps, queue)
             if not isinstance(loaded, LoadedTemplate):
@@ -98,57 +126,57 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
             check_cancelled(job, queue)
             queue.await_review(job, rerun.outputs, deps.buckets.outputs, rerun.review_reasons)
             log.info("job %s re-ran %s, back in review", job.id, (job.rerun or {}).get("step"))
-            return True
+            return
         if job.task == "prepare":
             triage = prepare_sample(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s prepared %d pages", job.id, triage["pageCount"])
-            return True
+            return
         if job.task == "segment":
             grid = run_segment(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s segmented %d samples", job.id, len(grid["samples"]))
-            return True
+            return
         if job.task == "draft":
             drafted = run_draft(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s drafted stage %s with %s", job.id, drafted["stage"], drafted["model"])
-            return True
+            return
         if job.task == "export":
             manifest = run_export(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s exported %d samples", job.id, len(manifest["samples"]))
-            return True
+            return
         if job.task == "graph":
             preview = run_graph_preview(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s previewed %d graphs", job.id, len(preview["samples"]))
-            return True
+            return
         if job.task == "suggest":
             suggested = run_suggest(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s suggested %d ontologies", job.id, len(suggested["suggestions"]))
-            return True
+            return
         if job.task == "embed":
             embedded = run_embed(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s embedded %d terms", job.id, embedded)
-            return True
+            return
         if job.task == "withdraw":
             withdrawn = run_withdraw(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s withdrew %d objects, %d graphs", job.id, *withdrawn)
-            return True
+            return
         if job.task == "republish":
             count = run_republish(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s re-delivered %d jobs", job.id, count)
-            return True
+            return
         if job.task == "ontology":
             parsed = run_ontology_import(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s indexed %d ontology terms", job.id, len(parsed.terms))
-            return True
+            return
         result = process_job(job, deps, queue)
         queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
         check_cancelled(job, queue)
@@ -179,7 +207,6 @@ def run_once(queue: JobQueue, deps: PipelineDeps, worker_id: str) -> bool:
         detail, error = repr(exc), f"{type(exc).__name__}: {exc}"
         _quietly(job, lambda: queue.event(job.id, "error", "failed", {"error": detail}))
         _quietly(job, lambda: queue.fail(job, error))
-    return True
 
 
 def _quietly(job: ClaimedJob, write: Callable[[], None]) -> None:
@@ -305,6 +332,7 @@ def main() -> None:
         settings.converter_url or "disabled",
     )
 
+    heartbeat = PgJobHeartbeat(settings.database_url)
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
@@ -328,10 +356,11 @@ def main() -> None:
             if reaped := queue.reap_stale(settings.stale_lock_s):
                 log.warning("re-queued %d stale jobs", reaped)
             next_reap = now + 60
-        if not run_once(queue, deps, settings.worker_id):
+        if not run_once(queue, deps, settings.worker_id, heartbeat, settings.heartbeat_s):
             idle(queue, stop, settings.poll_interval_s)
 
     queue.close()
+    heartbeat.close()
     log.info("worker stopped")
 
 

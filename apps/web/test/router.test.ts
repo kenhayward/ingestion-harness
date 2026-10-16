@@ -18,6 +18,10 @@ describe('parseHash', () => {
     ['#/workbench/letter/samples', { name: 'project', projectId: 'letter', tab: 'samples' }],
     ['#/workbench/letter/brief', { name: 'project', projectId: 'letter', tab: 'brief' }],
     ['#/workbench/letter/survey', { name: 'project', projectId: 'letter', tab: 'survey' }],
+    [
+      '#/workbench/letter/survey/ontologies',
+      { name: 'project', projectId: 'letter', tab: 'survey', view: 'ontologies' },
+    ],
     ['#/workbench/letter/outputs', { name: 'project', projectId: 'letter', tab: 'outputs' }],
     ['#/workbench/letter/steps', { name: 'project', projectId: 'letter', tab: 'steps' }],
     ['#/workbench/letter/sections', { name: 'project', projectId: 'letter', tab: 'sections' }],
@@ -29,6 +33,13 @@ describe('parseHash', () => {
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
     ['#/account/password', { name: 'password' }],
+    ['#/account/profile', { name: 'profile', tab: 'details' }],
+    ['#/account/profile/password', { name: 'profile', tab: 'password' }],
+    [
+      '#/account/profile/github?github=linked',
+      { name: 'profile', tab: 'details', github: 'linked' },
+    ],
+    ['#/account/profile/github?github=nonsense', { name: 'profile', tab: 'details' }],
     ['#/upload', { name: 'home', focusUpload: true }],
     ['#/nowhere', { name: 'home' }],
   ])('%s', (hash, route) => {

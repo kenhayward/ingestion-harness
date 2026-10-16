@@ -157,6 +157,18 @@ describe('publish gate', () => {
     expect(logged).toMatchObject({ version: 1, overrideReason: null });
   });
 
+  it('sets the label and note given on the version it publishes (#144)', async () => {
+    const ctx = await project();
+    const res = await publish(ctx, { label: 'First release', note: 'Signed off by finance' });
+    expect(res.statusCode).toBe(201);
+    expect(await ctx.templates.get('letter', 1)).toMatchObject({
+      status: 'published',
+      label: 'First release',
+      note: 'Signed off by finance',
+    });
+    expect((await publish(ctx, { label: ' ' })).statusCode).toBe(400);
+  });
+
   it('does not count a holdout run of an earlier draft', async () => {
     const ctx = await project();
     await holdoutRun(ctx, 'Acme');

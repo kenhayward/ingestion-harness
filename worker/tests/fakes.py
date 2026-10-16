@@ -76,6 +76,8 @@ class FakeProvider:
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if isinstance(response, CompletionResult):  # e.g. a truncated reply
+            return response
         text = response if isinstance(response, str) else json.dumps(response)
         return CompletionResult(text=text, model=model, input_tokens=10, output_tokens=5)
 
@@ -106,6 +108,10 @@ class FakeQueue:
     step_runs: list[dict[str, Any]] = field(default_factory=list)
     #: Draft outputs recorded as soon as they were written (job id, outputs).
     drafts: list[tuple[str, list[RenderedOutput]]] = field(default_factory=list)
+    #: `suggest` jobs queued (project, params); suggest_removed: the ids each one replaced.
+    suggested: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    suggest_removed: list[str] = field(default_factory=list)
+    suggest_error: Exception | None = None
     #: Simulates an operator cancel: is_cancelled() returns cancel_when() for every job.
     cancel_when: Callable[[], bool] | None = None
     #: Timeouts passed to wait_for_work (it returns immediately).
@@ -168,6 +174,12 @@ class FakeQueue:
     def reap_stale(self, older_than_s: float) -> int:
         return 0
 
+    def queue_suggest(self, project_id: str, params: dict[str, Any]) -> tuple[str, list[str]]:
+        if self.suggest_error is not None:
+            raise self.suggest_error
+        self.suggested.append((project_id, params))
+        return f"suggest-{len(self.suggested)}", list(self.suggest_removed)
+
 
 @dataclass
 class FakeConverter:
@@ -210,6 +222,8 @@ class MemoryLlmConfigStore:
         self.settings: dict[str, tuple[str, bool]] = {}
         #: (provider, model_id) disabled by an admin: not offered even when curated
         self.disabled: set[tuple[str, str]] = set()
+        #: (provider, model_id) -> an admin's output limit (Models page)
+        self.limits: dict[tuple[str, str], int] = {}
         self._version = 0
         if seed is not None:
             self.seed(seed)
@@ -225,6 +239,7 @@ class MemoryLlmConfigStore:
             dict(self.choices),
             dict(self.settings),
             frozenset(self.disabled),
+            dict(self.limits),
         )
 
     def seed(self, seed: Seed) -> None:
@@ -274,10 +289,15 @@ class MemoryLlmConfigStore:
                 update={
                     "optional": True,
                     "models": sorted(
-                        m
-                        for (p, m), (curated, _) in self.curated.items()
-                        if p == n and curated and (p, m) not in self.disabled
+                        offered := [
+                            m
+                            for (p, m), (curated, _) in self.curated.items()
+                            if p == n and curated and (p, m) not in self.disabled
+                        ]
                     ),
+                    "max_output_tokens": {
+                        m: self.limits[(n, m)] for m in offered if (n, m) in self.limits
+                    },
                 }
             )
             for n in sorted(self.endpoints)
@@ -323,6 +343,14 @@ class MemoryLlmConfigStore:
     def disable_model(self, provider: str, model_id: str) -> None:
         before = self._snapshot()
         self.disabled.add((provider, model_id))
+        self._changed(before)
+
+    def set_output_limit(self, provider: str, model_id: str, limit: int | None) -> None:
+        before = self._snapshot()
+        if limit is None:
+            self.limits.pop((provider, model_id), None)
+        else:
+            self.limits[(provider, model_id)] = limit
         self._changed(before)
 
     def uncurate(self, provider: str, model_id: str) -> None:
@@ -571,11 +599,19 @@ class MemoryOntologyStore:
         self.status[(ontology_id, version)] = "parsing"
         return True
 
+    def ready(self, ontology_id: str, version: int) -> bool:
+        return self.status.get((ontology_id, version)) == "ready"
+
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
         self.saved[(ontology_id, version)] = parsed
         self.status[(ontology_id, version)] = "ready"
+        # Like Postgres: the version's terms are replaced and their embeddings cascade with them.
+        for key in [k for k in self.embeddings if k[:2] == (ontology_id, version)]:
+            del self.embeddings[key]
 
     def fail(self, ontology_id: str, version: int, error: str) -> None:
+        if self.status.get((ontology_id, version)) == "ready":
+            return  # like Postgres: a ready version never fails
         self.status[(ontology_id, version)] = "failed"
         self.errors[(ontology_id, version)] = error
 

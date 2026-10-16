@@ -241,10 +241,10 @@ def test_reading_a_document_reports_the_text_layer_then_each_ocr_page(setup) -> 
     assert queue.completed
     progress = [data for _, _, msg, data in queue.event_details if msg == PREPARE_PROGRESS]
     assert progress == [
-        {"stage": "text", "page": 2, "of": 2},
-        {"stage": "ocr", "page": 0, "of": 2},  # before the first page finishes
-        {"stage": "ocr", "page": 1, "of": 2},
-        {"stage": "ocr", "page": 2, "of": 2},
+        {"stage": "text", "page": 2, "of": 2, "pages": 2},
+        {"stage": "ocr", "page": 0, "of": 2, "pages": 2},  # before the first page finishes
+        {"stage": "ocr", "page": 1, "of": 2, "pages": 2},
+        {"stage": "ocr", "page": 2, "of": 2, "pages": 2},
     ]
 
 

@@ -16,6 +16,36 @@ function page(
 }
 
 describe('OntologiesPage', () => {
+  const chebi = ontologySummary({
+    id: 'chebi',
+    label: 'ChEBI lite',
+    embedding: { model: 'ryzen/bge-m3', version: 1, terms: 238190, embedded: 125568 },
+  });
+  const done = ontologySummary({
+    embedding: { model: 'ryzen/bge-m3', version: 1, terms: 5427, embedded: 5427 },
+  });
+
+  it("shows how far each ontology's embeddings are, as listed", async () => {
+    const api = page([chebi, done, ontologySummary({ id: 'none', label: 'Glossary' })]);
+    const card = await screen.findByRole('region', { name: 'Ontology ChEBI lite' });
+    expect(within(card).getByText('Embedded 125,568 of 238,190 terms (52%)')).toBeInTheDocument();
+    expect(within(card).getByRole('img', { name: 'Embeddings: 52%' })).toBeInTheDocument();
+    const pv = screen.getByRole('region', { name: 'Ontology Process validation' });
+    expect(within(pv).getByText('All 5,427 terms embedded')).toBeInTheDocument();
+    expect(within(pv).queryByRole('img', { name: /Embeddings/ })).toBeNull();
+    const none = screen.getByRole('region', { name: 'Ontology Glossary' });
+    expect(within(none).queryByText(/embedded/i)).toBeNull();
+    // Read when the page loads: nothing is importing, so nothing polls.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(api.listOntologies).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'List' }));
+    const row = within(screen.getByRole('table', { name: 'Ontologies' }))
+      .getByRole('link', { name: 'ChEBI lite' })
+      .closest('tr')!;
+    expect(within(row).getByText('Embedded 125,568 of 238,190 terms (52%)')).toBeInTheDocument();
+  });
+
   it('shows each ontology with its kinds, tags and newest version', async () => {
     page([
       ontologySummary({ localOnly: true }),
@@ -377,7 +407,15 @@ describe('OntologiesPage layout (handoff: header row, Cards / List)', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((c) => c.textContent),
-    ).toEqual(['Ontology', 'Id', 'Format and tags', 'Version', 'Contents', 'Actions']);
+    ).toEqual([
+      'Ontology',
+      'Id',
+      'Format and tags',
+      'Version',
+      'Contents',
+      'Embeddings',
+      'Actions',
+    ]);
     expect(screen.queryByRole('region', { name: /^Ontology / })).toBeNull();
     expect(table.querySelector('.ontology-card-icon')).toBeNull();
     // Long values are kept whole in a title.

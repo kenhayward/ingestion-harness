@@ -119,8 +119,8 @@ describe('SamplesTab', () => {
       new File(['%PDF-2'], 'two.pdf', { type: 'application/pdf' }),
     ];
     await userEvent.upload(await screen.findByLabelText('Add sample documents'), files);
-    expect(uploadSample).toHaveBeenCalledWith('letter', files[0], 'dev');
-    expect(uploadSample).toHaveBeenCalledWith('letter', files[1], 'dev');
+    expect(uploadSample).toHaveBeenCalledWith('letter', files[0], 'dev', expect.any(Function));
+    expect(uploadSample).toHaveBeenCalledWith('letter', files[1], 'dev', expect.any(Function));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'two.pdf: this PDF is already a sample of the project',
     );
@@ -133,7 +133,7 @@ describe('SamplesTab', () => {
     );
     const three = new File(['%PDF-3'], 'three.pdf', { type: 'application/pdf' });
     await userEvent.upload(screen.getByLabelText('Add sample documents'), three);
-    expect(uploadSample).toHaveBeenLastCalledWith('letter', three, 'holdout');
+    expect(uploadSample).toHaveBeenLastCalledWith('letter', three, 'holdout', expect.any(Function));
   });
 
   it('uploads Word documents too', async () => {
@@ -143,7 +143,7 @@ describe('SamplesTab', () => {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     await userEvent.upload(await screen.findByLabelText('Add sample documents'), word);
-    expect(uploadSample).toHaveBeenCalledWith('letter', word, 'dev');
+    expect(uploadSample).toHaveBeenCalledWith('letter', word, 'dev', expect.any(Function));
   });
 
   it('takes dropped files and skips what is not a PDF or Word document', async () => {
@@ -153,7 +153,9 @@ describe('SamplesTab', () => {
     const pdf = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
     const txt = new File(['hi'], 'notes.txt', { type: 'text/plain' });
     fireEvent.drop(zone, { dataTransfer: { files: [pdf, txt] } });
-    await waitFor(() => expect(uploadSample).toHaveBeenCalledWith('letter', pdf, 'dev'));
+    await waitFor(() =>
+      expect(uploadSample).toHaveBeenCalledWith('letter', pdf, 'dev', expect.any(Function)),
+    );
     expect(uploadSample).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'notes.txt: not a PDF or Word document',
@@ -330,6 +332,93 @@ describe('SamplesTab', () => {
       />,
     );
     expect(await screen.findByRole('note', { name: 'head starts here' })).toBeInTheDocument();
+  });
+});
+
+describe('SamplesTab progress (#142)', () => {
+  const pdf = (name: string) => new File(['%PDF-1'], name, { type: 'application/pdf' });
+
+  it('shows each preparing sample as a bar, and its page count once known', async () => {
+    tab(
+      fakeApi({
+        listSamples: vi.fn(async () => [
+          sampleView({ filename: 'ready.pdf', triage: triage(2, []) }),
+          sampleView({
+            filename: 'wip.pdf',
+            state: 'preparing',
+            prepareStatus: 'running',
+            triage: null,
+            prepare: { stage: 'ocr', page: 1, of: 3, pages: 5 },
+          }),
+          sampleView({
+            filename: 'next.pdf',
+            state: 'preparing',
+            prepareStatus: 'queued',
+            triage: null,
+          }),
+        ]),
+      }),
+    );
+    await screen.findByRole('listitem', { name: 'wip.pdf' });
+    expect(within(row('wip.pdf')).getByRole('img', { name: '5 pages' })).toHaveTextContent('5');
+    expect(
+      within(row('wip.pdf')).getByRole('img', { name: 'Preparing wip.pdf: 40%' }),
+    ).toBeInTheDocument();
+    expect(row('wip.pdf')).toHaveTextContent('40%');
+    expect(row('next.pdf')).toHaveTextContent('Waiting for a worker…');
+    expect(
+      within(row('next.pdf')).getByRole('img', { name: 'Preparing next.pdf: 0%' }),
+    ).toBeInTheDocument();
+    expect(within(row('ready.pdf')).queryByRole('img', { name: /^Preparing/ })).toBeNull();
+    const strip = screen.getByRole('region', { name: 'Preparing samples' });
+    expect(strip).toHaveTextContent('1 of 3 ready · 2 preparing');
+    expect(within(strip).getByRole('img', { name: 'All samples: 47%' })).toBeInTheDocument();
+  });
+
+  it('shows no strip once every sample is ready or failed', async () => {
+    tab(fakeApi({ listSamples: vi.fn(async () => [sampleView({ filename: 'a.pdf' })]) }));
+    await screen.findByRole('listitem', { name: 'a.pdf' });
+    expect(screen.queryByRole('region', { name: 'Preparing samples' })).toBeNull();
+  });
+
+  it('lists the files being uploaded with their progress, and refreshes after each one', async () => {
+    let finish: (() => void) | null = null;
+    const uploadSample = vi.fn(
+      (_p: string, _f: File, _r: string, onProgress?: (sent: number, total: number) => void) =>
+        new Promise<ReturnType<typeof sampleView>>((resolve) => {
+          onProgress?.(45, 100);
+          finish = () => resolve(sampleView());
+        }),
+    );
+    const listSamples = vi.fn(async () => []);
+    tab(fakeApi({ uploadSample, listSamples }));
+    await userEvent.upload(await screen.findByLabelText('Add sample documents'), [
+      pdf('one.pdf'),
+      pdf('two.pdf'),
+    ]);
+    const uploads = await screen.findByRole('list', { name: 'Uploads' });
+    expect(within(uploads).getByRole('listitem', { name: 'one.pdf' })).toHaveTextContent(
+      'Uploading — 45%',
+    );
+    expect(
+      within(uploads).getByRole('img', { name: 'Uploading one.pdf: 45%' }),
+    ).toBeInTheDocument();
+    expect(within(uploads).getByRole('listitem', { name: 'two.pdf' })).toHaveTextContent(
+      'Waiting to upload',
+    );
+    expect(screen.getByRole('region', { name: 'Preparing samples' })).toHaveTextContent(
+      '2 uploading',
+    );
+    const before = listSamples.mock.calls.length;
+    await act(async () => finish!());
+    // one.pdf is in: the list refreshes before two.pdf finishes.
+    await waitFor(() => expect(listSamples.mock.calls.length).toBe(before + 1));
+    expect(within(uploads).queryByRole('listitem', { name: 'one.pdf' })).toBeNull();
+    expect(within(uploads).getByRole('listitem', { name: 'two.pdf' })).toHaveTextContent(
+      'Uploading — 45%',
+    );
+    await act(async () => finish!());
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Uploads' })).toBeNull());
   });
 });
 

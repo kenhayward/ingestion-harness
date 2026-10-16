@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import { BriefBodySchema, stableJson, type GateHint } from '@ih/shared';
+import { BriefBodySchema, stableJson, type GateHint, type TemplateChangeInput } from '@ih/shared';
 import type {
   Brief,
   BriefBody,
@@ -143,12 +143,25 @@ export interface RemovedProject {
   documents: StoredObject[];
 }
 
+/** What `resetProject` writes back: the reset draft (none open: null) and the kept brief. */
+export interface ProjectReset {
+  draft: {
+    version: number;
+    definition: Record<string, unknown>;
+    change: TemplateChangeInput;
+  } | null;
+  /** The brief to keep as version 1; null: no brief. */
+  brief: BriefBody | null;
+}
+
 /** Persistence for workbench projects, samples and briefs (ADR 0007; migration 0008). */
 export interface WorkbenchRepo {
   listProjects(): Promise<WorkbenchProject[]>;
   getProject(id: string): Promise<WorkbenchProject | null>;
   /** Throws WorkbenchConflictError when the id is taken. */
   createProject(id: string, name: string): Promise<WorkbenchProject>;
+  /** Sets the project's display name; false for an unknown project. */
+  renameProject(id: string, name: string): Promise<boolean>;
   addSample(sample: NewSample): Promise<SampleRecord>;
   /** Oldest first. */
   listSamples(projectId: string): Promise<SampleRecord[]>;
@@ -237,6 +250,16 @@ export interface WorkbenchRepo {
     options?: { keepRetirement?: boolean },
   ): Promise<RemovedProject | 'published' | null>;
   /**
+   * Resets the project (Reset project, Overview tab) in one transaction: deletes its jobs
+   * except the samples' prepare jobs, its feedback, iterations, proposals, stage skips and
+   * confirmations, briefs, every reference of the type and the documents nothing uses any
+   * more; publications stay (their iteration is set null). Then the open draft (`reset.draft`)
+   * gets its new definition and a change log of only `reset.draft.change`, and `reset.brief`
+   * becomes brief version 1. Samples, the project's settings and pins stay. Files are the
+   * caller's. Null when the project is unknown. Locks as `deleteProject` does.
+   */
+  resetProject(id: string, reset: ProjectReset): Promise<RemovedProject | null>;
+  /**
    * Per project, a hash of everything the project overview reads (the project row, its jobs,
    * samples, proposals, skips, confirmations, briefs, iterations, publications, feedback, template versions and
    * references), and the latest activity time. Equal fingerprints mean an unchanged list row.
@@ -299,6 +322,13 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   /** Strictly increasing ISO times (the MemoryRepo's clock): stage states compare them. */
   private now(): string {
     return this.jobs.now();
+  }
+
+  async renameProject(id: string, name: string) {
+    const project = this.projects.get(id);
+    if (!project) return false;
+    this.projects.set(id, { ...project, name });
+    return true;
   }
 
   async createProject(id: string, name: string) {
@@ -588,16 +618,79 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     if (!this.projects.has(id)) return null;
     const versions = (await this.templates.list()).filter((t) => t.id === id);
     if (versions.some((t) => t.status === 'published')) return 'published';
+    // The project's jobs, and the type's project-less test jobs (Templates-page test uploads
+    // and regression runs of a type that was never published).
+    const jobs = this.removeJobs(
+      id,
+      (j) => j.projectId === id || (j.projectId === null && j.test && j.specId === id),
+    );
+    const ofProject = (r: { projectId: string }) => r.projectId === id;
+    for (const rows of [
+      this.feedback,
+      this.publications,
+      this.iterations,
+      this.proposals,
+      this.skips,
+      this.confirms,
+      this.briefs,
+    ] as { projectId: string }[][]) {
+      for (let i = rows.length - 1; i >= 0; i--) if (ofProject(rows[i]!)) rows.splice(i, 1);
+    }
+    for (const [sampleId, sample] of this.samples) {
+      if (sample.projectId === id) this.samples.delete(sampleId);
+    }
+    const repo = this.jobs;
+    repo.sampleDocuments.clear();
+    for (const sample of this.samples.values()) repo.sampleDocuments.add(sample.documentId);
+    const documents = this.removeReferencesAndDocuments(id);
+    // The type is gone: a stale retirement would block reusing the id (D11).
+    if (!options.keepRetirement) this.templates.retirements.delete(id);
+    this.projects.delete(id);
+    // ON DELETE CASCADE (migration 0022).
+    this.listCacheRows.delete(id);
+    for (const pins of this.pins.values()) pins.delete(id);
+    for (const t of versions) await this.templates.deleteDraft(id, t.version);
+    return { jobs, documents };
+  }
+
+  async resetProject(id: string, reset: ProjectReset): Promise<RemovedProject | null> {
+    if (!this.projects.has(id)) return null;
+    // The samples' prepare jobs stay: a sample's state comes from its prepare job.
+    const jobs = this.removeJobs(id, (j) => j.projectId === id && j.task !== 'prepare');
+    const ofProject = (r: { projectId: string }) => r.projectId === id;
+    for (const rows of [
+      this.feedback,
+      this.iterations,
+      this.proposals,
+      this.skips,
+      this.confirms,
+      this.briefs,
+    ] as { projectId: string }[][]) {
+      for (let i = rows.length - 1; i >= 0; i--) if (ofProject(rows[i]!)) rows.splice(i, 1);
+    }
+    // ON DELETE SET NULL (migration 0016).
+    this.publications.forEach((p, i) => {
+      if (p.projectId === id) this.publications[i] = { ...p, iterationId: null };
+    });
+    const documents = this.removeReferencesAndDocuments(id);
+    if (reset.draft) {
+      const { version, definition, change } = reset.draft;
+      if (await this.templates.deleteDraft(id, version)) {
+        await this.templates.create(id, version, definition, 'draft', change);
+      }
+    }
+    if (reset.brief) await this.saveBrief(id, reset.brief);
+    return { jobs, documents };
+  }
+
+  /** Deletes the jobs `owned` picks among the project's and test jobs, with their history. */
+  private removeJobs(id: string, owned: (j: JobSummary) => boolean): RemovedJob[] {
     const repo = this.jobs;
     const removed: RemovedJob[] = [];
     const draftsOf = (jobId: string) =>
       (repo.outputs.get(jobId) ?? [])
         .filter((o) => o.stage === 'draft')
         .map((o) => ({ bucket: o.bucket, key: o.key }));
-    // The project's jobs, and the type's project-less test jobs (Templates-page test uploads
-    // and regression runs of a type that was never published).
-    const owned = (j: JobSummary) =>
-      j.projectId === id || (j.projectId === null && j.test && j.specId === id);
     for (const job of [...repo.jobs.values()].filter(owned)) {
       removed.push({ jobId: job.id, draftObjects: draftsOf(job.id), inboxObject: null });
       repo.jobs.delete(job.id);
@@ -632,23 +725,15 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
         if (ref.sourceJobId === jobId) repo.references.set(ref.id, { ...ref, sourceJobId: null });
       }
     }
-    const ofProject = (r: { projectId: string }) => r.projectId === id;
-    for (const rows of [
-      this.feedback,
-      this.publications,
-      this.iterations,
-      this.proposals,
-      this.skips,
-      this.confirms,
-      this.briefs,
-    ] as { projectId: string }[][]) {
-      for (let i = rows.length - 1; i >= 0; i--) if (ofProject(rows[i]!)) rows.splice(i, 1);
-    }
-    for (const [sampleId, sample] of this.samples) {
-      if (sample.projectId === id) this.samples.delete(sampleId);
-    }
-    repo.sampleDocuments.clear();
-    for (const sample of this.samples.values()) repo.sampleDocuments.add(sample.documentId);
+    return removed;
+  }
+
+  /**
+   * Deletes the type's references, then its documents that no job, reference or sample uses;
+   * returns their inbox objects that no remaining document shares.
+   */
+  private removeReferencesAndDocuments(id: string): StoredObject[] {
+    const repo = this.jobs;
     for (const [refId, ref] of repo.references) {
       if (ref.templateId !== id) continue;
       repo.references.delete(refId);
@@ -680,14 +765,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
       const listed = documents.some((o) => o.bucket === doc.bucket && o.key === doc.objectKey);
       if (!shared && !listed) documents.push({ bucket: doc.bucket, key: doc.objectKey });
     }
-    // The type is gone: a stale retirement would block reusing the id (D11).
-    if (!options.keepRetirement) this.templates.retirements.delete(id);
-    this.projects.delete(id);
-    // ON DELETE CASCADE (migration 0022).
-    this.listCacheRows.delete(id);
-    for (const pins of this.pins.values()) pins.delete(id);
-    for (const t of versions) await this.templates.deleteDraft(id, t.version);
-    return { jobs: removed, documents };
+    return documents;
   }
 
   async projectFingerprints(): Promise<ProjectFingerprint[]> {
@@ -1080,6 +1158,68 @@ const FINGERPRINT_SQL = `
    ORDER BY p.id`;
 
 /** Postgres adapter (migration 0008). */
+/** The jobs `owned` (SQL over `jobs j`, `$1` = the project id) picks, with their draft outputs. */
+async function pgOwnedJobs(
+  client: pg.PoolClient,
+  id: string,
+  owned: string,
+): Promise<RemovedJob[]> {
+  const outputs = await client.query<{
+    id: string;
+    bucket: string | null;
+    object_key: string | null;
+  }>(
+    `SELECT j.id, o.bucket, o.object_key
+       FROM jobs j LEFT JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'draft'
+      WHERE ${owned}
+      ORDER BY j.created_at, j.id`,
+    [id],
+  );
+  const jobs = new Map<string, RemovedJob>();
+  for (const r of outputs.rows) {
+    const job = jobs.get(r.id) ?? { jobId: r.id, draftObjects: [], inboxObject: null };
+    if (r.bucket !== null && r.object_key !== null) {
+      job.draftObjects.push({ bucket: r.bucket, key: r.object_key });
+    }
+    jobs.set(r.id, job);
+  }
+  return [...jobs.values()];
+}
+
+/**
+ * Deletes the `owned` jobs, the type's references and its documents nothing uses any more;
+ * returns those documents' inbox objects that no remaining document shares.
+ */
+async function pgRemoveJobsAndDocuments(
+  client: pg.PoolClient,
+  id: string,
+  owned: string,
+): Promise<StoredObject[]> {
+  // job_events, job_outputs, review_edits and step_runs cascade (0001, 0002, 0004); other
+  // jobs' reference_id and references' source_job_id are set null (0005).
+  await client.query(`DELETE FROM jobs j WHERE ${owned}`, [id]);
+  // Other jobs' reference_id and copies' copied_from are set null (0005, 0018).
+  await client.query('DELETE FROM template_references WHERE template_id = $1', [id]);
+  const docs = await client.query<{ bucket: string; object_key: string }>(
+    `DELETE FROM documents d WHERE d.spec_id = $1
+        AND NOT EXISTS (SELECT 1 FROM jobs WHERE document_id = d.id)
+        AND NOT EXISTS (SELECT 1 FROM template_references WHERE document_id = d.id)
+        AND NOT EXISTS (SELECT 1 FROM workbench_samples WHERE document_id = d.id)
+      RETURNING d.bucket, d.object_key`,
+    [id],
+  );
+  const documents: StoredObject[] = [];
+  for (const d of docs.rows) {
+    if (documents.some((o) => o.bucket === d.bucket && o.key === d.object_key)) continue;
+    const shared = await client.query(
+      'SELECT 1 FROM documents WHERE bucket = $1 AND object_key = $2 LIMIT 1',
+      [d.bucket, d.object_key],
+    );
+    if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
+  }
+  return documents;
+}
+
 export class PgWorkbenchRepo implements WorkbenchRepo {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -1179,6 +1319,14 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       [projectId],
     );
     return rows.map(toPublication);
+  }
+
+  async renameProject(id: string, name: string) {
+    const { rowCount } = await this.pool.query(
+      'UPDATE workbench_projects SET name = $2 WHERE id = $1',
+      [id, name],
+    );
+    return (rowCount ?? 0) > 0;
   }
 
   async createProject(id: string, name: string) {
@@ -1505,25 +1653,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       const owned = `j.project_id = $1
          OR (j.project_id IS NULL AND j.test
              AND EXISTS (SELECT 1 FROM documents d WHERE d.id = j.document_id AND d.spec_id = $1))`;
-      const outputs = await client.query<{
-        id: string;
-        bucket: string | null;
-        object_key: string | null;
-      }>(
-        `SELECT j.id, o.bucket, o.object_key
-           FROM jobs j LEFT JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'draft'
-          WHERE ${owned}
-          ORDER BY j.created_at, j.id`,
-        [id],
-      );
-      const jobs = new Map<string, RemovedJob>();
-      for (const r of outputs.rows) {
-        const job = jobs.get(r.id) ?? { jobId: r.id, draftObjects: [], inboxObject: null };
-        if (r.bucket !== null && r.object_key !== null) {
-          job.draftObjects.push({ bucket: r.bucket, key: r.object_key });
-        }
-        jobs.set(r.id, job);
-      }
+      const jobs = await pgOwnedJobs(client, id, owned);
       // Children first (FKs from migrations 0008-0016). Feedback points at proposals and
       // iterations, publications at iterations, proposals at jobs.
       for (const table of [
@@ -1538,28 +1668,7 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       ]) {
         await client.query(`DELETE FROM ${table} WHERE project_id = $1`, [id]);
       }
-      // job_events, job_outputs, review_edits and step_runs cascade (0001, 0002, 0004); other
-      // jobs' reference_id and references' source_job_id are set null (0005).
-      await client.query(`DELETE FROM jobs j WHERE ${owned}`, [id]);
-      // Other jobs' reference_id and copies' copied_from are set null (0005, 0018).
-      await client.query('DELETE FROM template_references WHERE template_id = $1', [id]);
-      const docs = await client.query<{ bucket: string; object_key: string }>(
-        `DELETE FROM documents d WHERE d.spec_id = $1
-            AND NOT EXISTS (SELECT 1 FROM jobs WHERE document_id = d.id)
-            AND NOT EXISTS (SELECT 1 FROM template_references WHERE document_id = d.id)
-            AND NOT EXISTS (SELECT 1 FROM workbench_samples WHERE document_id = d.id)
-          RETURNING d.bucket, d.object_key`,
-        [id],
-      );
-      const documents: StoredObject[] = [];
-      for (const d of docs.rows) {
-        if (documents.some((o) => o.bucket === d.bucket && o.key === d.object_key)) continue;
-        const shared = await client.query(
-          'SELECT 1 FROM documents WHERE bucket = $1 AND object_key = $2 LIMIT 1',
-          [d.bucket, d.object_key],
-        );
-        if (!shared.rowCount) documents.push({ bucket: d.bucket, key: d.object_key });
-      }
+      const documents = await pgRemoveJobsAndDocuments(client, id, owned);
       // The type is gone: a stale retirement would block reusing the id (D11).
       if (!options.keepRetirement) {
         await client.query('DELETE FROM document_type_retirements WHERE type_id = $1', [id]);
@@ -1569,7 +1678,83 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       await client.query('DELETE FROM template_changes WHERE template_id = $1', [id]);
       await client.query(`DELETE FROM templates WHERE id = $1 AND status = 'draft'`, [id]);
       await client.query('COMMIT');
-      return { jobs: [...jobs.values()], documents };
+      return { jobs, documents };
+    } catch (err) {
+      failed = err;
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release(failed instanceof Error ? failed : undefined);
+    }
+  }
+
+  async resetProject(id: string, reset: ProjectReset): Promise<RemovedProject | null> {
+    const client = await this.pool.connect();
+    let failed: unknown = undefined;
+    try {
+      await client.query('BEGIN');
+      // The template rows, then the project, as deleteProject and publishDraft lock them.
+      await client.query('SELECT 1 FROM templates WHERE id = $1 ORDER BY version FOR UPDATE', [id]);
+      const found = await client.query(
+        'SELECT 1 FROM workbench_projects WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!found.rowCount) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+      // The samples' prepare jobs stay: a sample's state comes from its prepare job.
+      const owned = `j.project_id = $1 AND j.task <> 'prepare'`;
+      const jobs = await pgOwnedJobs(client, id, owned);
+      // Publications stay; their iteration_id is set null (0016).
+      for (const table of [
+        'workbench_feedback',
+        'workbench_iterations',
+        'workbench_proposals',
+        'workbench_stage_skips',
+        'workbench_stage_confirms',
+        'workbench_briefs',
+      ]) {
+        await client.query(`DELETE FROM ${table} WHERE project_id = $1`, [id]);
+      }
+      const documents = await pgRemoveJobsAndDocuments(client, id, owned);
+      if (reset.draft) {
+        const { version, definition, change } = reset.draft;
+        const updated = await client.query(
+          `UPDATE templates SET definition = $3, updated_at = now()
+            WHERE id = $1 AND version = $2 AND status = 'draft'`,
+          [id, version, JSON.stringify(definition)],
+        );
+        if (updated.rowCount) {
+          await client.query(
+            'DELETE FROM template_changes WHERE template_id = $1 AND version = $2',
+            [id, version],
+          );
+          await client.query(
+            `INSERT INTO template_changes
+               (template_id, version, source, stage, proposal_id, summary, diff, created_by)
+             VALUES ($1, $2, $3, $4, $5::uuid, $6, $7::jsonb, $8)`,
+            [
+              id,
+              version,
+              change.source,
+              change.stage,
+              change.proposalId,
+              change.summary,
+              JSON.stringify(change.diff),
+              change.by,
+            ],
+          );
+        }
+      }
+      if (reset.brief) {
+        await client.query(
+          'INSERT INTO workbench_briefs (project_id, version, body) VALUES ($1, 1, $2)',
+          [id, JSON.stringify(reset.brief)],
+        );
+      }
+      await client.query('COMMIT');
+      return { jobs, documents };
     } catch (err) {
       failed = err;
       await client.query('ROLLBACK').catch(() => {});

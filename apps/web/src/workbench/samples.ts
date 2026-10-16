@@ -54,12 +54,78 @@ export const PREPARE_ERROR_TEXT: Record<Exclude<PrepareError['code'], 'other'>, 
   too_large: 'The file is too large to convert. Split it or make it smaller, then upload it again.',
 };
 
+/**
+ * The document's page count once known (#142): prepared, or named by the worker's progress
+ * (`pages`; a text-layer event's `of` from older workers). Mid-OCR from an older worker: null.
+ */
+export function samplePages(s: SampleView): number | null {
+  if (s.triage) return s.triage.pageCount;
+  const p = s.prepare;
+  if (!p) return null;
+  return p.pages ?? (p.stage === 'text' ? p.of : null);
+}
+
+/**
+ * How far a sample's preparation is, 0..1 (#142); null for a failed one. Waiting 0, reading the
+ * document (converting a Word file too) 5%, text layer read 10%, then OCR pages to 100%. A file
+ * with a full text layer is ready right after the text layer.
+ */
+export function prepareFraction(s: SampleView): number | null {
+  if (s.state === 'ready') return 1;
+  if (s.state === 'failed') return null;
+  const p = s.prepare;
+  if (!p) return s.prepareStatus === 'running' ? 0.05 : 0;
+  if (p.stage === 'text' || p.of === 0) return 0.1;
+  return 0.1 + (0.9 * Math.min(p.page, p.of)) / p.of;
+}
+
+/** A file being uploaded, before it is a sample. */
+export interface UploadProgress {
+  sent: number;
+  total: number;
+  /** False while it waits for the files before it. */
+  started: boolean;
+}
+
+export const uploadFraction = (u: UploadProgress) =>
+  u.total > 0 ? Math.min(1, u.sent / u.total) : 0;
+
+export function uploadNote(u: UploadProgress): string {
+  if (!u.started) return 'Waiting to upload';
+  return `Uploading — ${Math.round(uploadFraction(u) * 100)}%`;
+}
+
+/**
+ * The strip above the lists while files upload or prepare (#142): counts, and how far the batch
+ * is (ready and failed samples count as done, uploads as not started). Null when nothing is.
+ */
+export function batchProgress(
+  samples: readonly SampleView[],
+  uploading: number,
+): { text: string; value: number } | null {
+  const preparing = samples.filter((s) => s.state === 'preparing').length;
+  if (preparing === 0 && uploading === 0) return null;
+  const ready = samples.filter((s) => s.state === 'ready').length;
+  const failed = samples.filter((s) => s.state === 'failed').length;
+  const total = samples.length + uploading;
+  const done = samples.reduce((n, s) => n + (prepareFraction(s) ?? 1), 0);
+  const parts = [`${ready} of ${total} ready`];
+  if (uploading) parts.push(`${uploading} uploading`);
+  if (preparing) parts.push(`${preparing} preparing`);
+  if (failed) parts.push(`${failed} failed`);
+  return { text: parts.join(' · '), value: done / total };
+}
+
 export type NoteTone = 'muted' | 'info' | 'danger';
 
 /** The row's one-line note: live progress, the failure reason, or how OCR read it. */
 export function prepareNote(s: SampleView): { text: string; tone: NoteTone } | null {
   if (s.state === 'preparing') {
     const p = s.prepare;
+    if (!p && s.prepareStatus === 'queued') return { text: 'Waiting for a worker…', tone: 'info' };
+    if (!p && s.prepareStatus === 'running') {
+      return { text: 'Preparing — reading the document…', tone: 'info' };
+    }
     if (!p) return { text: 'Preparing…', tone: 'info' };
     if (p.stage === 'text') {
       return { text: `Preparing — text layer read (${plural(p.of, 'page')})`, tone: 'info' };

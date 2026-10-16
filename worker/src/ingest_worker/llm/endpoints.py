@@ -409,7 +409,10 @@ class PgLlmConfigStore:
             f"""SELECT name, {_ENDPOINT_COLUMNS}, api_key_enc,
                        array(SELECT m.model_id FROM llm_models m
                               WHERE m.provider = e.name AND m.curated AND m.enabled
-                              ORDER BY m.model_id)
+                              ORDER BY m.model_id),
+                       (SELECT json_object_agg(m.model_id, m.max_output_tokens) FROM llm_models m
+                         WHERE m.provider = e.name AND m.curated AND m.enabled
+                           AND m.max_output_tokens IS NOT NULL)
                   FROM llm_endpoints e ORDER BY name"""
         ).fetchall()
         endpoints = [
@@ -427,6 +430,7 @@ class PgLlmConfigStore:
                     "enabled": r[9],
                     "apiKeyEnc": r[10],
                     "models": list(r[11]),
+                    "maxOutputTokens": r[12] or {},
                     "optional": True,
                 }
             )

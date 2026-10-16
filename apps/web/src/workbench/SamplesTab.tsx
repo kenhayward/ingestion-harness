@@ -7,13 +7,19 @@ import { Meter } from '../ui/Meter.js';
 import { Segmented } from '../ui/Segmented.js';
 import { SampleText } from './SampleText.js';
 import {
+  batchProgress,
   DEV_TARGET,
   HOLDOUT_MIN,
   holdoutLine,
   plural,
+  prepareFraction,
   prepareNote,
   sampleMeta,
+  samplePages,
   sampleSummary,
+  uploadFraction,
+  uploadNote,
+  type UploadProgress,
 } from './samples.js';
 import { SampleTag } from './tags.js';
 
@@ -84,6 +90,8 @@ export function SamplesTab({
   const [uploading, setUploading] = useState(false);
   const [addAs, setAddAs] = useState<SampleRole>('dev');
   const [over, setOver] = useState(false);
+  /** The files of the current upload not yet in (#142), in upload order. */
+  const [uploads, setUploads] = useState<(UploadProgress & { key: number; name: string })[]>([]);
 
   const [listError, setListError] = useState<string | null>(null);
   const alive = useRef(true);
@@ -143,15 +151,27 @@ export function SamplesTab({
     const slots = Math.max(0, MAX_SAMPLES - (samples?.length ?? 0));
     const accepted = files.filter(isSourceFile);
     for (const f of accepted.slice(slots)) failures.push(`${f.name}: no sample slots left`);
+    const batch = accepted.slice(0, slots);
     setUploading(true);
+    setUploads(
+      batch.map((f, key) => ({ key, name: f.name, sent: 0, total: f.size, started: false })),
+    );
+    const update = (key: number, next: Partial<UploadProgress>) =>
+      setUploads((rows) => rows.map((r) => (r.key === key ? { ...r, ...next } : r)));
     let uploaded = 0;
-    for (const file of accepted.slice(0, slots)) {
+    for (const [key, file] of batch.entries()) {
+      update(key, { started: true });
       try {
-        await api.uploadSample(projectId, file, addAs);
+        await api.uploadSample(projectId, file, addAs, (sent, total) =>
+          update(key, { sent, total }),
+        );
         uploaded += 1;
+        // Show it (preparing) while the rest upload.
+        await refresh();
       } catch (err) {
         failures.push(`${file.name}: ${(err as Error).message}`);
       }
+      setUploads((rows) => rows.filter((r) => r.key !== key));
     }
     setUploading(false);
     setError(failures.length ? failures.join('; ') : null);
@@ -173,6 +193,7 @@ export function SamplesTab({
   const ready = samples.filter((s) => s.state === 'ready');
   const shown =
     ready.find((s) => s.id === selected) ?? ready.find((s) => s.role === 'dev') ?? ready[0] ?? null;
+  const batch = batchProgress(samples, uploads.length);
   const devOk = summary.dev.total >= DEV_TARGET.min && summary.dev.total <= DEV_TARGET.max;
   const gateOk = summary.holdout.ready >= HOLDOUT_MIN;
 
@@ -271,6 +292,26 @@ export function SamplesTab({
         </div>
       </div>
       {(error ?? listError) && <p role="alert">{error ?? listError}</p>}
+      {batch && (
+        <section className="card batch-progress" aria-label="Preparing samples">
+          <div className="batch-progress-head">
+            <h3>Preparing samples</h3>
+            <span className="muted">{batch.text}</span>
+          </div>
+          <Meter label="All samples" value={batch.value} tone="accent" />
+          {uploads.length > 0 && (
+            <ul aria-label="Uploads" className="upload-rows">
+              {uploads.map((u) => (
+                <li key={u.key} aria-label={u.name} className="upload-row">
+                  <span className="upload-name">{u.name}</span>
+                  <span className="muted">{uploadNote(u)}</span>
+                  <Meter label={`Uploading ${u.name}`} value={uploadFraction(u)} tone="accent" />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <div className="samples-layout">
         <div className="sample-groups">
@@ -294,6 +335,8 @@ export function SamplesTab({
                   <ul aria-label={role === 'dev' ? 'Dev samples' : 'Holdout samples'}>
                     {rows.map((s) => {
                       const note = prepareNote(s);
+                      const pages = samplePages(s);
+                      const fraction = s.state === 'preparing' ? prepareFraction(s) : null;
                       const pill = PILL[s.state];
                       const isShown = shown?.id === s.id;
                       return (
@@ -305,11 +348,9 @@ export function SamplesTab({
                           <span
                             className="page-badge"
                             role="img"
-                            aria-label={
-                              s.triage ? plural(s.triage.pageCount, 'page') : 'Pages unknown'
-                            }
+                            aria-label={pages === null ? 'Pages unknown' : plural(pages, 'page')}
                           >
-                            {s.triage?.pageCount ?? '?'}
+                            {pages ?? '?'}
                           </span>
                           <div className="sample-main">
                             <div className="sample-title">
@@ -333,6 +374,16 @@ export function SamplesTab({
                             <p className="muted sample-meta">{sampleMeta(s)}</p>
                             {note && (
                               <p className={`sample-note tone-text-${note.tone}`}>{note.text}</p>
+                            )}
+                            {fraction !== null && (
+                              <div className="sample-progress">
+                                <Meter
+                                  label={`Preparing ${s.filename}`}
+                                  value={fraction}
+                                  tone="accent"
+                                />
+                                <span className="muted">{Math.round(fraction * 100)}%</span>
+                              </div>
                             )}
                             {s.role === 'holdout' && (
                               <p className="sample-note holdout-note">

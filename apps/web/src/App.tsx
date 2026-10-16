@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { GitHubLinkResult } from '@ih/shared';
 import type { Api, Me } from './api/client.js';
 import { ModelsPage } from './models/ModelsPage.js';
 import { LinkedDataPage } from './linked-data/LinkedDataPage.js';
@@ -7,6 +8,7 @@ import { OntologyPage } from './ontologies/OntologyPage.js';
 import { AccessPage } from './access/AccessPage.js';
 import { ChangePassword } from './access/ChangePassword.js';
 import { FailedSignInsNotice, type FailedSignIns } from './access/FailedSignInsNotice.js';
+import { ProfileDialog, type ProfileTab } from './access/ProfileDialog.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
 import { JobsPage } from './jobs/JobsPage.js';
@@ -123,6 +125,7 @@ export function App({
       launched={launched}
       install={install}
       notice={notice}
+      onMeChanged={check}
       onSignOut={signOut}
     />
   );
@@ -135,6 +138,7 @@ function SignedInApp({
   launched,
   install,
   notice,
+  onMeChanged,
   onSignOut,
 }: {
   api: Api;
@@ -144,9 +148,25 @@ function SignedInApp({
   install: InstallPrompt;
   /** Shown above every page until dismissed (the failed sign-ins notice). */
   notice: ReactNode;
+  /** The name or picture may have changed (Profile): re-read who is signed in. */
+  onMeChanged: () => void;
   onSignOut: () => void;
 }) {
   const route = useHashRoute();
+  /** The Profile dialog, over whatever page is open (docs/design/profile.md). */
+  const [profile, setProfile] = useState<{
+    tab: ProfileTab;
+    github?: GitHubLinkResult;
+  } | null>(null);
+  // Back from GitHub (or a link to #/account/profile): open the dialog over Home, and leave the
+  // address so a reload or Back does not open it again.
+  useEffect(() => {
+    if (route.name !== 'profile') return;
+    setProfile({ tab: route.tab, ...(route.github ? { github: route.github } : {}) });
+    if (route.github) onMeChanged();
+    window.history.replaceState(null, '', '#/');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }, [route, onMeChanged]);
   // Opened files are uploaded from Home: go there from any other page.
   useEffect(() => {
     const toHome = () => {
@@ -176,8 +196,6 @@ function SignedInApp({
     setQuerySection(section);
     setQuery('');
   }
-  /** Upload document was pressed: Home opens the file picker once, then clears this. */
-  const [pickPending, setPickPending] = useState(false);
   let page: ReactNode;
   if (route.name === 'review') {
     // Keyed: Next document must start fresh (no reason, note or page carried over).
@@ -240,6 +258,7 @@ function SignedInApp({
         api={api}
         projectId={route.projectId}
         tab={route.tab}
+        surveyView={route.tab === 'survey' ? route.view : undefined}
         onNavigate={navigate}
         pollMs={pollMs}
         role={me.role}
@@ -265,8 +284,6 @@ function SignedInApp({
         error={error}
         refresh={refresh}
         pollMs={pollMs}
-        pickPending={pickPending}
-        onPicked={() => setPickPending(false)}
         launched={launched}
         focusUpload={uploadFocus}
       />
@@ -281,14 +298,22 @@ function SignedInApp({
       onQuery={setQuery}
       install={install}
       notify={notify}
-      onUpload={() => {
-        navigate('#/');
-        setPickPending(true);
-      }}
+      onProfile={() => setProfile({ tab: 'details' })}
       onSignOut={onSignOut}
     >
       {notice}
       {page}
+      {profile && (
+        <ProfileDialog
+          api={api}
+          me={me}
+          initialTab={profile.tab}
+          githubResult={profile.github}
+          onChanged={onMeChanged}
+          onClose={() => setProfile(null)}
+          onSignOut={onSignOut}
+        />
+      )}
     </AppShell>
   );
 }

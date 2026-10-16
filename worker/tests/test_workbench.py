@@ -155,10 +155,10 @@ def test_prepare_reports_the_text_layer_then_each_ocr_page(fixture_specs_dir: Pa
 
     assert queue.completed
     assert events_named(queue, PREPARE_PROGRESS) == [
-        {"stage": "text", "page": 3, "of": 3},
-        {"stage": "ocr", "page": 0, "of": 2},  # before the first page finishes
-        {"stage": "ocr", "page": 1, "of": 2},
-        {"stage": "ocr", "page": 2, "of": 2},
+        {"stage": "text", "page": 3, "of": 3, "pages": 3},
+        {"stage": "ocr", "page": 0, "of": 2, "pages": 3},  # before the first page finishes
+        {"stage": "ocr", "page": 1, "of": 2, "pages": 3},
+        {"stage": "ocr", "page": 2, "of": 2, "pages": 3},
     ]
     assert events_named(queue, PREPARE_FAILED) == []
 
@@ -169,7 +169,9 @@ def test_prepare_without_ocr_reports_the_text_layer_only(fixture_specs_dir: Path
 
     run_once(queue, deps, "w1")
 
-    assert events_named(queue, PREPARE_PROGRESS) == [{"stage": "text", "page": 2, "of": 2}]
+    assert events_named(queue, PREPARE_PROGRESS) == [
+        {"stage": "text", "page": 2, "of": 2, "pages": 2}
+    ]
 
 
 @pytest.mark.parametrize(

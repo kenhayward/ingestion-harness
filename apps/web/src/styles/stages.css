@@ -1022,6 +1022,12 @@ label.inline.list-select {
   font-size: var(--ih-text-sm);
   font-weight: 600;
 }
+.delivery-targets {
+  margin: 0 0 16px;
+}
+.delivery-targets .chips {
+  align-items: center;
+}
 .outputs-card {
   margin-bottom: 16px;
   padding: 0;
@@ -1410,6 +1416,62 @@ label.inline.list-select {
 }
 .holdout-note {
   color: var(--ih-skip-fg);
+}
+/* Preparation progress (#142): a bar per preparing sample, and the batch strip with uploads. */
+.sample-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: var(--ih-text-sm);
+}
+.sample-progress .meter {
+  flex: 1;
+  max-width: 240px;
+}
+.batch-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.batch-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.batch-progress-head h3 {
+  margin: 0;
+}
+.upload-rows {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.upload-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(84px, 160px);
+  align-items: center;
+  gap: 12px;
+  font-size: var(--ih-text-sm);
+}
+.upload-name {
+  overflow: hidden;
+  font-family: var(--ih-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .upload-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .upload-row .meter {
+    grid-column: 1 / -1;
+  }
 }
 .sample-actions {
   display: flex;
@@ -1986,15 +2048,9 @@ label.inline.list-select {
 /* Survey (handoff §3) */
 .survey-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
-}
-.survey-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  min-width: 0;
 }
 .survey-decision {
   grid-column: 1 / -1;
@@ -2132,7 +2188,7 @@ label.inline.list-select {
 .survey-anatomy h3 {
   font-weight: 600;
 }
-.survey-main > *,
+.survey-found,
 .survey-anatomy,
 .survey-card-head > * {
   min-width: 0;
@@ -2145,6 +2201,12 @@ label.inline.list-select {
 .survey-candidates .table-scroll td {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+/* Kind, Name and In brief take the width of their contents; What and Where wrap. */
+.survey-candidates .table-scroll .fit {
+  width: 1%;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .survey-found,
 .survey-questions,
@@ -3425,4 +3487,61 @@ label.inline.list-select {
   .unsaved-actions {
     margin-left: 0;
   }
+}
+
+/* Survey tabs: Findings, Questions, Candidates, Ontologies */
+.survey-tabs [role='tab'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.survey-panel-ontologies .survey-ontologies {
+  margin-top: 0;
+}
+.survey-tab > .survey-decision {
+  margin-top: 16px;
+}
+
+/* Recipe editor: Versions sub-tab (#144). */
+.versions-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.versions-list > li {
+  padding: 10px 0;
+  border-top: 1px solid var(--ih-border);
+}
+.version-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+}
+.version-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.version-when {
+  margin-left: auto;
+}
+.version-note,
+.version-by {
+  margin: 4px 0 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.version-actions,
+.version-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+.version-form {
+  display: grid;
+  gap: 4px;
+  max-width: 560px;
+  margin-top: 8px;
 }

@@ -1,4 +1,5 @@
 import type {
+  EmbeddingProgress,
   OntologyStats,
   OntologyStatus,
   OntologyTerm,
@@ -50,6 +51,20 @@ export function versionStatusText(v: OntologyVersionView): string {
   if (v.status === 'failed') return `Import failed: ${v.error ?? 'unknown error'}`;
   return statsLine(v.stats);
 }
+
+const count = (n: number) => n.toLocaleString('en-GB');
+
+/** How far an ontology's embeddings are, or null when there is nothing to say. */
+export function embeddingText(e: EmbeddingProgress | null): string | null {
+  if (!e || e.terms === 0) return null;
+  if (e.embedded >= e.terms)
+    return `All ${count(e.terms)} ${e.terms === 1 ? 'term' : 'terms'} embedded`;
+  return `Embedded ${count(e.embedded)} of ${count(e.terms)} terms (${embeddedPercent(e)}%)`;
+}
+
+/** Whole percent embedded, rounded down: 99.9% is not done. */
+export const embeddedPercent = (e: EmbeddingProgress) =>
+  Math.floor((100 * e.embedded) / Math.max(1, e.terms));
 
 export function groupCount(stats: OntologyStats | null, group: TermGroup): number {
   if (!stats) return 0;

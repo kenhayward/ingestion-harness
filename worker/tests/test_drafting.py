@@ -154,6 +154,47 @@ def make(
     return provider, store, deps
 
 
+@pytest.mark.parametrize(("limit", "budget"), [(None, 16_000), (48_000, 48_000)])
+def test_a_drafting_reply_may_use_its_models_output_limit(
+    fixture_specs_dir: Path, limit: int | None, budget: int
+) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    limits = {} if limit is None else {"big": limit}
+    deps = dataclasses.replace(
+        deps,
+        models=ModelRegistry(
+            {"drafter": provider},
+            {"drafter": ProviderConfig(name="drafter", kind="openai-chat", location="local",
+                                       maxOutputTokens=limits)},  # type: ignore[arg-type]
+            {"draft": "drafter/big"},
+        ),
+    )  # fmt: skip
+    provider.responses = [SURVEY_BODY]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert provider.calls[0][1].max_tokens == budget
+
+
+def test_a_drafting_reply_cut_off_at_the_limit_says_where_to_raise_it(
+    fixture_specs_dir: Path,
+) -> None:
+    from ingest_worker.llm.base import CompletionResult
+
+    provider, _, deps = make(fixture_specs_dir)
+    cut = CompletionResult(text='{"notes": "32 tables', model="big", truncated=True)
+    provider.responses = [cut]
+    queue = FakeQueue(jobs=[draft_job(stage="outputs")])
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert reason == (
+        "The drafting model's reply was cut off at its output limit (16,000 tokens). "
+        "An admin can raise the model's Max output tokens on the Models page, or the stage "
+        "can be run again with less to propose."
+    )
+    assert "chunkPages" not in reason
+
+
 def test_survey_job_writes_the_validated_body(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [SURVEY_BODY]
@@ -752,14 +793,19 @@ def test_revise_job_whose_feedback_has_no_ids_still_runs(fixture_specs_dir: Path
     assert "answers" not in body["changes"][0]
 
 
-def test_survey_job_also_writes_ontology_suggestions(fixture_specs_dir: Path) -> None:
+def test_a_survey_queues_its_ontology_suggestions_and_finishes(fixture_specs_dir: Path) -> None:
+    """The survey finishes when the model replies: matching its candidates against the library
+    (minutes on a large one) is a `suggest` job of its own, whose record is the survey's."""
+    from ingest_worker.queue import ClaimedJob
     from ingest_worker.storage import ontology_suggestions_key
 
-    from .fakes import MemoryOntologyStore
     from .test_ontology_suggest import library_store
 
     provider, store, deps = make(fixture_specs_dir)
     ontologies, _ = library_store()
+    searched: list[str] = []
+    lexical = ontologies.lexical_best
+    ontologies.lexical_best = lambda *a, **k: searched.append("x") or lexical(*a, **k)  # type: ignore[method-assign]
     deps = dataclasses.replace(deps, ontologies=ontologies)
     body = {**SURVEY_BODY, "candidates": [
         {"name": "active_substance", "description": "", "where": "", "kind": "table", "seenIn": {"n": 1, "of": 1}},
@@ -767,25 +813,70 @@ def test_survey_job_also_writes_ontology_suggestions(fixture_specs_dir: Path) ->
     ]}  # fmt: skip
     provider.responses = [body]
     library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
-    queue = FakeQueue(jobs=[draft_job(library=library, pinned=[])])
+    pinned = [{"ontologyId": "domain", "version": 1}]
+    queue = FakeQueue(jobs=[draft_job(library=library, pinned=pinned)])
     run_once(queue, deps, "w1")
-    assert queue.completed
-    record = json.loads(store.get("runs", ontology_suggestions_key("letter", "job-d")))
+
+    assert queue.completed and searched == []  # nothing matched while the survey ran
+    assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
+    [(project, params)] = queue.suggested
+    assert project == "letter"
+    assert params == {
+        "surveyProposalId": "job-d",
+        "candidates": [
+            {"name": "active_substance", "description": "", "kind": "table"},
+            {"name": "batch_number", "description": "", "kind": "field"},
+        ],
+        "library": library,
+        "pinned": pinned,
+        "dataPolicy": "local",
+    }
+
+    suggest = ClaimedJob(
+        "job-s", "", "letter", 0, "", "", None, 1, 3, task="suggest", project_id="letter",
+        params=params,
+    )  # fmt: skip
+    queue = FakeQueue(jobs=[suggest])
+    run_once(queue, deps, "w1")
+    record = json.loads(store.get("runs", ontology_suggestions_key("letter", "job-s")))
     assert record["surveyProposalId"] == "job-d"
-    assert [s["ontologyId"] for s in record["suggestions"]] == ["domain"]
-    assert isinstance(ontologies, MemoryOntologyStore)
+    assert [s["ontologyId"] for s in record["pinned"]] == ["domain"]
 
 
-def test_failed_suggestions_never_fail_the_survey(fixture_specs_dir: Path) -> None:
+def test_a_survey_replaces_the_projects_earlier_suggest_job_and_its_record(
+    fixture_specs_dir: Path,
+) -> None:
+    """One `suggest` job per project, as the API's Refresh keeps it: the one it replaces goes,
+    with its record."""
+    from ingest_worker.storage import ontology_suggestions_key
+
     from .test_ontology_suggest import library_store
 
     provider, store, deps = make(fixture_specs_dir)
     ontologies, _ = library_store()
-    ontologies.lexical_best = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("index down"))  # type: ignore[method-assign]
+    deps = dataclasses.replace(deps, ontologies=ontologies)
+    store.put("runs", ontology_suggestions_key("letter", "old-s"), b"{}", "application/json")
+    provider.responses = [SURVEY_BODY]
+    library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
+    queue = FakeQueue(jobs=[draft_job(library=library)])
+    queue.suggest_removed = ["old-s"]
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(queue.suggested) == 1
+    assert store.get_optional("runs", ontology_suggestions_key("letter", "old-s")) is None
+
+
+def test_a_survey_whose_suggestions_cannot_be_queued_still_finishes(
+    fixture_specs_dir: Path,
+) -> None:
+    from .test_ontology_suggest import library_store
+
+    provider, store, deps = make(fixture_specs_dir)
+    ontologies, _ = library_store()
     deps = dataclasses.replace(deps, ontologies=ontologies)
     provider.responses = [SURVEY_BODY]
     library = [{"id": "domain", "version": 1, "label": "Domain", "terms": 3}]
     queue = FakeQueue(jobs=[draft_job(library=library)])
+    queue.suggest_error = ConnectionError("database went away")
     run_once(queue, deps, "w1")
     assert queue.completed
     assert store.get("runs", drafting_key("letter", "job-d"))
@@ -800,3 +891,4 @@ def test_survey_without_a_library_writes_no_suggestions(fixture_specs_dir: Path)
     queue = FakeQueue(jobs=[draft_job()])
     run_once(queue, deps, "w1")
     assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
+    assert queue.suggested == []

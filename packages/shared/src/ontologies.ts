@@ -185,6 +185,26 @@ export const OntologySummarySchema = z.object({
 });
 export type OntologySummary = z.infer<typeof OntologySummarySchema>;
 
+/**
+ * How far the worker has embedded an ontology's newest ready version under the current
+ * embedding model (the setting): read when the library is listed, never pushed.
+ */
+export const EmbeddingProgressSchema = z.object({
+  model: z.string(),
+  version: z.number().int(),
+  /** Its terms the worker embeds: every kind but shapes. */
+  terms: z.number().int(),
+  /** Those with an embedding under `model`. */
+  embedded: z.number().int(),
+});
+export type EmbeddingProgress = z.infer<typeof EmbeddingProgressSchema>;
+
+/** A row of `GET /api/ontologies`: null without an embedding model or a ready version. */
+export const OntologyListItemSchema = OntologySummarySchema.extend({
+  embedding: EmbeddingProgressSchema.nullable(),
+});
+export type OntologyListItem = z.infer<typeof OntologyListItemSchema>;
+
 export const OntologyDetailSchema = OntologySummarySchema.extend({
   /** Newest first. */
   versions: z.array(OntologyVersionViewSchema),

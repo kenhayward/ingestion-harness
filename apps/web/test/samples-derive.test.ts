@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { SampleView } from '@ih/shared';
 import {
+  batchProgress,
   formatBytes,
   holdoutLine,
+  prepareFraction,
   prepareNote,
   sampleMeta,
+  samplePages,
   sampleSummary,
+  uploadNote,
 } from '../src/workbench/samples.js';
 import { sampleView } from './fake-api.js';
 
@@ -82,10 +86,97 @@ describe('sampleMeta', () => {
   });
 });
 
+describe('samplePages', () => {
+  it.each<[string, Partial<SampleView>, number | null]>([
+    ['prepared', { triage: triage(4, []) }, 4],
+    [
+      'reading OCR pages, the worker named the total',
+      { state: 'preparing', triage: null, prepare: { stage: 'ocr', page: 1, of: 2, pages: 7 } },
+      7,
+    ],
+    [
+      'text layer read (an older worker)',
+      { state: 'preparing', triage: null, prepare: { stage: 'text', page: 5, of: 5 } },
+      5,
+    ],
+    [
+      'OCR under way (an older worker): only the OCR pages are known',
+      { state: 'preparing', triage: null, prepare: { stage: 'ocr', page: 1, of: 2 } },
+      null,
+    ],
+    ['nothing read yet', { state: 'preparing', triage: null, prepare: null }, null],
+  ])('%s', (_name, o, pages) => {
+    expect(samplePages(sampleView(o))).toBe(pages);
+  });
+});
+
+describe('prepareFraction', () => {
+  const preparing = (o: Partial<SampleView>) =>
+    sampleView({ state: 'preparing', triage: null, prepareStatus: 'running', ...o });
+  it.each<[string, SampleView, number | null]>([
+    ['ready', sampleView(), 1],
+    ['failed: no bar', sampleView({ state: 'failed', triage: null }), null],
+    ['waiting for a worker', preparing({ prepareStatus: 'queued' }), 0],
+    ['reading the document', preparing({ prepare: null }), 0.05],
+    ['text layer read', preparing({ prepare: { stage: 'text', page: 4, of: 4 } }), 0.1],
+    ['OCR 1 of 4 pages', preparing({ prepare: { stage: 'ocr', page: 1, of: 4 } }), 0.325],
+    ['OCR all pages', preparing({ prepare: { stage: 'ocr', page: 4, of: 4 } }), 1],
+    ['OCR of nothing', preparing({ prepare: { stage: 'ocr', page: 0, of: 0 } }), 0.1],
+  ])('%s', (_name, s, fraction) => {
+    expect(prepareFraction(s)).toBe(fraction);
+  });
+});
+
+describe('uploadNote', () => {
+  it.each([
+    [{ sent: 0, total: 100, started: false }, 'Waiting to upload'],
+    [{ sent: 45, total: 100, started: true }, 'Uploading — 45%'],
+    [{ sent: 0, total: 0, started: true }, 'Uploading — 0%'],
+  ])('%j reads %s', (u, text) => {
+    expect(uploadNote(u)).toBe(text);
+  });
+});
+
+describe('batchProgress', () => {
+  it('is null with nothing uploading or preparing', () => {
+    expect(batchProgress([sampleView(), sampleView({ state: 'failed' })], 0)).toBeNull();
+  });
+
+  it('counts ready, uploading, preparing and failed, and averages how far each is', () => {
+    const samples = [
+      sampleView(),
+      sampleView({ state: 'failed', triage: null }),
+      sampleView({ state: 'preparing', prepareStatus: 'queued', triage: null }),
+      sampleView({
+        state: 'preparing',
+        prepareStatus: 'running',
+        triage: null,
+        prepare: { stage: 'ocr', page: 2, of: 4 },
+      }),
+    ];
+    // ready 1 + failed 1 (done) + 0 + 0.55, plus two uploads at 0, over 6.
+    expect(batchProgress(samples, 2)).toEqual({
+      text: '1 of 6 ready · 2 uploading · 2 preparing · 1 failed',
+      value: 2.55 / 6,
+    });
+    expect(batchProgress(samples.slice(2), 0)!.text).toBe('0 of 2 ready · 2 preparing');
+  });
+});
+
 describe('prepareNote', () => {
   it.each<[string, Partial<SampleView>, ReturnType<typeof prepareNote>]>([
     [
-      'queued or just claimed',
+      'waiting for a worker',
+      { state: 'preparing', prepareStatus: 'queued', triage: null, prepare: null },
+      { text: 'Waiting for a worker…', tone: 'info' },
+    ],
+    [
+      'just claimed: reading (or converting) the document',
+      { state: 'preparing', prepareStatus: 'running', triage: null, prepare: null },
+      { text: 'Preparing — reading the document…', tone: 'info' },
+    ],
+    [
+      'preparing, status unknown (an older API)',
       { state: 'preparing', triage: null, prepare: null },
       { text: 'Preparing…', tone: 'info' },
     ],
