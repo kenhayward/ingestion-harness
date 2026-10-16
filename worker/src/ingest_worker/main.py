@@ -40,7 +40,9 @@ from .pipeline import (
     load_definition,
     process_job,
     publish_outputs,
+    target_named,
 )
+from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource
 from .specs import LoadedTemplate, load_specs
@@ -102,9 +104,8 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
         if job.task == "publish":
             check_cancelled(job, queue)
 
-            def record(outputs: list[RenderedOutput]) -> None:
-                if deps.target is not None and not job.test:  # approved test runs: not delivered
-                    queue.record_published(job, outputs, deps.target.bucket)
+            def record(outputs: list[RenderedOutput], target: Target) -> None:
+                queue.record_published(job, outputs, target)  # test runs never get here
 
             try:
                 published = publish_job(job, deps, queue, record)
@@ -187,11 +188,14 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
             queue.await_review(job, result.outputs, deps.buckets.outputs, reasons)
             log.info("job %s awaiting review: %s", job.id, "; ".join(reasons))
         else:
-            published = [] if job.test else publish_outputs(deps, result.delivered())
-            if deps.target is not None and published:
-                queue.record_published(job, published, deps.target.bucket)
+            # The target of the job's recipe version, resolved before anything is delivered (a
+            # missing one sends the job to review); test runs deliver nothing and resolve none.
+            target = None if job.test else target_named(deps, result.publish_to)
+            published = [] if target is None else publish_outputs(deps, result.delivered(), target)
+            if target is not None and published:
+                queue.record_published(job, published, target)
                 if result.deliver_graph is not None:
-                    result.deliver_graph()
+                    result.deliver_graph(target)
             queue.complete(job, result.outputs, deps.buckets.outputs)
             log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
     except JobCancelled:
@@ -222,10 +226,10 @@ def publish_job(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
-    on_published: Callable[[list[RenderedOutput]], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target], None] | None = None,
 ) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
-    reference) keeps the reviewed document but is never delivered to the target."""
+    reference) keeps the reviewed document but is never delivered to a target."""
     loaded = load_definition(job, deps, queue)
     if not isinstance(loaded, LoadedTemplate):
         raise DocumentError("only documents run by a recipe go through review/publish")
@@ -278,6 +282,16 @@ def main() -> None:
         if llm_config.ocr and ocr_config is not None
         else None
     )
+    # Publishing targets: .env seeds the default once, then the database decides (own
+    # connection, re-opened when lost; refreshed with the LLM config).
+    target_store = PgPublishTargetStore.connect(settings.database_url)
+    seed_default_target(target_store, os.environ)
+    targets = LiveTargets(
+        target_store,
+        S3Settings(
+            settings.s3_endpoint, settings.s3_region, settings.s3_access_key, settings.s3_secret_key
+        ),
+    )
     # The ontology library and the Linked data settings share one autocommit connection.
     library = psycopg.connect(settings.database_url, autocommit=True)
     deps = PipelineDeps(
@@ -289,16 +303,7 @@ def main() -> None:
         extract_text=extract_pages,
         buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
         ocr=ocr,
-        target=Target(
-            store=S3ObjectStore(
-                settings.target_endpoint,
-                settings.target_region,
-                settings.target_access_key,
-                settings.target_secret_key,
-            ),
-            bucket=settings.target_bucket,
-            prefix=settings.target_prefix,
-        ),
+        targets=targets,
         converter=(GotenbergConverter(settings.converter_url) if settings.converter_url else None),
         example_template=(
             settings.example_template.read_text(encoding="utf-8")
@@ -346,6 +351,8 @@ def main() -> None:
             if refresh_models(live, deps):
                 log.info("LLM config changed: providers=%s", deps.models.provider_names)
                 next_discovery = now  # list the models of new or moved endpoints now
+            if targets.refresh():
+                log.info("publishing targets changed")
             next_config_check = now + CONFIG_CHECK_S
         if now >= next_discovery:
             discovered = deps.models.discover()

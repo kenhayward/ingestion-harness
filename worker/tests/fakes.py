@@ -119,6 +119,7 @@ class FakeQueue:
     event_details: list[tuple[str, str, str, dict[str, Any]]] = field(default_factory=list)
     models: list[ModelDescriptor] = field(default_factory=list)
     awaiting: list[tuple[str, list[RenderedOutput], list[str]]] = field(default_factory=list)
+    #: Published outputs recorded (job id, outputs, the publishing target's id).
     published: list[tuple[str, list[RenderedOutput], str]] = field(default_factory=list)
     edits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -160,8 +161,10 @@ class FakeQueue:
     def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
         self.drafts.append((job.id, outputs))
 
-    def record_published(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
-        self.published.append((job.id, outputs, bucket))
+    def record_published(
+        self, job: ClaimedJob, outputs: list[RenderedOutput], target: Target
+    ) -> None:
+        self.published.append((job.id, outputs, target.id))
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         return self.edits.get(job_id, [])
@@ -709,15 +712,17 @@ class MemoryPublishTargetStore:
 
 
 class FakeTargets:
-    """Stands in for LiveTargets: a fixed map of target id to Target."""
+    """Stands in for LiveTargets: a fixed map of target id to Target (`gets`: the ids asked for)."""
 
     def __init__(self, targets: dict[str, Target]) -> None:
         self.targets = targets
+        self.gets: list[str] = []
 
     def refresh(self) -> bool:
         return False
 
     def get(self, target_id: str) -> Target:
+        self.gets.append(target_id)
         try:
             return self.targets[target_id]
         except KeyError:

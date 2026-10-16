@@ -16,7 +16,7 @@ from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, ontology_normalized_key
 from ingest_worker.template import Template
 
-from .fakes import FakeGraphStore, FakeQueue, MemoryLinkedDataSettings
+from .fakes import FakeGraphStore, FakeQueue, FakeTargets, MemoryLinkedDataSettings
 
 BASE = "https://data.acme.example/"
 NEW_BASE = "https://data.acme.com/ct/"
@@ -70,33 +70,37 @@ def setup(tmp_path: Path, *jobs: DeliveredJob) -> tuple[PipelineDeps, MemoryRebu
         models=ModelRegistry({}, {}, {}),
         extract_text=lambda _pdf: [],
         buckets=Buckets("inbox", "outputs", "runs"),
-        target=Target(store=target, bucket="published", prefix="pvp/"),
+        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
         linked_data=MemoryLinkedDataSettings(BASE),
         graph_registry=MemoryGraphRegistry(),
         graph_store=FakeGraphStore(),
     )
     store.put("runs", ontology_normalized_key("acme", 1), ONTOLOGY, "application/n-triples")
     for j in jobs:
-        reviewed = {
-            "document_id": j.document_id,
-            "job_id": j.job_id,
-            "fields": {"sender": {"value": f"Sender {j.sha256[:2]}", "evidence": None, "page": 1}},
-            "tables": {},
-            "issues": [],
-            "models": {"head": "main"},
-            "review": {"reviewer": "kh"},
-        }
-        store.put(
-            "runs",
-            f"{j.job_id}/reviewed-document.json",
-            json.dumps(reviewed).encode(),
-            "application/json",
-        )
+        setup_reviewed(deps, j)
     source = MemoryRebuildSource(
         jobs=list(jobs),
         templates={1: TEMPLATE, 2: MAPPED},
     )
     return deps, source
+
+
+def setup_reviewed(deps: PipelineDeps, j: DeliveredJob) -> None:
+    reviewed = {
+        "document_id": j.document_id,
+        "job_id": j.job_id,
+        "fields": {"sender": {"value": f"Sender {j.sha256[:2]}", "evidence": None, "page": 1}},
+        "tables": {},
+        "issues": [],
+        "models": {"head": "main"},
+        "review": {"reviewer": "kh"},
+    }
+    deps.store.put(
+        "runs",
+        f"{j.job_id}/reviewed-document.json",
+        json.dumps(reviewed).encode(),
+        "application/json",
+    )
 
 
 def store_of(deps: PipelineDeps) -> FakeGraphStore:
@@ -218,3 +222,61 @@ def test_remint_drops_the_old_graph_first_and_a_failure_is_retried_by_the_next_r
         f"remint under {NEW_BASE}: 2 re-minted, 0 already there, 0 failed"
     )
     assert not any(iri.startswith(f"{BASE}graph/source/") for iri in store_of(deps).graphs)
+
+
+# --- publishing targets: the job's own recipe version decides where copies go -----------------
+
+
+def to_finance(deps: PipelineDeps, source: MemoryRebuildSource) -> MemoryObjectStore:
+    """v1 (the jobs' version) names finance-lake (prefix fin/); its store."""
+    assert isinstance(deps.targets, FakeTargets)
+    finance = MemoryObjectStore()
+    deps.targets.targets["finance-lake"] = Target(finance, "finance", "fin/", "finance-lake")
+    source.templates[1] = {**TEMPLATE, "delivery": {"publishTo": "finance-lake"}}
+    return finance
+
+
+def default_store(deps: PipelineDeps) -> MemoryObjectStore:
+    assert isinstance(deps.targets, FakeTargets)
+    store = deps.targets.targets["default"].store
+    assert isinstance(store, MemoryObjectStore)
+    return store
+
+
+def test_backfill_publishes_to_the_target_of_the_jobs_version(tmp_path: Path) -> None:
+    from ingest_worker.storage import graph_version_key
+
+    deps, source = setup(tmp_path, job(1, "aa" * 32))
+    finance = to_finance(deps, source)
+    assert backfill(deps, FakeQueue(), source, "letter")[-1].endswith("1 published, 0 skipped")
+    assert ("finance", "fin/" + graph_version_key("aa" * 32, "letter", 1)) in finance.objects
+    assert not default_store(deps).objects
+    [current] = registry_of(deps).all_current()
+    assert current.target_id == "finance-lake"
+
+
+def test_rebuild_reads_each_copy_from_its_recorded_target(tmp_path: Path) -> None:
+    deps, source = setup(tmp_path, job(1, "aa" * 32), job(2, "bb" * 32))
+    backfill(deps, FakeQueue(), source, "letter")  # both to the default
+    finance = to_finance(deps, source)
+    source.jobs.append(job(3, "cc" * 32))
+    setup_reviewed(deps, job(3, "cc" * 32))
+    backfill(deps, FakeQueue(), source, "letter")  # the third to finance-lake
+    assert len(finance.objects) == 1
+    store = store_of(deps)
+    before = dict(store.graphs)
+    store.graphs.clear()
+    lines = rebuild(deps)
+    assert store.graphs == before
+    assert lines[-1] == "rebuild: 1 ontology graphs, 3 document graphs, 0 missing"
+
+
+def test_remint_publishes_to_the_target_of_the_jobs_version(tmp_path: Path) -> None:
+    deps, source = setup(tmp_path, job(1, "aa" * 32))
+    finance = to_finance(deps, source)
+    backfill(deps, FakeQueue(), source, "letter")
+    deps.linked_data = MemoryLinkedDataSettings(NEW_BASE)
+    remint(deps, FakeQueue(), source)
+    current = registry_of(deps).current("aa" * 32, "letter")
+    assert current is not None and current.version == 2 and current.target_id == "finance-lake"
+    assert len(finance.objects) == 2 and not default_store(deps).objects

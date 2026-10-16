@@ -35,6 +35,8 @@ class GraphPublish:
     base_iri: str
     triples: int
     entities: list[EntityRecord] = field(default_factory=list)
+    #: The publishing target the version's copy was written to.
+    target_id: str = "default"
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,8 @@ class PublishedGraph:
     base_iri: str
     triples: int
     published_at: str
+    #: The publishing target holding this version's copy.
+    target_id: str
 
 
 class GraphRegistry(Protocol):
@@ -120,6 +124,7 @@ class MemoryGraphRegistry:
                 record.base_iri,
                 record.triples,
                 _now(),
+                record.target_id,
             )
             self.graphs[key] = graph
             self.versions.append(graph)
@@ -166,7 +171,7 @@ class MemoryGraphRegistry:
 
 
 _GRAPH_COLUMNS = """sha256, template_id, graph_iri, version, job_id::text, document_id::text,
-                    template_version, base_iri, triples, published_at"""
+                    template_version, base_iri, triples, published_at, target_id"""
 
 
 def _graph(row: tuple[Any, ...]) -> PublishedGraph:
@@ -181,6 +186,7 @@ def _graph(row: tuple[Any, ...]) -> PublishedGraph:
         base_iri=row[7],
         triples=row[8],
         published_at=row[9].isoformat(),
+        target_id=row[10],
     )
 
 
@@ -217,23 +223,24 @@ class PgGraphRegistry:
                 record.template_version,
                 record.base_iri,
                 record.triples,
+                record.target_id,
             )
             self._conn.execute(
                 """INSERT INTO published_graphs (sha256, template_id, graph_iri, version, job_id,
-                       document_id, template_version, base_iri, triples)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       document_id, template_version, base_iri, triples, target_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (sha256, template_id) DO UPDATE SET
                      graph_iri = EXCLUDED.graph_iri, version = EXCLUDED.version,
                      job_id = EXCLUDED.job_id, document_id = EXCLUDED.document_id,
                      template_version = EXCLUDED.template_version,
                      base_iri = EXCLUDED.base_iri, triples = EXCLUDED.triples,
-                     published_at = now()""",
+                     target_id = EXCLUDED.target_id, published_at = now()""",
                 values,
             )
             self._conn.execute(
                 """INSERT INTO published_graph_versions (sha256, template_id, graph_iri, version,
-                       job_id, document_id, template_version, base_iri, triples)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                       job_id, document_id, template_version, base_iri, triples, target_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 values,
             )
             self._conn.execute(

@@ -328,3 +328,48 @@ def test_pg_store_seeds_the_default_once_and_moves_the_version(pg: PgPublishTarg
     assert pg.version() == after
     assert pg.seed_default(replace(seed, bucket="other")) == "differs"
     assert pg.version() == after
+
+
+def test_seeding_reports_the_fields_env_now_disagrees_on() -> None:
+    from ingest_worker.publish_targets import seed_default_target
+
+    store = MemoryPublishTargetStore([row()])
+    env = {"S3_ENDPOINT": "e", "S3_ACCESS_KEY": "k", "S3_SECRET_KEY": "s"}
+    assert seed_default_target(store, env) == []  # seeded
+    assert seed_default_target(store, env) == []  # kept
+    moved = {**env, "TARGET_S3_BUCKET": "other", "TARGET_S3_PREFIX": "p"}
+    assert seed_default_target(store, moved) == ["bucket", "prefix"]
+    assert store.load()[0].bucket == "ingest-published"  # the database wins
+
+
+class _Conn:
+    def __init__(self, fail: bool) -> None:
+        self.fail, self.closed = fail, False
+
+    def execute(self, *_args: Any) -> Any:
+        import psycopg
+
+        if self.fail:
+            raise psycopg.OperationalError("the connection is closed")
+        return self
+
+    def fetchone(self) -> tuple[int]:
+        return (7,)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_a_lost_connection_is_replaced_once() -> None:
+    broken, fresh = _Conn(fail=True), _Conn(fail=False)
+    store = PgPublishTargetStore(broken, reconnect=lambda: fresh)  # type: ignore[arg-type]
+    assert store.version() == 7
+    assert broken.closed
+
+
+def test_without_reconnect_a_lost_connection_raises() -> None:
+    import psycopg
+
+    store = PgPublishTargetStore(_Conn(fail=True))  # type: ignore[arg-type]
+    with pytest.raises(psycopg.OperationalError):
+        store.version()

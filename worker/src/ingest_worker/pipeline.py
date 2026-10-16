@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jsonschema import Draft202012Validator
 
@@ -37,6 +37,7 @@ from .ocr import (
 from .outputs import RenderedOutput, content_type, render_outputs
 from .pdf import TextExtractor
 from .prompts import render_prompt
+from .publish_targets import DEFAULT_TARGET_ID
 from .publish_targets import Target as Target
 from .queue import ClaimedJob, JobQueue
 from .segment import (
@@ -106,14 +107,22 @@ class ProcessResult:
     review_reasons: list[str] = field(default_factory=list)
     #: The output formats delivered on publishing (None: every output).
     formats: list[str] | None = None
-    #: Publishes the document's graph to the triple store once its outputs are delivered
-    #: without review (None: no graph is delivered).
-    deliver_graph: Callable[[], object] | None = None
+    #: Publishes the document's graph (its copy to the given target, then the triple store)
+    #: once its outputs are delivered without review (None: no graph is delivered).
+    deliver_graph: Callable[[Target], object] | None = None
+    #: The publishing target of the job's recipe version (legacy specs: the default).
+    publish_to: str = DEFAULT_TARGET_ID
 
     def delivered(self) -> list[RenderedOutput]:
         if self.formats is None:
             return self.outputs
         return [o for o in self.outputs if o.format in self.formats]
+
+
+class Targets(Protocol):
+    """The publishing targets by id (LiveTargets); `get` raises TargetMissing for an unknown id."""
+
+    def get(self, target_id: str) -> Target: ...
 
 
 @dataclass
@@ -128,8 +137,9 @@ class PipelineDeps:
     render_page: PageRenderer = field(default=render_page_png)
     #: (pdf, 0-based page) -> JPEG preview for the review screen.
     render_preview: Callable[[bytes, int], bytes] = field(default=render_preview_jpeg)
-    #: Where approved outputs are delivered. None: outputs stay in the outputs bucket only.
-    target: Target | None = None
+    #: Where approved outputs are delivered, by publishing target id. None: outputs stay in the
+    #: outputs bucket only.
+    targets: Targets | None = None
     #: YAML of a worked-example template shown to drafting models (None: no example).
     example_template: str | None = None
     #: Converts Word (.docx) sources to PDF (None: Word documents go to needs_review).
@@ -335,14 +345,28 @@ def prepare_document(
     )
 
 
-def publish_outputs(deps: PipelineDeps, outputs: list[RenderedOutput]) -> list[RenderedOutput]:
-    """Write outputs to the final target (same layout, keys prefixed). Returns what was written."""
-    if deps.target is None:
-        return []
-    published = [replace(o, key=f"{deps.target.prefix}{o.key}") for o in outputs]
+def target_named(deps: PipelineDeps, target_id: str) -> Target | None:
+    """The publishing target `target_id` (None: no targets, nothing is delivered). An unknown id
+    raises TargetMissing (a DocumentError: needs review), never a fallback to the default."""
+    return None if deps.targets is None else deps.targets.get(target_id)
+
+
+def target_for(deps: PipelineDeps, loaded: Any) -> Target | None:
+    """The publishing target of a loaded recipe version (`delivery.publishTo`, else the default);
+    legacy specs always deliver to the default."""
+    if isinstance(loaded, LoadedTemplate):
+        return target_named(deps, loaded.template.publish_to())
+    return target_named(deps, DEFAULT_TARGET_ID)
+
+
+def publish_outputs(
+    deps: PipelineDeps, outputs: list[RenderedOutput], target: Target
+) -> list[RenderedOutput]:
+    """Write outputs to `target` (same layout, keys prefixed). Returns what was written."""
+    published = [replace(o, key=f"{target.prefix}{o.key}") for o in outputs]
     for o in published:
         ctype = content_type(o.format)
-        deps.target.store.put(deps.target.bucket, o.key, o.body, ctype)
+        target.store.put(target.bucket, o.key, o.body, ctype)
     return published
 
 

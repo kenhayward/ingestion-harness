@@ -19,7 +19,7 @@ from ingest_worker.rdf_rebuild import DeliveredJob, MemoryRebuildSource
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, graph_version_key
 
-from .fakes import FakeGraphStore, FakeQueue, MemoryLinkedDataSettings
+from .fakes import FakeGraphStore, FakeQueue, FakeTargets, MemoryLinkedDataSettings
 
 BASE = "https://data.acme.example/"
 SHA = "ab" * 32
@@ -61,7 +61,7 @@ def setup(tmp_path: Path) -> tuple[PipelineDeps, MemoryObjectStore]:
         models=ModelRegistry({}, {}, {}),
         extract_text=lambda _pdf: [],
         buckets=Buckets("inbox", "outputs", "runs"),
-        target=Target(store=target, bucket="published", prefix="pvp/"),
+        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
         linked_data=MemoryLinkedDataSettings(BASE),
         graph_registry=MemoryGraphRegistry(),
         graph_store=FakeGraphStore(),
@@ -167,8 +167,8 @@ def test_republish_delivers_the_withdrawn_jobs_again(tmp_path: Path) -> None:
     queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
     run_once(queue, deps, "w1")
     assert queue.completed
-    [(job_id, published, bucket)] = queue.published
-    assert job_id == DELIVERED.job_id and bucket == "published"
+    [(job_id, published, target_id)] = queue.published
+    assert job_id == DELIVERED.job_id and target_id == "default"
     assert {o.format for o in published} == {"csv", "rdf"}
     assert all(target.get_optional("published", o.key) for o in published)
     current = registry.current(SHA, "letter")
@@ -216,7 +216,7 @@ def test_a_withdrawal_spares_what_was_published_again_since(tmp_path: Path) -> N
     for key in ["pvp/letter/v1/fields/doc.csv", "pvp/" + graph_version_key(SHA, "letter", 1),
                 "pvp/" + graph_version_key(SHA, "letter", 2)]:  # fmt: skip
         target.put("published", key, b"x", "text/plain")
-    source.live.add(("published", "pvp/letter/v1/fields/doc.csv"))
+    source.live.add(("default", "published", "pvp/letter/v1/fields/doc.csv"))
     queue = FakeQueue(jobs=[background("withdraw", WITHDRAW)])
     run_once(queue, deps, "w1")
     assert queue.completed
@@ -260,3 +260,101 @@ def test_republish_skips_a_job_it_cannot_render_and_goes_on(tmp_path: Path) -> N
     assert [j for j, _, _ in queue.published] == [DELIVERED.job_id]
     skipped = [d for _, _, m, d in queue.event_details if m == "republish skipped"]
     assert skipped and skipped[0]["job"] == legacy.job_id
+
+
+# --- publishing targets: everything is withdrawn through the target it was delivered to ---------
+
+
+def two_targets(deps: PipelineDeps) -> MemoryObjectStore:
+    """Adds finance-lake (prefix fin/) next to the default target; its store."""
+    assert isinstance(deps.targets, FakeTargets)
+    finance = MemoryObjectStore()
+    deps.targets.targets["finance-lake"] = Target(finance, "finance", "fin/", "finance-lake")
+    return finance
+
+
+def test_outputs_delivered_to_two_targets_are_withdrawn_from_each(tmp_path: Path) -> None:
+    deps, default = setup(tmp_path)
+    finance = two_targets(deps)
+    default.put("published", "pvp/letter/v1/fields/doc.csv", b"x", "text/csv")
+    finance.put("finance", "fin/letter/v2/fields/doc.csv", b"x", "text/csv")
+    finance.put("published", "pvp/letter/v1/fields/doc.csv", b"same key, other store", "text/csv")
+    params = {
+        "objects": [
+            {"bucket": "published", "key": "pvp/letter/v1/fields/doc.csv", "target": "default"},
+            {"bucket": "finance", "key": "fin/letter/v2/fields/doc.csv", "target": "finance-lake"},
+        ],
+        "graphs": [],
+    }
+    queue = FakeQueue(jobs=[background("withdraw", params)])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert not default.objects
+    assert list(finance.objects) == [("published", "pvp/letter/v1/fields/doc.csv")]
+
+
+def test_graph_copies_are_withdrawn_through_their_recorded_targets(tmp_path: Path) -> None:
+    deps, default = setup(tmp_path)
+    finance = two_targets(deps)
+    default.put("published", "pvp/" + graph_version_key(SHA, "letter", 1), b"x", "text/turtle")
+    finance.put("finance", "fin/" + graph_version_key(SHA, "letter", 2), b"x", "text/turtle")
+    store_of(deps).graphs[GRAPH] = b"<a> <b> <c> ."
+    entry = {"sha256": SHA, "templateId": "letter"}
+    params = {
+        "objects": [],
+        "graphs": [
+            {**entry, "graphIri": None, "target": "default", "versions": [1]},
+            {**entry, "graphIri": GRAPH, "target": "finance-lake", "versions": [2]},
+        ],
+    }
+    queue = FakeQueue(jobs=[background("withdraw", params)])
+    run_once(queue, deps, "w1")
+    assert queue.completed, queue.reviewed or queue.failed
+    assert not default.objects and not finance.objects
+    assert GRAPH not in store_of(deps).graphs
+    [data] = [d for _, _, m, d in queue.event_details if m == "withdrawn"]
+    assert data == {"objects": 0, "graphs": 1}
+
+
+def test_a_withdrawal_naming_a_missing_target_goes_to_review(tmp_path: Path) -> None:
+    deps, default = setup(tmp_path)
+    default.put("published", "pvp/letter/v1/fields/doc.csv", b"x", "text/csv")
+    params = {
+        "objects": [{"bucket": "finance", "key": "fin/a.csv", "target": "finance-lake"}],
+        "graphs": [],
+    }
+    queue = FakeQueue(jobs=[background("withdraw", params)])
+    run_once(queue, deps, "w1")
+    assert queue.reviewed == [(background("withdraw", {}).id, "no publishing target finance-lake")]
+
+
+def test_republish_delivers_to_the_target_of_the_jobs_version(tmp_path: Path) -> None:
+    deps, default = setup(tmp_path)
+    finance = two_targets(deps)
+    v1 = {**TEMPLATE, "delivery": {**TEMPLATE["delivery"], "publishTo": "finance-lake"}}
+    queue = FakeQueue(
+        jobs=[background("republish", {"templateId": "letter"})],
+        templates={("letter", 1): v1},
+    )
+    run_once(queue, deps, "w1")
+    assert queue.completed, queue.reviewed or queue.failed
+    [(_, published, target_id)] = queue.published
+    assert target_id == "finance-lake"
+    assert all(finance.get_optional("finance", o.key) for o in published)
+    assert ("finance", "fin/" + graph_version_key(SHA, "letter", 1)) in finance.objects
+    assert not default.objects
+    registry = deps.graph_registry
+    assert isinstance(registry, MemoryGraphRegistry)
+    assert registry.current(SHA, "letter").target_id == "finance-lake"  # type: ignore[union-attr]
+
+
+def test_a_live_output_spares_only_its_own_targets_object(tmp_path: Path) -> None:
+    deps, default = setup(tmp_path)
+    two_targets(deps)
+    source = deps.delivered_jobs
+    assert isinstance(source, MemoryRebuildSource)
+    default.put("published", "pvp/letter/v1/fields/doc.csv", b"x", "text/csv")
+    source.live.add(("finance-lake", "published", "pvp/letter/v1/fields/doc.csv"))
+    queue = FakeQueue(jobs=[background("withdraw", {**WITHDRAW, "graphs": []})])
+    run_once(queue, deps, "w1")
+    assert queue.completed and not default.objects

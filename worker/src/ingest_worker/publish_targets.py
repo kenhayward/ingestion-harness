@@ -8,11 +8,13 @@ packages/shared/test/fixtures/publish-targets.json.
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 
 from .errors import DocumentError
 from .llm.secrets import SecretError, decrypt_secret, secrets_keys
@@ -20,6 +22,10 @@ from .storage import ObjectStore, S3ObjectStore
 
 if TYPE_CHECKING:
     import psycopg
+
+log = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 DEFAULT_TARGET_ID = "default"
 DEFAULT_BUCKET = "ingest-published"
@@ -145,20 +151,61 @@ _COLUMNS = (
 
 
 class PgPublishTargetStore:
-    def __init__(self, conn: psycopg.Connection[Any]) -> None:
+    """The targets on Postgres. With `reconnect`, a lost connection (a database restart) is
+    replaced once per call, so a long-lived worker keeps reading its targets."""
+
+    def __init__(
+        self,
+        conn: psycopg.Connection[Any],
+        reconnect: Callable[[], psycopg.Connection[Any]] | None = None,
+    ) -> None:
         self._conn = conn
+        self._reconnect = reconnect
+
+    @classmethod
+    def connect(cls, database_url: str) -> PgPublishTargetStore:
+        """Its own autocommit connection, re-opened when lost."""
+        import psycopg
+
+        def open_conn() -> psycopg.Connection[Any]:
+            return psycopg.connect(database_url, autocommit=True)
+
+        return cls(open_conn(), reconnect=open_conn)
+
+    def _run(self, work: Callable[[psycopg.Connection[Any]], _T]) -> _T:
+        import psycopg
+
+        try:
+            return work(self._conn)
+        except psycopg.OperationalError:
+            if self._reconnect is None:
+                raise
+            log.warning("publishing targets: the database connection was lost; reconnecting")
+            with contextlib.suppress(Exception):  # already broken: nothing to close cleanly
+                self._conn.close()
+            self._conn = self._reconnect()
+            return work(self._conn)
 
     def load(self) -> list[TargetRow]:
-        rows = self._conn.execute(f"SELECT {_COLUMNS} FROM publish_targets ORDER BY id").fetchall()
-        return [TargetRow(*r) for r in rows]
+        def work(conn: psycopg.Connection[Any]) -> list[TargetRow]:
+            rows = conn.execute(f"SELECT {_COLUMNS} FROM publish_targets ORDER BY id").fetchall()
+            return [TargetRow(*r) for r in rows]
+
+        return self._run(work)
 
     def version(self) -> int:
-        row = self._conn.execute("SELECT version FROM publish_targets_state").fetchone()
-        return int(row[0]) if row else 0
+        def work(conn: psycopg.Connection[Any]) -> int:
+            row = conn.execute("SELECT version FROM publish_targets_state").fetchone()
+            return int(row[0]) if row else 0
+
+        return self._run(work)
 
     def seed_default(self, seed: DefaultSeed) -> SeedOutcome:
-        with self._conn.transaction():
-            row = self._conn.execute(
+        return self._run(lambda conn: self._seed(conn, seed))
+
+    def _seed(self, conn: psycopg.Connection[Any], seed: DefaultSeed) -> SeedOutcome:
+        with conn.transaction():
+            row = conn.execute(
                 f"SELECT {_COLUMNS} FROM publish_targets WHERE id = %s FOR UPDATE",
                 (DEFAULT_TARGET_ID,),
             ).fetchone()
@@ -167,7 +214,7 @@ class PgPublishTargetStore:
             current = TargetRow(*row)
             if current.seeded_at is not None:
                 return "differs" if seed_differences(current, seed) else "kept"
-            self._conn.execute(
+            conn.execute(
                 """UPDATE publish_targets
                    SET kind = %s, bucket = %s, prefix = %s, endpoint = %s, region = %s,
                        access_key_env = %s, secret_key_env = %s, force_path_style = %s,
@@ -187,6 +234,22 @@ class PgPublishTargetStore:
                 ),
             )
             return "seeded"
+
+
+def seed_default_target(store: PublishTargetStore, env: Mapping[str, str]) -> list[str]:
+    """Seed the default target from `.env` (first start only). Afterwards the database wins: the
+    fields `.env` now disagrees on are logged as a warning and returned, nothing is changed."""
+    seed = default_seed(env)
+    if store.seed_default(seed) != "differs":
+        return []
+    stored = next(r for r in store.load() if r.id == DEFAULT_TARGET_ID)
+    fields = seed_differences(stored, seed)
+    log.warning(
+        "the default publishing target differs from .env (TARGET_S3_*) in %s: the stored "
+        "target is used; change it under Administration > Published outputs",
+        ", ".join(fields),
+    )
+    return fields
 
 
 @dataclass(frozen=True)
