@@ -2439,5 +2439,129 @@
         ]
       }
     }
+  },
+  {
+    "name": "sections and steps: a repeating section with keyFrom and a keyColumn step",
+    "definition": {
+      "id": "stability",
+      "version": 1,
+      "name": "Stability",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": [
+          {
+            "id": "appearance_results",
+            "columns": [
+              {
+                "id": "batch",
+                "type": "text"
+              },
+              {
+                "id": "result",
+                "type": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": []
+    },
+    "changes": [
+      {
+        "op": "putSection",
+        "section": {
+          "id": "batch",
+          "anchor": "^\\d+\\. STUDY",
+          "repeat": true,
+          "key": "BATCH\\s+(\\w+)"
+        },
+        "reason": "r"
+      },
+      {
+        "op": "putSection",
+        "section": {
+          "id": "appearance",
+          "anchor": "^Table \\d+:.*Appearance",
+          "repeat": true,
+          "key": "Batch\\s+(\\w+)",
+          "keyFrom": "batch"
+        },
+        "reason": "r"
+      },
+      {
+        "op": "putStep",
+        "step": {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"],
+          "keyColumn": "batch"
+        },
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "stability",
+      "version": 1,
+      "name": "Stability",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          },
+          {
+            "id": "batch",
+            "anchor": "^\\d+\\. STUDY",
+            "repeat": true,
+            "key": "BATCH\\s+(\\w+)"
+          },
+          {
+            "id": "appearance",
+            "anchor": "^Table \\d+:.*Appearance",
+            "repeat": true,
+            "key": "Batch\\s+(\\w+)",
+            "keyFrom": "batch"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": [
+          {
+            "id": "appearance_results",
+            "columns": [
+              {
+                "id": "batch",
+                "type": "text"
+              },
+              {
+                "id": "result",
+                "type": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"],
+          "keyColumn": "batch"
+        }
+      ]
+    }
   }
 ]

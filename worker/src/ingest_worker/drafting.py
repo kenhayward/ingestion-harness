@@ -496,6 +496,23 @@ def anchor_check(
         if sid in grid["anchorErrors"]:
             misses.append(f'section "{sid}": {grid["anchorErrors"][sid]}')
             continue
+        if f"{sid}.key" in grid["anchorErrors"]:
+            misses.append(f'section "{sid}": key: {grid["anchorErrors"][f"{sid}.key"]}')
+        if not section.get("repeat"):
+            for row in rows:
+                cell = next((c for c in row["sections"] if c["id"] == sid), None)
+                if cell is not None and cell.get("matches", 0) > 1:
+                    misses.append(
+                        f'section "{sid}": anchor matched {cell["matches"]} times in '
+                        f"{names.get(row['sampleId'], row['sampleId'])}; only the first is used. "
+                        "Set repeat if this block repeats."
+                    )
+        misses += [
+            f"{names.get(row['sampleId'], row['sampleId'])}: {issue}"
+            for row in rows
+            for issue in row.get("keyIssues", [])
+            if issue.split(" ", 1)[0].rstrip(":") == sid
+        ]
         missed = [
             names.get(row["sampleId"], row["sampleId"])
             for row in rows

@@ -492,3 +492,87 @@ def test_resolve_answers_maps_labels_to_feedback_ids(
     body = resolve_answers({"notes": "", "changes": [change]}, {"F1": "fb-1", "F2": "fb-2"})
     assert body["changes"][0].get("answers") == expected
     assert body["changes"][0]["id"] == "s"
+
+
+# --- repeating sections (spec 2026-10-16) ----------------------------------------------------
+
+REPEAT_DRAFT: dict[str, Any] = {
+    **DRAFT,
+    "document": {
+        "sections": [
+            {"id": "all", "anchor": r"\A"},
+            {"id": "batch", "anchor": r"^\d+\. STUDY", "repeat": True, "key": r"BATCH (\w+)"},
+        ]
+    },
+}
+
+
+def test_sections_convert_carries_repeat_key_and_key_from() -> None:
+    item = section_item(
+        id="appearance",
+        anchor=r"^Table \d+:.*Appearance",
+        description=None,
+        repeat=True,
+        key=r"Batch\s+(\w+)",
+        keyFrom="batch",
+    )
+    body, errors = run(SECTIONS, {"notes": "", "changes": [item]}, REPEAT_DRAFT)
+    assert errors == []
+    assert body["changes"][0]["section"] == {
+        "id": "appearance",
+        "anchor": r"^Table \d+:.*Appearance",
+        "repeat": True,
+        "key": r"Batch\s+(\w+)",
+        "keyFrom": "batch",
+    }
+
+
+def test_sections_convert_leaves_out_unset_repeat_keys() -> None:
+    item = section_item(repeat=None, key=None, keyFrom=None)
+    body, errors = run(SECTIONS, {"notes": "", "changes": [item]})
+    assert errors == []
+    assert not {"repeat", "key", "keyFrom"} & set(body["changes"][0]["section"])
+
+
+def test_check_sections_refuses_an_invalid_key() -> None:
+    item = section_item(id="t", anchor="^Table", repeat=True, key=r"Batch (\w+")
+    _, errors = run(SECTIONS, {"notes": "", "changes": [item]})
+    assert any("'t': key: invalid regular expression" in e for e in errors), errors
+
+
+def test_steps_convert_carries_key_column() -> None:
+    draft = {
+        **REPEAT_DRAFT,
+        "outputs": {
+            "fields": [],
+            "tables": [{"id": "batches", "columns": [{"id": "batch"}, {"id": "packaging"}]}],
+        },
+    }
+    item = step_item(
+        id="batches", fields=None, table="batches", sections=["batch"], keyColumn="batch"
+    )
+    body, errors = run(STEPS, {"notes": "", "changes": [item]}, draft)
+    assert errors == []
+    assert body["changes"][0]["step"]["keyColumn"] == "batch"
+
+
+def test_revise_sentinels_mean_no_repeat_keys() -> None:
+    assert REVISE.convert is not None
+    section = {**section_item(), "repeat": False, "key": "", "keyFrom": ""}
+    section = {k: v for k, v in section.items() if k not in ("op", "reason")}
+    step = {**step_item(), "keyColumn": ""}
+    step = {k: v for k, v in step.items() if k not in ("op", "reason")}
+    body, errors = REVISE.convert(
+        {
+            "notes": "",
+            "changes": [nested("putSection", "section", section), nested("putStep", "step", step)],
+        }
+    )
+    assert errors == []
+    assert not {"repeat", "key", "keyFrom"} & set(body["changes"][0]["section"])
+    assert "keyColumn" not in body["changes"][1]["step"]
+
+
+def test_drafting_prompts_explain_repeating_sections() -> None:
+    assert "repeat true" in SECTIONS.instructions and "keyFrom" in SECTIONS.instructions
+    assert "keyColumn" in STEPS.instructions

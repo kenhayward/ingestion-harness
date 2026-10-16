@@ -94,6 +94,7 @@ STEPS_SCHEMA = _body(
             "pageImages": {"type": ["array", "null"], "items": {"type": "integer"}},
             "chunkPages": {"type": ["integer", "null"]},
             "context": {"type": ["array", "null"], "items": _object({"name": _S, "path": _S})},
+            "keyColumn": _NS,
             "description": _NS,
             "values": _NS,
             "reference": _NS,
@@ -233,6 +234,7 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                                 "pageImages": c.get("pageImages"),
                                 "chunkPages": c.get("chunkPages"),
                                 "context": context or None,
+                                "keyColumn": c.get("keyColumn"),
                             }
                         )
                     )
@@ -331,6 +333,9 @@ Task: propose the extraction pipeline that fills every output in the current dra
   - instructions: concrete guidance (where the value is, formats, what to ignore).
   - pageImages: page numbers to show as images when the text loses information, else null.
   - chunkPages: null unless the step fills a long table (table set) from exactly one section.
+  - A table step reading a repeating section (repeat true) runs once per occurrence; set
+    keyColumn to the column the occurrence key fills (for example batch), else null. A field
+    step must not read a repeating section.
   - context: values from earlier steps the prompt should see, as {name, path}, where path is
     a field id or table.column.
 - putStep with type check: values and reference are paths (field or table.column) whose values
@@ -355,6 +360,9 @@ SECTIONS_SCHEMA = _body(
             "anchor": _NS,
             "required": {"type": ["boolean", "null"]},
             "description": _NS,
+            "repeat": {"type": ["boolean", "null"]},
+            "key": _NS,
+            "keyFrom": _NS,
             "copiesSelect": {"type": ["string", "null"], "enum": ["first", "last", None]},
             "reason": _S,
         }
@@ -376,7 +384,7 @@ def convert_sections(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     for i, c in enumerate(data["changes"]):
         try:
             if c["op"] == "putSection":
-                keys = ("id", "anchor", "required", "description")
+                keys = ("id", "anchor", "required", "description", "repeat", "key", "keyFrom")
                 section = Section.model_validate(_clean({k: c.get(k) for k in keys}))
                 changes.append(
                     {"op": "putSection", "section": _dump(section), "reason": c["reason"]}
@@ -409,6 +417,14 @@ def check_sections(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
         if c["op"] == "putSection" and (error := _regex_error(c["section"]["anchor"])):
             errors.append(f"section {c['section']['id']!r}: invalid regular expression: {error}")
         elif (
+            c["op"] == "putSection"
+            and c["section"].get("key")
+            and (error := _regex_error(c["section"]["key"]))
+        ):
+            errors.append(
+                f"section {c['section']['id']!r}: key: invalid regular expression: {error}"
+            )
+        elif (
             c["op"] == "setCopies"
             and c["copies"]
             and (error := _regex_error(c["copies"]["anchor"]))
@@ -435,6 +451,13 @@ Task: propose section anchors that split every sample the same way.
     section in every sample. Prefer headings and wording over page numbers or layout.
   - required: false when some documents legitimately lack the section.
   - description: what the section contains.
+  - repeat: true when the same block repeats per entity (per batch, per site): every match of
+    the anchor then starts an occurrence. Give such a block one section with repeat true, not one
+    big section. key: a regex reading the entity id from the occurrence's first lines (the
+    named group key, else group 1, else the whole match). When blocks repeat inside a repeating
+    heading (tables under each batch heading), give each block keyFrom: the heading's section
+    id; an occurrence whose own key finds nothing then takes the heading's key, and a block
+    missing for one heading is reported.
 - removeSection: drop a section from the current draft.
 - setCopies: when a PDF holds several copies (for example blank, then executed), anchor is the
   regex that starts each copy and copiesSelect is first or last; anchor null removes copy
