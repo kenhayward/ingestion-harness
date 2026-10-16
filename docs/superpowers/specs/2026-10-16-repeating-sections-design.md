@@ -1,6 +1,6 @@
 # Repeating sections in the recipe format
 
-Date: 2026-10-16 · Status: proposed, open questions decided (design only, not built) · Follows the short-term fix
+Date: 2026-10-16 · Status: implemented · Follows the short-term fix
 ("option 1": the sections drafting stage counts repeated anchor matches and steers to one big
 section; the Steps prompt tells table steps to take batch ids from captions)
 
@@ -324,18 +324,18 @@ signal to tighten the anchor.
 
 ### Preview grid (`segment_samples`, `SegmentationResultSchema`, `SegmentationGrid`)
 
-`SectionCellSchema` gains two optional fields (defaulted on read, so stored grids from before
-parse):
+`SectionCellSchema` gains two optional fields (left out of stored grids from before, which still
+parse; readers treat a missing one as `[]`/`0`):
 
-- `occurrences: z.array(OccurrenceCellSchema).default([])`, each
+- `occurrences: z.array(OccurrenceCellSchema).optional()`, each
   `{ page, line, chars, key, keySource }` (`keySource`: `own` | `inherited` | null), filled for
   repeating sections only; `found`/`page`/`line` stay the first occurrence's and `chars` the
   total.
-- `matches: z.number().int().nonnegative().default(0)`: for a **non-repeating** section, how
+- `matches: z.number().int().nonnegative().optional()`: for a **non-repeating** section, how
   many times its anchor matches the sample (so the grid can say "matches 3×, only the first is
   used"). This reuses option 1's count and is what makes the problem visible in the UI.
 
-`SegmentedSampleSchema` gains `keyIssues: z.array(z.string()).default([])`, the key check's
+`SegmentedSampleSchema` gains `keyIssues: z.array(z.string()).optional()`, the key check's
 messages for that sample.
 
 `segment_samples` also drops suggestions that would break a sample (unchanged) and adds no new
@@ -448,8 +448,8 @@ and checks a hit against.
   section's cell shows `×3` and the keys (`4586783 · 4586784 · 4586785`, an inherited key in
   italics with "from batch"), expanding to one line per occurrence (page, first line,
   characters); a sample with key issues shows them as a warn list under its row; a non-repeating cell with `matches > 1` shows a
-  warn note "matches 3×, only the first is used" with *Make it repeat* (sets Repeats, unsaved,
-  previewed live, like an anchor suggestion).
+  note "matches 3×, only the first is used" with *Make <id> repeat* in the selected sample's side
+  panel (sets Repeats, unsaved, previewed live, like an anchor suggestion).
 - **Pipeline step form** (`PipelineEditor`/`StepForms`): in the Reads sections list a repeating
   section is tagged *repeats*; when one is ticked on a table step the form says "Runs once per
   occurrence of <section>" and shows *Key column* (a select of the table's columns, *None*
