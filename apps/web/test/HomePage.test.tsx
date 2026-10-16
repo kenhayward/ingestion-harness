@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import type { JobLive, JobSummary } from '@ih/shared';
 import { HomePage } from '../src/home/HomePage.js';
 import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
@@ -266,5 +267,16 @@ describe('HomePage pushed progress', () => {
     const r = pushed([job({ createdBy: 'ken', status: 'succeeded' })]);
     await screen.findByRole('complementary', { name: 'Job details' });
     expect(r.watchJob).not.toHaveBeenCalled();
+  });
+});
+
+describe('HomePage help', () => {
+  it('explains the Home screen from the page header', async () => {
+    home([]);
+    const header = screen.getByRole('heading', { level: 1, name: 'Home' }).closest('.page-header')!;
+    await userEvent.click(
+      within(header as HTMLElement).getByRole('button', { name: 'Help: Using the Home screen' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'Using the Home screen' })).toBeInTheDocument();
   });
 });

@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react';
 import { GeneralHelp } from './GeneralHelp.js';
+import { HomeHelp } from './HomeHelp.js';
+import { JobsHelp } from './JobsHelp.js';
 import { GitHubSyncHelp } from './GitHubSyncHelp.js';
 import { MappingHelp } from './MappingHelp.js';
 import { OutputsHelp } from './OutputsHelp.js';
 import { PipelineHelp } from './PipelineHelp.js';
 import { QualityHelp } from './QualityHelp.js';
+import { ResultsHelp } from './ResultsHelp.js';
 import { SectionsHelp } from './SectionsHelp.js';
 import { VersionsHelp } from './VersionsHelp.js';
 import { YamlHelp } from './YamlHelp.js';
@@ -17,6 +20,9 @@ export interface HelpTopic {
 
 /** Every help topic, by id. Add a topic here, then `<HelpButton topic="id" />` where needed. */
 export const HELP_TOPICS = {
+  home: { title: 'Using the Home screen', body: <HomeHelp /> },
+  jobs: { title: 'Using the Jobs page', body: <JobsHelp /> },
+  results: { title: 'Using the Results page', body: <ResultsHelp /> },
   'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   general: { title: 'General recipe settings', body: <GeneralHelp /> },
   sections: { title: 'How sections work', body: <SectionsHelp /> },
