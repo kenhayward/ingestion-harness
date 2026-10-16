@@ -455,6 +455,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
 
     def check(data: dict[str, Any]) -> list[str]:
         body, errors = stage.convert(data) if stage.convert else (data, [])
+        if not errors and stage.fit is not None:
+            body = stage.fit(body, draft)
         if not errors and stage.check is not None:
             errors = stage.check(body, draft)
         return errors
@@ -491,6 +493,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             raise DocumentError(f"drafting model refused: {exc}") from exc
         _audit(deps, job, label, result.attempts)
         body = stage.convert(result.data)[0] if stage.convert else result.data
+        if stage.fit is not None:
+            body = stage.fit(body, draft)
         return result, body
 
     prompt = f"{context}\n\n{stage.instructions}"

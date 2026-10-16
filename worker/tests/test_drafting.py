@@ -437,6 +437,45 @@ def test_steps_errors_are_fed_back_then_need_review(fixture_specs_dir: Path) -> 
     assert "unknown field" in reason
 
 
+def test_steps_with_an_unusable_key_column_complete_with_a_note(
+    fixture_specs_dir: Path,
+) -> None:
+    """A repeating section without a key cannot fill keyColumn: the stage drops it and says so
+    rather than failing both attempts."""
+    provider, store, deps = make(fixture_specs_dir)
+    draft = {
+        **DRAFT,
+        "document": {"sections": [{"id": "all", "anchor": "^A", "repeat": True}]},
+        "outputs": {"fields": [], "tables": [{"id": "results", "columns": [{"id": "batch"}]}]},
+    }
+    step = {
+        "op": "putStep",
+        "id": "results_step",
+        "type": "extract",
+        "fields": None,
+        "table": "results",
+        "sections": ["all"],
+        "instructions": "Batch from the caption",
+        "pageImages": None,
+        "chunkPages": None,
+        "keyColumn": "batch",
+        "context": None,
+        "description": None,
+        "values": None,
+        "reference": None,
+        "aliases": None,
+        "preamble": None,
+        "reason": "r",
+    }
+    provider.responses = [{"notes": "", "changes": [step]}]
+    queue = FakeQueue(jobs=[draft_job(stage="steps", draft=draft)])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 1, queue.reviewed
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert "keyColumn" not in body["changes"][0]["step"]
+    assert "Ignored keyColumn on 'results_step'" in body["notes"]
+
+
 def test_change_stage_without_a_draft_needs_review(fixture_specs_dir: Path) -> None:
     provider, _, deps = make(fixture_specs_dir)
     queue = FakeQueue(jobs=[draft_job(stage="outputs", draft=None)])
