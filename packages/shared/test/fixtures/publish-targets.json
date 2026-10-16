@@ -183,7 +183,7 @@
       }
     },
     {
-      "name": "prefix ingest gains a trailing slash",
+      "name": "prefix kept as .env had it (no slash added)",
       "env": {
         "S3_ENDPOINT": "http://seaweed:8333",
         "S3_ACCESS_KEY": "k",
@@ -193,7 +193,7 @@
       "expected": {
         "kind": "internal",
         "bucket": "ingest-published",
-        "prefix": "ingest/",
+        "prefix": "ingest",
         "endpoint": null,
         "region": null,
         "accessKeyEnv": null,

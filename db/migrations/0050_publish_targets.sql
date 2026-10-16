@@ -66,3 +66,17 @@ CREATE TABLE s3_consumer_targets (
   PRIMARY KEY (consumer_id, target_id)
 );
 INSERT INTO s3_consumer_targets (consumer_id, target_id) SELECT id, 'default' FROM s3_consumers;
+
+-- Withdraw jobs the old API queued name no target (every published output went to the one
+-- target of .env, now 'default'), and the worker's params are strict: carry them over, so a
+-- withdrawal pending at upgrade (or one an operator retries later) still runs. Finished ones are
+-- history and stay as they ran.
+UPDATE jobs
+   SET params = jsonb_build_object(
+         'objects', coalesce((SELECT jsonb_agg(e || '{"target": "default"}'::jsonb ORDER BY n)
+                                FROM jsonb_array_elements(params->'objects') WITH ORDINALITY o(e, n)),
+                             '[]'::jsonb),
+         'graphs', coalesce((SELECT jsonb_agg(e || '{"target": "default"}'::jsonb ORDER BY n)
+                               FROM jsonb_array_elements(params->'graphs') WITH ORDINALITY g(e, n)),
+                            '[]'::jsonb))
+ WHERE task = 'withdraw' AND status <> 'succeeded';

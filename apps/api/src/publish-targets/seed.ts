@@ -1,4 +1,4 @@
-import { normalisePrefix, type TargetKind } from '@ih/shared';
+import type { TargetKind } from '@ih/shared';
 import type { Config } from '../config.js';
 
 /** The default target as `.env` describes it (held in step with the worker by a shared fixture). */
@@ -27,7 +27,9 @@ export function defaultSeed(c: Config): DefaultSeed {
   const ownSecret =
     c.TARGET_S3_SECRET_KEY !== undefined && c.TARGET_S3_SECRET_KEY !== c.S3_SECRET_KEY;
   const bucket = c.TARGET_S3_BUCKET;
-  const prefix = normalisePrefix(c.TARGET_S3_PREFIX);
+  // Verbatim, never normalised: `ingest` has always meant keys like `ingestletter/…`, and
+  // existing graph copies and data-lake grants sit under it (prefixes admins enter are normalised).
+  const prefix = c.TARGET_S3_PREFIX;
   if (sameEndpoint && !ownAccess && !ownSecret) {
     return {
       kind: 'internal',

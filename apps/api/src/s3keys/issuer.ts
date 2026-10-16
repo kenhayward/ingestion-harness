@@ -9,7 +9,7 @@ export const USER_PREFIX = 'lake-';
 /** One internal publishing target a consumer may read: its bucket and (normalised) key prefix. */
 export interface Grant {
   bucket: string;
-  /** Empty, or ends in `/` (`normalisePrefix`). */
+  /** Empty, or ends in `/` (`normalisePrefix`), except a `default` seeded verbatim from `.env`. */
   prefix: string;
 }
 

@@ -74,7 +74,8 @@ def default_seed(env: Mapping[str, str]) -> DefaultSeed:
     own_access = t_access is not None and t_access != value("S3_ACCESS_KEY")
     own_secret = t_secret is not None and t_secret != value("S3_SECRET_KEY")
     bucket = value("TARGET_S3_BUCKET") or DEFAULT_BUCKET
-    prefix = normalise_prefix(env.get("TARGET_S3_PREFIX", ""))
+    # Verbatim, never normalised (as in TS): `ingest` has always meant keys like `ingestletter/…`.
+    prefix = env.get("TARGET_S3_PREFIX", "")
     if same_endpoint and not own_access and not own_secret:
         return DefaultSeed("internal", bucket, prefix, None, None, None, None, True)
     return DefaultSeed(

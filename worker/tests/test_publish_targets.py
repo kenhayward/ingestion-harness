@@ -318,7 +318,7 @@ def test_pg_store_seeds_the_default_once_and_moves_the_version(pg: PgPublishTarg
     [r] = [r for r in pg.load() if r.id == "default"]
     assert (r.kind, r.prefix, r.seeded_at is not None, r.path_style) == (
         "internal",
-        "pvp/",
+        "pvp",  # verbatim, as .env had it
         True,
         True,
     )

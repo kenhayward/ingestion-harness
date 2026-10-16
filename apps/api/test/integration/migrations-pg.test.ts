@@ -78,4 +78,83 @@ describe.skipIf(!url)('migrations over existing data', { timeout: 60_000 }, () =
       await db.end();
     }
   });
+
+  it('0050 names the default target in pending withdrawals and grants it to consumers', async () => {
+    await admin.query(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`);
+    await admin.query(`CREATE DATABASE ${DB}`);
+    const before = migrationsBefore('0050');
+    try {
+      await migrate(dbUrl, before);
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+    const db = new pg.Client({ connectionString: dbUrl });
+    await db.connect();
+    try {
+      // Withdraw params as the API wrote them before publishing targets.
+      const old = {
+        objects: [
+          { bucket: 'ingest-published', key: 'a.csv' },
+          { bucket: 'ingest-published', key: 'b.json' },
+        ],
+        graphs: [{ sha256: 's', templateId: 't', graphIri: 'urn:g', versions: [1, 2] }],
+      };
+      const empty = { objects: [], graphs: [] };
+      const ids: Record<string, string> = {};
+      for (const [name, status, params] of [
+        ['queued', 'queued', old],
+        ['running', 'running', old],
+        ['review', 'needs_review', old],
+        ['failed', 'failed', old],
+        ['empty', 'queued', empty],
+        ['done', 'succeeded', old],
+      ] as const) {
+        const r = await db.query<{ id: string }>(
+          `INSERT INTO jobs (task, status, params) VALUES ('withdraw', $1::job_status, $2)
+           RETURNING id`,
+          [status, JSON.stringify(params)],
+        );
+        ids[name] = r.rows[0]!.id;
+      }
+      await db.query(
+        `INSERT INTO jobs (task, status, params) VALUES ('republish', 'queued', $1)`,
+        [JSON.stringify({ templateId: 't' })],
+      );
+      await db.query(
+        `INSERT INTO s3_consumers (id, label, user_name)
+         VALUES ('00000000-0000-0000-0000-000000000001', 'Lake', 'lake-1')`,
+      );
+
+      await migrate(dbUrl, migrations);
+
+      const params = async (id: string) =>
+        (await db.query<{ params: unknown }>('SELECT params FROM jobs WHERE id = $1', [id]))
+          .rows[0]!.params;
+      const carried = {
+        objects: [
+          { bucket: 'ingest-published', key: 'a.csv', target: 'default' },
+          { bucket: 'ingest-published', key: 'b.json', target: 'default' },
+        ],
+        graphs: [
+          { sha256: 's', templateId: 't', graphIri: 'urn:g', versions: [1, 2], target: 'default' },
+        ],
+      };
+      for (const name of ['queued', 'running', 'review', 'failed']) {
+        expect([name, await params(ids[name]!)]).toEqual([name, carried]);
+      }
+      expect(await params(ids.empty!)).toEqual(empty);
+      // A finished withdrawal is history: left as it ran.
+      expect(await params(ids.done!)).toEqual(old);
+      const republish = await db.query<{ params: unknown }>(
+        `SELECT params FROM jobs WHERE task = 'republish'`,
+      );
+      expect(republish.rows[0]!.params).toEqual({ templateId: 't' });
+      const grants = await db.query('SELECT consumer_id, target_id FROM s3_consumer_targets');
+      expect(grants.rows).toEqual([
+        { consumer_id: '00000000-0000-0000-0000-000000000001', target_id: 'default' },
+      ]);
+    } finally {
+      await db.end();
+    }
+  });
 });
