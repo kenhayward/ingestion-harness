@@ -57,6 +57,30 @@ describe('SegmentationGrid', () => {
     expect(within(table).getByRole('row', { name: /b\.pdf/ })).toHaveTextContent('HOLDOUT');
   });
 
+  it('says when an anchor matches more than once (a repeated block)', () => {
+    const repeated: SegmentationResult = {
+      ...result,
+      anchorErrors: {},
+      samples: [
+        {
+          ...result.samples[0]!,
+          missingRequired: [],
+          sections: [
+            { id: 'header', found: true, page: 1, line: 'INVOICE 42', chars: 120, matches: 3 },
+            { id: 'totals', found: true, page: 2, line: 'Total', chars: 100, matches: 1 },
+          ],
+        },
+      ],
+    };
+    render(
+      <SegmentationGrid result={repeated} sections={sections} samples={[a]} onOpen={vi.fn()} />,
+    );
+    const header = screen.getByRole('button', { name: 'a.pdf · header' });
+    expect(header).toHaveTextContent('matches 3×');
+    expect(header).toHaveAccessibleDescription(/only the first starts the section/);
+    expect(screen.getByRole('button', { name: 'a.pdf · totals' })).not.toHaveTextContent('matches');
+  });
+
   it('opens a cell', async () => {
     const onOpen = vi.fn();
     render(

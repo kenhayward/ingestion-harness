@@ -50,7 +50,8 @@ log = logging.getLogger("ingest_worker")
 
 #: Job events the API reads to show where a running extraction is (TS: PREPARE_PROGRESS_EVENT,
 #: SEGMENTED_EVENT in packages/shared/src/jobs.ts): the text layer read, then each OCR page
-#: (`{stage, page, of}`; Workbench `prepare` jobs write it too), then the sections found.
+#: (`{stage, page, of, pages}`, `pages` being the document's page count; Workbench `prepare`
+#: jobs write it too), then the sections found.
 PREPARE_PROGRESS = "prepare progress"
 SEGMENTED = "segmented"
 
@@ -261,7 +262,9 @@ def prepare_document(
     total_pages = len(pages)
 
     def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
-        advisory_event(job, queue, PREPARE_PROGRESS, {"stage": stage, "page": page, "of": of})
+        # `pages` is the document's page count, so a reader mid-OCR still knows it (#142).
+        data = {"stage": stage, "page": page, "of": of, "pages": total_pages}
+        advisory_event(job, queue, PREPARE_PROGRESS, data)
 
     report("text", total_pages, total_pages)
     if document.pages and not (document.pages.min <= len(pages) <= document.pages.max):

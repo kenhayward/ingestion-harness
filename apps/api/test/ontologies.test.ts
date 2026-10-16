@@ -330,3 +330,48 @@ describe('fetched versions', () => {
     expect(store.objects.has('runs/ontologies/x1/sources/abc.ttl')).toBe(false);
   });
 });
+
+describe('embedding progress in the library list', () => {
+  it("counts the newest ready version's terms embedded under the embedding model", async () => {
+    const ctx = await setup();
+    await ctx.upload({ id: 'pv', label: 'Process validation' });
+    ctx.ontologies.markReady('pv', 1);
+    ctx.ontologies.seedTerms('pv', 1, [
+      { iri: 'https://e.org/A', kind: 'class' },
+      { iri: 'https://e.org/B', kind: 'class' },
+      { iri: 'https://e.org/C', kind: 'concept' },
+      { iri: 'https://e.org/S', kind: 'shape' }, // shapes are never embedded
+    ]);
+    ctx.ontologies.seedEmbedded('pv', 1, 'ryzen/bge-m3', 2);
+    ctx.ontologies.seedEmbedded('pv', 1, 'old/model', 3);
+    ctx.llm.seedSettings({ embedding_model: 'ryzen/bge-m3' });
+    const res = await ctx.app.inject({ url: '/api/ontologies' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()[0].embedding).toEqual({
+      model: 'ryzen/bge-m3',
+      version: 1,
+      terms: 3,
+      embedded: 2,
+    });
+  });
+
+  it('has none without an embedding model, or for an ontology with no ready version', async () => {
+    const ctx = await setup();
+    await ctx.upload({ id: 'pv', label: 'Process validation' });
+    ctx.ontologies.markReady('pv', 1);
+    ctx.ontologies.seedTerms('pv', 1, [{ iri: 'https://e.org/A', kind: 'class' }]);
+    const before = await ctx.app.inject({ url: '/api/ontologies' });
+    expect(before.json()[0].embedding).toBeNull();
+
+    ctx.llm.seedSettings({ embedding_model: 'ryzen/bge-m3' });
+    await ctx.upload(
+      { id: 'qa', label: 'Quality' },
+      { filename: 'qa.ttl', content: Buffer.from(`${TTL}# qa\n`), contentType: 'text/turtle' },
+    );
+    const after = (await ctx.app.inject({ url: '/api/ontologies' })).json();
+    expect(after.map((o: { id: string; embedding: unknown }) => [o.id, o.embedding])).toEqual([
+      ['pv', { model: 'ryzen/bge-m3', version: 1, terms: 1, embedded: 0 }],
+      ['qa', null], // still importing
+    ]);
+  });
+});

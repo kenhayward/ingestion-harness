@@ -108,13 +108,16 @@ def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict
 
 
 def _prepare(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
-    def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
-        data = {"stage": stage, "page": page, "of": of}
-        _quietly(job, "info", PREPARE_PROGRESS, data, queue)
-
     source = load_source(job, deps, queue)
     pdf, sha256 = source.pdf, source.sha256
     pages = _extract(deps, pdf)
+    total = len(pages)
+
+    def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
+        # `pages`: the document's page count, which the Samples tab shows mid-OCR (#142).
+        data = {"stage": stage, "page": page, "of": of, "pages": total}
+        _quietly(job, "info", PREPARE_PROGRESS, data, queue)
+
     report("text", len(pages), len(pages))
     ocr_numbers = (
         [i + 1 for i in pages_needing_ocr(pages, "auto", deps.ocr.min_chars)] if deps.ocr else []
@@ -244,7 +247,14 @@ def segment_samples(
             span = by_id.get(section.id)
             if span is None:
                 cells.append(
-                    {"id": section.id, "found": False, "page": None, "line": None, "chars": 0}
+                    {
+                        "id": section.id,
+                        "found": False,
+                        "page": None,
+                        "line": None,
+                        "chars": 0,
+                        "matches": 0,
+                    }
                 )
                 continue
             body = text[span.start : span.end].strip()
@@ -255,6 +265,8 @@ def segment_samples(
                     "page": first + bisect_right(page_starts, span.start),
                     "line": _line_at(text, span.start),
                     "chars": len(body),
+                    # Only the first match starts the section; more mean a repeated block.
+                    "matches": sum(1 for _ in re.finditer(section.anchor, text, re.MULTILINE)),
                 }
             )
         rows.append(

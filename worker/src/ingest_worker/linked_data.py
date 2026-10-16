@@ -18,7 +18,7 @@ def effective_base_iri(customer_slug: str | None, base_iri: str | None) -> str |
 
 
 class LinkedDataSettings(Protocol):
-    """The Linked data page's settings (migration 0034), read for every graph."""
+    """The Linked data settings (Administration > Linked data, migration 0034), read for every graph."""
 
     def effective_base(self) -> str | None: ...
 

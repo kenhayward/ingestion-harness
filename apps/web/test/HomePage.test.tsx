@@ -15,8 +15,6 @@ function home(jobs: JobSummary[], me = KEN, api = fakeApi()) {
       error={null}
       refresh={vi.fn(async () => {})}
       pollMs={0}
-      pickPending={false}
-      onPicked={() => {}}
     />,
   );
   return api;
@@ -133,8 +131,6 @@ describe('HomePage live progress', () => {
         refresh={refresh}
         pollMs={3000}
         livePollMs={10}
-        pickPending={false}
-        onPicked={() => {}}
       />,
     );
     return refresh;
@@ -204,8 +200,6 @@ describe('HomePage pushed progress', () => {
         refresh={refresh}
         pollMs={3000}
         livePollMs={10}
-        pickPending={false}
-        onPicked={() => {}}
       />,
     );
     return { api, refresh, watchJob, stop, on: () => on };

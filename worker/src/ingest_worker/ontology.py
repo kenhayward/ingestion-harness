@@ -10,7 +10,8 @@ import hashlib
 import json
 import re
 from collections import deque
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
@@ -487,6 +488,10 @@ class OntologyStore(Protocol):
         """Mark it parsing; False when it is already ready or failed (a retry skips it)."""
         ...
 
+    def ready(self, ontology_id: str, version: int) -> bool:
+        """Whether its terms are saved: a retry then only finishes embedding them."""
+        ...
+
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None: ...
     def fail(self, ontology_id: str, version: int, error: str) -> None: ...
 
@@ -691,6 +696,14 @@ class PgOntologyStore:
             (ontology_id, version),
         )
         return cur.rowcount > 0
+
+    def ready(self, ontology_id: str, version: int) -> bool:
+        row = self._conn.execute(
+            """SELECT status = 'ready' FROM ontology_versions
+                WHERE ontology_id = %s AND version = %s""",
+            (ontology_id, version),
+        ).fetchone()
+        return bool(row and row[0])
 
     def save(self, ontology_id: str, version: int, parsed: ParsedOntology) -> None:
         from psycopg.types.json import Jsonb
@@ -1052,49 +1065,14 @@ class PgOntologyStore:
         kinds: list[list[str]],
         min_similarity: float,
     ) -> list[list[TermHit]]:
-        from psycopg import sql
-
         out: list[list[TermHit]] = [[] for _ in vectors]
-        asked = [i for i, v in enumerate(vectors) if v]
-        if not versions or not asked:
+        if not versions or not any(vectors):
             return out
-        dims = {len(vectors[i]) for i in asked}
-        if len(dims) != 1:
-            raise ValueError("query vectors of different dimensions")
-        # One pass over the asked versions' embeddings for every query vector (a small inner
-        # relation), exact like `semantic`: no approximate index to crowd versions out.
-        query = sql.SQL(
-            """WITH q AS (
-                 SELECT x.i, x.v::vector AS vec, string_to_array(x.k, ',') AS kinds
-                   FROM unnest(%(idx)s::int[], %(vecs)s::text[], %(ks)s::text[]) AS x(i, v, k)),
-               s AS (
-                 SELECT q.i, t.ontology_id, t.version, {cols},
-                        1 - (e.embedding <=> q.vec) AS sim
-                   FROM ontology_term_embeddings e
-                   JOIN ontology_terms t USING (ontology_id, version, kind, iri)
-                   JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
-                     ON e.ontology_id = p.id AND e.version = p.v
-                   JOIN q ON e.kind = ANY(q.kinds)
-                  WHERE e.model_ref = {ref} AND e.dims = {dims})
-               SELECT DISTINCT ON (i, ontology_id, version) * FROM s
-                WHERE sim >= %(min)s
-                ORDER BY i, ontology_id, version, sim DESC, label, iri"""
-        ).format(
-            cols=sql.SQL(_READ_COLUMNS),
-            ref=sql.Literal(model_ref),
-            dims=sql.Literal(dims.pop()),
+        statement, params = semantic_best_statement(
+            versions, model_ref, vectors, kinds, min_similarity
         )
-        rows = self._conn.execute(
-            query,
-            {
-                "idx": asked,
-                "vecs": [vector_literal(vectors[i]) for i in asked],
-                "ks": [",".join(kinds[i]) for i in asked],
-                "ids": [v[0] for v in versions],
-                "vs": [v[1] for v in versions],
-                "min": min_similarity,
-            },
-        ).fetchall()
+        with parallel_scan(self._conn):
+            rows = self._conn.execute(statement, params).fetchall()
         for r in rows:
             out[r[0]].append(TermHit(r[1], r[2], _read_term(r[3:]), float(r[-1])))
         return [sorted(h, key=lambda x: (-x.similarity, x.ontology_id, x.version)) for h in out]
@@ -1137,6 +1115,70 @@ def _resolved(iri: str, how: str, ontology_id: str, version: int) -> dict[str, A
         "version": version,
         "reason": None,
     }
+
+
+@contextmanager
+def parallel_scan(conn: Any) -> Iterator[None]:
+    """A transaction in which Postgres splits a large scan across its parallel workers
+    (max_parallel_workers_per_gather, 2 by default): its default costs keep a scan that
+    compares vectors on one CPU, as they cannot see what `<=>` costs."""
+    with conn.transaction():
+        conn.execute("SET LOCAL parallel_setup_cost = 0")
+        conn.execute("SET LOCAL parallel_tuple_cost = 0")
+        conn.execute("SET LOCAL min_parallel_table_scan_size = 0")
+        yield
+
+
+def semantic_best_statement(
+    versions: list[tuple[str, int]],
+    model_ref: str,
+    vectors: list[list[float]],
+    kinds: list[list[str]],
+    min_similarity: float,
+) -> tuple[Any, dict[str, Any]]:
+    """`semantic_best`'s query: each asked query vector's best term in every version, at or
+    above `min_similarity`. One pass over the versions' embeddings for all the vectors, exact:
+    no approximate index to crowd versions out (a spike on the live library: HNSW was 7x
+    faster but missed 2 of 127 matches). The vectors are a `vector[]` parameter, parsed once
+    and parallel safe: inlined as text they were parsed again for every (embedding, vector)
+    pair, 99% of the time, and a MATERIALIZED CTE keeps the scan on one CPU (23 vectors
+    against 148k embeddings: over 9 min, then 31.9 s, now 11.5 s on 3 CPUs). Only the matches
+    above the threshold are joined with their terms."""
+    from psycopg import sql
+
+    asked = [i for i, v in enumerate(vectors) if v]
+    dims = {len(vectors[i]) for i in asked}
+    if len(dims) != 1:
+        raise ValueError("query vectors of different dimensions")
+    statement = sql.SQL(
+        """SELECT DISTINCT ON (s.i, s.ontology_id, s.version)
+                  s.i, s.ontology_id, s.version, {cols}, s.sim
+             FROM (SELECT q.i, e.ontology_id, e.version, e.kind, e.iri,
+                          1 - (e.embedding <=> q.vec) AS sim
+                     FROM ontology_term_embeddings e
+                     JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                       ON e.ontology_id = p.id AND e.version = p.v
+                     JOIN unnest(%(idx)s::int[], %(vecs)s::vector[], %(ks)s::text[])
+                          AS q(i, vec, k)
+                       ON e.kind = ANY(string_to_array(q.k, ','))
+                    WHERE e.model_ref = {ref} AND e.dims = {dims}
+                      AND 1 - (e.embedding <=> q.vec) >= %(min)s) s
+             JOIN ontology_terms t USING (ontology_id, version, kind, iri)
+            ORDER BY s.i, s.ontology_id, s.version, s.sim DESC, t.label, t.iri"""
+    ).format(
+        cols=sql.SQL(_READ_COLUMNS),
+        ref=sql.Literal(model_ref),
+        dims=sql.Literal(dims.pop()),
+    )
+    params = {
+        "idx": asked,
+        "vecs": [vector_literal(vectors[i]) for i in asked],
+        "ks": [",".join(kinds[i]) for i in asked],
+        "ids": [v[0] for v in versions],
+        "vs": [v[1] for v in versions],
+        "min": min_similarity,
+    }
+    return statement, params
 
 
 _READ_COLUMNS = (
@@ -1411,7 +1453,7 @@ def _finish(
         "application/n-triples",
     )
     store.save(oid, version, parsed)
-    embed_after_import(deps, queue, job.id, oid, version)
+    embed_after_import(deps, queue, job, oid, version)
     queue.event(
         job.id,
         "info",
@@ -1426,13 +1468,16 @@ def run_ontology_batch(
 ) -> int:
     """A folder imported as one ontology per file: every member is read first, so imports
     between members resolve to each other whatever their order; a member that cannot be read or
-    indexed fails alone. A retry skips members already finished."""
+    indexed fails alone. A retry skips members already finished, only finishing the embedding of
+    those that are ready."""
     store = deps.ontologies
     assert store is not None
     max_triples = deps.ontology_max_triples
     graphs: dict[tuple[str, int], Graph] = {}
     for m in members:
         if not store.start(m.ontology_id, m.version):
+            if store.ready(m.ontology_id, m.version):
+                embed_after_import(deps, queue, job, m.ontology_id, m.version)
             continue
         try:
             graphs[(m.ontology_id, m.version)] = read_graph(
@@ -1460,7 +1505,11 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
     """Read the version's file (uploaded, or fetched from its URL), resolve its owl:imports,
     keep its canonical N-Triples and index its terms with its imports'. A file that cannot be
     read fails the version (the job goes to review); other errors retry, failing the version on
-    the last attempt so it never stays 'parsing'. An import never fails the job."""
+    the last attempt so it never stays 'parsing'. An import never fails the job.
+
+    A retry of a version that is already ready (the worker stopped while embedding its terms,
+    e.g. a redeploy) only finishes the embedding: saving the terms again would delete the
+    embeddings written so far, which reference them."""
     try:
         params = OntologyJobParams.model_validate(job.params or {})
     except ValidationError as exc:
@@ -1473,7 +1522,9 @@ def run_ontology_import(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) ->
         return ParsedOntology(0, None, None, None, [], [])
     oid, version = params.ontology_id, params.version
     assert oid is not None and version is not None  # the params validator guarantees them
-    store.start(oid, version)
+    if not store.start(oid, version) and store.ready(oid, version):
+        embed_after_import(deps, queue, job, oid, version)
+        return ParsedOntology(0, None, None, None, [], [])
     try:
         max_triples = deps.ontology_max_triples
         if params.sources is not None:

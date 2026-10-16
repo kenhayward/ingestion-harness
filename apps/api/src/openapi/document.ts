@@ -85,6 +85,11 @@ export const TAGS = {
     Sign in with an email address and a password to get a session cookie (\`ih_session\`).
     Every \`/api\` route needs the session except sign-in, sign-out and these docs. See
     [ADR 0013](${REPO}/docs/adr/0013-email-password-users.md).`,
+  Profile: md`
+    Your own profile: name, job title, company and LinkedIn name, and a linked GitHub account
+    (its picture is your picture in the app) with the repository recipe YAML will be stored in.
+    The email address is changed by an admin.
+  `,
   Users: md`
     Admins add people with a name, an email address and a one-time password, and can edit,
     disable, unlock or reissue them, and read recent sign-ins. The admin from the API log signs
@@ -131,7 +136,7 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
   },
   {
     name: 'Administration',
-    tags: ['Auth & sessions', 'Users', 'Data-lake S3 keys', 'Linked data', 'Health'],
+    tags: ['Auth & sessions', 'Profile', 'Users', 'Data-lake S3 keys', 'Linked data', 'Health'],
   },
 ];
 

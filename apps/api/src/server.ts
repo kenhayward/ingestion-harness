@@ -2,10 +2,12 @@ import pg from 'pg';
 import { PgAccessRepo } from './access/pg.js';
 import { SIGN_IN_RETENTION_DAYS } from './access/repo.js';
 import { buildApp } from './app.js';
-import { loadConfig, s3KeysConfig, targetConfig } from './config.js';
+import { githubConfig, loadConfig, s3KeysConfig, targetConfig } from './config.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
+import { HttpGitHub } from './profile/github.js';
+import { PgProfileRepo } from './profile/pg.js';
 import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgRepo } from './repositories/pg.js';
@@ -31,6 +33,7 @@ const workbench = new PgWorkbenchRepo(
 );
 const seeded = await seedTemplates(templates, config.SPECS_DIR);
 const access = new PgAccessRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }));
+const github = githubConfig(config);
 const s3 = {
   endpoint: config.S3_ENDPOINT,
   region: config.S3_REGION,
@@ -55,7 +58,7 @@ const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err)
 const linkedData = new PgLinkedDataRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
 );
-// .env seeds the customer and base once; the Linked data page wins afterwards.
+// .env seeds the customer and base once; Administration > Linked data wins afterwards.
 if (config.LINKED_DATA_CUSTOMER) {
   const [slug, ...name] = config.LINKED_DATA_CUSTOMER.split('=');
   await linkedData.seed({
@@ -86,6 +89,9 @@ const app = await buildApp({
   },
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
   access, // always enforced in production (ADR 0006)
+  profiles: new PgProfileRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  github: github && new HttpGitHub(github),
+  githubRedirectUrl: github?.redirectUrl ?? null,
   s3Keys,
   llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),

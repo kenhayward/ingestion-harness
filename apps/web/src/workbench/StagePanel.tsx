@@ -11,12 +11,14 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
+import { DeliveryTargets } from './DeliveryTargets.js';
 import { OutputsView } from './OutputsView.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
 import { StaleBanner } from './StaleBanner.js';
 import { StepsView } from './StepsView.js';
 import { stepCards, type StepMetric } from './steps.js';
 import { TabHeader } from './TabHeader.js';
+import { DraftRunProgress } from './DraftRunProgress.js';
 import { useDefinitions } from './useDefinitions.js';
 
 /** Handoff §0.4 / SC1: what Keep is called and what the banner asks, per stage. */
@@ -392,7 +394,14 @@ export function StagePanel({
         </>
       )}
       {!hasDraft && <p className="muted">Start the next version on the Recipe tab first.</p>}
-      {running && <p className="muted">Drafting…</p>}
+      {running && (
+        <DraftRunProgress
+          stage={stage}
+          run={proposal.run}
+          label="Drafting progress"
+          fallback={<p className="muted">Drafting…</p>}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {message && <p role="status">{message}</p>}
@@ -429,6 +438,17 @@ export function StagePanel({
       {stage === 'outputs' && draftDef && typeof draft === 'number' ? (
         <>
           {proposal?.status === 'ready' && card}
+          <DeliveryTargets
+            api={api}
+            projectId={projectId}
+            draftVersion={draft}
+            definition={draftDef}
+            updatedAt={definitions.draftUpdatedAt}
+            onSaved={() => {
+              void definitions.reload();
+              onApplied();
+            }}
+          />
           <OutputsView
             draftVersion={draft}
             liveVersion={definitions.liveDef ? published : null}

@@ -69,6 +69,21 @@ def test_context_must_come_from_an_earlier_step() -> None:
         Template.model_validate({**TEMPLATE, "pipeline": [*PIPELINE[:2], *unknown, PIPELINE[3]]})
 
 
+def test_a_bare_table_path_says_to_name_a_column() -> None:
+    # Drafting models ask for a whole table ("results") as context or a check path; the error
+    # they get back must say how to fix it, or they repeat it on the retry.
+    bare = [{**PIPELINE[2], "context": {"x": "results"}}]
+    with pytest.raises(ValidationError) as exc:
+        Template.model_validate({**TEMPLATE, "pipeline": [*PIPELINE[:2], *bare, PIPELINE[3]]})
+    assert (
+        "context 'x': unknown field or column 'results': 'results' is a table, "
+        "so name one of its columns: results.batch"
+    ) in str(exc.value)
+    check = {**TEMPLATE["pipeline"][3], "values": "results"}
+    with pytest.raises(ValidationError, match="'results' is a table, so name one of its columns"):
+        Template.model_validate({**TEMPLATE, "pipeline": [*TEMPLATE["pipeline"][:3], check]})
+
+
 def test_compiled_steps_always_carry_a_context_list() -> None:
     t = Template.model_validate(TEMPLATE)
     assert compile_step(t, t.extract_steps()[0]).prompt_context["step_context"] == []

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig, s3KeysConfig, targetConfig } from '../src/config.js';
+import { githubConfig, loadConfig, s3KeysConfig, targetConfig } from '../src/config.js';
 
 const base = {
   DATABASE_URL: 'postgres://u:p@localhost:5432/ih',
@@ -7,6 +7,41 @@ const base = {
   S3_ACCESS_KEY: 'k',
   S3_SECRET_KEY: 's',
 };
+
+describe('githubConfig', () => {
+  it('is off without an OAuth app', () => {
+    expect(
+      githubConfig(loadConfig({ ...base, GITHUB_CLIENT_ID: '', GITHUB_CLIENT_SECRET: '' })),
+    ).toBeNull();
+  });
+
+  it('reads the OAuth app and its callback address', () => {
+    const cfg = loadConfig({
+      ...base,
+      GITHUB_CLIENT_ID: 'Iv1.abc',
+      GITHUB_CLIENT_SECRET: 'shh',
+      GITHUB_REDIRECT_URL: 'https://ct.example/api/profile/github/callback',
+    });
+    expect(githubConfig(cfg)).toEqual({
+      clientId: 'Iv1.abc',
+      clientSecret: 'shh',
+      redirectUrl: 'https://ct.example/api/profile/github/callback',
+    });
+    expect(
+      githubConfig(loadConfig({ ...base, GITHUB_CLIENT_ID: 'a', GITHUB_CLIENT_SECRET: 'b' }))
+        ?.redirectUrl,
+    ).toBeNull();
+  });
+
+  it.each([{ GITHUB_CLIENT_ID: 'a' }, { GITHUB_CLIENT_SECRET: 'b' }])(
+    'refuses half an OAuth app: %j',
+    (env) => {
+      expect(() => loadConfig({ ...base, ...env })).toThrow(
+        /GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET go together/,
+      );
+    },
+  );
+});
 
 describe('loadConfig', () => {
   it('applies defaults', () => {

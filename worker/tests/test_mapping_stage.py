@@ -519,7 +519,7 @@ def test_local_terms_live_under_the_recipe_namespace() -> None:
         ],
         local_namespace=None,
     )
-    assert any("set the customer on the Linked data page" in e for e in none)
+    assert any("set the customer under Administration > Linked data" in e for e in none)
 
 
 def test_terms_imported_from_a_local_only_ontology_refuse_an_external_drafter(

@@ -7,8 +7,10 @@ describe('parseHash', () => {
     ['#/results', { name: 'results' }],
     ['#/results/abc-123', { name: 'result', jobId: 'abc-123' }],
     ['#/templates', { name: 'templates' }],
-    ['#/models', { name: 'models' }],
-    ['#/linked-data', { name: 'linked-data' }],
+    // Models, Linked data and Access live in the Administration dialog: no address of their own.
+    ['#/models', { name: 'home' }],
+    ['#/linked-data', { name: 'home' }],
+    ['#/access', { name: 'home' }],
     ['#/ontologies', { name: 'ontologies' }],
     ['#/ontologies/idmp-o', { name: 'ontology', ontologyId: 'idmp-o' }],
     ['#/review/j1', { name: 'review', jobId: 'j1' }],
@@ -33,6 +35,13 @@ describe('parseHash', () => {
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
     ['#/account/password', { name: 'password' }],
+    ['#/account/profile', { name: 'profile', tab: 'details' }],
+    ['#/account/profile/password', { name: 'profile', tab: 'password' }],
+    [
+      '#/account/profile/github?github=linked',
+      { name: 'profile', tab: 'details', github: 'linked' },
+    ],
+    ['#/account/profile/github?github=nonsense', { name: 'profile', tab: 'details' }],
     ['#/upload', { name: 'home', focusUpload: true }],
     ['#/nowhere', { name: 'home' }],
   ])('%s', (hash, route) => {

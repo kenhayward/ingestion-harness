@@ -12,6 +12,8 @@ from .base import (
     LLMError,
     ModelDescriptor,
     RefusalError,
+    TokenCallback,
+    TokenCounter,
     VisionRequest,
 )
 
@@ -63,7 +65,9 @@ class AnthropicProvider:
             ).models.list()
         ]
 
-    def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult:
+    def complete_json(
+        self, model: str, request: CompletionRequest, on_tokens: TokenCallback | None = None
+    ) -> CompletionResult:
         output_config: dict[str, Any] = {
             "format": {"type": "json_schema", "schema": request.json_schema}
         }
@@ -76,7 +80,8 @@ class AnthropicProvider:
                 "system": request.system,
                 "messages": [{"role": "user", "content": _content(request.prompt, request.images)}],
                 "output_config": output_config,
-            }
+            },
+            on_tokens,
         )
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
@@ -92,9 +97,12 @@ class AnthropicProvider:
             params["output_config"] = {"effort": self._effort}
         return self._send(params)
 
-    def _send(self, params: dict[str, Any]) -> CompletionResult:
+    def _send(
+        self, params: dict[str, Any], on_tokens: TokenCallback | None = None
+    ) -> CompletionResult:
         # Streamed and collected with get_final_message(): large output budgets (64K) can run
         # long, and the SDK refuses non-streaming requests it estimates exceed ~10 minutes.
+        # With `on_tokens`, the text and thinking deltas are counted on the way.
         try:
             if self._server_fallbacks:
                 stream: Any = self._client.beta.messages.stream(
@@ -103,6 +111,13 @@ class AnthropicProvider:
             else:
                 stream = self._client.messages.stream(**params)
             with stream as s:
+                if on_tokens is not None:
+                    counter = TokenCounter(on_tokens)
+                    for event in s:
+                        if getattr(event, "type", None) == "content_block_delta":
+                            delta = event.delta
+                            counter.add(getattr(delta, "text", None))
+                            counter.add(getattr(delta, "thinking", None))
                 message: Any = s.get_final_message()
         except anthropic.APIStatusError as exc:
             if exc.status_code in (408, 409, 429) or exc.status_code >= 500:

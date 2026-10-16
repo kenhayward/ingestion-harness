@@ -510,14 +510,6 @@ html {
   margin-top: auto;
   color: var(--ih-muted);
 }
-.nav-heading {
-  margin: 16px 12px 4px;
-  font-size: var(--ih-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ih-muted);
-}
 /* Collapse / expand the nav (any page; remembered except on project pages). */
 .nav-toggle {
   align-self: flex-end;
@@ -549,7 +541,6 @@ html {
   padding: 0;
 }
 .side-nav.compact .nav-label,
-.side-nav.compact .nav-heading,
 .side-nav.compact .nav-foot > svg:last-of-type {
   display: none;
 }
@@ -561,6 +552,33 @@ html {
   height: 18px;
   padding: 0 5px;
   font-size: var(--ih-text-xs);
+}
+/* Too narrow for the collapsed nav beside the page (it sits there from 720px): a row of icons above
+   the page instead of a 68px column with an empty area beside it (#111). */
+@media (max-width: 719.98px) {
+  /* Rows take their own height: spare height goes below the page, not into the nav's row. */
+  .app-body {
+    align-content: flex-start;
+  }
+  .side-nav.compact {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ih-border);
+  }
+  .side-nav.compact a {
+    width: var(--ih-touch);
+  }
+  .side-nav.compact .nav-toggle {
+    margin-bottom: 0;
+  }
+  .side-nav.compact a.nav-foot {
+    margin-top: 0;
+    margin-left: auto;
+  }
 }
 .page {
   flex: 999 1 640px;
@@ -2433,11 +2451,22 @@ a.pill {
 }
 .card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: auto;
 }
-.card-actions > .primary {
-  flex: 1;
+/* Icon-only actions (titles explain them): equal squares that fit any card width. */
+.card-actions > .icon.bordered {
+  width: var(--ih-control-h);
+  min-height: var(--ih-control-h);
+  padding: 0;
+  border-color: var(--ih-border-strong);
+  color: var(--ih-text);
+}
+.card-actions > .icon.bordered.primary {
+  border-color: var(--ih-accent);
+  background: var(--ih-accent);
+  color: var(--ih-accent-text);
 }
 label.button {
   display: inline-flex;
@@ -2856,8 +2885,9 @@ button.add {
   flex-direction: column;
   gap: 16px;
 }
-.access-page .page-header {
-  margin-bottom: 0;
+/* note-card's flex basis is meant for a row: in this column it would be a height. */
+.access-page > .note-card {
+  flex: none;
 }
 .access-top {
   display: flex;
@@ -3221,48 +3251,483 @@ tr.confirming td {
   background: var(--ih-neutral-bg);
 }
 
-/* Models page: one card per LLM endpoint */
+/* Administration dialog: Profile's layout, larger; each tab's main button in the header. */
+.dialog.profile-dialog.admin-dialog {
+  width: min(1180px, calc(100vw - 32px));
+  height: min(820px, calc(100vh - 32px));
+}
+.admin-header {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.admin-header-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.admin-lead {
+  margin: 0 0 20px;
+}
+
+/* Models tab: Model choices, Pipeline models, Endpoints. */
 .models-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 26px;
 }
-.endpoint-card {
+.models-page > .admin-lead {
+  margin: 0;
+}
+.admin-section {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 20px;
+}
+.admin-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+}
+.admin-section-head > div:first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.admin-section-head h3 {
+  margin: 0 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.admin-section-head h3 .muted {
+  font-weight: 400;
+}
+.admin-section-head p {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+}
+.admin-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   border: 1px solid var(--ih-border);
-  border-radius: var(--ih-radius-lg);
+  border-radius: 12px;
   background: var(--ih-surface);
 }
-.endpoint-card.disabled {
-  opacity: 0.75;
+/* Rounded ends instead of overflow: hidden, which would clip the rows' popovers. */
+.admin-list > :first-child {
+  border-top-left-radius: 11px;
+  border-top-right-radius: 11px;
 }
-.endpoint-head {
+.admin-list > :last-child {
+  border-bottom-left-radius: 11px;
+  border-bottom-right-radius: 11px;
+}
+.admin-list > li,
+.admin-list > section {
+  border-bottom: 1px solid var(--ih-border-soft);
+}
+.admin-list > :last-child {
+  border-bottom: 0;
+}
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.admin-row.confirming {
+  background: var(--ih-danger-bg);
+}
+.small-caps {
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ih-muted);
+}
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A model choice: tile, label and description, the model it runs, its ⋯ menu. */
+.model-tile {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--ih-surface2);
+  color: var(--ih-muted);
+}
+.model-tile.accent {
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.choice-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.choice-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  font-size: var(--ih-text-md);
 }
-.endpoint-head h2 {
-  margin: 0 4px 0 0;
-  font-size: var(--ih-text-lg);
+.choice-text small {
+  font-size: var(--ih-text-sm);
 }
-.endpoint-actions {
+.choice-model {
+  flex: 0 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: var(--ih-text-md);
+  text-align: right;
+}
+.choice-model > span {
+  max-width: 100%;
+}
+.choice-model small {
+  font-size: var(--ih-text-sm);
+}
+.new-choice {
+  padding: 14px 16px;
+  background: var(--ih-accent-soft);
+}
+.choice-form {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 12px;
+  margin: 0;
+}
+.choice-form-model {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.choice-form-fields {
   display: flex;
   flex-wrap: wrap;
+  gap: 12px;
+}
+.choice-form-fields label {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ih-text-sm);
+}
+.choice-form-fields input,
+.choice-form-fields select {
+  width: 100%;
+}
+.choice-form-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 8px;
+}
+.confirm-text button {
+  min-height: var(--ih-control-h-sm);
+}
+
+/* Popovers anchored to their trigger: Add choice ▾, Offer a model ▾, a row's ⋯ menu. */
+.popover-anchor {
+  position: relative;
+  flex: none;
+}
+button.dropdown-trigger {
+  min-height: 34px;
+  background: var(--ih-surface);
+}
+button.dropdown-trigger.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: var(--ih-text-sm);
+}
+button.dropdown-trigger[aria-expanded='true'] {
+  border-color: var(--ih-accent);
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.dropdown-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  max-height: min(440px, 60vh);
+  border: 1px solid var(--ih-border);
+  border-radius: 10px;
+  background: var(--ih-surface);
+  box-shadow: var(--ih-shadow-card);
+  overflow: hidden;
+}
+.add-choice-pop {
+  width: min(400px, calc(100vw - 48px));
+}
+.offer-pop {
+  width: min(380px, calc(100vw - 48px));
+}
+.dropdown-search {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--ih-border-strong);
+  border-radius: var(--ih-radius-md);
+  color: var(--ih-muted);
+}
+.dropdown-search:focus-within {
+  border-color: var(--ih-accent);
+  outline: 2px solid var(--ih-accent);
+}
+.dropdown-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+}
+.dropdown-list {
+  flex: 1;
+  overflow: auto;
+  padding: 0 6px 6px;
+}
+.dropdown-group-head {
+  padding: 8px 8px 4px;
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+}
+.offer-pop > .dropdown-group-head {
+  padding: 10px 14px 4px;
+}
+button.dropdown-option {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--ih-radius-sm);
+  text-align: left;
+  color: var(--ih-text);
+}
+button.dropdown-option:hover:not(:disabled),
+button.dropdown-option:focus-visible {
+  background: var(--ih-accent-soft);
+  outline: 0;
+}
+button.dropdown-option > .icon {
+  color: var(--ih-accent);
+}
+.option-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.option-name {
+  font-size: var(--ih-text-md);
+  font-weight: 500;
+}
+.option-id {
+  font-size: 11px;
+  color: var(--ih-muted);
+  overflow-wrap: anywhere;
+}
+.option-note {
+  font-size: var(--ih-text-xs);
+  font-weight: 400;
+}
+.dropdown-empty {
+  margin: 8px;
+  font-size: var(--ih-text-sm);
+}
+.dropdown-foot .inline-edit {
+  flex: none;
+  flex-wrap: nowrap;
+}
+.dropdown-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ih-border-soft);
+  background: var(--ih-surface2);
+  font-size: var(--ih-text-sm);
+}
+.menu-popover.row-menu {
+  top: calc(100% + 4px);
+  width: 190px;
+  min-width: 0;
+  border-radius: 10px;
+}
+.menu-popover [role='menuitem'].separated {
+  margin-top: 4px;
+  border-top: 1px solid var(--ih-border-soft);
+  border-radius: 0 0 var(--ih-radius-sm) var(--ih-radius-sm);
+}
+.menu-popover [role='menuitem'].danger-item {
+  color: var(--ih-danger-fg);
+}
+
+/* Pipeline models: three selects side by side, stacking when narrow. */
+.pipeline-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--ih-border);
+  border-radius: 12px;
+  background: var(--ih-surface);
+}
+.pipeline-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
+}
+.pipeline-fields select {
+  min-height: 36px;
+  color: var(--ih-text);
+}
+
+/* Endpoints: a row each, opening on its connection and the models it offers. */
+button.endpoint-toggle {
+  width: 100%;
+  min-height: 46px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: inherit;
+  text-align: left;
+}
+.endpoint-toggle > .icon {
+  flex: none;
+  color: var(--ih-muted);
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.endpoint-toggle[aria-expanded='true'] > .icon {
+  transform: none;
+}
+.endpoint-name {
+  font-size: var(--ih-text-md);
+  font-weight: 600;
+}
+.endpoint-where {
+  font-size: var(--ih-text-sm);
+  font-weight: 400;
+}
+.endpoint-count {
   margin-left: auto;
+  font-size: var(--ih-text-sm);
+  font-weight: 400;
+}
+.endpoint-row.open {
+  background: var(--ih-surface2);
+}
+.endpoint-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  padding: 4px 16px 16px 50px;
+}
+.endpoint-connection {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.endpoint-connection p {
+  margin: 0;
+}
+.endpoint-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 0;
+}
+.endpoint-meta dt {
+  font-size: var(--ih-text-sm);
+  color: var(--ih-muted);
 }
 .endpoint-meta dd {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+.endpoint-meta dd > code {
+  overflow-wrap: anywhere;
 }
 .endpoint-meta .segmented {
   margin-left: 0;
+}
+.endpoint-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.endpoint-offered {
+  flex: 1 1 380px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.endpoint-offered-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.offered-models {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ih-border-soft);
+  border-radius: 10px;
+  background: var(--ih-surface);
+}
+.offered-models li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--ih-border-soft);
+}
+.offered-models li:last-child {
+  border-bottom: 0;
+}
+.offered-models li > .option-text {
+  flex: 1 1 140px;
 }
 .inline-edit {
   display: flex;
@@ -3274,95 +3739,36 @@ tr.confirming td {
   flex: 1 1 200px;
   min-width: 0;
 }
-.endpoint-models {
-  min-width: 0;
-  margin: 0;
-  padding: 12px 0 0;
-  border: 0;
-  border-top: 1px solid var(--ih-border);
-}
-.endpoint-models legend {
-  padding: 12px 0 8px;
-  font-weight: 600;
-}
-.endpoint-models ul {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 4px 16px;
-  margin: 0 0 12px;
-  padding: 0;
-  list-style: none;
-}
-.endpoint-models label {
+.output-limit {
   display: flex;
-  flex-direction: row;
-  justify-content: flex-start;
   align-items: center;
-  font-weight: 400;
-  gap: 8px;
-  overflow-wrap: anywhere;
+  gap: 6px;
+  font-size: var(--ih-text-sm);
 }
-.endpoint-models input[type='checkbox'] {
-  flex: none;
-  width: auto;
+.output-limit input {
+  width: 76px;
+  min-height: 30px;
+  padding: 0 8px;
+  text-align: right;
+  appearance: textfield;
 }
-.endpoint-models .actions input {
-  flex: 1 1 200px;
-  min-width: 0;
-}
-.endpoint-models .actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* Models page: model choices and pipeline models (ADR 0010, phase 4b) */
-.choices-section,
-.pipeline-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.choices-section h2,
-.pipeline-section h2,
-.endpoints-heading {
-  margin: 8px 0 0;
-  font-size: var(--ih-text-lg);
-}
-.choices-section > p,
-.pipeline-section > p {
+/* No spinners: in 76 px they would hide the number. */
+.output-limit input::-webkit-inner-spin-button,
+.output-limit input::-webkit-outer-spin-button {
   margin: 0;
+  appearance: none;
 }
-.choice-list {
-  width: 100%;
-  border-collapse: collapse;
+.output-limit button {
+  min-height: 30px;
+  padding: 0 10px;
 }
-.choice-list td input {
-  display: block;
-  width: 100%;
-  margin-bottom: 6px;
-}
-.choice-label {
-  font-weight: 500;
-}
-.choice-description {
-  display: block;
-}
-.pipeline-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  padding: 16px 20px;
-  border: 1px solid var(--ih-border);
-  border-radius: var(--ih-radius-lg);
-  background: var(--ih-surface);
-}
-.pipeline-fields label {
-  flex: 1 1 260px;
-}
-/* card-form's flex basis is meant for a row (Access page): in this column it would be a height. */
-.choices-section .card-form {
-  flex: none;
+@media (max-width: 760px) {
+  .endpoint-body {
+    padding-left: 16px;
+  }
+  .admin-header-actions button {
+    padding: 0 10px;
+  }
 }
 
 /* The one model picker (ADR 0010, phase 4c): the select, and the model the pick runs below it. */
@@ -3540,7 +3946,18 @@ tr.confirming td {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.ontology-card .ontology-version {
+.ontology-card .ontology-embedding {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.ontology-embedding .meter {
+  flex: none;
+  width: 84px;
+}
+.ontology-version {
   border-top: 1px solid var(--ih-border-soft);
   padding-top: 10px;
 }
@@ -3942,4 +4359,186 @@ tr.confirming td {
   align-items: center;
   justify-content: space-between;
   gap: var(--ih-space-2);
+}
+
+/* Pictures: the linked GitHub account's, else initials (shell/Avatar.tsx). */
+img.avatar {
+  object-fit: cover;
+  background: var(--ih-surface2);
+}
+.avatar-large {
+  width: 96px;
+  height: 96px;
+  font-size: 30px;
+}
+
+/* Profile (docs/design/profile.md): a ledger of tabs beside the open tab, a header naming it,
+   a scrolling body and a footer with Close. Below 760px the ledger sits above the tab. */
+.dialog.profile-dialog {
+  width: min(960px, 100%);
+  height: min(680px, calc(100vh - 32px));
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.profile-side {
+  flex: none;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--ih-border);
+  background: var(--ih-surface2);
+}
+.profile-id {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 16px 20px;
+  border-bottom: 1px solid var(--ih-border);
+}
+.profile-who {
+  font-size: var(--ih-text-lg);
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.profile-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+}
+.profile-tabs [role='tab'] {
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  border: 0;
+  color: var(--ih-text);
+  font-size: var(--ih-text-base);
+}
+.profile-tabs [role='tab'][aria-selected='true'] {
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+  font-weight: 600;
+}
+.profile-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.profile-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--ih-border);
+}
+.profile-body {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 24px;
+}
+.profile-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 24px;
+  border-top: 1px solid var(--ih-border);
+}
+.profile-details,
+.profile-form,
+.password-form {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 16px;
+  max-width: 560px;
+  margin: 0;
+}
+.password-form > button[type='submit'],
+.profile-actions > button {
+  align-self: flex-start;
+}
+.profile-details {
+  gap: 24px;
+}
+.profile-form .field,
+.github-repo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.profile-form input[readonly] {
+  color: var(--ih-muted);
+}
+.profile-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.profile-actions select {
+  flex: 1;
+  min-width: 200px;
+}
+.profile-github {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+}
+.profile-github legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+.profile-github p {
+  margin: 0;
+}
+.profile-github > a.button {
+  align-self: flex-start;
+}
+.github-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.github-account > button {
+  margin-left: auto;
+}
+@media (max-width: 760px) {
+  .dialog.profile-dialog {
+    flex-direction: column;
+    height: calc(100vh - 32px);
+  }
+  .profile-side {
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--ih-border);
+  }
+  .profile-id {
+    flex-direction: row;
+    padding: 12px 16px;
+  }
+  .profile-id .avatar-large {
+    width: 40px;
+    height: 40px;
+    font-size: var(--ih-text-md);
+  }
+  .profile-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px 12px;
+  }
+  .profile-header,
+  .profile-body,
+  .profile-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }

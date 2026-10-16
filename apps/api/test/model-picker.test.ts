@@ -315,7 +315,7 @@ describe('the document type model (inherited by steps naming none)', () => {
       {
         path: 'model',
         message:
-          'model choice gone uses ryzen/other, which is not offered: add it on the Models page',
+          'model choice gone uses ryzen/other, which is not offered: add it under Administration > Models',
       },
     ]);
     await ctx.templates.updateDraft('letter', 1, withTypeModel('fast'));

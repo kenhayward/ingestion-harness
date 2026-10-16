@@ -4,6 +4,7 @@ import {
   choiceIdFrom,
   ChoicePatchBodySchema,
   CuratedModelsBodySchema,
+  ModelSettingsBodySchema,
   EndpointCreateBodySchema,
   EndpointPatchBodySchema,
   isOffered,
@@ -26,7 +27,7 @@ const IN_USE = error(
   '`model choice {label} uses {ref}: point it elsewhere first`, or `the drafting model …` / ' +
     '`the OCR model …`.',
 );
-const NOT_OFFERED = '{ref} is not offered: add it on the Models page';
+const NOT_OFFERED = '{ref} is not offered: add it under Administration > Models';
 const ChoiceParams = z.object({ id: z.string().describe('The model choice id.') });
 const NameParams = z.object({ name: z.string().describe('The endpoint name (model-ref prefix).') });
 const base = (operationId: string, summary: string, description: string) => ({
@@ -38,7 +39,7 @@ const base = (operationId: string, summary: string, description: string) => ({
 });
 
 /**
- * LLM endpoints and their curated models (ADR 0010), for the Models page. Admins only; the
+ * LLM endpoints and their curated models (ADR 0010), for Administration > Models. Admins only; the
  * access hook has already required a session (`deps.access === null` disables both in unit
  * tests). Keys are encrypted here and never returned.
  */
@@ -64,7 +65,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
   /** Choices and pipeline models may only point at offered models; null when `ref` is one. */
   const notOffered = async (ref: string) => {
     const offered = (await app.deps.repo.listModels()).some((m) => isOffered(m) && m.ref === ref);
-    return offered ? null : `model ${ref} is not offered: add it on the Models page`;
+    return offered ? null : `model ${ref} is not offered: add it under Administration > Models`;
   };
   const choicesView = async () => {
     const [choices, settings] = await Promise.all([repo.listChoices(), repo.getSettings()]);
@@ -225,6 +226,50 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
       if (used) return reply.code(409).send({ error: used });
       const updated = await repo.setCuratedModels(name, models, by(req));
       return updated ?? reply.code(404).send({ error: 'endpoint not found' });
+    },
+  );
+
+  app.patch<{ Params: { name: string; modelId: string } }>(
+    '/llm/endpoints/:name/models/:modelId',
+    {
+      schema: {
+        ...base(
+          'setLlmModelSettings',
+          "Set a model's output limit",
+          md`
+            **Admins only.** \`maxOutputTokens\` is the most tokens one reply of this model may
+            use where the step does not say: the Workbench drafting stages and the mapping stage
+            (16,000 when null). A reply cut off at the limit fails the stage with a message that
+            names this setting. Mainly a property of the model, so set it to what the model and
+            its context window allow. A model id containing \`/\` is URL-encoded.
+          `,
+        ),
+        params: NameParams.extend({
+          modelId: z.string().describe('The model id on this endpoint.'),
+        }),
+        body: ModelSettingsBodySchema,
+        response: {
+          200: res('The endpoint.', LlmEndpointViewSchema),
+          400: error('Zod issues.'),
+          403: ADMINS_ONLY,
+          404: error('`endpoint not found` or `model not found`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = ModelSettingsBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { name, modelId } = req.params;
+      if (!(await repo.getEndpoint(name))) {
+        return reply.code(404).send({ error: 'endpoint not found' });
+      }
+      const updated = await repo.setModelOutputLimit(
+        name,
+        modelId,
+        body.data.maxOutputTokens,
+        by(req),
+      );
+      return updated ?? reply.code(404).send({ error: 'model not found' });
     },
   );
 

@@ -1,15 +1,24 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type {
+  FastifyBaseLogger,
+  FastifyInstance,
+  FastifyPluginAsync,
+  FastifyReply,
+  FastifyRequest,
+} from 'fastify';
 import { z } from 'zod';
 import {
   answeredFeedback,
   AVAILABLE_STAGES,
   BriefBodySchema,
+  type BriefBody,
   BriefSchema,
   BriefVersionViewSchema,
   briefVersions,
   ComparisonViewSchema,
+  DRAFT_PROGRESS_EVENT,
   DRAFT_STAGES,
+  DraftProgressSchema,
   DataPolicySchema,
   EVALUATION_SETS,
   MAX_COMPARED_MODELS,
@@ -85,6 +94,7 @@ import {
   type ProjectSummary,
   type ProjectView,
   type ProposalStatus,
+  type DraftRun,
   type ProposalView,
   type Publication,
   type Reference,
@@ -143,6 +153,7 @@ import {
   WorkbenchConflictError,
   type IterationRecord,
   type ProposalRecord,
+  type RemovedProject,
   type SampleRecord,
 } from '../workbench/repo.js';
 import { creatorOf } from '../access/routes.js';
@@ -222,6 +233,38 @@ export async function versionsOf(templates: TemplateRepo, id: string) {
     published: versions.filter((v) => v.status === 'published').at(-1)?.version ?? null,
     latest: (versions.at(-1) ?? null) as TemplateRecord | null,
   };
+}
+
+/**
+ * Removes, best effort, the files of a deleted or reset project: its jobs' files, the inbox
+ * objects no document uses any more and its drafting, segmentation, export, graph and
+ * suggestion files. The prepared text, step and OCR caches are content-keyed and stay.
+ */
+async function removeProjectFiles(
+  app: FastifyInstance,
+  id: string,
+  removed: RemovedProject,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const { store, buckets } = app.deps;
+  await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, log)));
+  const files = await Promise.allSettled([
+    ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
+    ...['drafting', 'segmentation', 'exports', 'graphs', 'ontology-suggestions'].map((prefix) =>
+      store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
+    ),
+  ]);
+  for (const result of files) {
+    if (result.status === 'rejected') {
+      log.warn({ err: result.reason, projectId: id }, 'project file clean-up failed');
+    }
+  }
+}
+
+/** What a reset keeps of the brief: the written sections; null when none has any text. */
+export function keptBrief(body: BriefBody): BriefBody | null {
+  const kept: BriefBody = { ...body, answers: [], ontologies: [], ontologyGuidance: '' };
+  return stableJson(kept) === stableJson(EMPTY_BRIEF) ? null : kept;
 }
 
 export async function projectView(
@@ -316,10 +359,29 @@ export async function acceptedSurvey(
   return body?.success ? body.data : null;
 }
 
+/**
+ * Where an unfinished drafting job is (issue #151): queued since it was (re)queued, or running
+ * since its claim (a claim sets `updated_at`; heartbeats do not), with its latest
+ * `drafting progress` event of this attempt. Null once the job finished.
+ */
+function draftRun(job: ProjectJob | null, events: readonly JobEventRecord[]): DraftRun | null {
+  if (job?.status === 'queued') return { status: 'queued', since: job.updatedAt, progress: null };
+  if (job?.status !== 'running') return null;
+  const latest = events.find((e) => e.jobId === job.id && e.message === DRAFT_PROGRESS_EVENT);
+  const fresh = latest && Date.parse(latest.at) >= Date.parse(job.updatedAt);
+  const parsed = fresh ? DraftProgressSchema.safeParse(latest.data) : null;
+  return {
+    status: 'running',
+    since: job.updatedAt,
+    progress: parsed?.success ? { ...parsed.data, at: latest!.at } : null,
+  };
+}
+
 async function proposalView(
   app: FastifyInstance,
   p: ProposalRecord,
   job: ProjectJob | null,
+  events: readonly JobEventRecord[] = [],
 ): Promise<ProposalView> {
   const base = {
     id: p.id,
@@ -328,6 +390,7 @@ async function proposalView(
     createdAt: p.createdAt,
     decidedAt: p.decidedAt,
     acceptedChanges: p.acceptedChanges,
+    run: draftRun(job, events),
   };
   const empty = { ...base, model: null, body: null };
   if (!job || job.status === 'queued' || job.status === 'running') {
@@ -439,6 +502,8 @@ async function toView(
     createdAt: s.createdAt,
     state,
     prepareJobId: job?.id ?? null,
+    prepareStatus:
+      state === 'preparing' ? (job?.status === 'running' ? 'running' : 'queued') : null,
     error: state === 'failed' ? (job?.error ?? job?.status ?? 'preparation job missing') : null,
     prepare: prepareProgress(job, events),
     prepareError: prepareError(state, job, events),
@@ -1342,6 +1407,70 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
   );
 
   /**
+   * Reset a project: everything but its samples and the brief's written sections goes, and
+   * the open draft starts again empty (published versions and publications stay).
+   */
+  app.post<{ Params: ProjectParams }>(
+    '/workbench/projects/:id/reset',
+    {
+      schema: {
+        tags: ['Projects & data policy'],
+        operationId: 'resetProject',
+        summary: 'Reset a project',
+        description: md`
+          Starts the project again, keeping only its samples (prepared as they are) and the
+          brief's written sections. Deleted: its proposals and stage decisions, feedback,
+          test, reference and evaluation runs with their files, every reference of the
+          document type, survey answers and pinned ontologies. The open draft becomes an
+          empty recipe of the same name and version, with a change log of one entry.
+          Published versions and the publication log stay; the data policy, threshold and
+          pins too. Queued and running jobs of the project are deleted with the rest.
+        `,
+        params: ProjectIdParams,
+        response: {
+          200: res('The project, reset.', ProjectViewSchema),
+          404: PROJECT_NOT_FOUND,
+        },
+      },
+    },
+    async (req, reply) => {
+      const id = req.params.id;
+      const project = await workbench.getProject(id);
+      if (!project) return reply.code(404).send({ error: 'project not found' });
+      const { draft } = await versionsOf(templates, id);
+      const open = draft === null ? null : await templates.get(id, draft);
+      const brief = await workbench.latestBrief(id);
+      const removed = await workbench.resetProject(id, {
+        draft:
+          open === null
+            ? null
+            : {
+                version: open.version,
+                definition: pinned(
+                  skeleton(id, String(open.definition.name ?? project.name)),
+                  id,
+                  open.version,
+                ),
+                change: startedChange(`Draft v${open.version} reset`, req.auth?.label ?? null),
+              },
+        brief: brief ? keptBrief(brief.body) : null,
+      });
+      if (!removed) return reply.code(404).send({ error: 'project not found' });
+      await removeProjectFiles(app, id, removed, req.log);
+      req.log.info(
+        {
+          projectId: id,
+          by: req.auth?.label ?? null,
+          jobs: removed.jobs.length,
+          documents: removed.documents.length,
+        },
+        'workbench project reset',
+      );
+      return projectView(app, (await workbench.getProject(id)) ?? project);
+    },
+  );
+
+  /**
    * Delete a project whose type was never published: its rows and template drafts in one
    * transaction (which also refuses a published type), then its internal files (best-effort).
    * Published types keep their project.
@@ -1379,19 +1508,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           error: `${id} has a published version; published document types keep their project`,
         });
       }
-      const { store, buckets } = app.deps;
-      await Promise.all(removed.jobs.map((job) => removeJobFiles(app.deps, job, req.log)));
-      const files = await Promise.allSettled([
-        ...removed.documents.map((o) => store.delete(o.bucket, o.key)),
-        ...['drafting', 'segmentation', 'exports', 'graphs', 'ontology-suggestions'].map((prefix) =>
-          store.deletePrefix(buckets.runs, `${prefix}/${id}/`),
-        ),
-      ]);
-      for (const result of files) {
-        if (result.status === 'rejected') {
-          req.log.warn({ err: result.reason, projectId: id }, 'project file clean-up failed');
-        }
-      }
+      await removeProjectFiles(app, id, removed, req.log);
       req.log.info(
         { projectId: id, jobs: removed.jobs.length, documents: removed.documents.length },
         'workbench project deleted',
@@ -1453,7 +1570,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           Publishes the open draft when it is valid. References and evaluation are optional: the
           publish gate is informational only, and its iteration and score (if any) are recorded
           with the publication. \`overrideReason\` is still accepted but ignored (no override is
-          needed or recorded). If the draft changes after the gate was decided, nothing is published: check the gate
+          needed or recorded). \`label\` and \`note\`, when given, are set on the version
+          (#144; it keeps the draft's otherwise). If the draft changes after the gate was decided, nothing is published: check the gate
           again. Every publication is logged (\`GET …/publications\`). This is the only way to
           publish a Workbench document type. See
           [ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).
@@ -1496,6 +1614,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         }),
       );
       if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
+      if (body.data.label !== undefined || body.data.note !== undefined) {
+        // Set on the draft first: harmless when the publish is then refused.
+        const { label, note } = body.data;
+        await templates.setLabel(projectId, draft, { label, note }, req.auth?.label ?? null);
+      }
       // The gate was decided for the draft as it was read then; an edit since then voids it. The
       // re-check, the publish and the publication record share one transaction.
       const outcome = await workbench.publishDraft({
@@ -3051,7 +3174,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           Every drafting proposal, with its status (derived from its job): \`running\`,
           \`ready\` (waiting for a decision), \`failed\`, \`accepted\`,
           \`partially_accepted\` or \`rejected\`. A ready proposal's \`body\` is the survey's
-          questions, or the stage's notes and typed changes.
+          questions, or the stage's notes and typed changes. While its job is queued or running,
+          \`run\` says since when and, once the worker reports it, what it is doing (its latest
+          \`drafting progress\` event of this attempt: reading the samples, each model call,
+          testing anchors, queuing ontology suggestions).
         `,
         params: ProjectIdParams,
         response: {
@@ -3067,8 +3193,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const jobs = new Map(
         (await app.deps.repo.listDraftJobs(req.params.id)).map((j) => [j.id, j]),
       );
+      const running = [...jobs.values()].filter((j) => j.status === 'running').map((j) => j.id);
+      const events = running.length
+        ? await app.deps.repo.latestEvents(running, [DRAFT_PROGRESS_EVENT])
+        : [];
       const proposals = await workbench.listProposals(req.params.id);
-      return Promise.all(proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null)));
+      return Promise.all(
+        proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null, events)),
+      );
     },
   );
 

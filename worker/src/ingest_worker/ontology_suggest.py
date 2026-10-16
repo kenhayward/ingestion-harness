@@ -348,6 +348,37 @@ def run_suggestions(
     return record
 
 
+def queue_suggestions(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    *,
+    candidates: list[SuggestCandidate],
+    library: list[LibraryVersion],
+    pinned: list[SuggestPin],
+    data_policy: Literal["local", "external"],
+) -> str:
+    """A survey's suggestions, as a `suggest` job of their own: matching the candidates against
+    a large library takes minutes, and the survey is done when the model replies. The job's
+    record names this survey (`surveyProposalId` = the survey job), so the Survey tab shows it as
+    the survey's; the project's earlier suggest job and its record are replaced."""
+    if job.project_id is None:
+        raise DocumentError("ontology suggestions without a project")
+    params = SuggestParams.model_validate(
+        {
+            "surveyProposalId": job.id,
+            "candidates": [c.model_dump() for c in candidates],
+            "library": [v.model_dump(by_alias=True) for v in library],
+            "pinned": [p.model_dump(by_alias=True) for p in pinned],
+            "dataPolicy": data_policy,
+        }
+    ).model_dump(by_alias=True)
+    suggest_id, removed = queue.queue_suggest(job.project_id, params)
+    for old in removed:
+        deps.store.delete(deps.buckets.runs, ontology_suggestions_key(job.project_id, old))
+    return suggest_id
+
+
 def run_suggest(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
     """The `suggest` task: Refresh suggestions on the Survey tab."""
     try:

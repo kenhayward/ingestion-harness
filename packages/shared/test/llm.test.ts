@@ -26,11 +26,14 @@ describe('modelRefProblem (only configured models run)', () => {
     ['local/qwen', null],
     ['ryzen/openai/gpt-oss-20b', null],
     ['cheap', null],
-    ['local/llama-3', 'model local/llama-3 is not offered: add it on the Models page'],
-    ['openai/gpt-oss-20b', 'model openai/gpt-oss-20b is not offered: add it on the Models page'],
+    ['local/llama-3', 'model local/llama-3 is not offered: add it under Administration > Models'],
+    [
+      'openai/gpt-oss-20b',
+      'model openai/gpt-oss-20b is not offered: add it under Administration > Models',
+    ],
     [
       'fast',
-      'model choice fast uses anthropic/claude-haiku-5-5, which is not offered: add it on the Models page',
+      'model choice fast uses anthropic/claude-haiku-5-5, which is not offered: add it under Administration > Models',
     ],
     ['loop', 'model choice loop does not resolve to a model'],
     ['nope', 'unknown model choice nope'],
@@ -41,7 +44,7 @@ describe('modelRefProblem (only configured models run)', () => {
   it('can leave unknown alias names to the worker (template checks)', () => {
     expect(modelRefProblem('default', offered, {}, { unknownAliases: 'allow' })).toBeNull();
     expect(modelRefProblem('local/x', offered, {}, { unknownAliases: 'allow' })).toBe(
-      'model local/x is not offered: add it on the Models page',
+      'model local/x is not offered: add it under Administration > Models',
     );
   });
 });

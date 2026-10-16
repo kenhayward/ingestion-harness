@@ -133,6 +133,30 @@ def test_steps_validate_the_whole_template_after_applying() -> None:
     assert any("unknown field" in e for e in errors) and any("not filled" in e for e in errors)
 
 
+@pytest.mark.parametrize("sections", [[], None])
+def test_an_extract_step_without_sections_says_why_it_needs_one(sections: Any) -> None:
+    """The model sent `sections: []` for outputs no section holds (a file name): the empty list
+    was dropped and the feedback said "Field required", so the retry sent the same again."""
+    draft = {**DRAFT, "outputs": {"fields": [{"id": "sender"}], "tables": []}}
+    _, errors = run(STEPS, {"notes": "", "changes": [step_item(sections=sections)]}, draft)
+    assert errors == [
+        "changes[0]: step 'head': sections is empty: an extract step reads at least one section. "
+        "For a value no section holds (a file name, a value these documents lack), fill it in "
+        "the step that reads the section it belongs with; it may come back empty."
+    ]
+    assert not any("Field required" in e for e in errors)
+
+
+def test_the_steps_prompt_says_every_extract_step_reads_a_section() -> None:
+    assert "reads at least one section" in STEPS.instructions
+    assert "may come back empty" in STEPS.instructions
+
+
+def test_the_steps_prompt_says_steps_see_the_file_name_and_page_markers() -> None:
+    assert "states the source file name" in STEPS.instructions
+    assert "[page N]" in STEPS.instructions
+
+
 def test_steps_convert_context_checks_and_preamble() -> None:
     draft = {**DRAFT, "outputs": {"fields": [{"id": "sender"}, {"id": "ref"}], "tables": []}}
     changes = [
@@ -178,6 +202,74 @@ def test_empty_strings_and_lists_are_treated_as_absent() -> None:
     assert "aliases" not in body["changes"][1]["step"]
     _, errors = run(STEPS, {"notes": "", "changes": [step_item(sections=[])]}, draft)
     assert any("sections" in e for e in errors)
+
+
+CHUNK_DRAFT: dict[str, Any] = {
+    **DRAFT,
+    "document": {"sections": [{"id": "all", "anchor": "\\A"}, {"id": "end", "anchor": "^End"}]},
+    "outputs": {"fields": [{"id": "sender"}], "tables": [{"id": "rows", "columns": [{"id": "x"}]}]},
+}
+
+
+@pytest.mark.parametrize(
+    ("item", "kept"),
+    [
+        (step_item(id="t", fields=None, table="rows", chunkPages=5), True),
+        (step_item(chunkPages=5), False),  # a field step
+        (
+            step_item(id="t", fields=None, table="rows", sections=["all", "end"], chunkPages=5),
+            False,
+        ),
+    ],
+)
+def test_chunk_pages_where_it_cannot_apply_is_dropped_with_a_note(
+    item: dict[str, Any], kept: bool
+) -> None:
+    other = (
+        step_item(id="o", fields=None, table="rows")
+        if item["table"] is None
+        else step_item(id="o", fields=["sender"])
+    )
+    body, errors = run(STEPS, {"notes": "n", "changes": [item, other]}, CHUNK_DRAFT)
+    assert errors == []
+    step = body["changes"][0]["step"]
+    if kept:
+        assert step["chunkPages"] == 5 and body["notes"] == "n"
+    else:
+        assert "chunkPages" not in step
+        assert body["notes"].startswith("n\n") and repr(item["id"]) in body["notes"]
+
+
+def test_revise_keeps_the_note_about_dropped_chunk_pages() -> None:
+    step = {k: v for k, v in step_item(chunkPages=5).items() if k not in ("op", "reason")}
+    body, errors = REVISE.convert(
+        {
+            "notes": "",
+            "changes": [{"op": "putStep", "step": step, "answers": [], "reason": "r"}],
+        }
+    )
+    assert errors == [] and "chunkPages" not in body["changes"][0]["step"]
+    assert "'head'" in body["notes"]
+
+
+def test_steps_ignore_an_unfinished_mapping_they_cannot_fix() -> None:
+    """A mapping started without a document class (MappingEditor, a partial mapping proposal)
+    is the Mapping stage's to finish: it must not fail the steps, nor hide their own errors."""
+    draft = {
+        **DRAFT,
+        "outputs": {"fields": [{"id": "sender"}, {"id": "ref"}], "tables": []},
+        "semantics": {
+            "document": {"class": "", "iri": "doc/{source}"},
+            "fields": {"sender": {"property": "ex:sender"}},
+        },
+        "delivery": {"formats": ["csv", "rdf"]},
+    }
+    both = step_item(fields=["sender", "ref"])
+    _, errors = run(STEPS, {"notes": "", "changes": [both]}, draft)
+    assert errors == []
+    _, errors = run(STEPS, {"notes": "", "changes": [step_item()]}, draft)
+    assert errors and all("semantics" not in e for e in errors)
+    assert any("not filled" in e for e in errors)
 
 
 def test_removes_are_checked_against_the_draft_after_earlier_changes() -> None:

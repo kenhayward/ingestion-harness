@@ -13,7 +13,10 @@ import {
   OntologyFromUrlBodySchema,
   OntologySettingsSchema,
   OntologyPatchSchema,
+  OntologyListItemSchema,
   OntologySummarySchema,
+  type EmbeddingProgress,
+  type OntologyListItem,
   OntologyVersionViewSchema,
   TAG_RE,
   TermDetailSchema,
@@ -108,18 +111,28 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           md`
             Every ontology in the library by name, with its newest version (whatever its
             status) and how many versions it has. Retired ontologies are left out unless
-            \`retired=include\`.
+            \`retired=include\`. \`embedding\` is how far the worker has embedded the newest
+            ready version under the embedding model (Administration > Models), counted when listed; null
+            without an embedding model or a ready version.
           `,
         ),
         querystring: ListQuery,
-        response: { 200: res('The library.', z.array(OntologySummarySchema)) },
+        response: { 200: res('The library.', z.array(OntologyListItemSchema)) },
       },
     },
-    async (req) => {
+    async (req): Promise<OntologyListItem[]> => {
       const query = ListQuery.safeParse(req.query ?? {});
-      return app.deps.ontologies.list({
+      const library = await app.deps.ontologies.list({
         retired: query.success && query.data.retired === 'include',
       });
+      const { embeddingModel } = await app.deps.llm.getSettings();
+      const progress = embeddingModel
+        ? await app.deps.ontologies.embeddingProgress(
+            embeddingModel,
+            library.map((o) => o.id),
+          )
+        : new Map<string, EmbeddingProgress>();
+      return library.map((o) => ({ ...o, embedding: progress.get(o.id) ?? null }));
     },
   );
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { GITHUB_LINK_RESULTS, type GitHubLinkResult } from '@ih/shared';
 
 export const PROJECT_TABS = [
   'overview',
@@ -23,10 +24,12 @@ export type Route =
   | { name: 'jobs' }
   | { name: 'review'; jobId: string }
   | { name: 'templates' }
-  | { name: 'access' }
   | { name: 'password' }
-  | { name: 'models' }
-  | { name: 'linked-data' }
+  /**
+   * Home with the Profile dialog open: where GitHub sends the browser back to after a link
+   * (`#/account/profile/github?github=<result>`), and `#/account/profile[/password]`.
+   */
+  | { name: 'profile'; tab: 'details' | 'password'; github?: GitHubLinkResult }
   | { name: 'ontologies' }
   | { name: 'ontology'; ontologyId: string }
   | { name: 'results' }
@@ -64,10 +67,13 @@ export function parseHash(hash: string): Route {
   if (hash === '#/workbench') return { name: 'workbench' };
   if (hash === '#/results') return { name: 'results' };
   if (hash === '#/templates') return { name: 'templates' };
-  if (hash === '#/access') return { name: 'access' };
   if (hash === '#/account/password') return { name: 'password' };
-  if (hash === '#/models') return { name: 'models' };
-  if (hash === '#/linked-data') return { name: 'linked-data' };
+  const profile = /^#\/account\/profile(?:\/([a-z]+))?(?:\?github=([a-z]+))?$/.exec(hash);
+  if (profile) {
+    const tab = profile[1] === 'password' ? 'password' : 'details';
+    const github = GITHUB_LINK_RESULTS.find((r) => r === profile[2]);
+    return github ? { name: 'profile', tab, github } : { name: 'profile', tab };
+  }
   if (hash === '#/ontologies') return { name: 'ontologies' };
   return { name: 'home' };
 }

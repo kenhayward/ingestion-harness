@@ -7,7 +7,7 @@ Outputs ({templateId}/v{version}/<output>/{documentId}.<ext>):
     <check>    one CSV per check step
     issues     values that could not be normalised (kept as written)
     document   JSON with field evidence/pages, tables, checks, issues, review decision
-    graph      Turtle (.ttl), for recipes with an ontology mapping once the Linked data page
+    graph      Turtle (.ttl), for recipes with an ontology mapping once Administration > Linked data
                sets a base IRI (ADR 0011); delivered only when `delivery.formats` has rdf
 """
 
@@ -71,7 +71,7 @@ log = logging.getLogger("ingest_worker")
 STEP_PROGRESS = "step progress"
 
 #: Job event when a mapped recipe drafts no graph because no base IRI is set.
-GRAPH_SKIPPED = "graph skipped: set the customer on the Linked data page"
+GRAPH_SKIPPED = "graph skipped: set the customer under Administration > Linked data"
 #: Job event when a graph that is not delivered could not be rendered (CSV/JSON still are).
 GRAPH_FAILED = "graph failed"
 #: Job event when a delivered graph was published (`{graph, version, triples, endpoint}`;
@@ -418,6 +418,7 @@ def _run_step(
     provider, model_id = model
     context = dict(ex.prompt_context or {})
     context["step_context"] = context_values(loaded.template, step, fields, tables)
+    context["source_file"] = job.filename or None
     if extra_instructions:
         guidance = f"Reviewer guidance for this re-run: {extra_instructions}"
         base = context.get("instructions")

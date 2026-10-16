@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -58,6 +59,26 @@ class CompletionResult:
     truncated: bool = False
 
 
+#: Called with the estimated output tokens received so far while a reply streams (progress).
+TokenCallback = Callable[[int], None]
+
+
+class TokenCounter:
+    """A streamed reply's characters, its text and any thinking or reasoning, reported as a
+    growing token estimate (about four characters a token: tokenizers differ, and thinking is
+    not always counted in usage, so it is said as approximate)."""
+
+    def __init__(self, on_tokens: TokenCallback) -> None:
+        self._on_tokens = on_tokens
+        self._chars = 0
+
+    def add(self, text: str | None) -> None:
+        if not text:
+            return
+        self._chars += len(text)
+        self._on_tokens((self._chars + 3) // 4)
+
+
 class LLMError(Exception):
     """Provider call failed in a way that may succeed on retry (rate limit, 5xx, network)."""
 
@@ -74,7 +95,12 @@ class LLMProvider(Protocol):
 
     def list_models(self) -> list[ModelDescriptor]: ...
 
-    def complete_json(self, model: str, request: CompletionRequest) -> CompletionResult: ...
+    def complete_json(
+        self, model: str, request: CompletionRequest, on_tokens: TokenCallback | None = None
+    ) -> CompletionResult:
+        """With `on_tokens`, the reply streams and is counted as it arrives (progress only:
+        the result is the same). Without it, providers call as they always have."""
+        ...
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult: ...
 

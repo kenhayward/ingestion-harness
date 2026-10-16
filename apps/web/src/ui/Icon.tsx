@@ -95,11 +95,20 @@ const PATHS = {
     <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
   ),
   pencil: <path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" />,
+  text: <path d="M5 7V5h14v2M12 5v14M9 19h6" />,
   flag: <path d="M5 21V4h11l-2 4 2 4H5" />,
   plus: <path d="M12 5v14M5 12h14" />,
   chevronUp: <path d="M18 15l-6-6-6 6" />,
   chevronDown: <path d="M6 9l6 6 6-6" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  refresh: <path d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 3.5v5h-5" />,
   trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />,
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+    </>
+  ),
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
   download: (
     <>
@@ -198,6 +207,20 @@ const PATHS = {
     <>
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <path d="M3.5 6.5l8.5 6.5 8.5-6.5" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20a8 8 0 0 1 16 0" />
+    </>
+  ),
+  gitBranch: (
+    <>
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <circle cx="18" cy="7" r="2" />
+      <path d="M6 7v10M18 9a6 6 0 0 1-6 6H8" />
     </>
   ),
   userOff: (

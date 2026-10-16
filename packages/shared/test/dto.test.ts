@@ -144,8 +144,9 @@ const sample = {
   createdAt: '2026-10-13T09:00:00.000Z',
   state: 'ready',
   prepareJobId: '00000000-0000-4000-8000-000000000005',
+  prepareStatus: 'running',
   error: null,
-  prepare: { stage: 'ocr', page: 1, of: 3 },
+  prepare: { stage: 'ocr', page: 1, of: 3, pages: 4 },
   prepareError: null,
   triage: { sha256: 'ab'.repeat(32), pageCount: 2, ocrPages: [], chars: 900, ocrModel: null },
   holdoutRuns: 0,
@@ -217,6 +218,20 @@ const proposal = {
   acceptedChanges: null,
   createdAt: at,
   decidedAt: null,
+  // A ready proposal's job has finished (run null); the schema's run is exercised here anyway.
+  run: {
+    status: 'running',
+    since: at,
+    progress: {
+      stage: 'outputs',
+      phase: 'model',
+      samples: 2,
+      attempt: 1,
+      of: 2,
+      round: 1,
+      at,
+    },
+  },
 };
 
 const referenceRow = {

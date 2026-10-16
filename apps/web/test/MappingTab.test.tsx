@@ -92,6 +92,35 @@ describe('MappingTab', () => {
     expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
   });
 
+  it('says the stage is not used while RDF is off on the Outputs tab', async () => {
+    const unmapped: Record<string, unknown> = { ...definition };
+    delete unmapped.semantics;
+    const api = fakeApi({ listProposals: vi.fn(async () => [proposal]) });
+    const onNavigate = vi.fn();
+    render(
+      <MappingTab
+        api={api}
+        projectId="batch"
+        used
+        definition={unmapped}
+        dataPolicy="local"
+        hasDraft
+        draft={2}
+        published={1}
+        briefVersion={1}
+        pollMs={1}
+        item={null}
+        onApplied={vi.fn()}
+        onSkipped={vi.fn()}
+        onNavigate={onNavigate}
+      />,
+    );
+    expect(screen.getByText(/Not used: RDF is off on the Outputs tab/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Turn RDF on in Outputs' }));
+    expect(onNavigate).toHaveBeenCalledWith('#/workbench/batch/outputs');
+    expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
+  });
+
   it('shows a proposal with confidence, values and alternatives, and applies it', async () => {
     const decideProposal = vi.fn(async () => ({
       ...proposal,

@@ -23,7 +23,7 @@ import {
 /** Graph previews (ADR 0011): the open draft's ontology mapping rendered over finished runs. */
 
 const FINISHED = new Set(['succeeded', 'awaiting_review']);
-const NO_BASE = 'set the customer on the Linked data page';
+const NO_BASE = 'set the customer under Administration > Linked data';
 
 const view = (job: ProjectJob, result: GraphPreviewResult | null): GraphPreviewView => ({
   jobId: job.id,
@@ -92,7 +92,7 @@ export const workbenchGraphRoutes: FastifyPluginAsync = async (app) => {
           ),
           404: PROJECT_NOT_FOUND,
           409: error(
-            '`set the customer on the Linked data page`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`.',
+            '`set the customer under Administration > Linked data`, `the recipe has no ontology mapping: …`, `… is not prepared`, `… has no finished test run: run it first`, or `no finished test runs to preview: …`.',
           ),
         },
       },

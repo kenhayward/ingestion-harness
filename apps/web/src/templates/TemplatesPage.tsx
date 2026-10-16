@@ -7,6 +7,7 @@ import { Icon } from '../ui/Icon.js';
 import { unretireHint } from '../ui/retired.js';
 import { LegacyTypeCard } from './LegacyTypeCard.js';
 import { legacyTypes } from './legacy.js';
+import { RenameDialog } from './RenameDialog.js';
 import { RetireDialog } from './RetireDialog.js';
 import { TemplateCard } from './TemplateCard.js';
 
@@ -36,7 +37,9 @@ export function TemplatesPage({
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
   /** The card whose Retire… confirm is open. */
   const [retiring, setRetiring] = useState<{ id: string; name: string } | null>(null);
-  /** Said after a retire, since the card leaves the page. */
+  /** The card whose Rename… dialog is open. */
+  const [renaming, setRenaming] = useState<TemplateListItem | null>(null);
+  /** Said after a retire, since the card leaves the page, or a rename. */
   const [notice, setNotice] = useState<string | null>(null);
 
   const reload = useCallback(() => {
@@ -100,6 +103,10 @@ export function TemplatesPage({
               api={api}
               item={t}
               onNavigate={onNavigate}
+              onRename={() => {
+                setNotice(null);
+                setRenaming(t);
+              }}
               onRetire={retire(t.id, t.name)}
             />
           ))}
@@ -107,6 +114,22 @@ export function TemplatesPage({
             <LegacyTypeCard key={l.id} item={l} onRetire={retire(l.id, l.title)} />
           ))}
         </div>
+      )}
+      {renaming && (
+        <RenameDialog
+          api={api}
+          item={renaming}
+          onClose={() => setRenaming(null)}
+          onRenamed={(name, draft) => {
+            const where =
+              renaming.draft === null && draft !== renaming.published
+                ? ` in draft v${draft}: publish it for uploads to use the new name`
+                : '';
+            setNotice(`Renamed ${renaming.name} to ${name}${where}.`);
+            setRenaming(null);
+            reload();
+          }}
+        />
       )}
       {retiring && (
         <RetireDialog

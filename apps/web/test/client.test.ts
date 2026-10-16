@@ -111,6 +111,36 @@ describe('http api: sign-in and users', () => {
   });
 });
 
+describe('http api: profile', () => {
+  it('calls the profile routes and links GitHub by navigation', async () => {
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? new Response(null, { status: 204 }) : respond(200, {}),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    const details = { name: 'Ken', jobTitle: null, company: 'Acme', linkedin: 'ken-h' };
+    await api.getProfile();
+    await api.updateProfile(details);
+    await api.listGitHubRepos();
+    await api.setGitHubRepo('ken/recipes');
+    await api.unlinkGitHub();
+    expect(
+      (fetch.mock.calls as unknown as [string, RequestInit | undefined][]).map(([url, init]) => ({
+        url,
+        method: init?.method ?? 'GET',
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      })),
+    ).toEqual([
+      { url: '/api/profile', method: 'GET', body: undefined },
+      { url: '/api/profile', method: 'PUT', body: details },
+      { url: '/api/profile/github/repos', method: 'GET', body: undefined },
+      { url: '/api/profile/github/repo', method: 'PUT', body: { repo: 'ken/recipes' } },
+      { url: '/api/profile/github', method: 'DELETE', body: undefined },
+    ]);
+    expect(api.gitHubConnectUrl()).toBe('/api/profile/github/connect');
+  });
+});
+
 describe('http api: URLs', () => {
   it('links the uploaded PDF of a job', () => {
     expect(createHttpApi('/api').documentUrl('j1')).toBe('/api/jobs/j1/document');
@@ -232,6 +262,55 @@ describe('http api: workbench', () => {
     expect(createHttpApi('/api').exportBundleUrl('letter', 'j1')).toBe(
       '/api/workbench/projects/letter/exports/j1/bundle',
     );
+  });
+
+  it('reports upload progress for a sample, and reads its answer or refusal', async () => {
+    const sent: { method: string; url: string; body: FormData }[] = [];
+    let respondWith: { status: number; body: unknown } = { status: 201, body: { id: 's1' } };
+    class FakeXhr {
+      status = 0;
+      responseText = '';
+      upload: { onprogress: ((e: ProgressEvent) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      private method = '';
+      private url = '';
+      open(method: string, url: string) {
+        this.method = method;
+        this.url = url;
+      }
+      send(body: FormData) {
+        sent.push({ method: this.method, url: this.url, body });
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 3, total: 6 } as ProgressEvent);
+        this.status = respondWith.status;
+        this.responseText = JSON.stringify(respondWith.body);
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const api = createHttpApi('/api');
+    const file = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
+    const progress = vi.fn();
+    expect(await api.uploadSample('letter', file, 'dev', progress)).toEqual({ id: 's1' });
+    expect(progress).toHaveBeenCalledWith(3, 6);
+    expect(sent[0]!.method).toBe('POST');
+    expect(sent[0]!.url).toBe('/api/workbench/projects/letter/samples');
+    expect([...sent[0]!.body.keys()]).toEqual(['role', 'file']);
+
+    respondWith = { status: 409, body: { error: 'this PDF is already a sample of the project' } };
+    await expect(api.uploadSample('letter', file, 'dev', progress)).rejects.toMatchObject({
+      status: 409,
+      message: 'this PDF is already a sample of the project',
+    });
+
+    const ended = vi.fn();
+    const off = api.onUnauthorized(ended);
+    respondWith = { status: 401, body: { error: 'sign in required' } };
+    await expect(api.uploadSample('letter', file, 'dev', progress)).rejects.toThrow(
+      'sign in required',
+    );
+    expect(ended).toHaveBeenCalledTimes(1);
+    off();
   });
 
   it('uploads a sample as multipart with its role before the file', async () => {
@@ -647,6 +726,7 @@ describe('http api: LLM endpoints', () => {
     });
     await api.updateLlmEndpoint('gpu 2', { enabled: false });
     await api.setLlmEndpointModels('gpu2', ['a']);
+    await api.setLlmModelSettings('gpu2', 'org/b', { maxOutputTokens: 32000 });
     await api.deleteLlmEndpoint('gpu2');
     const calls = fetch.mock.calls.map((c) => [
       c[0],
@@ -667,6 +747,11 @@ describe('http api: LLM endpoints', () => {
       ],
       ['/api/llm/endpoints/gpu%202', 'PATCH', JSON.stringify({ enabled: false })],
       ['/api/llm/endpoints/gpu2/models', 'PUT', JSON.stringify({ models: ['a'] })],
+      [
+        '/api/llm/endpoints/gpu2/models/org%2Fb',
+        'PATCH',
+        JSON.stringify({ maxOutputTokens: 32000 }),
+      ],
       ['/api/llm/endpoints/gpu2', 'DELETE', null],
     ]);
   });
