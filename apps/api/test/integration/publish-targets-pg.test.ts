@@ -1,0 +1,111 @@
+/**
+ * Opt-in Postgres integration test for PgPublishTargetRepo (migration 0050): the shared contract.
+ *
+ * Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY database: it applies db/migrations
+ * and empties the publishing-target tables there. See workbench-pg.test.ts for how to start one.
+ */
+import { fileURLToPath } from 'node:url';
+import pg from 'pg';
+import { afterAll, describe, expect, it } from 'vitest';
+import { migrate } from '../../src/db/migrate.js';
+import { PgPublishTargetRepo } from '../../src/publish-targets/pg.js';
+import { publishTargetsContract } from '../publish-targets-contract.js';
+
+const url = process.env.IH_TEST_DATABASE_URL;
+const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
+
+describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
+  let pool: pg.Pool | undefined;
+  const make = async () => {
+    if (!pool) {
+      await migrate(url!, migrations);
+      pool = new pg.Pool({ connectionString: url, max: 5 });
+    }
+    await pool.query('TRUNCATE s3_consumer_targets, job_outputs, published_graph_versions');
+    await pool.query('DELETE FROM published_graphs');
+    await pool.query('DELETE FROM jobs');
+    await pool.query('DELETE FROM documents');
+    // Published recipes refuse deletion; this is a throwaway database.
+    await pool.query('ALTER TABLE templates DISABLE TRIGGER templates_no_delete');
+    await pool.query('DELETE FROM templates');
+    await pool.query('ALTER TABLE templates ENABLE TRIGGER templates_no_delete');
+    await pool.query('DELETE FROM s3_consumers');
+    await pool.query("DELETE FROM publish_targets WHERE id <> 'default'");
+    await pool.query(
+      `UPDATE publish_targets SET label = 'Default', kind = 'internal', bucket = 'ingest-published',
+         prefix = '', endpoint = NULL, region = NULL, access_key_id = NULL, secret_key_enc = NULL,
+         access_key_env = NULL, secret_key_env = NULL, force_path_style = false, sse = 'none',
+         kms_key_id = NULL, storage_class = NULL, source = 'env', seeded_at = NULL,
+         edited_at = NULL, updated_by = NULL WHERE id = 'default'`,
+    );
+    const repo = new PgPublishTargetRepo(pool);
+    const p = pool;
+    return {
+      repo,
+      facts: {
+        publish: async (id: string, version: number, publishTo: string | null) => {
+          const definition = publishTo === null ? {} : { delivery: { publishTo } };
+          await p.query(
+            `INSERT INTO templates (id, version, status, definition, published_at)
+             VALUES ($1, $2, 'published', $3, now())`,
+            [id, version, JSON.stringify(definition)],
+          );
+        },
+        delivered: async (targetId: string) => {
+          const jobId = await newJob(p);
+          await p.query(
+            `INSERT INTO job_outputs (job_id, output_id, format, bucket, object_key, stage, target_id)
+             VALUES ($1, 'o', 'csv', 'b', 'k', 'published', $2)`,
+            [jobId, targetId],
+          );
+        },
+        grant: async (targetId: string) => {
+          const c = await p.query<{ id: string }>(
+            `INSERT INTO s3_consumers (id, label, user_name)
+             VALUES (gen_random_uuid(), 'c', md5(random()::text)) RETURNING id`,
+          );
+          await p.query(
+            'INSERT INTO s3_consumer_targets (consumer_id, target_id) VALUES ($1, $2)',
+            [c.rows[0]!.id, targetId],
+          );
+        },
+      },
+    };
+  };
+  afterAll(async () => {
+    await pool?.end();
+  });
+
+  publishTargetsContract('pg', make);
+
+  it('requires a target for a published output but not a draft one', async () => {
+    await make();
+    const jobId = await newJob(pool!);
+    await expect(
+      pool!.query(
+        `INSERT INTO job_outputs (job_id, output_id, format, bucket, object_key, stage)
+         VALUES ($1, 'o', 'csv', 'b', 'k', 'published')`,
+        [jobId],
+      ),
+    ).rejects.toThrow(/job_outputs_target_check/);
+    await expect(
+      pool!.query(
+        `INSERT INTO job_outputs (job_id, output_id, format, bucket, object_key, stage)
+         VALUES ($1, 'o', 'csv', 'b', 'k', 'draft')`,
+        [jobId],
+      ),
+    ).resolves.toBeDefined();
+  });
+});
+
+async function newJob(p: pg.Pool): Promise<string> {
+  const doc = await p.query<{ id: string }>(
+    `INSERT INTO documents (filename, sha256, size_bytes, spec_id, spec_version, bucket, object_key)
+     VALUES ('a.pdf', md5(random()::text), 1, 's', 1, 'b', md5(random()::text)) RETURNING id`,
+  );
+  const job = await p.query<{ id: string }>(
+    'INSERT INTO jobs (document_id) VALUES ($1) RETURNING id',
+    [doc.rows[0]!.id],
+  );
+  return job.rows[0]!.id;
+}
