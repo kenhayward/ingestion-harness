@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import multiprocessing
@@ -18,10 +19,12 @@ from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.segment import segment
-from ingest_worker.specs import load_specs
+from ingest_worker.specs import Section, load_specs
 from ingest_worker.storage import MemoryObjectStore, prepared_text_key, segmentation_key
 from ingest_worker.workbench import SegmentDocument, segment_samples, segment_with_timeout
 
+from .covalidation import BATCHES, RECIPE, SECTIONS, edited
+from .covalidation import PAGES as COVALIDATION
 from .fakes import FakeQueue
 
 PAGES = [
@@ -63,6 +66,8 @@ def test_grid_reports_page_line_and_size_per_section() -> None:
         "page": None,
         "line": None,
         "chars": 0,
+        "occurrences": [],
+        "matches": 0,
     }
 
 
@@ -103,6 +108,7 @@ def test_unprepared_samples_get_an_error_row_and_others_still_segment() -> None:
         "error": "not prepared",
         "missingRequired": [],
         "sections": [],
+        "keyIssues": [],
     }
     assert cells(result, 1)["purpose"]["found"] is True
 
@@ -116,6 +122,7 @@ def test_sample_with_no_pages_gets_an_error_row() -> None:
         "error": "no pages",
         "missingRequired": [],
         "sections": [],
+        "keyIssues": [],
     }
 
 
@@ -325,3 +332,44 @@ def test_a_suggestion_that_breaks_a_sample_where_the_section_was_found_is_droppe
     assert segment_samples(both, document)["suggestions"] == []
     only_misses = [("globex", ["Vendor: Globex\n"])]
     assert len(segment_samples(only_misses, document)["suggestions"]) == 1
+
+
+def test_segment_samples_reports_occurrences_matches_and_key_issues() -> None:
+    sections = [*SECTIONS, Section(id="tables", anchor="^T0 Complies", required=False)]
+    missed = edited("Microbial Purity", "Microbal Purity", 3)
+    grid = segment_samples(
+        [("s1", COVALIDATION), ("s2", missed)], SegmentDocument(sections=sections)
+    )
+    cells = {c["id"]: c for c in grid["samples"][0]["sections"]}
+    appearance = cells["appearance"]
+    assert [(o["page"], o["key"], o["keySource"]) for o in appearance["occurrences"]] == [
+        (2, BATCHES[0], "own"),
+        (3, BATCHES[1], "own"),
+        (4, BATCHES[2], "own"),
+    ]
+    assert appearance["page"] == 2
+    assert appearance["chars"] == sum(o["chars"] for o in appearance["occurrences"])
+    assert appearance["line"].startswith("Table 1:")
+    assert cells["tables"]["matches"] == 6
+    assert cells["front"]["matches"] == 1 and cells["front"]["occurrences"] == []
+    assert appearance["matches"] == 0
+    assert grid["samples"][0]["keyIssues"] == []
+    assert grid["samples"][1]["keyIssues"] == [f"microbial: no occurrence for batch {BATCHES[2]}"]
+
+
+def test_an_inherited_key_is_marked() -> None:
+    sections = [s.model_copy(update={"key": None}) if s.id == "appearance" else s for s in SECTIONS]
+    grid = segment_samples([("s1", COVALIDATION)], SegmentDocument(sections=sections))
+    cell = next(c for c in grid["samples"][0]["sections"] if c["id"] == "appearance")
+    assert {o["keySource"] for o in cell["occurrences"]} == {"inherited"}
+
+
+def test_an_invalid_key_is_an_anchor_error() -> None:
+    sections = copy.deepcopy(RECIPE["document"]["sections"])
+    sections[1]["key"] = "BATCH (\w+"
+    grid = segment_samples(
+        [("s1", COVALIDATION)], SegmentDocument.model_validate({"sections": sections})
+    )
+    assert "batch.key" in grid["anchorErrors"]
+    cell = next(c for c in grid["samples"][0]["sections"] if c["id"] == "batch")
+    assert [o["key"] for o in cell["occurrences"]] == [None, None, None]

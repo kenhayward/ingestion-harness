@@ -32,7 +32,7 @@ from .pipeline import (
     ocr_pages,
 )
 from .queue import ClaimedJob, JobQueue
-from .segment import PAGE_BREAK, section_spans, select_copy
+from .segment import PAGE_BREAK, SectionSpan, key_issues, section_spans, select_copy
 from .specs import CopySelection, Section, key_from_errors
 from .storage import prepared_text_key, prepared_triage_key, segmentation_key
 
@@ -202,17 +202,24 @@ def segment_samples(
 
     Same steps as prepare_document: copy selection, page markers, then section_spans, so the
     grid shows exactly where production segmentation would cut. Invalid anchors are reported in
-    anchorErrors and skipped; they never fail the preview. The grid also carries `suggestions`
-    (anchor_hints) for required sections that miss a sample."""
+    anchorErrors and skipped; they never fail the preview (an invalid key, under "<id>.key", is
+    dropped: its section still segments, without keys). The grid also carries `suggestions`
+    (anchor_hints) for required sections that miss a sample, every occurrence of a repeating
+    section, how often a plain section's anchor matches, and each sample's key issues."""
     anchor_errors: dict[str, str] = {}
+    keyed: list[Section] = []
     for section in document.sections:
         if (error := _regex_error(section.anchor)) is not None:
             anchor_errors[section.id] = error
+        if section.key is not None and (error := _regex_error(section.key)) is not None:
+            anchor_errors[f"{section.id}.key"] = error
+            section = section.model_copy(update={"key": None})
+        keyed.append(section)
     copies = document.copies
     if copies is not None and (error := _regex_error(copies.anchor)) is not None:
         anchor_errors["copies"] = error
         copies = None
-    valid = [s for s in document.sections if s.id not in anchor_errors]
+    valid = [s for s in keyed if s.id not in anchor_errors]
     required = [s.id for s in valid if s.required]
 
     rows: list[dict[str, Any]] = []
@@ -228,6 +235,7 @@ def segment_samples(
                     "error": "not prepared" if pages is None else "no pages",
                     "missingRequired": [],
                     "sections": [],
+                    "keyIssues": [],
                 }
             )
             continue
@@ -241,25 +249,55 @@ def segment_samples(
             page_starts.append(offset)
             offset += len(page) + len(PAGE_BREAK)
         spans, unmatched = section_spans(text, valid)
-        by_id = {span.id: span for span in spans}
+        by_id: dict[str, list[SectionSpan]] = {}
+        for span in spans:
+            by_id.setdefault(span.id, []).append(span)
         for span_id in by_id:
             found_in.setdefault(span_id, []).append(text)
+
         cells: list[dict[str, Any]] = []
         for section in document.sections:
-            span = by_id.get(section.id)
-            if span is None:
+            matches = (
+                0
+                if section.repeat or section.id in anchor_errors
+                else len(re.findall(section.anchor, text, re.MULTILINE))
+            )
+            found = by_id.get(section.id, [])
+            if not found:
                 cells.append(
-                    {"id": section.id, "found": False, "page": None, "line": None, "chars": 0}
+                    {
+                        "id": section.id,
+                        "found": False,
+                        "page": None,
+                        "line": None,
+                        "chars": 0,
+                        "occurrences": [],
+                        "matches": matches,
+                    }
                 )
                 continue
-            body = text[span.start : span.end].strip()
+            chars = [len(text[s.start : s.end].strip()) for s in found]
+            pages_at = [first + bisect_right(page_starts, s.start) for s in found]
             cells.append(
                 {
                     "id": section.id,
                     "found": True,
-                    "page": first + bisect_right(page_starts, span.start),
-                    "line": _line_at(text, span.start),
-                    "chars": len(body),
+                    "page": pages_at[0],
+                    "line": _line_at(text, found[0].start),
+                    "chars": sum(chars),
+                    "occurrences": [
+                        {
+                            "page": page,
+                            "line": _line_at(text, s.start),
+                            "chars": n,
+                            "key": s.key,
+                            "keySource": s.key_source,
+                        }
+                        for s, n, page in zip(found, chars, pages_at, strict=True)
+                    ]
+                    if section.repeat
+                    else [],
+                    "matches": matches,
                 }
             )
         rows.append(
@@ -270,6 +308,7 @@ def segment_samples(
                 "error": None,
                 "missingRequired": [i for i in unmatched if i in required],
                 "sections": cells,
+                "keyIssues": [i.message for i in key_issues(valid, spans)],
             }
         )
         for section in valid:
