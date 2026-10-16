@@ -1,6 +1,6 @@
 -- GitHub recipe sync (docs/superpowers/specs/2026-10-16-github-recipe-sync-design.md).
 -- No foreign keys to `templates`: a link outlives its drafts. A never-published type's links and
--- push records are removed with its project (WorkbenchRepo.deleteProject).
+-- push records are removed when that project is deleted.
 
 -- This deployment's identity in a repository. One row, created on first read.
 CREATE TABLE github_sync_settings (
