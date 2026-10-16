@@ -28,7 +28,6 @@ describe.skipIf(!url)('PgGitHubSyncRepo', { timeout: 60_000 }, () => {
     await pool.query(
       'TRUNCATE github_sync_settings, template_github_links, template_github_pushes',
     );
-    await pool.query("DELETE FROM templates WHERE id = 'invoice_gh' AND status = 'draft'");
     return { repo: new PgGitHubSyncRepo(pool), templates: new PgTemplateRepo(pool) };
   });
 });

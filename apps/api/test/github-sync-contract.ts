@@ -101,13 +101,14 @@ export function githubSyncContract(name: string, make: MakeGitHubSync) {
     });
 
     it('records who published a version', async () => {
+      const id = `invoice_gh_${Date.now()}`;
       const { templates } = await make();
-      await templates.create('invoice_gh', 1, { id: 'invoice_gh' }, 'draft');
-      const rec = await templates.publish('invoice_gh', 1, 'Ken');
+      await templates.create(id, 1, { id }, 'draft');
+      const rec = await templates.publish(id, 1, 'Ken');
       expect(rec?.publishedBy).toBe('Ken');
-      await templates.create('invoice_gh', 2, { id: 'invoice_gh' }, 'draft');
-      expect((await templates.publish('invoice_gh', 2))?.publishedBy).toBeNull();
-      expect((await templates.get('invoice_gh', 1))?.publishedBy).toBe('Ken');
+      await templates.create(id, 2, { id }, 'draft');
+      expect((await templates.publish(id, 2))?.publishedBy).toBeNull();
+      expect((await templates.get(id, 1))?.publishedBy).toBe('Ken');
     });
   });
 }
