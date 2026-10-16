@@ -118,8 +118,11 @@ Validation (both sides, same messages, held in step by a shared fixture):
 - `keyFrom` names a repeating section with a `key` and no `keyFrom` of its own (so no chains
   and not itself) →
   `section "<id>": keyFrom "<s>" must be a repeating section with a key and no keyFrom`.
-- `key` must compile as a multiline regex and have at most one capturing group, or a named
-  group `key` → `section "<id>": key must have at most one group, or a group named key`.
+- `key` has at most one capturing group, or a named group `key` →
+  `section "<id>": key must have at most one group, or a group named key` (Python reads
+  `re.compile(key).groups`/`groupindex`; TS counts groups with a small scanner, since keys are
+  Python regexes). Like `anchor`, a key that does not compile is not a format error: the
+  preview reports it in `anchorErrors` under `<id>.key`, and the drafting check refuses it.
   The key is the named group `key`, else group 1, else the whole match; stripped; an empty
   string reads as no key.
 - `anchor` is unchanged (a multiline regex); for a repeating section **every** non-overlapping
@@ -384,7 +387,7 @@ guess it), and the worker sets it on every row of that occurrence before merging
 normalises rows as today (`_normalise_step`, so a `batch` of type `integer` is parsed). The
 key is the occurrence's resolved key (own, else inherited through `keyFrom`). An
 occurrence without a key (neither found) leaves the column null and adds an issue
-`{step, target: <table>, row, column: <keyColumn>, message: "no key found in occurrence n of <section>"}`
+`{step, target: <table>, row, column: <keyColumn>, message: "no key found in this row's occurrence of <section>"}`
 for each of its rows (review policy decides as for any issue). The merged result is validated
 against the full table schema (with the key column), which is also what the step cache stores
 and checks a hit against.
