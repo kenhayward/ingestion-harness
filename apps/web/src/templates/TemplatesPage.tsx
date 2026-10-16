@@ -5,6 +5,7 @@ import { matchesQuery } from '../shell/derive.js';
 import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
 import { unretireHint } from '../ui/retired.js';
+import { ImportDialog as GitHubImportDialog } from './github/ImportDialog.js';
 import { LegacyTypeCard } from './LegacyTypeCard.js';
 import { legacyTypes } from './legacy.js';
 import { RenameDialog } from './RenameDialog.js';
@@ -32,7 +33,7 @@ export function TemplatesPage({
 }) {
   const [items, setItems] = useState<TemplateListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'new' | 'import' | null>(null);
+  const [dialog, setDialog] = useState<'new' | 'import' | 'github' | null>(null);
 
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
   /** The card whose Retire… confirm is open. */
@@ -76,6 +77,10 @@ export function TemplatesPage({
           <button type="button" onClick={() => setDialog('import')}>
             <Icon name="upload" />
             Import YAML
+          </button>
+          <button type="button" onClick={() => setDialog('github')}>
+            <Icon name="upload" />
+            Import from GitHub…
           </button>
           <button type="button" className="primary" onClick={() => setDialog('new')}>
             <Icon name="plus" />
@@ -146,6 +151,14 @@ export function TemplatesPage({
       )}
       {dialog === 'new' && (
         <NewTypeDialog api={api} onNavigate={onNavigate} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'github' && (
+        <GitHubImportDialog
+          api={api}
+          admin={role === 'admin'}
+          onOpened={(id, version) => onNavigate(`#/templates/${id}/${version}`)}
+          onClose={() => setDialog(null)}
+        />
       )}
       {dialog === 'import' && (
         <ImportDialog api={api} onNavigate={onNavigate} onClose={() => setDialog(null)} />

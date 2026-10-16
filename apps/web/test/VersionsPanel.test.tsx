@@ -219,20 +219,20 @@ describe('VersionsPanel GitHub sync', () => {
   });
 
   it('shows the folder, Pull from GitHub… and Change… for a linked type', async () => {
-    const onPull = vi.fn();
-    withSync(linked([sync({ version: 3, state: 'absent' })]), { onPull });
+    const api = withSync(linked([sync({ version: 3, state: 'absent' })]));
     expect(
       await screen.findByText('GitHub: acme/recipes · main · ct-studio/production/invoice/'),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Pull from GitHub…' }));
-    expect(onPull).toHaveBeenCalled();
+    expect(await screen.findByRole('dialog', { name: 'Pull from GitHub' })).toBeInTheDocument();
+    expect(api.listGitHubRemote).toHaveBeenCalledWith('invoice');
     expect(screen.getByRole('button', { name: 'Change…' })).toBeInTheDocument();
   });
 
-  it('hides Pull without a handler, and Change… and the instance from non-admins', async () => {
+  it('shows non-admins Pull but not Change… or the instance', async () => {
     const api = withSync(linked([sync({ version: 3, state: 'absent' })]), { admin: false });
     expect(await screen.findByText('GitHub: acme/recipes · main · ct-studio/')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Pull from GitHub…' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pull from GitHub…' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Change…' })).not.toBeInTheDocument();
     expect(api.getGitHubSettings).not.toHaveBeenCalled();
   });
@@ -337,5 +337,40 @@ describe('VersionsPanel GitHub sync', () => {
     const push = within(row).getByRole('button', { name: 'Push v1' });
     expect(push).toBeDisabled();
     expect(push).toHaveAccessibleDescription('Link your GitHub account in Profile to push.');
+  });
+  it('takes the label, reloads the versions and sync, and hands the version on', async () => {
+    const remote = {
+      versions: [
+        {
+          instance: 'production',
+          typeId: 'invoice',
+          version: 3,
+          label: 'Signed off',
+          note: null,
+          publishedBy: 'Ken',
+          publishedAt: '2026-10-01T09:00:00.000Z',
+          definitionSha256: 'abc',
+          commit: 'deadbeefcafe',
+          path: 'ct-studio/production/invoice/v3.yaml',
+          mine: true,
+          compare: 'label' as const,
+        },
+      ],
+      skipped: [],
+    };
+    const api = withSync(
+      linked([sync({ version: 3, state: 'label' })]),
+      {},
+      {
+        listGitHubRemote: vi.fn(async () => remote),
+      },
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Pull from GitHub…' }));
+    await userEvent.click(await screen.findByRole('button', { name: "Take GitHub's label" }));
+    await waitFor(() =>
+      expect(api.takeGitHubLabel).toHaveBeenCalledWith('invoice', 3, 'deadbeefcafe'),
+    );
+    await waitFor(() => expect(api.getGitHubSync).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.listVersions).toHaveBeenCalledTimes(2));
   });
 });

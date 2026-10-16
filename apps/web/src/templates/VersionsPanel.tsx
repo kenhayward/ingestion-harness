@@ -15,6 +15,7 @@ import type {
 import { Dialog } from '../ui/Dialog.js';
 import { changeAtText } from './editor-derive.js';
 import { GitHubStrip } from './github/GitHubStrip.js';
+import { PullDialog } from './github/PullDialog.js';
 import { shortCommit, SyncChip } from './github/SyncChip.js';
 
 const DIRTY_REASON = 'Save or discard your changes first';
@@ -40,7 +41,6 @@ export function VersionsPanel({
   retired,
   refreshKey,
   admin = false,
-  onPull,
   onRestored,
   onStarted,
 }: {
@@ -57,8 +57,6 @@ export function VersionsPanel({
   refreshKey: number;
   /** The viewer is an admin: they link the type to GitHub and see the deployment's folder. */
   admin?: boolean;
-  /** Opens the pull dialog; *Pull from GitHub…* is hidden without it. */
-  onPull?: () => void;
   onRestored: (draft: TemplateRecordView) => void;
   onStarted: (draft: TemplateRecordView) => void;
 }) {
@@ -74,6 +72,7 @@ export function VersionsPanel({
   /** What a push in this visit answered, by version. */
   const [outcomes, setOutcomes] = useState<Record<number, PushOutcome>>({});
   const [pushing, setPushing] = useState<number | null>(null);
+  const [pulling, setPulling] = useState(false);
   const reasonId = useId();
   /** Numbers each load, so an older response never replaces a newer one. */
   const request = useRef(0);
@@ -151,7 +150,7 @@ export function VersionsPanel({
         admin={admin}
         sync={sync}
         onChanged={() => setSyncReloads((r) => r + 1)}
-        onPull={onPull}
+        onPull={() => setPulling(true)}
       />
       {error && <p role="alert">{error}</p>}
       {versions === null && !error && <p className="muted">Loading…</p>}
@@ -237,6 +236,29 @@ export function VersionsPanel({
             </li>
           ))}
         </ul>
+      )}
+      {pulling && (
+        <PullDialog
+          api={api}
+          templateId={templateId}
+          retired={retired}
+          dirty={openDraftDirty}
+          openUpdatedAt={draft && draft.version === openVersion ? openUpdatedAt : null}
+          onClose={() => setPulling(false)}
+          onTaken={() => {
+            // A label is not part of the definition: reload both lists and keep the dialog open.
+            setReloads((r) => r + 1);
+            setSyncReloads((r) => r + 1);
+          }}
+          onDraft={(view) => {
+            setPulling(false);
+            setReloads((r) => r + 1);
+            setSyncReloads((r) => r + 1);
+            // With a draft open the draft is replaced; otherwise the next one is started.
+            if (draft) onRestored(view);
+            else onStarted(view);
+          }}
+        />
       )}
       {replacing !== null && draft && (
         <ReplaceDialog
