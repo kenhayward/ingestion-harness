@@ -122,8 +122,6 @@ export function HomePage({
   refresh,
   pollMs,
   livePollMs = 1000,
-  pickPending,
-  onPicked,
   launched,
   focusUpload = 0,
 }: {
@@ -138,9 +136,6 @@ export function HomePage({
   pollMs: number;
   /** While the latest job is queued or running it is re-read this often; <= 0 = never. */
   livePollMs?: number;
-  /** Upload document (top bar) was pressed: the upload strip opens the file picker. */
-  pickPending: boolean;
-  onPicked: () => void;
   /** Files opened with the installed app, for the upload strip (docs/design/pwa.md). */
   launched?: LaunchedFiles;
   /** Bumped by the Upload documents shortcut (#/upload): the upload strip takes focus. */
@@ -183,8 +178,6 @@ export function HomePage({
         <UploadStrip
           api={api}
           onUploaded={() => void refresh()}
-          pickPending={pickPending}
-          onPicked={onPicked}
           launched={launched}
           focusRequest={focusUpload}
         />

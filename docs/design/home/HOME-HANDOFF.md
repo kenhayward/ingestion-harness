@@ -54,7 +54,7 @@ uses it.
   part you drop files on. Drag-over keeps today's accent styling.
 - Controls stay on one row at desktop width: drop zone (flex 2) · Document type · Model ·
   Upload. The per-file upload list stays under the row, full width.
-- No change to the strip's behaviour (top-bar "Upload document" still opens the picker).
+- No change to the strip's behaviour. (The top bar's "Upload document" button, which went to Home and opened the picker, has since been removed: Home is where uploads start.)
 
 ## 4. Latest job card
 
