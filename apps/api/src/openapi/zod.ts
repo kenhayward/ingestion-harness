@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { OPERATOR_REFUSED, operatorMayCall } from '@ih/shared';
 
 /** Where the docs browser and the OpenAPI document are served. */
 export const DOCS_PREFIX = '/api/docs';
@@ -106,6 +107,14 @@ const CHANGE_PASSWORD_FIRST = {
   required: ['error'],
 };
 
+const OPERATORS_REFUSED = {
+  type: 'object',
+  description:
+    'An operator (Home, Jobs and Results only): this route is for designers and administrators.',
+  properties: { error: { type: 'string', const: OPERATOR_REFUSED } },
+  required: ['error'],
+};
+
 const UNDER_MAINTENANCE = {
   type: 'object',
   description:
@@ -143,7 +152,8 @@ const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 /**
  * `@fastify/swagger` transform: Zod → JSON Schema, plus what every route shares. Public routes
  * (and the health checks outside /api) need no session; the rest gain the 401 the access hook
- * sends, its 403 for a one-time password session and its 503 during maintenance. Every /api route that changes something
+ * sends, its 403s for a one-time password session and for operators, and its 503 during
+ * maintenance. Every /api route that changes something
  * gains its cross-site 403.
  */
 export function transform({
@@ -178,6 +188,7 @@ export function transform({
     ...(guarded && !methods.some((m) => WHILE_CHANGING.includes(`${m} ${url}`))
       ? [CHANGE_PASSWORD_FIRST]
       : []),
+    ...(guarded && !methods.some((m) => operatorMayCall(m, url)) ? [OPERATORS_REFUSED] : []),
     ...(url.startsWith('/api/') && methods.some((m) => UNSAFE_METHODS.includes(m))
       ? [CROSS_SITE_REFUSED]
       : []),

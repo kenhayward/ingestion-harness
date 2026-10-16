@@ -36,7 +36,7 @@ describe.skipIf(!url)('PgAccessRepo', { timeout: 60_000 }, () => {
     const repo = await make();
     await repo.rotateAdminPassword();
     const created = await repo.createUser(
-      { name: 'P', email: 'p@example.com', role: 'user' },
+      { name: 'P', email: 'p@example.com', role: 'designer' },
       null,
     );
     if (typeof created === 'string') throw new Error(created);
@@ -57,7 +57,7 @@ describe.skipIf(!url)('PgAccessRepo', { timeout: 60_000 }, () => {
     const repo = await make();
     await repo.rotateAdminPassword();
     const created = await repo.createUser(
-      { name: 'Q', email: 'q@example.com', role: 'user' },
+      { name: 'Q', email: 'q@example.com', role: 'designer' },
       null,
     );
     if (typeof created === 'string') throw new Error(created);

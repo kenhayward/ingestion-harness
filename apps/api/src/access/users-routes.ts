@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { RoleSchema } from '@ih/shared';
 import { error, md, res } from '../openapi/zod.js';
 import {
   SIGN_IN_RETENTION_DAYS,
@@ -9,7 +10,7 @@ import {
   type UserProblem,
 } from './repo.js';
 
-const Role = z.enum(['admin', 'user']);
+const Role = RoleSchema;
 const Name = z.string().trim().min(1).max(100).describe('Unique, whatever the case.');
 const Email = z
   .string()
@@ -22,7 +23,9 @@ const Time = z.string().datetime();
 const NewUserBody = z.object({
   name: Name,
   email: Email,
-  role: Role.default('user').describe('`admin` for a full admin. Default `user`.'),
+  role: Role.default('designer').describe(
+    '`admin` (Administrator), `designer` (Workbench and Document types) or `operator` (Home, Jobs and Results only). Default `designer`.',
+  ),
 });
 const PatchBody = z
   .object({ name: Name, email: Email, role: Role })
@@ -205,7 +208,7 @@ export function registerUserRoutes(app: FastifyInstance, access: AccessRepo): vo
           .code(400)
           .send({ error: 'name (1-100 chars), a valid email or a role is required' });
       }
-      if (self(req) && body.data.role === 'user') {
+      if (self(req) && body.data.role !== undefined && body.data.role !== 'admin') {
         return reply.code(409).send({ error: 'you cannot remove your own admin role' });
       }
       const result = await access.updateUser(req.params.id, body.data);

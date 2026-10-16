@@ -21,7 +21,7 @@ const page = (items = [ontologyTerm()]): TermPage => ({
   limit: 100,
 });
 
-function view(role: 'admin' | 'user' = 'user', overrides: Partial<Api> = {}) {
+function view(role: 'admin' | 'designer' = 'designer', overrides: Partial<Api> = {}) {
   const api = fakeApi({
     getOntology: vi.fn(async () => ontologyDetail()),
     listOntologyTerms: vi.fn(async (_id: string, _v: number, q: OntologyTermQuery) =>
@@ -125,7 +125,7 @@ describe('OntologyPage', () => {
   });
 
   it('shows a term as a graph', async () => {
-    view('user', {
+    view('designer', {
       getNeighbourhood: vi.fn(async () => ({
         nodes: [
           { iri: `${C}Protocol`, label: 'Protocol', kind: 'class' as const, focus: true },
@@ -171,7 +171,7 @@ describe('OntologyPage', () => {
   });
 
   it('says a version is importing or failed instead of browsing it', async () => {
-    view('user', {
+    view('designer', {
       getOntology: vi.fn(async () =>
         ontologyDetail({
           versions: [ontologyVersion({ status: 'failed', error: 'cannot read pv.ttl as Turtle' })],
@@ -185,7 +185,7 @@ describe('OntologyPage', () => {
   });
 
   it('shows how each import was resolved, and where a URL version came from', async () => {
-    view('user', {
+    view('designer', {
       getOntology: vi.fn(async () =>
         ontologyDetail({
           versions: [
@@ -238,7 +238,7 @@ describe('OntologyPage', () => {
   });
 
   it('lists the files of a folder version, and imports between them as included', async () => {
-    view('user', {
+    view('designer', {
       getOntology: vi.fn(async () =>
         ontologyDetail({
           versions: [
@@ -282,7 +282,7 @@ describe('OntologyPage', () => {
   });
 
   it('marks terms that come from an import', async () => {
-    view('user', {
+    view('designer', {
       getOntologyTerm: vi.fn(async () =>
         termDetail({ label: 'Thing', definedIn: 'w3id-org-base@1' }),
       ),
@@ -293,7 +293,7 @@ describe('OntologyPage', () => {
   });
 
   it('offers no download for a URL version not fetched yet', async () => {
-    view('user', {
+    view('designer', {
       getOntology: vi.fn(async () =>
         ontologyDetail({
           versions: [

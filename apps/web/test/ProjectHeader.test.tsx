@@ -11,7 +11,7 @@ describe('ProjectHeader', () => {
       <ProjectHeader
         view={projectView({ draft: 4, published: 3 })}
         gate={gateView()}
-        role="user"
+        role="designer"
         onTogglePolicy={vi.fn()}
       />,
     );
@@ -27,7 +27,7 @@ describe('ProjectHeader', () => {
       <ProjectHeader
         view={projectView({ draft: 4 })}
         gate={gateView({ reason: 'no complete holdout evaluation of the current draft' })}
-        role="user"
+        role="designer"
         onTogglePolicy={vi.fn()}
       />,
     );
@@ -55,7 +55,7 @@ describe('ProjectHeader', () => {
           iterationId: 'it1',
           reason: 'holdout score 95% meets the threshold 90%',
         })}
-        role="user"
+        role="designer"
         onTogglePolicy={vi.fn()}
       />,
     );
@@ -68,7 +68,7 @@ describe('ProjectHeader', () => {
       <ProjectHeader
         view={projectView({ draft: null, published: 3 })}
         gate={gateView()}
-        role="user"
+        role="designer"
         onTogglePolicy={vi.fn()}
       />,
     );
@@ -93,7 +93,7 @@ describe('ProjectHeader', () => {
     const external = projectView();
     external.project.dataPolicy = 'external';
     render(
-      <ProjectHeader view={external} gate={gateView()} role="user" onTogglePolicy={vi.fn()} />,
+      <ProjectHeader view={external} gate={gateView()} role="designer" onTogglePolicy={vi.fn()} />,
     );
     expect(screen.getByText('External models allowed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /models/ })).toBeNull();
@@ -107,7 +107,7 @@ describe('ProjectHeader', () => {
           retired: { retiredAt: '2026-10-14T09:00:00.000Z', retiredBy: 'ken' },
         })}
         gate={gateView()}
-        role="user"
+        role="designer"
         onTogglePolicy={vi.fn()}
       />,
     );

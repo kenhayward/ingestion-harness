@@ -293,7 +293,7 @@ describe('ProjectPage', () => {
         tab="overview"
         onNavigate={vi.fn()}
         pollMs={60_000}
-        role="user"
+        role="designer"
       />,
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Reset project…' }));
@@ -473,7 +473,7 @@ describe('ProjectPage', () => {
         tab="samples"
         onNavigate={onNavigate}
         pollMs={60_000}
-        role="user"
+        role="designer"
       />,
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Delete project' }));
@@ -558,7 +558,7 @@ describe('ProjectPage', () => {
         projectId="letter"
         tab="samples"
         onNavigate={vi.fn()}
-        role="user"
+        role="designer"
       />,
     );
     expect(await screen.findByText('Local models only')).toBeInTheDocument();

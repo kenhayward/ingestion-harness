@@ -6,7 +6,7 @@ import { ApiError, type Me } from '../src/api/client.js';
 import { fakeApi } from './fake-api.js';
 
 const KEN: Me = {
-  role: 'user',
+  role: 'designer',
   label: 'Ken',
   email: 'ken@example.com',
   mustChangePassword: true,

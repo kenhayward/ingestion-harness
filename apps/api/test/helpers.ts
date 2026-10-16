@@ -1,4 +1,4 @@
-import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
+import { DocumentSpecSchema, TemplateSchema, type Role } from '@ih/shared';
 import type { FastifyInstance } from 'fastify';
 import { MemoryAccessRepo, type AccessRepo } from '../src/access/repo.js';
 import { MemoryProfileRepo } from '../src/profile/repo.js';
@@ -173,7 +173,7 @@ export async function signInNewUser(
   app: FastifyInstance,
   access: AccessRepo,
   name: string,
-  role: 'admin' | 'user' = 'user',
+  role: Role = 'designer',
   email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@example.test`,
 ) {
   const created = await access.createUser({ name, email, role }, null);
