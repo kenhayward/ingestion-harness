@@ -18,6 +18,7 @@ const SECTION: Record<Route['name'], Section> = {
   password: 'account',
   // The way back from GitHub: Home with the Profile dialog open.
   profile: 'home',
+  help: 'home',
   ontologies: 'ontologies',
   ontology: 'ontologies',
 };
@@ -80,6 +81,7 @@ const PAGE: Record<Route['name'], string> = {
   project: 'Workbench',
   password: 'Change password',
   profile: 'Home',
+  help: 'Home',
   ontologies: 'Ontologies',
   ontology: 'Ontologies',
 };

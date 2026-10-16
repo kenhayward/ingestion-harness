@@ -113,6 +113,7 @@ function AccountMenu({
   onInstall,
   onAdmin,
   onProfile,
+  onHelp,
   onSignOut,
 }: {
   me: Me;
@@ -120,6 +121,8 @@ function AccountMenu({
   onInstall: (() => void) | null;
   onAdmin: () => void;
   onProfile: () => void;
+  /** The account menu's Help (everyone). */
+  onHelp: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -217,6 +220,17 @@ function AccountMenu({
             role="menuitem"
             onClick={() => {
               setOpen(false);
+              onHelp();
+            }}
+          >
+            <Icon name="help" />
+            Help
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
               onSignOut();
             }}
           >
@@ -240,6 +254,7 @@ export function AppShell({
   notify,
   onAdmin,
   onProfile,
+  onHelp,
   onSignOut,
   children,
 }: {
@@ -256,6 +271,8 @@ export function AppShell({
   onAdmin: () => void;
   /** The account menu's Profile: opens the Profile dialog. */
   onProfile: () => void;
+  /** The account menu's Help (everyone). */
+  onHelp: () => void;
   onSignOut: () => void;
   children: ReactNode;
 }) {
@@ -337,6 +354,7 @@ export function AppShell({
             onInstall={onInstall}
             onAdmin={onAdmin}
             onProfile={onProfile}
+            onHelp={onHelp}
             onSignOut={onSignOut}
           />
         </div>

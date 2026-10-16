@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { GeneralHelp } from './GeneralHelp.js';
 import { HomeHelp } from './HomeHelp.js';
+import { IntroductionHelp } from './IntroductionHelp.js';
 import { JobsHelp } from './JobsHelp.js';
 import { GitHubSyncHelp } from './GitHubSyncHelp.js';
 import { MappingHelp } from './MappingHelp.js';
@@ -31,6 +32,7 @@ export interface HelpTopic {
 
 /** Every help topic, by id. Add a topic here, then `<HelpButton topic="id" />` where needed. */
 export const HELP_TOPICS = {
+  introduction: { title: 'Introduction', body: <IntroductionHelp /> },
   home: { title: 'Using the Home screen', body: <HomeHelp /> },
   jobs: { title: 'Using the Jobs page', body: <JobsHelp /> },
   results: { title: 'Using the Results page', body: <ResultsHelp /> },

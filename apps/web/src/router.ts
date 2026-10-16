@@ -31,6 +31,8 @@ export type Route =
    * (`#/account/profile/github?github=<result>`), and `#/account/profile[/password]`.
    */
   | { name: 'profile'; tab: 'details' | 'password'; github?: GitHubLinkResult }
+  /** Home with the Help dialog open (`#/help`, `#/help/<topic>`): a link to a help topic. */
+  | { name: 'help'; topic?: string }
   | { name: 'ontologies' }
   | { name: 'ontology'; ontologyId: string }
   | { name: 'results' }
@@ -69,6 +71,8 @@ export function parseHash(hash: string): Route {
       : { name: 'project', projectId, tab };
   }
   if (hash === '#/jobs') return { name: 'jobs' };
+  const help = /^#\/help(?:\/([A-Za-z-]+))?$/.exec(hash);
+  if (help) return help[1] ? { name: 'help', topic: help[1] } : { name: 'help' };
   if (hash === '#/upload') return { name: 'home', focusUpload: true };
   if (hash === '#/workbench') return { name: 'workbench' };
   if (hash === '#/results') return { name: 'results' };
