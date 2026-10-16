@@ -168,8 +168,11 @@ export const DraftRunSchema = z.object({
   status: z.enum(['queued', 'running']),
   /** Queued: when it was queued (or requeued). Running: when a worker claimed it. */
   since: z.string(),
-  /** This attempt's latest progress and when it was reported; null before the first. */
-  progress: DraftProgressSchema.extend({ at: z.string() }).nullable(),
+  /**
+   * This attempt's latest progress and when it was reported; null before the first. `phaseAt`:
+   * when its phase (and model try) began, which a streamed reply's token counts leave alone.
+   */
+  progress: DraftProgressSchema.extend({ at: z.string(), phaseAt: z.string() }).nullable(),
 });
 export type DraftRun = z.infer<typeof DraftRunSchema>;
 

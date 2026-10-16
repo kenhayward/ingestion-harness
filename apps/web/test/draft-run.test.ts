@@ -5,7 +5,7 @@ import { draftRunView } from '../src/workbench/draft-run.js';
 const T0 = Date.parse('2026-10-16T10:00:00.000Z');
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
 
-const progress = (over: Partial<DraftProgress>, atS: number) => ({
+const progress = (over: Partial<DraftProgress>, atS: number, phaseAtS = atS) => ({
   stage: 'survey' as const,
   phase: 'model' as const,
   samples: 3,
@@ -14,6 +14,7 @@ const progress = (over: Partial<DraftProgress>, atS: number) => ({
   round: 1,
   ...over,
   at: at(atS),
+  phaseAt: at(phaseAtS),
 });
 
 const running = (p: DraftRun['progress']): DraftRun => ({
@@ -85,6 +86,12 @@ describe('draftRunView (issue #151)', () => {
     expect(again.phases.at(-1)!.detail).toBe(
       'The first reply did not pass the checks: asking again (try 2 of 2). ~80 tokens received so far.',
     );
+  });
+
+  it('times the model from when the try began, not from its latest token count (issue #181)', () => {
+    // The try began at 30 s; the streamed reply's token counts arrive every few seconds.
+    const v = draftRunView('survey', running(progress({ tokens: 900 }, 55, 30)), T0 + 58_000);
+    expect(v.phases.at(-1)!.elapsed).toBe('00:28');
   });
 
   it('adds the anchor check for sections, and the second round when anchors missed', () => {
