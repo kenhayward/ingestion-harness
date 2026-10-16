@@ -16,7 +16,11 @@ export interface HelpEntry {
 export const HELP_INDEX: HelpEntry[] = [
   { topic: 'introduction', label: 'Introduction' },
   { topic: 'home', label: 'Home' },
-  { topic: 'jobs', label: 'Jobs' },
+  {
+    topic: 'jobs',
+    label: 'Jobs',
+    children: [{ topic: 'review', label: 'Reviewing a document' }],
+  },
   {
     topic: 'results',
     label: 'Results',
@@ -36,7 +40,25 @@ export const HELP_INDEX: HelpEntry[] = [
       { topic: 'versions', label: 'Versions' },
     ],
   },
-  { topic: 'workbench', label: 'Workbench' },
+  {
+    topic: 'workbench',
+    label: 'Workbench',
+    children: [
+      { topic: 'wbOverview', label: 'Overview' },
+      { topic: 'wbSamples', label: 'Samples' },
+      { topic: 'wbBrief', label: 'Brief' },
+      { topic: 'wbSurvey', label: 'Survey' },
+      { topic: 'wbOutputs', label: 'Outputs stage' },
+      { topic: 'wbSections', label: 'Sections stage' },
+      { topic: 'wbSteps', label: 'Steps stage' },
+      { topic: 'wbMapping', label: 'Mapping stage' },
+      { topic: 'wbReferences', label: 'References' },
+      { topic: 'wbEvaluate', label: 'Evaluate' },
+      { topic: 'wbRevise', label: 'Revise' },
+      { topic: 'wbRecipe', label: 'Recipe' },
+      { topic: 'wbRuns', label: 'Test runs' },
+    ],
+  },
   {
     topic: 'ontologies',
     label: 'Ontologies',

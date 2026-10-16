@@ -22,6 +22,22 @@ import { TemplatesHelp } from './TemplatesHelp.js';
 import { SectionsHelp } from './SectionsHelp.js';
 import { VersionsHelp } from './VersionsHelp.js';
 import { WorkbenchHelp } from './WorkbenchHelp.js';
+import {
+  ReviewHelp,
+  WbBriefHelp,
+  WbEvaluateHelp,
+  WbMappingHelp,
+  WbOutputsHelp,
+  WbOverviewHelp,
+  WbRecipeHelp,
+  WbReferencesHelp,
+  WbReviseHelp,
+  WbRunsHelp,
+  WbSamplesHelp,
+  WbSectionsHelp,
+  WbStepsHelp,
+  WbSurveyHelp,
+} from './WorkbenchTabsHelp.js';
 import { YamlHelp } from './YamlHelp.js';
 
 /** A help topic: the dialog's title and its content (HelpButton in `ui/Help.tsx`). */
@@ -39,6 +55,20 @@ export const HELP_TOPICS = {
   result: { title: 'Reading a published result', body: <ResultHelp /> },
   templates: { title: 'Using the Document types page', body: <TemplatesHelp /> },
   workbench: { title: 'Using the Workbench', body: <WorkbenchHelp /> },
+  wbOverview: { title: 'The project overview', body: <WbOverviewHelp /> },
+  wbSamples: { title: 'Samples', body: <WbSamplesHelp /> },
+  wbBrief: { title: 'The brief', body: <WbBriefHelp /> },
+  wbSurvey: { title: 'The survey', body: <WbSurveyHelp /> },
+  wbOutputs: { title: 'Proposing outputs', body: <WbOutputsHelp /> },
+  wbSections: { title: 'Finding section anchors', body: <WbSectionsHelp /> },
+  wbSteps: { title: 'Proposing extraction steps', body: <WbStepsHelp /> },
+  wbMapping: { title: 'Proposing a mapping', body: <WbMappingHelp /> },
+  wbReferences: { title: 'References: the right answers', body: <WbReferencesHelp /> },
+  wbEvaluate: { title: 'Evaluating the recipe', body: <WbEvaluateHelp /> },
+  wbRevise: { title: 'Revising from feedback', body: <WbReviseHelp /> },
+  wbRecipe: { title: 'The Recipe tab', body: <WbRecipeHelp /> },
+  wbRuns: { title: 'Test runs', body: <WbRunsHelp /> },
+  review: { title: 'Reviewing a document', body: <ReviewHelp /> },
   ontologies: { title: 'The ontology library', body: <OntologiesHelp /> },
   ontology: { title: 'An ontology and its versions', body: <OntologyHelp /> },
   ontologyClasses: { title: 'Classes', body: <OntologyClassesHelp /> },

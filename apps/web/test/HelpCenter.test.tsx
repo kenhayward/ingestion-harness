@@ -14,6 +14,27 @@ describe('help index', () => {
     expect(HELP_INDEX[0]!.topic).toBe('introduction');
   });
 
+  it('nests the Workbench tabs under Workbench and Review under Jobs', () => {
+    const wb = HELP_INDEX.find((e) => e.topic === 'workbench')!;
+    expect(wb.children?.map((c) => c.topic)).toEqual([
+      'wbOverview',
+      'wbSamples',
+      'wbBrief',
+      'wbSurvey',
+      'wbOutputs',
+      'wbSections',
+      'wbSteps',
+      'wbMapping',
+      'wbReferences',
+      'wbEvaluate',
+      'wbRevise',
+      'wbRecipe',
+      'wbRuns',
+    ]);
+    const jobs = HELP_INDEX.find((e) => e.topic === 'jobs')!;
+    expect(jobs.children?.map((c) => c.topic)).toEqual(['review']);
+  });
+
   it('nests the parts of a screen under it', () => {
     const types = HELP_INDEX.find((e) => e.topic === 'templates')!;
     expect(types.children?.map((c) => c.topic)).toEqual([

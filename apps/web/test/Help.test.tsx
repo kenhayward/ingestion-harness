@@ -128,3 +128,27 @@ describe('help topics for the library and Workbench pages', () => {
     for (const m of mentions) expect(dialog).toHaveTextContent(m);
   });
 });
+
+describe('help topics for the Workbench tabs and Review', () => {
+  it.each([
+    ['wbOverview', 'The project overview', ['Next', 'Reset project']],
+    ['wbSamples', 'Samples', ['dev', 'holdout', 'prepare']],
+    ['wbBrief', 'The brief', ['version']],
+    ['wbSurvey', 'The survey', ['Candidates', 'Ontologies', 'Pin']],
+    ['wbOutputs', 'Proposing outputs', ['Accept', 'Delivered outputs']],
+    ['wbSections', 'Finding section anchors', ['anchor', 'Repeats']],
+    ['wbSteps', 'Proposing extraction steps', ['coverage']],
+    ['wbMapping', 'Proposing a mapping', ['RDF', 'vocabulary']],
+    ['wbReferences', 'References: the right answers', ['Save as reference', 'Re-verify']],
+    ['wbEvaluate', 'Evaluating the recipe', ['holdout', 'threshold', 'Compare']],
+    ['wbRevise', 'Revising from feedback', ['feedback', 'Not sent']],
+    ['wbRecipe', 'The Recipe tab', ['Try on', 'Publish']],
+    ['wbRuns', 'Test runs', ['batch']],
+    ['review', 'Reviewing a document', ['Approve', 'Reject', 'Re-run', 'evidence']],
+  ] as const)('%s: %s', async (topic, title, mentions) => {
+    render(<HelpButton topic={topic} />);
+    await userEvent.click(screen.getByRole('button', { name: `Help: ${title}` }));
+    const dialog = screen.getByRole('dialog', { name: title });
+    for (const m of mentions) expect(dialog).toHaveTextContent(m);
+  });
+});
