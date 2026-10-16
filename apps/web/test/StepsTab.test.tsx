@@ -159,6 +159,14 @@ describe('Steps tab', () => {
     expect(screen.getByText('Outputs: 3 fields')).toBeInTheDocument();
   });
 
+  it('links to the Recipe tab, where steps are edited by hand', async () => {
+    stepsPanel();
+    const pipeline = await screen.findByRole('region', { name: 'Pipeline in draft v4' });
+    expect(
+      within(pipeline).getByRole('link', { name: 'Edit steps on the Recipe tab' }),
+    ).toHaveAttribute('href', '#/workbench/letter/template');
+  });
+
   it('marks the steps the proposal added and turns coverage green once applied', async () => {
     const api = stepsPanel();
     await userEvent.click(await screen.findByRole('button', { name: 'Apply 2 selected changes' }));

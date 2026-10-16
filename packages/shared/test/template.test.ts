@@ -125,6 +125,11 @@ describe('TemplateSchema', () => {
       'unknown field or column',
     ],
     [
+      'bare table as a check path',
+      (v) => withPipeline([...v.pipeline.slice(0, 3), { ...v.pipeline[3], values: 'results' }]),
+      'is a table, so name one of its columns: results.batch, results.value',
+    ],
+    [
       'step with neither fields nor table',
       (v) => withPipeline([{ ...v.pipeline[0], fields: [] }, ...v.pipeline.slice(1)]),
       'fields or a table',

@@ -69,6 +69,21 @@ def test_grid_reports_page_line_and_size_per_section() -> None:
         "occurrences": [],
         "matches": 0,
     }
+    assert c["approvals"]["matches"] == 1
+
+
+def test_grid_counts_every_match_of_an_anchor() -> None:
+    # A block repeated per batch: production uses the first match, the grid says how many.
+    pages = ["BATCH 1\nAssay 1\n", "BATCH 2\nAssay 2\n", "BATCH 3\nAssay 3\n"]
+    document = doc(
+        sections=[
+            {"id": "batch", "anchor": "^BATCH"},
+            {"id": "assay", "anchor": "^Assay"},
+            {"id": "none", "anchor": "^NOWHERE", "required": False},
+        ]
+    )
+    c = cells(segment_samples([("s1", pages)], document))
+    assert (c["batch"]["matches"], c["assay"]["matches"], c["none"]["matches"]) == (3, 3, 0)
 
 
 def test_grid_sizes_match_production_segmentation() -> None:

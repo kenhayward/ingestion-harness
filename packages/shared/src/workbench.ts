@@ -210,8 +210,9 @@ export const SectionCellSchema = z.object({
   chars: z.number().int().nonnegative(),
   /** Every occurrence of a repeating section (empty for other sections and older grids). */
   occurrences: z.array(OccurrenceCellSchema).optional(),
-  /** How often a plain section's anchor matches (only the first is used; 0 for a repeating
-   * section, an invalid anchor, and older grids). */
+  /** How often a plain section's anchor matches (only the first starts the section; >1 = a
+   * repeated block). 0 for a repeating section (every match is an occurrence) and an invalid
+   * anchor; absent in grids from before the count. */
   matches: z.number().int().nonnegative().optional(),
 });
 export type SectionCell = z.infer<typeof SectionCellSchema>;

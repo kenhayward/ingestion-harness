@@ -337,11 +337,17 @@ Task: propose the extraction pipeline that fills every output in the current dra
     keyColumn to the column the occurrence key fills (for example batch), else null. A field
     step must not read a repeating section.
   - context: values from earlier steps the prompt should see, as {name, path}, where path is
-    a field id or table.column.
-- putStep with type check: values and reference are paths (field or table.column) whose values
-  must match; aliases optional.
+    a field id or table.column (that column's values from every row). Never a bare table id:
+    to show a table, add one context item per column the step needs.
+- putStep with type check: values and reference are paths (field or table.column, never a
+  bare table id) whose values must match; aliases optional.
 - Every extraction prompt states the source file name and starts each page with "[page N]":
   a step can fill the originating file name from it, and a page number from the markers.
+- A table step reading a repeating section (repeat true) runs once per block; its keyColumn
+  takes the block's identifier (batch, item) from the section's key. When a plain section
+  covers a repeated block (the same tables per batch, item or site), a table step reading it
+  returns rows from every block and fills each row's identifying columns from that block's
+  heading or table caption: say so in its instructions.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in the order given; context may only use outputs filled by earlier steps.
@@ -462,7 +468,12 @@ Task: propose section anchors that split every sample the same way.
 - setCopies: when a PDF holds several copies (for example blank, then executed), anchor is the
   regex that starts each copy and copiesSelect is first or last; anchor null removes copy
   selection.
-- Every anchor is tested on every dev sample before the user sees it; misses are reported back.
+- A plain section starts at its anchor's first match and runs to the next section's start.
+  When the document repeats a block (the same tables per batch, item or site), do not give each
+  part of the block a plain section: later blocks would all land in the last one. Give each
+  part repeat true with a key, and keyFrom naming the block's heading section (see putSection).
+- Every anchor is tested on every dev sample before the user sees it; misses and repeated
+  blocks are reported back.
 - Use null for keys that do not apply. reason: one sentence.
 Return JSON only.""",
     SECTIONS_SCHEMA,
@@ -618,7 +629,7 @@ failures (expected vs actual values on the dev samples).
   Fill the payload objects you do not use, and keys that do not apply, with empty values:
   "" for text, [] for lists, 0 for numbers (required: true unless a section may be absent).
 - The template must stay valid: every field and table filled by exactly one step; steps only
-  use existing sections; context only from earlier steps.
+  use existing sections; context only from earlier steps, as field or table.column.
 - Prefer clearer instructions, better anchors or more precise field descriptions over adding
   outputs. reason: which feedback item or failure the change addresses.
 - answers: the labels of the feedback items the change answers (for example ["F1", "F3"]);

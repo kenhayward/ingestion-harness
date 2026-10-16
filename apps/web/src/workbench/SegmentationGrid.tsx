@@ -147,6 +147,15 @@ export function SegmentationGrid({
                                     , swallows more than 60% of the text
                                   </span>
                                 )}
+                                {cell?.found && (cell.matches ?? 1) > 1 && (
+                                  <span className="flag">
+                                    {' '}
+                                    · matches {cell.matches}×
+                                    <span className="visually-hidden">
+                                      : only the first starts the section
+                                    </span>
+                                  </span>
+                                )}
                                 {flag && flag !== 'large' && (
                                   <span className="flag"> {FLAG_TEXT[flag]}</span>
                                 )}

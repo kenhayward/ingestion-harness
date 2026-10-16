@@ -204,6 +204,7 @@ export function StepsView({
             <span className="muted">
               Per-step figures from every run of this type (cached runs left out)
             </span>
+            <a href={`#/workbench/${projectId}/template`}>Edit steps on the Recipe tab</a>
           </div>
           <p className="pipeline-end">
             Prepared text, split into {sections.length}{' '}

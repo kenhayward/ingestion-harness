@@ -28,6 +28,14 @@ const tableColumnsOf = (definition: Definition): Record<string, string[]> => {
 };
 const idsOf = (v: unknown): string[] =>
   Array.isArray(v) ? ids(v.map((x) => (x as { id?: unknown })?.id)) : [];
+/** Each section's anchor by id, so a step's Reads list says where each section starts. */
+const anchorsOf = (v: unknown): ReadonlyMap<string, string> =>
+  new Map(
+    (Array.isArray(v) ? v : []).flatMap((x) => {
+      const { id, anchor } = (x ?? {}) as { id?: unknown; anchor?: unknown };
+      return typeof id === 'string' && typeof anchor === 'string' ? [[id, anchor] as const] : [];
+    }),
+  );
 
 /**
  * The Template tab's Pipeline (handoff §10): the steps as a list (number, id, what it fills and
@@ -120,6 +128,7 @@ export function PipelineEditor({
           sections={idsOf((definition.document as Definition | undefined)?.sections)}
           sectionDefs={sectionDefsOf(definition)}
           tableColumns={tableColumnsOf(definition)}
+          anchors={anchorsOf((definition.document as Definition | undefined)?.sections)}
           fields={idsOf((definition.outputs as Definition | undefined)?.fields)}
           tables={idsOf((definition.outputs as Definition | undefined)?.tables)}
           coverage={outputCoverage(definition)}
@@ -154,6 +163,7 @@ function StepDetail({
   sections,
   sectionDefs,
   tableColumns,
+  anchors,
   fields,
   tables,
   coverage,
@@ -173,6 +183,7 @@ function StepDetail({
   sections: string[];
   sectionDefs: readonly SectionLike[];
   tableColumns: Record<string, string[]>;
+  anchors: ReadonlyMap<string, string>;
   fields: string[];
   tables: string[];
   coverage: OutputCoverage;
@@ -234,6 +245,7 @@ function StepDetail({
             sections={sections}
             sectionDefs={sectionDefs}
             tableColumns={tableColumns}
+            anchors={anchors}
             fields={fields}
             tables={tables}
             coverage={coverage}
@@ -259,6 +271,7 @@ function ExtractDetail({
   sections,
   sectionDefs,
   tableColumns,
+  anchors,
   fields,
   tables,
   coverage,
@@ -271,6 +284,7 @@ function ExtractDetail({
   sections: string[];
   sectionDefs: readonly SectionLike[];
   tableColumns: Record<string, string[]>;
+  anchors: ReadonlyMap<string, string>;
   fields: string[];
   tables: string[];
   coverage: OutputCoverage;
@@ -368,6 +382,11 @@ function ExtractDetail({
                     <small className="muted"> repeats</small>
                   )}
                 </label>
+                {anchors.get(id) && (
+                  <code className="section-anchor muted" title="Anchor: where this section starts">
+                    {anchors.get(id)}
+                  </code>
+                )}
               </li>
             ))}
           </ul>

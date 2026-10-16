@@ -245,6 +245,17 @@ class Template(_Model):
         suffix = "[*]" if fld.type == "list" else ""
         return f"{self.filler_of_field(head).id}.{head}.value{suffix}", fld
 
+    def _unknown_path(self, path: str) -> str:
+        """Why `path` does not resolve, saying how to fix a bare table id (TS `unknownPath`)."""
+        table = next((t for t in self.outputs.tables if t.id == path), None)
+        if table is None:
+            return f"unknown field or column {path!r}"
+        columns = ", ".join(f"{path}.{c.id}" for c in table.columns)
+        return (
+            f"unknown field or column {path!r}: {path!r} is a table, "
+            f"so name one of its columns: {columns}"
+        )
+
     def compile_check(self, step: CheckStep) -> Check:
         def path(p: str) -> str:
             resolved = self._resolve(p)
@@ -383,7 +394,7 @@ class Template(_Model):
                 for name, path in step.context.items():
                     if self._resolve(path) is None:
                         errors.append(
-                            f"step {step.id!r}: context {name!r}: unknown field or column {path!r}"
+                            f"step {step.id!r}: context {name!r}: {self._unknown_path(path)}"
                         )
                         continue
                     head, _, column = path.partition(".")
@@ -399,7 +410,7 @@ class Template(_Model):
                 if isinstance(check, CheckStep):
                     for p in filter(None, (check.values, check.reference, check.aliases)):
                         if self._resolve(p) is None:
-                            errors.append(f"check {check.id!r}: unknown field or column {p!r}")
+                            errors.append(f"check {check.id!r}: {self._unknown_path(p)}")
         errors += self._semantics_errors()
         if errors:
             raise ValueError("; ".join(errors))

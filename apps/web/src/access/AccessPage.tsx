@@ -5,7 +5,6 @@ import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
 import { InSlot } from '../ui/InSlot.js';
 import { userCounts, userGroup, userMatches, userStatusView, type UserGroup } from './derive.js';
-import { S3KeysSection } from './S3KeysSection.js';
 import { SignInsPanel } from './SignInsPanel.js';
 import { UserDialog, type UserFields } from './UserDialog.js';
 
@@ -17,9 +16,8 @@ interface Issued {
 }
 
 /**
- * Admin page (ADR 0013): the users, with Edit, Disable / Enable / Unlock, Reissue one-time
- * password and Sign-in history on each row; recent sign-ins; below, read-only S3 keys for the
- * data lake (ADR 0008).
+ * Administration > Users (ADR 0013): the users, with Edit, Disable / Enable / Unlock, Reissue
+ * one-time password and Sign-in history on each row; recent sign-ins.
  */
 export function AccessPage({
   api,
@@ -194,7 +192,6 @@ export function AccessPage({
         onUserId={showHistory}
         refreshKey={refreshKey}
       />
-      <S3KeysSection api={api} />
     </div>
   );
 }

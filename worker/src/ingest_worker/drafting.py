@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -29,6 +31,7 @@ from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queu
 from .pipeline import (
     DocumentError,
     PipelineDeps,
+    advisory_event,
     check_cancelled,
     enforce_data_policy,
 )
@@ -43,6 +46,75 @@ log = logging.getLogger(__name__)
 #: Output budget of one drafting call when its model sets none (Administration > Models: Max output
 #: tokens; TS DEFAULT_MAX_OUTPUT_TOKENS).
 DRAFT_MAX_TOKENS = 16_000
+
+#: Model calls per proposal round: the first reply, then one more with its errors fed back.
+DRAFT_ATTEMPTS = 2
+
+#: A running drafting stage's progress (issue #151; TS DRAFT_PROGRESS_EVENT, DraftProgressSchema;
+#: shared fixture draft-progress.json): one event per phase and per model call. Advisory.
+DRAFT_PROGRESS = "drafting progress"
+
+DraftPhase = Literal["reading", "model", "anchors", "suggestions"]
+
+#: A streamed reply's token count is reported at once, then after this many more tokens or
+#: seconds: often enough to show it moving, never an event per token.
+TOKEN_STEP = 500
+TOKEN_EVERY_S = 5.0
+
+
+class TokenThrottle:
+    """Passes a model call's growing token estimate on now and then (TOKEN_STEP, TOKEN_EVERY_S)."""
+
+    def __init__(
+        self, report: Callable[[int], None], clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self._report = report
+        self._clock = clock
+        self._last: int | None = None
+        self._at = 0.0
+
+    def __call__(self, tokens: int) -> None:
+        now = self._clock()
+        if self._last is not None and (
+            tokens <= self._last
+            or (tokens - self._last < TOKEN_STEP and now - self._at < TOKEN_EVERY_S)
+        ):
+            return
+        self._last, self._at = tokens, now
+        self._report(tokens)
+
+
+def progress_reporter(
+    job: ClaimedJob, queue: JobQueue, stage: str, samples: int
+) -> Callable[..., None]:
+    """Report a phase of the run: reading the samples, each model call (its attempt, then its
+    streamed reply's tokens so far), testing anchors, queuing ontology suggestions. `round` 2 is
+    the sections stage's anchor round."""
+
+    def report(
+        phase: DraftPhase,
+        *,
+        attempt: int | None = None,
+        round: int = 1,
+        tokens: int | None = None,
+    ) -> None:
+        advisory_event(
+            job,
+            queue,
+            DRAFT_PROGRESS,
+            {
+                "stage": stage,
+                "phase": phase,
+                "samples": samples,
+                "attempt": attempt,
+                "of": DRAFT_ATTEMPTS if attempt is not None else None,
+                "round": round,
+                # A streamed reply's estimated tokens so far (model phase only).
+                "tokens": tokens,
+            },
+        )
+
+    return report
 
 
 def output_limit(deps: PipelineDeps, model_ref: str) -> int:
@@ -341,6 +413,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
 
     limit = output_limit(deps, model_ref)
     sent = params.samples[:MAX_CONTEXT_SAMPLES]
+    report = progress_reporter(job, queue, stage.id, len(sent))
+    report("reading")
     samples = [
         DraftSample(s.sample_id, s.filename, s.role, prepared_pages(deps, s.sha256)) for s in sent
     ]
@@ -385,7 +459,14 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             errors = stage.check(body, draft)
         return errors
 
-    def propose(prompt: str, label: str) -> tuple[ExtractionResult, dict[str, Any]]:
+    def propose(prompt: str, label: str, round: int = 1) -> tuple[ExtractionResult, dict[str, Any]]:
+        # Each model call reports when it starts, then its streamed reply's tokens now and then.
+        tokens = [TokenThrottle(lambda _t: None)]
+
+        def on_attempt(n: int) -> None:
+            report("model", attempt=n, round=round)
+            tokens[0] = TokenThrottle(lambda t: report("model", attempt=n, round=round, tokens=t))
+
         try:
             result = run_extraction(
                 extraction_id=label,
@@ -393,10 +474,12 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 model_id=model_id,
                 prompt=prompt,
                 schema=stage.schema,
-                max_attempts=2,
+                max_attempts=DRAFT_ATTEMPTS,
                 max_tokens=limit,
                 system=DRAFT_SYSTEM,
                 check=check if (stage.convert or stage.check) else None,
+                on_attempt=on_attempt,
+                on_tokens=lambda t: tokens[0](t),
             )
         except OutputTruncatedError as exc:
             _audit(deps, job, label, exc.attempts)
@@ -417,6 +500,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     if stage.id == "survey":
         body = clamp_seen_in(body, len(samples))
         if params.library:  # the ontology library's suggestions (advisory): a job of their own
+            report("suggestions")
             try:
                 suggest_id = queue_suggestions(
                     job,
@@ -432,6 +516,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 log.warning("job %s: ontology suggestions failed: %s", job.id, exc)
                 queue.event(job.id, "warn", "ontology suggestions failed", {"error": str(exc)})
     if stage.id == "sections":
+        report("anchors")
         grid, misses = anchor_check(samples, draft, body)
         if misses:
             check_cancelled(job, queue)
@@ -441,7 +526,9 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 f"need work:\n<anchor_misses>\n{feedback}\n</anchor_misses>\n"
                 "Propose the full set of changes again.",
                 "draft-sections-anchors",
+                round=2,
             )
+            report("anchors", round=2)
             grid, final_misses = anchor_check(samples, draft, body)
             if grid is None:
                 raise DocumentError(final_misses[0])
@@ -452,6 +539,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         and any(c["op"] in ("putSection", "setCopies") for c in body["changes"])
     ):
         # One pass, no feedback round: a runaway anchor must not reach the Sections tab.
+        report("anchors")
         segment_with_timeout(
             [(s.sample_id, s.pages) for s in samples], _segment_document(draft, body)
         )
@@ -498,15 +586,6 @@ def anchor_check(
             continue
         if f"{sid}.key" in grid["anchorErrors"]:
             misses.append(f'section "{sid}": key: {grid["anchorErrors"][f"{sid}.key"]}')
-        if not section.get("repeat"):
-            for row in rows:
-                cell = next((c for c in row["sections"] if c["id"] == sid), None)
-                if cell is not None and cell.get("matches", 0) > 1:
-                    misses.append(
-                        f'section "{sid}": anchor matched {cell["matches"]} times in '
-                        f"{names.get(row['sampleId'], row['sampleId'])}; only the first is used. "
-                        "Set repeat if this block repeats."
-                    )
         misses += [
             f"{names.get(row['sampleId'], row['sampleId'])}: {issue}"
             for row in rows
@@ -527,7 +606,34 @@ def anchor_check(
                 f'section "{sid}" is required but anchor {section["anchor"]!r} missed: '
                 f"{', '.join(missed)}"
             )
+    misses += repeated_blocks(rows, put_ids, names)
     return grid, misses
+
+
+def repeated_blocks(
+    rows: list[dict[str, Any]], put_ids: set[str], names: dict[str, str]
+) -> list[str]:
+    """Two or more proposed sections whose anchors each match several times in one sample: the
+    document repeats a block (per batch, per item), which first-match segmentation cannot split.
+    One section that matches twice is common (a "Total" line) and is not reported."""
+    out: list[str] = []
+    for row in rows:
+        repeats = [c for c in row["sections"] if c["id"] in put_ids and c.get("matches", 0) > 1]
+        if len(repeats) < 2:
+            continue
+        ids = ", ".join(f'"{c["id"]}"' for c in repeats)
+        times = max(c["matches"] for c in repeats)
+        out.append(
+            f"sections {ids} each match {times} times in "
+            f"{names.get(row['sampleId'], row['sampleId'])}: the document repeats a block "
+            "(per batch, item or similar). A plain section starts only at its anchor's first "
+            "match and runs to the next section, so every later block ends up in the last "
+            "section. Set repeat true on each of these sections (every match then starts an "
+            "occurrence), with a key reading the block's identifier and keyFrom naming the "
+            "block's heading section if there is one; keep plain sections for parts that "
+            "occur once."
+        )
+    return out
 
 
 def _segment_document(draft: dict[str, Any], body: dict[str, Any]) -> SegmentDocument:

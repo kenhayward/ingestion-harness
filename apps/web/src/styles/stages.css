@@ -3404,6 +3404,19 @@ label.inline.list-select {
   margin: 0;
   padding: 0;
 }
+/* Box and id, then the anchor in small type, wrapping under them when narrow. */
+.section-check-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  min-width: 0;
+}
+.section-anchor {
+  min-width: 0;
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
 /* `label` is a column app-wide; these rows read box, colour, id from left to right. */
 .section-check {
   display: flex;
@@ -3544,4 +3557,95 @@ label.inline.list-select {
   gap: 4px;
   max-width: 560px;
   margin-top: 8px;
+}
+
+/* A queued or running drafting stage (issue #151): its phases, the current one's time. */
+.draft-run {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-info-bg);
+}
+.draft-run-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ih-info-fg);
+}
+.draft-run-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ih-info-fg);
+  animation: ih-draft-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ih-draft-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .draft-run-pulse {
+    animation: none;
+  }
+}
+.draft-run-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.draft-phase {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: var(--ih-text-md);
+}
+.draft-phase-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border: 2px solid var(--ih-border-strong);
+  border-radius: 50%;
+  background: var(--ih-surface);
+}
+.draft-phase.done .draft-phase-mark {
+  border-color: var(--ih-ok-fg);
+  background: var(--ih-ok-bg);
+  color: var(--ih-ok-fg);
+}
+.draft-phase.current .draft-phase-mark {
+  border-color: var(--ih-info-fg);
+  border-top-color: transparent;
+  animation: ih-spin 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .draft-phase.current .draft-phase-mark {
+    animation: none;
+    border-top-color: var(--ih-info-fg);
+  }
+}
+.draft-phase.pending {
+  color: var(--ih-muted);
+}
+.draft-phase.current .draft-phase-label {
+  font-weight: 600;
+}
+.draft-phase-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.draft-phase-text small {
+  font-size: var(--ih-text-sm);
 }
