@@ -5,7 +5,7 @@ import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
 import type { JobWatch } from './jobs/watch.js';
 import type { GitHubSyncRepo } from './github-sync/repo.js';
-import type { GitHubOAuth } from './profile/github.js';
+import type { GitHubOAuth, GitHubRepoApi } from './profile/github.js';
 import type { ProfileRepo } from './profile/repo.js';
 import { registerOpenApi } from './openapi/plugin.js';
 import { jobLiveRoutes } from './routes/job-live.js';
@@ -59,6 +59,8 @@ export interface AppDeps {
   githubSync: GitHubSyncRepo;
   /** The GitHub OAuth app (`GITHUB_CLIENT_ID`/`_SECRET`); null/absent: GitHub cannot be linked. */
   github?: GitHubOAuth | null;
+  /** GitHub repositories for recipe sync (the same `HttpGitHub`); null/absent: sync is unavailable. */
+  githubRepos?: GitHubRepoApi | null;
   /** `GITHUB_REDIRECT_URL`: the callback registered with GitHub; absent: from the request. */
   githubRedirectUrl?: string | null;
   /** Read-only S3 keys for the data lake (ADR 0008); null when the target isn't local SeaweedFS. */

@@ -34,7 +34,8 @@ const workbench = new PgWorkbenchRepo(
 );
 const seeded = await seedTemplates(templates, config.SPECS_DIR);
 const access = new PgAccessRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }));
-const github = githubConfig(config);
+const githubOAuth = githubConfig(config);
+const githubHttp = githubOAuth && new HttpGitHub(githubOAuth);
 const s3 = {
   endpoint: config.S3_ENDPOINT,
   region: config.S3_REGION,
@@ -92,8 +93,9 @@ const app = await buildApp({
   access, // always enforced in production (ADR 0006)
   profiles: new PgProfileRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   githubSync: new PgGitHubSyncRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
-  github: github && new HttpGitHub(github),
-  githubRedirectUrl: github?.redirectUrl ?? null,
+  github: githubHttp,
+  githubRepos: githubHttp,
+  githubRedirectUrl: githubOAuth?.redirectUrl ?? null,
   s3Keys,
   llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
