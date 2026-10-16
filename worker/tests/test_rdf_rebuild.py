@@ -280,3 +280,16 @@ def test_remint_publishes_to_the_target_of_the_jobs_version(tmp_path: Path) -> N
     current = registry_of(deps).current("aa" * 32, "letter")
     assert current is not None and current.version == 2 and current.target_id == "finance-lake"
     assert len(finance.objects) == 2 and not default_store(deps).objects
+
+
+def test_rebuild_counts_a_graph_whose_target_is_gone_as_missing(tmp_path: Path) -> None:
+    deps, source = setup(tmp_path, job(1, "aa" * 32), job(2, "bb" * 32))
+    to_finance(deps, source)
+    backfill(deps, FakeQueue(), source, "letter")  # both to finance-lake
+    assert isinstance(deps.targets, FakeTargets)
+    del deps.targets.targets["finance-lake"]  # removed since
+    store = store_of(deps)
+    store.graphs.clear()
+    lines = rebuild(deps)
+    assert lines[-1] == "rebuild: 1 ontology graphs, 0 document graphs, 2 missing"
+    assert sum("no publishing target finance-lake" in line for line in lines) == 2

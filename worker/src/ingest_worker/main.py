@@ -40,7 +40,6 @@ from .pipeline import (
     load_definition,
     process_job,
     publish_outputs,
-    target_named,
 )
 from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
@@ -188,9 +187,7 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
             queue.await_review(job, result.outputs, deps.buckets.outputs, reasons)
             log.info("job %s awaiting review: %s", job.id, "; ".join(reasons))
         else:
-            # The target of the job's recipe version, resolved before anything is delivered (a
-            # missing one sends the job to review); test runs deliver nothing and resolve none.
-            target = None if job.test else target_named(deps, result.publish_to)
+            target = result.target  # resolved before extraction (None: test run, no targets)
             published = [] if target is None else publish_outputs(deps, result.delivered(), target)
             if target is not None and published:
                 queue.record_published(job, published, target)
@@ -248,6 +245,16 @@ def refresh_models(live: LiveModels, deps: PipelineDeps) -> bool:
     if deps.ocr is not None and live.ocr_model:
         deps.ocr = replace(deps.ocr, model=live.ocr_model)
     return True
+
+
+def refresh_targets(targets: LiveTargets) -> bool:
+    """Reload the publishing targets when they changed; a database restart is ridden out (the
+    store reconnects on its next call, and every lookup refreshes again)."""
+    try:
+        return targets.refresh()
+    except psycopg.OperationalError as exc:
+        log.warning("publishing targets could not be refreshed: %s", exc)
+        return False
 
 
 def idle(queue: JobQueue, stop: threading.Event, timeout_s: float) -> None:
@@ -351,7 +358,7 @@ def main() -> None:
             if refresh_models(live, deps):
                 log.info("LLM config changed: providers=%s", deps.models.provider_names)
                 next_discovery = now  # list the models of new or moved endpoints now
-            if targets.refresh():
+            if refresh_targets(targets):
                 log.info("publishing targets changed")
             next_config_check = now + CONFIG_CHECK_S
         if now >= next_discovery:

@@ -373,3 +373,20 @@ def test_without_reconnect_a_lost_connection_raises() -> None:
     store = PgPublishTargetStore(_Conn(fail=True))  # type: ignore[arg-type]
     with pytest.raises(psycopg.OperationalError):
         store.version()
+
+
+def test_the_worker_rides_out_a_database_restart_while_refreshing_targets() -> None:
+    import psycopg
+
+    from ingest_worker.main import refresh_targets
+
+    class Down:
+        def refresh(self) -> bool:
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+
+    class Moved:
+        def refresh(self) -> bool:
+            return True
+
+    assert refresh_targets(Down()) is False  # type: ignore[arg-type]
+    assert refresh_targets(Moved()) is True  # type: ignore[arg-type]

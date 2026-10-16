@@ -38,6 +38,7 @@ def record(template_id: str = "letter", **over: Any) -> GraphPublish:
         "base_iri": BASE,
         "triples": 10,
         "entities": [EntityRecord(BATCH, "https://a/Batch", ["pv-1"])],
+        "target_id": "default",
     }
     values.update(over)
     return GraphPublish(**values)

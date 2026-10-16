@@ -34,9 +34,9 @@ class GraphPublish:
     template_version: int
     base_iri: str
     triples: int
-    entities: list[EntityRecord] = field(default_factory=list)
     #: The publishing target the version's copy was written to.
-    target_id: str = "default"
+    target_id: str
+    entities: list[EntityRecord] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

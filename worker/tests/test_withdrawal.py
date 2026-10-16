@@ -184,7 +184,10 @@ def test_republish_continues_the_version_numbers(tmp_path: Path) -> None:
     assert isinstance(registry, MemoryGraphRegistry)
     from ingest_worker.graph_registry import GraphPublish
 
-    record = GraphPublish(SHA, "letter", GRAPH, DELIVERED.job_id, DELIVERED.document_id, 1, BASE, 1)
+    record = GraphPublish(
+        SHA, "letter", GRAPH, DELIVERED.job_id, DELIVERED.document_id, 1, BASE, 1,
+        target_id="default",
+    )  # fmt: skip
     registry.publish(record, lambda _v: None)
     registry.graphs.clear()  # retired: the current row is forgotten, the versions kept
     queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
@@ -210,7 +213,7 @@ def test_a_withdrawal_spares_what_was_published_again_since(tmp_path: Path) -> N
     assert isinstance(source, MemoryRebuildSource)
     # Since the withdrawal was queued: another job published v1 of the graph again, and a live
     # output now has the withdrawn object's key.
-    record = GraphPublish(SHA, "letter", GRAPH, "j2", "d2", 1, BASE, 1)
+    record = GraphPublish(SHA, "letter", GRAPH, "j2", "d2", 1, BASE, 1, target_id="default")
     registry.publish(record, lambda _v: None)
     store_of(deps).graphs[GRAPH] = b"<a> <b> <c> ."
     for key in ["pvp/letter/v1/fields/doc.csv", "pvp/" + graph_version_key(SHA, "letter", 1),
@@ -320,12 +323,17 @@ def test_a_withdrawal_naming_a_missing_target_goes_to_review(tmp_path: Path) -> 
     deps, default = setup(tmp_path)
     default.put("published", "pvp/letter/v1/fields/doc.csv", b"x", "text/csv")
     params = {
-        "objects": [{"bucket": "finance", "key": "fin/a.csv", "target": "finance-lake"}],
+        "objects": [
+            {"bucket": "published", "key": "pvp/letter/v1/fields/doc.csv", "target": "default"},
+            {"bucket": "finance", "key": "fin/a.csv", "target": "finance-lake"},
+        ],
         "graphs": [],
     }
     queue = FakeQueue(jobs=[background("withdraw", params)])
     run_once(queue, deps, "w1")
     assert queue.reviewed == [(background("withdraw", {}).id, "no publishing target finance-lake")]
+    # Every target is resolved before anything is deleted: the default's object is still there.
+    assert default.get_optional("published", "pvp/letter/v1/fields/doc.csv") == b"x"
 
 
 def test_republish_delivers_to_the_target_of_the_jobs_version(tmp_path: Path) -> None:

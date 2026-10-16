@@ -236,7 +236,7 @@ def process_template_job(
         if delivered_graph is not None and "rdf" in formats
         else None
     )
-    return ProcessResult(outputs, reasons, formats, deliver_graph, template.publish_to())
+    return ProcessResult(outputs, reasons, formats, deliver_graph)
 
 
 def publish_template_job(

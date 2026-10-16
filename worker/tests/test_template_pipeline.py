@@ -895,17 +895,20 @@ def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: 
     assert not queue.published and not queue.completed
     assert not default.objects and not finance.objects
     assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
+    provider = deps.models._providers["local"]
+    assert isinstance(provider, FakeProvider) and provider.calls == []  # no model was called
+    assert not queue.drafts
 
 
 def test_an_approval_whose_target_is_missing_goes_to_review_unwritten(tmp_path: Path) -> None:
     template = {**DELIVERED_TEMPLATE, "review": {"required": "always"}}
     deps, default, finance, queue = finance_deps(tmp_path, template)
     assert isinstance(deps.targets, FakeTargets)
-    del deps.targets.targets["finance-lake"]
     queue.jobs = [V2]
     deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
     run_once(queue, deps, "w1")
     assert queue.awaiting
+    del deps.targets.targets["finance-lake"]  # removed while the job awaited review
     queue.jobs = [replace(V2, task="publish")]
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed

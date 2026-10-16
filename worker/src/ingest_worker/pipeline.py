@@ -110,8 +110,9 @@ class ProcessResult:
     #: Publishes the document's graph (its copy to the given target, then the triple store)
     #: once its outputs are delivered without review (None: no graph is delivered).
     deliver_graph: Callable[[Target], object] | None = None
-    #: The publishing target of the job's recipe version (legacy specs: the default).
-    publish_to: str = DEFAULT_TARGET_ID
+    #: The publishing target of the job's recipe version (legacy specs: the default), resolved
+    #: before extraction; None for test runs and without targets (nothing is delivered).
+    target: Target | None = None
 
     def delivered(self) -> list[RenderedOutput]:
         if self.formats is None:
@@ -398,10 +399,13 @@ def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any
 
 def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> ProcessResult:
     loaded = load_definition(job, deps, queue)
+    # Before any model call: a missing target sends the job to review without an LLM run. Test
+    # runs deliver nothing and resolve none.
+    target = None if job.test else target_for(deps, loaded)
     if isinstance(loaded, LoadedTemplate):
         from .template_pipeline import process_template_job
 
-        return process_template_job(job, deps, queue, loaded)
+        return replace(process_template_job(job, deps, queue, loaded), target=target)
     spec = loaded.spec
 
     resolved = resolve_models(job, deps, spec.extractions)
@@ -439,7 +443,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Process
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs)
+    return ProcessResult(outputs, target=target)
 
 
 def ocr_pages(
