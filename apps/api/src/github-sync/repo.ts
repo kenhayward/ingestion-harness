@@ -99,6 +99,12 @@ export class MemoryGitHubSyncRepo implements GitHubSyncRepo {
     return this.links.delete(typeId);
   }
 
+  /** The type is gone (a deleted, never-published project): its link and push records go too. */
+  forgetType(typeId: string): void {
+    this.links.delete(typeId);
+    for (const [key, p] of this.records) if (p.typeId === typeId) this.records.delete(key);
+  }
+
   async pushes(typeId: string) {
     return [...this.records.values()]
       .filter((p) => p.typeId === typeId)

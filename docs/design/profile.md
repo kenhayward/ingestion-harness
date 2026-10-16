@@ -60,5 +60,8 @@ have handed back the token the other user's link still uses.
 `GET /api/profile/github/repos` lists the repositories the account can push to (owner,
 collaborator and organisation ones, at most 10 pages of 100, by name). `PUT
 /api/profile/github/repo` keeps one (`owner/name`, any case, stored as GitHub spells it) after
-checking that list, or none (`null`). Nothing writes to it yet: the feature that stores recipe
-YAML there is still to come.
+checking that list, or none (`null`). It is the *suggested* repository of the GitHub recipe sync:
+the link dialog on a document type's Versions tab offers it first, and an admin may pick any
+other repository the account can push to. What is stored there, and how versions are pushed,
+pulled and imported, is described in
+[the GitHub recipe sync design](../superpowers/specs/2026-10-16-github-recipe-sync-design.md).

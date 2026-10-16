@@ -19,6 +19,7 @@ import type {
 } from '@ih/shared';
 import type { MemoryRepo } from '../repositories/memory.js';
 import type { MemoryTemplateRepo } from '../templates/repo.js';
+import type { MemoryGitHubSyncRepo } from '../github-sync/repo.js';
 import type { NewDocument, RemovedJob, StoredObject } from '../repositories/types.js';
 
 /** A workbench sample joined with its document row. */
@@ -309,6 +310,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
   constructor(
     private readonly jobs: MemoryRepo,
     private readonly templates: MemoryTemplateRepo,
+    private readonly githubSync?: MemoryGitHubSyncRepo,
   ) {}
 
   async listProjects() {
@@ -649,6 +651,8 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     // ON DELETE CASCADE (migration 0022).
     this.listCacheRows.delete(id);
     for (const pins of this.pins.values()) pins.delete(id);
+    // The type's repository link and push records go with it (migration 0046).
+    this.githubSync?.forgetType(id);
     for (const t of versions) await this.templates.deleteDraft(id, t.version);
     return { jobs, documents };
   }
@@ -1677,6 +1681,9 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       await client.query('DELETE FROM workbench_projects WHERE id = $1', [id]);
       // The cascade from templates would take them too; deleted explicitly as a child (TP1).
       await client.query('DELETE FROM template_changes WHERE template_id = $1', [id]);
+      // The repository link and the push records of the type (migration 0046).
+      await client.query('DELETE FROM template_github_pushes WHERE type_id = $1', [id]);
+      await client.query('DELETE FROM template_github_links WHERE type_id = $1', [id]);
       await client.query(`DELETE FROM templates WHERE id = $1 AND status = 'draft'`, [id]);
       await client.query('COMMIT');
       return { jobs, documents };
