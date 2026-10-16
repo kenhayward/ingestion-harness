@@ -212,3 +212,33 @@ describe('JobsPage: My jobs', () => {
     expect(within(panel()).queryByText('Queued by')).not.toBeInTheDocument();
   });
 });
+
+describe('JobsPage: a linked job (#/jobs/<id>)', () => {
+  it('opens the linked job rather than the first one needing attention', () => {
+    page(
+      [
+        job({ id: 'a', filename: 'a.pdf', status: 'failed' }),
+        job({ id: 'b', filename: 'b.pdf', status: 'succeeded' }),
+      ],
+      { jobId: 'b' },
+    );
+    expect(within(panel()).getByRole('heading', { name: 'b.pdf' })).toBeInTheDocument();
+  });
+
+  it('follows a new link while the page is open', () => {
+    const jobs = [
+      job({ id: 'a', filename: 'a.pdf', status: 'failed' }),
+      job({ id: 'b', filename: 'b.pdf', status: 'succeeded' }),
+    ];
+    const { rerender } = page(jobs, { jobId: 'b' });
+    rerender(element(jobs, { jobId: 'a' }));
+    expect(within(panel()).getByRole('heading', { name: 'a.pdf' })).toBeInTheDocument();
+  });
+
+  it('says when the linked job is not in the list', () => {
+    page([job({ id: 'a', filename: 'a.pdf', status: 'failed' })], { jobId: 'gone' });
+    expect(screen.getByRole('status', { name: 'Linked job' })).toHaveTextContent(
+      'The linked job is not in this list: it may have been deleted, or be older than the list shows.',
+    );
+  });
+});

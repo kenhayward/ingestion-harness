@@ -1500,6 +1500,20 @@ button.danger-fill {
   border-radius: 7px;
   font-size: var(--ih-text-md);
 }
+/* Copy link: the confirmation, or the link to copy by hand where the browser cannot. */
+.row-actions,
+.panel-actions {
+  flex-wrap: wrap;
+}
+.copy-note {
+  align-self: center;
+  font-size: var(--ih-text-sm);
+}
+.copy-link {
+  flex: 1 1 100%;
+  min-width: 14rem;
+  font-size: var(--ih-text-sm);
+}
 .row-actions > .more {
   flex: none;
   width: 34px;

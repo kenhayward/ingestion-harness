@@ -34,6 +34,8 @@ describe('parseHash', () => {
     ['', { name: 'home' }],
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
+    ['#/jobs/job-1', { name: 'jobs', jobId: 'job-1' }],
+    ['#/jobs/a%2Fb', { name: 'jobs', jobId: 'a/b' }],
     ['#/account/password', { name: 'password' }],
     ['#/account/profile', { name: 'profile', tab: 'details' }],
     ['#/account/profile/password', { name: 'profile', tab: 'password' }],
