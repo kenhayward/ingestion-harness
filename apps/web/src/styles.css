@@ -1500,8 +1500,12 @@ button.danger-fill {
   border-radius: 7px;
   font-size: var(--ih-text-md);
 }
-/* Copy link: the confirmation, or the link to copy by hand where the browser cannot. */
-.row-actions,
+/*
+ * Copy link: the confirmation, or the link to copy by hand where the browser cannot, may need a
+ * line of its own. Only then: other rows of buttons sit in narrow cells (width: 1%) and would
+ * stack one button per line.
+ */
+.row-actions:has(> .copy-note, > .copy-link),
 .panel-actions {
   flex-wrap: wrap;
 }
@@ -4678,18 +4682,46 @@ img.avatar {
   gap: 8px;
   margin-top: 16px;
 }
-.maintenance-page textarea {
-  width: 100%;
-  font: inherit;
-}
-.maintenance-switch {
+.maintenance-form {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+}
+.maintenance-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+}
+.maintenance-field > label {
   font-weight: 600;
 }
+.maintenance-page textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+}
+/* label.inline: the checkbox and its words on one line; the state lined up under the words. */
+.maintenance-switch {
+  align-self: flex-start;
+  font-weight: 600;
+}
+.maintenance-switch > input {
+  margin: 0;
+}
+.maintenance-state {
+  margin: 0;
+  /* The checkbox (16px) and label.inline's gap (6px). */
+  padding-left: 22px;
+  font-size: var(--ih-text-sm);
+}
+.maintenance-preview {
+  align-self: stretch;
+}
 .maintenance-preview h3 {
-  margin: 8px 0;
+  margin: 0 0 8px;
   font-size: var(--ih-text-md);
 }
 

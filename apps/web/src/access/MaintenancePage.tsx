@@ -72,33 +72,37 @@ export function MaintenancePage({
       </p>
       {error && <p role="alert">{error}</p>}
       {view && (
-        <form className="form-rows" onSubmit={submit}>
-          <label className="maintenance-switch">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
+        <form className="maintenance-form" onSubmit={submit}>
+          <div className="maintenance-field">
+            <label className="inline maintenance-switch">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+              />
+              Under maintenance
+            </label>
+            <p className="muted maintenance-state">
+              {view.enabled && view.since ? `On since ${when(view.since)}` : 'Off'}
+              {view.updatedBy && view.updatedAt
+                ? ` · changed by ${view.updatedBy}, ${when(view.updatedAt)}`
+                : ''}
+            </p>
+          </div>
+          <div className="maintenance-field">
+            <label htmlFor={messageId}>Message to users</label>
+            <textarea
+              id={messageId}
+              rows={4}
+              maxLength={MAINTENANCE_MESSAGE_MAX}
+              placeholder={DEFAULT_MAINTENANCE_MESSAGE}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
             />
-            Under maintenance
-          </label>
-          <p className="muted maintenance-state">
-            {view.enabled && view.since ? `On since ${when(view.since)}` : 'Off'}
-            {view.updatedBy && view.updatedAt
-              ? ` · changed by ${view.updatedBy}, ${when(view.updatedAt)}`
-              : ''}
-          </p>
-          <label htmlFor={messageId}>Message to users</label>
-          <textarea
-            id={messageId}
-            rows={4}
-            maxLength={MAINTENANCE_MESSAGE_MAX}
-            placeholder={DEFAULT_MAINTENANCE_MESSAGE}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
-          <small className="muted">
-            Blank: “{DEFAULT_MAINTENANCE_MESSAGE}” Kept when maintenance is switched off.
-          </small>
+            <small className="muted">
+              Blank: “{DEFAULT_MAINTENANCE_MESSAGE}” Kept when maintenance is switched off.
+            </small>
+          </div>
           <section aria-labelledby={previewId} className="maintenance-preview">
             <h3 id={previewId}>What users see</h3>
             <MaintenanceBanner
