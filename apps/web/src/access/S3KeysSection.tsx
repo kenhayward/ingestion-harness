@@ -28,7 +28,7 @@ const shortDate = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
 /**
- * Read-only S3 keys for the data lake (ADR 0008), under Administration > Access: issue (secret shown once),
+ * Read-only S3 keys for the data lake (ADR 0008), under Administration > Integration: issue (secret shown once),
  * rotate with a grace period, revoke, delete. Admins only (the page checks).
  */
 export function S3KeysSection({ api }: { api: Api }) {

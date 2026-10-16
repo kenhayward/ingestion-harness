@@ -6,20 +6,23 @@ import { Avatar } from '../shell/Avatar.js';
 import { useModalFocus } from '../ui/Dialog.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { AccessPage } from './AccessPage.js';
+import { IntegrationPage } from './IntegrationPage.js';
 
-export type AdminTab = 'models' | 'linked-data' | 'access';
+export type AdminTab = 'models' | 'linked-data' | 'users' | 'integration';
 
 const TABS: { id: AdminTab; label: string; icon: IconName }[] = [
   { id: 'models', label: 'Models', icon: 'chip' },
   { id: 'linked-data', label: 'Linked data', icon: 'link' },
-  { id: 'access', label: 'Access', icon: 'key' },
+  { id: 'users', label: 'Users', icon: 'users' },
+  { id: 'integration', label: 'Integration', icon: 'plug' },
 ];
 
 const TAB_KEY = 'ih.adminTab';
 
 function loadTab(): AdminTab {
   try {
-    const stored = localStorage.getItem(TAB_KEY);
+    // The Users tab was called Access: a browser that remembers it opens on Users.
+    const stored = localStorage.getItem(TAB_KEY)?.replace(/^access$/, 'users');
     return TABS.find((t) => t.id === stored)?.id ?? 'models';
   } catch {
     return 'models';
@@ -35,7 +38,8 @@ function saveTab(tab: AdminTab) {
 }
 
 /**
- * The account menu's Administration (admins only): Models, Linked data and Access as tabs of one
+ * The account menu's Administration (admins only): Models, Linked data, Users and Integration as
+ * tabs of one
  * dialog laid out like Profile, each tab's main button in the header. It has no address. Only
  * Close closes it: not a click outside, not Escape, so a half-typed key or URL is never lost.
  */
@@ -120,7 +124,8 @@ export function AdminDialog({ api, me, onClose }: { api: Api; me: Me; onClose: (
           >
             {tab === 'models' && <ModelsPage api={api} me={me} actions={actions} />}
             {tab === 'linked-data' && <LinkedDataPage api={api} me={me} />}
-            {tab === 'access' && <AccessPage api={api} me={me} actions={actions} />}
+            {tab === 'users' && <AccessPage api={api} me={me} actions={actions} />}
+            {tab === 'integration' && <IntegrationPage api={api} me={me} />}
           </div>
           <footer className="profile-footer">
             <button type="button" onClick={onClose}>
