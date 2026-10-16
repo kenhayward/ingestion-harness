@@ -5,6 +5,7 @@ import {
   NotFoundError,
   ProtectedBranchError,
   StaleRefError,
+  UnauthorizedError,
   type GitHubRepoApi,
 } from '../src/profile/github.js';
 
@@ -40,8 +41,12 @@ interface FakeRepo {
 }
 
 const sha1 = (text: string) => createHash('sha1').update(text).digest('hex');
-/** The blob sha of some content: deterministic, so equal content has equal sha. */
-export const fakeBlobSha = (content: string) => sha1(`blob ${content}`);
+/** The blob sha git (and so GitHub) gives some content: sha1 of `blob <bytes>\0<content>`. */
+export const fakeBlobSha = (content: string) =>
+  createHash('sha1')
+    .update(`blob ${Buffer.byteLength(content, 'utf-8')}\0`)
+    .update(content, 'utf-8')
+    .digest('hex');
 
 /**
  * GitHub's repository side for tests: an in-memory git model (branches -> head commit -> files),
@@ -59,6 +64,8 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   readonly treeReads: ('recursive' | 'truncated')[] = [];
   /** Runs after a commit is built and before the branch moves: move the head here to race it. */
   beforeRefUpdate: (() => void) | null = null;
+  /** Tokens GitHub no longer accepts: every call with one is a 401 (`UnauthorizedError`). */
+  readonly revoked = new Set<string>();
 
   addRepo(
     fullName: string,
@@ -136,6 +143,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   // --- GitHubRepoApi -------------------------------------------------------------------
 
   async permission(token: string, repo: string): Promise<Permission> {
+    if (this.revoked.has(token)) throw new UnauthorizedError();
     return this.repos.get(repo)?.permissions.get(token) ?? 'none';
   }
 
@@ -247,6 +255,7 @@ export class FakeGitHubRepos implements GitHubRepoApi {
   }
 
   private readable(token: string, fullName: string): FakeRepo {
+    if (this.revoked.has(token)) throw new UnauthorizedError();
     const repo = this.repos.get(fullName);
     if (!repo || (repo.permissions.get(token) ?? 'none') === 'none') {
       throw new NotFoundError(`${fullName} not found`);
