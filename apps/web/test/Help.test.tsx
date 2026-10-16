@@ -92,3 +92,16 @@ describe('help topics for the recipe tabs', () => {
     expect(screen.getByRole('dialog')).toHaveClass('help-dialog');
   });
 });
+
+describe('help topics for the operator pages', () => {
+  it.each([
+    ['home', 'Using the Home screen', ['Document type', 'Model', 'Latest job', 'Awaiting review']],
+    ['jobs', 'Using the Jobs page', ['Needs attention', 'My jobs', 'Copy link', 'Clean up']],
+    ['results', 'Using the Results page', ['Published', 'Issues', 'ZIP']],
+  ] as const)('%s: %s', async (topic, title, mentions) => {
+    render(<HelpButton topic={topic} />);
+    await userEvent.click(screen.getByRole('button', { name: `Help: ${title}` }));
+    const dialog = screen.getByRole('dialog', { name: title });
+    for (const m of mentions) expect(dialog).toHaveTextContent(m);
+  });
+});

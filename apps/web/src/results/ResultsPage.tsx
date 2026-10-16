@@ -6,6 +6,7 @@ import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
 import { shortWhen } from './format.js';
 import { ResultPreview } from './ResultPreview.js';
+import { HelpButton } from '../ui/Help.js';
 
 /** Must match the API's default `limit` for GET /api/results. */
 export const RESULTS_PAGE_SIZE = 50;
@@ -108,6 +109,9 @@ export function ResultsPage({
             Published outputs in the target store. Test runs and rejected documents never appear
             here.
           </p>
+        </div>
+        <div className="page-header-actions">
+          <HelpButton topic="results" />
         </div>
       </div>
       <div className="toolbar">

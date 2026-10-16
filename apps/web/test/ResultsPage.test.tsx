@@ -261,3 +261,16 @@ describe('ResultsPage while a filter loads', () => {
     );
   });
 });
+
+describe('ResultsPage help', () => {
+  it('explains the Results page from the page header', async () => {
+    render(<ResultsPage api={fakeApi()} />);
+    const header = screen
+      .getByRole('heading', { level: 1, name: 'Results' })
+      .closest('.page-header')!;
+    await userEvent.click(
+      within(header as HTMLElement).getByRole('button', { name: 'Help: Using the Results page' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'Using the Results page' })).toBeInTheDocument();
+  });
+});

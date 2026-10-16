@@ -4623,9 +4623,29 @@ img.avatar {
   background: var(--ih-ok-fg);
   color: var(--ih-ok-bg);
 }
-/* 30% wider than the standard rich dialog (480px). */
+/* Wide, so a topic reads with little scrolling. */
 .dialog.dialog-rich.help-dialog {
-  width: min(624px, 100%);
+  width: min(1248px, calc(100vw - 32px));
+}
+.help-dialog .help-body {
+  max-width: none;
+  columns: 2 28rem;
+  column-gap: 2.5rem;
+}
+.help-dialog .help-body > h3 {
+  break-after: avoid;
+}
+.help-dialog .help-body > ul,
+.help-dialog .help-body > p {
+  break-inside: avoid;
+}
+/* The top-right of a page header: live indicators, then the page's help. */
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  align-self: flex-start;
+  margin-left: auto;
 }
 .help-dialog .dialog-icon {
   color: var(--ih-ok-fg);

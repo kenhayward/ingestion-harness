@@ -9,6 +9,7 @@ import { JobDetailPanel } from './JobDetailPanel.js';
 import { JobList } from './JobList.js';
 import { chipCounts, inChip, modelLabel, type Chip } from './derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
+import { HelpButton } from '../ui/Help.js';
 
 const jobsText = (n: number) => `${n} ${n === 1 ? 'job' : 'jobs'}`;
 
@@ -131,12 +132,15 @@ export function JobsPage({
             Every job: filter by status, act on the ones that need you, clean up finished ones.
           </p>
         </div>
-        {pollMs > 0 && (
-          <span className={error ? 'live live-warn' : 'live'}>
-            <span className="live-dot" aria-hidden="true" />
-            {error ? 'Reconnecting…' : `Live · refreshes every ${pollMs / 1000} s`}
-          </span>
-        )}
+        <div className="page-header-actions">
+          {pollMs > 0 && (
+            <span className={error ? 'live live-warn' : 'live'}>
+              <span className="live-dot" aria-hidden="true" />
+              {error ? 'Reconnecting…' : `Live · refreshes every ${pollMs / 1000} s`}
+            </span>
+          )}
+          <HelpButton topic="jobs" />
+        </div>
       </div>
       {linkedMissing && (
         <p role="status" aria-label="Linked job" className="kept-note">
