@@ -10,6 +10,40 @@ import { RetirementSchema } from './retirement.js';
 export const ID_PATTERN = /^[a-z][a-z0-9_-]*$/;
 const Id = z.string().regex(ID_PATTERN, 'lowercase id: [a-z][a-z0-9_-]*');
 
+/**
+ * Capturing groups of a (Python) regular expression, without compiling it: keys are Python
+ * regexes, which JavaScript cannot always compile. `(?P<name>` and `(?<name>` are named groups;
+ * other `(?` constructs, escaped parentheses and parentheses in character classes are not groups.
+ */
+export function captureGroups(pattern: string): { count: number; names: string[] } {
+  let count = 0;
+  const names: string[] = [];
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') {
+      i++;
+    } else if (inClass) {
+      if (c === ']') inClass = false;
+    } else if (c === '[') {
+      inClass = true;
+      if (pattern[i + 1] === '^') i++;
+      if (pattern[i + 1] === ']') i++; // a leading ] is a literal
+    } else if (c === '(') {
+      if (pattern[i + 1] !== '?') {
+        count++;
+        continue;
+      }
+      const named = /^\?P?<([A-Za-z_]\w*)>/.exec(pattern.slice(i + 1));
+      if (named) {
+        count++;
+        names.push(named[1]!);
+      }
+    }
+  }
+  return { count, names };
+}
+
 export const SectionSchema = z
   .object({
     id: Id,
@@ -17,8 +51,48 @@ export const SectionSchema = z
     anchor: z.string().min(1),
     required: z.boolean().default(true),
     description: z.string().optional(),
+    /** Every match of `anchor` starts an occurrence (recipes only; no default, so a parsed
+     * definition never gains `repeat: false`). */
+    repeat: z.boolean().optional(),
+    /** Regex naming an occurrence: the named group `key`, else group 1, else the whole match. */
+    key: z.string().min(1).optional(),
+    /** A repeating section whose latest preceding key an occurrence takes when `key` finds none;
+     * the occurrences are also checked against its keys. */
+    keyFrom: Id.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((s, ctx) => {
+    const issue = (message: string) => ctx.addIssue({ code: 'custom', message });
+    if (s.key !== undefined && !s.repeat) issue(`section "${s.id}": key needs repeat`);
+    if (s.keyFrom !== undefined && !s.repeat) issue(`section "${s.id}": keyFrom needs repeat`);
+    if (s.key !== undefined) {
+      const groups = captureGroups(s.key);
+      if (groups.count > 1 && !groups.names.includes('key')) {
+        issue(`section "${s.id}": key must have at most one group, or a group named key`);
+      }
+    }
+  });
+export type Section = z.infer<typeof SectionSchema>;
+
+/** `keyFrom` must name a repeating section with a key and no keyFrom of its own. */
+export function keyFromIssues(
+  sections: readonly Pick<Section, 'id' | 'repeat' | 'key' | 'keyFrom'>[],
+): { index: number; message: string }[] {
+  const byId = new Map(sections.map((s) => [s.id, s]));
+  return sections.flatMap((s, index) => {
+    if (s.keyFrom === undefined) return [];
+    const target = byId.get(s.keyFrom);
+    const ok = target?.repeat && target.key !== undefined && target.keyFrom === undefined;
+    return ok
+      ? []
+      : [
+          {
+            index,
+            message: `section "${s.id}": keyFrom "${s.keyFrom}" must be a repeating section with a key and no keyFrom`,
+          },
+        ];
+  });
+}
 
 export const ExtractionSchema = z
   .object({
@@ -130,6 +204,15 @@ export const DocumentSpecSchema = z
   })
   .strict()
   .superRefine((spec, ctx) => {
+    spec.document.sections.forEach((s, i) => {
+      if (s.repeat) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['document', 'sections', i, 'repeat'],
+          message: `section "${s.id}": repeat is supported in recipes only`,
+        });
+      }
+    });
     const sectionIds = new Set(spec.document.sections.map((s) => s.id));
     const extractionIds = new Set(spec.extractions.map((e) => e.id));
 

@@ -417,6 +417,7 @@ def test_steps_errors_are_fed_back_then_need_review(fixture_specs_dir: Path) -> 
                 "instructions": None,
                 "pageImages": None,
                 "chunkPages": None,
+                "keyColumn": None,
                 "context": None,
                 "description": None,
                 "values": None,
@@ -454,6 +455,9 @@ def sections_body(anchor: str) -> dict[str, Any]:
                 "anchor": anchor,
                 "required": None,
                 "description": None,
+                "repeat": None,
+                "key": None,
+                "keyFrom": None,
                 "copiesSelect": None,
                 "reason": "r",
             }
@@ -553,6 +557,47 @@ def test_anchor_check_misses(changes: list[dict[str, Any]], expected: list[str])
     assert grid is not None
     assert len(misses) == len(expected)
     assert all(e in m for m, e in zip(misses, expected, strict=True))
+
+
+def _covalidation_check(changes: list[dict[str, Any]], pages: list[str] | None = None) -> list[str]:
+    from .covalidation import PAGES
+
+    samples = [DraftSample("s1", "a.pdf", "dev", pages or PAGES)]
+    draft = {"document": {"sections": [{"id": "all", "anchor": r"\A"}]}}
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    return misses
+
+
+def test_repeated_blocks_feedback_suggests_repeating_sections() -> None:
+    plain = [put("appearance", r"^Table \d+:.*Appearance"), put("micro", r"^Table \d+:.*Microbial")]
+    [miss] = _covalidation_check(plain)
+    assert 'sections "appearance", "micro" each match 3 times in a.pdf' in miss
+    assert "Set repeat true on each of these sections" in miss
+
+
+def test_repeating_sections_are_not_reported_as_repeated_blocks() -> None:
+    repeating = [
+        put("appearance", r"^Table \d+:.*Appearance", repeat=True),
+        put("micro", r"^Table \d+:.*Microbial", repeat=True),
+    ]
+    assert _covalidation_check(repeating) == []
+
+
+def test_anchor_check_feeds_back_key_issues_of_repeating_sections() -> None:
+    from .covalidation import edited
+
+    batch = put("batch", r"^\d+\. STUDY", repeat=True, key=r"BATCH\s+(\w+)")
+    table = put(
+        "micro", r"^Table \d+:.*Microbial", repeat=True, key=r"Batch\s+(\w+)", keyFrom="batch"
+    )
+    misses = _covalidation_check([batch, table], edited("Microbial Purity", "Microbal Purity", 3))
+    assert misses == ["a.pdf: micro: no occurrence for batch 4586785"]
+
+
+def test_anchor_check_reports_an_invalid_key() -> None:
+    misses = _covalidation_check([put("batch", r"^\d+\. STUDY", repeat=True, key="BATCH (")])
+    assert len(misses) == 1 and misses[0].startswith('section "batch": key: ')
 
 
 REPEATED = [
@@ -746,7 +791,7 @@ def revise_section_response(anchor: str) -> dict[str, Any]:
     response = revise_response()
     [change] = response["changes"]
     change["op"] = "putSection"  # only the section payload is read for putSection
-    change["section"] |= {"id": "all", "anchor": anchor, "required": True}
+    change["section"] |= {"id": "all", "anchor": anchor, "required": True, "repeat": False}
     return response
 
 

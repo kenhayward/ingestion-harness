@@ -13,21 +13,25 @@ export function Checklist({
   options,
   selected,
   onToggle,
+  disabled = {},
 }: {
   label: string;
   options: string[];
   selected: string[];
   onToggle: (id: string, on: boolean) => void;
+  /** Options that cannot be ticked: id -> why (shown as the option's title). */
+  disabled?: Record<string, string>;
 }) {
   return (
     <fieldset className="choice">
       <legend>{label}</legend>
       {options.length === 0 && <small>None defined yet.</small>}
       {options.map((id) => (
-        <label key={id} className="inline">
+        <label key={id} className="inline" title={disabled[id]}>
           <input
             type="checkbox"
             checked={selected.includes(id)}
+            disabled={disabled[id] !== undefined && !selected.includes(id)}
             onChange={(e) => onToggle(id, e.target.checked)}
           />
           {id}

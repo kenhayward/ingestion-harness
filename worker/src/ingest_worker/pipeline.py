@@ -32,7 +32,14 @@ from .outputs import RenderedOutput, content_type, render_outputs
 from .pdf import TextExtractor
 from .prompts import render_prompt
 from .queue import ClaimedJob, JobQueue
-from .segment import PAGE_BREAK, MissingSectionsError, segment, select_copy
+from .segment import (
+    PAGE_BREAK,
+    KeyIssue,
+    MissingSectionsError,
+    Occurrence,
+    segment_occurrences,
+    select_copy,
+)
 from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
 from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
@@ -173,6 +180,20 @@ class Prepared:
     sections: dict[str, str]
     #: sha256 of the uploaded file (Source.sha256): names the document's graph.
     sha256: str = ""
+    #: Occurrences of each repeating section (none for recipes without one).
+    occurrences: dict[str, list[Occurrence]] = field(default_factory=dict)
+    #: The key check of sections with `keyFrom` (segment.key_issues).
+    key_issues: list[KeyIssue] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RepeatPlan:
+    """A step reading a repeating section: one model call per occurrence; with `key_column`,
+    the worker fills that column of every row with the occurrence's key."""
+
+    section_id: str
+    occurrences: list[Occurrence]
+    key_column: str | None
 
 
 #: Matches the lines added by mark_pages.
@@ -302,11 +323,22 @@ def prepare_document(
 
     try:
         marker = PAGE_MARKER if getattr(document, "page_markers", False) else None
-        sections = segment(pages, document.sections, page_marker=marker)
+        segmented = segment_occurrences(pages, document.sections, page_marker=marker)
     except MissingSectionsError as exc:
         raise DocumentError(str(exc)) from exc
-    queue.event(job.id, "info", SEGMENTED, {"pages": len(pages), "sections": list(sections)})
-    return Prepared(pdf, total_pages, sections, source.sha256)
+    sections = segmented.sections
+    data: dict[str, Any] = {"pages": len(pages), "sections": list(sections)}
+    if segmented.occurrences:
+        data["occurrences"] = {k: len(v) for k, v in segmented.occurrences.items()}
+    queue.event(job.id, "info", SEGMENTED, data)
+    return Prepared(
+        pdf,
+        total_pages,
+        sections,
+        source.sha256,
+        segmented.occurrences,
+        segmented.key_issues,
+    )
 
 
 def publish_outputs(deps: PipelineDeps, outputs: list[RenderedOutput]) -> list[RenderedOutput]:
@@ -492,15 +524,54 @@ def _ocr_cache_keyer(digest: str, model_ref: str, settings: OcrSettings) -> Call
     return lambda page_number: ocr_cache_key(digest, fingerprint, page_number)
 
 
+#: progress(attempt, chunk, occurrence) before each model call; chunk is {index, count} and
+#: occurrence {n, of, key}, each None when the step has none.
+StepProgress = Callable[[int, dict[str, int] | None, dict[str, Any] | None], None]
+
+
 def _attempt_reporter(
-    progress: Callable[[int, dict[str, int] | None], None] | None,
+    progress: StepProgress | None,
     chunk: dict[str, int] | None,
+    occurrence: Occurrence | None,
 ) -> Callable[[int], None] | None:
-    """Bind a chunk to the step's progress callback (None: no reporting)."""
+    """Bind a chunk and an occurrence to the step's progress callback (None: no reporting)."""
     if progress is None:
         return None
     report = progress
-    return lambda attempt: report(attempt, chunk)
+    where = (
+        None
+        if occurrence is None
+        else {"n": occurrence.index, "of": occurrence.count, "key": occurrence.key}
+    )
+    return lambda attempt: report(attempt, chunk, where)
+
+
+def _without_column(schema: dict[str, Any], column: str) -> dict[str, Any]:
+    """A table step's schema whose rows leave out `column` (the worker fills it)."""
+    rows = schema["properties"]["rows"]
+    row = rows["items"]
+    items = {
+        **row,
+        "required": [c for c in row["required"] if c != column],
+        "properties": {k: v for k, v in row["properties"].items() if k != column},
+    }
+    return {**schema, "properties": {**schema["properties"], "rows": {**rows, "items": items}}}
+
+
+def _chunks(
+    ex: Extraction, sections: dict[str, str]
+) -> list[tuple[str, dict[str, str], dict[str, Any] | None]]:
+    """(audit suffix, sections, chunk) per call: one call, or one per chunk of pages."""
+    if ex.chunk_pages is None:
+        return [("", sections, None)]
+    section_id = ex.sections[0]
+    pages = [p.strip() for p in sections[section_id].split(PAGE_BREAK) if p.strip()]
+    size = ex.chunk_pages
+    groups = [PAGE_BREAK.join(pages[i : i + size]) for i in range(0, len(pages), size)] or [""]
+    return [
+        (f".chunk-{n}", {**sections, section_id: text}, {"index": n, "count": len(groups)})
+        for n, text in enumerate(groups, start=1)
+    ]
 
 
 def run_step_extraction(
@@ -514,41 +585,63 @@ def run_step_extraction(
     images: tuple[bytes, ...],
     *,
     cache: StepCache | None = None,
-    progress: Callable[[int, dict[str, int] | None], None] | None = None,
+    progress: StepProgress | None = None,
+    repeat: RepeatPlan | None = None,
 ) -> ExtractionResult:
     """Run one extraction, or one call per chunk of pages with `merge_path` arrays concatenated
-    (keeps each call's output well inside the model's output token limit).
-    `progress(attempt, chunk)` is called before each model call (never for a cache hit).
+    (keeps each call's output well inside the model's output token limit). With `repeat`, one
+    call (or one per chunk) per occurrence of the repeating section, told which occurrence it
+    reads; its `key_column` is left out of the schema sent and set on every row from the
+    occurrence's key. No occurrence: no call and no rows.
+    `progress(attempt, chunk, occurrence)` is called before each model call (never for a cache
+    hit).
 
     With a `cache`, an unchanged step input (every rendered prompt, schema, images, step id,
     model and provider fingerprint) returns the stored output without calling the model, if it
     still satisfies the schema; a miss stores the result."""
-    plan: list[tuple[str, dict[str, str], dict[str, Any] | None]]
-    if ex.chunk_pages is None:
-        plan = [(ex.id, sections, None)]
+    if repeat is not None and not repeat.occurrences:
+        return ExtractionResult({"rows": []}, f"{provider.name}/{model_id}", [])
+
+    plan: list[tuple[str, dict[str, str], dict[str, Any] | None, Occurrence | None]] = []
+    if repeat is None:
+        plan = [(f"{ex.id}{suffix}", s, chunk, None) for suffix, s, chunk in _chunks(ex, sections)]
     else:
-        section_id = ex.sections[0]
-        pages = [p.strip() for p in sections[section_id].split(PAGE_BREAK) if p.strip()]
-        size = ex.chunk_pages
-        groups = [PAGE_BREAK.join(pages[i : i + size]) for i in range(0, len(pages), size)] or [""]
-        plan = [
-            (
-                f"{ex.id}.chunk-{n}",
-                {**sections, section_id: text},
-                {"index": n, "count": len(groups)},
-            )
-            for n, text in enumerate(groups, start=1)
-        ]
+        for each in repeat.occurrences:
+            own = {**sections, repeat.section_id: each.text}
+            plan += [
+                (f"{ex.id}.occ-{each.index}{suffix}", s, chunk, each)
+                for suffix, s, chunk in _chunks(ex, own)
+            ]
+
+    key_column = repeat.key_column if repeat is not None else None
+    prompt_context = ex.prompt_context
+    table = (prompt_context or {}).get("table")
+    if key_column and prompt_context is not None and isinstance(table, dict):
+        # The worker fills the key column: the model is not asked for it.
+        columns = [c for c in table.get("columns", []) if c.get("id") != key_column]
+        prompt_context = {**prompt_context, "table": {**table, "columns": columns}}
+
+    def occurrence_context(o: Occurrence | None) -> dict[str, Any] | None:
+        if o is None or repeat is None:
+            return None
+        return {"index": o.index, "count": o.count, "key": o.key, "section": repeat.section_id}
 
     rendered = [
         (
             audit_id,
             render_prompt(
-                directory, ex.prompt, chunk_sections, ex.sections, chunk, ex.prompt_context
+                directory,
+                ex.prompt,
+                call_sections,
+                ex.sections,
+                chunk,
+                prompt_context,
+                occurrence=occurrence_context(occurrence),
             ),
             chunk,
+            occurrence,
         )
-        for audit_id, chunk_sections, chunk in plan
+        for audit_id, call_sections, chunk, occurrence in plan
     ]
 
     key: str | None = None
@@ -559,7 +652,7 @@ def run_step_extraction(
             step_id=ex.id,
             system=SYSTEM_PROMPT,
             schema=ex.schema_,
-            prompts=[prompt for _, prompt, _ in rendered],
+            prompts=[prompt for _, prompt, _, _ in rendered],
             images=images,
             max_tokens=ex.max_tokens,
             max_attempts=ex.max_attempts,
@@ -569,20 +662,23 @@ def run_step_extraction(
             return ExtractionResult(hit.data, hit.model_ref, [], cached=True)
         # An entry that no longer satisfies the schema is a miss; the fresh result replaces it.
 
+    schema = _without_column(ex.schema_, key_column) if key_column else ex.schema_
     merged: ExtractionResult | None = None
-    for audit_id, prompt, chunk in rendered:
+    for audit_id, prompt, chunk, occurrence in rendered:
         where = f" [chunk {chunk['index']}/{chunk['count']}]" if chunk else ""
+        if occurrence is not None:
+            where = f" [occurrence {occurrence.index}/{occurrence.count}]{where}"
         try:
             result = run_extraction(
                 extraction_id=ex.id,
                 provider=provider,
                 model_id=model_id,
                 prompt=prompt,
-                schema=ex.schema_,
+                schema=schema,
                 max_attempts=ex.max_attempts,
                 images=images,
                 max_tokens=ex.max_tokens,
-                on_attempt=_attempt_reporter(progress, chunk),
+                on_attempt=_attempt_reporter(progress, chunk, occurrence),
             )
         except ExtractionFailedError as exc:
             _audit(deps, job.id, audit_id, exc.attempts)
@@ -590,6 +686,9 @@ def run_step_extraction(
         except RefusalError as exc:
             raise DocumentError(f"extraction {ex.id!r}{where}: {exc}") from exc
         _audit(deps, job.id, audit_id, result.attempts)
+        if key_column and occurrence is not None:
+            for row in result.data["rows"]:
+                row[key_column] = occurrence.key
         if merged is None:
             merged = result
         else:

@@ -203,7 +203,15 @@ describe('progressSteps', () => {
 
 describe('progressSteps with live progress', () => {
   const running = job({ status: 'running' });
-  const step = { kind: 'step', step: 'head', index: 2, of: 4, attempt: 1, chunk: null } as const;
+  const step = {
+    kind: 'step',
+    step: 'head',
+    index: 2,
+    of: 4,
+    attempt: 1,
+    chunk: null,
+    occurrence: null,
+  } as const;
   const current = (progress: JobProgress | null, runs: StepRun[] = []) =>
     progressSteps(running, runs, progress)
       .filter((s) => s.state !== 'todo')
@@ -240,6 +248,24 @@ describe('progressSteps with live progress', () => {
       'a retried call',
       { ...step, attempt: 2 },
       ['Text & OCR: done Done', 'Sections: done Done', 'Extraction: current Step 2 of 4 · try 2'],
+    ],
+    [
+      'a repeating step',
+      { ...step, occurrence: { n: 2, of: 3, key: '4586784' } },
+      [
+        'Text & OCR: done Done',
+        'Sections: done Done',
+        'Extraction: current Step 2 of 4 · occurrence 2 of 3 (4586784)',
+      ],
+    ],
+    [
+      'a chunked repeating step',
+      { ...step, chunk: { n: 1, of: 2 }, occurrence: { n: 2, of: 3, key: '4586784' } },
+      [
+        'Text & OCR: done Done',
+        'Sections: done Done',
+        'Extraction: current Step 2 of 4 · occurrence 2 of 3 (4586784) · part 1 of 2',
+      ],
     ],
     [
       'a chunked step',
@@ -362,6 +388,7 @@ describe('stepSeconds', () => {
         of: 2,
         attempt: 1,
         chunk: null,
+        occurrence: null,
       }),
     ).toEqual([20, 5, 575, null, null]);
   });

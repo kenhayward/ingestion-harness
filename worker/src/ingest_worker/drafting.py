@@ -584,6 +584,14 @@ def anchor_check(
         if sid in grid["anchorErrors"]:
             misses.append(f'section "{sid}": {grid["anchorErrors"][sid]}')
             continue
+        if f"{sid}.key" in grid["anchorErrors"]:
+            misses.append(f'section "{sid}": key: {grid["anchorErrors"][f"{sid}.key"]}')
+        misses += [
+            f"{names.get(row['sampleId'], row['sampleId'])}: {issue}"
+            for row in rows
+            for issue in row.get("keyIssues", [])
+            if issue.split(" ", 1)[0].rstrip(":") == sid
+        ]
         missed = [
             names.get(row["sampleId"], row["sampleId"])
             for row in rows
@@ -618,11 +626,12 @@ def repeated_blocks(
         out.append(
             f"sections {ids} each match {times} times in "
             f"{names.get(row['sampleId'], row['sampleId'])}: the document repeats a block "
-            "(per batch, item or similar). A section starts only at its anchor's first match "
-            "and runs to the next section, so every later block ends up in the last section. "
-            "Propose one section that starts at the first block and covers all of them "
-            "(steps then read it and take each block's identifiers from its heading or "
-            "caption); keep separate sections only for parts that occur once."
+            "(per batch, item or similar). A plain section starts only at its anchor's first "
+            "match and runs to the next section, so every later block ends up in the last "
+            "section. Set repeat true on each of these sections (every match then starts an "
+            "occurrence), with a key reading the block's identifier and keyFrom naming the "
+            "block's heading section if there is one; keep plain sections for parts that "
+            "occur once."
         )
     return out
 

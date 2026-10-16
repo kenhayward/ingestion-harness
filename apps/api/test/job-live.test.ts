@@ -32,7 +32,7 @@ function messages(body: string): JobLive[] {
     .map((block) => JSON.parse(/^data: (.*)$/m.exec(block)![1]!) as JobLive);
 }
 
-const step = { step: 'head', index: 1, of: 2, attempt: 1, chunk: null };
+const step = { step: 'head', index: 1, of: 2, attempt: 1, chunk: null, occurrence: null };
 
 describe('GET /api/jobs/:id progress', () => {
   it("is a running extraction's latest progress event of this attempt", async () => {

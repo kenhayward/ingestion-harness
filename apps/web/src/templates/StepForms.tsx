@@ -4,6 +4,7 @@ import { ModelPicker } from '../ui/ModelPicker.js';
 import { Segmented } from '../ui/Segmented.js';
 import { Area, Checklist, intList, opt, optInt, Select, Text } from './fields.js';
 import type { Definition } from './model.js';
+import { repeatNote, type SectionLike } from './editor-derive.js';
 
 const FILLS = [
   { value: 'fields', label: 'Fields' },
@@ -16,11 +17,53 @@ export const defaultLabel = (models: readonly ModelChoice[]) => {
   return choice ? ` (${choice.label})` : '';
 };
 
+/** A step reading a repeating section (spec 2026-10-16): what runs once per occurrence, and the
+ * table column the worker fills with each occurrence's key. */
+export function RepeatKeyColumn({
+  step,
+  sectionDefs,
+  columns,
+  set,
+}: {
+  step: Definition;
+  sectionDefs: readonly SectionLike[];
+  /** The step's table's columns. */
+  columns: string[];
+  set: (key: string, value: unknown) => void;
+}) {
+  const { note, keyColumnReason } = repeatNote(step, sectionDefs);
+  if (!note) return null;
+  return (
+    <div className="repeat-key-column">
+      <p className="muted">{note}</p>
+      <label className="field">
+        <span className="field-label">Key column</span>
+        <select
+          aria-label="Key column"
+          value={typeof step.keyColumn === 'string' ? step.keyColumn : ''}
+          disabled={keyColumnReason !== null}
+          title={keyColumnReason ?? "Filled with each occurrence's key"}
+          onChange={(e) => set('keyColumn', e.target.value || undefined)}
+        >
+          <option value="">None</option>
+          {columns.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
 export function ExtractStep({
   step,
   fields,
   tables,
   sections,
+  sectionDefs = [],
+  tableColumns = {},
   models,
   typeModelLabel,
   set,
@@ -30,6 +73,10 @@ export function ExtractStep({
   fields: string[];
   tables: string[];
   sections: string[];
+  /** The recipe's sections with their repeat keys (repeating sections). */
+  sectionDefs?: readonly SectionLike[];
+  /** Each table's column ids. */
+  tableColumns?: Record<string, string[]>;
   models: readonly ModelChoice[];
   /** The empty option: what a step naming no model inherits. */
   typeModelLabel: string;
@@ -91,7 +138,14 @@ export function ExtractStep({
           label="Sections"
           options={sections}
           selected={step.sections ?? []}
+          disabled={repeatNote(step, sectionDefs).disabled}
           onToggle={(id, on) => toggle('sections', id, on)}
+        />
+        <RepeatKeyColumn
+          step={step}
+          sectionDefs={sectionDefs}
+          columns={tableColumns[step.table as string] ?? []}
+          set={set}
         />
         <div className="field">
           <span className="field-label">Model</span>

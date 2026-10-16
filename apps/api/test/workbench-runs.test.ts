@@ -318,7 +318,7 @@ describe('test run progress (TR3)', () => {
       ).find((j) => j.id === id)!;
     return { ...ctx, id, listed };
   }
-  const event = { step: 'totals', index: 3, of: 3, attempt: 2, chunk: null };
+  const event = { step: 'totals', index: 3, of: 3, attempt: 2, chunk: null, occurrence: null };
 
   it("shows a running run's latest progress of this attempt", async () => {
     const r = await runningRun();

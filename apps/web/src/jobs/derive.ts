@@ -200,7 +200,10 @@ function readingText(p: Extract<JobProgress, { kind: 'prepare' }>): string {
 }
 
 function stepText(p: Extract<JobProgress, { kind: 'step' }>): string {
-  const where = `Step ${p.index} of ${p.of}`;
+  const occurrence = p.occurrence
+    ? ` · occurrence ${p.occurrence.n} of ${p.occurrence.of}${p.occurrence.key ? ` (${p.occurrence.key})` : ''}`
+    : '';
+  const where = `Step ${p.index} of ${p.of}${occurrence}`;
   if (p.chunk) return `${where} · part ${p.chunk.n} of ${p.chunk.of}`;
   return p.attempt > 1 ? `${where} · try ${p.attempt}` : where;
 }

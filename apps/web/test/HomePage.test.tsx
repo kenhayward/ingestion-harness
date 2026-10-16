@@ -222,7 +222,15 @@ describe('HomePage pushed progress', () => {
       r.on().update({
         stageTimes: NO_TIMES,
         job: { ...running, updatedAt: '2030-01-01T00:00:00Z' },
-        progress: { kind: 'step', step: 'head', index: 1, of: 2, attempt: 1, chunk: null },
+        progress: {
+          kind: 'step',
+          step: 'head',
+          index: 1,
+          of: 2,
+          attempt: 1,
+          chunk: null,
+          occurrence: null,
+        },
       }),
     );
     expect(await within(panel).findByText('Step 1 of 2')).toBeInTheDocument();

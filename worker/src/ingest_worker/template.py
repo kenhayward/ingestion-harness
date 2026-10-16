@@ -18,7 +18,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, model_validator
 
 from .normalize import DateOrder, ValueType
-from .specs import Check, DocumentLayout, Extraction, Id, _Model
+from .specs import Check, DocumentLayout, Extraction, Id, Section, _Model
 
 RESERVED_OUTPUT_IDS = {"fields", "document", "issues", "graph"}
 BUILTIN_PROMPT = "builtin/extract.md.j2"
@@ -70,6 +70,8 @@ class ExtractStep(_Model):
     chunk_pages: int | None = Field(default=None, ge=1, alias="chunkPages")
     #: Values from earlier steps shown in the prompt: name -> `<field>` or `<table>.<column>`.
     context: dict[Id, str] = Field(default_factory=dict)
+    #: The table column the worker fills with each occurrence's key (repeating sections).
+    key_column: Id | None = Field(default=None, alias="keyColumn")
 
     @model_validator(mode="after")
     def _fills(self) -> ExtractStep:
@@ -203,6 +205,11 @@ class Template(_Model):
     def table(self, table_id: str) -> TableDef:
         return next(t for t in self.outputs.tables if t.id == table_id)
 
+    def repeating_section(self, step: ExtractStep) -> Section | None:
+        """The repeating section a step reads (validation allows at most one), or None."""
+        by_id = {s.id: s for s in self.document.sections}
+        return next((by_id[i] for i in step.sections if i in by_id and by_id[i].repeat), None)
+
     def extract_steps(self) -> list[ExtractStep]:
         return [s for s in self.pipeline if isinstance(s, ExtractStep)]
 
@@ -310,6 +317,38 @@ class Template(_Model):
                     errors.append(f"semantics: table {tid!r}: unknown column {cid!r}")
         return errors
 
+    def _repeat_errors(self, step: ExtractStep) -> list[str]:
+        by_id = {s.id: s for s in self.document.sections}
+        repeating = [i for i in step.sections if i in by_id and by_id[i].repeat]
+        errors = []
+        if step.fields and repeating:
+            errors.append(
+                f"step {step.id!r}: a field step cannot read a repeating section "
+                f"({repeating[0]}); fill a table instead"
+            )
+        if len(repeating) > 1:
+            errors.append(
+                f"step {step.id!r}: reads more than one repeating section ({', '.join(repeating)})"
+            )
+        if step.key_column is not None:
+            section = by_id[repeating[0]] if repeating else None
+            if (
+                step.table is None
+                or section is None
+                or (section.key is None and section.key_from is None)
+            ):
+                errors.append(
+                    f"step {step.id!r}: keyColumn needs a repeating section with a key or keyFrom"
+                )
+            else:
+                table = next((t for t in self.outputs.tables if t.id == step.table), None)
+                if table is not None and step.key_column not in [c.id for c in table.columns]:
+                    errors.append(
+                        f"step {step.id!r}: keyColumn {step.key_column!r} is not a column of "
+                        f"{step.table}"
+                    )
+        return errors
+
     @model_validator(mode="after")
     def _consistency(self) -> Template:
         errors: list[str] = []
@@ -340,6 +379,7 @@ class Template(_Model):
                 if step.table not in table_ids:
                     errors.append(f"step {step.id!r}: unknown table {step.table!r}")
                 fills[step.table] = fills.get(step.table, 0) + 1
+            errors += self._repeat_errors(step)
         for output_id in field_ids + table_ids:
             count = fills.get(output_id, 0)
             kind = "field" if output_id in field_ids else "table"
@@ -474,7 +514,7 @@ def compile_step(template: Template, step: ExtractStep) -> Extraction:
             "pageImages": step.page_images,
             "maxTokens": step.max_tokens,
             "chunkPages": step.chunk_pages,
-            "mergePath": "rows" if step.chunk_pages else None,
+            "mergePath": "rows" if step.chunk_pages or template.repeating_section(step) else None,
             "promptContext": context,
         }
     )

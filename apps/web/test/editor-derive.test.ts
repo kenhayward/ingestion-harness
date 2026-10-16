@@ -11,6 +11,7 @@ import {
   tryOnBlockedReason,
   unsavedText,
 } from '../src/templates/editor-derive.js';
+import { repeatNote } from '../src/templates/editor-derive.js';
 import { RETIRED_REASON } from '../src/ui/retired.js';
 import { job } from './fake-api.js';
 
@@ -166,4 +167,45 @@ describe('publishBlocker for a retired type', () => {
     expect(publishBlocker(true, 3, true)).toBe(RETIRED_REASON);
     expect(publishBlocker(false, 0, false)).toBeNull();
   });
+});
+
+const REPEAT_SECTIONS = [
+  { id: 'front', anchor: '\\A' },
+  { id: 'batch', anchor: '^\\d+\\. STUDY', repeat: true, key: 'BATCH (.+)' },
+  { id: 'appearance', anchor: '^Table', repeat: true, key: 'Batch (.+)', keyFrom: 'batch' },
+  { id: 'plain_repeat', anchor: '^Annex', repeat: true },
+];
+
+describe('repeatNote', () => {
+  const fieldReason = "a field step can't read a repeating section";
+  it.each([
+    [
+      'a table step on a repeating section with a key',
+      { table: 'appearance_results', sections: ['appearance'] },
+      { note: 'Runs once per occurrence of appearance', disabled: {}, keyColumnReason: null },
+    ],
+    [
+      'a field step',
+      { fields: ['study'], sections: ['front'] },
+      {
+        note: null,
+        disabled: { batch: fieldReason, appearance: fieldReason, plain_repeat: fieldReason },
+        keyColumnReason: 'reads no repeating section',
+      },
+    ],
+    [
+      'a repeating section with neither key nor keyFrom',
+      { table: 't', sections: ['plain_repeat'] },
+      {
+        note: 'Runs once per occurrence of plain_repeat',
+        disabled: {},
+        keyColumnReason: 'plain_repeat has no key',
+      },
+    ],
+    [
+      'a table step on plain sections',
+      { table: 't', sections: ['front'] },
+      { note: null, disabled: {}, keyColumnReason: 'reads no repeating section' },
+    ],
+  ])('%s', (_, step, expected) => expect(repeatNote(step, REPEAT_SECTIONS)).toEqual(expected));
 });

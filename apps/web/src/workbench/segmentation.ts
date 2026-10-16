@@ -89,3 +89,26 @@ export function move<T>(items: readonly T[], from: number, to: number): T[] {
   next.splice(to, 0, item!);
   return next;
 }
+
+/** A repeating section's cell: "×3 · 4586783 · 4586784 · no key" (null: not repeating). */
+export function occurrenceSummary(cell: SectionCell): string | null {
+  const found = cell.occurrences ?? [];
+  if (found.length === 0) return null;
+  return [`×${found.length}`, ...found.map((o) => o.key ?? 'no key')].join(' · ');
+}
+
+/** A plain section whose anchor matches more than once: only the first match is used. */
+export function repeatHint(cell: SectionCell): string | null {
+  const matches = cell.matches ?? 0;
+  return matches > 1 ? `matches ${matches}×, only the first is used` : null;
+}
+
+/** The sections a repeating section may take its key from: repeating, with a key, no keyFrom. */
+export function keyFromOptions(
+  sections: readonly { id: string; repeat?: boolean; key?: string; keyFrom?: string }[],
+  self: string,
+): string[] {
+  return sections
+    .filter((s) => s.id && s.id !== self && s.repeat && s.key && !s.keyFrom)
+    .map((s) => s.id);
+}

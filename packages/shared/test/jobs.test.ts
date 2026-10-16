@@ -60,7 +60,7 @@ describe('JobSummary timing and batch (TR2)', () => {
 
 const fixture = JSON.parse(
   readFileSync(new URL('./fixtures/step-progress.json', import.meta.url), 'utf8'),
-) as { templateRun: unknown[] };
+) as { templateRun: unknown[]; beforeRepeats: object; repeating: object };
 
 describe('step progress (TR3)', () => {
   it.each(fixture.templateRun.map((e, i) => [i, e] as const))(
@@ -69,6 +69,17 @@ describe('step progress (TR3)', () => {
       expect(StepProgressSchema.parse(event)).toEqual(event);
     },
   );
+
+  it('reads an event from before repeating sections as no occurrence', () => {
+    expect(StepProgressSchema.parse(fixture.beforeRepeats)).toEqual({
+      ...fixture.beforeRepeats,
+      occurrence: null,
+    });
+  });
+
+  it('reads the occurrence of a repeating step', () => {
+    expect(StepProgressSchema.parse(fixture.repeating)).toEqual(fixture.repeating);
+  });
 
   it.each([
     ['a zero attempt', { step: 'a', index: 1, of: 1, attempt: 0, chunk: null }],

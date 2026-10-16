@@ -136,3 +136,31 @@ export function changeAtText(iso: string): string {
     minute: '2-digit',
   });
 }
+
+export type SectionLike = { id: string; repeat?: boolean; key?: string; keyFrom?: string };
+
+/** A step and repeating sections (spec 2026-10-16): the form's note, the sections a field step
+ * cannot read (id -> reason), and why the Key column select is off (null: it is on). */
+export function repeatNote(
+  step: { sections?: unknown; table?: unknown; fields?: unknown },
+  sections: readonly SectionLike[],
+): { note: string | null; disabled: Record<string, string>; keyColumnReason: string | null } {
+  const reads = Array.isArray(step.sections) ? (step.sections as unknown[]) : [];
+  const repeating = sections.filter((s) => s.repeat);
+  const read = repeating.find((s) => reads.includes(s.id));
+  const isTable = typeof step.table === 'string';
+  const disabled: Record<string, string> = isTable
+    ? {}
+    : Object.fromEntries(
+        repeating.map((s) => [s.id, "a field step can't read a repeating section"]),
+      );
+  return {
+    note: isTable && read ? `Runs once per occurrence of ${read.id}` : null,
+    disabled,
+    keyColumnReason: !read
+      ? 'reads no repeating section'
+      : !read.key && !read.keyFrom
+        ? `${read.id} has no key`
+        : null,
+  };
+}

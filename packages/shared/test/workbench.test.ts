@@ -99,6 +99,55 @@ describe('segmentation contracts', () => {
     expect(result.samples[0]!.sections[0]!.page).toBe(1);
   });
 
+  it('reads a grid stored before repeating sections', () => {
+    const result = SegmentationResultSchema.parse({
+      anchorErrors: {},
+      samples: [
+        {
+          sampleId: 's1',
+          firstPage: 1,
+          pageCount: 2,
+          error: null,
+          missingRequired: [],
+          sections: [{ id: 'header', found: true, page: 1, line: 'INVOICE 42', chars: 30 }],
+        },
+      ],
+    });
+    expect(result.samples[0]!.keyIssues).toBeUndefined();
+    expect(result.samples[0]!.sections[0]!.occurrences).toBeUndefined();
+    expect(result.samples[0]!.sections[0]!.matches).toBeUndefined();
+  });
+
+  it('reads the occurrences of a repeating section', () => {
+    const occurrence = { page: 2, line: 'Table 1: …', chars: 40, key: '4586783', keySource: 'own' };
+    const result = SegmentationResultSchema.parse({
+      anchorErrors: {},
+      samples: [
+        {
+          sampleId: 's1',
+          firstPage: 1,
+          pageCount: 4,
+          error: null,
+          missingRequired: [],
+          keyIssues: ['microbial: no occurrence for batch 4586785'],
+          sections: [
+            {
+              id: 'appearance',
+              found: true,
+              page: 2,
+              line: 'Table 1: …',
+              chars: 40,
+              occurrences: [occurrence],
+              matches: 0,
+            },
+          ],
+        },
+      ],
+    });
+    expect(result.samples[0]!.sections[0]!.occurrences).toEqual([occurrence]);
+    expect(result.samples[0]!.keyIssues).toEqual(['microbial: no occurrence for batch 4586785']);
+  });
+
   it('accepts segment jobs', () => {
     expect(JobSummarySchema.shape.task.parse('segment')).toBe('segment');
   });

@@ -183,3 +183,70 @@ describe('SegmentationGrid', () => {
     expect(head.querySelector('.tone-text-danger')).toBeNull();
   });
 });
+
+describe('SegmentationGrid with repeating sections', () => {
+  const occ = (page: number, key: string | null, keySource: 'own' | 'inherited' | null) => ({
+    page,
+    line: `Table ${page}`,
+    chars: 20,
+    key,
+    keySource,
+  });
+  const repeated: SegmentationResult = {
+    anchorErrors: {},
+    suggestions: [],
+    samples: [
+      {
+        sampleId: 's1',
+        firstPage: 1,
+        pageCount: 4,
+        error: null,
+        missingRequired: [],
+        keyIssues: ['microbial: no occurrence for batch 4586785'],
+        sections: [
+          {
+            id: 'appearance',
+            found: true,
+            page: 2,
+            line: 'Table 1',
+            chars: 60,
+            matches: 0,
+            occurrences: [
+              occ(2, '4586783', 'own'),
+              occ(3, '4586784', 'inherited'),
+              occ(4, '4586785', 'own'),
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it('shows the occurrences with their keys, an inherited one marked', () => {
+    render(
+      <SegmentationGrid
+        result={repeated}
+        sections={[{ id: 'appearance', required: true, keyFrom: 'batch' }]}
+        samples={[a]}
+        onOpen={vi.fn()}
+      />,
+    );
+    const cell = screen.getByRole('button', { name: 'a.pdf · appearance' });
+    expect(cell).toHaveTextContent('×3 · 4586783 · 4586784 · 4586785');
+    expect(cell).toHaveTextContent('4586784 from batch');
+  });
+
+  it('lists a sample’s key issues', () => {
+    render(
+      <SegmentationGrid
+        result={repeated}
+        sections={[{ id: 'appearance', required: true }]}
+        samples={[a]}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('note', { name: 'Key issues in a.pdf' })).toHaveTextContent(
+      'microbial: no occurrence for batch 4586785',
+    );
+  });
+});

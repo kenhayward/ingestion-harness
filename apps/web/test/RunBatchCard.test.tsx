@@ -34,7 +34,14 @@ function batch(active = true): RunBatch {
         filename: 'hooli.pdf',
         status: 'running',
         startedAt: at(0),
-        progress: { step: 'line_items', index: 2, of: 3, attempt: 1, chunk: { n: 2, of: 2 } },
+        progress: {
+          step: 'line_items',
+          index: 2,
+          of: 3,
+          attempt: 1,
+          chunk: { n: 2, of: 2 },
+          occurrence: null,
+        },
       }),
       testRunView({
         id: '11111111-0000-4000-8000-000000000004',

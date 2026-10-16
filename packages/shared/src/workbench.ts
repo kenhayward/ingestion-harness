@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { RetirementSchema } from './retirement.js';
-import { CopySelectionSchema, SectionSchema } from './spec.js';
+import { CopySelectionSchema, keyFromIssues, SectionSchema } from './spec.js';
 import { JobStatusSchema, PrepareProgressSchema, ShaclReportSchema } from './jobs.js';
 
 /** Workbench (ADR 0007): sample roles, brief, prepared text. Mirrors worker/src/ingest_worker/workbench.py. */
@@ -181,8 +181,22 @@ export const SegmentDocumentSchema = z
       }
       seen.add(section.id);
     });
+    keyFromIssues(doc.sections).forEach(({ index, message }) =>
+      ctx.addIssue({ code: 'custom', path: ['sections', index, 'keyFrom'], message }),
+    );
   });
 export type SegmentDocument = z.infer<typeof SegmentDocumentSchema>;
+
+/** One occurrence of a repeating section in a sample (worker segment_samples). */
+export const OccurrenceCellSchema = z.object({
+  page: z.number().int().positive().nullable(),
+  line: z.string().nullable(),
+  chars: z.number().int().nonnegative(),
+  key: z.string().nullable(),
+  /** `own`: read from the occurrence; `inherited`: from its keyFrom section; null: no key. */
+  keySource: z.enum(['own', 'inherited']).nullable(),
+});
+export type OccurrenceCell = z.infer<typeof OccurrenceCellSchema>;
 
 /** One sample × section cell of the preview grid. */
 export const SectionCellSchema = z.object({
@@ -192,10 +206,13 @@ export const SectionCellSchema = z.object({
   page: z.number().int().positive().nullable(),
   /** The line the anchor matched, trimmed to 200 characters. */
   line: z.string().nullable(),
-  /** Characters of section text (0 when not found or empty). */
+  /** Characters of section text (0 when not found or empty); a repeating section's total. */
   chars: z.number().int().nonnegative(),
-  /** How often the anchor matches (only the first starts the section; >1 = a repeated block).
-   * Absent in grids from before the count. */
+  /** Every occurrence of a repeating section (empty for other sections and older grids). */
+  occurrences: z.array(OccurrenceCellSchema).optional(),
+  /** How often a plain section's anchor matches (only the first starts the section; >1 = a
+   * repeated block). 0 for a repeating section (every match is an occurrence) and an invalid
+   * anchor; absent in grids from before the count. */
   matches: z.number().int().nonnegative().optional(),
 });
 export type SectionCell = z.infer<typeof SectionCellSchema>;
@@ -209,6 +226,8 @@ export const SegmentedSampleSchema = z.object({
   error: z.string().nullable(),
   missingRequired: z.array(z.string()),
   sections: z.array(SectionCellSchema),
+  /** The key check of sections with keyFrom (worker segment.key_issues); [] for older grids. */
+  keyIssues: z.array(z.string()).optional(),
 });
 export type SegmentedSample = z.infer<typeof SegmentedSampleSchema>;
 

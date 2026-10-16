@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { CopySelectionSchema, ID_PATTERN, OcrModeSchema, SectionSchema } from './spec.js';
+import {
+  CopySelectionSchema,
+  ID_PATTERN,
+  keyFromIssues,
+  OcrModeSchema,
+  SectionSchema,
+} from './spec.js';
 
 /**
  * Document type template (outputs-first). Mirrors worker/src/ingest_worker/template.py — both
@@ -65,6 +71,8 @@ export const ExtractStepSchema = z
     chunkPages: z.number().int().positive().optional(),
     /** Values from earlier steps shown in the prompt: name -> `<field>` or `<table>.<column>`. */
     context: z.record(Id, z.string().min(1)).default({}),
+    /** The table column the worker fills with each occurrence's key (repeating sections). */
+    keyColumn: Id.optional(),
   })
   .strict();
 
@@ -277,6 +285,8 @@ export const TemplateSchema = z
     const tables = new Map(t.outputs.tables.map((tb) => [tb.id, tb]));
     const sectionIds = new Set(t.document.sections.map((s) => s.id));
     const extracts = t.pipeline.filter((s) => s.type === 'extract');
+    const sectionById = new Map(t.document.sections.map((s) => [s.id, s]));
+    keyFromIssues(t.document.sections).forEach(({ message }) => issue(message));
 
     const dupes = (ids: string[]) => [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
     dupes([...fieldIds, ...tables.keys()]).forEach((d) => issue(`duplicate output id "${d}"`));
@@ -303,6 +313,32 @@ export const TemplateSchema = z
       }
       if (step.table !== undefined && !tables.has(step.table)) {
         issue(`step "${step.id}": unknown table "${step.table}"`);
+      }
+      const repeating = step.sections.filter((s) => sectionById.get(s)?.repeat);
+      if (step.fields.length > 0 && repeating.length > 0) {
+        issue(
+          `step "${step.id}": a field step cannot read a repeating section (${repeating[0]}); fill a table instead`,
+        );
+      }
+      if (repeating.length > 1) {
+        issue(`step "${step.id}": reads more than one repeating section (${repeating.join(', ')})`);
+      }
+      if (step.keyColumn !== undefined) {
+        const section = repeating.length > 0 ? sectionById.get(repeating[0]!) : undefined;
+        if (
+          step.table === undefined ||
+          section === undefined ||
+          (section.key === undefined && section.keyFrom === undefined)
+        ) {
+          issue(`step "${step.id}": keyColumn needs a repeating section with a key or keyFrom`);
+        } else {
+          const table = tables.get(step.table);
+          if (table && !table.columns.some((c) => c.id === step.keyColumn)) {
+            issue(
+              `step "${step.id}": keyColumn "${step.keyColumn}" is not a column of ${step.table}`,
+            );
+          }
+        }
       }
     }
     for (const o of outputCoverage(t).outputs) {

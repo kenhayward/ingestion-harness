@@ -5,6 +5,7 @@ Both suites validate every spec under /specs (tests/test_specs.py here).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -23,6 +24,46 @@ class Section(_Model):
     anchor: str = Field(min_length=1)
     required: bool = True
     description: str | None = None
+    #: Every match of `anchor` starts an occurrence (templates only; spec 2026-10-16).
+    repeat: bool = False
+    #: Regex naming an occurrence: the named group `key`, else group 1, else the whole match.
+    key: str | None = Field(default=None, min_length=1)
+    #: A repeating section whose latest preceding key an occurrence takes when `key` finds none;
+    #: the occurrences are also checked against its keys (segment.key_issues).
+    key_from: Id | None = Field(default=None, alias="keyFrom")
+
+    @model_validator(mode="after")
+    def _repeat_keys(self) -> Section:
+        if self.key is not None and not self.repeat:
+            raise ValueError(f"section {self.id!r}: key needs repeat")
+        if self.key_from is not None and not self.repeat:
+            raise ValueError(f"section {self.id!r}: keyFrom needs repeat")
+        if self.key is not None:
+            try:
+                compiled = re.compile(self.key, re.MULTILINE)
+            except re.error:
+                return self  # like an anchor: reported where it is used (preview, drafting)
+            if compiled.groups > 1 and "key" not in compiled.groupindex:
+                raise ValueError(
+                    f"section {self.id!r}: key must have at most one group, or a group named key"
+                )
+        return self
+
+
+def key_from_errors(sections: list[Section]) -> list[str]:
+    """`keyFrom` must name a repeating section with a key and no keyFrom of its own."""
+    by_id = {s.id: s for s in sections}
+    errors = []
+    for s in sections:
+        if s.key_from is None:
+            continue
+        target = by_id.get(s.key_from)
+        if target is None or not target.repeat or target.key is None or target.key_from is not None:
+            errors.append(
+                f"section {s.id!r}: keyFrom {s.key_from!r} must be a repeating section with a key "
+                "and no keyFrom"
+            )
+    return errors
 
 
 class Extraction(_Model):
@@ -108,6 +149,12 @@ class DocumentLayout(_Model):
     copies: CopySelection | None = None
     sections: list[Section] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def _key_from(self) -> DocumentLayout:
+        if errors := key_from_errors(self.sections):
+            raise ValueError("; ".join(errors))
+        return self
+
 
 class DocumentSpec(_Model):
     id: Id
@@ -132,6 +179,11 @@ class DocumentSpec(_Model):
                 f"duplicate {label} id {i!r}" for i in sorted({i for i in ids if ids.count(i) > 1})
             ]
 
+        errors += [
+            f"section {s.id!r}: repeat is supported in recipes only"
+            for s in self.document.sections
+            if s.repeat
+        ]
         section_ids = {s.id for s in self.document.sections}
         extraction_ids = {e.id for e in self.extractions}
         for e in self.extractions:

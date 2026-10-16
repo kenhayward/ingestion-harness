@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from ingest_worker.specs import DocumentSpec, load_specs
+from ingest_worker.workbench import SegmentDocument
+
+from .covalidation import FIXTURE
 
 MINIMAL = {
     "id": "demo",
@@ -150,3 +154,16 @@ def test_load_specs_reports_missing_prompt(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="prompt not found"):
         load_specs(tmp_path)
+
+
+def test_a_legacy_spec_cannot_repeat() -> None:
+    doc = {"sections": [{"id": "h", "anchor": "^H", "repeat": True}]}
+    with pytest.raises(ValidationError, match="repeat is supported in recipes only"):
+        DocumentSpec.model_validate({**MINIMAL, "document": doc})
+
+
+def test_a_segment_preview_checks_key_from() -> None:
+    sections = copy.deepcopy(FIXTURE["base"]["document"]["sections"])
+    sections[2]["keyFrom"] = "nope"
+    with pytest.raises(ValidationError, match="must be a repeating section with a key"):
+        SegmentDocument.model_validate({"sections": sections})

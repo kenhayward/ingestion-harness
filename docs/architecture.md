@@ -29,7 +29,7 @@ Cancellation and deletion: [ADR 0005](adr/0005-job-cancellation-and-deletion.md)
 
 Live progress: while a job runs, the worker writes advisory progress events (`prepare progress`:
 the text layer, then each OCR page; `segmented`; `step progress`: one per model call, attempt
-and chunk), for production and Workbench jobs alike. Triggers on `jobs`, `job_events` and
+chunk and occurrence of a repeating section), for production and Workbench jobs alike. Triggers on `jobs`, `job_events` and
 `step_runs` (migration 0031) `NOTIFY ih_job_changed` with the job id; the API holds one
 `LISTEN` connection (`PgJobWatch`, reconnecting) and serves `GET /api/jobs/:id/events` as
 Server-Sent Events: `{ job, progress }` at once and on every change, a comment every 15 s (when
@@ -95,6 +95,8 @@ no LLM extraction) that writes `prepared/{sha256}/text.json|triage.json` to the 
 sample's state is derived from that job. Workbench jobs (prepare and test runs) run at `priority = -10` against production's 0.
 Prepare jobs never appear on the Jobs page and are never bulk-deleted, dev test runs are ordinary test jobs, and a sample's
 document is never deleted along with a job.
+
+Repeating sections ([spec](superpowers/specs/2026-10-16-repeating-sections-design.md)): a recipe section with `repeat: true` starts an occurrence at every match of its anchor, and each occurrence runs to the next start of any section. Its `key` regex names an occurrence (the batch); with `keyFrom: <section>` an occurrence whose own key finds nothing takes the key of the nearest preceding occurrence of that repeating section, and `segment.key_issues` checks the section against that source (a batch with no occurrence, a key no batch has, an own key that differs from the heading above): key issues are job issues with step `segment` and review reasons (`n section key issue(s)`, then `section key issue: <message>` each); a heading whose key cannot be read passes on no key, so its blocks are flagged rather than given the previous batch's. A table step reading a repeating section runs one model call per occurrence (times chunks), told which occurrence it reads, and the worker fills its `keyColumn` with the occurrence's key (the column is left out of the schema and the column list the model sees). Recipes without `repeat` segment, prompt and cache exactly as before.
 
 Anchor previews are `segment` jobs (`priority = -5`, migration 0009): project-scoped with no document, one per project, running the production `segment.section_spans` over the project's prepared samples in a child process capped at 10 s and writing a segmentation result to the runs bucket. They never appear on the Jobs page and are not retryable or cancellable there. Idle workers wake on `NOTIFY ih_jobs` rather than waiting for the poll; the UI polls the preview every 300 ms (30 s deadline).
 

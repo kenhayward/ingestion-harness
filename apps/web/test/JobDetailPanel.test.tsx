@@ -281,7 +281,15 @@ describe('JobDetailPanel step times', () => {
         {...defaults}
         now={Date.parse(at(60))}
         wide
-        progress={{ kind: 'step', step: 'a', index: 1, of: 2, attempt: 1, chunk: null }}
+        progress={{
+          kind: 'step',
+          step: 'a',
+          index: 1,
+          of: 2,
+          attempt: 1,
+          chunk: null,
+          occurrence: null,
+        }}
         stageTimes={{ readAt: at(20), segmentedAt: at(25) }}
       />,
     );

@@ -4463,6 +4463,17 @@
                                       },
                                       "description": {
                                         "type": "string"
+                                      },
+                                      "repeat": {
+                                        "type": "boolean"
+                                      },
+                                      "key": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "keyFrom": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_-]*$"
                                       }
                                     },
                                     "required": [
@@ -4827,6 +4838,17 @@
                                       },
                                       "description": {
                                         "type": "string"
+                                      },
+                                      "repeat": {
+                                        "type": "boolean"
+                                      },
+                                      "key": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "keyFrom": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_-]*$"
                                       }
                                     },
                                     "required": [
@@ -5040,6 +5062,10 @@
                                           "pattern": "^[a-z][a-z0-9_-]*$"
                                         },
                                         "default": {}
+                                      },
+                                      "keyColumn": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_-]*$"
                                       }
                                     },
                                     "required": [
@@ -7151,6 +7177,39 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "occurrence": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "n": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "of": {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        "key": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "n",
+                                        "of",
+                                        "key"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "default": null
                                 },
                                 "kind": {
                                   "type": "string",
@@ -9799,6 +9858,39 @@
                                         }
                                       ]
                                     },
+                                    "occurrence": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "n": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "of": {
+                                              "type": "integer",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "key": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "n",
+                                            "of",
+                                            "key"
+                                          ],
+                                          "additionalProperties": true
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "default": null
+                                    },
                                     "kind": {
                                       "type": "string",
                                       "enum": [
@@ -9984,6 +10076,17 @@
                                   },
                                   "description": {
                                     "type": "string"
+                                  },
+                                  "repeat": {
+                                    "type": "boolean"
+                                  },
+                                  "key": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "keyFrom": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                   }
                                 },
                                 "required": [
@@ -10197,6 +10300,10 @@
                                       "pattern": "^[a-z][a-z0-9_-]*$"
                                     },
                                     "default": {}
+                                  },
+                                  "keyColumn": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                   }
                                 },
                                 "required": [
@@ -25293,6 +25400,39 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "occurrence": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "n": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "of": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "key": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "n",
+                                      "of",
+                                      "key"
+                                    ],
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "default": null
                               }
                             },
                             "required": [
@@ -25562,6 +25702,63 @@
                                           "type": "integer",
                                           "minimum": 0
                                         },
+                                        "occurrences": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "page": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "line": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "chars": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                              },
+                                              "key": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "keySource": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "own",
+                                                      "inherited"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "page",
+                                              "line",
+                                              "chars",
+                                              "key",
+                                              "keySource"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        },
                                         "matches": {
                                           "type": "integer",
                                           "minimum": 0
@@ -25575,6 +25772,12 @@
                                         "chars"
                                       ],
                                       "additionalProperties": true
+                                    }
+                                  },
+                                  "keyIssues": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
                                     }
                                   }
                                 },
@@ -25936,6 +26139,63 @@
                                           "type": "integer",
                                           "minimum": 0
                                         },
+                                        "occurrences": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "page": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "line": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "chars": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                              },
+                                              "key": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "keySource": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "own",
+                                                      "inherited"
+                                                    ]
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "page",
+                                              "line",
+                                              "chars",
+                                              "key",
+                                              "keySource"
+                                            ],
+                                            "additionalProperties": true
+                                          }
+                                        },
                                         "matches": {
                                           "type": "integer",
                                           "minimum": 0
@@ -25949,6 +26209,12 @@
                                         "chars"
                                       ],
                                       "additionalProperties": true
+                                    }
+                                  },
+                                  "keyIssues": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
                                     }
                                   }
                                 },
@@ -28199,6 +28465,17 @@
                                               },
                                               "description": {
                                                 "type": "string"
+                                              },
+                                              "repeat": {
+                                                "type": "boolean"
+                                              },
+                                              "key": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "keyFrom": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
                                               }
                                             },
                                             "required": [
@@ -28398,6 +28675,10 @@
                                                       "pattern": "^[a-z][a-z0-9_-]*$"
                                                     },
                                                     "default": {}
+                                                  },
+                                                  "keyColumn": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                                   }
                                                 },
                                                 "required": [
@@ -29160,6 +29441,63 @@
                                                       "type": "integer",
                                                       "minimum": 0
                                                     },
+                                                    "occurrences": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "page": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "integer",
+                                                                "exclusiveMinimum": 0
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "line": {
+                                                            "type": [
+                                                              "string",
+                                                              "null"
+                                                            ]
+                                                          },
+                                                          "chars": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                          },
+                                                          "key": {
+                                                            "type": [
+                                                              "string",
+                                                              "null"
+                                                            ]
+                                                          },
+                                                          "keySource": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "own",
+                                                                  "inherited"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "page",
+                                                          "line",
+                                                          "chars",
+                                                          "key",
+                                                          "keySource"
+                                                        ],
+                                                        "additionalProperties": true
+                                                      }
+                                                    },
                                                     "matches": {
                                                       "type": "integer",
                                                       "minimum": 0
@@ -29173,6 +29511,12 @@
                                                     "chars"
                                                   ],
                                                   "additionalProperties": true
+                                                }
+                                              },
+                                              "keyIssues": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
                                                 }
                                               }
                                             },
@@ -32198,6 +32542,17 @@
                                                 },
                                                 "description": {
                                                   "type": "string"
+                                                },
+                                                "repeat": {
+                                                  "type": "boolean"
+                                                },
+                                                "key": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "keyFrom": {
+                                                  "type": "string",
+                                                  "pattern": "^[a-z][a-z0-9_-]*$"
                                                 }
                                               },
                                               "required": [
@@ -32397,6 +32752,10 @@
                                                         "pattern": "^[a-z][a-z0-9_-]*$"
                                                       },
                                                       "default": {}
+                                                    },
+                                                    "keyColumn": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
                                                     }
                                                   },
                                                   "required": [
@@ -33159,6 +33518,63 @@
                                                         "type": "integer",
                                                         "minimum": 0
                                                       },
+                                                      "occurrences": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "object",
+                                                          "properties": {
+                                                            "page": {
+                                                              "anyOf": [
+                                                                {
+                                                                  "type": "integer",
+                                                                  "exclusiveMinimum": 0
+                                                                },
+                                                                {
+                                                                  "type": "null"
+                                                                }
+                                                              ]
+                                                            },
+                                                            "line": {
+                                                              "type": [
+                                                                "string",
+                                                                "null"
+                                                              ]
+                                                            },
+                                                            "chars": {
+                                                              "type": "integer",
+                                                              "minimum": 0
+                                                            },
+                                                            "key": {
+                                                              "type": [
+                                                                "string",
+                                                                "null"
+                                                              ]
+                                                            },
+                                                            "keySource": {
+                                                              "anyOf": [
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "own",
+                                                                    "inherited"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "null"
+                                                                }
+                                                              ]
+                                                            }
+                                                          },
+                                                          "required": [
+                                                            "page",
+                                                            "line",
+                                                            "chars",
+                                                            "key",
+                                                            "keySource"
+                                                          ],
+                                                          "additionalProperties": true
+                                                        }
+                                                      },
                                                       "matches": {
                                                         "type": "integer",
                                                         "minimum": 0
@@ -33172,6 +33588,12 @@
                                                       "chars"
                                                     ],
                                                     "additionalProperties": true
+                                                  }
+                                                },
+                                                "keyIssues": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string"
                                                   }
                                                 }
                                               },
@@ -33932,6 +34354,17 @@
                                               },
                                               "description": {
                                                 "type": "string"
+                                              },
+                                              "repeat": {
+                                                "type": "boolean"
+                                              },
+                                              "key": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "keyFrom": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
                                               }
                                             },
                                             "required": [
@@ -34131,6 +34564,10 @@
                                                       "pattern": "^[a-z][a-z0-9_-]*$"
                                                     },
                                                     "default": {}
+                                                  },
+                                                  "keyColumn": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                                   }
                                                 },
                                                 "required": [
@@ -34893,6 +35330,63 @@
                                                       "type": "integer",
                                                       "minimum": 0
                                                     },
+                                                    "occurrences": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "page": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "integer",
+                                                                "exclusiveMinimum": 0
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "line": {
+                                                            "type": [
+                                                              "string",
+                                                              "null"
+                                                            ]
+                                                          },
+                                                          "chars": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                          },
+                                                          "key": {
+                                                            "type": [
+                                                              "string",
+                                                              "null"
+                                                            ]
+                                                          },
+                                                          "keySource": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "own",
+                                                                  "inherited"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "page",
+                                                          "line",
+                                                          "chars",
+                                                          "key",
+                                                          "keySource"
+                                                        ],
+                                                        "additionalProperties": true
+                                                      }
+                                                    },
                                                     "matches": {
                                                       "type": "integer",
                                                       "minimum": 0
@@ -34906,6 +35400,12 @@
                                                     "chars"
                                                   ],
                                                   "additionalProperties": true
+                                                }
+                                              },
+                                              "keyIssues": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
                                                 }
                                               }
                                             },

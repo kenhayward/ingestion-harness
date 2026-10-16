@@ -6,6 +6,7 @@ import {
   RETRY_WARN_ATTEMPTS,
   retryWarning,
   sectionIds,
+  repeatLine,
   stepCards,
   stepFigures,
 } from '../src/workbench/steps.js';
@@ -182,4 +183,26 @@ describe('step figures', () => {
       'Needs a retry on many runs (2.0 attempts on average): the first answer often fails the checks. Narrow the sections it reads or add instructions below.',
     );
   });
+});
+
+const REPEAT_SECTIONS = [
+  { id: 'front', anchor: '\\A' },
+  { id: 'batch', anchor: '^\\d+\\. STUDY', repeat: true, key: 'BATCH (.+)' },
+  { id: 'appearance', anchor: '^Table', repeat: true, key: 'Batch (.+)', keyFrom: 'batch' },
+  { id: 'plain_repeat', anchor: '^Annex', repeat: true },
+];
+
+describe('repeatLine', () => {
+  const def = (step: Record<string, unknown>) => ({
+    document: { sections: REPEAT_SECTIONS },
+    pipeline: [{ type: 'extract', id: 's', ...step }],
+  });
+  it.each([
+    [
+      { table: 't', sections: ['appearance'], keyColumn: 'batch' },
+      'Once per appearance · batch from its key',
+    ],
+    [{ table: 't', sections: ['appearance'] }, 'Once per appearance'],
+    [{ table: 't', sections: ['front'] }, null],
+  ])('%#', (step, text) => expect(repeatLine(def(step), 's')).toBe(text));
 });
