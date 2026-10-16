@@ -2,6 +2,7 @@ import { useId } from 'react';
 import type { JobSummary, ModelChoice } from '@ih/shared';
 import type { ReviewData } from '../api/client.js';
 import { modelLabel } from '../jobs/derive.js';
+import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { StatusPill } from '../ui/StatusPill.js';
 import { reviewQueue } from './queue.js';
@@ -55,6 +56,7 @@ export function ReviewHeader({
             )}
           </div>
         )}
+        <HelpButton topic="review" />
       </header>
       {reasons.length > 0 && (
         <div className="why callout tone-warn" role="note" aria-labelledby={reasonsId}>

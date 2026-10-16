@@ -4831,3 +4831,26 @@ img.avatar {
 .help-center-body > * {
   max-width: 46rem;
 }
+
+/* Workbench tab help: the last of a tab header's actions (TabHeader), centred on them; on the
+   Overview (no header) a row of its own at the panel's top right. The text takes what is left, so
+   the actions and the ? stay at the top right beside it until the panel is narrow. */
+.tab-header-text {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+.tab-actions > .help-button {
+  align-self: center;
+}
+.tab-help-corner {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+/* Review: the help at the header's top right, the queue just left of it. */
+.review-header > .help-button {
+  align-self: flex-start;
+}
+.review-header > .review-queue {
+  margin-left: auto;
+}

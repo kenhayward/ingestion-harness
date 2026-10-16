@@ -22,7 +22,9 @@ import { SectionsTab } from './SectionsTab.js';
 import { MappingTab } from './MappingTab.js';
 import { StagePanel } from './StagePanel.js';
 import { SurveyTab } from './SurveyTab.js';
-import { TabHeader } from './TabHeader.js';
+import { TabHeader, TabHelpTopic } from './TabHeader.js';
+import type { HelpTopicId } from '../help/topics.js';
+import { HelpButton } from '../ui/Help.js';
 
 const TAB_TITLE: Record<Exclude<ProjectTab, 'overview'>, string> = {
   samples: 'Samples',
@@ -84,6 +86,23 @@ function DeleteProject({
 }
 
 /** Resets the project after its id is typed (Overview tab); the caller shows a refusal. */
+/** Each project tab's help topic, shown at the top right of its panel. */
+export const WB_TAB_HELP: Record<ProjectTab, HelpTopicId> = {
+  overview: 'wbOverview',
+  samples: 'wbSamples',
+  brief: 'wbBrief',
+  survey: 'wbSurvey',
+  outputs: 'wbOutputs',
+  sections: 'wbSections',
+  steps: 'wbSteps',
+  mapping: 'wbMapping',
+  references: 'wbReferences',
+  evaluate: 'wbEvaluate',
+  revise: 'wbRevise',
+  template: 'wbRecipe',
+  runs: 'wbRuns',
+};
+
 function ResetProject({ projectId, onReset }: { projectId: string; onReset: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState('');
@@ -306,252 +325,257 @@ export function ProjectPage({
           onNavigate={onNavigate}
         />
         <div className="project-tab">
-          {tab === 'overview' &&
-            (overview ? (
+          <TabHelpTopic.Provider value={WB_TAB_HELP[tab]}>
+            {tab === 'overview' &&
+              (overview ? (
+                <>
+                  <div className="tab-help-corner">
+                    <HelpButton topic="wbOverview" />
+                  </div>
+                  <OverviewTab projectId={project.id} overview={overview} />
+                  {notice && <p role="status">{notice}</p>}
+                  <ResetProject
+                    projectId={project.id}
+                    onReset={() =>
+                      act(async () => {
+                        setNotice(null);
+                        await api.resetProject(project.id);
+                        forgetProjectDrafts(project.id);
+                        changed();
+                        setNotice(
+                          "Project reset: the samples and the brief's written sections were kept.",
+                        );
+                      })
+                    }
+                  />
+                </>
+              ) : (
+                !overviewError && <p>Loading…</p>
+              ))}
+            {tab === 'samples' && (
               <>
-                <OverviewTab projectId={project.id} overview={overview} />
-                {notice && <p role="status">{notice}</p>}
-                <ResetProject
+                {header(
+                  'samples',
+                  'Develop with 3–8 dev samples and keep at least 2 holdout samples for the publish gate. Holdout text is never sent to a model.',
+                )}
+                <SamplesTab
+                  api={api}
                   projectId={project.id}
-                  onReset={() =>
-                    act(async () => {
-                      setNotice(null);
-                      await api.resetProject(project.id);
-                      forgetProjectDrafts(project.id);
-                      changed();
-                      setNotice(
-                        "Project reset: the samples and the brief's written sections were kept.",
-                      );
-                    })
-                  }
+                  pollMs={pollMs}
+                  onChanged={loadOverview}
+                  retired={retired}
                 />
               </>
-            ) : (
-              !overviewError && <p>Loading…</p>
-            ))}
-          {tab === 'samples' && (
-            <>
-              {header(
-                'samples',
-                'Develop with 3–8 dev samples and keep at least 2 holdout samples for the publish gate. Holdout text is never sent to a model.',
-              )}
-              <SamplesTab
+            )}
+            {tab === 'brief' && (
+              <BriefTab
                 api={api}
                 projectId={project.id}
+                brief={view.brief}
+                item={itemOf('brief')}
+                onNavigate={onNavigate}
+                onSaved={(brief) => {
+                  setView({ ...view, brief });
+                  loadOverview();
+                }}
+                aside={
+                  <ExportPanel
+                    api={api}
+                    role={role}
+                    projectId={project.id}
+                    dataPolicy={project.dataPolicy}
+                    pollMs={pollMs}
+                  />
+                }
+              />
+            )}
+            {tab === 'survey' && (
+              <SurveyTab
+                api={api}
+                projectId={project.id}
+                dataPolicy={project.dataPolicy}
+                brief={view.brief}
+                onBriefSaved={(brief) => {
+                  setView({ ...view, brief });
+                  loadOverview();
+                }}
+                pollMs={pollMs}
+                onChanged={changed}
+                item={itemOf('survey')}
+                retired={retired}
+                view={surveyView}
+              />
+            )}
+            {tab === 'mapping' && (
+              <MappingTab
+                api={api}
+                projectId={project.id}
+                used={vocabularyOf(view.brief?.body ?? EMPTY_BRIEF).length > 0}
+                dataPolicy={project.dataPolicy}
+                hasDraft={draft !== null}
+                draft={draft}
+                published={published}
+                briefVersion={view.brief?.version ?? null}
+                pollMs={pollMs}
+                item={itemOf('mapping')}
+                retired={retired}
+                onApplied={changed}
+                onSkipped={changed}
+                onNavigate={onNavigate}
+              />
+            )}
+            {(tab === 'outputs' || tab === 'steps') && (
+              <StagePanel
+                key={tab}
+                api={api}
+                projectId={project.id}
+                stage={tab}
+                title={TAB_TITLE[tab]}
+                item={itemOf(tab)}
+                dataPolicy={project.dataPolicy}
+                hasDraft={draft !== null}
+                draft={draft}
+                published={published}
+                briefVersion={view.brief?.version ?? null}
+                pollMs={pollMs}
+                onApplied={changed}
+                onSkipped={changed}
+                retired={retired}
+              />
+            )}
+            {tab === 'sections' && (
+              <>
+                <StagePanel
+                  key={`sections-${revision}`}
+                  api={api}
+                  projectId={project.id}
+                  stage="sections"
+                  title={TAB_TITLE.sections}
+                  item={itemOf('sections')}
+                  dataPolicy={project.dataPolicy}
+                  hasDraft={draft !== null}
+                  briefVersion={view.brief?.version ?? null}
+                  pollMs={pollMs}
+                  onApplied={changed}
+                  onConfirmed={loadOverview}
+                  onSkipped={changed}
+                  blockedReason={anchorsDirty ? 'Save your unsaved anchors first' : null}
+                  retired={retired}
+                />
+                <SectionsTab
+                  key={revision}
+                  onDirtyChange={setAnchorsDirty}
+                  api={api}
+                  projectId={project.id}
+                  draft={draft}
+                  pollMs={300}
+                />
+              </>
+            )}
+            {tab === 'references' && (
+              <ReferencesTab
+                key={`references-${revision}`}
+                api={api}
+                projectId={project.id}
+                dataPolicy={project.dataPolicy}
+                draft={draft}
+                published={published}
+                item={itemOf('references')}
+                pollMs={pollMs}
+                onChanged={changed}
+                retired={retired}
+              />
+            )}
+            {tab === 'evaluate' &&
+              header(
+                'evaluate',
+                'Runs the draft on samples with verified references and scores every value against them. Dev runs guide your changes; holdout runs measure the draft against the publish threshold. Both are optional.',
+              )}
+            {tab === 'evaluate' && (
+              <EvaluateTab
+                api={api}
+                projectId={project.id}
+                dataPolicy={project.dataPolicy}
+                draft={draft}
+                published={published}
+                pollMs={pollMs}
+                onRestored={changed}
+                onStarted={loadOverview}
+                onGateChanged={loadOverview}
+                retired={retired}
+              />
+            )}
+            {tab === 'revise' && header('revise')}
+            {tab === 'revise' && (
+              <ReviseTab
+                api={api}
+                projectId={project.id}
+                dataPolicy={project.dataPolicy}
+                draft={draft}
+                pollMs={pollMs}
+                onApplied={changed}
+                onChanged={loadOverview}
+                retired={retired}
+              />
+            )}
+            {tab === 'runs' && (
+              <RunsTab
+                api={api}
+                projectId={project.id}
+                dataPolicy={project.dataPolicy}
+                draft={draft}
+                item={itemOf('runs')}
                 pollMs={pollMs}
                 onChanged={loadOverview}
                 retired={retired}
               />
-            </>
-          )}
-          {tab === 'brief' && (
-            <BriefTab
-              api={api}
-              projectId={project.id}
-              brief={view.brief}
-              item={itemOf('brief')}
-              onNavigate={onNavigate}
-              onSaved={(brief) => {
-                setView({ ...view, brief });
-                loadOverview();
-              }}
-              aside={
-                <ExportPanel
-                  api={api}
-                  role={role}
-                  projectId={project.id}
-                  dataPolicy={project.dataPolicy}
-                  pollMs={pollMs}
-                />
-              }
-            />
-          )}
-          {tab === 'survey' && (
-            <SurveyTab
-              api={api}
-              projectId={project.id}
-              dataPolicy={project.dataPolicy}
-              brief={view.brief}
-              onBriefSaved={(brief) => {
-                setView({ ...view, brief });
-                loadOverview();
-              }}
-              pollMs={pollMs}
-              onChanged={changed}
-              item={itemOf('survey')}
-              retired={retired}
-              view={surveyView}
-            />
-          )}
-          {tab === 'mapping' && (
-            <MappingTab
-              api={api}
-              projectId={project.id}
-              used={vocabularyOf(view.brief?.body ?? EMPTY_BRIEF).length > 0}
-              dataPolicy={project.dataPolicy}
-              hasDraft={draft !== null}
-              draft={draft}
-              published={published}
-              briefVersion={view.brief?.version ?? null}
-              pollMs={pollMs}
-              item={itemOf('mapping')}
-              retired={retired}
-              onApplied={changed}
-              onSkipped={changed}
-              onNavigate={onNavigate}
-            />
-          )}
-          {(tab === 'outputs' || tab === 'steps') && (
-            <StagePanel
-              key={tab}
-              api={api}
-              projectId={project.id}
-              stage={tab}
-              title={TAB_TITLE[tab]}
-              item={itemOf(tab)}
-              dataPolicy={project.dataPolicy}
-              hasDraft={draft !== null}
-              draft={draft}
-              published={published}
-              briefVersion={view.brief?.version ?? null}
-              pollMs={pollMs}
-              onApplied={changed}
-              onSkipped={changed}
-              retired={retired}
-            />
-          )}
-          {tab === 'sections' && (
-            <>
-              <StagePanel
-                key={`sections-${revision}`}
-                api={api}
-                projectId={project.id}
-                stage="sections"
-                title={TAB_TITLE.sections}
-                item={itemOf('sections')}
-                dataPolicy={project.dataPolicy}
-                hasDraft={draft !== null}
-                briefVersion={view.brief?.version ?? null}
-                pollMs={pollMs}
-                onApplied={changed}
-                onConfirmed={loadOverview}
-                onSkipped={changed}
-                blockedReason={anchorsDirty ? 'Save your unsaved anchors first' : null}
-                retired={retired}
-              />
-              <SectionsTab
-                key={revision}
-                onDirtyChange={setAnchorsDirty}
-                api={api}
-                projectId={project.id}
-                draft={draft}
-                pollMs={300}
-              />
-            </>
-          )}
-          {tab === 'references' && (
-            <ReferencesTab
-              key={`references-${revision}`}
-              api={api}
-              projectId={project.id}
-              dataPolicy={project.dataPolicy}
-              draft={draft}
-              published={published}
-              item={itemOf('references')}
-              pollMs={pollMs}
-              onChanged={changed}
-              retired={retired}
-            />
-          )}
-          {tab === 'evaluate' &&
-            header(
-              'evaluate',
-              'Runs the draft on samples with verified references and scores every value against them. Dev runs guide your changes; holdout runs measure the draft against the publish threshold. Both are optional.',
             )}
-          {tab === 'evaluate' && (
-            <EvaluateTab
-              api={api}
-              projectId={project.id}
-              dataPolicy={project.dataPolicy}
-              draft={draft}
-              published={published}
-              pollMs={pollMs}
-              onRestored={changed}
-              onStarted={loadOverview}
-              onGateChanged={loadOverview}
-              retired={retired}
-            />
-          )}
-          {tab === 'revise' && header('revise')}
-          {tab === 'revise' && (
-            <ReviseTab
-              api={api}
-              projectId={project.id}
-              dataPolicy={project.dataPolicy}
-              draft={draft}
-              pollMs={pollMs}
-              onApplied={changed}
-              onChanged={loadOverview}
-              retired={retired}
-            />
-          )}
-          {tab === 'runs' && (
-            <RunsTab
-              api={api}
-              projectId={project.id}
-              dataPolicy={project.dataPolicy}
-              draft={draft}
-              item={itemOf('runs')}
-              pollMs={pollMs}
-              onChanged={loadOverview}
-              retired={retired}
-            />
-          )}
-          {tab === 'template' &&
-            (draft !== null ? (
-              // The editor owns its tab header ("Transformation recipe · draft vN", Try on, Export, More).
-              <TemplateEditor
-                key={draft}
-                api={api}
-                templateId={project.id}
-                version={draft}
-                onNavigate={onNavigate}
-                embedded={{
-                  onChanged: () => {
-                    load();
-                    loadOverview();
-                  },
-                  onSaved: loadOverview,
-                  dataPolicy: project.dataPolicy,
-                  stages: overview?.stages ?? null,
-                  item: itemOf('template'),
-                  published,
-                  retired: view.retired ?? null,
-                }}
-              />
-            ) : (
-              <>
-                {header('template')}
-                <div className="card">
-                  <p>Every version is published; start the next one to keep developing.</p>
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={retired !== null}
-                    title={retired ?? undefined}
-                    onClick={() =>
-                      void act(async () => {
-                        await api.newDraft(project.id, published!);
-                        load();
-                        loadOverview();
-                      })
-                    }
-                  >
-                    Start v{(published ?? 0) + 1}
-                  </button>
-                </div>
-              </>
-            ))}
+            {tab === 'template' &&
+              (draft !== null ? (
+                // The editor owns its tab header ("Transformation recipe · draft vN", Try on, Export, More).
+                <TemplateEditor
+                  key={draft}
+                  api={api}
+                  templateId={project.id}
+                  version={draft}
+                  onNavigate={onNavigate}
+                  embedded={{
+                    onChanged: () => {
+                      load();
+                      loadOverview();
+                    },
+                    onSaved: loadOverview,
+                    dataPolicy: project.dataPolicy,
+                    stages: overview?.stages ?? null,
+                    item: itemOf('template'),
+                    published,
+                    retired: view.retired ?? null,
+                  }}
+                />
+              ) : (
+                <>
+                  {header('template')}
+                  <div className="card">
+                    <p>Every version is published; start the next one to keep developing.</p>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={retired !== null}
+                      title={retired ?? undefined}
+                      onClick={() =>
+                        void act(async () => {
+                          await api.newDraft(project.id, published!);
+                          load();
+                          loadOverview();
+                        })
+                      }
+                    >
+                      Start v{(published ?? 0) + 1}
+                    </button>
+                  </div>
+                </>
+              ))}
+          </TabHelpTopic.Provider>
         </div>
       </div>
       {published === null && (
