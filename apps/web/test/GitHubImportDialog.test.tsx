@@ -122,4 +122,15 @@ describe('ImportDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('memo already exists');
     expect(onOpened).not.toHaveBeenCalled();
   });
+
+  it('forgets the browsed pick when the repository, branch or folder changes', async () => {
+    const { api } = setup(true);
+    await browse();
+    await userEvent.click(await screen.findByRole('radio', { name: /v3/ }));
+    await userEvent.clear(screen.getByRole('textbox', { name: 'Branch' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Branch' }), 'dev');
+    expect(screen.queryByRole('radio', { name: /v3/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+    expect(api.importFromGitHub).not.toHaveBeenCalled();
+  });
 });

@@ -146,4 +146,47 @@ describe('PullDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('the draft changed while applying');
     expect(onDraft).not.toHaveBeenCalled();
   });
+
+  it('offers this deployment rows only what their comparison allows', async () => {
+    const all = {
+      versions: [
+        rv({ version: 1, compare: 'same' }),
+        rv({ version: 2, label: 'L', compare: 'label' }),
+        rv({ version: 3, compare: 'differs' }),
+        rv({ version: 5, compare: 'missing-here' }),
+      ],
+      skipped: [],
+    };
+    setup({}, { listGitHubRemote: vi.fn(async () => all) });
+    const mine = await screen.findByRole('region', { name: 'This deployment' });
+    const rows = within(mine).getAllByRole('listitem');
+    expect(rows).toHaveLength(4);
+    const byText = (t: string) => rows.find((r) => r.textContent!.includes(t))!;
+    const buttons = (r: HTMLElement) =>
+      within(r)
+        .queryAllByRole('button')
+        .map((b) => b.textContent);
+    expect(buttons(byText('v1'))).toEqual([]);
+    expect(buttons(byText('v2'))).toEqual(["Take GitHub's label"]);
+    expect(buttons(byText('v3'))).toEqual([]);
+    expect(within(byText('v3')).getByText('Different from here')).toBeInTheDocument();
+    expect(buttons(byText('v5'))).toEqual(['Use as draft…']);
+  });
+
+  it("refetches the listing after taking GitHub's label", async () => {
+    const after = {
+      versions: [rv({ version: 2, label: 'Signed off', compare: 'same' })],
+      skipped: [],
+    };
+    const before = {
+      versions: [rv({ version: 2, label: 'Signed off', compare: 'label' })],
+      skipped: [],
+    };
+    const list = vi.fn().mockResolvedValueOnce(before).mockResolvedValue(after);
+    setup({}, { listGitHubRemote: list });
+    await userEvent.click(await screen.findByRole('button', { name: "Take GitHub's label" }));
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Same as here')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Take GitHub's label" })).not.toBeInTheDocument();
+  });
 });

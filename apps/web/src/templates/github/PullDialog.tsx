@@ -47,6 +47,7 @@ export function PullDialog({
   const [busy, setBusy] = useState<string | null>(null);
   const reasonId = useId();
 
+  const [reloads, setReloads] = useState(0);
   useEffect(() => {
     let live = true;
     api.listGitHubRemote(templateId).then(
@@ -60,7 +61,7 @@ export function PullDialog({
     return () => {
       live = false;
     };
-  }, [api, templateId]);
+  }, [api, templateId, reloads]);
 
   const reason = retired ?? (dirty ? DIRTY_REASON : null);
 
@@ -93,13 +94,14 @@ export function PullDialog({
             onClick={() =>
               void act(key, async () => {
                 onTaken(await api.takeGitHubLabel(templateId, v.version, commit));
+                setReloads((r) => r + 1);
               })
             }
           >
             Take GitHub&apos;s label
           </button>
         )}
-        {commit && (
+        {commit && (!v.mine || v.compare === 'missing-here') && (
           <>
             <button
               type="button"

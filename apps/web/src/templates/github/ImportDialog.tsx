@@ -77,6 +77,13 @@ export function ImportDialog({
     return suggested ? [suggested, ...rest] : rest;
   })();
 
+  /** The browsed listing belongs to one repository, branch and folder: any change forgets it. */
+  const edit = (set: (v: string) => void) => (v: string) => {
+    set(v);
+    setListing(null);
+    setPicked(null);
+  };
+
   const browse = async () => {
     if (!repo || browsing) return;
     setBrowsing(true);
@@ -138,7 +145,11 @@ export function ImportDialog({
       <div className="dialog-form">
         <label>
           Repository
-          <select value={repo} onChange={(e) => setRepo(e.target.value)} disabled={repos === null}>
+          <select
+            value={repo}
+            onChange={(e) => edit(setRepo)(e.target.value)}
+            disabled={repos === null}
+          >
             {options.map((n) => (
               <option key={n} value={n}>
                 {n === suggested ? `${n} (suggested repository)` : n}
@@ -148,11 +159,11 @@ export function ImportDialog({
         </label>
         <label>
           Branch
-          <input value={branch} maxLength={250} onChange={(e) => setBranch(e.target.value)} />
+          <input value={branch} maxLength={250} onChange={(e) => edit(setBranch)(e.target.value)} />
         </label>
         <label>
           Folder
-          <input value={root} onChange={(e) => setRoot(e.target.value)} />
+          <input value={root} onChange={(e) => edit(setRoot)(e.target.value)} />
         </label>
         <div>
           <button type="button" disabled={!repo || browsing} onClick={() => void browse()}>
