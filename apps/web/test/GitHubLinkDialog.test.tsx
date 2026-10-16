@@ -88,3 +88,15 @@ describe('LinkDialog', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 });
+
+describe('GitHub sync help', () => {
+  it('opens from its button', async () => {
+    setup();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: How GitHub sync works' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'How GitHub sync works' })).toHaveTextContent(
+      'On GitHub',
+    );
+  });
+});

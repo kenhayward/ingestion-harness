@@ -13,6 +13,7 @@ import type {
   TemplateVersionItem,
 } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
+import { HelpButton } from '../ui/Help.js';
 import { changeAtText } from './editor-derive.js';
 import { GitHubStrip } from './github/GitHubStrip.js';
 import { PullDialog } from './github/PullDialog.js';
@@ -139,7 +140,9 @@ export function VersionsPanel({
 
   return (
     <section className="card versions-panel" aria-labelledby={heading}>
-      <h3 id={heading}>Versions</h3>
+      <h3 id={heading}>
+        Versions <HelpButton topic="github-sync" />
+      </h3>
       <p className="muted">
         Label a version to say what it is for. To go back to a version, copy it into the draft and
         publish that.

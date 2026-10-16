@@ -134,3 +134,15 @@ describe('ImportDialog', () => {
     expect(api.importFromGitHub).not.toHaveBeenCalled();
   });
 });
+
+describe('GitHub sync help', () => {
+  it('opens from its button', async () => {
+    setup(true);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: How GitHub sync works' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'How GitHub sync works' })).toHaveTextContent(
+      'On GitHub',
+    );
+  });
+});

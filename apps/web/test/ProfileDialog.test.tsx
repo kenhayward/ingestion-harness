@@ -172,7 +172,7 @@ describe('GitHub', () => {
     ).toBeInTheDocument();
   });
 
-  it('chooses the repository recipe YAML will be stored in', async () => {
+  it('chooses the suggested repository', async () => {
     const setGitHubRepo = vi.fn(async (repo: string | null) =>
       profile({ github: { ...LINKED, repo } }),
     );
@@ -185,8 +185,8 @@ describe('GitHub', () => {
       setGitHubRepo,
     });
     const github = await panelOf(dialog);
-    expect(github).toHaveTextContent('Recipe YAML will be stored in this repository');
-    const select = await within(github).findByRole('combobox', { name: 'YAML repository' });
+    expect(github).toHaveTextContent('Offered first when a document type is linked or imported.');
+    const select = await within(github).findByRole('combobox', { name: 'Suggested repository' });
     expect(
       within(select)
         .getAllByRole('option')
@@ -241,5 +241,17 @@ describe('Change password', () => {
     expect(api.changePassword).toHaveBeenCalledWith('my old long phrase', 'my new long phrase');
     expect(await within(panel).findByRole('status')).toHaveTextContent('Password changed.');
     expect(within(panel).queryByRole('button', { name: 'Back' })).toBeNull();
+  });
+});
+
+describe('GitHub sync help', () => {
+  it('opens from its button', async () => {
+    const { dialog } = setup({ getProfile: vi.fn(async () => profile({ github: LINKED })) });
+    await userEvent.click(
+      await within(dialog).findByRole('button', { name: 'Help: How GitHub sync works' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'How GitHub sync works' })).toHaveTextContent(
+      'On GitHub',
+    );
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { DEFAULT_SYNC_ROOT, type GitHubLinkView } from '@ih/shared';
 import type { Api } from '../../api/client.js';
 import { Dialog } from '../../ui/Dialog.js';
+import { HelpButton } from '../../ui/Help.js';
 
 /**
  * Links a document type to a GitHub repository, changes the link, or removes it (admins). The
@@ -112,6 +113,7 @@ export function LinkDialog({
         </>
       }
     >
+      <HelpButton topic="github-sync" />
       <form
         id={formId}
         className="dialog-form"

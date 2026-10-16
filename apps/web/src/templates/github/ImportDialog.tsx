@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { DEFAULT_SYNC_ROOT, type RemoteListing, type RemoteVersion } from '@ih/shared';
 import type { Api } from '../../api/client.js';
 import { Dialog } from '../../ui/Dialog.js';
+import { HelpButton } from '../../ui/Help.js';
 import { RepoBrowser } from './RepoBrowser.js';
 
 /**
@@ -142,6 +143,7 @@ export function ImportDialog({
         </button>
       }
     >
+      <HelpButton topic="github-sync" />
       <div className="dialog-form">
         <label>
           Repository

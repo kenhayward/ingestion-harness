@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import type { RemoteCompare, RemoteListingView, RemoteVersionView } from '@ih/shared';
 import type { Api, TemplateRecordView } from '../../api/client.js';
 import { Dialog } from '../../ui/Dialog.js';
+import { HelpButton } from '../../ui/Help.js';
 import { RepoBrowser, remoteKey } from './RepoBrowser.js';
 
 const DIRTY_REASON = 'Save or discard your changes first';
@@ -135,6 +136,7 @@ export function PullDialog({
 
   return (
     <Dialog title="Pull from GitHub" onClose={onClose}>
+      <HelpButton topic="github-sync" />
       {error && <p role="alert">{error}</p>}
       {listing === null && !error && <p className="muted">Loading…</p>}
       {listing !== null && (

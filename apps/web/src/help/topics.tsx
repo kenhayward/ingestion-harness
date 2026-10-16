@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { GitHubSyncHelp } from './GitHubSyncHelp.js';
 import { SectionsHelp } from './SectionsHelp.js';
 
 /** A help topic: the dialog's title and its content (HelpButton in `ui/Help.tsx`). */
@@ -9,6 +10,7 @@ export interface HelpTopic {
 
 /** Every help topic, by id. Add a topic here, then `<HelpButton topic="id" />` where needed. */
 export const HELP_TOPICS = {
+  'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   sections: { title: 'How sections work', body: <SectionsHelp /> },
 } satisfies Record<string, HelpTopic>;
 

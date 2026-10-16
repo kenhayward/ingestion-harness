@@ -190,3 +190,15 @@ describe('PullDialog', () => {
     expect(screen.queryByRole('button', { name: "Take GitHub's label" })).not.toBeInTheDocument();
   });
 });
+
+describe('GitHub sync help', () => {
+  it('opens from its button', async () => {
+    setup();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: How GitHub sync works' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'How GitHub sync works' })).toHaveTextContent(
+      'On GitHub',
+    );
+  });
+});

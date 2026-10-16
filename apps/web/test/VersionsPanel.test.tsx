@@ -374,3 +374,15 @@ describe('VersionsPanel GitHub sync', () => {
     await waitFor(() => expect(api.listVersions).toHaveBeenCalledTimes(2));
   });
 });
+
+describe('GitHub sync help', () => {
+  it('opens from its button', async () => {
+    setup(withDraft);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: How GitHub sync works' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'How GitHub sync works' })).toHaveTextContent(
+      'On GitHub',
+    );
+  });
+});
