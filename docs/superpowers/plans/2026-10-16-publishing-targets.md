@@ -205,3 +205,27 @@
 - Modify: `CLAUDE.md` (contracts row "Publishing targets (migration 0050)": TS `packages/shared/src/publish-targets.ts`, `apps/api/src/publish-targets/`, `DeliverySchema.publishTo`, `JobOutput.targetId`, `WithdrawParamsSchema` targets | Python `publish_targets.py`, `Template.publish_to`, `queue.record_published(…, target)`, `WithdrawParams` targets; fixture `publish-targets.json`; a Rules-of-the-road bullet; Results bullet and ADR 0008 bullet updated; `TARGET_S3_*` only seed `default`), `deploy/.env.example` (comment: seeds the `default` target on first start, then Administration > Published outputs), `deploy/README.md`, `docs/adr/0008-s3-read-keys.md` (status note: keys per internal target), `docs/architecture.md` (publish target paragraph), `docs/openapi.json` (`npm run openapi`)
 
 - [ ] **Step 1:** Write the doc changes.  **Step 2:** `npm run check` and `npm run worker:test` PASS.  **Step 3: Commit** `docs: publishing targets`
+
+### Task 11: A second SeaweedFS as an external endpoint
+
+A throwaway SeaweedFS outside the compose stack stands in for "someone else's S3", so the external
+path (own endpoint, own keys, path style, bucket errors) is exercised against a real S3 server, not
+only fakes.
+
+**Files:**
+- Create: `deploy/scripts/external-s3.sh` and `deploy/scripts/external-s3.ps1` (`up` | `down` | `env`), `apps/api/test/integration/publish-targets-external.test.ts`, `worker/tests/test_publish_targets_integration.py`
+- Modify: `CLAUDE.md` (Commands table row and the integration-test paragraph), `deploy/README.md`
+
+**Interfaces:**
+- `external-s3 up`: `docker run -d --rm --name ih-external-s3 -p 127.0.0.1:8433:8333` with the **same pinned image as compose** (`chrislusf/seaweedfs:4.48`; read it from `deploy/docker-compose.yml` rather than hard-coding a second copy), the existing `deploy/seaweedfs/s3.json.template` rendered with its own keys (`IH_EXTERNAL_S3_ACCESS_KEY`/`_SECRET_KEY`, default `ext-test-access` / `ext-test-secret`), `weed server -dir=/data -volume.max=0 -s3 -s3.port=8333 -s3.config=/tmp/s3.json`; waits until the S3 port answers; creates bucket `ext-published`. `env` prints `IH_TEST_EXTERNAL_S3_ENDPOINT=http://localhost:8433`, `…_REGION=us-east-1`, `…_ACCESS_KEY`, `…_SECRET_KEY`, `…_BUCKET=ext-published`. `down` stops it (no volume: data is throwaway). From containers of the dev stack the endpoint is `http://host.docker.internal:8433`.
+- Both tests skip unless `IH_TEST_EXTERNAL_S3_ENDPOINT` is set (API: under `apps/api/test/integration/`, run by `npm run test:integration`; worker: `@pytest.mark.integration`).
+
+- [ ] **Step 1: Write the tests**
+  - API: `TargetStores` with an external target over the container (`forcePathStyle: true`, secret encrypted with a test `SecretsKeys`): `probeTarget` → `ok: true`; a wrong secret → `ok: false, step: 'connect'|'write'` with `access denied`; bucket `no-such-bucket-xyz` → `no such bucket`; put with `storageClass: 'STANDARD'` then get returns the bytes; a key under prefix `ingest/` lands at `ingest/<key>`; rotating the secret through the repo (PATCH) keeps reads working without rebuilding `TargetStores`.
+  - Worker: `LiveTargets` over a `MemoryPublishTargetStore` holding the external row: `get(id).store.put` then `get` round-trips; a wrong secret raises from `put`.
+- [ ] **Step 2: Run without the container** — both skip (no failure).
+- [ ] **Step 3: Write the scripts; run `deploy/scripts/external-s3.ps1 up`, export its `env` output, run** `npx vitest run --config apps/api/vitest.integration.config.ts publish-targets-external` **and** `cd worker && uv run pytest -m integration tests/test_publish_targets_integration.py` — PASS. Fix code, not tests, if the real server disagrees with the fakes (e.g. error names), and add the disagreement to the fakes so unit tests learn it.
+- [ ] **Step 4: `external-s3 down`; `npm run check` PASS**
+- [ ] **Step 5: Commit** `test: a second SeaweedFS as an external publishing target`
+
+**End-to-end (controller, after Task 11, only with the user's go-ahead because it redeploys their running stack):** with the container up, deploy the branch to the dev stack, add an external target `ext-lake` (endpoint `http://host.docker.internal:8433`, path style on) on Published outputs, *Test connection*, publish a test recipe version with *Publish to* `ext-lake`, upload a document, approve it, and check the object in `ext-published`, the Results page opening it, and retiring the type withdrawing it from the external bucket while a `default` delivery of an older version is withdrawn from the internal one.
