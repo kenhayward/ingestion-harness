@@ -45,3 +45,26 @@ describe('Sections help', () => {
     expect(dialog).toHaveTextContent('needs review');
   });
 });
+
+describe('help topics for the recipe tabs', () => {
+  it.each([
+    ['general', 'General recipe settings', ['Preamble', 'Review', 'OCR', 'Delivered formats']],
+    ['outputs', 'Outputs: fields and tables', ['Type', 'Description', 'exactly one step']],
+    ['pipeline', 'How the pipeline runs', ['Extract steps', 'Check steps', 'Pages per call']],
+    ['mapping', 'Mapping outputs to an ontology', ['literal', 'entity', 'concept', 'Shapes']],
+    ['yaml', 'Editing the recipe as YAML', ['Apply YAML']],
+    ['quality', 'Reading the Quality tab', ['Review rate', 'Avg attempts']],
+    ['versions', 'Versions, labels and drafts', ['Replace draft', 'Label']],
+  ] as const)('%s: %s', async (topic, title, mentions) => {
+    render(<HelpButton topic={topic} />);
+    await userEvent.click(screen.getByRole('button', { name: `Help: ${title}` }));
+    const dialog = screen.getByRole('dialog', { name: title });
+    for (const m of mentions) expect(dialog).toHaveTextContent(m);
+  });
+
+  it('opens in the wider help dialog', async () => {
+    render(<HelpButton topic="sections" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Help: How sections work' }));
+    expect(screen.getByRole('dialog')).toHaveClass('help-dialog');
+  });
+});
