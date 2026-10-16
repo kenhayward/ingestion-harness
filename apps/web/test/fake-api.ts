@@ -357,7 +357,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('reissuePassword not stubbed');
     }),
     listSignIns: vi.fn(async () => []),
-    listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
+    listS3Keys: vi.fn(async () => ({ endpoint: null, internalTargets: [], consumers: [] })),
     listLlmEndpoints: vi.fn(async () => []),
     listPublishTargets: vi.fn(async () => []),
     listPublishTargetChoices: vi.fn(async () => []),
@@ -471,6 +471,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     rotateS3Key: vi.fn(async () => {
       throw new Error('rotateS3Key not stubbed');
+    }),
+    setS3KeyTargets: vi.fn(async () => {
+      throw new Error('setS3KeyTargets not stubbed');
     }),
     revokeS3Key: vi.fn(async () => undefined),
     deleteS3Consumer: vi.fn(async () => undefined),

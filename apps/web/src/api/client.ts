@@ -394,7 +394,8 @@ export interface Api {
   /** Read-only S3 keys for the data lake (ADR 0008). Rejects with a 404 ApiError when off. */
   listS3Keys(): Promise<S3KeysOverview>;
   /** A new consumer and key: `secretAccessKey` is only ever returned here and by rotate. */
-  createS3Key(label: string, expiresInDays: number | null): Promise<IssuedS3Key>;
+  createS3Key(label: string, expiresInDays: number | null, targets: string[]): Promise<IssuedS3Key>;
+  setS3KeyTargets(consumerId: string, targets: string[]): Promise<S3Consumer>;
   /** Another key for the consumer; its other active keys expire within `graceDays`. */
   rotateS3Key(
     consumerId: string,
@@ -782,12 +783,15 @@ export interface S3Consumer {
   userName: string;
   createdAt: string;
   keys: S3Key[];
+  /** The internal publishing targets (ids) its keys may read. */
+  targets: string[];
 }
 
 /** What the lake is configured with besides a key pair; `endpoint` null = not configured. */
 export interface S3KeysOverview {
-  bucket: string;
   endpoint: string | null;
+  /** The internal publishing targets a key can be granted on. */
+  internalTargets: TargetChoice[];
   consumers: S3Consumer[];
 }
 
@@ -795,7 +799,6 @@ export interface IssuedS3Key {
   consumer: S3Consumer;
   key: S3Key;
   secretAccessKey: string;
-  bucket: string;
   endpoint: string | null;
 }
 
@@ -1142,8 +1145,10 @@ export function createHttpApi(base = '/api'): Api {
       noContent(apiFetch(`${base}/llm/choices/${encodeURIComponent(id)}`, { method: 'DELETE' })),
     setLlmSettings: (body) => post<LlmChoicesView>(`${base}/llm/settings`, body, 'PUT'),
     listS3Keys: () => apiFetch(`${base}/access/s3-keys`).then(json<S3KeysOverview>),
-    createS3Key: (label, expiresInDays) =>
-      post<IssuedS3Key>(`${base}/access/s3-keys`, { label, expiresInDays }),
+    createS3Key: (label, expiresInDays, targets) =>
+      post<IssuedS3Key>(`${base}/access/s3-keys`, { label, expiresInDays, targets }),
+    setS3KeyTargets: (consumerId, targets) =>
+      post<S3Consumer>(`${base}/access/s3-keys/${consumerId}/targets`, { targets }, 'PUT'),
     rotateS3Key: (consumerId, expiresInDays, graceDays) =>
       post<IssuedS3Key>(`${base}/access/s3-keys/${consumerId}/rotate`, {
         expiresInDays,

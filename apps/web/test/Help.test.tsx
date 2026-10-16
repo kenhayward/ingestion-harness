@@ -72,7 +72,11 @@ describe('GitHub sync help', () => {
 
 describe('help topics for the recipe tabs', () => {
   it.each([
-    ['general', 'General recipe settings', ['Preamble', 'Review', 'OCR', 'Delivered formats']],
+    [
+      'general',
+      'General recipe settings',
+      ['Preamble', 'Review', 'OCR', 'Delivered formats', 'Publish to'],
+    ],
     ['outputs', 'Outputs: fields and tables', ['Type', 'Description', 'exactly one step']],
     ['pipeline', 'How the pipeline runs', ['Extract steps', 'Check steps', 'Pages per call']],
     ['mapping', 'Mapping outputs to an ontology', ['literal', 'entity', 'concept', 'Shapes']],

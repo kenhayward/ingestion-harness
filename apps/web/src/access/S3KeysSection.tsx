@@ -6,6 +6,7 @@ import {
   type S3Consumer,
   type S3Key,
 } from '../api/client.js';
+import type { TargetChoice } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
 import { EXPIRY_OPTIONS, expiresSoon, expiryDays, expiryText, type Expiry } from './expiry.js';
@@ -32,9 +33,11 @@ const shortDate = (iso: string) =>
  * rotate with a grace period, revoke, delete. Admins only (the page checks).
  */
 export function S3KeysSection({ api }: { api: Api }) {
-  const [overview, setOverview] = useState<{ bucket: string; consumers: S3Consumer[] } | null>(
-    null,
-  );
+  const [overview, setOverview] = useState<{
+    internalTargets: TargetChoice[];
+    consumers: S3Consumer[];
+  } | null>(null);
+  const [granted, setGranted] = useState<string[]>([]);
   const [unavailable, setUnavailable] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [expiry, setExpiry] = useState<Expiry>('90');
@@ -67,8 +70,9 @@ export function S3KeysSection({ api }: { api: Api }) {
   const create = (e: FormEvent) => {
     e.preventDefault();
     void act(async () => {
-      setIssued(await api.createS3Key(label.trim(), expiryDays(expiry)));
+      setIssued(await api.createS3Key(label.trim(), expiryDays(expiry), granted));
       setLabel('');
+      setGranted([]);
     });
   };
 
@@ -77,19 +81,18 @@ export function S3KeysSection({ api }: { api: Api }) {
       <div>
         <h2 id="s3-keys-heading">Data lake S3 keys</h2>
         <p className="muted">
-          Read-only keys for the published outputs
-          {overview && (
-            <>
-              {' '}
-              in the <code>{overview.bucket}</code> bucket
-            </>
-          )}
-          . Issue one consumer per system; rotate with a grace period so it can switch keys without
-          a gap, and revoke a key to stop it immediately.
+          Read-only keys for the published outputs of the internal publishing targets you choose for
+          each consumer. Issue one consumer per system; rotate with a grace period so it can switch
+          keys without a gap, and revoke a key to stop it immediately.
         </p>
       </div>
       {unavailable ? (
         <p className="note-card">{unavailable}</p>
+      ) : overview?.internalTargets.length === 0 ? (
+        <p className="note-card">
+          There is no internal publishing target to grant a key on. Add one under Administration
+          &gt; Published outputs.
+        </p>
       ) : (
         <form className="card-form" onSubmit={create} aria-label="Issue an S3 key">
           <label>
@@ -110,7 +113,17 @@ export function S3KeysSection({ api }: { api: Api }) {
               onChange={setExpiry}
             />
           </div>
-          <button type="submit" className="primary" disabled={!label.trim()}>
+          <TargetTicks
+            legend="Targets it may read"
+            choices={overview?.internalTargets ?? []}
+            value={granted}
+            onChange={setGranted}
+          />
+          <button
+            type="submit"
+            className="primary"
+            disabled={!label.trim() || granted.length === 0}
+          >
             <Icon name="plus" />
             Create key
           </button>
@@ -118,7 +131,12 @@ export function S3KeysSection({ api }: { api: Api }) {
       )}
       {issued && (
         // Keyed per key: a second key starts uncopied (each secret is shown only once).
-        <NewS3Key key={issued.key.id} issued={issued} onDone={() => setIssued(null)} />
+        <NewS3Key
+          key={issued.key.id}
+          issued={issued}
+          buckets={bucketsOf(issued.consumer, overview?.internalTargets ?? [])}
+          onDone={() => setIssued(null)}
+        />
       )}
       {error && <p role="alert">{error}</p>}
       {overview?.consumers.length === 0 && !unavailable && (
@@ -128,6 +146,8 @@ export function S3KeysSection({ api }: { api: Api }) {
         <ConsumerCard
           key={c.id}
           consumer={c}
+          choices={overview?.internalTargets ?? []}
+          onSetTargets={(targets) => act(() => api.setS3KeyTargets(c.id, targets))}
           onRotate={(days, grace) =>
             act(async () => setIssued(await api.rotateS3Key(c.id, days, grace)))
           }
@@ -139,18 +159,62 @@ export function S3KeysSection({ api }: { api: Api }) {
   );
 }
 
+/** The buckets a consumer's granted targets live in. */
+const bucketsOf = (c: S3Consumer, choices: readonly TargetChoice[]) =>
+  [...new Set(c.targets.map((id) => choices.find((t) => t.id === id)?.bucket ?? id))].join(', ');
+
+/** Tick boxes over the internal targets; the caller decides what an empty choice means. */
+function TargetTicks({
+  legend,
+  choices,
+  value,
+  onChange,
+}: {
+  legend: string;
+  choices: readonly TargetChoice[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  return (
+    <fieldset className="formats">
+      <legend>{legend}</legend>
+      {choices.map((t) => (
+        <label key={t.id}>
+          <input
+            type="checkbox"
+            checked={value.includes(t.id)}
+            onChange={() =>
+              onChange(
+                value.includes(t.id)
+                  ? value.filter((id) => id !== t.id)
+                  : choices.map((c) => c.id).filter((id) => id === t.id || value.includes(id)),
+              )
+            }
+          />
+          {t.label} <small className="muted">({t.bucket})</small>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 function ConsumerCard({
   consumer: c,
+  choices,
+  onSetTargets,
   onRotate,
   onRevoke,
   onDelete,
 }: {
   consumer: S3Consumer;
+  choices: readonly TargetChoice[];
+  onSetTargets: (targets: string[]) => Promise<void>;
   onRotate: (expiresInDays: number | null, graceDays: number) => Promise<void>;
   onRevoke: (keyId: string) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
-  const [mode, setMode] = useState<'rotate' | 'delete' | null>(null);
+  const [mode, setMode] = useState<'rotate' | 'delete' | 'targets' | null>(null);
+  const [ticked, setTicked] = useState<string[]>(c.targets);
   const [expiry, setExpiry] = useState<Expiry>('90');
   const [grace, setGrace] = useState<Grace>('7');
   const active = c.keys.filter((k) => k.status === 'active').length;
@@ -167,6 +231,11 @@ function ConsumerCard({
       <header className={mode === 'delete' ? 'confirming' : undefined}>
         <div>
           <strong>{c.label}</strong>
+          <small className="muted">
+            {c.targets.length === 0
+              ? 'No targets'
+              : c.targets.map((id) => choices.find((t) => t.id === id)?.label ?? id).join(', ')}
+          </small>
           {mode === 'delete' && (
             <small className="confirm-text">Delete {c.label}? Its keys stop working now.</small>
           )}
@@ -198,6 +267,15 @@ function ConsumerCard({
             )}
             <button
               type="button"
+              onClick={() => {
+                setTicked(c.targets);
+                setMode(mode === 'targets' ? null : 'targets');
+              }}
+            >
+              Change targets
+            </button>
+            <button
+              type="button"
               className="icon bordered danger"
               aria-label={`Delete ${c.label}`}
               title="Delete"
@@ -208,6 +286,32 @@ function ConsumerCard({
           </div>
         )}
       </header>
+      {mode === 'targets' && (
+        <form
+          className="s3-rotate"
+          aria-label={`Targets for ${c.label}`}
+          onSubmit={(e) => {
+            e.preventDefault();
+            setMode(null);
+            void onSetTargets(ticked);
+          }}
+        >
+          <TargetTicks
+            legend="Targets it may read"
+            choices={choices}
+            value={ticked}
+            onChange={setTicked}
+          />
+          <div className="row-actions">
+            <button type="button" onClick={() => setMode(null)}>
+              Cancel
+            </button>
+            <button type="submit" className="primary" disabled={ticked.length === 0}>
+              Save targets
+            </button>
+          </div>
+        </form>
+      )}
       {mode === 'rotate' && (
         <form className="s3-rotate" onSubmit={rotate} aria-label={`Rotate ${c.label}`}>
           <div className="field">
@@ -326,7 +430,15 @@ function KeyRow({
   );
 }
 
-function NewS3Key({ issued, onDone }: { issued: IssuedS3Key; onDone: () => void }) {
+function NewS3Key({
+  issued,
+  buckets,
+  onDone,
+}: {
+  issued: IssuedS3Key;
+  buckets: string;
+  onDone: () => void;
+}) {
   const [note, setNote] = useState<string | null>(null);
   const id = useId();
   const copy = (name: string, value: string) => {
@@ -342,7 +454,7 @@ function NewS3Key({ issued, onDone }: { issued: IssuedS3Key; onDone: () => void 
   };
   const fields: { label: string; value: string }[] = [
     { label: 'Endpoint URL', value: issued.endpoint ?? '' },
-    { label: 'Bucket', value: issued.bucket },
+    { label: 'Buckets', value: buckets },
     { label: 'Access key ID', value: issued.key.accessKeyId },
     { label: 'Secret access key', value: issued.secretAccessKey },
   ];
