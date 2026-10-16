@@ -263,6 +263,13 @@ export interface IngestionRepo {
   getJobParams(id: string): Promise<Record<string, unknown> | null>;
   /** The newest event with each of `messages` for each job (job_events); none: left out. */
   latestEvents(jobIds: string[], messages: readonly string[]): Promise<JobEventRecord[]>;
+  /** When the job's first `message` event at or after `since` whose data contains `match` came. */
+  firstEventAt(
+    jobId: string,
+    message: string,
+    since: string,
+    match: Record<string, unknown>,
+  ): Promise<string | null>;
   /** Queued and running document jobs, and the median duration of recent timed runs. */
   queueStats(): Promise<QueueStats>;
   /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */

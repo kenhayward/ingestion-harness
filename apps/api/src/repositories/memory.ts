@@ -447,6 +447,22 @@ export class MemoryRepo implements IngestionRepo {
     );
   }
 
+  async firstEventAt(
+    jobId: string,
+    message: string,
+    since: string,
+    match: Record<string, unknown>,
+  ): Promise<string | null> {
+    const contains = (data: unknown) =>
+      typeof data === 'object' &&
+      data !== null &&
+      Object.entries(match).every(([k, v]) => (data as Record<string, unknown>)[k] === v);
+    const event = (this.events.get(jobId) ?? []).find(
+      (e) => e.message === message && Date.parse(e.at) >= Date.parse(since) && contains(e.data),
+    );
+    return event?.at ?? null;
+  }
+
   async queueStats(): Promise<QueueStats> {
     const jobs = [...this.jobs.values()];
     const since = Date.now() - 24 * 3600_000;

@@ -275,6 +275,28 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await repo.latestEvents([], ['prepare progress'])).toEqual([]);
   });
 
+  it("finds when a job's first matching event came since a time", async () => {
+    const projectId = await newProject();
+    const job = await repo.createDraftJob(projectId, { stage: 'survey' });
+    const add = (data: unknown, at: string) =>
+      pool.query(
+        `INSERT INTO job_events (job_id, level, message, data, at)
+         VALUES ($1, 'info', 'drafting progress', $2, $3)`,
+        [job.id, JSON.stringify(data), at],
+      );
+    const model = { phase: 'model', round: 1, attempt: 1 };
+    await add({ ...model, tokens: null }, '2026-10-16T10:00:00.000Z'); // an earlier claim
+    await add({ phase: 'reading', round: 1, attempt: null }, '2026-10-16T10:01:00.000Z');
+    await add({ ...model, tokens: null }, '2026-10-16T10:01:05.000Z');
+    await add({ ...model, tokens: 500 }, '2026-10-16T10:01:10.000Z');
+    const since = '2026-10-16T10:01:00.000Z';
+    const first = (match: Record<string, unknown>) =>
+      repo.firstEventAt(job.id, 'drafting progress', since, match);
+    expect(await first(model)).toBe('2026-10-16T10:01:05.000Z');
+    expect(await first({ phase: 'reading', round: 1, attempt: null })).toBe(since);
+    expect(await first({ ...model, attempt: 2 })).toBeNull();
+  });
+
   it('creates, lists and decides proposals once', async () => {
     const projectId = await newProject();
     const a = await repo.createDraftJob(projectId, { stage: 'survey' });
