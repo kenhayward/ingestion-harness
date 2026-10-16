@@ -9,7 +9,10 @@ const repos = [
   { fullName: 'acme/recipes', private: false },
 ];
 
-function setup(link: Parameters<typeof LinkDialog>[0]['link'] = null) {
+function setup(
+  link: Parameters<typeof LinkDialog>[0]['link'] = null,
+  over: Parameters<typeof fakeApi>[0] = {},
+) {
   const api = fakeApi({
     listGitHubRepos: vi.fn(async () => repos),
     getProfile: vi.fn(async () =>
@@ -22,6 +25,7 @@ function setup(link: Parameters<typeof LinkDialog>[0]['link'] = null) {
         },
       }),
     ),
+    ...over,
   });
   const onSaved = vi.fn();
   const onClose = vi.fn();
@@ -56,6 +60,87 @@ describe('LinkDialog', () => {
       pushOnPublish: true,
     });
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it("starts a new link in Integration's default folder", async () => {
+    const { api } = setup(null, {
+      getGitHubSettings: vi.fn(async () => ({
+        instanceName: 'production',
+        instanceId: 'inst-1',
+        defaultRoot: 'data/ct',
+        locked: false,
+      })),
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('data/ct'),
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Link' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Link' }));
+    expect(api.setGitHubLink).toHaveBeenCalledWith(
+      'invoice',
+      expect.objectContaining({ root: 'data/ct' }),
+    );
+  });
+
+  it('keeps an existing link in its own folder', async () => {
+    setup(
+      {
+        repo: 'acme/other',
+        branch: 'main',
+        root: 'kept/here',
+        alwaysPr: false,
+        pushOnPublish: true,
+        setBy: 'admin',
+        setAt: '2026-10-01T00:00:00.000Z',
+      },
+      {
+        getGitHubSettings: vi.fn(async () => ({
+          instanceName: 'production',
+          instanceId: 'inst-1',
+          defaultRoot: 'data/ct',
+          locked: false,
+        })),
+      },
+    );
+    await screen.findByRole('combobox', { name: 'Repository' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('kept/here');
+  });
+
+  it('needs a branch and a folder, and trims them', async () => {
+    const { api } = setup();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Link' })).toBeEnabled());
+    const branch = screen.getByRole('textbox', { name: 'Branch' });
+    await userEvent.clear(branch);
+    await userEvent.type(branch, '   ');
+    expect(screen.getByRole('button', { name: 'Link' })).toBeDisabled();
+    expect(screen.getByText('Name the branch and the folder.')).toBeInTheDocument();
+    await userEvent.type(branch, 'dev  ');
+    const folder = screen.getByRole('textbox', { name: 'Folder' });
+    await userEvent.clear(folder);
+    expect(screen.getByRole('button', { name: 'Link' })).toBeDisabled();
+    await userEvent.type(folder, ' ct ');
+    await userEvent.click(screen.getByRole('button', { name: 'Link' }));
+    expect(api.setGitHubLink).toHaveBeenCalledWith(
+      'invoice',
+      expect.objectContaining({ branch: 'dev', root: 'ct' }),
+    );
+  });
+
+  it('asks an admin without a linked account to link it in Profile first', async () => {
+    const { api } = setup(null, {
+      getProfile: vi.fn(async () => profile({ github: null })),
+      listGitHubRepos: vi.fn(async () => {
+        throw new Error('Link your GitHub account in Profile first');
+      }),
+    });
+    expect(
+      await screen.findByText('Link your GitHub account in Profile first'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Repository' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Link' })).toBeDisabled();
+    expect(api.setGitHubLink).not.toHaveBeenCalled();
   });
 
   it('shows a refusal as an alert', async () => {

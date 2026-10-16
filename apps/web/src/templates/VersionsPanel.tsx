@@ -70,8 +70,10 @@ export function VersionsPanel({
   const [reloads, setReloads] = useState(0);
   const [sync, setSync] = useState<GitHubSyncView | null>(null);
   const [syncReloads, setSyncReloads] = useState(0);
-  /** What a push in this visit answered, by version. */
+  /** What a push answered, by version, until the sync view reloads (then its state is shown). */
   const [outcomes, setOutcomes] = useState<Record<number, PushOutcome>>({});
+  /** The push whose reload is pending: a skipped or failed answer stays beside its row. */
+  const lastPush = useRef<{ version: number; outcome: PushOutcome } | null>(null);
   const [pushing, setPushing] = useState<number | null>(null);
   const [pulling, setPulling] = useState(false);
   const reasonId = useId();
@@ -96,7 +98,15 @@ export function VersionsPanel({
     let live = true;
     api.getGitHubSync(templateId).then(
       (v) => {
-        if (live) setSync(v);
+        if (!live) return;
+        setSync(v);
+        const kept = lastPush.current;
+        lastPush.current = null;
+        setOutcomes(
+          kept && (kept.outcome.kind === 'skipped' || kept.outcome.kind === 'failed')
+            ? { [kept.version]: kept.outcome }
+            : {},
+        );
       },
       () => {
         if (live) setSync(null); // sync is unavailable (no access control): the panel is as before
@@ -112,6 +122,7 @@ export function VersionsPanel({
     setError(null);
     try {
       const outcome = await api.pushVersion(templateId, version);
+      lastPush.current = { version, outcome };
       setOutcomes((o) => ({ ...o, [version]: outcome }));
       setSyncReloads((r) => r + 1);
     } catch (err) {
@@ -155,6 +166,14 @@ export function VersionsPanel({
         onChanged={() => setSyncReloads((r) => r + 1)}
         onPull={() => setPulling(true)}
       />
+      {sync?.link &&
+        !sync.canPush &&
+        sync.reason &&
+        versions?.some((v) => v.status === 'published') && (
+          <p id={reasonId} className="muted github-reason">
+            {sync.reason}
+          </p>
+        )}
       {error && <p role="alert">{error}</p>}
       {versions === null && !error && <p className="muted">Loading…</p>}
       {versions !== null && (
@@ -185,7 +204,7 @@ export function VersionsPanel({
                   outcome={outcomes[v.version] ?? null}
                   canPush={sync.canPush && pushing === null}
                   reason={sync.canPush ? null : sync.reason}
-                  reasonId={`${reasonId}-${v.version}`}
+                  reasonId={reasonId}
                   onPush={() => void push(v.version)}
                 />
               )}
@@ -431,17 +450,11 @@ function SyncRow({
           <button
             type="button"
             disabled={!canPush}
-            title={reason ?? undefined}
             aria-describedby={reason ? reasonId : undefined}
             onClick={onPush}
           >
             {label}
           </button>
-          {reason && (
-            <span id={reasonId} className="visually-hidden">
-              {reason}
-            </span>
-          )}
         </>
       )}
     </div>

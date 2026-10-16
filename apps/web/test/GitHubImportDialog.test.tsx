@@ -14,6 +14,7 @@ const remote = (o: Partial<RemoteVersion> = {}): RemoteVersion => ({
   publishedBy: 'Ken',
   publishedAt: '2026-10-01T09:00:00.000Z',
   definitionSha256: 'abc',
+  name: 'Memo letters',
   commit: 'cafebabe1234',
   path: 'ct-studio/staging/memo/v3.yaml',
   mine: false,
@@ -90,7 +91,7 @@ describe('ImportDialog', () => {
     await browse();
     await userEvent.click(await screen.findByRole('radio', { name: /v3/ }));
     expect(screen.getByRole('textbox', { name: 'Id' })).toHaveValue('memo');
-    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('memo');
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Memo letters');
     expect(screen.getByRole('checkbox', { name: /Keep it in sync/ })).toBeChecked();
     expect(
       screen.getByText('It will write under recipes-root/production/, never staging/.'),
@@ -103,11 +104,61 @@ describe('ImportDialog', () => {
         path: 'ct-studio/staging/memo/v3.yaml',
         commit: 'cafebabe1234',
         id: 'memo',
-        name: 'memo',
+        name: 'Memo letters',
         link: true,
       }),
     );
     await waitFor(() => expect(onOpened).toHaveBeenCalledWith('memo', 1));
+  });
+
+  it('sends no name for a definition without one, leaving the default to the server', async () => {
+    const { api } = setup(false, {
+      browseGitHub: vi.fn(async () => ({ versions: [remote({ name: null })], skipped: [] })),
+    });
+    await browse();
+    await userEvent.click(await screen.findByRole('radio', { name: /v3/ }));
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('');
+    await userEvent.click(screen.getByRole('button', { name: 'Import' }));
+    await waitFor(() => expect(api.importFromGitHub).toHaveBeenCalled());
+    expect(vi.mocked(api.importFromGitHub).mock.calls[0]![0]).not.toHaveProperty('name');
+  });
+
+  it('names the browsed folder in the link hint', async () => {
+    setup(true);
+    const folder = await screen.findByRole('textbox', { name: 'Folder' });
+    await waitFor(() => expect(folder).toHaveValue('recipes-root'));
+    await userEvent.clear(folder);
+    await userEvent.type(folder, 'shared/ct');
+    await browse();
+    await userEvent.click(await screen.findByRole('radio', { name: /v3/ }));
+    expect(
+      screen.getByText('It will write under shared/ct/production/, never staging/.'),
+    ).toBeInTheDocument();
+  });
+
+  it('drops a browse answer that comes back after the fields changed', async () => {
+    let answerFirst!: (l: { versions: RemoteVersion[]; skipped: [] }) => void;
+    const browseGitHub = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerFirst = resolve;
+          }),
+      )
+      .mockResolvedValue({ versions: [remote({ typeId: 'letter', version: 5 })], skipped: [] });
+    setup(true, { browseGitHub });
+    await browse();
+    await waitFor(() => expect(browseGitHub).toHaveBeenCalledTimes(1));
+    await userEvent.clear(screen.getByRole('textbox', { name: 'Branch' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Branch' }), 'dev');
+    expect(screen.getByRole('button', { name: 'Browse' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Browse' }));
+    expect(await screen.findByRole('radio', { name: /v5/ })).toBeInTheDocument();
+    answerFirst({ versions: [remote()], skipped: [] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('radio', { name: /v3/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /v5/ })).toBeInTheDocument();
   });
 
   it('shows the clash message from a 409', async () => {

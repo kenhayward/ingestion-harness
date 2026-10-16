@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { DEFAULT_SYNC_ROOT, type RemoteListing, type RemoteVersion } from '@ih/shared';
 import type { Api } from '../../api/client.js';
 import { Dialog } from '../../ui/Dialog.js';
@@ -37,8 +37,10 @@ export function ImportDialog({
   const [link, setLink] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The folder the link would write under, once known (admins). */
-  const [linkRoot, setLinkRoot] = useState(DEFAULT_SYNC_ROOT);
+  /** The folder the listing was read from: the link writes under it (the server links it). */
+  const [browsedRoot, setBrowsedRoot] = useState(DEFAULT_SYNC_ROOT);
+  /** Numbers each browse: an answer for fields since changed is dropped. */
+  const browseSeq = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -56,7 +58,6 @@ export function ImportDialog({
         setRepo((current) => current || pick || names[0] || '');
         if (settings) {
           setRoot(settings.defaultRoot);
-          setLinkRoot(settings.defaultRoot);
           setInstance(settings.instanceName);
         }
       },
@@ -81,28 +82,35 @@ export function ImportDialog({
   /** The browsed listing belongs to one repository, branch and folder: any change forgets it. */
   const edit = (set: (v: string) => void) => (v: string) => {
     set(v);
+    browseSeq.current++; // a browse still in flight is for the old fields
+    setBrowsing(false);
     setListing(null);
     setPicked(null);
   };
 
   const browse = async () => {
     if (!repo || browsing) return;
+    const n = ++browseSeq.current;
+    const at = root.trim();
     setBrowsing(true);
     setError(null);
     setPicked(null);
     try {
-      setListing(await api.browseGitHub({ repo, branch: branch.trim(), root: root.trim() }));
+      const found = await api.browseGitHub({ repo, branch: branch.trim(), root: at });
+      if (n !== browseSeq.current) return;
+      setListing(found);
+      setBrowsedRoot(at);
     } catch (err) {
-      setError((err as Error).message);
+      if (n === browseSeq.current) setError((err as Error).message);
     } finally {
-      setBrowsing(false);
+      if (n === browseSeq.current) setBrowsing(false);
     }
   };
 
   const pick = (v: RemoteVersion) => {
     setPicked(v);
     setId(v.typeId);
-    setName(v.typeId);
+    setName(v.name ?? '');
     setError(null);
   };
 
@@ -118,7 +126,8 @@ export function ImportDialog({
         path: picked.path,
         commit: picked.commit,
         id: id.trim(),
-        name: name.trim(),
+        // Left empty: the server takes the definition's name.
+        ...(name.trim() ? { name: name.trim() } : {}),
         link: admin && link,
       });
       onOpened(made.record.id, made.record.version);
@@ -137,7 +146,7 @@ export function ImportDialog({
           type="submit"
           form={formId}
           className="primary"
-          disabled={busy || !picked || !picked.commit || !id.trim() || !name.trim()}
+          disabled={busy || !picked || !picked.commit || !id.trim()}
         >
           Import
         </button>
@@ -196,7 +205,7 @@ export function ImportDialog({
                 Keep it in sync with this repository
               </label>
               <small className="muted">
-                {`It will write under ${linkRoot}/${instance ?? 'this instance'}/, never ${picked.instance}/.`}
+                {`It will write under ${browsedRoot}/${instance ?? 'this instance'}/, never ${picked.instance}/.`}
               </small>
             </>
           )}

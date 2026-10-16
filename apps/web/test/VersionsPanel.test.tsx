@@ -287,7 +287,21 @@ describe('VersionsPanel GitHub sync', () => {
       commit: 'a1b2c3d4e5f6',
       commitUrl: 'https://gh/c/a1b2c3d',
     }));
-    const api = withSync(linked([sync({ version: 1, state: 'absent' })]), {}, { pushVersion });
+    // The reload after the push reads what the server now holds.
+    const getGitHubSync = vi
+      .fn()
+      .mockResolvedValueOnce(linked([sync({ version: 1, state: 'absent' })]))
+      .mockResolvedValue(
+        linked([
+          sync({
+            version: 1,
+            state: 'on',
+            commit: 'a1b2c3d4e5f6',
+            commitUrl: 'https://gh/c/a1b2c3d',
+          }),
+        ]),
+      );
+    const api = withSync(linked([]), {}, { pushVersion, getGitHubSync });
     const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
     await userEvent.click(within(row).getByRole('button', { name: 'Push v1' }));
     expect(api.pushVersion).toHaveBeenCalledWith('invoice', 1);
@@ -310,7 +324,13 @@ describe('VersionsPanel GitHub sync', () => {
       prNumber: 42,
       prUrl: 'https://gh/pr/42',
     }));
-    withSync(linked([sync({ version: 1, state: 'absent' })]), {}, { pushVersion });
+    const getGitHubSync = vi
+      .fn()
+      .mockResolvedValueOnce(linked([sync({ version: 1, state: 'absent' })]))
+      .mockResolvedValue(
+        linked([sync({ version: 1, state: 'pr', prNumber: 42, prUrl: 'https://gh/pr/42' })]),
+      );
+    withSync(linked([]), {}, { pushVersion, getGitHubSync });
     const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
     await userEvent.click(within(row).getByRole('button', { name: 'Push v1' }));
     expect(await within(row).findByRole('link', { name: 'PR #42 open' })).toBeInTheDocument();
@@ -338,6 +358,54 @@ describe('VersionsPanel GitHub sync', () => {
     expect(push).toBeDisabled();
     expect(push).toHaveAccessibleDescription('Link your GitHub account in Profile to push.');
   });
+
+  it('says once, in plain sight, why pushing is off', async () => {
+    withSync(
+      linked([sync({ version: 3, state: 'absent' }), sync({ version: 1, state: 'absent' })], {
+        canPush: false,
+        reason: 'Link your GitHub account in Profile to push.',
+      }),
+    );
+    const shown = await screen.findAllByText('Link your GitHub account in Profile to push.');
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toBeVisible();
+    expect(shown[0]).not.toHaveClass('visually-hidden');
+    for (const name of ['v3 · Published', 'v1 · Published']) {
+      const row = screen.getByRole('listitem', { name });
+      expect(within(row).queryByText('Link your GitHub account in Profile to push.')).toBeNull();
+    }
+  });
+
+  it('keeps a failed push answer beside its row after the reload it causes', async () => {
+    const pushVersion = vi.fn(async () => ({
+      kind: 'failed' as const,
+      reason: 'GitHub is slow: check Versions for the result.',
+    }));
+    const api = withSync(linked([sync({ version: 1, state: 'absent' })]), {}, { pushVersion });
+    const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
+    await userEvent.click(within(row).getByRole('button', { name: 'Push v1' }));
+    await waitFor(() => expect(api.getGitHubSync).toHaveBeenCalledTimes(2));
+    expect(
+      await within(row).findByText('GitHub is slow: check Versions for the result.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the live state once the sync view reloads, not the last push answer', async () => {
+    const pushVersion = vi.fn(async () => ({
+      kind: 'pushed' as const,
+      commit: 'a1b2c3d4e5f6',
+      commitUrl: 'https://gh/c/a1b2c3d',
+    }));
+    const getGitHubSync = vi
+      .fn()
+      .mockResolvedValueOnce(linked([sync({ version: 1, state: 'absent' })]))
+      .mockResolvedValue(linked([sync({ version: 1, state: 'label' })]));
+    withSync(linked([]), {}, { pushVersion, getGitHubSync });
+    const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
+    await userEvent.click(await within(row).findByRole('button', { name: 'Push v1' }));
+    expect(await within(row).findByRole('button', { name: 'Push label' })).toBeInTheDocument();
+    expect(within(row).getByText('Label changed since push')).toBeInTheDocument();
+  });
   it('takes the label, reloads the versions and sync, and hands the version on', async () => {
     const remote = {
       versions: [
@@ -350,6 +418,7 @@ describe('VersionsPanel GitHub sync', () => {
           publishedBy: 'Ken',
           publishedAt: '2026-10-01T09:00:00.000Z',
           definitionSha256: 'abc',
+          name: 'Invoice',
           commit: 'deadbeefcafe',
           path: 'ct-studio/production/invoice/v3.yaml',
           mine: true,
