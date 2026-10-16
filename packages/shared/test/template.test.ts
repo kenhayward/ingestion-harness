@@ -260,3 +260,39 @@ describe('delivery targets (S3 and RDF)', () => {
     expect(before.semantics).toBe(MAPPING);
   });
 });
+
+describe('repeating sections (shared with the worker)', () => {
+  type Case = {
+    name: string;
+    valid: boolean;
+    error: string | null;
+    sections?: object[];
+    pipeline?: object[];
+  };
+  const fx = JSON.parse(
+    readFileSync(new URL('./fixtures/repeating-sections.json', import.meta.url), 'utf8'),
+  ) as { base: { document: object }; cases: Case[] };
+  const definition = (c: Case) => ({
+    ...fx.base,
+    document: { ...fx.base.document, ...(c.sections ? { sections: c.sections } : {}) },
+    ...(c.pipeline ? { pipeline: c.pipeline } : {}),
+  });
+
+  it.each(fx.cases.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    const result = TemplateSchema.safeParse(definition(c));
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
+    if (!c.valid) {
+      expect(result.error!.issues.map((i) => i.message).join('\n')).toContain(c.error);
+    }
+  });
+
+  it('parses a recipe without repeat to itself', () => {
+    const plain = TemplateSchema.parse(definition(fx.cases.find((c) => c.name === 'no repeat anywhere')!));
+    for (const s of plain.document.sections) {
+      expect(Object.keys(s)).not.toContain('repeat');
+      expect(Object.keys(s)).not.toContain('key');
+      expect(Object.keys(s)).not.toContain('keyFrom');
+    }
+    for (const s of plain.pipeline) expect(Object.keys(s)).not.toContain('keyColumn');
+  });
+});

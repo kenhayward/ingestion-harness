@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { RetirementSchema } from './retirement.js';
-import { CopySelectionSchema, SectionSchema } from './spec.js';
+import { CopySelectionSchema, keyFromIssues, SectionSchema } from './spec.js';
 import { JobStatusSchema, PrepareProgressSchema, ShaclReportSchema } from './jobs.js';
 
 /** Workbench (ADR 0007): sample roles, brief, prepared text. Mirrors worker/src/ingest_worker/workbench.py. */
@@ -181,6 +181,9 @@ export const SegmentDocumentSchema = z
       }
       seen.add(section.id);
     });
+    keyFromIssues(doc.sections).forEach(({ index, message }) =>
+      ctx.addIssue({ code: 'custom', path: ['sections', index, 'keyFrom'], message }),
+    );
   });
 export type SegmentDocument = z.infer<typeof SegmentDocumentSchema>;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DocumentSpecSchema } from '../src/spec.js';
+import { captureGroups, DocumentSpecSchema } from '../src/spec.js';
 
 const valid = {
   id: 'demo',
@@ -144,5 +144,34 @@ describe('DocumentSpecSchema', () => {
       outputs: [valid.outputs[0], valid.outputs[0]],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('repeating sections in the spec format', () => {
+  it.each([
+    [String.raw`BATCH\s+(\w+)`, 1, []],
+    [String.raw`(?:BATCH|LOT)\s+(\w+)`, 1, []],
+    [String.raw`(?P<key>\w+)`, 1, ['key']],
+    [String.raw`(?<key>\w+)`, 1, ['key']],
+    ['(?=x)(?!y)(?<=z)(?<!w)', 0, []],
+    [String.raw`\(not a group\)`, 0, []],
+    ['[(]x', 0, []],
+    [String.raw`[\]()]x`, 0, []],
+    ['[]()]x', 0, []],
+    ['(a)(b)', 2, []],
+  ] as const)('captureGroups(%s)', (pattern, count, names) => {
+    expect(captureGroups(pattern)).toEqual({ count, names });
+  });
+
+  it('refuses repeat in a legacy spec', () => {
+    const spec = {
+      ...valid,
+      document: { sections: [{ id: 'header', anchor: '^HEADER', repeat: true }] },
+    };
+    const result = DocumentSpecSchema.safeParse(spec);
+    expect(result.success).toBe(false);
+    expect(result.error!.issues.map((i) => i.message).join('\n')).toContain(
+      'repeat is supported in recipes only',
+    );
   });
 });
