@@ -114,7 +114,9 @@ describe('Install CT Studio', () => {
     const event = offer(target);
     await findInstallButton(); // the shell has the offer: the menu lists it too
     await userEvent.click(
-      within(screen.getByRole('banner')).getByRole('button', { name: 'Ken (admin): account menu' }),
+      within(screen.getByRole('banner')).getByRole('button', {
+        name: 'Ken (Administrator): account menu',
+      }),
     );
     await userEvent.click(screen.getByRole('menuitem', { name: 'Install CT Studio' }));
     expect(event.prompt).toHaveBeenCalled();

@@ -76,7 +76,7 @@ const pushOf = (r: PushRow): VersionPush => ({
   pushedAt: r.pushed_at.toISOString(),
 });
 
-/** GitHub sync settings, links and push records in Postgres (migration 0046). */
+/** GitHub sync settings, links and push records in Postgres (migration 0048). */
 export class PgGitHubSyncRepo implements GitHubSyncRepo {
   constructor(private readonly pool: pg.Pool) {}
 

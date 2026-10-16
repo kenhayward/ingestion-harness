@@ -23,7 +23,7 @@ const fakeClock = (): Clock => {
  * PgAccessRepo (real clock: the clock-dependent cases are skipped there).
  */
 export function accessContract(name: string, make: MakeRepo, opts: { clock: boolean }) {
-  const ken = { name: 'Ken Hayward', email: 'Ken@Example.com ', role: 'user' as const };
+  const ken = { name: 'Ken Hayward', email: 'Ken@Example.com ', role: 'designer' as const };
 
   async function setup() {
     const clock = opts.clock ? fakeClock() : undefined;
@@ -366,7 +366,7 @@ export function accessContract(name: string, make: MakeRepo, opts: { clock: bool
         name: 'Kenneth',
       });
       expect((await repo.session(s.sessionId))?.label).toBe('Kenneth');
-      await repo.createUser({ name: 'Ann', email: 'ann@example.com', role: 'user' }, null);
+      await repo.createUser({ name: 'Ann', email: 'ann@example.com', role: 'designer' }, null);
       expect(await repo.updateUser(user.id, { email: 'ANN@example.com' })).toBe('email_taken');
       expect(await repo.updateUser(user.id, { name: 'ann' })).toBe('name_taken');
       expect(await repo.updateUser('00000000-0000-4000-8000-000000000000', { name: 'x' })).toBe(

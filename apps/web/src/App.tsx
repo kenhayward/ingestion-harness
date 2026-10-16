@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { GitHubLinkResult } from '@ih/shared';
-import type { Api, Me } from './api/client.js';
+import { operatorMayOpen, type GitHubLinkResult, type MaintenanceNotice } from '@ih/shared';
+import { maintenanceOf, type Api, type Me } from './api/client.js';
 import { OntologiesPage } from './ontologies/OntologiesPage.js';
 import { OntologyPage } from './ontologies/OntologyPage.js';
 import { AdminDialog } from './access/AdminDialog.js';
 import { ChangePassword } from './access/ChangePassword.js';
 import { FailedSignInsNotice, type FailedSignIns } from './access/FailedSignInsNotice.js';
+import { MaintenanceBanner } from './access/MaintenanceBanner.js';
 import { ProfileDialog, type ProfileTab } from './access/ProfileDialog.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
@@ -26,10 +27,13 @@ import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
 import { ProjectPage } from './workbench/ProjectPage.js';
 import { WorkbenchPage } from './workbench/WorkbenchPage.js';
+import { Icon } from './ui/Icon.js';
 
 /**
  * Sign-in gate (ADR 0013): the app renders only for a valid session, and a session opened with a
- * one-time password gets the password change first.
+ * one-time password gets the password change first. During maintenance (migration 0046) the
+ * sign-in page shows the banner, and anyone but an admin gets the maintenance page instead of the
+ * app until it is over.
  */
 export function App({
   api,
@@ -50,19 +54,77 @@ export function App({
   const [failed, setFailed] = useState<FailedSignIns | null>(null);
   /** The session check failed for another reason (API restarting, proxy error): not "signed out". */
   const [unreachable, setUnreachable] = useState<string | null>(null);
+  /** Maintenance mode as last read (the notice, a refusal or an admin's save). */
+  const [maintenance, setMaintenance] = useState<MaintenanceNotice | null>(null);
+  /** The API refused this session for maintenance: the maintenance page, not the app. */
+  const [held, setHeld] = useState(false);
 
   const check = useCallback(() => {
     setUnreachable(null);
-    api.me().then(setMe, (err: Error) => setUnreachable(err.message));
+    api.me().then(
+      (next) => {
+        setHeld(false);
+        setMe(next);
+      },
+      (err: Error) => {
+        const notice = maintenanceOf((err as { body?: unknown }).body);
+        if (notice) {
+          setMaintenance(notice);
+          setHeld(true);
+        } else setUnreachable(err.message);
+      },
+    );
   }, [api]);
 
   useEffect(() => {
     check();
-    return api.onUnauthorized(() => {
+    const offUnauthorized = api.onUnauthorized(() => {
       setMe(null);
       setEnded(true);
     });
+    const offMaintenance = api.onMaintenance((notice) => {
+      setMaintenance(notice);
+      setHeld(true);
+    });
+    return () => {
+      offUnauthorized();
+      offMaintenance();
+    };
   }, [api, check]);
+
+  // The sign-in page and an admin's strip show the notice: read it whenever who is in changes.
+  const signedOut = me === null;
+  useEffect(() => {
+    api.getMaintenanceNotice().then(setMaintenance, () => {
+      // Unreadable: no banner, as before maintenance mode existed.
+    });
+  }, [api, signedOut]);
+
+  if (held && maintenance) {
+    return (
+      <AuthLayout title="Under maintenance">
+        <MaintenanceBanner notice={maintenance}>
+          You are still signed in: check again once it is over.
+        </MaintenanceBanner>
+        <div className="maintenance-actions">
+          <button type="button" className="primary" onClick={check}>
+            Check again
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void api.logout().finally(() => {
+                setHeld(false);
+                setMe(null);
+              })
+            }
+          >
+            Sign out
+          </button>
+        </div>
+      </AuthLayout>
+    );
+  }
 
   if (unreachable !== null) {
     return (
@@ -90,6 +152,8 @@ export function App({
       <SignIn
         api={api}
         ended={ended}
+        maintenance={maintenance}
+        onMaintenance={setMaintenance}
         onSignedIn={({ failedSinceLastSignIn, lastFailedAt, ...signedIn }) => {
           setEnded(false);
           setFailed(
@@ -107,6 +171,22 @@ export function App({
   const notice = failed && (
     <FailedSignInsNotice failed={failed} onDismiss={() => setFailed(null)} />
   );
+  const strip = me.role === 'admin' && maintenance?.enabled && (
+    <div
+      role="status"
+      aria-label="Maintenance mode is on"
+      className="callout tone-warn maintenance-strip"
+    >
+      <Icon name="warning" size={18} />
+      <span>
+        <strong>Maintenance mode is on</strong>
+        <span>
+          Only admins can use CT Studio until it is switched off under Administration &gt;
+          Maintenance.
+        </span>
+      </span>
+    </div>
+  );
   if (me.mustChangePassword) {
     return (
       <AuthLayout title="Choose your password">
@@ -122,7 +202,15 @@ export function App({
       me={me}
       launched={launched}
       install={install}
-      notice={notice}
+      notice={
+        <>
+          {strip}
+          {notice}
+        </>
+      }
+      onMaintenanceChanged={({ enabled, message, since }) =>
+        setMaintenance({ enabled, message, since })
+      }
       onMeChanged={check}
       onSignOut={signOut}
     />
@@ -136,6 +224,7 @@ function SignedInApp({
   launched,
   install,
   notice,
+  onMaintenanceChanged,
   onMeChanged,
   onSignOut,
 }: {
@@ -146,6 +235,8 @@ function SignedInApp({
   install: InstallPrompt;
   /** Shown above every page until dismissed (the failed sign-ins notice). */
   notice: ReactNode;
+  /** An admin saved maintenance mode (Administration > Maintenance). */
+  onMaintenanceChanged: (view: MaintenanceNotice) => void;
   /** The name or picture may have changed (Profile): re-read who is signed in. */
   onMeChanged: () => void;
   onSignOut: () => void;
@@ -197,7 +288,16 @@ function SignedInApp({
     setQuery('');
   }
   let page: ReactNode;
-  if (route.name === 'review') {
+  if (me.role === 'operator' && !operatorMayOpen(route.name)) {
+    // Document types, Ontologies and the Workbench are for designers (the API refuses them too).
+    page = (
+      <section className="card not-for-operators">
+        <h1>Not available to operators</h1>
+        <p>Operators upload documents, follow and review jobs, and read results.</p>
+        <a href="#/">Go to Home</a>
+      </section>
+    );
+  } else if (route.name === 'review') {
     // Keyed: Next document must start fresh (no reason, note or page carried over).
     page = (
       <ReviewPage
@@ -205,6 +305,7 @@ function SignedInApp({
         api={api}
         jobId={route.jobId}
         jobs={jobs}
+        role={me.role}
         onDone={() => navigate('#/jobs')}
       />
     );
@@ -310,7 +411,14 @@ function SignedInApp({
           onSignOut={onSignOut}
         />
       )}
-      {admin && <AdminDialog api={api} me={me} onClose={() => setAdmin(false)} />}
+      {admin && (
+        <AdminDialog
+          api={api}
+          me={me}
+          onClose={() => setAdmin(false)}
+          onMaintenanceChanged={onMaintenanceChanged}
+        />
+      )}
     </AppShell>
   );
 }

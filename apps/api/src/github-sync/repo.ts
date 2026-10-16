@@ -37,7 +37,7 @@ export function defaultInstanceName(env: NodeJS.ProcessEnv = process.env): strin
 }
 
 /**
- * Settings, links and push records of the GitHub recipe sync (migration 0046): `PgGitHubSyncRepo` /
+ * Settings, links and push records of the GitHub recipe sync (migration 0048): `PgGitHubSyncRepo` /
  * `MemoryGitHubSyncRepo`, held in step by `test/github-sync-contract.ts`.
  */
 export interface GitHubSyncRepo {

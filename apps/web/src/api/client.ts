@@ -8,6 +8,10 @@ import type {
   SyncSettingsView,
   VersionSync,
   GitHubRepo,
+  Role,
+  MaintenanceBody,
+  MaintenanceNotice,
+  MaintenanceView,
   Profile,
   ProfileBody,
   GraphPreviewView,
@@ -358,6 +362,17 @@ export interface Api {
   setGitHubRepo(repo: string | null): Promise<Profile>;
   /** Called when any API call answers 401 (session ended). Returns an unsubscribe. */
   onUnauthorized(listener: () => void): () => void;
+  /**
+   * Called when any API call answers 503 for maintenance (only admins get in): with the notice.
+   * Returns an unsubscribe.
+   */
+  onMaintenance(listener: (notice: MaintenanceNotice) => void): () => void;
+  /** Whether CT Studio is under maintenance; needs no session (the sign-in page shows it). */
+  getMaintenanceNotice(): Promise<MaintenanceNotice>;
+  /** Admins: maintenance mode with who changed it. */
+  getMaintenance(): Promise<MaintenanceView>;
+  /** Admins: switch maintenance on or off, with the message for users. */
+  setMaintenance(body: MaintenanceBody): Promise<MaintenanceView>;
   listUsers(): Promise<User[]>;
   /** A new user: the one-time `password` is only ever returned here and by reissuePassword. */
   addUser(user: { name: string; email: string; role: User['role'] }): Promise<WithPassword>;
@@ -691,7 +706,7 @@ export interface User {
   name: string;
   /** null only for the admin from the log, who signs in as `admin`. */
   email: string | null;
-  role: 'admin' | 'user';
+  role: Role;
   /** `locked` = temporarily, until `lockedUntil`. */
   status: 'admin-from-log' | 'active' | 'must-change' | 'locked' | 'disabled';
   createdAt: string;
@@ -773,7 +788,7 @@ export interface IssuedS3Key {
 export interface Me {
   /** The user id: what jobs record as `createdByUser`. */
   userId: string;
-  role: 'admin' | 'user';
+  role: Role;
   label: string;
   /** null for the admin from the log. */
   email: string | null;
@@ -790,6 +805,13 @@ export interface SignedIn extends Me {
 }
 
 const unauthorizedListeners = new Set<() => void>();
+const maintenanceListeners = new Set<(notice: MaintenanceNotice) => void>();
+
+/** The notice in a maintenance 503's body (`{ error, maintenance }`), else null. */
+export function maintenanceOf(body: unknown): MaintenanceNotice | null {
+  const notice = (body as { maintenance?: MaintenanceNotice } | null)?.maintenance;
+  return notice && typeof notice.enabled === 'boolean' ? notice : null;
+}
 
 /** 401s that mean "not signed in yet / wrong password", not "your session ended". */
 const SIGN_IN_CALLS = ['/auth/login', '/auth/me'];
@@ -804,6 +826,16 @@ const apiFetch: typeof fetch = async (input, init) => {
   const url = String(input);
   if (res.status === 401 && !SIGN_IN_CALLS.some((path) => url.endsWith(path))) {
     for (const listener of unauthorizedListeners) listener();
+  }
+  // Maintenance began mid-use: everyone but admins is refused until it ends.
+  if (res.status === 503 && maintenanceListeners.size) {
+    const notice = maintenanceOf(
+      await res
+        .clone()
+        .json()
+        .catch(() => null),
+    );
+    if (notice) for (const listener of maintenanceListeners) listener(notice);
   }
   return res;
 };
@@ -1096,6 +1128,13 @@ export function createHttpApi(base = '/api'): Api {
       unauthorizedListeners.add(listener);
       return () => unauthorizedListeners.delete(listener);
     },
+    onMaintenance: (listener) => {
+      maintenanceListeners.add(listener);
+      return () => maintenanceListeners.delete(listener);
+    },
+    getMaintenanceNotice: () => fetch(`${base}/maintenance`).then(json<MaintenanceNotice>),
+    getMaintenance: () => apiFetch(`${base}/maintenance/settings`).then(json<MaintenanceView>),
+    setMaintenance: (body) => post<MaintenanceView>(`${base}/maintenance`, body, 'PUT'),
     listSpecs: (options) =>
       apiFetch(`${base}/specs${options?.retired ? `?retired=${options.retired}` : ''}`).then(
         json<SpecSummary[]>,

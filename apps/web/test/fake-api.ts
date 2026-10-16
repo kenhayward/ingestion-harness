@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
 import type {
   GitHubLinkBody,
+  MaintenanceBody,
+  MaintenanceNotice,
   Profile,
   OntologyDetail,
   OntologyListItem,
@@ -270,7 +272,7 @@ export function user(fields: Partial<User> = {}): User {
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Ken Hayward',
     email: 'ken@example.com',
-    role: 'user',
+    role: 'designer',
     status: 'active',
     createdAt: '2026-10-01T09:00:00.000Z',
     createdBy: 'Admin',
@@ -296,13 +298,39 @@ export const ADMIN_FROM_LOG = user({
   createdBy: null,
 });
 
-/** fakeApi() plus a way to simulate the session ending (a 401 mid-use). */
-export type FakeApi = Api & { expireSession(): void };
+/**
+ * fakeApi() plus ways to simulate the session ending (a 401 mid-use) and maintenance starting (a
+ * 503 mid-use).
+ */
+export type FakeApi = Api & {
+  expireSession(): void;
+  startMaintenance(notice: MaintenanceNotice): void;
+};
 
 export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
   const listeners = new Set<() => void>();
+  const maintenanceListeners = new Set<(notice: MaintenanceNotice) => void>();
   return {
     expireSession: () => listeners.forEach((l) => l()),
+    startMaintenance: (notice) => maintenanceListeners.forEach((l) => l(notice)),
+    onMaintenance: (listener) => {
+      maintenanceListeners.add(listener);
+      return () => maintenanceListeners.delete(listener);
+    },
+    getMaintenanceNotice: vi.fn(async () => ({ enabled: false, message: '', since: null })),
+    getMaintenance: vi.fn(async () => ({
+      enabled: false,
+      message: '',
+      since: null,
+      updatedBy: null,
+      updatedAt: null,
+    })),
+    setMaintenance: vi.fn(async (body: MaintenanceBody) => ({
+      ...body,
+      since: body.enabled ? '2026-10-16T13:00:00.000Z' : null,
+      updatedBy: 'admin',
+      updatedAt: '2026-10-16T13:00:00.000Z',
+    })),
     me: vi.fn(async () => ADMIN_ME),
     login: vi.fn(async () => ({ ...ADMIN_ME, failedSinceLastSignIn: 0, lastFailedAt: null })),
     logout: vi.fn(async () => undefined),

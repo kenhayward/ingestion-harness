@@ -36,6 +36,55 @@ describe('http api: ended sessions', () => {
   });
 });
 
+describe('http api: maintenance', () => {
+  const notice = { enabled: true, message: 'Deploying', since: '2026-10-16T13:00:00.000Z' };
+
+  it('reports a maintenance 503 from any call with its notice, and keeps the error', async () => {
+    const api = createHttpApi('/api');
+    const seen = vi.fn();
+    const off = api.onMaintenance(seen);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        respond(503, { error: 'CT Studio is under maintenance', maintenance: notice }),
+      ),
+    );
+    await expect(api.listJobs()).rejects.toMatchObject({
+      status: 503,
+      body: { maintenance: notice },
+    });
+    expect(seen).toHaveBeenCalledWith(notice);
+    off();
+  });
+
+  it('ignores other 503s', async () => {
+    const api = createHttpApi('/api');
+    const seen = vi.fn();
+    const off = api.onMaintenance(seen);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(503, { error: 'too many sign-ins at once' })),
+    );
+    await expect(api.listJobs()).rejects.toThrow('too many sign-ins at once');
+    expect(seen).not.toHaveBeenCalled();
+    off();
+  });
+
+  it('reads the notice and saves the setting', async () => {
+    const api = createHttpApi('/api');
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => respond(200, notice));
+    vi.stubGlobal('fetch', fetch);
+    expect(await api.getMaintenanceNotice()).toEqual(notice);
+    await api.setMaintenance({ enabled: true, message: 'Deploying' });
+    expect(
+      fetch.mock.calls.map((c) => [String(c[0]), (c[1] as RequestInit | undefined)?.method]),
+    ).toEqual([
+      ['/api/maintenance', undefined],
+      ['/api/maintenance', 'PUT'],
+    ]);
+  });
+});
+
 describe('http api: sign-in and users', () => {
   const calls = (fetch: ReturnType<typeof vi.fn>) =>
     (fetch.mock.calls as unknown as [string, RequestInit | undefined][]).map(([url, init]) => ({
@@ -45,7 +94,7 @@ describe('http api: sign-in and users', () => {
     }));
 
   it('signs in with a login and a password', async () => {
-    const fetch = vi.fn(async () => respond(200, { role: 'user', label: 'Ken' }));
+    const fetch = vi.fn(async () => respond(200, { role: 'designer', label: 'Ken' }));
     vi.stubGlobal('fetch', fetch);
     await createHttpApi('/api').login('ken@example.com', 'a long phrase');
     expect(calls(fetch)).toEqual([
@@ -87,7 +136,7 @@ describe('http api: sign-in and users', () => {
     vi.stubGlobal('fetch', fetch);
     const api = createHttpApi('/api');
     await api.listUsers();
-    await api.addUser({ name: 'Ken', email: 'ken@example.com', role: 'user' });
+    await api.addUser({ name: 'Ken', email: 'ken@example.com', role: 'designer' });
     await api.updateUser('u1', { email: 'k@x.com' });
     await api.setUserEnabled('u1', false);
     await api.setUserEnabled('u1', true);
@@ -99,7 +148,7 @@ describe('http api: sign-in and users', () => {
       {
         url: '/api/users',
         method: 'POST',
-        body: { name: 'Ken', email: 'ken@example.com', role: 'user' },
+        body: { name: 'Ken', email: 'ken@example.com', role: 'designer' },
       },
       { url: '/api/users/u1', method: 'PATCH', body: { email: 'k@x.com' } },
       { url: '/api/users/u1/disable', method: 'POST', body: undefined },

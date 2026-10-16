@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { JobSummary } from '@ih/shared';
+import { ROLE_LABELS, type JobSummary } from '@ih/shared';
 import type { Me } from '../api/client.js';
 import { useInstallAvailable, type InstallPrompt } from '../pwa/install.js';
 import type { NotifySetting } from '../pwa/notify.js';
@@ -125,7 +125,7 @@ function AccountMenu({
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const name = `${me.label} (${me.role}): account menu`;
+  const name = `${me.label} (${ROLE_LABELS[me.role]}): account menu`;
   const admin = me.role === 'admin';
 
   useEffect(() => {
@@ -166,7 +166,7 @@ function AccountMenu({
         <Avatar name={me.label} url={me.avatarUrl} />
         <span className="who" aria-hidden="true">
           <span>{me.label}</span>
-          <small>{me.role}</small>
+          <small>{ROLE_LABELS[me.role]}</small>
         </span>
         <Icon name="chevronDown" size={16} />
       </button>
@@ -261,6 +261,8 @@ export function AppShell({
 }) {
   const search = useRef<HTMLInputElement>(null);
   const section = sectionOf(route);
+  /** Operators see Home, Jobs and Results only: no design pages, no API docs. */
+  const designs = me.role !== 'operator';
   const attention = attentionCount(jobs);
   const onInstall = useInstallAvailable(install) ? () => void install.install() : null;
   // Project pages need the width: the nav starts collapsed there, and expanding it lasts for the
@@ -381,40 +383,44 @@ export function AppShell({
             current={section === 'results'}
             compact={compact}
           />
-          <NavLink
-            href="#/templates"
-            icon="types"
-            label="Document types"
-            current={section === 'templates'}
-            compact={compact}
-          />
-          <NavLink
-            href="#/ontologies"
-            icon="graph"
-            label="Ontologies"
-            current={section === 'ontologies'}
-            compact={compact}
-          />
-          <NavLink
-            href="#/workbench"
-            icon="workbench"
-            label="Workbench"
-            current={section === 'workbench'}
-            compact={compact}
-          />
-          <a
-            className="nav-foot"
-            href={API_DOCS}
-            target="_blank"
-            rel="noopener"
-            aria-label={compact ? 'API docs (opens in a new tab)' : undefined}
-            title={compact ? 'API docs' : undefined}
-          >
-            <Icon name="file" size={18} />
-            <span className="nav-label">API docs</span>
-            <Icon name="open" size={14} />
-            <span className="visually-hidden"> (opens in a new tab)</span>
-          </a>
+          {designs && (
+            <>
+              <NavLink
+                href="#/templates"
+                icon="types"
+                label="Document types"
+                current={section === 'templates'}
+                compact={compact}
+              />
+              <NavLink
+                href="#/ontologies"
+                icon="graph"
+                label="Ontologies"
+                current={section === 'ontologies'}
+                compact={compact}
+              />
+              <NavLink
+                href="#/workbench"
+                icon="workbench"
+                label="Workbench"
+                current={section === 'workbench'}
+                compact={compact}
+              />
+              <a
+                className="nav-foot"
+                href={API_DOCS}
+                target="_blank"
+                rel="noopener"
+                aria-label={compact ? 'API docs (opens in a new tab)' : undefined}
+                title={compact ? 'API docs' : undefined}
+              >
+                <Icon name="file" size={18} />
+                <span className="nav-label">API docs</span>
+                <Icon name="open" size={14} />
+                <span className="visually-hidden"> (opens in a new tab)</span>
+              </a>
+            </>
+          )}
         </nav>
         <main className="page">{children}</main>
       </div>

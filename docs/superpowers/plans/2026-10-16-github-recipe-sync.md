@@ -95,7 +95,7 @@ it.each(['Production', 'a b', '-x', ''])('refuses instance name %j', (n) =>
 ### Task 2: Migration and `GitHubSyncRepo`
 
 **Files:**
-- Create: `db/migrations/0046_github_sync.sql`
+- Create: `db/migrations/0048_github_sync.sql`
 - Create: `apps/api/src/github-sync/repo.ts` (`GitHubSyncRepo`, `MemoryGitHubSyncRepo`), `apps/api/src/github-sync/pg.ts` (`PgGitHubSyncRepo`)
 - Modify: `apps/api/src/templates/repo.ts` (`publish(id, version, by?: string | null)` sets `published_by`; `TemplateRecord.publishedBy: string | null`), `apps/api/src/app.ts` (`AppDeps.githubSync: GitHubSyncRepo`), `apps/api/src/server.ts` (Pg wiring), `apps/api/test/helpers.ts` (Memory default)
 - Test: `apps/api/test/github-sync-contract.ts`, `apps/api/test/github-sync-repo.test.ts`, `apps/api/test/integration/github-sync-pg.test.ts` (skips without `IH_TEST_DATABASE_URL`)
@@ -107,13 +107,13 @@ it.each(['Production', 'a b', '-x', ''])('refuses instance name %j', (n) =>
   - `link(typeId): Promise<GitHubLinkView | null>`, `setLink(typeId, body: GitHubLinkBody, by: string)`, `removeLink(typeId): Promise<boolean>`
   - `pushes(typeId): Promise<VersionPush[]>`, `recordPush(p: VersionPush): Promise<void>` (upsert by type+version), where `VersionPush = { typeId, version, repo, branch, path, commit, blobSha, labelSha, prNumber: number|null, prUrl: string|null, prState: 'open'|'merged'|'closed'|null, pushedBy, pushedAt }`
   - `markPushed(): Promise<void>` (sets `firstPushedAt` once)
-- Migration 0046: `github_sync_settings` (single row, `id boolean PRIMARY KEY DEFAULT true CHECK (id)`), `template_github_links` (`type_id text PRIMARY KEY`, repo, branch, root, always_pr, push_on_publish, set_by, set_at), `template_github_pushes` (PK `(type_id, version)`, columns above), `ALTER TABLE templates ADD COLUMN published_by text` (the 0003 triggers guard `definition`/`status` only; check the publish update sets it in the same statement). Comments name the design doc. No FK to `templates` (links outlive drafts; delete them in `WorkbenchRepo.deleteProject`'s children for never-published types).
+- Migration 0048: `github_sync_settings` (single row, `id boolean PRIMARY KEY DEFAULT true CHECK (id)`), `template_github_links` (`type_id text PRIMARY KEY`, repo, branch, root, always_pr, push_on_publish, set_by, set_at), `template_github_pushes` (PK `(type_id, version)`, columns above), `ALTER TABLE templates ADD COLUMN published_by text` (the 0003 triggers guard `definition`/`status` only; check the publish update sets it in the same statement). Comments name the design doc. No FK to `templates` (links outlive drafts; delete them in `WorkbenchRepo.deleteProject`'s children for never-published types).
 
 - [ ] **Step 1: Write the contract** (`runGitHubSyncContract(make)`) with cases: settings created once with a uuid and `ct-studio`; `setSettings` renames before `markPushed`, returns `'locked'` after it but still changes `defaultRoot`; `setLink` then `link` round-trips with `setBy`/`setAt`; `removeLink` false the second time; `recordPush` twice for one version keeps the newest; `pushes` sorted by version; `publish(id, v, 'Ken')` sets `publishedBy`.
 - [ ] **Step 2: Run** `npx vitest run apps/api/test/github-sync-repo.test.ts` — Expected: FAIL
 - [ ] **Step 3: Implement** the migration, both repos and the wiring.
 - [ ] **Step 4: Run** the unit test (PASS) and, with a throwaway Postgres as in CLAUDE.md, `IH_TEST_DATABASE_URL=… npx vitest run --config apps/api/vitest.integration.config.ts github-sync-pg` (PASS)
-- [ ] **Step 5: Commit** `git commit -m "api: GitHub sync settings, links and push records (migration 0046)"`
+- [ ] **Step 5: Commit** `git commit -m "api: GitHub sync settings, links and push records (migration 0048)"`
 
 ### Task 3: `GitHubRepoApi` port, `HttpGitHub` and the fake
 

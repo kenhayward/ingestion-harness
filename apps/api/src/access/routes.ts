@@ -1,4 +1,11 @@
-import type { Creator } from '@ih/shared';
+import {
+  MAINTENANCE_ERROR,
+  MaintenanceNoticeSchema,
+  OPERATOR_REFUSED,
+  RoleSchema,
+  operatorMayCall,
+  type Creator,
+} from '@ih/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ErrorBody, error, md, noContent, res } from '../openapi/zod.js';
@@ -16,6 +23,7 @@ import {
 import { registerUserRoutes } from './users-routes.js';
 import { registerGitHubSyncRoutes } from '../routes/github-sync.js';
 import { registerProfileRoutes } from '../profile/routes.js';
+import { maintenanceRefusal } from '../routes/maintenance.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -63,7 +71,7 @@ const PasswordBody = z.object({
     ),
 });
 
-const Role = z.enum(['admin', 'user']);
+const Role = RoleSchema;
 
 /** The signed-in user, as login and me return it. */
 export const MeSchema = z.object({
@@ -170,8 +178,18 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
     const sessionId = req.cookies[SESSION_COOKIE];
     const session = sessionId ? await access.session(sessionId) : null;
     if (!session) return reply.code(401).send({ error: 'sign in required' });
+    // Maintenance (migration 0046): admins carry on; everyone else keeps their session but waits.
+    if (session.role !== 'admin') {
+      const maintenance = await app.maintenance.current();
+      if (maintenance.enabled) return reply.code(503).send(maintenanceRefusal(maintenance));
+    }
     if (session.mustChangePassword && !WHILE_CHANGING.has(`${req.method} ${route}`)) {
       return reply.code(403).send({ error: CHANGE_FIRST });
+    }
+    // Operators run documents through and nothing else: an allow-list, so new routes stay closed.
+    const method = req.method === 'HEAD' ? 'GET' : req.method;
+    if (session.role === 'operator' && !operatorMayCall(method, route)) {
+      return reply.code(403).send({ error: OPERATOR_REFUSED });
     }
     req.auth = session;
   });
@@ -212,7 +230,10 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
             '`too many failed sign-ins for this account: try again after <time>` (with `lockedUntil`), or `too many attempts, try again later` for the client.',
             LockedBody.partial({ lockedUntil: true }),
           ),
-          503: error(`\`${BUSY}\`: too many sign-ins are being checked at this moment.`),
+          503: res(
+            `\`${BUSY}\`: too many sign-ins are being checked at this moment. Or \`${MAINTENANCE_ERROR}\` (with \`maintenance\`): only admins can sign in during maintenance.`,
+            ErrorBody.extend({ maintenance: MaintenanceNoticeSchema.optional() }),
+          ),
         },
       },
     },
@@ -274,7 +295,15 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
             return reply
               .code(403)
               .send({ error: 'this one-time password has expired: ask an admin for a new one' });
-          case 'ok':
+          case 'ok': {
+            // Maintenance: only admins get in. Checked after the password, so a refusal never
+            // tells anyone whether an email exists; the session just opened is ended at once.
+            const maintenance = await app.maintenance.current();
+            if (maintenance.enabled && result.session.role !== 'admin') {
+              await access.logout(result.sessionId);
+              req.log.info({ userId: result.session.userId }, 'sign-in refused: maintenance');
+              return reply.code(503).send(maintenanceRefusal(maintenance));
+            }
             await record({
               userId: result.session.userId,
               result: 'ok',
@@ -286,6 +315,7 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
               failedSinceLastSignIn: result.failedSinceLastSignIn,
               lastFailedAt: result.lastFailedAt,
             };
+          }
         }
       } finally {
         slot.done(ok);

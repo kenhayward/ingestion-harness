@@ -23,6 +23,7 @@ import { SpecRegistry } from '../../src/specs/spec-registry.js';
 import { MemoryObjectStore } from '../../src/storage/object-store.js';
 import { MemoryLlmConfigRepo } from '../../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../../src/ontologies/repo.js';
+import { MemoryMaintenanceRepo } from '../../src/maintenance/repo.js';
 import { MemoryLinkedDataRepo } from '../../src/linked-data/repo.js';
 import { MemoryGitHubSyncRepo } from '../../src/github-sync/repo.js';
 import { MemoryProfileRepo } from '../../src/profile/repo.js';
@@ -74,6 +75,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       ontologies: new MemoryOntologyRepo(),
       ontologyFetch: { hosts: [], maxBytes: 1 },
       linkedData: new MemoryLinkedDataRepo(),
+      maintenance: new MemoryMaintenanceRepo(),
       llmSecrets: null,
       logger: { level: 'error' }, // a 500 prints its stack
     });

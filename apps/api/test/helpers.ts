@@ -1,4 +1,4 @@
-import { DocumentSpecSchema, TemplateSchema } from '@ih/shared';
+import { DocumentSpecSchema, TemplateSchema, type Role } from '@ih/shared';
 import type { FastifyInstance } from 'fastify';
 import { MemoryAccessRepo, type AccessRepo } from '../src/access/repo.js';
 import { MemoryGitHubSyncRepo } from '../src/github-sync/repo.js';
@@ -7,6 +7,7 @@ import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../src/ontologies/repo.js';
 import { MemoryLinkedDataRepo } from '../src/linked-data/repo.js';
+import { MemoryMaintenanceRepo } from '../src/maintenance/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
@@ -95,6 +96,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     ontologies,
     ontologyFetch: { hosts: ['w3id.org'], maxBytes: 104857600 },
     linkedData: new MemoryLinkedDataRepo(),
+    maintenance: new MemoryMaintenanceRepo(),
     llmSecrets: null,
     s3Keys: new S3KeyService({
       repo: new MemoryS3KeyRepo(),
@@ -175,7 +177,7 @@ export async function signInNewUser(
   app: FastifyInstance,
   access: AccessRepo,
   name: string,
-  role: 'admin' | 'user' = 'user',
+  role: Role = 'designer',
   email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}@example.test`,
 ) {
   const created = await access.createUser({ name, email, role }, null);

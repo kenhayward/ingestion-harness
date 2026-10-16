@@ -11,7 +11,7 @@ import {
   type PushOutcome,
 } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
-import { HelpButton } from '../ui/Help.js';
+import { TabHelp } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { keepDraft, loadKept } from '../ui/keptDraft.js';
 import { RETIRED_REASON } from '../ui/retired.js';
@@ -546,9 +546,20 @@ export function TemplateEditor({
           </div>
 
           {tab === 'quality' && !embedded && (
-            <QualityPanel api={api} templateId={templateId} version={version} retired={blockedBy} />
+            <>
+              <TabHelp topic="quality">How each version has done on real documents</TabHelp>
+              <QualityPanel
+                api={api}
+                templateId={templateId}
+                version={version}
+                retired={blockedBy}
+              />
+            </>
           )}
 
+          {tab === 'versions' && (
+            <TabHelp topic="versions">Published versions, the open draft, and going back</TabHelp>
+          )}
           {tab === 'versions' && (
             // Outside the fieldset: published versions take labels too (#144).
             <VersionsPanel
@@ -576,6 +587,9 @@ export function TemplateEditor({
           <fieldset disabled={!editable} className="editor-body">
             {tab === 'general' && (
               <>
+                <TabHelp topic="general">
+                  How documents are read, the default model, review and delivery
+                </TabHelp>
                 <div className="form-rows">
                   <Text label="Name" value={def.name} onChange={(v) => update(['name'], v)} />
                   <div className="model-row">
@@ -681,12 +695,9 @@ export function TemplateEditor({
 
             {tab === 'sections' && (
               <>
-                <div className="sub-tab-head">
-                  <span className="muted">
-                    Where each part of the document starts, and which parts repeat
-                  </span>
-                  <HelpButton topic="sections" />
-                </div>
+                <TabHelp topic="sections">
+                  Where each part of the document starts, and which parts repeat
+                </TabHelp>
                 <RowTable
                   label="Sections"
                   noun="section"
@@ -814,6 +825,11 @@ export function TemplateEditor({
             )}
 
             {tab === 'mapping' && (
+              <TabHelp topic="mapping">
+                What each output means in an ontology, for RDF delivery
+              </TabHelp>
+            )}
+            {tab === 'mapping' && (
               <MappingEditor
                 api={api}
                 definition={def}
@@ -825,6 +841,7 @@ export function TemplateEditor({
 
             {tab === 'outputs' && (
               <>
+                <TabHelp topic="outputs">What the recipe extracts and delivers</TabHelp>
                 <div role="tablist" aria-label="Outputs" className="sub-tabs">
                   {(
                     [
@@ -894,6 +911,7 @@ export function TemplateEditor({
 
             {tab === 'yaml' && (
               <div className="yaml">
+                <TabHelp topic="yaml">The whole recipe as text</TabHelp>
                 <YamlEditor
                   label="Recipe YAML"
                   value={yamlText}
@@ -909,6 +927,9 @@ export function TemplateEditor({
               </div>
             )}
           </fieldset>
+          {tab === 'pipeline' && (
+            <TabHelp topic="pipeline">The steps that fill the outputs, in order</TabHelp>
+          )}
           {/* Outside the disabled fieldset: a published version's steps still open (read-only). */}
           {tab === 'pipeline' && embedded && (
             <PipelineEditor

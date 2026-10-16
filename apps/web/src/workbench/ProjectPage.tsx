@@ -1,3 +1,4 @@
+import type { Role } from '@ih/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EMPTY_BRIEF, vocabularyOf, type ProjectOverview, type ProjectView } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
@@ -149,7 +150,7 @@ export function ProjectPage({
   onNavigate: (hash: string) => void;
   /** Poll interval for the tabs, and for the overview while anything runs. */
   pollMs?: number;
-  role: 'admin' | 'user';
+  role: Role;
 }) {
   const [view, setView] = useState<ProjectView | null>(null);
   const [missing, setMissing] = useState(false);

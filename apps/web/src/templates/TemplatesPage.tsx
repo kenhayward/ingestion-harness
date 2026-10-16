@@ -1,3 +1,4 @@
+import type { Role } from '@ih/shared';
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import type { SpecSummary } from '@ih/shared';
 import type { Api, TemplateListItem } from '../api/client.js';
@@ -22,14 +23,14 @@ export function TemplatesPage({
   api,
   onNavigate,
   query = '',
-  role = 'user',
+  role = 'designer',
 }: {
   api: Api;
   onNavigate: (hash: string) => void;
   /** Top-bar search: shows only matching document types. */
   query?: string;
   /** Admins get Retire… on every card. */
-  role?: 'admin' | 'user';
+  role?: Role;
 }) {
   const [items, setItems] = useState<TemplateListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);

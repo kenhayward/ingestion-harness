@@ -1,5 +1,5 @@
 /**
- * Opt-in Postgres integration test for PgGitHubSyncRepo (migration 0046): the shared contract.
+ * Opt-in Postgres integration test for PgGitHubSyncRepo (migration 0048): the shared contract.
  * Skipped unless IH_TEST_DATABASE_URL points at a THROWAWAY database: it applies db/migrations and
  * empties the sync tables there. See workbench-pg.test.ts for how to start one.
  */

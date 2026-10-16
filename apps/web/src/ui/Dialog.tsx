@@ -51,6 +51,7 @@ export function Dialog({
   icon,
   description,
   closeLabel = 'Cancel',
+  className,
 }: {
   title: string;
   onClose: () => void;
@@ -63,6 +64,8 @@ export function Dialog({
   description?: ReactNode;
   /** The closing button's text: Cancel, or Close for a dialog with nothing to cancel (help). */
   closeLabel?: string;
+  /** Added to the dialog box's classes (a size, e.g. `help-dialog`). */
+  className?: string;
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -88,7 +91,7 @@ export function Dialog({
     >
       <div
         ref={box}
-        className={rich ? 'dialog dialog-rich' : 'dialog'}
+        className={[rich ? 'dialog dialog-rich' : 'dialog', className].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

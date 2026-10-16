@@ -32,10 +32,10 @@ export const TemplateRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   publishedAt: z.string().nullable(),
-  /** Who published it (migration 0046); null for older versions and unattributed publishes. */
+  /** Who published it (migration 0048); null for older versions and unattributed publishes. */
   publishedBy: z.string().nullable(),
   ...VersionLabelSchema.shape,
-  /** Where the definition was imported from (migration 0047); null when written here. */
+  /** Where the definition was imported from (migration 0049); null when written here. */
   importedFrom: ImportedFromSchema.nullable(),
 });
 export type TemplateRecord = z.infer<typeof TemplateRecordSchema>;
@@ -85,7 +85,7 @@ export interface TemplateRepo {
     by: string | null,
   ): Promise<TemplateRecord | null>;
   /**
-   * Records where a draft's definition came from (migration 0047), leaving `updatedAt` alone.
+   * Records where a draft's definition came from (migration 0049), leaving `updatedAt` alone.
    * Null unless the version exists and is a draft.
    */
   setImportedFrom(

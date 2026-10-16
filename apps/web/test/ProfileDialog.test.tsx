@@ -7,7 +7,7 @@ import { fakeApi, profile } from './fake-api.js';
 
 const KEN: Me = {
   userId: 'u1',
-  role: 'user',
+  role: 'designer',
   label: 'Ken Hayward',
   email: 'ken@example.com',
   mustChangePassword: false,

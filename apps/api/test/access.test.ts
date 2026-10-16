@@ -55,6 +55,8 @@ const PUBLIC = [
   'GET /api/docs/js/scalar.js',
   'GET /api/docs/openapi.json',
   'GET /api/docs/openapi.yaml',
+  // The sign-in page shows the maintenance notice before anyone signs in.
+  'GET /api/maintenance',
   // GitHub's redirect brings no session cookie: the link's state finds the user.
   'GET /api/profile/github/callback',
   'POST /api/auth/login',
@@ -69,7 +71,7 @@ describe('email and password access', () => {
     expect(res.json()).toEqual({ error: 'sign in required' });
   });
 
-  it('guards every /api route except login, logout, the API docs and the GitHub callback', async () => {
+  it('guards every /api route except login, logout, the API docs, the maintenance notice and the GitHub callback', async () => {
     const { app } = await setup();
     const routes = routesOf(app);
     expect(routes.length).toBeGreaterThan(20);
@@ -250,7 +252,7 @@ describe('email and password access', () => {
     const admin = (await login(app, 'admin', adminPassword)).cookie;
     const { password } = await addUser(app, admin, { name: 'Ken', email: 'ken@example.com' });
     const { res, cookie } = await login(app, 'ken@example.com', password);
-    expect(res.json()).toMatchObject({ mustChangePassword: true, label: 'Ken', role: 'user' });
+    expect(res.json()).toMatchObject({ mustChangePassword: true, label: 'Ken', role: 'designer' });
     expect((await app.inject({ url: '/api/specs', headers: { cookie } })).json()).toEqual({
       error: 'change your one-time password first',
     });
@@ -435,7 +437,7 @@ describe('email and password access', () => {
     expect(user).toMatchObject({
       name: 'Ken Hayward',
       email: 'ken@example.com',
-      role: 'user',
+      role: 'designer',
       status: 'must-change',
       createdBy: 'Admin',
     });
@@ -532,7 +534,7 @@ describe('email and password access', () => {
       method: 'PATCH',
       url: `/api/users/${user.id}`,
       headers: { cookie: ann },
-      payload: { role: 'user' },
+      payload: { role: 'designer' },
     });
     expect(demote.json()).toEqual({ error: 'you cannot remove your own admin role' });
     // Reissuing your own would sign you out before you could read the new password.

@@ -1500,8 +1500,12 @@ button.danger-fill {
   border-radius: 7px;
   font-size: var(--ih-text-md);
 }
-/* Copy link: the confirmation, or the link to copy by hand where the browser cannot. */
-.row-actions,
+/*
+ * Copy link: the confirmation, or the link to copy by hand where the browser cannot, may need a
+ * line of its own. Only then: other rows of buttons sit in narrow cells (width: 1%) and would
+ * stack one button per line.
+ */
+.row-actions:has(> .copy-note, > .copy-link),
 .panel-actions {
   flex-wrap: wrap;
 }
@@ -4604,17 +4608,28 @@ img.avatar {
 .help-button {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   min-height: 0;
   padding: 0;
   border-radius: 50%;
-  color: var(--ih-muted);
+  border: 1px solid var(--ih-ok-fg);
+  background: var(--ih-ok-bg);
+  color: var(--ih-ok-fg);
   vertical-align: middle;
 }
 .help-button:hover,
 .help-button:focus-visible {
-  color: var(--ih-accent);
+  background: var(--ih-ok-fg);
+  color: var(--ih-ok-bg);
+}
+/* 30% wider than the standard rich dialog (480px). */
+.dialog.dialog-rich.help-dialog {
+  width: min(624px, 100%);
+}
+.help-dialog .dialog-icon {
+  color: var(--ih-ok-fg);
+  background: var(--ih-ok-bg);
 }
 /* The dialog body scrolls; the topic only sets its reading width. */
 .help-body {
@@ -4639,4 +4654,83 @@ img.avatar {
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
+}
+
+/* Maintenance mode (migration 0046): the banner, the admin's strip and the tab. */
+.maintenance-banner,
+.maintenance-strip {
+  border: 1px solid color-mix(in srgb, var(--ih-warn-fg) 30%, transparent);
+  color: var(--ih-warn-fg);
+}
+.maintenance-banner > .icon,
+.maintenance-strip > .icon {
+  flex: none;
+  margin-top: 1px;
+}
+.auth-column > .maintenance-banner {
+  margin-bottom: 16px;
+}
+.maintenance-message {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.maintenance-strip {
+  margin-bottom: 16px;
+}
+.maintenance-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.maintenance-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+}
+.maintenance-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+}
+.maintenance-field > label {
+  font-weight: 600;
+}
+.maintenance-page textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+}
+/* label.inline: the checkbox and its words on one line; the state lined up under the words. */
+.maintenance-switch {
+  align-self: flex-start;
+  font-weight: 600;
+}
+.maintenance-switch > input {
+  margin: 0;
+}
+.maintenance-state {
+  margin: 0;
+  /* The checkbox (16px) and label.inline's gap (6px). */
+  padding-left: 22px;
+  font-size: var(--ih-text-sm);
+}
+.maintenance-preview {
+  align-self: stretch;
+}
+.maintenance-preview h3 {
+  margin: 0 0 8px;
+  font-size: var(--ih-text-md);
+}
+
+/* An operator opening a design page (Document types, Ontologies, Workbench). */
+.not-for-operators {
+  max-width: 560px;
+  padding: 24px;
+}
+.not-for-operators h1 {
+  margin-top: 0;
+  font-size: var(--ih-text-xl, 1.25rem);
 }

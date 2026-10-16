@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { HELP_TOPICS, type HelpTopicId } from '../help/topics.js';
 import { Dialog } from './Dialog.js';
 import { Icon } from './Icon.js';
@@ -27,11 +27,22 @@ export function HelpButton({ topic }: { topic: HelpTopicId }) {
           title={title}
           icon={<Icon name="help" size={28} strokeWidth={1.6} />}
           closeLabel="Close"
+          className="help-dialog"
           onClose={() => setOpen(false)}
         >
           <div className="help-body">{body}</div>
         </Dialog>
       )}
     </>
+  );
+}
+
+/** The strip at the top of a tab: what the tab is for, and its help button at the right. */
+export function TabHelp({ topic, children }: { topic: HelpTopicId; children: ReactNode }) {
+  return (
+    <div className="sub-tab-head">
+      <span className="muted">{children}</span>
+      <HelpButton topic={topic} />
+    </div>
   );
 }

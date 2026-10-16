@@ -31,7 +31,7 @@ describe.skipIf(!url)('PgProfileRepo', { timeout: 60_000 }, () => {
       const access = new PgAccessRepo(pool);
       const user = async (name: string) => {
         const created = await access.createUser(
-          { name, email: `${name}@example.com`, role: 'user' },
+          { name, email: `${name}@example.com`, role: 'designer' },
           null,
         );
         if (typeof created === 'string') throw new Error(created);
