@@ -12,6 +12,7 @@ import type { S3KeyService } from './s3keys/service.js';
 import type { LlmConfigRepo } from './llm/repo.js';
 import type { OntologyRepo } from './ontologies/repo.js';
 import type { LinkedDataRepo } from './linked-data/repo.js';
+import { MaintenanceGate, type MaintenanceRepo } from './maintenance/repo.js';
 import type { SecretsKeys } from './llm/secrets.js';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
@@ -37,6 +38,7 @@ import { s3KeyRoutes } from './routes/s3-keys.js';
 import { llmRoutes } from './routes/llm.js';
 import { ontologyRoutes } from './routes/ontologies.js';
 import { linkedDataRoutes } from './routes/linked-data.js';
+import { maintenanceRoutes } from './routes/maintenance.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -68,6 +70,8 @@ export interface AppDeps {
   ontologyFetch: { hosts: string[]; maxBytes: number };
   /** The customer and the base IRI RDF is minted under (ADR 0011). */
   linkedData: LinkedDataRepo;
+  /** Maintenance mode (migration 0046): only admins get in while it is on. */
+  maintenance: MaintenanceRepo;
   /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
   llmSecrets: SecretsKeys | null;
   /** Job change notifications for live streams (Postgres NOTIFY); null: heartbeats only. */
@@ -89,6 +93,8 @@ export interface AppDeps {
 declare module 'fastify' {
   interface FastifyInstance {
     deps: AppDeps;
+    /** Maintenance mode as the access hook reads it (cached briefly). */
+    maintenance: MaintenanceGate;
   }
 }
 
@@ -105,6 +111,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       : (deps.trustProxy ?? PRIVATE_NETWORKS);
   const app = Fastify({ logger: deps.logger ?? false, trustProxy });
   app.decorate('deps', deps);
+  app.decorate('maintenance', new MaintenanceGate(deps.maintenance));
 
   await app.register(multipart, { limits: { fileSize: deps.maxUploadBytes, files: 1 } });
   await app.register(cookie);
@@ -131,6 +138,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(llmRoutes, { prefix: '/api' });
   await app.register(ontologyRoutes, { prefix: '/api' });
   await app.register(linkedDataRoutes, { prefix: '/api' });
+  await app.register(maintenanceRoutes, { prefix: '/api' });
 
   return app;
 }

@@ -55,6 +55,8 @@ const PUBLIC = [
   'GET /api/docs/js/scalar.js',
   'GET /api/docs/openapi.json',
   'GET /api/docs/openapi.yaml',
+  // The sign-in page shows the maintenance notice before anyone signs in.
+  'GET /api/maintenance',
   // GitHub's redirect brings no session cookie: the link's state finds the user.
   'GET /api/profile/github/callback',
   'POST /api/auth/login',
@@ -69,7 +71,7 @@ describe('email and password access', () => {
     expect(res.json()).toEqual({ error: 'sign in required' });
   });
 
-  it('guards every /api route except login, logout, the API docs and the GitHub callback', async () => {
+  it('guards every /api route except login, logout, the API docs, the maintenance notice and the GitHub callback', async () => {
     const { app } = await setup();
     const routes = routesOf(app);
     expect(routes.length).toBeGreaterThan(20);

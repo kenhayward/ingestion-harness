@@ -4640,3 +4640,44 @@ img.avatar {
   gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
+
+/* Maintenance mode (migration 0046): the banner, the admin's strip and the tab. */
+.maintenance-banner,
+.maintenance-strip {
+  border: 1px solid color-mix(in srgb, var(--ih-warn-fg) 30%, transparent);
+  color: var(--ih-warn-fg);
+}
+.maintenance-banner > .icon,
+.maintenance-strip > .icon {
+  flex: none;
+  margin-top: 1px;
+}
+.auth-column > .maintenance-banner {
+  margin-bottom: 16px;
+}
+.maintenance-message {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.maintenance-strip {
+  margin-bottom: 16px;
+}
+.maintenance-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.maintenance-page textarea {
+  width: 100%;
+  font: inherit;
+}
+.maintenance-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.maintenance-preview h3 {
+  margin: 8px 0;
+  font-size: var(--ih-text-md);
+}

@@ -106,6 +106,25 @@ const CHANGE_PASSWORD_FIRST = {
   required: ['error'],
 };
 
+const UNDER_MAINTENANCE = {
+  type: 'object',
+  description:
+    'Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.',
+  properties: {
+    error: { type: 'string', const: 'CT Studio is under maintenance' },
+    maintenance: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' },
+        message: { type: 'string' },
+        since: { type: ['string', 'null'], format: 'date-time' },
+      },
+      required: ['enabled', 'message', 'since'],
+    },
+  },
+  required: ['error', 'maintenance'],
+};
+
 /** What a session opened with a one-time password may still call (ADR 0013). */
 const WHILE_CHANGING = ['GET /api/auth/me', 'PUT /api/auth/password'];
 
@@ -124,7 +143,7 @@ const UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 /**
  * `@fastify/swagger` transform: Zod → JSON Schema, plus what every route shares. Public routes
  * (and the health checks outside /api) need no session; the rest gain the 401 the access hook
- * sends and its 403 for a one-time password session. Every /api route that changes something
+ * sends, its 403 for a one-time password session and its 503 during maintenance. Every /api route that changes something
  * gains its cross-site 403.
  */
 export function transform({
@@ -165,6 +184,9 @@ export function transform({
   ];
   if (out.response && hook403.length) {
     out.response = { ...out.response, 403: with403(out.response['403'], ...hook403) };
+  }
+  if (out.response && guarded) {
+    out.response = { ...out.response, 503: with403(out.response['503'], UNDER_MAINTENANCE) };
   }
   return { schema: out, url };
 }
