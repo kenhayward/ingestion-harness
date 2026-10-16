@@ -55,6 +55,36 @@ describe('SurveyTab', () => {
     expect(within(candidates).getByText('protocol_number')).toBeInTheDocument();
   });
 
+  it('shows what a running survey is doing, and for how long (issue #151)', async () => {
+    const since = new Date(Date.now() - 95_000).toISOString();
+    const at = new Date(Date.now() - 65_000).toISOString();
+    const running = proposalView({
+      status: 'running',
+      body: null,
+      run: {
+        status: 'running',
+        since,
+        progress: {
+          stage: 'survey',
+          phase: 'model',
+          samples: 4,
+          attempt: 1,
+          of: 2,
+          round: 1,
+          at,
+        },
+      },
+    });
+    tab({ listProposals: vi.fn(async () => [running]) });
+    const box = await screen.findByRole('group', { name: 'Survey progress' });
+    expect(box).toHaveTextContent(/Running for 01:3\d/);
+    const steps = within(box).getAllByRole('listitem');
+    expect(steps.map((li) => li.getAttribute('aria-current'))).toEqual([null, null, 'step']);
+    expect(steps[1]).toHaveTextContent('4 samples');
+    expect(steps[2]).toHaveTextContent('Drafting with the model');
+    expect(steps[2]).toHaveTextContent(/01:0\d/);
+  });
+
   it('warns that external models may receive dev sample text', async () => {
     tab({}, 'external');
     expect(

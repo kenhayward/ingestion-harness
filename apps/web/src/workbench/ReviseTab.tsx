@@ -20,6 +20,7 @@ import {
   runningEvaluation,
   type ReferenceCounts,
 } from './evaluate.js';
+import { DraftRunProgress } from './DraftRunProgress.js';
 import { ProposalCard, type NextStep } from './ProposalCard.js';
 import { ReviseFeedback } from './ReviseFeedback.js';
 import {
@@ -387,10 +388,17 @@ export function ReviseTab({
           </section>
         </div>
       </section>
-      {running && (
-        <p role="status" className="revise-running">
-          The model is drafting a revision…
-        </p>
+      {running && latest && (
+        <DraftRunProgress
+          stage="revise"
+          run={latest.run}
+          label="Revision progress"
+          fallback={
+            <p role="status" className="revise-running">
+              The model is drafting a revision…
+            </p>
+          }
+        />
       )}
       {evaluating && (
         <p role="status" aria-label="Dev evaluation" className="revise-running">

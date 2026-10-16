@@ -16,7 +16,9 @@ import {
   BriefVersionViewSchema,
   briefVersions,
   ComparisonViewSchema,
+  DRAFT_PROGRESS_EVENT,
   DRAFT_STAGES,
+  DraftProgressSchema,
   DataPolicySchema,
   EVALUATION_SETS,
   MAX_COMPARED_MODELS,
@@ -92,6 +94,7 @@ import {
   type ProjectSummary,
   type ProjectView,
   type ProposalStatus,
+  type DraftRun,
   type ProposalView,
   type Publication,
   type Reference,
@@ -356,10 +359,29 @@ export async function acceptedSurvey(
   return body?.success ? body.data : null;
 }
 
+/**
+ * Where an unfinished drafting job is (issue #151): queued since it was (re)queued, or running
+ * since its claim (a claim sets `updated_at`; heartbeats do not), with its latest
+ * `drafting progress` event of this attempt. Null once the job finished.
+ */
+function draftRun(job: ProjectJob | null, events: readonly JobEventRecord[]): DraftRun | null {
+  if (job?.status === 'queued') return { status: 'queued', since: job.updatedAt, progress: null };
+  if (job?.status !== 'running') return null;
+  const latest = events.find((e) => e.jobId === job.id && e.message === DRAFT_PROGRESS_EVENT);
+  const fresh = latest && Date.parse(latest.at) >= Date.parse(job.updatedAt);
+  const parsed = fresh ? DraftProgressSchema.safeParse(latest.data) : null;
+  return {
+    status: 'running',
+    since: job.updatedAt,
+    progress: parsed?.success ? { ...parsed.data, at: latest!.at } : null,
+  };
+}
+
 async function proposalView(
   app: FastifyInstance,
   p: ProposalRecord,
   job: ProjectJob | null,
+  events: readonly JobEventRecord[] = [],
 ): Promise<ProposalView> {
   const base = {
     id: p.id,
@@ -368,6 +390,7 @@ async function proposalView(
     createdAt: p.createdAt,
     decidedAt: p.decidedAt,
     acceptedChanges: p.acceptedChanges,
+    run: draftRun(job, events),
   };
   const empty = { ...base, model: null, body: null };
   if (!job || job.status === 'queued' || job.status === 'running') {
@@ -3151,7 +3174,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           Every drafting proposal, with its status (derived from its job): \`running\`,
           \`ready\` (waiting for a decision), \`failed\`, \`accepted\`,
           \`partially_accepted\` or \`rejected\`. A ready proposal's \`body\` is the survey's
-          questions, or the stage's notes and typed changes.
+          questions, or the stage's notes and typed changes. While its job is queued or running,
+          \`run\` says since when and, once the worker reports it, what it is doing (its latest
+          \`drafting progress\` event of this attempt: reading the samples, each model call,
+          testing anchors, queuing ontology suggestions).
         `,
         params: ProjectIdParams,
         response: {
@@ -3167,8 +3193,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const jobs = new Map(
         (await app.deps.repo.listDraftJobs(req.params.id)).map((j) => [j.id, j]),
       );
+      const running = [...jobs.values()].filter((j) => j.status === 'running').map((j) => j.id);
+      const events = running.length
+        ? await app.deps.repo.latestEvents(running, [DRAFT_PROGRESS_EVENT])
+        : [];
       const proposals = await workbench.listProposals(req.params.id);
-      return Promise.all(proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null)));
+      return Promise.all(
+        proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null, events)),
+      );
     },
   );
 
