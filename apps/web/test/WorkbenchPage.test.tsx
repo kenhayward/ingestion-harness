@@ -506,3 +506,14 @@ describe('WorkbenchPage retired projects (D18)', () => {
     expect(within(cards).queryByRole('button', { name: /unretire/i })).toBeNull();
   });
 });
+
+describe('WorkbenchPage help', () => {
+  it('sits just right of New project', async () => {
+    page();
+    const help = await screen.findByRole('button', { name: 'Help: Using the Workbench' });
+    const newProject = screen.getByRole('button', { name: 'New project' });
+    expect(newProject.nextElementSibling).toBe(help);
+    await userEvent.click(help);
+    expect(screen.getByRole('dialog', { name: 'Using the Workbench' })).toBeInTheDocument();
+  });
+});

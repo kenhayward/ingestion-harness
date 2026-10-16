@@ -12,6 +12,7 @@ import { legacyTypes } from './legacy.js';
 import { RenameDialog } from './RenameDialog.js';
 import { RetireDialog } from './RetireDialog.js';
 import { TemplateCard } from './TemplateCard.js';
+import { HelpButton } from '../ui/Help.js';
 
 type Opened = { record: { id: string; version: number } };
 
@@ -87,6 +88,7 @@ export function TemplatesPage({
             <Icon name="plus" />
             New document type
           </button>
+          <HelpButton topic="templates" />
         </div>
       </div>
       {error && <p role="alert">{error}</p>}

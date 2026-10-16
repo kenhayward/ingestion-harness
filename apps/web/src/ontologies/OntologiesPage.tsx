@@ -21,6 +21,7 @@ import {
 import { DeleteVersionDialog } from './DeleteVersionDialog.js';
 import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { ImportOntologyDialog } from './ImportOntologyDialog.js';
+import { HelpButton } from '../ui/Help.js';
 
 /** The ontology library's view, remembered per browser. */
 const VIEW_KEY = 'ih.ontologyView';
@@ -128,6 +129,7 @@ export function OntologiesPage({
               Import ontology
             </button>
           )}
+          <HelpButton topic="ontologies" />
         </div>
       </header>
       {note && <p role="status">{note}</p>}

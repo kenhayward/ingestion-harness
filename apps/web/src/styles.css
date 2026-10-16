@@ -4754,3 +4754,18 @@ img.avatar {
   margin-top: 0;
   font-size: var(--ih-text-xl, 1.25rem);
 }
+.result-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* A help button among a header's buttons sits centred beside them; on the ontology term bar it
+   goes to the right end. */
+.header-actions > .help-button,
+.page-actions > .help-button {
+  align-self: center;
+}
+.term-browser-bar > .help-button {
+  margin-left: auto;
+}

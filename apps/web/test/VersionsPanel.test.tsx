@@ -333,7 +333,17 @@ describe('VersionsPanel GitHub sync', () => {
     withSync(linked([]), {}, { pushVersion, getGitHubSync });
     const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
     await userEvent.click(within(row).getByRole('button', { name: 'Push v1' }));
-    expect(await within(row).findByRole('link', { name: 'PR #42 open' })).toBeInTheDocument();
+    // The push reloads the panel, which may render a new row: look the row up again (CI's
+    // coverage run is slow enough to catch the old one detached).
+    await waitFor(
+      () =>
+        expect(
+          within(screen.getByRole('listitem', { name: 'v1 · Published' })).getByRole('link', {
+            name: 'PR #42 open',
+          }),
+        ).toBeInTheDocument(),
+      { timeout: 5000 },
+    );
   });
 
   it('shows a refused push as an alert', async () => {

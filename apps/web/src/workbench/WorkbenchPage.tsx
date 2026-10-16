@@ -20,6 +20,7 @@ import {
   savePageSize,
 } from './listDerive.js';
 import { ProjectCard, ProjectTable } from './ProjectTable.js';
+import { HelpButton } from '../ui/Help.js';
 
 type Filter = ProjectListQuery['filter'];
 type Sort = ProjectListQuery['sort'];
@@ -232,6 +233,7 @@ export function WorkbenchPage({
           <button type="button" className="primary" onClick={() => setDialog('new')}>
             New project
           </button>
+          <HelpButton topic="workbench" />
         </div>
       </div>
 

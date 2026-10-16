@@ -681,3 +681,13 @@ describe('ImportOntologyDialog upload limit (a folder or file over it is refused
     ).toBeInTheDocument();
   });
 });
+
+describe('OntologiesPage help', () => {
+  it('explains the library from the page header', async () => {
+    page();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: The ontology library' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'The ontology library' })).toBeInTheDocument();
+  });
+});

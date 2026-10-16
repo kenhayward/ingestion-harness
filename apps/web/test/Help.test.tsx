@@ -105,3 +105,26 @@ describe('help topics for the operator pages', () => {
     for (const m of mentions) expect(dialog).toHaveTextContent(m);
   });
 });
+
+describe('help topics for the library and Workbench pages', () => {
+  it.each([
+    ['templates', 'Using the Document types page', ['New document type', 'Retire', 'Test run']],
+    ['result', 'Reading a published result', ['edited', 'Checks', 'Issues', 'Target']],
+    [
+      'ontologies',
+      'The ontology library',
+      ['Import ontology', 'One ontology per file', 'Local only'],
+    ],
+    ['ontology', 'An ontology and its versions', ['Version', 'Imports', 'Delete version']],
+    ['ontologyClasses', 'Classes', ['Parents', 'Children']],
+    ['ontologyProperties', 'Properties', ['Domain', 'Range']],
+    ['ontologyConcepts', 'Concepts and schemes', ['scheme', 'enum']],
+    ['ontologyShapes', 'Shapes', ['SHACL', 'review']],
+    ['workbench', 'Using the Workbench', ['New project', 'Needs you', 'Pinned', 'Import bundle']],
+  ] as const)('%s: %s', async (topic, title, mentions) => {
+    render(<HelpButton topic={topic} />);
+    await userEvent.click(screen.getByRole('button', { name: `Help: ${title}` }));
+    const dialog = screen.getByRole('dialog', { name: title });
+    for (const m of mentions) expect(dialog).toHaveTextContent(m);
+  });
+});
