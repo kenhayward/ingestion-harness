@@ -479,6 +479,8 @@ async function toView(
     createdAt: s.createdAt,
     state,
     prepareJobId: job?.id ?? null,
+    prepareStatus:
+      state === 'preparing' ? (job?.status === 'running' ? 'running' : 'queued') : null,
     error: state === 'failed' ? (job?.error ?? job?.status ?? 'preparation job missing') : null,
     prepare: prepareProgress(job, events),
     prepareError: prepareError(state, job, events),

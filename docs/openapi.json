@@ -7075,6 +7075,10 @@
                                   "type": "integer",
                                   "minimum": 0
                                 },
+                                "pages": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
                                 "kind": {
                                   "type": "string",
                                   "enum": [
@@ -9715,6 +9719,10 @@
                                       "minimum": 0
                                     },
                                     "of": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "pages": {
                                       "type": "integer",
                                       "minimum": 0
                                     },
@@ -22111,6 +22119,20 @@
                           }
                         ]
                       },
+                      "prepareStatus": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "error": {
                         "type": [
                           "string",
@@ -22134,6 +22156,10 @@
                                 "minimum": 0
                               },
                               "of": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "pages": {
                                 "type": "integer",
                                 "minimum": 0
                               }
@@ -22239,6 +22265,7 @@
                       "createdAt",
                       "state",
                       "prepareJobId",
+                      "prepareStatus",
                       "error",
                       "prepare",
                       "prepareError",
@@ -22436,6 +22463,20 @@
                         }
                       ]
                     },
+                    "prepareStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "error": {
                       "type": [
                         "string",
@@ -22459,6 +22500,10 @@
                               "minimum": 0
                             },
                             "of": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "pages": {
                               "type": "integer",
                               "minimum": 0
                             }
@@ -22564,6 +22609,7 @@
                     "createdAt",
                     "state",
                     "prepareJobId",
+                    "prepareStatus",
                     "error",
                     "prepare",
                     "prepareError",
@@ -22979,6 +23025,20 @@
                         }
                       ]
                     },
+                    "prepareStatus": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "running"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "error": {
                       "type": [
                         "string",
@@ -23002,6 +23062,10 @@
                               "minimum": 0
                             },
                             "of": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "pages": {
                               "type": "integer",
                               "minimum": 0
                             }
@@ -23107,6 +23171,7 @@
                     "createdAt",
                     "state",
                     "prepareJobId",
+                    "prepareStatus",
                     "error",
                     "prepare",
                     "prepareError",

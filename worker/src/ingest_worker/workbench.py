@@ -108,13 +108,16 @@ def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict
 
 
 def _prepare(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
-    def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
-        data = {"stage": stage, "page": page, "of": of}
-        _quietly(job, "info", PREPARE_PROGRESS, data, queue)
-
     source = load_source(job, deps, queue)
     pdf, sha256 = source.pdf, source.sha256
     pages = _extract(deps, pdf)
+    total = len(pages)
+
+    def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
+        # `pages`: the document's page count, which the Samples tab shows mid-OCR (#142).
+        data = {"stage": stage, "page": page, "of": of, "pages": total}
+        _quietly(job, "info", PREPARE_PROGRESS, data, queue)
+
     report("text", len(pages), len(pages))
     ocr_numbers = (
         [i + 1 for i in pages_needing_ocr(pages, "auto", deps.ocr.min_chars)] if deps.ocr else []

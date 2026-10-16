@@ -264,6 +264,55 @@ describe('http api: workbench', () => {
     );
   });
 
+  it('reports upload progress for a sample, and reads its answer or refusal', async () => {
+    const sent: { method: string; url: string; body: FormData }[] = [];
+    let respondWith: { status: number; body: unknown } = { status: 201, body: { id: 's1' } };
+    class FakeXhr {
+      status = 0;
+      responseText = '';
+      upload: { onprogress: ((e: ProgressEvent) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      private method = '';
+      private url = '';
+      open(method: string, url: string) {
+        this.method = method;
+        this.url = url;
+      }
+      send(body: FormData) {
+        sent.push({ method: this.method, url: this.url, body });
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 3, total: 6 } as ProgressEvent);
+        this.status = respondWith.status;
+        this.responseText = JSON.stringify(respondWith.body);
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const api = createHttpApi('/api');
+    const file = new File(['%PDF-1'], 'one.pdf', { type: 'application/pdf' });
+    const progress = vi.fn();
+    expect(await api.uploadSample('letter', file, 'dev', progress)).toEqual({ id: 's1' });
+    expect(progress).toHaveBeenCalledWith(3, 6);
+    expect(sent[0]!.method).toBe('POST');
+    expect(sent[0]!.url).toBe('/api/workbench/projects/letter/samples');
+    expect([...sent[0]!.body.keys()]).toEqual(['role', 'file']);
+
+    respondWith = { status: 409, body: { error: 'this PDF is already a sample of the project' } };
+    await expect(api.uploadSample('letter', file, 'dev', progress)).rejects.toMatchObject({
+      status: 409,
+      message: 'this PDF is already a sample of the project',
+    });
+
+    const ended = vi.fn();
+    const off = api.onUnauthorized(ended);
+    respondWith = { status: 401, body: { error: 'sign in required' } };
+    await expect(api.uploadSample('letter', file, 'dev', progress)).rejects.toThrow(
+      'sign in required',
+    );
+    expect(ended).toHaveBeenCalledTimes(1);
+    off();
+  });
+
   it('uploads a sample as multipart with its role before the file', async () => {
     const fetchMock = vi.fn(async () => respond(201, { id: 's1' }));
     vi.stubGlobal('fetch', fetchMock);

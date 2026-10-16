@@ -594,7 +594,13 @@ export interface Api {
   getRevisePreview(projectId: string): Promise<RevisePreview>;
   listStages(projectId: string): Promise<StageView[]>;
   listSamples(projectId: string): Promise<SampleView[]>;
-  uploadSample(projectId: string, file: File, role: SampleRole): Promise<SampleView>;
+  /** With `onProgress`, reports the bytes sent of the upload (#142). */
+  uploadSample(
+    projectId: string,
+    file: File,
+    role: SampleRole,
+    onProgress?: (sent: number, total: number) => void,
+  ): Promise<SampleView>;
   setSampleRole(projectId: string, sampleId: string, role: SampleRole): Promise<SampleView>;
   removeSample(projectId: string, sampleId: string): Promise<void>;
   getSampleText(projectId: string, sampleId: string): Promise<PreparedText>;
@@ -783,6 +789,31 @@ function messageOf(res: Response, body: { error?: unknown }): string {
     if (issues.length) return issues.join('; ');
   }
   return `${res.status} ${res.statusText}`.trim();
+}
+
+/**
+ * A multipart POST through XMLHttpRequest, for its upload progress: answers and refusals read as
+ * they do through `apiFetch` (a 401 ends the session, an error body becomes the ApiError).
+ */
+function xhrPost<T>(
+  url: string,
+  body: FormData,
+  onProgress: (sent: number, total: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded, e.total);
+    };
+    xhr.onerror = () => reject(new Error('upload failed: the connection was lost'));
+    xhr.onload = () => {
+      const res = new Response(xhr.responseText || null, { status: xhr.status });
+      if (res.status === 401) for (const listener of unauthorizedListeners) listener();
+      json<T>(res).then(resolve, reject);
+    };
+    xhr.send(body);
+  });
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -1174,14 +1205,14 @@ export function createHttpApi(base = '/api'): Api {
     listStages: (id) => apiFetch(`${base}/workbench/projects/${id}/stages`).then(json<StageView[]>),
     listSamples: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/samples`).then(json<SampleView[]>),
-    uploadSample: (id, file, role) => {
+    uploadSample: (id, file, role, onProgress) => {
       const form = new FormData();
       form.append('role', role); // fields before the file part
       form.append('file', file);
-      return apiFetch(`${base}/workbench/projects/${id}/samples`, {
-        method: 'POST',
-        body: form,
-      }).then(json<SampleView>);
+      const url = `${base}/workbench/projects/${id}/samples`;
+      // fetch cannot report upload progress; XMLHttpRequest can.
+      if (onProgress) return xhrPost<SampleView>(url, form, onProgress);
+      return apiFetch(url, { method: 'POST', body: form }).then(json<SampleView>);
     },
     setSampleRole: (id, sampleId, role) =>
       post<SampleView>(`${base}/workbench/projects/${id}/samples/${sampleId}`, { role }, 'PATCH'),

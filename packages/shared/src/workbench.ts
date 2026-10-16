@@ -145,6 +145,8 @@ export const SampleViewSchema = z.object({
   createdAt: z.string(),
   state: SampleStateSchema,
   prepareJobId: z.string().uuid().nullable(),
+  /** While `preparing`: waiting for a worker (`queued`) or being read (`running`); else null. */
+  prepareStatus: z.enum(['queued', 'running']).nullable(),
   error: z.string().nullable(),
   /** While the prepare job runs: its latest progress in this attempt (null before any). */
   prepare: PrepareProgressSchema.nullable(),

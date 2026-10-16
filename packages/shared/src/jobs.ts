@@ -183,11 +183,15 @@ export const JobGraphSchema = z.object({
 });
 export type JobGraph = z.infer<typeof JobGraphSchema>;
 
-/** Where a document read is: the text layer read, or `page` of `of` OCR pages done. */
+/**
+ * Where a document read is: the text layer read, or `page` of `of` OCR pages done. `pages` is
+ * the document's page count (#142); events from workers before it lack it.
+ */
 export const PrepareProgressSchema = z.object({
   stage: z.enum(['text', 'ocr']),
   page: z.number().int().nonnegative(),
   of: z.number().int().nonnegative(),
+  pages: z.number().int().nonnegative().optional(),
 });
 export type PrepareProgress = z.infer<typeof PrepareProgressSchema>;
 
