@@ -11,6 +11,7 @@ from .base import (
     DISCOVERY_TIMEOUT_S,
     CompletionRequest,
     CompletionResult,
+    ContextExceededError,
     LLMError,
     ModelDescriptor,
     ProviderKind,
@@ -18,6 +19,7 @@ from .base import (
     TokenCallback,
     TokenCounter,
     VisionRequest,
+    is_context_exceeded,
 )
 
 #: How to ask an OpenAI-compatible server for JSON. Many local servers lack json_schema.
@@ -48,6 +50,8 @@ def _responses_input(prompt: str, images: tuple[bytes, ...]) -> str | list[dict[
 
 
 def _wrap_errors(exc: Exception) -> Exception:
+    if isinstance(exc, openai.APIStatusError) and is_context_exceeded(exc.message, exc.body):
+        return ContextExceededError(f"openai {exc.status_code}: {_server_message(exc)}")
     if isinstance(exc, openai.APIStatusError) and (
         exc.status_code in (408, 409, 429) or exc.status_code >= 500
     ):
@@ -55,6 +59,15 @@ def _wrap_errors(exc: Exception) -> Exception:
     if isinstance(exc, openai.APIConnectionError):
         return LLMError(f"openai connection error: {exc}")
     return exc
+
+
+def _server_message(exc: openai.APIStatusError) -> str:
+    """The part of a context error that says why (LM Studio nests it in a JSON string)."""
+    for text in (exc.message, str(exc.body)):
+        match = re.search(r'"message"\s*:\s*"([^"]+)"', text)
+        if match and is_context_exceeded(match.group(1)):
+            return match.group(1)
+    return exc.message
 
 
 class _OpenAIBase:
@@ -96,7 +109,15 @@ class _OpenAIBase:
             return whole(params)
         try:
             return stream(params, TokenCounter(on_tokens))
-        except openai.BadRequestError:
+        except openai.APIStatusError as exc:
+            # A request too long for the context would not fit whole either.
+            if is_context_exceeded(exc.message, exc.body) or not isinstance(
+                exc, openai.BadRequestError
+            ):
+                wrapped = _wrap_errors(exc)
+                if wrapped is exc:
+                    raise
+                raise wrapped from exc
             result = whole(params)  # the same request whole: a real 400 raises again here
             self._streams = False
             return result

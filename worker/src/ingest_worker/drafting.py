@@ -24,7 +24,7 @@ from .extract import (
     OutputTruncatedError,
     run_extraction,
 )
-from .llm.base import RefusalError
+from .llm.base import ContextExceededError, RefusalError
 from .llm.registry import ModelResolutionError
 from .mapping_stage import MAPPING as MAPPING_STAGE
 from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queue_suggestions
@@ -129,6 +129,17 @@ def truncated_reason(limit: int) -> str:
         f"The drafting model's reply was cut off at its output limit ({limit:,} tokens). "
         "An admin can raise the model's Max output tokens under Administration > Models, or the stage "
         "can be run again with less to propose."
+    )
+
+
+def context_reason(limit: int) -> str:
+    """Why a drafting stage stopped when its request did not fit the drafting model's context
+    window (no model ref, as `truncated_reason`)."""
+    return (
+        "The drafting model's context window, as loaded on its server, is too small for this "
+        f"stage's request and its output limit ({limit:,} tokens). An admin can raise the "
+        "model's context length on its server (e.g. LM Studio) or lower its Max output tokens "
+        "under Administration > Models."
     )
 
 
@@ -491,6 +502,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             raise DocumentError(str(exc)) from exc
         except RefusalError as exc:
             raise DocumentError(f"drafting model refused: {exc}") from exc
+        except ContextExceededError as exc:  # a retry would repeat it
+            raise DocumentError(context_reason(limit)) from exc
         _audit(deps, job, label, result.attempts)
         body = stage.convert(result.data)[0] if stage.convert else result.data
         if stage.fit is not None:

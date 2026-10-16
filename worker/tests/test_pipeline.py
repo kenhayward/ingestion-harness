@@ -312,6 +312,47 @@ def test_transient_ocr_errors_are_retried(setup) -> None:  # type: ignore[no-unt
     assert queue.failed and "503" in queue.failed[0][1]
 
 
+SERVER_CONTEXT = "openai 400: Context size has been exceeded."
+
+
+def test_an_ocr_page_too_long_for_the_loaded_context_needs_review(setup) -> None:  # type: ignore[no-untyped-def]
+    from ingest_worker.llm.base import ContextExceededError
+
+    _, _, deps = setup
+    ocr = FakeProvider("local")
+    ocr.vision_responses = [ContextExceededError(SERVER_CONTEXT)]
+    with_ocr(deps, ocr)
+    deps.extract_text = lambda _pdf: [PAGES[0], ""]
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    assert not queue.failed  # deterministic: never retried
+    [(_, reason)] = queue.reviewed
+    assert reason == (
+        "OCR page 2: the request does not fit the context window of local/olmocr-2-7b-1025 as "
+        "loaded on its server; raise the model's context length on its server (e.g. LM Studio) "
+        "or lower the OCR output budget (ocr.maxTokens in config/llm-providers.yaml, now 8000) "
+        f"(server said: {SERVER_CONTEXT})"
+    )
+
+
+def test_a_step_too_long_for_the_loaded_context_needs_review(setup) -> None:  # type: ignore[no-untyped-def]
+    from ingest_worker.llm.base import ContextExceededError
+
+    provider, _, deps = setup
+    provider.responses = [ContextExceededError(SERVER_CONTEXT)]
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    assert not queue.failed
+    assert len(provider.calls) == 1  # no second attempt
+    [(_, reason)] = queue.reviewed
+    assert reason == (
+        "extraction 'invoice_header': the request does not fit the context window of "
+        "anthropic/claude-opus-5-5 as loaded on its server; raise the model's context length on "
+        "its server (e.g. LM Studio), lower the step's maxTokens (now 64000) or split it with "
+        f"chunkPages (server said: {SERVER_CONTEXT})"
+    )
+
+
 # --- page images, copy selection, OCR concurrency -------------------------------------------
 
 

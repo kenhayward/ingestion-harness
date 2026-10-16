@@ -196,6 +196,25 @@ def test_a_drafting_reply_cut_off_at_the_limit_says_where_to_raise_it(
     assert "chunkPages" not in reason
 
 
+def test_a_drafting_request_too_long_for_the_loaded_context_says_what_to_change(
+    fixture_specs_dir: Path,
+) -> None:
+    from ingest_worker.llm.base import ContextExceededError
+
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [ContextExceededError("openai 400: Context size has been exceeded.")]
+    queue = FakeQueue(jobs=[draft_job(stage="outputs")])
+    run_once(queue, deps, "w1")
+    assert not queue.failed and len(provider.calls) == 1
+    [(_, reason)] = queue.reviewed
+    assert reason == (
+        "The drafting model's context window, as loaded on its server, is too small for this "
+        "stage's request and its output limit (16,000 tokens). An admin can raise the model's "
+        "context length on its server (e.g. LM Studio) or lower its Max output tokens under "
+        "Administration > Models."
+    )
+
+
 def test_survey_job_writes_the_validated_body(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [SURVEY_BODY]

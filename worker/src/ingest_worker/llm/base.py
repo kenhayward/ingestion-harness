@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -85,6 +86,38 @@ class LLMError(Exception):
 
 class RefusalError(LLMError):
     """The model declined the request. Not retried within a job — routed to needs_review."""
+
+
+class ContextExceededError(Exception):
+    """The request (prompt, images and the output budget) does not fit the model's context
+    window as its server loaded it. Deterministic: a retry repeats it, so callers route it to
+    needs_review with what to change (`context_exceeded_reason`)."""
+
+
+#: How servers say a request is too long for the context window: LM Studio ("Context size has
+#: been exceeded"), OpenAI and vLLM ("maximum context length", `context_length_exceeded`),
+#: llama.cpp ("exceeds the available context size", `exceed_context_size_error`), Ollama and
+#: Anthropic ("prompt is too long", "exceed context limit").
+_CONTEXT_EXCEEDED = re.compile(
+    r"context[ _-]?(size|length|window|limit)[^.]{0,60}exceed"
+    r"|exceed[\w ]{0,60}context"
+    r"|maximum context length"
+    r"|prompt is too long",
+    re.IGNORECASE,
+)
+
+
+def is_context_exceeded(*texts: object) -> bool:
+    """Whether an error's message or body says the request did not fit the context window."""
+    return any(_CONTEXT_EXCEEDED.search(str(t)) for t in texts if t)
+
+
+def context_exceeded_reason(where: str, model_ref: str, fix: str, error: Exception) -> str:
+    """The needs_review reason for a `ContextExceededError`: where, which model, what to change."""
+    return (
+        f"{where}: the request does not fit the context window of {model_ref} as loaded on its "
+        f"server; {fix} (server said: {error})"
+    )
 
 
 class LLMProvider(Protocol):
