@@ -8,9 +8,11 @@ from __future__ import annotations
 import logging
 import sys
 import time
+from collections.abc import Callable
 from typing import Any
 
 from .config import Settings
+from .publish_targets import TargetRow
 
 log = logging.getLogger("ingest_worker.admin")
 
@@ -34,6 +36,31 @@ def ensure_buckets(
     return created
 
 
+def target_buckets(load: Callable[[], list[TargetRow]], fallback: list[str]) -> list[str]:
+    """The buckets of the internal publishing targets (an external target's bucket is managed
+    elsewhere); `fallback` when the targets cannot be read (today's single target bucket)."""
+    try:
+        rows = load()
+    except Exception as exc:
+        log.info("publishing targets unavailable (%s); using the .env target bucket", exc)
+        return fallback
+    return list(dict.fromkeys(r.bucket for r in rows if r.kind == "internal"))
+
+
+def _stored_targets(s: Settings) -> list[TargetRow]:
+    """Seed the default target from .env (first start), then read every target."""
+    import os
+
+    import psycopg
+
+    from .publish_targets import PgPublishTargetStore, default_seed
+
+    with psycopg.connect(s.database_url, autocommit=True, connect_timeout=5) as conn:
+        store = PgPublishTargetStore(conn)
+        store.seed_default(default_seed(os.environ))
+        return store.load()
+
+
 def main(argv: list[str] = sys.argv[1:]) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if argv[:1] != ["init-buckets"]:
@@ -52,9 +79,9 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         config=Config(s3={"addressing_style": "path"}),
     )
     buckets = [s.bucket_inbox, s.bucket_outputs, s.bucket_runs]
-    if s.target_endpoint == s.s3_endpoint:
-        buckets.append(s.target_bucket)  # an external target's bucket is managed elsewhere
-    created = ensure_buckets(client, buckets)
+    fallback = [s.target_bucket] if s.target_endpoint == s.s3_endpoint else []
+    buckets += target_buckets(lambda: _stored_targets(s), fallback)
+    created = ensure_buckets(client, list(dict.fromkeys(buckets)))
     log.info("buckets ready (created: %s)", ", ".join(created) or "none")
     return 0
 

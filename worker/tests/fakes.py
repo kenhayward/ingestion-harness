@@ -5,7 +5,8 @@ import json
 import math
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from typing import Any
 
 from ingest_worker.embeddings import EmbeddingTerm
@@ -26,6 +27,14 @@ from ingest_worker.ontology import (
     trigram_similarity,
 )
 from ingest_worker.outputs import RenderedOutput
+from ingest_worker.publish_targets import (
+    DefaultSeed,
+    SeedOutcome,
+    Target,
+    TargetMissing,
+    TargetRow,
+    seed_differences,
+)
 from ingest_worker.queue import ClaimedJob
 
 
@@ -656,3 +665,60 @@ class FakeGraphStore:
             raise self.fail
         self.requests.append(("DELETE", graph_iri, None, None))
         return self.graphs.pop(graph_iri, None) is not None
+
+
+class MemoryPublishTargetStore:
+    """In-memory PublishTargetStore with PgPublishTargetStore's seeding rule: the default row is
+    written from .env once (while `seeded_at` is None), then only compared."""
+
+    def __init__(self, rows: list[TargetRow] | None = None) -> None:
+        self.rows = list(rows or [])
+        self._version = 0
+
+    def load(self) -> list[TargetRow]:
+        return list(self.rows)
+
+    def version(self) -> int:
+        return self._version
+
+    def set_rows(self, rows: list[TargetRow]) -> None:
+        self.rows = list(rows)
+        self._version += 1
+
+    def seed_default(self, seed: DefaultSeed) -> SeedOutcome:
+        i = next(n for n, r in enumerate(self.rows) if r.id == "default")
+        current = self.rows[i]
+        if current.seeded_at is not None:
+            return "differs" if seed_differences(current, seed) else "kept"
+        self.rows[i] = replace(
+            current,
+            kind=seed.kind,
+            bucket=seed.bucket,
+            prefix=seed.prefix,
+            endpoint=seed.endpoint,
+            region=seed.region,
+            access_key_id=None,
+            secret_key_enc=None,
+            access_key_env=seed.access_key_env,
+            secret_key_env=seed.secret_key_env,
+            path_style=seed.force_path_style,
+            seeded_at=datetime.now(UTC),
+        )
+        self._version += 1
+        return "seeded"
+
+
+class FakeTargets:
+    """Stands in for LiveTargets: a fixed map of target id to Target."""
+
+    def __init__(self, targets: dict[str, Target]) -> None:
+        self.targets = targets
+
+    def refresh(self) -> bool:
+        return False
+
+    def get(self, target_id: str) -> Target:
+        try:
+            return self.targets[target_id]
+        except KeyError:
+            raise TargetMissing(target_id) from None

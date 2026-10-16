@@ -15,6 +15,7 @@ from jsonschema import Draft202012Validator
 
 from .checks import run_check
 from .convert import ConversionRejected, DocumentConverter, is_docx
+from .errors import DocumentError as DocumentError
 from .extract import SYSTEM_PROMPT, ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import (
     ContextExceededError,
@@ -36,6 +37,7 @@ from .ocr import (
 from .outputs import RenderedOutput, content_type, render_outputs
 from .pdf import TextExtractor
 from .prompts import render_prompt
+from .publish_targets import Target as Target
 from .queue import ClaimedJob, JobQueue
 from .segment import (
     PAGE_BREAK,
@@ -80,10 +82,6 @@ def advisory_event(job: ClaimedJob, queue: JobQueue, message: str, data: dict[st
 PAGE_IMAGE_LONGEST_DIM = 1288
 
 
-class DocumentError(Exception):
-    """The document (or spec) can't be processed as-is. Not retried; job goes to needs_review."""
-
-
 class JobCancelled(Exception):
     """An operator cancelled the job: stop at the next safe point, write no status."""
 
@@ -99,15 +97,6 @@ class Buckets:
     inbox: str
     outputs: str
     runs: str
-
-
-@dataclass
-class Target:
-    """Final destination for published outputs (any S3 endpoint/bucket; keys get `prefix`)."""
-
-    store: ObjectStore
-    bucket: str
-    prefix: str = ""
 
 
 @dataclass
