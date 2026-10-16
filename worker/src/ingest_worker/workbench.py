@@ -33,7 +33,7 @@ from .pipeline import (
 )
 from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, section_spans, select_copy
-from .specs import CopySelection, Section
+from .specs import CopySelection, Section, key_from_errors
 from .storage import prepared_text_key, prepared_triage_key, segmentation_key
 
 log = logging.getLogger("ingest_worker")
@@ -176,6 +176,8 @@ class SegmentDocument(BaseModel):
             if section.id in seen:
                 raise ValueError(f"duplicate section id {section.id}")
             seen.add(section.id)
+        if errors := key_from_errors(self.sections):
+            raise ValueError("; ".join(errors))
         return self
 
 

@@ -1,0 +1,445 @@
+{
+  "base": {
+    "id": "covalidation",
+    "version": 1,
+    "name": "Co-validation stability report",
+    "document": {
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        {
+          "id": "batch",
+          "anchor": "^\\d+\\.\\s+STUDY-\\d+\\s+-\\s+BATCH\\s+\\d+",
+          "repeat": true,
+          "key": "BATCH\\s+(\\w+)"
+        },
+        {
+          "id": "appearance",
+          "anchor": "^Table \\d+:.*-\\s*Appearance and Water Content Results",
+          "repeat": true,
+          "key": "Batch\\s+(\\w+)",
+          "keyFrom": "batch"
+        },
+        {
+          "id": "microbial",
+          "anchor": "^Table \\d+:.*-\\s*Microbial Purity Results",
+          "repeat": true,
+          "key": "Batch\\s+(\\w+)",
+          "keyFrom": "batch"
+        },
+        { "id": "conclusion", "anchor": "^\\d+\\.\\s+CONCLUSION", "required": false }
+      ]
+    },
+    "outputs": {
+      "fields": [{ "id": "study", "type": "text" }],
+      "tables": [
+        {
+          "id": "batches",
+          "columns": [
+            { "id": "batch", "type": "text" },
+            { "id": "packaging", "type": "text" }
+          ]
+        },
+        {
+          "id": "appearance_results",
+          "columns": [
+            { "id": "batch", "type": "text" },
+            { "id": "timepoint", "type": "text" },
+            { "id": "result", "type": "text" }
+          ]
+        },
+        {
+          "id": "microbial_results",
+          "columns": [
+            { "id": "batch", "type": "text" },
+            { "id": "timepoint", "type": "text" },
+            { "id": "result", "type": "text" }
+          ]
+        }
+      ]
+    },
+    "pipeline": [
+      { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front"] },
+      {
+        "type": "extract",
+        "id": "batches",
+        "table": "batches",
+        "sections": ["batch"],
+        "keyColumn": "batch"
+      },
+      {
+        "type": "extract",
+        "id": "appearance",
+        "table": "appearance_results",
+        "sections": ["appearance"],
+        "keyColumn": "batch"
+      },
+      {
+        "type": "extract",
+        "id": "microbial",
+        "table": "microbial_results",
+        "sections": ["microbial"],
+        "keyColumn": "batch"
+      }
+    ]
+  },
+  "cases": [
+    { "name": "covalidation", "valid": true, "error": null },
+    {
+      "name": "no repeat anywhere",
+      "valid": true,
+      "error": null,
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.\\s+STUDY" },
+        { "id": "appearance", "anchor": "^Table \\d+:.*Appearance" },
+        { "id": "microbial", "anchor": "^Table \\d+:.*Microbial" },
+        { "id": "conclusion", "anchor": "^\\d+\\.\\s+CONCLUSION", "required": false }
+      ],
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front"] },
+        { "type": "extract", "id": "batches", "table": "batches", "sections": ["batch"] },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"]
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial_results",
+          "sections": ["microbial"]
+        }
+      ]
+    },
+    {
+      "name": "keyFrom without own key",
+      "valid": true,
+      "error": null,
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        {
+          "id": "batch",
+          "anchor": "^\\d+\\.\\s+STUDY",
+          "repeat": true,
+          "key": "BATCH\\s+(\\w+)"
+        },
+        {
+          "id": "appearance",
+          "anchor": "^Table \\d+:.*Appearance",
+          "repeat": true,
+          "keyFrom": "batch"
+        },
+        {
+          "id": "microbial",
+          "anchor": "^Table \\d+:.*Microbial",
+          "repeat": true,
+          "key": "Batch\\s+(\\w+)",
+          "keyFrom": "batch"
+        },
+        { "id": "conclusion", "anchor": "^\\d+\\.\\s+CONCLUSION", "required": false }
+      ]
+    },
+    {
+      "name": "named key group with another group",
+      "valid": true,
+      "error": null,
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        {
+          "id": "batch",
+          "anchor": "^\\d+\\.\\s+STUDY",
+          "repeat": true,
+          "key": "(BATCH|LOT)\\s+(?P<key>\\w+)"
+        },
+        {
+          "id": "appearance",
+          "anchor": "^Table \\d+:.*Appearance",
+          "repeat": true,
+          "keyFrom": "batch"
+        },
+        {
+          "id": "microbial",
+          "anchor": "^Table \\d+:.*Microbial",
+          "repeat": true,
+          "keyFrom": "batch"
+        },
+        { "id": "conclusion", "anchor": "^\\d+\\.\\s+CONCLUSION", "required": false }
+      ]
+    },
+    {
+      "name": "chunked repeating step",
+      "valid": true,
+      "error": null,
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front"] },
+        {
+          "type": "extract",
+          "id": "batches",
+          "table": "batches",
+          "sections": ["batch"],
+          "keyColumn": "batch"
+        },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"],
+          "keyColumn": "batch",
+          "chunkPages": 1
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial_results",
+          "sections": ["microbial"],
+          "keyColumn": "batch"
+        }
+      ]
+    },
+    {
+      "name": "key without repeat",
+      "valid": false,
+      "error": "key needs repeat",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true, "key": "BATCH\\s+(\\w+)" },
+        { "id": "appearance", "anchor": "^Table.*Appearance", "repeat": true, "keyFrom": "batch" },
+        { "id": "microbial", "anchor": "^Table.*Microbial", "repeat": true, "keyFrom": "batch" },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false, "key": "x" }
+      ]
+    },
+    {
+      "name": "keyFrom without repeat",
+      "valid": false,
+      "error": "keyFrom needs repeat",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true, "key": "BATCH\\s+(\\w+)" },
+        { "id": "appearance", "anchor": "^Table.*Appearance", "repeat": true, "keyFrom": "batch" },
+        { "id": "microbial", "anchor": "^Table.*Microbial", "repeat": true, "keyFrom": "batch" },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false, "keyFrom": "batch" }
+      ]
+    },
+    {
+      "name": "key with two groups",
+      "valid": false,
+      "error": "key must have at most one group, or a group named key",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true, "key": "(BATCH)\\s+(\\w+)" },
+        { "id": "appearance", "anchor": "^Table.*Appearance", "repeat": true, "keyFrom": "batch" },
+        { "id": "microbial", "anchor": "^Table.*Microbial", "repeat": true, "keyFrom": "batch" },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false }
+      ]
+    },
+    {
+      "name": "keyFrom unknown section",
+      "valid": false,
+      "error": "must be a repeating section with a key and no keyFrom",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true, "key": "BATCH\\s+(\\w+)" },
+        { "id": "appearance", "anchor": "^Table.*Appearance", "repeat": true, "keyFrom": "nope" },
+        { "id": "microbial", "anchor": "^Table.*Microbial", "repeat": true, "keyFrom": "batch" },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false }
+      ]
+    },
+    {
+      "name": "keyFrom non-repeating",
+      "valid": false,
+      "error": "must be a repeating section with a key and no keyFrom",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true, "key": "BATCH\\s+(\\w+)" },
+        { "id": "appearance", "anchor": "^Table.*Appearance", "repeat": true, "keyFrom": "front" },
+        { "id": "microbial", "anchor": "^Table.*Microbial", "repeat": true, "keyFrom": "batch" },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false }
+      ]
+    },
+    {
+      "name": "keyFrom without key",
+      "valid": false,
+      "error": "must be a repeating section with a key and no keyFrom",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true },
+        { "id": "appearance", "anchor": "^Table.*Appearance", "repeat": true, "keyFrom": "batch" },
+        { "id": "microbial", "anchor": "^Table.*Microbial", "repeat": true, "key": "Batch (\\w+)" },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false }
+      ],
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front"] },
+        { "type": "extract", "id": "batches", "table": "batches", "sections": ["batch"] },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"]
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial_results",
+          "sections": ["microbial"]
+        }
+      ]
+    },
+    {
+      "name": "keyFrom chain",
+      "valid": false,
+      "error": "must be a repeating section with a key and no keyFrom",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true, "key": "BATCH\\s+(\\w+)" },
+        {
+          "id": "appearance",
+          "anchor": "^Table.*Appearance",
+          "repeat": true,
+          "key": "Batch (\\w+)",
+          "keyFrom": "batch"
+        },
+        {
+          "id": "microbial",
+          "anchor": "^Table.*Microbial",
+          "repeat": true,
+          "keyFrom": "appearance"
+        },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false }
+      ]
+    },
+    {
+      "name": "keyFrom itself",
+      "valid": false,
+      "error": "must be a repeating section with a key and no keyFrom",
+      "sections": [
+        { "id": "front", "anchor": "\\A" },
+        { "id": "batch", "anchor": "^\\d+\\.", "repeat": true, "key": "BATCH\\s+(\\w+)" },
+        {
+          "id": "appearance",
+          "anchor": "^Table.*Appearance",
+          "repeat": true,
+          "key": "Batch (\\w+)",
+          "keyFrom": "appearance"
+        },
+        { "id": "microbial", "anchor": "^Table.*Microbial", "repeat": true, "keyFrom": "batch" },
+        { "id": "conclusion", "anchor": "^4\\.", "required": false }
+      ]
+    },
+    {
+      "name": "field step on repeating section",
+      "valid": false,
+      "error": "a field step cannot read a repeating section (batch); fill a table instead",
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front", "batch"] },
+        {
+          "type": "extract",
+          "id": "batches",
+          "table": "batches",
+          "sections": ["batch"],
+          "keyColumn": "batch"
+        },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"],
+          "keyColumn": "batch"
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial_results",
+          "sections": ["microbial"],
+          "keyColumn": "batch"
+        }
+      ]
+    },
+    {
+      "name": "two repeating sections",
+      "valid": false,
+      "error": "reads more than one repeating section (appearance, microbial)",
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front"] },
+        {
+          "type": "extract",
+          "id": "batches",
+          "table": "batches",
+          "sections": ["batch"],
+          "keyColumn": "batch"
+        },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance", "microbial"]
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial_results",
+          "sections": ["microbial"],
+          "keyColumn": "batch"
+        }
+      ]
+    },
+    {
+      "name": "keyColumn on non-repeating",
+      "valid": false,
+      "error": "keyColumn needs a repeating section with a key or keyFrom",
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front"] },
+        {
+          "type": "extract",
+          "id": "batches",
+          "table": "batches",
+          "sections": ["front"],
+          "keyColumn": "batch"
+        },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"],
+          "keyColumn": "batch"
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial_results",
+          "sections": ["microbial"],
+          "keyColumn": "batch"
+        }
+      ]
+    },
+    {
+      "name": "keyColumn unknown column",
+      "valid": false,
+      "error": "is not a column of appearance_results",
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["study"], "sections": ["front"] },
+        {
+          "type": "extract",
+          "id": "batches",
+          "table": "batches",
+          "sections": ["batch"],
+          "keyColumn": "batch"
+        },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["appearance"],
+          "keyColumn": "lot"
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial_results",
+          "sections": ["microbial"],
+          "keyColumn": "batch"
+        }
+      ]
+    }
+  ]
+}

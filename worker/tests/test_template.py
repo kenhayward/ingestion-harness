@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 from typing import Any
 
 import pytest
@@ -10,6 +12,8 @@ from pydantic import ValidationError
 
 from ingest_worker.config import REPO_ROOT
 from ingest_worker.template import Template, compile_step
+
+from .covalidation import FIXTURE as REPEAT_FIXTURE
 
 SECTIONS = {"sections": [{"id": "head", "anchor": r"\A"}, {"id": "body", "anchor": "^BODY"}]}
 
@@ -208,3 +212,38 @@ def test_delivered_formats_default_to_csv_and_json() -> None:
         {**SEMANTICS_FIXTURE["base"], "delivery": {"formats": ["json"]}}
     )
     assert json_only.delivery_formats() == ["json"]
+
+
+def _repeat_definition(case: dict[str, Any]) -> dict[str, Any]:
+    base = copy.deepcopy(REPEAT_FIXTURE["base"])
+    if "sections" in case:
+        base["document"]["sections"] = case["sections"]
+    if "pipeline" in case:
+        base["pipeline"] = case["pipeline"]
+    return base
+
+
+@pytest.mark.parametrize(
+    "case", REPEAT_FIXTURE["cases"], ids=[c["name"] for c in REPEAT_FIXTURE["cases"]]
+)
+def test_repeating_sections_match_the_shared_fixture(case: dict[str, Any]) -> None:
+    if case["valid"]:
+        Template.model_validate(_repeat_definition(case))
+    else:
+        with pytest.raises(ValidationError, match=re.escape(case["error"])):
+            Template.model_validate(_repeat_definition(case))
+
+
+def test_repeating_section_of_a_step() -> None:
+    t = Template.model_validate(REPEAT_FIXTURE["base"])
+    steps = {s.id: s for s in t.extract_steps()}
+    assert t.repeating_section(steps["header"]) is None
+    section = t.repeating_section(steps["appearance"])
+    assert section is not None and section.id == "appearance"
+
+
+def test_compile_step_merges_rows_for_a_repeating_step() -> None:
+    t = Template.model_validate(REPEAT_FIXTURE["base"])
+    steps = {s.id: s for s in t.extract_steps()}
+    assert compile_step(t, steps["appearance"]).merge_path == "rows"
+    assert compile_step(t, steps["header"]).merge_path is None
