@@ -70,7 +70,8 @@ export function draftRunView(stage: DraftStage, run: DraftRun, now: number): Run
       : progress
         ? `${progress.phase}-${progress.phase === 'reading' || progress.phase === 'suggestions' ? 1 : progress.round}`
         : READING.key;
-  const started = progress && run.status === 'running' ? Date.parse(progress.at) : since;
+  // From when the phase (and the model's try) began: token counts come every few seconds.
+  const started = progress && run.status === 'running' ? Date.parse(progress.phaseAt) : since;
   const steps = stepsOf(stage, progress);
   const at = steps.findIndex((s) => s.key === current);
   const seconds = (from: number) => formatDuration((now - from) / 1000);

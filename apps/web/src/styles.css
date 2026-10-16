@@ -934,6 +934,49 @@ fieldset.choice label.inline:has(input:checked) {
 .row-table td.index {
   color: var(--ih-muted);
 }
+/* An item with a second line (RowTable `detail`): the two rows read as one item. */
+.row-table tr.has-detail > td {
+  padding-bottom: 0;
+}
+.row-table tr.row-detail > td {
+  padding-top: 0.15rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--ih-border);
+}
+/* Sections: Repeats, then (when ticked) Key and Key from, each labelled with a hint. */
+.section-repeat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 1rem;
+}
+.section-repeat-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.4rem;
+  flex: 0 1 18rem;
+}
+.section-repeat-toggle > input {
+  margin-top: 0.2rem;
+}
+.section-repeat-toggle > span,
+.section-repeat-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.section-repeat-field {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.section-repeat-field > span {
+  font-size: var(--ih-text-sm);
+  font-weight: 600;
+}
+.section-repeat small {
+  font-size: var(--ih-text-sm);
+}
 input.code {
   font-family: var(--ih-font-mono);
 }
@@ -4555,4 +4598,45 @@ img.avatar {
     padding-left: 16px;
     padding-right: 16px;
   }
+}
+
+/* Help: the "?" beside a heading (HelpButton) and the topic in its dialog. */
+.help-button {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--ih-muted);
+  vertical-align: middle;
+}
+.help-button:hover,
+.help-button:focus-visible {
+  color: var(--ih-accent);
+}
+/* The dialog body scrolls; the topic only sets its reading width. */
+.help-body {
+  max-width: 44rem;
+  line-height: 1.5;
+}
+.help-body h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 1.05em;
+  font-weight: 600;
+}
+.help-body p,
+.help-body ul {
+  margin: 0.25rem 0;
+}
+.help-body ul {
+  padding-left: 1.25rem;
+}
+.sub-tab-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }
