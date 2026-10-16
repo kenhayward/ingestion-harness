@@ -44,6 +44,8 @@ import {
   type WithdrawalStatus,
   REPUBLISH_JOB,
   WITHDRAW_JOB,
+  graphWithdrawals,
+  type WithdrawnGraph,
 } from './types.js';
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
@@ -75,9 +77,13 @@ export class MemoryRepo implements IngestionRepo {
     graphIri: string;
     version: number;
     jobId: string;
+    targetId: string;
   }[] = [];
   /** The current graph of each (sha256, type) (published_graphs). */
-  private readonly graphs = new Map<string, { graphIri: string; version: number; jobId: string }>();
+  private readonly graphs = new Map<
+    string,
+    { graphIri: string; version: number; jobId: string; targetId: string }
+  >();
   /** Document-less withdraw/republish jobs queued (ADR 0011 step 7). */
   readonly backgroundJobs: {
     id: string;
@@ -506,8 +512,14 @@ export class MemoryRepo implements IngestionRepo {
     return this.update(id, { status: 'cancelled' });
   }
 
-  /** Tests: the worker published a graph version for `jobId`. */
-  publishGraph(g: { sha256: string; templateId: string; graphIri: string; jobId: string }): number {
+  /** Tests: the worker published a graph version for `jobId` (to `targetId`, else `default`). */
+  publishGraph(g: {
+    sha256: string;
+    templateId: string;
+    graphIri: string;
+    jobId: string;
+    targetId?: string;
+  }): number {
     const key = `${g.sha256}:${g.templateId}`;
     const version =
       Math.max(
@@ -516,8 +528,9 @@ export class MemoryRepo implements IngestionRepo {
           .filter((v) => v.sha256 === g.sha256 && v.templateId === g.templateId)
           .map((v) => v.version),
       ) + 1;
-    this.graphVersions.push({ ...g, version });
-    this.graphs.set(key, { graphIri: g.graphIri, version, jobId: g.jobId });
+    const targetId = g.targetId ?? DEFAULT_TARGET_ID;
+    this.graphVersions.push({ ...g, version, targetId });
+    this.graphs.set(key, { graphIri: g.graphIri, version, jobId: g.jobId, targetId });
     return version;
   }
 
@@ -555,7 +568,11 @@ export class MemoryRepo implements IngestionRepo {
       const delivered = outputs.filter((o) => o.stage === 'published');
       if (!delivered.length) continue;
       objects.push(
-        ...delivered.map((o) => ({ bucket: o.bucket, key: o.key, target: DEFAULT_TARGET_ID })),
+        ...delivered.map((o) => ({
+          bucket: o.bucket,
+          key: o.key,
+          target: o.targetId ?? DEFAULT_TARGET_ID,
+        })),
       );
       this.withdrawnOutputs.set(job.id, [
         ...(this.withdrawnOutputs.get(job.id) ?? []),
@@ -568,20 +585,14 @@ export class MemoryRepo implements IngestionRepo {
     }
     const graphs = this.currentGraphs()
       .filter((g) => g.templateId === typeId)
-      .map((g) => {
+      .flatMap((g) => {
         this.graphs.delete(`${g.sha256}:${g.templateId}`);
-        const versions = this.graphVersions
-          .filter((v) => v.sha256 === g.sha256 && v.templateId === g.templateId)
-          .map((v) => v.version)
-          .sort((a, b) => a - b);
-        return {
-          sha256: g.sha256,
-          templateId: g.templateId,
-          graphIri: g.graphIri,
-          target: DEFAULT_TARGET_ID,
-          versions,
-        };
+        const versions = this.graphVersions.filter(
+          (v) => v.sha256 === g.sha256 && v.templateId === g.templateId,
+        );
+        return graphWithdrawals(g, versions, g);
       });
+    objects.sort((a, b) => a.key.localeCompare(b.key));
     if (!objects.length && !graphs.length) return null;
     return this.queueBackground('withdraw', { objects, graphs }, by);
   }
@@ -611,31 +622,15 @@ export class MemoryRepo implements IngestionRepo {
       .map((o) => ({ bucket: o.bucket, key: o.key }));
     const objects = (this.outputs.get(id) ?? [])
       .filter((o) => o.stage === 'published')
-      .map((o) => ({ bucket: o.bucket, key: o.key, target: DEFAULT_TARGET_ID }));
-    const graphs: {
-      sha256: string;
-      templateId: string;
-      graphIri: string | null;
-      target: string;
-      versions: number[];
-    }[] = [];
-    for (const v of this.graphVersions.filter((g) => g.jobId === id)) {
-      const key = `${v.sha256}:${v.templateId}`;
-      let entry = graphs.find((g) => g.sha256 === v.sha256 && g.templateId === v.templateId);
-      if (!entry) {
-        const current = this.graphs.get(key);
-        const drop = current?.jobId === id;
-        if (drop) this.graphs.delete(key);
-        entry = {
-          sha256: v.sha256,
-          templateId: v.templateId,
-          graphIri: drop ? current!.graphIri : null,
-          target: DEFAULT_TARGET_ID,
-          versions: [],
-        };
-        graphs.push(entry);
-      }
-      entry.versions.push(v.version);
+      .map((o) => ({ bucket: o.bucket, key: o.key, target: o.targetId ?? DEFAULT_TARGET_ID }));
+    const graphs: WithdrawnGraph[] = [];
+    const mine = this.graphVersions.filter((g) => g.jobId === id);
+    for (const key of new Set(mine.map((v) => `${v.sha256}:${v.templateId}`))) {
+      const versions = mine.filter((v) => `${v.sha256}:${v.templateId}` === key);
+      const current = this.graphs.get(key);
+      const drop = current?.jobId === id;
+      if (drop) this.graphs.delete(key);
+      graphs.push(...graphWithdrawals(versions[0]!, versions, drop ? current! : null));
     }
     for (let i = this.graphVersions.length - 1; i >= 0; i--) {
       if (this.graphVersions[i]!.jobId === id) this.graphVersions.splice(i, 1);

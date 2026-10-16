@@ -15,13 +15,7 @@ import type {
   OutputFormat,
   SuggestParams,
 } from '@ih/shared';
-import {
-  DEFAULT_TARGET_ID,
-  DELETABLE_STATUSES,
-  modelRef,
-  sourceContentType,
-  type Creator,
-} from '@ih/shared';
+import { DELETABLE_STATUSES, modelRef, sourceContentType, type Creator } from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -45,6 +39,8 @@ import {
   type WithdrawalStatus,
   REPUBLISH_JOB,
   WITHDRAW_JOB,
+  graphWithdrawals,
+  type WithdrawnGraph,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -194,14 +190,6 @@ const toReference = (r: ReferenceRow): Reference => ({
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
-type Withdrawn = {
-  sha256: string;
-  templateId: string;
-  graphIri: string | null;
-  target: string;
-  versions: number[];
-};
-
 async function queueBackground(
   client: pg.PoolClient,
   task: 'withdraw' | 'republish',
@@ -260,8 +248,8 @@ async function lockGraphs(client: pg.PoolClient, keys: { sha256: string; templat
  * version. Its version rows go. Null when it delivered nothing.
  */
 async function withdrawJob(client: pg.PoolClient, jobId: string): Promise<string | null> {
-  const objects = await client.query<{ bucket: string; key: string }>(
-    `SELECT bucket, object_key AS key FROM job_outputs
+  const objects = await client.query<{ bucket: string; key: string; target: string }>(
+    `SELECT bucket, object_key AS key, target_id AS target FROM job_outputs
       WHERE job_id = $1 AND stage = 'published' AND withdrawn_at IS NULL ORDER BY object_key`,
     [jobId],
   );
@@ -273,38 +261,38 @@ async function withdrawJob(client: pg.PoolClient, jobId: string): Promise<string
   const versions = await client.query<{
     sha256: string;
     template_id: string;
-    versions: number[];
+    versions: { version: number; targetId: string }[];
     current_iri: string | null;
+    current_target: string | null;
   }>(
-    `SELECT v.sha256, v.template_id, array_agg(v.version ORDER BY v.version) AS versions,
-            (SELECT g.graph_iri FROM published_graphs g
-              WHERE g.sha256 = v.sha256 AND g.template_id = v.template_id AND g.job_id = $1)
-              AS current_iri
-       FROM published_graph_versions v WHERE v.job_id = $1
-      GROUP BY v.sha256, v.template_id ORDER BY v.sha256, v.template_id`,
+    `SELECT v.sha256, v.template_id,
+            json_agg(json_build_object('version', v.version, 'targetId', v.target_id)
+                     ORDER BY v.version) AS versions,
+            g.graph_iri AS current_iri, g.target_id AS current_target
+       FROM published_graph_versions v
+       LEFT JOIN published_graphs g
+         ON g.sha256 = v.sha256 AND g.template_id = v.template_id AND g.job_id = $1
+      WHERE v.job_id = $1
+      GROUP BY v.sha256, v.template_id, g.graph_iri, g.target_id
+      ORDER BY v.sha256, v.template_id`,
     [jobId],
   );
-  const graphs: Withdrawn[] = [];
+  const graphs: WithdrawnGraph[] = [];
   for (const r of versions.rows) {
     if (r.current_iri) {
       await forgetGraphs(client, 'sha256 = $1 AND template_id = $2', [r.sha256, r.template_id]);
     }
-    graphs.push({
-      sha256: r.sha256,
-      templateId: r.template_id,
-      graphIri: r.current_iri,
-      target: DEFAULT_TARGET_ID,
-      versions: r.versions,
-    });
+    graphs.push(
+      ...graphWithdrawals(
+        { sha256: r.sha256, templateId: r.template_id },
+        r.versions,
+        r.current_iri ? { graphIri: r.current_iri, targetId: r.current_target! } : null,
+      ),
+    );
   }
   await client.query('DELETE FROM published_graph_versions WHERE job_id = $1', [jobId]);
   if (!objects.rows.length && !graphs.length) return null;
-  return queueBackground(
-    client,
-    'withdraw',
-    { objects: objects.rows.map((o) => ({ ...o, target: DEFAULT_TARGET_ID })), graphs },
-    null,
-  );
+  return queueBackground(client, 'withdraw', { objects: objects.rows, graphs }, null);
 }
 
 export class PgRepo implements IngestionRepo {
@@ -723,8 +711,9 @@ export class PgRepo implements IngestionRepo {
       bucket: string;
       object_key: string;
       row_count: number | null;
+      target_id: string | null;
     }>(
-      `SELECT output_id, stage, format, bucket, object_key, row_count FROM job_outputs
+      `SELECT output_id, stage, format, bucket, object_key, row_count, target_id FROM job_outputs
         WHERE job_id = $1 AND withdrawn_at IS NULL ORDER BY stage, output_id`,
       [id],
     );
@@ -737,8 +726,7 @@ export class PgRepo implements IngestionRepo {
         bucket: o.bucket,
         key: o.object_key,
         rowCount: o.row_count,
-        // Task 4 reads the recorded target; until then published outputs are the default's.
-        targetId: o.stage === 'published' ? 'default' : null,
+        targetId: o.target_id,
       })),
     };
   }
@@ -884,12 +872,12 @@ export class PgRepo implements IngestionRepo {
 
   async withdrawType(typeId: string, by: string | null): Promise<string | null> {
     return this.inTransaction(async (client) => {
-      const objects = await client.query<{ bucket: string; key: string }>(
+      const objects = await client.query<{ bucket: string; key: string; target: string }>(
         `UPDATE job_outputs o SET withdrawn_at = now()
            FROM jobs j JOIN documents d ON d.id = j.document_id
           WHERE o.job_id = j.id AND d.spec_id = $1 AND o.stage = 'published'
             AND o.withdrawn_at IS NULL
-        RETURNING o.bucket, o.object_key AS key`,
+        RETURNING o.bucket, o.object_key AS key, o.target_id AS target`,
         [typeId],
       );
       // No per-graph locks (a large type would exhaust them): a publish committed meanwhile
@@ -898,10 +886,13 @@ export class PgRepo implements IngestionRepo {
         sha256: string;
         template_id: string;
         graph_iri: string;
-        versions: number[];
+        target_id: string;
+        versions: { version: number; targetId: string }[] | null;
       }>(
-        `SELECT g.sha256, g.template_id, g.graph_iri,
-                (SELECT array_agg(v.version ORDER BY v.version) FROM published_graph_versions v
+        `SELECT g.sha256, g.template_id, g.graph_iri, g.target_id,
+                (SELECT json_agg(json_build_object('version', v.version, 'targetId', v.target_id)
+                                 ORDER BY v.version)
+                   FROM published_graph_versions v
                   WHERE v.sha256 = g.sha256 AND v.template_id = g.template_id) AS versions
            FROM published_graphs g WHERE g.template_id = $1 ORDER BY g.sha256`,
         [typeId],
@@ -912,16 +903,13 @@ export class PgRepo implements IngestionRepo {
         client,
         'withdraw',
         {
-          objects: [...objects.rows]
-            .sort((a, b) => a.key.localeCompare(b.key))
-            .map((o) => ({ ...o, target: DEFAULT_TARGET_ID })),
-          graphs: graphs.rows.map((g) => ({
-            sha256: g.sha256,
-            templateId: g.template_id,
-            graphIri: g.graph_iri,
-            target: DEFAULT_TARGET_ID,
-            versions: g.versions ?? [],
-          })),
+          objects: [...objects.rows].sort((a, b) => a.key.localeCompare(b.key)),
+          graphs: graphs.rows.flatMap((g) =>
+            graphWithdrawals({ sha256: g.sha256, templateId: g.template_id }, g.versions ?? [], {
+              graphIri: g.graph_iri,
+              targetId: g.target_id,
+            }),
+          ),
         },
         by,
       );

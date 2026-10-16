@@ -15,6 +15,8 @@ import type { OntologyRepo } from './ontologies/repo.js';
 import type { LinkedDataRepo } from './linked-data/repo.js';
 import { MaintenanceGate, type MaintenanceRepo } from './maintenance/repo.js';
 import type { SecretsKeys } from './llm/secrets.js';
+import type { PublishTargetRepo } from './publish-targets/repo.js';
+import type { TargetStores } from './publish-targets/stores.js';
 import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
@@ -40,13 +42,15 @@ import { llmRoutes } from './routes/llm.js';
 import { ontologyRoutes } from './routes/ontologies.js';
 import { linkedDataRoutes } from './routes/linked-data.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
+import { publishTargetRoutes } from './routes/publish-targets.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
   store: ObjectStore;
-  /** Final publish target (`TARGET_S3_*`); published job outputs are read from here. */
-  targetStore: ObjectStore;
-  target: { bucket: string; prefix: string };
+  /** Publishing targets (migration 0050): where recipes deliver, edited under Administration. */
+  targets: PublishTargetRepo;
+  /** One object store per publishing target; published outputs are read through their own. */
+  targetStores: TargetStores;
   specs: SpecRegistry;
   templates: TemplateRepo;
   /** Workbench projects, samples and briefs (ADR 0007). */
@@ -146,6 +150,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(ontologyRoutes, { prefix: '/api' });
   await app.register(linkedDataRoutes, { prefix: '/api' });
   await app.register(maintenanceRoutes, { prefix: '/api' });
+  await app.register(publishTargetRoutes, { prefix: '/api' });
 
   return app;
 }

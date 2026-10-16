@@ -20,6 +20,8 @@ import { buildApp } from '../../src/app.js';
 import { migrate } from '../../src/db/migrate.js';
 import { PgRepo } from '../../src/repositories/pg.js';
 import { SpecRegistry } from '../../src/specs/spec-registry.js';
+import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
+import { TargetStores } from '../../src/publish-targets/stores.js';
 import { MemoryObjectStore } from '../../src/storage/object-store.js';
 import { MemoryLlmConfigRepo } from '../../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../../src/ontologies/repo.js';
@@ -57,11 +59,23 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
     const templatesPool = new pg.Pool({ connectionString: url, max: 5 });
     const workbenchPool = new pg.Pool({ connectionString: url, max: 3 });
     pools.push(templatesPool, workbenchPool);
+    const perfTargets = new MemoryPublishTargetRepo();
     app = await buildApp({
       repo,
       store: new MemoryObjectStore(), // no prepared triage or proposal bodies: read as missing
-      targetStore: new MemoryObjectStore(),
-      target: { bucket: 'published', prefix: 'pub/' },
+      targets: perfTargets,
+      targetStores: new TargetStores({
+        repo: perfTargets,
+        internal: {
+          endpoint: 'http://s3.test',
+          region: 'r',
+          accessKeyId: 'a',
+          secretAccessKey: 's',
+        },
+        secrets: null,
+        env: {},
+        make: () => new MemoryObjectStore(),
+      }),
       templates: new PgTemplateRepo(templatesPool),
       workbench: new PgWorkbenchRepo(workbenchPool),
       specs: SpecRegistry.fromDefinitions([]),

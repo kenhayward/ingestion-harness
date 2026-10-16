@@ -13,7 +13,10 @@ import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
 import { S3KeyService } from '../src/s3keys/service.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
-import { MemoryObjectStore } from '../src/storage/object-store.js';
+import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
+import { TargetStores } from '../src/publish-targets/stores.js';
+import { MemoryObjectStore, type ObjectStore } from '../src/storage/object-store.js';
+import type { S3Options } from '../src/storage/s3.js';
 import { MemoryTemplateRepo } from '../src/templates/repo.js';
 import { MemoryWorkbenchRepo } from '../src/workbench/repo.js';
 import { installConformance } from './openapi-conformance.js';
@@ -66,20 +69,78 @@ export const letter = (version = 1) => ({
   pipeline: [{ type: 'extract', id: 'head', fields: ['sender'], sections: ['all'] }],
 });
 
-export async function testApp(overrides: Partial<AppDeps> = {}) {
+/** The internal store options test target stores are built with (`ctx.targetStore`). */
+export const TEST_INTERNAL_S3: S3Options = {
+  endpoint: 'http://seaweed.test:8333',
+  region: 'us-east-1',
+  accessKeyId: 'internal',
+  secretAccessKey: 'internal-secret',
+};
+
+/**
+ * The test app. `targetStore` is the store of every internal publishing target (the seeded
+ * `default`: bucket `published`, prefix `pub/`); an external target gets the store
+ * `endpointStores` holds for its endpoint (one is made on first use). `targetOptions` records
+ * every set of options a target store was built with.
+ */
+export async function testApp(overrides: Partial<AppDeps> & { targetStore?: ObjectStore } = {}) {
+  const { targetStore: givenTargetStore, ...deps } = overrides;
   const repo = new MemoryRepo();
   const store = new MemoryObjectStore();
-  const targetStore = new MemoryObjectStore();
+  const targetStore = givenTargetStore ?? new MemoryObjectStore();
   const templates = new MemoryTemplateRepo();
   const githubSync = new MemoryGitHubSyncRepo();
   const workbench = new MemoryWorkbenchRepo(repo, templates, githubSync);
   const llm = new MemoryLlmConfigRepo();
   const ontologies = new MemoryOntologyRepo();
+  const usedRepo = (deps.repo ?? repo) as MemoryRepo;
+  const usedTemplates = (deps.templates ?? templates) as MemoryTemplateRepo;
+  const targets = new MemoryPublishTargetRepo({
+    publishedDefinitions: async () =>
+      [...usedTemplates.records.values()]
+        .filter((r) => r.status === 'published')
+        .map((r) => ({
+          id: r.id,
+          version: r.version,
+          definition: r.definition as { delivery?: { publishTo?: string } },
+        })),
+    deliveredCount: async (id) =>
+      [...usedRepo.outputs.values()]
+        .flat()
+        .filter((o) => o.stage === 'published' && o.targetId === id).length +
+      usedRepo.graphVersions.filter((v) => v.targetId === id).length,
+    consumerCount: async () => 0,
+  });
+  await targets.seedDefault({
+    kind: 'internal',
+    bucket: 'published',
+    prefix: 'pub/',
+    endpoint: null,
+    region: null,
+    accessKeyEnv: null,
+    secretKeyEnv: null,
+    forcePathStyle: true,
+  });
+  const endpointStores = new Map<string, ObjectStore>();
+  const targetOptions: S3Options[] = [];
+  const targetStores = new TargetStores({
+    repo: deps.targets ?? targets,
+    internal: TEST_INTERNAL_S3,
+    secrets: deps.llmSecrets ?? null,
+    env: { TARGET_S3_ACCESS_KEY: 'env-access', TARGET_S3_SECRET_KEY: 'env-secret' },
+    make: (o) => {
+      targetOptions.push(o);
+      if (o === TEST_INTERNAL_S3) return targetStore;
+      const found = endpointStores.get(o.endpoint) ?? new MemoryObjectStore();
+      endpointStores.set(o.endpoint, found);
+      return found;
+    },
+  });
   const app = await buildApp({
     repo,
     store,
-    targetStore,
-    target: { bucket: 'published', prefix: 'pub/' },
+    targets,
+    targetStores,
     templates,
     workbench,
     specs: SpecRegistry.fromDefinitions([
@@ -104,20 +165,24 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
       bucket: 'published',
       endpoint: null,
     }),
-    ...overrides,
+    ...deps,
   });
   installConformance(app);
   // A test passing its own `llm` keeps it; the default one is a MemoryLlmConfigRepo.
-  const llmRepo = (overrides.llm ?? llm) as MemoryLlmConfigRepo;
-  const ontologyRepo = (overrides.ontologies ?? ontologies) as MemoryOntologyRepo;
+  const llmRepo = (deps.llm ?? llm) as MemoryLlmConfigRepo;
+  const ontologyRepo = (deps.ontologies ?? ontologies) as MemoryOntologyRepo;
   return {
     app,
     repo,
     store,
     targetStore,
+    targets: (deps.targets ?? targets) as MemoryPublishTargetRepo,
+    targetStores: deps.targetStores ?? targetStores,
+    endpointStores,
+    targetOptions,
     templates,
     workbench,
-    githubSync: (overrides.githubSync ?? githubSync) as MemoryGitHubSyncRepo,
+    githubSync: (deps.githubSync ?? githubSync) as MemoryGitHubSyncRepo,
     llm: llmRepo,
     ontologies: ontologyRepo,
   };
@@ -194,7 +259,7 @@ export async function signInNewUser(
 }
 
 /** An app with access control on (so the auth routes exist), signed-in cookies for both roles. */
-export async function accessApp(overrides: Partial<AppDeps> = {}) {
+export async function accessApp(overrides: Parameters<typeof testApp>[0] = {}) {
   const access = new MemoryAccessRepo();
   const ctx = await testApp({ access, ...overrides });
   const adminPassword = await access.rotateAdminPassword();

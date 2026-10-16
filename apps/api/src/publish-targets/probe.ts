@@ -52,22 +52,30 @@ export async function probeTarget(
 ): Promise<TargetTestResult> {
   const key = `${prefix}.ct-studio-check-${randomUUID()}`;
   const body = Buffer.from(`ct-studio connection check ${new Date().toISOString()}`);
-  let step: Step = 'write';
   try {
     await store.put(bucket, key, body, 'text/plain');
-    step = 'read';
+  } catch (err) {
+    return { ok: false, ...describe(err, 'write') };
+  }
+  let readFailure: TargetTestResult | null = null;
+  try {
     const back = await store.get(bucket, key);
     if (!back || !back.equals(body)) {
-      return {
+      readFailure = {
         ok: false,
         step: 'read',
         message: 'the file read back did not match what was written',
       };
     }
-    step = 'delete';
+  } catch (err) {
+    readFailure = { ok: false, ...describe(err, 'read') };
+  }
+  // Written, so always deleted, whatever the read found; the read's failure is the answer.
+  try {
     await store.delete(bucket, key);
   } catch (err) {
-    return { ok: false, ...describe(err, step) };
+    return readFailure ?? { ok: false, ...describe(err, 'delete') };
   }
+  if (readFailure) return readFailure;
   return { ok: true, step: null, message: 'Connected: wrote, read and deleted a test file' };
 }

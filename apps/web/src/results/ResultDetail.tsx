@@ -76,8 +76,9 @@ export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
         <dd>{new Date(result.publishedAt).toLocaleString()}</dd>
         <dt>Review</dt>
         <dd>{review}</dd>
-        <dt>Target</dt>
+        <dt>Publishing target</dt>
         <dd>
+          {target.label}{' '}
           <code>
             {target.bucket}/{target.prefix}
           </code>

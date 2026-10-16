@@ -21,7 +21,7 @@ export const TAGS = {
     (final). Each extraction step's run can be inspected and re-run.
   `,
   Results: md`
-    Published outputs, read from the final target bucket: the documents a job delivered, their
+    Published outputs, read from the publishing target each was delivered to: the documents a job delivered, their
     values and their files.
   `,
   Specs: md`
@@ -108,6 +108,12 @@ export const TAGS = {
     customer per deployment; without their own base, IRIs live under
     \`https://id.stocks-hayward.com/<customer>/\`.
   `,
+  'Published outputs': md`
+    Publishing targets: the S3 buckets published outputs are delivered to. Each recipe names one
+    (\`delivery.publishTo\`, absent = \`default\`, seeded from \`.env\`); every delivered output
+    records its target, so it is read and withdrawn there whatever changes later. A target in
+    use keeps its bucket, prefix, endpoint and region.
+  `,
   GitHub: md`
     Syncing transformation recipes with a GitHub repository: this deployment's instance name
     and default folder, a document type's repository link, and pushing a published version
@@ -147,6 +153,7 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
       'Profile',
       'Users',
       'Data-lake S3 keys',
+      'Published outputs',
       'Linked data',
       'GitHub',
       'Health',

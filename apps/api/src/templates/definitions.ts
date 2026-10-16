@@ -97,7 +97,7 @@ export function choiceProblem(
  * versions keep running theirs.
  */
 export async function templateIssues(
-  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies'>,
+  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets'>,
   definition: unknown,
   { draft }: { draft: boolean },
 ): Promise<TemplateIssue[]> {
@@ -119,10 +119,22 @@ export async function templateIssues(
       ? [{ path: `pipeline.${i}.model`, message: `step "${step.id}": ${problem}` }]
       : [];
   });
+  // A recipe from another deployment keeps its target id; until one exists here it cannot publish.
+  const publishTo = parsed.data.delivery?.publishTo;
+  const targetIssues =
+    publishTo !== undefined && !(await deps.targets.get(publishTo))
+      ? [
+          {
+            path: 'delivery.publishTo',
+            message: `no publishing target ${publishTo} on this deployment`,
+          },
+        ]
+      : [];
   return [
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),
     ...modelIssues,
+    ...targetIssues,
     ...(await semanticsIssues(deps.ontologies, parsed.data)),
   ];
 }

@@ -174,7 +174,7 @@ describe('job output downloads by stage', () => {
     ctx.repo.outputs.set(job.id, reviewedOutputs);
     const res = await ctx.app.inject(`/api/jobs/${job.id}/outputs/lines`);
     expect(res.statusCode).toBe(502);
-    expect(res.json()).toEqual({ error: 'target storage unavailable' });
+    expect(res.json()).toEqual({ error: 'publishing target Default unavailable' });
   });
 });
 

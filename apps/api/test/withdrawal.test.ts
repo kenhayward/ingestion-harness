@@ -94,6 +94,94 @@ describe('deleting a delivered job', () => {
   });
 });
 
+describe('withdrawing through the recorded publishing targets', () => {
+  const onTarget = (jobId: string, targetId: string, bucket: string): JobOutput => ({
+    outputId: 'fields',
+    stage: 'published',
+    format: 'csv',
+    bucket,
+    key: `${targetId}/demo/fields/${jobId}.csv`,
+    rowCount: 1,
+    targetId,
+  });
+
+  it("names each object's and each graph copy's own target when a type retires", async () => {
+    const { app, repo, upload, sha, graphIri } = await setup();
+    const v1 = await upload();
+    const v2 = await upload(Buffer.from('%PDF-1.7\nanother\n'));
+    repo.outputs.set(v1.id, [onTarget(v1.id, 'default', 'ingest-published')]);
+    repo.outputs.set(v2.id, [onTarget(v2.id, 'finance-lake', 'finance-lake')]);
+    const s = await sha(v1);
+    // One document's graph: version 1 delivered to default, version 2 to finance-lake.
+    repo.publishGraph({ sha256: s, templateId: 'demo', graphIri: graphIri(s), jobId: v1.id });
+    repo.publishGraph({
+      sha256: s,
+      templateId: 'demo',
+      graphIri: graphIri(s),
+      jobId: v2.id,
+      targetId: 'finance-lake',
+    });
+    await app.inject({ method: 'PUT', url: '/api/specs/demo/retirement' });
+    expect(repo.backgroundJobs[0]!.params).toEqual({
+      objects: [
+        {
+          bucket: 'ingest-published',
+          key: `default/demo/fields/${v1.id}.csv`,
+          target: 'default',
+        },
+        {
+          bucket: 'finance-lake',
+          key: `finance-lake/demo/fields/${v2.id}.csv`,
+          target: 'finance-lake',
+        },
+      ],
+      graphs: [
+        { sha256: s, templateId: 'demo', graphIri: null, target: 'default', versions: [1] },
+        {
+          sha256: s,
+          templateId: 'demo',
+          graphIri: graphIri(s),
+          target: 'finance-lake',
+          versions: [2],
+        },
+      ],
+    });
+  });
+
+  it('names the recorded target when a delivered job is deleted', async () => {
+    const { app, repo, upload, sha, graphIri } = await setup();
+    const job = await upload();
+    const s = await sha(job);
+    repo.outputs.set(job.id, [onTarget(job.id, 'finance-lake', 'finance-lake')]);
+    repo.publishGraph({
+      sha256: s,
+      templateId: 'demo',
+      graphIri: graphIri(s),
+      jobId: job.id,
+      targetId: 'finance-lake',
+    });
+    await app.inject({ method: 'DELETE', url: `/api/jobs/${job.id}` });
+    expect(repo.backgroundJobs[0]!.params).toEqual({
+      objects: [
+        {
+          bucket: 'finance-lake',
+          key: `finance-lake/demo/fields/${job.id}.csv`,
+          target: 'finance-lake',
+        },
+      ],
+      graphs: [
+        {
+          sha256: s,
+          templateId: 'demo',
+          graphIri: graphIri(s),
+          target: 'finance-lake',
+          versions: [1],
+        },
+      ],
+    });
+  });
+});
+
 describe('retiring and unretiring a document type', () => {
   it('withdraws every delivered output and graph once; unretiring re-delivers', async () => {
     const { app, repo, upload, sha, graphIri } = await setup();

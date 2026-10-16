@@ -14,7 +14,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
   });
   return {
     job: j,
-    target: { bucket: 'ingest-published', prefix: 'pvp/' },
+    target: { id: 'default', label: 'Default', bucket: 'ingest-published', prefix: 'pvp/' },
     publishedAt: '2026-10-02T08:00:01.000Z',
     outputs: [
       {

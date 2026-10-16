@@ -87,18 +87,44 @@ describe('TargetStores', () => {
   });
 
   it('reads each credential half from the environment when none is stored', async () => {
-    const { stores, made, repo } = setup({ LAKE_AK: 'EA', LAKE_SK: 'ES' });
+    const { stores, made, repo } = setup({ TARGET_S3_ACCESS_KEY: 'EA', S3_SECRET_KEY: 'ES' });
     await repo.create(
       external({
         accessKeyId: null,
         secretKeyEnc: null,
-        accessKeyEnv: 'LAKE_AK',
-        secretKeyEnv: 'LAKE_SK',
+        accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
+        secretKeyEnv: 'S3_SECRET_KEY',
       }),
       null,
     );
     await stores.storeFor('lake');
     expect(made[0]).toMatchObject({ accessKeyId: 'EA', secretAccessKey: 'ES' });
+  });
+
+  it.each([
+    ['accessKeyEnv', { accessKeyEnv: 'DATABASE_URL', accessKeyId: null }],
+    ['secretKeyEnv', { secretKeyEnv: 'LLM_SECRETS_KEY', secretKeyEnc: null }],
+  ])('refuses a credential %s outside the allowlist', async (_name, over) => {
+    const { stores, repo, made } = setup({
+      DATABASE_URL: 'postgres://x',
+      LLM_SECRETS_KEY: 'k',
+      TARGET_S3_ACCESS_KEY: 'EA',
+      TARGET_S3_SECRET_KEY: 'ES',
+    });
+    await repo.create(
+      external({
+        accessKeyId: null,
+        secretKeyEnc: null,
+        accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
+        secretKeyEnv: 'TARGET_S3_SECRET_KEY',
+        ...over,
+      }),
+      null,
+    );
+    await expect(stores.storeFor('lake')).rejects.toThrow(
+      new TargetUnavailableError('Finance lake names an unsupported credential variable'),
+    );
+    expect(made).toEqual([]);
   });
 
   it('caches a store until the repo version moves', async () => {
@@ -221,6 +247,16 @@ describe('probeTarget', () => {
       step: 'read',
     });
   });
+
+  it.each(['get', 'wrong'] as const)(
+    'still deletes the test file when the read fails (%s)',
+    async (at) => {
+      const store = new Failing(at, named('AccessDenied'));
+      const r = await probeTarget(store, 'b', 'ingest/');
+      expect(r).toMatchObject({ ok: false, step: 'read' });
+      expect(store.objects.size).toBe(0);
+    },
+  );
 
   it('fails the delete step', async () => {
     expect(await probeTarget(new Failing('delete', named('AccessDenied')), 'b', '')).toEqual({

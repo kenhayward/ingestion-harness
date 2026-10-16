@@ -21,6 +21,17 @@ export class TargetUnavailableError extends Error {
 
 const VERSION_CHECK_MS = 1_000;
 
+/**
+ * The only environment variables a target may read its keys from (the seeded default's), so a
+ * stored variable name can never make the API read any other secret of its environment.
+ */
+export const CREDENTIAL_ENV_NAMES: ReadonlySet<string> = new Set([
+  'TARGET_S3_ACCESS_KEY',
+  'TARGET_S3_SECRET_KEY',
+  'S3_ACCESS_KEY',
+  'S3_SECRET_KEY',
+]);
+
 export interface TargetStoresOptions {
   repo: PublishTargetRepo;
   /** The API's own object store settings (SeaweedFS), used by internal targets. */
@@ -44,15 +55,29 @@ export class TargetStores {
     if (hit) return hit;
     const target = await this.opts.repo.get(targetId);
     if (!target) throw new TargetMissingError(targetId);
-    const make = this.opts.make ?? ((o: S3Options) => new S3ObjectStore(o));
-    const entry = { store: make(this.options(target)), target };
+    const entry = { store: this.storeOf(target), target };
     this.cache.set(targetId, entry);
     return entry;
   }
 
+  /**
+   * A store for these settings, not cached (Test connection, a bucket to create before saving).
+   * `secretAccessKey` stands in for the stored or environment secret.
+   */
+  storeOf(target: TargetRecord, secretAccessKey?: string): ObjectStore {
+    const make = this.opts.make ?? ((o: S3Options) => new S3ObjectStore(o));
+    return make(this.options(target, secretAccessKey));
+  }
+
+  /** Creates the target's bucket if missing (internal targets: on this deployment's SeaweedFS). */
   async ensureBucket(target: TargetRecord): Promise<void> {
-    const { store } = await this.storeFor(target.id);
-    await store.ensureBucket(target.bucket);
+    await this.storeOf(target).ensureBucket(target.bucket);
+  }
+
+  /** Forget every store now (this API wrote a target), rather than within a second. */
+  invalidate(): void {
+    this.cache.clear();
+    this.seenVersion = null;
   }
 
   private async refresh(): Promise<void> {
@@ -66,13 +91,20 @@ export class TargetStores {
     }
   }
 
-  private options(t: TargetRecord): S3Options {
+  private options(t: TargetRecord, secretOverride?: string): S3Options {
     if (t.kind === 'internal') return this.opts.internal;
     const { env, secrets } = this.opts;
+    for (const name of [t.accessKeyEnv, t.secretKeyEnv]) {
+      if (name !== null && !CREDENTIAL_ENV_NAMES.has(name)) {
+        throw new TargetUnavailableError(`${t.label} names an unsupported credential variable`);
+      }
+    }
     const region = t.region ?? this.opts.internal.region;
     const accessKeyId = t.accessKeyId ?? (t.accessKeyEnv ? env[t.accessKeyEnv] : undefined);
     let secretAccessKey: string | undefined;
-    if (t.secretKeyEnc) {
+    if (secretOverride !== undefined) {
+      secretAccessKey = secretOverride;
+    } else if (t.secretKeyEnc) {
       try {
         if (!secrets) throw new Error('no master key');
         secretAccessKey = decryptSecret(t.secretKeyEnc, secrets);

@@ -19,7 +19,8 @@ describe('ResultDetailView', () => {
       'pvp v3',
     );
     expect(valueOf('Review')).toHaveTextContent('Approved by Ken — Checked');
-    expect(valueOf('Target')).toHaveTextContent('ingest-published/pvp/');
+    expect(valueOf('Publishing target')).toHaveTextContent('Default');
+    expect(valueOf('Publishing target')).toHaveTextContent('ingest-published/pvp/');
     const downloads = screen.getByRole('navigation', { name: 'Downloads' });
     expect(within(downloads).getByRole('link', { name: 'results.csv' })).toHaveAttribute(
       'href',
