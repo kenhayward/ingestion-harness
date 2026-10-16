@@ -5354,6 +5354,1058 @@
         }
       }
     },
+    "/api/templates/{id}/github/remote": {
+      "get": {
+        "operationId": "listRecipeVersionsOnGitHub",
+        "summary": "List a document type's versions on GitHub",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Reads the head of the link's branch with **your** linked GitHub account and lists\n          every version of this type there: this deployment's own folder (`mine`, found by\n          its instance id in `instance.yaml`) and the same type id in other deployments'\n          folders. Each of this deployment's versions is compared with the version of the\n          same number here (`compare`): `same`, `label` (same recipe, the label or note\n          differs), `differs` (another recipe: published versions never change) or\n          `missing-here`. Label and note are compared, not who set them or when. Files that\n          cannot be used are listed in `skipped` with the reason (`not valid YAML`, `not a\nCT Studio recipe file`, `format version N is not supported`, `drafts are not\nimported yet`, `the file does not match its path`, also for folder names that\n          are not an instance name and a type id). `commit` is the head commit read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The versions on GitHub.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "instance": {
+                            "type": "string"
+                          },
+                          "typeId": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "label": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "note": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "publishedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "publishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "definitionSha256": {
+                            "type": "string"
+                          },
+                          "commit": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "mine": {
+                            "type": "boolean",
+                            "description": "Written by this deployment."
+                          },
+                          "compare": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "same",
+                                  "label",
+                                  "differs",
+                                  "missing-here"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Against this deployment's version of the same number; null for other deployments."
+                          }
+                        },
+                        "required": [
+                          "instance",
+                          "typeId",
+                          "version",
+                          "label",
+                          "note",
+                          "publishedBy",
+                          "publishedAt",
+                          "definitionSha256",
+                          "commit",
+                          "path",
+                          "mine",
+                          "compare"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "reason"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "versions",
+                    "skipped"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The versions on GitHub."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/versions/{version}/github/take-label": {
+      "post": {
+        "operationId": "takeRecipeLabelFromGitHub",
+        "summary": "Take GitHub's label for a version",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Sets the version's label and note to those of this deployment's file for it on\nGitHub at `commit`, when the recipe there is the same as here. `labelSetBy`\nbecomes `GitHub: <name>`, the name being the file's own `labelSetBy` (who set the\nlabel where it was pushed from; GitHub's commit author is not looked up), or plain\n`GitHub` without one. Allowed for retired types.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40,64}$",
+                    "description": "The head commit the listing read (`commit` of a listed version)."
+                  }
+                },
+                "required": [
+                  "commit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "publishedBy",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The version."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`vN on GitHub is a different recipe: published versions never change`, the file is missing or not usable at that commit, or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`vN on GitHub is a different recipe: published versions never change`, the file is missing or not usable at that commit, or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/github/use-as-draft": {
+      "post": {
+        "operationId": "useGitHubVersionAsDraft",
+        "summary": "Use a version on GitHub as the draft",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Reads `<root>/<instance>/<typeId>/v<version>.yaml` at `commit` on the type's link\n          (any deployment's folder, any type id) and writes its definition into the open draft,\n          replacing it, or into the next draft started from the latest version when none is\n          open. The definition takes this type's id and the draft's own version number. Logged\n          in the draft's change log as an `import` change `Imported from GitHub:\n<instance>/<typeId> v<version> @ <short commit>` (Restore undoes it); the file's\n          label and note are copied to the draft (`labelSetBy` `GitHub: <name>`, as for\n          taking a label). Refused for a retired type.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instance": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                    "description": "The deployment folder the version is in."
+                  },
+                  "typeId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]*$",
+                    "description": "The document type folder the version is in (another id may be used)."
+                  },
+                  "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "description": "The version number on GitHub."
+                  },
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40,64}$",
+                    "description": "The head commit the listing read (`commit` of a listed version)."
+                  },
+                  "baseUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "The open draft `updatedAt` the user saw: a draft written since is a 409."
+                  }
+                },
+                "required": [
+                  "instance",
+                  "typeId",
+                  "version",
+                  "commit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "publishedBy",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The draft."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not the open draft's `updatedAt`; `{name} is retired: unretire it to use it again` for a retired document type; the file is missing or not usable at that commit; or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not the open draft's `updatedAt`; `{name} is retired: unretire it to use it again` for a retired document type; the file is missing or not usable at that commit; or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "liveness",

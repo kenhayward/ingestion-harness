@@ -1,7 +1,14 @@
 import {
   GitHubLinkBodySchema,
   GitHubLinkViewSchema,
+  ID_PATTERN,
   PushOutcomeSchema,
+  RemoteListingViewSchema,
+  SyncNameSchema,
+  VersionLabelBodySchema,
+  describeDefinitionChange,
+  type RecipeFile,
+  type RemoteListingView,
   SyncSettingsBodySchema,
   SyncSettingsViewSchema,
   VersionSyncSchema,
@@ -9,11 +16,16 @@ import {
 } from '@ih/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { labelSha } from '../github-sync/file.js';
+import { definitionSha256, labelSha } from '../github-sync/file.js';
 import { cannotPush, NOT_LINKED_TO_PUSH, pushVersion, SyncConflict } from '../github-sync/push.js';
+import { compareWith, githubAuthor, listRemote, readRemoteVersion } from '../github-sync/remote.js';
 import { userToken } from '../github-sync/token.js';
 import { error, md, noContent, res } from '../openapi/zod.js';
-import { GitHubError } from '../profile/github.js';
+import { GitHubError, UnauthorizedError } from '../profile/github.js';
+import { createNextDraft, pinned } from '../templates/drafts.js';
+import type { TemplateRecord } from '../templates/repo.js';
+import { RETIRED_DOC, retiredProblem } from '../templates/retirement.js';
+import { DRAFT_CHANGED, issuesOf, RecordView } from './templates.js';
 
 const TAGS = ['GitHub'];
 const ADMINS_ONLY = error('`admins only`.');
@@ -23,6 +35,52 @@ const VersionParams = z.object({
   id: z.string().describe('The document type id.'),
   version: z.string().describe('The version number.'),
 });
+
+const NOT_LINKED_TO_PULL = 'Link your GitHub account in Profile to pull.';
+const PULL_409 =
+  '`' +
+  NOT_LINKED_TO_PULL +
+  '`, the type is not linked to a repository, GitHub is not set up, the branch or repository ' +
+  'is gone, or GitHub no longer accepts your link (link the account again in Profile).';
+const Commit = z
+  .string()
+  .regex(/^[0-9a-f]{40,64}$/, 'a full commit sha')
+  .describe('The head commit the listing read (`commit` of a listed version).');
+const TakeLabelBody = z.object({ commit: Commit }).strict();
+const UseAsDraftBody = z
+  .object({
+    instance: SyncNameSchema.describe('The deployment folder the version is in.'),
+    typeId: z
+      .string()
+      .regex(ID_PATTERN, 'a document type id')
+      .describe('The document type folder the version is in (another id may be used).'),
+    version: z.number().int().positive().describe('The version number on GitHub.'),
+    commit: Commit,
+    baseUpdatedAt: z
+      .string()
+      .datetime()
+      .optional()
+      .describe('The open draft `updatedAt` the user saw: a draft written since is a 409.'),
+  })
+  .strict();
+
+/** A pull's GitHub failure as an answer: what the user must resolve is a 409, the rest a 502. */
+function pullFailure(reply: FastifyReply, err: unknown) {
+  if (err instanceof SyncConflict || err instanceof UnauthorizedError) {
+    return reply.code(409).send({ error: err.message });
+  }
+  if (err instanceof GitHubError) return reply.code(502).send({ error: err.message });
+  throw err;
+}
+
+/** The label and note of a file on GitHub as a `setLabel` body; null when not valid here. */
+function labelOf(file: RecipeFile) {
+  const body = VersionLabelBodySchema.safeParse({
+    label: file.version.label,
+    note: file.version.note,
+  });
+  return body.success ? body.data : null;
+}
 
 const StatusSchema = z.object({
   link: GitHubLinkViewSchema.nullable().describe('The repository link; null without one.'),
@@ -46,6 +104,18 @@ export function registerGitHubSyncRoutes(app: FastifyInstance): void {
   const origin = (req: FastifyRequest) => `${req.protocol}://${req.host}`;
   const versionsOf = async (id: string) =>
     (await deps.templates.list()).filter((r) => r.id === id).sort((a, b) => b.version - a.version);
+  const withIssues = issuesOf(app);
+
+  /** The GitHub side of a pull: the port, the type's link and the user's own token. */
+  const pullFrom = async (req: FastifyRequest, id: string) => {
+    const api = deps.githubRepos ?? null;
+    if (!api) throw new SyncConflict('GitHub is not set up on this deployment');
+    const link = await sync.link(id);
+    if (!link) throw new SyncConflict(`\`${id}\` is not linked to a GitHub repository`);
+    const token = await userToken(deps, req.auth!.userId);
+    if (token === 'not_linked') throw new SyncConflict(NOT_LINKED_TO_PULL);
+    return { api, link, token };
+  };
 
   app.get(
     '/api/github/settings',
@@ -309,6 +379,238 @@ export function registerGitHubSyncRoutes(app: FastifyInstance): void {
       } catch (err) {
         if (err instanceof SyncConflict) return reply.code(409).send({ error: err.message });
         throw err;
+      }
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/api/templates/:id/github/remote',
+    {
+      schema: {
+        tags: TAGS,
+        operationId: 'listRecipeVersionsOnGitHub',
+        summary: "List a document type's versions on GitHub",
+        description: md`
+          Reads the head of the link's branch with **your** linked GitHub account and lists
+          every version of this type there: this deployment's own folder (\`mine\`, found by
+          its instance id in \`instance.yaml\`) and the same type id in other deployments'
+          folders. Each of this deployment's versions is compared with the version of the
+          same number here (\`compare\`): \`same\`, \`label\` (same recipe, the label or note
+          differs), \`differs\` (another recipe: published versions never change) or
+          \`missing-here\`. Label and note are compared, not who set them or when. Files that
+          cannot be used are listed in \`skipped\` with the reason (\`not valid YAML\`, \`not a
+CT Studio recipe file\`, \`format version N is not supported\`, \`drafts are not
+imported yet\`, \`the file does not match its path\`, also for folder names that
+          are not an instance name and a type id). \`commit\` is the head commit read.
+        `,
+        params: TypeParams,
+        response: {
+          200: res('The versions on GitHub.', RemoteListingViewSchema),
+          404: TYPE_NOT_FOUND,
+          409: error(PULL_409),
+          502: error('GitHub could not be reached.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params;
+      const records = await versionsOf(id);
+      if (!records.length) return reply.code(404).send({ error: 'recipe not found' });
+      try {
+        const { link, token } = await pullFrom(req, id);
+        const listing = await listRemote(deps, {
+          token,
+          repo: link.repo,
+          branch: link.branch,
+          root: link.root,
+          typeId: id,
+        });
+        const view: RemoteListingView = {
+          ...listing,
+          versions: listing.versions.map((v) => ({
+            ...v,
+            compare: v.mine
+              ? compareWith(
+                  v,
+                  records.find((r) => r.version === v.version),
+                )
+              : null,
+          })),
+        };
+        return view;
+      } catch (err) {
+        return pullFailure(reply, err);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string; version: string } }>(
+    '/api/templates/:id/versions/:version/github/take-label',
+    {
+      schema: {
+        tags: TAGS,
+        operationId: 'takeRecipeLabelFromGitHub',
+        summary: "Take GitHub's label for a version",
+        description: md`
+          Sets the version's label and note to those of this deployment's file for it on
+          GitHub at \`commit\`, when the recipe there is the same as here. \`labelSetBy\`
+          becomes \`GitHub: <name>\`, the name being the file's own \`labelSetBy\` (who set the
+          label where it was pushed from; GitHub's commit author is not looked up), or plain
+          \`GitHub\` without one. Allowed for retired types.
+        `,
+        params: VersionParams,
+        body: TakeLabelBody,
+        response: {
+          200: res('The version.', RecordView),
+          400: error('Zod issues.'),
+          404: TYPE_NOT_FOUND,
+          409: error(
+            '`vN on GitHub is a different recipe: published versions never change`, the file is ' +
+              'missing or not usable at that commit, or ' +
+              PULL_409,
+          ),
+          502: error('GitHub could not be reached.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = TakeLabelBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id } = req.params;
+      const version = Number(req.params.version);
+      const record = Number.isInteger(version) ? await deps.templates.get(id, version) : null;
+      if (!record) return reply.code(404).send({ error: 'recipe not found' });
+      try {
+        const { api, link, token } = await pullFrom(req, id);
+        const settings = await sync.settings();
+        const { file, instanceId } = await readRemoteVersion(
+          api,
+          { token, repo: link.repo, root: link.root, commit: body.data.commit },
+          { instance: settings.instanceName, typeId: id, version },
+        );
+        if (instanceId !== settings.instanceId) {
+          throw new SyncConflict(
+            `\`${settings.instanceName}\` in this repo belongs to another CT Studio deployment`,
+          );
+        }
+        if (
+          compareWith(
+            { ...file.version, definitionSha256: definitionSha256(file.definition) },
+            record,
+          ) === 'differs'
+        ) {
+          throw new SyncConflict(
+            `v${version} on GitHub is a different recipe: published versions never change`,
+          );
+        }
+        const label = labelOf(file);
+        if (!label) throw new SyncConflict(`the label of v${version} on GitHub is not valid here`);
+        const updated = await deps.templates.setLabel(id, version, label, githubAuthor(file));
+        if (!updated) return reply.code(404).send({ error: 'recipe not found' });
+        req.log.info({ templateId: id, version }, 'label taken from GitHub');
+        return await withIssues(updated);
+      } catch (err) {
+        return pullFailure(reply, err);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/templates/:id/github/use-as-draft',
+    {
+      schema: {
+        tags: TAGS,
+        operationId: 'useGitHubVersionAsDraft',
+        summary: 'Use a version on GitHub as the draft',
+        description: md`
+          Reads \`<root>/<instance>/<typeId>/v<version>.yaml\` at \`commit\` on the type's link
+          (any deployment's folder, any type id) and writes its definition into the open draft,
+          replacing it, or into the next draft started from the latest version when none is
+          open. The definition takes this type's id and the draft's own version number. Logged
+          in the draft's change log as an \`import\` change \`Imported from GitHub:
+<instance>/<typeId> v<version> @ <short commit>\` (Restore undoes it); the file's
+          label and note are copied to the draft (\`labelSetBy\` \`GitHub: <name>\`, as for
+          taking a label). Refused for a retired type.
+        `,
+        params: TypeParams,
+        body: UseAsDraftBody,
+        response: {
+          200: res('The draft.', RecordView),
+          400: error('Zod issues.'),
+          404: TYPE_NOT_FOUND,
+          409: error(
+            '`' +
+              DRAFT_CHANGED +
+              "` when `baseUpdatedAt` is not the open draft's `updatedAt`; " +
+              RETIRED_DOC +
+              '; the file is missing or not usable at that commit; or ' +
+              PULL_409,
+          ),
+          502: error('GitHub could not be reached.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = UseAsDraftBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { id } = req.params;
+      const { instance, typeId, version, commit, baseUpdatedAt } = body.data;
+      const records = await versionsOf(id);
+      if (!records.length) return reply.code(404).send({ error: 'recipe not found' });
+      const retired = await retiredProblem(deps, id);
+      if (retired) return reply.code(409).send({ error: retired });
+      const by = req.auth?.label ?? null;
+      try {
+        const { api, link, token } = await pullFrom(req, id);
+        const { file } = await readRemoteVersion(
+          api,
+          { token, repo: link.repo, root: link.root, commit },
+          { instance, typeId, version },
+        );
+        const label = labelOf(file);
+        if (!label) throw new SyncConflict(`the label of v${version} on GitHub is not valid here`);
+
+        let draft: TemplateRecord | undefined = records.find((r) => r.status === 'draft');
+        if (draft) {
+          if ((baseUpdatedAt ?? draft.updatedAt) !== draft.updatedAt) {
+            return reply.code(409).send({ error: DRAFT_CHANGED });
+          }
+        } else {
+          const created = await createNextDraft(deps.templates, id, undefined, by);
+          if (created === 'draft-exists') return reply.code(409).send({ error: DRAFT_CHANGED });
+          if (created === 'not-found') return reply.code(404).send({ error: 'recipe not found' });
+          draft = created;
+        }
+
+        const definition = pinned(file.definition, id, draft.version);
+        const text = describeDefinitionChange(draft.definition, definition);
+        let record: TemplateRecord | null = draft;
+        if (text.count > 0) {
+          record = await deps.templates.updateDraft(id, draft.version, definition, {
+            expectedUpdatedAt: draft.updatedAt,
+            change: {
+              source: 'import',
+              stage: null,
+              proposalId: null,
+              summary: `Imported from GitHub: ${instance}/${typeId} v${version} @ ${commit.slice(0, 7)}`,
+              diff: text.diff,
+              by,
+            },
+          });
+          if (!record) return reply.code(409).send({ error: DRAFT_CHANGED });
+        }
+        if (record.label !== (label.label ?? null) || record.note !== (label.note ?? null)) {
+          record =
+            (await deps.templates.setLabel(id, record.version, label, githubAuthor(file))) ??
+            record;
+        }
+        req.log.info(
+          { templateId: id, version: record.version, from: `${instance}/${typeId} v${version}` },
+          'draft taken from GitHub',
+        );
+        return await withIssues(record);
+      } catch (err) {
+        return pullFailure(reply, err);
       }
     },
   );

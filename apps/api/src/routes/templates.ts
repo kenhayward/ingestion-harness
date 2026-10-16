@@ -70,7 +70,7 @@ const RestoreBody = z
       .describe('The draft `updatedAt` the user saw: a draft written since is a 409.'),
   })
   .strict();
-const DRAFT_CHANGED = 'the draft changed since you opened it; reload it to see the changes';
+export const DRAFT_CHANGED = 'the draft changed since you opened it; reload it to see the changes';
 const ImportBody = z
   .object({
     yaml: z.string().min(1).describe('A definition as YAML (or JSON), with `id` and `version`.'),
@@ -87,7 +87,7 @@ const VersionParams = z.object({
 const TypeParams = z.object({ id: z.string().describe('The document type id.') });
 
 /** A version with the validation issues of its definition (empty when valid). */
-const RecordView = z.object({
+export const RecordView = z.object({
   record: TemplateRecordSchema,
   issues: z.array(TemplateIssueSchema).describe('Validation issues; empty when valid.'),
 });
@@ -150,7 +150,7 @@ const VersionItem = z.object({
 const NOT_FOUND = error('`recipe not found`.');
 
 /** The record with its issues, the models its steps name included (ADR 0010). */
-const issuesOf = (app: FastifyInstance) => async (record: TemplateRecord) => ({
+export const issuesOf = (app: FastifyInstance) => async (record: TemplateRecord) => ({
   record,
   issues: await templateIssues(app.deps, record.definition, { draft: record.status === 'draft' }),
 });

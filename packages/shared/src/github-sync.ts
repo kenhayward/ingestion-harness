@@ -171,3 +171,24 @@ export const RemoteListingSchema = z.object({
   skipped: z.array(z.object({ path: z.string(), reason: z.string() })),
 });
 export type RemoteListing = z.infer<typeof RemoteListingSchema>;
+
+/**
+ * How a version this deployment pushed compares with its version of the same number here:
+ * `same` (definition, label and note), `label` (same definition, label or note differ),
+ * `differs` (another definition: published versions never change) or `missing-here`.
+ */
+export const REMOTE_COMPARES = ['same', 'label', 'differs', 'missing-here'] as const;
+export type RemoteCompare = (typeof REMOTE_COMPARES)[number];
+
+export const RemoteVersionViewSchema = RemoteVersionSchema.extend({
+  compare: z
+    .enum(REMOTE_COMPARES)
+    .nullable()
+    .describe("Against this deployment's version of the same number; null for other deployments."),
+});
+export type RemoteVersionView = z.infer<typeof RemoteVersionViewSchema>;
+
+export const RemoteListingViewSchema = RemoteListingSchema.extend({
+  versions: z.array(RemoteVersionViewSchema),
+});
+export type RemoteListingView = z.infer<typeof RemoteListingViewSchema>;
