@@ -29322,6 +29322,17 @@
                                       "type": "integer",
                                       "exclusiveMinimum": 0
                                     },
+                                    "tokens": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
                                     "at": {
                                       "type": "string"
                                     }
@@ -33306,6 +33317,17 @@
                                         "type": "integer",
                                         "exclusiveMinimum": 0
                                       },
+                                      "tokens": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "at": {
                                         "type": "string"
                                       }
@@ -35024,6 +35046,17 @@
                                     "round": {
                                       "type": "integer",
                                       "exclusiveMinimum": 0
+                                    },
+                                    "tokens": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
                                     },
                                     "at": {
                                       "type": "string"

@@ -74,6 +74,19 @@ describe('draftRunView (issue #151)', () => {
     );
   });
 
+  it('counts the tokens of a reply as it streams', () => {
+    const first = draftRunView('survey', running(progress({ tokens: 1300 }, 30)), T0 + 40_000);
+    expect(first.phases.at(-1)!.detail).toBe('~1,300 tokens received so far.');
+    const again = draftRunView(
+      'survey',
+      running(progress({ attempt: 2, tokens: 80 }, 30)),
+      T0 + 40_000,
+    );
+    expect(again.phases.at(-1)!.detail).toBe(
+      'The first reply did not pass the checks: asking again (try 2 of 2). ~80 tokens received so far.',
+    );
+  });
+
   it('adds the anchor check for sections, and the second round when anchors missed', () => {
     const first = draftRunView(
       'sections',

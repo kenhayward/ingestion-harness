@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -55,14 +56,48 @@ DRAFT_PROGRESS = "drafting progress"
 
 DraftPhase = Literal["reading", "model", "anchors", "suggestions"]
 
+#: A streamed reply's token count is reported at once, then after this many more tokens or
+#: seconds: often enough to show it moving, never an event per token.
+TOKEN_STEP = 500
+TOKEN_EVERY_S = 5.0
+
+
+class TokenThrottle:
+    """Passes a model call's growing token estimate on now and then (TOKEN_STEP, TOKEN_EVERY_S)."""
+
+    def __init__(
+        self, report: Callable[[int], None], clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self._report = report
+        self._clock = clock
+        self._last: int | None = None
+        self._at = 0.0
+
+    def __call__(self, tokens: int) -> None:
+        now = self._clock()
+        if self._last is not None and (
+            tokens <= self._last
+            or (tokens - self._last < TOKEN_STEP and now - self._at < TOKEN_EVERY_S)
+        ):
+            return
+        self._last, self._at = tokens, now
+        self._report(tokens)
+
 
 def progress_reporter(
     job: ClaimedJob, queue: JobQueue, stage: str, samples: int
 ) -> Callable[..., None]:
-    """Report a phase of the run: reading the samples, each model call (its attempt), testing
-    anchors, queuing ontology suggestions. `round` 2 is the sections stage's anchor round."""
+    """Report a phase of the run: reading the samples, each model call (its attempt, then its
+    streamed reply's tokens so far), testing anchors, queuing ontology suggestions. `round` 2 is
+    the sections stage's anchor round."""
 
-    def report(phase: DraftPhase, *, attempt: int | None = None, round: int = 1) -> None:
+    def report(
+        phase: DraftPhase,
+        *,
+        attempt: int | None = None,
+        round: int = 1,
+        tokens: int | None = None,
+    ) -> None:
         advisory_event(
             job,
             queue,
@@ -74,6 +109,8 @@ def progress_reporter(
                 "attempt": attempt,
                 "of": DRAFT_ATTEMPTS if attempt is not None else None,
                 "round": round,
+                # A streamed reply's estimated tokens so far (model phase only).
+                "tokens": tokens,
             },
         )
 
@@ -423,6 +460,13 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         return errors
 
     def propose(prompt: str, label: str, round: int = 1) -> tuple[ExtractionResult, dict[str, Any]]:
+        # Each model call reports when it starts, then its streamed reply's tokens now and then.
+        tokens = [TokenThrottle(lambda _t: None)]
+
+        def on_attempt(n: int) -> None:
+            report("model", attempt=n, round=round)
+            tokens[0] = TokenThrottle(lambda t: report("model", attempt=n, round=round, tokens=t))
+
         try:
             result = run_extraction(
                 extraction_id=label,
@@ -434,7 +478,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 max_tokens=limit,
                 system=DRAFT_SYSTEM,
                 check=check if (stage.convert or stage.check) else None,
-                on_attempt=lambda n: report("model", attempt=n, round=round),
+                on_attempt=on_attempt,
+                on_tokens=lambda t: tokens[0](t),
             )
         except OutputTruncatedError as exc:
             _audit(deps, job, label, exc.attempts)
