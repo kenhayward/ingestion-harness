@@ -60,7 +60,7 @@ ignore = ["E501"] # ruff format owns line length; long SQL/f-strings are fine
 
 [tool.mypy]
 strict = true
-python_version = "3.13"
+python_version = "3.14"
 files = ["src"]
 
 [[tool.mypy.overrides]]
