@@ -3,11 +3,13 @@ import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
 import {
   PublishLabelSchema,
+  PushOutcomeSchema,
   RetirementSchema,
   VersionLabelBodySchema,
   VersionLabelSchema,
   versionName,
 } from '@ih/shared';
+import { pushAfterPublish } from '../github-sync/auto.js';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import {
@@ -88,6 +90,14 @@ const TypeParams = z.object({ id: z.string().describe('The document type id.') }
 const RecordView = z.object({
   record: TemplateRecordSchema,
   issues: z.array(TemplateIssueSchema).describe('Validation issues; empty when valid.'),
+});
+
+/** A published version, with what the automatic GitHub push did. */
+const PublishedView = RecordView.extend({
+  github: PushOutcomeSchema.nullable().describe(
+    'The automatic push to GitHub: null when the document type is not linked or pushes only on ' +
+      'request. A skipped or failed push never fails the publish.',
+  ),
 });
 
 const TemplateTypeSchema = z.object({
@@ -531,7 +541,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         params: VersionParams,
         body: PublishLabelSchema,
         response: {
-          200: res('The published version.', RecordView),
+          200: res('The published version.', PublishedView),
           400: res(
             'Zod issues for an invalid label or note, or the definition is not valid: ' +
               '`recipe is not valid`, with `issues`.',
@@ -566,7 +576,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       );
       if (issues.length) return reply.code(400).send({ error: 'recipe is not valid', issues });
       await labelFirst(id, version, body.data, req.auth?.label ?? null);
-      return await withIssues((await repo().publish(id, version))!);
+      const published = (await repo().publish(id, version, req.auth?.label ?? null))!;
+      const github = await pushAfterPublish(app.deps, req, id, version);
+      return { ...(await withIssues(published)), github };
     },
   );
 

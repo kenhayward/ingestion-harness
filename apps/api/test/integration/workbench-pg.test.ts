@@ -1030,6 +1030,11 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       expect(result.result).toBe('published');
       expect(await statusOf(projectId)).toMatchObject({ status: 'published' });
       expect((await statusOf(projectId)).published_at).not.toBeNull();
+      const by = await pool.query<{ published_by: string | null }>(
+        'SELECT published_by FROM templates WHERE id = $1 AND version = 1',
+        [projectId],
+      );
+      expect(by.rows[0]!.published_by).toBe('ken');
       const listed = await workbench.listPublications(projectId);
       expect(result).toEqual({ result: 'published', publication: listed[0] });
       expect(listed[0]).toMatchObject(publication(projectId));

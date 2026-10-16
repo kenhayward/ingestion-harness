@@ -376,7 +376,7 @@ export class MemoryWorkbenchRepo implements WorkbenchRepo {
     // The publication first: when it fails the draft stays open, as the Pg rollback leaves it.
     const publication = await this.recordPublication(input.publication);
     try {
-      await this.templates.publish(input.projectId, input.version);
+      await this.templates.publish(input.projectId, input.version, input.publication.publishedBy);
     } catch (err) {
       this.publications.splice(this.publications.indexOf(publication), 1);
       throw err;
@@ -1277,9 +1277,10 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       }
       // Twin of PgTemplateRepo.publish (apps/api/src/templates/repo.ts): keep the two in step.
       await client.query(
-        `UPDATE templates SET status = 'published', published_at = now(), updated_at = now()
+        `UPDATE templates SET status = 'published', published_at = now(), updated_at = now(),
+                published_by = $3
           WHERE id = $1 AND version = $2 AND status = 'draft'`,
-        [input.projectId, input.version],
+        [input.projectId, input.version, input.publication.publishedBy],
       );
       const publication = await this.insertPublication(client, input.publication);
       await client.query('COMMIT');

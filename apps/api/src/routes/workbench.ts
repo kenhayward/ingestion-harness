@@ -1,3 +1,4 @@
+import { pushAfterPublish } from '../github-sync/auto.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   FastifyBaseLogger,
@@ -29,6 +30,7 @@ import {
   FeedbackItemSchema,
   GateViewSchema,
   PublishGateViewSchema,
+  PushOutcomeSchema,
   gateHints,
   IterationSummarySchema,
   KEEPABLE_STAGES,
@@ -1594,7 +1596,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         response: {
           201: res(
             'Published.',
-            z.object({ publication: PublicationSchema, project: ProjectViewSchema }),
+            z.object({
+              publication: PublicationSchema,
+              project: ProjectViewSchema,
+              github: PushOutcomeSchema.nullable().describe(
+                'The automatic push to GitHub: null when the document type is not linked or ' +
+                  'pushes only on request. A skipped or failed push never fails the publish.',
+              ),
+            }),
           ),
           400: res(
             'Zod issues (an ignored override reason under 10 characters), or `the draft is not ' +
@@ -1669,7 +1678,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         },
         'workbench draft published',
       );
-      return reply.code(201).send({ publication, project: await projectView(app, project) });
+      const github = await pushAfterPublish(app.deps, req, projectId, draft);
+      return reply
+        .code(201)
+        .send({ publication, project: await projectView(app, project), github });
     },
   );
 

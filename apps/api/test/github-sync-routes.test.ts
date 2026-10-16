@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
 import { MemoryProfileRepo } from '../src/profile/repo.js';
 import { FakeGitHubRepos } from './fake-github-repos.js';
-import { accessApp, signInNewUser } from './helpers.js';
+import { accessApp, letter, signInNewUser } from './helpers.js';
 
 const keys: SecretsKeys = { current: Buffer.alloc(32, 7), previous: null };
 const REPO = 'acme/recipes';
@@ -213,5 +213,87 @@ describe('push and status', () => {
       canPush: false,
       reason: 'Link your GitHub account in Profile to push.',
     });
+  });
+});
+
+describe('automatic push at publish', () => {
+  const publishV2 = (c: Ctx, cookie = c.user.cookie) =>
+    c.call('POST', '/api/templates/invoice/versions/2/publish', cookie, {});
+
+  it('pushes the version with the publisher own token', async () => {
+    const c = await setup();
+    await linkIt(c, { pushOnPublish: true });
+    const res = await publishV2(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toMatchObject({ kind: 'pushed' });
+    expect(c.github.commits.at(-1)!.token).toBe(USER_TOKEN);
+    const stored = await c.templates.get('invoice', 2);
+    expect(stored).toMatchObject({ status: 'published', publishedBy: 'Ursula User' });
+  });
+
+  it('answers null when the type is not linked or the switch is off', async () => {
+    const c = await setup();
+    expect((await publishV2(c)).json().github).toBe(null);
+    const d = await setup();
+    await linkIt(d, { pushOnPublish: false });
+    expect((await publishV2(d)).json().github).toBe(null);
+    expect(d.github.commits).toHaveLength(0);
+  });
+
+  it('skips, with the message, for a publisher without a linked account', async () => {
+    const c = await setup();
+    await linkIt(c, { pushOnPublish: true });
+    const bare = await signInNewUser(c.app, c.access, 'Nolink User');
+    const res = await publishV2(c, bare.cookie);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toEqual({
+      kind: 'skipped',
+      reason: 'Link your GitHub account in Profile to push.',
+    });
+    expect((await c.templates.get('invoice', 2))!.status).toBe('published');
+  });
+
+  it('reports a failed push and still publishes', async () => {
+    const c = await setup();
+    await linkIt(c, { pushOnPublish: true });
+    c.github.seed(REPO, 'main', {
+      'ct-studio/default/instance.yaml': 'instanceId: someone-else\nname: default\n',
+    });
+    const res = await publishV2(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toMatchObject({ kind: 'failed' });
+    expect(res.json().github.reason).toContain('belongs to another CT Studio deployment');
+    expect((await c.templates.get('invoice', 2))!.status).toBe('published');
+    // An unexpected error is a failure too.
+    const d = await setup();
+    await linkIt(d, { pushOnPublish: true });
+    d.github.revoked.add(USER_TOKEN);
+    const res2 = await publishV2(d);
+    expect(res2.statusCode).toBe(200);
+    expect(res2.json().github.kind).toMatch(/failed|skipped/);
+    expect((await d.templates.get('invoice', 2))!.status).toBe('published');
+  });
+
+  it('does the same from the Workbench publish route, and records who published', async () => {
+    const c = await setup();
+    const made = await c.call('POST', '/api/workbench/projects', c.admin.cookie, {
+      id: 'letter',
+      name: 'Letter',
+    });
+    expect(made.statusCode).toBe(201);
+    await c.templates.updateDraft('letter', 1, letter(1));
+    const put = await c.call('PUT', '/api/templates/letter/github', c.admin.cookie, {
+      ...link,
+      pushOnPublish: true,
+    });
+    expect(put.statusCode).toBe(200);
+    const res = await c.call('POST', '/api/workbench/projects/letter/publish', c.user.cookie, {});
+    expect(res.statusCode).toBe(201);
+    expect(res.json().github).toMatchObject({ kind: 'pushed' });
+    expect(await c.templates.get('letter', 1)).toMatchObject({
+      status: 'published',
+      publishedBy: 'Ursula User',
+    });
+    expect(c.github.commits.at(-1)!.token).toBe(USER_TOKEN);
   });
 });

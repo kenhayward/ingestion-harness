@@ -16195,11 +16195,108 @@
                         "additionalProperties": true
                       },
                       "description": "Validation issues; empty when valid."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pushed"
+                                  ]
+                                },
+                                "commit": {
+                                  "type": "string"
+                                },
+                                "commitUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "commit",
+                                "commitUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pr"
+                                  ]
+                                },
+                                "prNumber": {
+                                  "type": "integer"
+                                },
+                                "prUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "prNumber",
+                                "prUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "skipped"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "failed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish."
                     }
                   },
                   "required": [
                     "record",
-                    "issues"
+                    "issues",
+                    "github"
                   ],
                   "additionalProperties": true,
                   "description": "The published version."
@@ -23159,11 +23256,108 @@
                         "retired"
                       ],
                       "additionalProperties": true
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pushed"
+                                  ]
+                                },
+                                "commit": {
+                                  "type": "string"
+                                },
+                                "commitUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "commit",
+                                "commitUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pr"
+                                  ]
+                                },
+                                "prNumber": {
+                                  "type": "integer"
+                                },
+                                "prUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "prNumber",
+                                "prUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "skipped"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "failed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish."
                     }
                   },
                   "required": [
                     "publication",
-                    "project"
+                    "project",
+                    "github"
                   ],
                   "additionalProperties": true,
                   "description": "Published."
