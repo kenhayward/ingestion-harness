@@ -206,6 +206,16 @@ export const StepProgressSchema = z.object({
   of: z.number().int().positive(),
   attempt: z.number().int().positive(),
   chunk: z.object({ n: z.number().int().positive(), of: z.number().int().positive() }).nullable(),
+  /** The occurrence of a repeating section this call reads (null: a plain step, or an event
+   * from before repeating sections). */
+  occurrence: z
+    .object({
+      n: z.number().int().positive(),
+      of: z.number().int().positive(),
+      key: z.string().nullable(),
+    })
+    .nullable()
+    .default(null),
 });
 export type StepProgress = z.infer<typeof StepProgressSchema>;
 

@@ -131,11 +131,11 @@ describe('batch header', () => {
 describe('run rows', () => {
   it.each([
     [
-      { step: 'totals', index: 3, of: 3, attempt: 2, chunk: null },
+      { step: 'totals', index: 3, of: 3, attempt: 2, chunk: null, occurrence: null },
       'Step 3 of 3 · totals · attempt 2',
     ],
     [
-      { step: 'line_items', index: 2, of: 3, attempt: 1, chunk: { n: 2, of: 2 } },
+      { step: 'line_items', index: 2, of: 3, attempt: 1, chunk: { n: 2, of: 2 }, occurrence: null },
       'Step 2 of 3 · line_items · chunk 2 of 2',
     ],
   ])('progress %#', (p, text) => expect(progressText(p)).toBe(text));
@@ -149,7 +149,10 @@ describe('run rows', () => {
     ],
     [{ status: 'running' }, 'Starting…', 'info'],
     [
-      { status: 'running', progress: { step: 'totals', index: 3, of: 3, attempt: 1, chunk: null } },
+      {
+        status: 'running',
+        progress: { step: 'totals', index: 3, of: 3, attempt: 1, chunk: null, occurrence: null },
+      },
       'Step 3 of 3 · totals',
       'info',
     ],
@@ -204,7 +207,7 @@ describe('run rows', () => {
   });
 
   it('says what a running re-run or publish is doing, not the extraction step', () => {
-    const progress = { step: 'totals', index: 3, of: 3, attempt: 1, chunk: null };
+    const progress = { step: 'totals', index: 3, of: 3, attempt: 1, chunk: null, occurrence: null };
     expect(runDetail(testRunView({ status: 'running', task: 'rerun', progress })).text).toBe(
       'Re-running a step',
     );

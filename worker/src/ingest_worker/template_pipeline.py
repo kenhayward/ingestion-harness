@@ -38,6 +38,7 @@ from .pipeline import (
     PipelineDeps,
     Prepared,
     ProcessResult,
+    RepeatPlan,
     StepProgress,
     check_cancelled,
     enforce_data_policy,
@@ -70,6 +71,8 @@ log = logging.getLogger("ingest_worker")
 
 #: Job event the API reads for the Test runs tab (TS: STEP_PROGRESS_EVENT, StepProgressSchema).
 STEP_PROGRESS = "step progress"
+#: The `step` of the key check's issues (segment.key_issues): not an extract step.
+SEGMENT_STEP = "segment"
 
 #: Job event when a mapped recipe drafts no graph because no base IRI is set.
 GRAPH_SKIPPED = "graph skipped: set the customer under Administration > Linked data"
@@ -124,6 +127,7 @@ def step_reporter(job: ClaimedJob, queue: JobQueue, step_id: str, index: int, of
             "of": of,
             "attempt": attempt,
             "chunk": None if chunk is None else {"n": chunk["index"], "of": chunk["count"]},
+            "occurrence": occurrence,
         }
         try:
             queue.event(job.id, "info", STEP_PROGRESS, data)
@@ -158,7 +162,7 @@ def process_template_job(
     fields: dict[str, dict[str, Any]] = {}
     tables: dict[str, list[dict[str, Any]]] = {}
     checks: dict[str, Any] = {}
-    issues: list[dict[str, Any]] = []
+    issues: list[dict[str, Any]] = segment_issues(doc)
     step_results: dict[str, Any] = {}  # normalised, keyed by step id (check paths use these)
     models_used: dict[str, str] = {}
 
@@ -189,6 +193,7 @@ def process_template_job(
         )
         models_used[step.id] = result.model_ref
         step_results[step.id] = _normalise_step(template, step, result.data, fields, tables, issues)
+        issues += key_column_issues(template, step, tables.get(step.table or "", []))
 
     reasons = _review_reasons(template, checks, issues)
     if reasons:
@@ -400,6 +405,51 @@ def context_values(
     return out
 
 
+def repeat_plan(template: Template, step: ExtractStep, doc: Prepared) -> RepeatPlan | None:
+    """The occurrences a step reading a repeating section runs over (None: a plain step)."""
+    section = template.repeating_section(step)
+    if section is None:
+        return None
+    return RepeatPlan(section.id, doc.occurrences.get(section.id, []), step.key_column)
+
+
+def segment_issues(doc: Prepared) -> list[dict[str, Any]]:
+    """The key check's findings as job issues (step `segment`)."""
+    return [
+        {
+            "step": SEGMENT_STEP,
+            "target": i.section,
+            "row": None,
+            "column": None,
+            "raw": None,
+            "message": i.message,
+        }
+        for i in doc.key_issues
+    ]
+
+
+def key_column_issues(
+    template: Template, step: ExtractStep, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """A row whose occurrence had no key: the worker could not fill the step's keyColumn."""
+    section = template.repeating_section(step)
+    column = step.key_column
+    if section is None or column is None or step.table is None:
+        return []
+    return [
+        {
+            "step": step.id,
+            "target": step.table,
+            "row": n,
+            "column": column,
+            "raw": None,
+            "message": f"no key found in this row's occurrence of {section.id}",
+        }
+        for n, row in enumerate(rows, start=1)
+        if row.get(column) is None
+    ]
+
+
 def _run_step(
     job: ClaimedJob,
     deps: PipelineDeps,
@@ -449,6 +499,7 @@ def _run_step(
             images,
             cache=cache,
             progress=progress,
+            repeat=repeat_plan(loaded.template, step, doc),
         )
     except Exception as exc:
         attempts = getattr(exc.__cause__, "attempts", [])
@@ -541,6 +592,7 @@ def rerun_template_job(
     # The SHACL issues are the previous graph's: validated again below.
     issues = [i for i in document.get("issues", []) if i.get("step") not in (step.id, "shacl")]
     _normalise_step(template, step, result.data, fields, tables, issues)
+    issues += key_column_issues(template, step, tables.get(step.table or "", []))
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
     document.update(
@@ -655,8 +707,11 @@ def _review_reasons(
     if policy == "never":
         return []
     reasons = ["review policy: always"] if policy == "always" else []
-    if issues:
-        reasons.append(f"{len(issues)} normalisation issue(s)")
+    keys = sum(1 for i in issues if i.get("step") == SEGMENT_STEP)
+    if len(issues) > keys:
+        reasons.append(f"{len(issues) - keys} normalisation issue(s)")
+    if keys:
+        reasons.append(f"{keys} section key issue(s)")
     for check_id, result in checks.items():
         unmatched = sum(1 for r in result["rows"] if r["status"] == "unmatched")
         if unmatched:
