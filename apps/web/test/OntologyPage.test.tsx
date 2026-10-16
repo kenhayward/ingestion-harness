@@ -338,3 +338,29 @@ describe('OntologyPage', () => {
     await waitFor(() => expect(api.deleteOntologyVersion).toHaveBeenCalledWith('pv', 1));
   });
 });
+
+describe('OntologyPage help', () => {
+  it('explains the ontology from the page header', async () => {
+    view();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: An ontology and its versions' }),
+    );
+    expect(
+      screen.getByRole('dialog', { name: 'An ontology and its versions' }),
+    ).toBeInTheDocument();
+  });
+
+  it('the term kinds bar shows help for the selected kind', async () => {
+    view();
+    await screen.findByRole('tree');
+    const bar = screen.getByRole('group', { name: 'Term kinds' }).parentElement!;
+    expect(within(bar).getByRole('button', { name: 'Help: Classes' })).toBeInTheDocument();
+    await userEvent.click(
+      within(screen.getByRole('group', { name: 'Term kinds' })).getByRole('button', {
+        name: 'Properties (2)',
+      }),
+    );
+    await userEvent.click(within(bar).getByRole('button', { name: 'Help: Properties' }));
+    expect(screen.getByRole('dialog', { name: 'Properties' })).toBeInTheDocument();
+  });
+});

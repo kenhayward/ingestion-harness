@@ -8,8 +8,17 @@ import type { GraphRenderer } from './graphRenderer.js';
 import { TermDetailPanel } from './TermDetailPanel.js';
 import { TermGraph } from './TermGraph.js';
 import { TermTree } from './TermTree.js';
+import { HelpButton } from '../ui/Help.js';
+import type { HelpTopicId } from '../help/topics.js';
 
 const GROUPS: TermGroup[] = ['classes', 'properties', 'concepts', 'shapes'];
+/** The help shown on the bar follows the selected kind. */
+const GROUP_HELP: Record<TermGroup, HelpTopicId> = {
+  classes: 'ontologyClasses',
+  properties: 'ontologyProperties',
+  concepts: 'ontologyConcepts',
+  shapes: 'ontologyShapes',
+};
 export const SEARCH_LIMIT = 100;
 
 /** A ready version's terms: one tab per group, a tree (or search hits) and a detail pane. */
@@ -60,6 +69,7 @@ export function TermBrowser({
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
+        <HelpButton key={group} topic={GROUP_HELP[group]} />
       </div>
       <div className="term-panes">
         <div className="term-list">

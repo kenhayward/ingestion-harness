@@ -10,6 +10,7 @@ import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { VersionLine } from './OntologiesPage.js';
 import type { GraphRenderer } from './graphRenderer.js';
 import { TermBrowser } from './TermBrowser.js';
+import { HelpButton } from '../ui/Help.js';
 
 /** One ontology: its versions, metadata and, once a version is ready, its terms. */
 export function OntologyPage({
@@ -123,6 +124,7 @@ export function OntologyPage({
                   )}
                 </>
               )}
+              <HelpButton topic="ontology" />
             </div>
           </div>
           {detail.description && <p>{detail.description}</p>}

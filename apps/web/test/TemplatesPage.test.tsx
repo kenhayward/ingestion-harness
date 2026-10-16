@@ -484,3 +484,16 @@ describe('TemplatesPage Import from GitHub…', () => {
     expect(screen.getByRole('button', { name: 'Import YAML' })).toBeInTheDocument();
   });
 });
+
+describe('TemplatesPage help', () => {
+  it('sits just right of New document type', async () => {
+    setup();
+    const help = await screen.findByRole('button', { name: 'Help: Using the Document types page' });
+    const newType = screen.getByRole('button', { name: 'New document type' });
+    expect(newType.nextElementSibling).toBe(help);
+    await userEvent.click(help);
+    expect(
+      screen.getByRole('dialog', { name: 'Using the Document types page' }),
+    ).toBeInTheDocument();
+  });
+});
