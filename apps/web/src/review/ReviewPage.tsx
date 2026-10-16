@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EditRequest, JobSummary, StepRun } from '@ih/shared';
+import type { EditRequest, JobSummary, Role, StepRun } from '@ih/shared';
 import { modelDisplayName } from '../jobs/derive.js';
 import type { Api, ReviewData } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
@@ -47,10 +47,13 @@ export function ReviewPage({
   jobId,
   onDone,
   jobs = [],
+  role = 'designer',
 }: {
   api: Api;
   jobId: string;
   onDone: () => void;
+  /** Operators review (edit, approve, reject) but neither re-run steps nor save references. */
+  role?: Role;
   /** The polled job list: the review queue position and Next document come from it. */
   jobs?: readonly JobSummary[];
 }) {
@@ -334,7 +337,7 @@ export function ReviewPage({
                               : '—'}
                         </td>
                         <td>
-                          {editable && (
+                          {editable && role !== 'operator' && (
                             <button
                               type="button"
                               aria-label={`Re-run ${step.id}`}
@@ -445,7 +448,7 @@ export function ReviewPage({
             )
           }
         />
-      ) : job.status === 'succeeded' ? (
+      ) : job.status === 'succeeded' && role !== 'operator' ? (
         <form
           className="decision-bar"
           aria-label="Save as reference"

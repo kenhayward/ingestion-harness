@@ -7,7 +7,7 @@ import { fakeApi, ontologySummary, ontologyVersion } from './fake-api.js';
 
 function page(
   list = [ontologySummary()],
-  role: 'admin' | 'user' = 'admin',
+  role: 'admin' | 'designer' = 'admin',
   overrides: Partial<Api> = {},
 ) {
   const api = fakeApi({ listOntologies: vi.fn(async () => list), ...overrides });
@@ -83,7 +83,7 @@ describe('OntologiesPage', () => {
   });
 
   it('offers Import only to admins and explains an empty library', async () => {
-    page([], 'user');
+    page([], 'designer');
     expect(
       await screen.findByText(/No ontologies yet\. An admin imports them\./),
     ).toBeInTheDocument();
@@ -375,7 +375,7 @@ describe('OntologiesPage layout (handoff: header row, Cards / List)', () => {
   });
 
   it('leaves Import out for users, keeping the view switch', async () => {
-    page(two(), 'user');
+    page(two(), 'designer');
     const header = await screen.findByRole('banner', { name: 'Ontologies' });
     expect(within(header).getByRole('group', { name: 'View' })).toBeInTheDocument();
     expect(within(header).queryByRole('button', { name: 'Import ontology' })).toBeNull();
@@ -597,7 +597,7 @@ describe('OntologiesPage list row actions (Download, Edit, Delete as on the deta
   });
 
   it('offers users only Download, as the detail page does', async () => {
-    page([ontologySummary()], 'user');
+    page([ontologySummary()], 'designer');
     const row = await rowOf('Process validation');
     expect(within(row).getByRole('link', { name: 'Download pv.ttl' })).toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: /^Edit / })).toBeNull();

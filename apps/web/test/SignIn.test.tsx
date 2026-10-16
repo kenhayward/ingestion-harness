@@ -9,7 +9,7 @@ const statusError = (status: number, message: string, body: Record<string, unkno
   new ApiError(message, status, body);
 
 const signedIn = (me: Partial<Me> = {}, failed = 0, lastFailedAt: string | null = null) => ({
-  role: 'user' as const,
+  role: 'designer' as const,
   label: 'Ken Hayward',
   email: 'ken@example.com',
   mustChangePassword: false,
@@ -53,7 +53,7 @@ describe('sign-in gate', () => {
     expect(api.login).toHaveBeenCalledWith('ken@example.com', 'a long phrase here');
     expect(await screen.findByText('No jobs yet: upload a document to start.')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Ken Hayward (user): account menu' }),
+      screen.getByRole('button', { name: 'Ken Hayward (Designer): account menu' }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/failed sign-ins? since your last visit/)).not.toBeInTheDocument();
   });
@@ -230,7 +230,7 @@ describe('sign-in gate', () => {
     render(<App api={api} pollMs={0} />);
     // An admin signs out from the account menu on their name.
     await userEvent.click(
-      await screen.findByRole('button', { name: 'admin (admin): account menu' }),
+      await screen.findByRole('button', { name: 'admin (Administrator): account menu' }),
     );
     await userEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     expect(api.logout).toHaveBeenCalled();
@@ -240,13 +240,15 @@ describe('sign-in gate', () => {
   it('offers Administration to admins only', async () => {
     const { unmount } = render(<App api={fakeApi()} pollMs={0} />);
     await userEvent.click(
-      await screen.findByRole('button', { name: 'admin (admin): account menu' }),
+      await screen.findByRole('button', { name: 'admin (Administrator): account menu' }),
     );
     expect(screen.getByRole('menuitem', { name: 'Administration' })).toBeInTheDocument();
     unmount();
     const user = fakeApi({ me: vi.fn(async () => signedIn({ label: 'Ken' })) });
     render(<App api={user} pollMs={0} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Ken (user): account menu' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Ken (Designer): account menu' }),
+    );
     expect(screen.queryByRole('menuitem', { name: 'Administration' })).not.toBeInTheDocument();
   });
 

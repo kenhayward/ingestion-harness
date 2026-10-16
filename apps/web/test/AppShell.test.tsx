@@ -15,7 +15,7 @@ describe('app shell', () => {
   it('has a top bar with search, colour mode and the signed-in user', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
-        role: 'user' as const,
+        role: 'designer' as const,
         label: 'Ken – laptop',
         email: null,
         mustChangePassword: false,
@@ -29,7 +29,7 @@ describe('app shell', () => {
     // Uploading is Home's (its Upload documents card): the top bar has no Upload button.
     expect(within(banner).queryByRole('button', { name: /upload/i })).toBeNull();
     expect(
-      within(banner).getByRole('button', { name: 'Ken – laptop (user): account menu' }),
+      within(banner).getByRole('button', { name: 'Ken – laptop (Designer): account menu' }),
     ).toHaveTextContent('KL');
     const home = within(banner).getByRole('link', {
       name: 'CT Studio — Content Transformation Studio, home',
@@ -40,7 +40,7 @@ describe('app shell', () => {
     expect(home.querySelector('svg')).toHaveAttribute('data-geometry', 'small');
   });
 
-  it.each(['user', 'admin'] as const)(
+  it.each(['designer', 'admin'] as const)(
     'links %s sessions to the API docs in a new tab',
     async (role) => {
       const api = fakeApi({
@@ -298,12 +298,14 @@ describe('the admin name menu', () => {
     });
     render(<App api={api} pollMs={0} />);
     const banner = await screen.findByRole('banner');
-    const trigger = within(banner).getByRole('button', { name: 'Ken (admin): account menu' });
+    const trigger = within(banner).getByRole('button', {
+      name: 'Ken (Administrator): account menu',
+    });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(within(banner).queryByRole('menu')).toBeNull();
     await userEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    const menu = within(banner).getByRole('menu', { name: 'Ken (admin): account menu' });
+    const menu = within(banner).getByRole('menu', { name: 'Ken (Administrator): account menu' });
     // Administration first; Models, Linked data and Access are no longer links of their own.
     const items = within(menu).getAllByRole('menuitem');
     expect(items[0]).toHaveAccessibleName('Administration');
@@ -329,7 +331,7 @@ describe('the admin name menu', () => {
   it('gives users a menu with Profile and Sign out only; Profile opens the dialog', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
-        role: 'user' as const,
+        role: 'designer' as const,
         label: 'Ann',
         email: 'ann@example.com',
         mustChangePassword: false,
@@ -338,9 +340,9 @@ describe('the admin name menu', () => {
     });
     render(<App api={api} pollMs={0} />);
     const banner = await screen.findByRole('banner');
-    const trigger = within(banner).getByRole('button', { name: 'Ann (user): account menu' });
+    const trigger = within(banner).getByRole('button', { name: 'Ann (Designer): account menu' });
     await userEvent.click(trigger);
-    const menu = within(banner).getByRole('menu', { name: 'Ann (user): account menu' });
+    const menu = within(banner).getByRole('menu', { name: 'Ann (Designer): account menu' });
     expect(
       within(menu)
         .getAllByRole('menuitem')
@@ -364,7 +366,7 @@ describe('the admin name menu', () => {
     window.location.hash = '#/account/password';
     const api = fakeApi({
       me: vi.fn(async () => ({
-        role: 'user' as const,
+        role: 'designer' as const,
         label: 'Ann',
         email: 'ann@example.com',
         mustChangePassword: false,
@@ -392,7 +394,7 @@ describe('the admin name menu', () => {
       const { unmount } = render(<App api={api} pollMs={0} />);
       const banner = await screen.findByRole('banner');
       await userEvent.click(
-        within(banner).getByRole('button', { name: 'Ken (admin): account menu' }),
+        within(banner).getByRole('button', { name: 'Ken (Administrator): account menu' }),
       );
       const items = within(within(banner).getByRole('menu')).getAllByRole('menuitem');
       const names = items.map((i) => i.textContent);
@@ -406,7 +408,7 @@ describe('the admin name menu', () => {
   it('shows the linked GitHub picture beside the name', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
-        role: 'user' as const,
+        role: 'designer' as const,
         label: 'Ann',
         email: 'ann@example.com',
         mustChangePassword: false,
@@ -416,7 +418,7 @@ describe('the admin name menu', () => {
     });
     render(<App api={api} pollMs={0} />);
     const banner = await screen.findByRole('banner');
-    const trigger = within(banner).getByRole('button', { name: 'Ann (user): account menu' });
+    const trigger = within(banner).getByRole('button', { name: 'Ann (Designer): account menu' });
     expect(trigger.querySelector('img.avatar')).toHaveAttribute(
       'src',
       'https://avatars.example/u/7',
@@ -427,7 +429,7 @@ describe('the admin name menu', () => {
   it('reopens Profile when GitHub sends the browser back, and re-reads who is signed in', async () => {
     window.location.hash = '#/account/profile/github?github=linked';
     const me = vi.fn(async () => ({
-      role: 'user' as const,
+      role: 'designer' as const,
       label: 'Ann',
       email: 'ann@example.com',
       mustChangePassword: false,

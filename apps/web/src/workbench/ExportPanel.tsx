@@ -1,3 +1,4 @@
+import type { Role } from '@ih/shared';
 import { useCallback, useEffect, useState } from 'react';
 import type { DataPolicy, ExportView } from '@ih/shared';
 import type { Api } from '../api/client.js';
@@ -16,7 +17,7 @@ export function ExportPanel({
 }: {
   api: Api;
   /** The session's role: a local-only project's bundle downloads for admins only. */
-  role: 'admin' | 'user';
+  role: Role;
   projectId: string;
   dataPolicy: DataPolicy;
   pollMs?: number;

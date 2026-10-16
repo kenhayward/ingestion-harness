@@ -16,7 +16,7 @@ const ON: MaintenanceNotice = {
 const refusal = (notice = ON) =>
   new ApiError(MAINTENANCE_ERROR, 503, { error: MAINTENANCE_ERROR, maintenance: notice });
 
-const USER = { ...ADMIN_ME, role: 'user' as const, label: 'Pat', email: 'pat@example.com' };
+const USER = { ...ADMIN_ME, role: 'designer' as const, label: 'Pat', email: 'pat@example.com' };
 
 describe('maintenance: what people see', () => {
   afterEach(() => {

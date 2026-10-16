@@ -64,7 +64,7 @@ function setup(initial: LinkedDataView, me: Me = admin) {
 describe('LinkedDataPage', () => {
   it('is for admins only', () => {
     const api = setup(view(), {
-      role: 'user',
+      role: 'designer',
       label: 'u',
       email: null,
       mustChangePassword: false,
