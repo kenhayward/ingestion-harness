@@ -1,6 +1,6 @@
 # Repeating sections in the recipe format
 
-Date: 2026-10-16 · Status: proposed (design only, not built) · Follows the short-term fix
+Date: 2026-10-16 · Status: proposed, open questions decided (design only, not built) · Follows the short-term fix
 ("option 1": the sections drafting stage counts repeated anchor matches and steers to one big
 section; the Steps prompt tells table steps to take batch ids from captions)
 
@@ -54,28 +54,42 @@ section and without the model choosing the batch.
 
 ## Decisions
 
-1. **Flat repeats, no nesting** in this design. Each repeating section matches every
-   occurrence itself, and its key is read from its own occurrence text. `covalidation`'s
-   captions all carry the batch, so five repeating table sections (plus an optional repeating
-   `batch` heading section) cover it. A nested form (a repeating `batch` parent whose children
-   are the tables, segmented inside each parent occurrence) is a bigger change to the format
-   (sections become a tree), to `section_spans`, to the grid and to the drafting schemas, and
-   adds little for documents whose child anchors carry the key. A cheap follow-up covers the
-   remaining case (children whose text lacks the key) without a tree: `keyFrom` (see Open
-   questions).
+1. **Flat repeats with `keyFrom`, no nesting.** Each repeating section matches every
+   occurrence itself. Its key is read from its own occurrence text (`key`) and, with
+   `keyFrom: <section>`, falls back to the key of the nearest preceding occurrence of another
+   repeating section (the batch heading). So a table whose caption does not repeat the batch
+   still gets it from the heading above, and `keyFrom` also declares "this repeats per batch",
+   which the key check (decision 7) uses. A nested form (a repeating `batch` parent whose
+   children are the tables, segmented inside each parent occurrence) would turn sections into a
+   tree and change `section_spans`, the grid and the drafting schemas for little more than
+   `keyFrom` gives.
 2. **One model call per occurrence**, like `chunkPages` (one call per chunk), not one call with
-   labelled blocks. The occurrence's rows are attributed by construction, the key column is
-   filled by the worker, each call's output stays within budget, and a failure names the
-   occurrence. Cost grows with occurrences (15 calls for `covalidation` instead of 5); a
-   labelled single call is listed as an open question.
-3. **Field steps cannot read a repeating section** (a field is one value per document). A
-   per-batch heading becomes a table (one row per occurrence) instead.
+   labelled blocks, and no option to switch. The occurrence's rows are attributed by
+   construction, the key column is filled by the worker, each call's output stays within
+   budget, and a failure names the occurrence. Cost grows with occurrences (15 small calls for
+   `covalidation` instead of 5 large ones, with similar input in total); the step cache absorbs
+   Workbench iterations. A labelled single call would bring back the failure being fixed (the
+   model keeping 15 tables apart); revisit only for documents with dozens of tiny occurrences.
+3. **Field steps cannot read a repeating section** (a field is one value per document, in
+   review, references and evaluation alike). Per-batch single values (lot code, packaging) are a
+   table with one row per occurrence, which is the shape CSV, JSON and RDF want anyway.
 4. **A step reads at most one repeating section.** Other (non-repeating) sections it reads are
    sent with every occurrence, as `chunkPages` sends the other sections with every chunk.
 5. **Templates only.** Legacy `spec.yaml` (`pipeline.py`) refuses `repeat`.
 6. **Absent means today's behaviour, byte for byte.** The new keys are optional on both sides,
    never defaulted into a stored definition, so published recipes, their `stableJson`
    snapshots (publish gate, iterations), YAML exports and prompts are unchanged.
+7. **No declared counts; check keys instead.** A section does not say how many occurrences it
+   has (the next report may have 4 batches). Instead, a section with `keyFrom` is checked
+   against its key source: a batch with no occurrence of the table, a table occurrence whose
+   key no batch has, or an own key that differs from the heading above, is a **key issue** on
+   the job (section 2, "Key check"). That catches the real failure, a table not found for one
+   batch, whatever the batch count.
+8. **Spurious matches are accepted, and made visible.** A list of tables at the front can match
+   the table anchors; such occurrences are short and usually yield no rows, the grid shows them
+   (×4 with their keys instead of ×3), and a tighter anchor fixes them. With `keyFrom`, an
+   occurrence before the first batch heading and without its own key also raises a key issue.
+   No "only after section X" guard.
 
 ## 1. Format
 
@@ -86,6 +100,7 @@ section and without the model choosing the batch.
   anchor: '^Table \d+:.*-\s*Appearance and Water Content Results'
   repeat: true          # optional, absent = false: every match starts an occurrence
   key: 'Batch\s+(\w+)'  # optional, needs repeat: names each occurrence
+  keyFrom: batch        # optional, needs repeat: key source when `key` finds none, and checked against it
   required: true        # a required repeating section needs at least one occurrence
   description: Appearance and water content table, one per batch.
 ```
@@ -94,10 +109,15 @@ section and without the model choosing the batch.
 | --- | --- | --- |
 | `repeat` | `z.boolean().optional()` (no `.default`: a parsed definition must not gain `repeat: false`) | `repeat: bool = False` (`_dump` already uses `exclude_defaults`, so it is never written back) |
 | `key` | `z.string().min(1).optional()` | `key: str \| None = Field(default=None, min_length=1)` |
+| `keyFrom` | `Id.optional()` | `key_from: Id \| None = Field(default=None, alias="keyFrom")` |
 
 Validation (both sides, same messages, held in step by a shared fixture):
 
 - `key` without `repeat: true` → `section "<id>": key needs repeat`.
+- `keyFrom` without `repeat: true` → `section "<id>": keyFrom needs repeat`.
+- `keyFrom` names a repeating section with a `key` and no `keyFrom` of its own (so no chains
+  and not itself) →
+  `section "<id>": keyFrom "<s>" must be a repeating section with a key and no keyFrom`.
 - `key` must compile as a multiline regex and have at most one capturing group, or a named
   group `key` → `section "<id>": key must have at most one group, or a group named key`.
   The key is the named group `key`, else group 1, else the whole match; stripped; an empty
@@ -127,9 +147,9 @@ Validation (in the template-level consistency check, since it needs the sections
   `step "<id>": a field step cannot read a repeating section (<section>); fill a table instead`.
 - A step reads at most one repeating section →
   `step "<id>": reads more than one repeating section (<a>, <b>)`.
-- `keyColumn` needs a `table`, a repeating section read by the step, and that section's `key`;
-  it names a column of the table →
-  `step "<id>": keyColumn needs a repeating section with a key` /
+- `keyColumn` needs a `table`, a repeating section read by the step, and that section's `key`
+  or `keyFrom`; it names a column of the table →
+  `step "<id>": keyColumn needs a repeating section with a key or keyFrom` /
   `step "<id>": keyColumn "<c>" is not a column of <table>`.
 - `chunkPages` with a repeating section is allowed (chunks within each occurrence); the
   existing rule "chunked steps need exactly one section" still holds.
@@ -137,7 +157,7 @@ Validation (in the template-level consistency check, since it needs the sections
 `compile_step` sets `mergePath: "rows"` when the step reads a repeating section (as it does for
 `chunkPages`). The legacy `Extraction` model is **not** changed: occurrence handling lives in
 `template_pipeline`/`run_step_extraction` arguments (section 3), so the spec-format contract only
-gains `repeat`/`key` on `Section`.
+gains `repeat`/`key`/`keyFrom` on `Section`.
 
 ### `copies`, `required`, `pageMarkers`
 
@@ -145,7 +165,8 @@ gains `repeat`/`key` on `Section`.
   copy only. A repeating section is not a copy selector, and `copies` is not a repeat: a blank
   protocol followed by its executed copy stays `copies`.
 - **required**: a required repeating section needs at least one occurrence; zero is the same
-  `MissingSectionsError` as today. There is no minimum or exact count (open question).
+  `MissingSectionsError` as today. There is no declared count (decision 7); with `keyFrom`, the
+  key check reports a batch that has no occurrence.
 - **pageMarkers**: each occurrence starting mid-page is prefixed with that page's marker, the
   rule `segment` already applies per span.
 
@@ -165,22 +186,27 @@ document:
       anchor: '^Table \d+:.*-\s*Appearance and Water Content Results'
       repeat: true
       key: 'Batch\s+(\w+)'
+      keyFrom: batch
     - id: assay
       anchor: '^Table \d+:.*-\s*Assay and Chromatographic Purity Results'
       repeat: true
       key: 'Batch\s+(\w+)'
+      keyFrom: batch
     - id: dissolution
       anchor: '^Table \d+:.*-\s*Dissolution Results'
       repeat: true
       key: 'Batch\s+(\w+)'
+      keyFrom: batch
     - id: nir
       anchor: '^Table \d+:.*-\s*Solid State by NIR Results'
       repeat: true
       key: 'Batch\s+(\w+)'
+      keyFrom: batch
     - id: microbial
       anchor: '^Table \d+:.*-\s*Microbial Purity Results'
       repeat: true
       key: 'Batch\s+(\w+)'
+      keyFrom: batch
     - id: conclusion
       anchor: '^\d+\.\s+CONCLUSION'
       required: false
@@ -205,6 +231,13 @@ to the next caption (so it holds "PACKED AS …"); `appearance`…`microbial` ×
 `microbial` runs to `conclusion`. Batch 1's `microbial` ends at batch 2's heading, because an
 occurrence ends at the next start of **any** section's occurrence.
 
+Each table section reads its batch from its own caption and, if a caption lacks it (OCR lost
+it, or another report's captions omit it), from the batch heading above. Because the tables
+say `keyFrom: batch`, segmentation also checks that every table occurs for every batch: if the
+NIR table of batch 4586785 were missed (say its caption was OCR'd as "Solid Stale by NIR"), the
+job carries the key issue `nir: no occurrence for batch 4586785` and goes to review, instead
+of silently delivering two batches of NIR rows.
+
 ## 2. Segmentation
 
 ### `section_spans` (one implementation for production and preview)
@@ -216,7 +249,9 @@ class SectionSpan:
     start: int
     end: int
     index: int = 0            # 0-based occurrence number within its section (0 for non-repeating)
-    key: str | None = None    # the occurrence key (repeating sections with `key` only)
+    key: str | None = None    # the occurrence key (repeating sections with `key`/`keyFrom` only)
+    own_key: str | None = None  # what `key` found in the occurrence's own text (for the key check)
+    key_source: Literal["own", "inherited"] | None = None
 ```
 
 - Non-repeating section: `re.search`, as today.
@@ -229,6 +264,10 @@ class SectionSpan:
 - The key is searched in the span's text (`text[start:end]`) with the section's `key`
   (multiline), so a key on the caption line or just below it is found; group selection as in
   section 1.
+- `keyFrom`: after sorting, one pass in document order remembers the latest key of every
+  section; an occurrence whose own key is None takes the latest key of its `keyFrom` section
+  (`key_source = "inherited"`), or stays None when no occurrence of that section precedes it.
+  An own key always wins (it is closer to the rows).
 - Return type unchanged (`(spans, unmatched)`); callers that indexed spans by id
   (`workbench.segment_samples`'s `by_id`) group them by id instead.
 
@@ -256,17 +295,45 @@ today). The `segmented` job event adds `occurrences: {section id: count}` for re
 (absent otherwise; `JobProgressSchema`'s `segmented` arm ignores extra data, so no TS change is
 required, but Home may show it later).
 
+### Key check (sections with `keyFrom`)
+
+A pure function `key_issues(sections, spans) -> list[KeyIssue]` in `segment.py`, run by
+production (template jobs) and by the preview grid on the same spans. For every section R with
+`keyFrom: S`, with `keys(S)` the keys of S's occurrences (None left out):
+
+| Case | Message |
+| --- | --- |
+| a key of S with no occurrence of R | `<R>: no occurrence for <S> <key>` |
+| an occurrence of R whose key is not a key of S | `<R> occurrence <n>: key <key> is not a <S> key` |
+| an occurrence of R whose own key differs from the key of the S above it | `<R> occurrence <n>: key <own> differs from <S> <inherited> above it` |
+| an occurrence of R with no key at all (no own key, no S above) | `<R> occurrence <n>: no key` |
+
+No check runs for sections without `keyFrom` (they may repeat per a different entity). In a
+template job the issues join the job's `issues` with `step: "segment"`, `target: <R>`,
+`row`/`column` null, and `_review_reasons` adds `n section key issue(s)` (counted apart from
+normalisation issues), so the review policy sends the job to review; nothing fails. Legacy
+specs cannot repeat, so `pipeline.py` never runs it.
+
+For the `covalidation` example a clean document has no key issues; a missed NIR caption gives
+`nir: no occurrence for batch 4586785`; a list of tables at the front matching the appearance
+anchor gives `appearance occurrence 1: no key` (unless its line carries a batch), which is the
+signal to tighten the anchor.
+
 ### Preview grid (`segment_samples`, `SegmentationResultSchema`, `SegmentationGrid`)
 
 `SectionCellSchema` gains two optional fields (defaulted on read, so stored grids from before
 parse):
 
-- `occurrences: z.array(OccurrenceCellSchema).default([])`, each `{ page, line, chars, key }`,
-  filled for repeating sections only; `found`/`page`/`line` stay the first occurrence's and
-  `chars` the total.
+- `occurrences: z.array(OccurrenceCellSchema).default([])`, each
+  `{ page, line, chars, key, keySource }` (`keySource`: `own` | `inherited` | null), filled for
+  repeating sections only; `found`/`page`/`line` stay the first occurrence's and `chars` the
+  total.
 - `matches: z.number().int().nonnegative().default(0)`: for a **non-repeating** section, how
   many times its anchor matches the sample (so the grid can say "matches 3×, only the first is
   used"). This reuses option 1's count and is what makes the problem visible in the UI.
+
+`SegmentedSampleSchema` gains `keyIssues: z.array(z.string()).default([])`, the key check's
+messages for that sample.
 
 `segment_samples` also drops suggestions that would break a sample (unchanged) and adds no new
 suggestion type; `anchor_hints.suggest_anchor` works on the anchor only and needs no change
@@ -314,8 +381,9 @@ key covers the rendered prompts) of every existing recipe stays valid. A golden 
 
 With `keyColumn`, the column is removed from the schema each call sends (the model does not
 guess it), and the worker sets it on every row of that occurrence before merging, then
-normalises rows as today (`_normalise_step`, so a `batch` of type `integer` is parsed). An
-occurrence without a key (the regex did not match) leaves the column null and adds an issue
+normalises rows as today (`_normalise_step`, so a `batch` of type `integer` is parsed). The
+key is the occurrence's resolved key (own, else inherited through `keyFrom`). An
+occurrence without a key (neither found) leaves the column null and adds an issue
 `{step, target: <table>, row, column: <keyColumn>, message: "no key found in occurrence n of <section>"}`
 for each of its rows (review policy decides as for any issue). The merged result is validated
 against the full table schema (with the key column), which is also what the step cache stores
@@ -334,7 +402,7 @@ and checks a hit against.
   a case.
 - **Per-step context** (`context_values`): unchanged: a later step can read
   `appearance_results.batch` as distinct values with counts. Per-occurrence context ("only this
-  batch's values") is an open question.
+  batch's values") is a follow-up (see the end).
 - **Step re-runs** (`rerun_template_job`) re-run every occurrence; re-running one occurrence is
   out of scope.
 - **Audit**: `runs/{job}/…` audit files per `<step>.occ-<n>[.chunk-<m>]`.
@@ -344,10 +412,13 @@ and checks a hit against.
 ## 4. Drafting
 
 - **Sections stage** (`draft_stages.SECTIONS`): `SECTIONS_SCHEMA` gains `repeat`
-  (`boolean|null`) and `key` (`string|null`); `convert_sections` passes them to `Section`. The
-  prompt replaces option 1's "one big section" steer with: "When the same block repeats per
-  entity (per batch, per site), give it one section with repeat true and key a regex reading the
-  entity id from the occurrence's first lines; every match starts an occurrence." The anchor
+  (`boolean|null`), `key` (`string|null`) and `keyFrom` (`string|null`); `convert_sections`
+  passes them to `Section`. The prompt replaces option 1's "one big section" steer with: "When
+  the same block repeats per entity (per batch, per site), give it one section with repeat true
+  and key a regex reading the entity id from the occurrence's first lines; every match starts an
+  occurrence. When blocks repeat inside a repeating heading (tables under each batch heading),
+  give each block keyFrom: the heading's section id." The anchor round's feedback includes the
+  key issues of each sample. The anchor
   round's feedback (option 1's repeated-match count) says "matched 3 times in <sample>; set
   repeat if this block repeats" for non-repeating sections only. `check_sections` validates `key`
   like `anchor`.
@@ -359,25 +430,27 @@ and checks a hit against.
 - **Union budget**: the stage schemas stay within Anthropic's 16 union-typed parameters; the
   existing guard test (`test_draft_stages.py`, `_union_count`) covers the new keys.
 - **`applyChanges` / `draft_changes.apply_changes`**: no new op. `putSection` and `putStep`
-  carry whole objects, so `repeat`, `key` and `keyColumn` pass through. The shared fixture
+  carry whole objects, so `repeat`, `key`, `keyFrom` and `keyColumn` pass through. The shared fixture
   `draft-changes.json` gains a case putting a repeating section and a `keyColumn` step, run on
   both sides with `toStrictEqual`.
 - **Revise** (no unions): `REVISE_SCHEMA` gains `repeat` (`false` = absent) and `key`/
-  `keyColumn` (`""` = absent), mapped back to absent like its other sentinels.
+  `keyFrom`/`keyColumn` (`""` = absent), mapped back to absent like its other sentinels.
 - **Survey**: unchanged (it may mention repeated blocks in the anatomy; no schema change).
 
 ## 5. UI
 
 - **Sections tab** (`SectionsTab`, section editor): a *Repeats* tick box per section and, when
-  ticked, a *Key* regex input with its compile error inline. `SegmentationGrid`: a repeating
-  section's cell shows `×3` and the keys (`4586783 · 4586784 · 4586785`), expanding to one line
-  per occurrence (page, first line, characters); a non-repeating cell with `matches > 1` shows a
+  ticked, a *Key* regex input with its compile error inline and a *Key from* select (the other
+  repeating sections that have a key, *None* first). `SegmentationGrid`: a repeating
+  section's cell shows `×3` and the keys (`4586783 · 4586784 · 4586785`, an inherited key in
+  italics with "from batch"), expanding to one line per occurrence (page, first line,
+  characters); a sample with key issues shows them as a warn list under its row; a non-repeating cell with `matches > 1` shows a
   warn note "matches 3×, only the first is used" with *Make it repeat* (sets Repeats, unsaved,
   previewed live, like an anchor suggestion).
 - **Pipeline step form** (`PipelineEditor`/`StepForms`): in the Reads sections list a repeating
   section is tagged *repeats*; when one is ticked on a table step the form says "Runs once per
   occurrence of <section>" and shows *Key column* (a select of the table's columns, *None*
-  first), disabled with a reason when the section has no key. On a field step repeating
+  first), disabled with a reason when the section has neither key nor key from. On a field step repeating
   sections are disabled with the reason "a field step can't read a repeating section".
 - **Steps tab** (`StepsView`, Workbench drafting): the step card names the repeating section and
   key column; the coverage strip is unchanged.
@@ -402,10 +475,13 @@ and checks a hit against.
 Python (`worker/tests/`):
 
 - `test_segment.py::test_section_spans_repeats` (parametrised): non-repeating unchanged; a
-  repeating section with 3 matches; interleaved repeating sections (the `covalidation` text,
+  repeating section with 3 matches; `keyFrom` inheritance (caption without a batch takes the
+  heading's; own key wins; none before the first heading); interleaved repeating sections (the `covalidation` text,
   `front`, 3 `batch`, 5 tables × 3 batches and `conclusion` → 20 spans in order with keys); ties at the same
   position; a key in group 1, a named `key` group, no group, no match (None); zero-width
   anchors; copies then repeats.
+- `test_segment.py::test_key_issues` (parametrised, one row per message in the key check table,
+  plus a clean `covalidation` document with none and sections without `keyFrom` never checked).
 - `test_segment.py::test_segment_occurrences`: page markers prefixed per occurrence; `segment`
   text of a repeating section = occurrences joined; required repeating section with zero
   occurrences → `MissingSectionsError`.
@@ -415,10 +491,12 @@ Python (`worker/tests/`):
 - `test_template_pipeline.py`: `covalidation`-shaped run with `FakeProvider` → 3 calls per
   table step, prompts carry occurrence and key, key column filled by the worker and absent from
   the sent schema, rows in document order, missing key → issue; zero occurrences → no call;
-  occurrences × chunks; step progress events carry `occurrence`; step cache hit on the second
+  occurrences × chunks; key issues join `issues` with step `segment` and give the review reason
+  `n section key issue(s)`; step progress events carry `occurrence`; step cache hit on the second
   run and miss when one occurrence's text changes.
 - `test_prompts.py` (new): golden byte-identical prompt for a non-repeating step.
-- `test_workbench_segment.py::test_segment_samples_repeats`: cells' `occurrences` and `matches`.
+- `test_workbench_segment.py::test_segment_samples_repeats`: cells' `occurrences` (with
+  `keySource`), `matches`, and samples' `keyIssues`.
 - `test_draft_stages.py`: `convert_sections`/`convert_steps` with the new keys; union counts;
   revise sentinels.
 
@@ -429,25 +507,26 @@ TypeScript:
   `repeat: false` added).
 - `packages/shared/test/drafting.test.ts`: the new `draft-changes.json` case.
 - `packages/shared/test/jobs.test.ts`: `StepProgressSchema` with and without `occurrence`.
-- `packages/shared/test/workbench.test.ts`: a stored grid without `occurrences`/`matches` parses.
+- `packages/shared/test/workbench.test.ts`: a stored grid without `occurrences`/`matches`/
+  `keyIssues` parses.
 - Web: `SectionsTab`/`SegmentationGrid` (×3 and keys, *Make it repeat*), `PipelineEditor`
   (key column select, field-step disabled reason), run progress text.
 
-## Open questions
+## Decided (2026-10-16)
 
-1. **Nesting / `keyFrom`.** Flat repeats need each child's own text to carry the key.
-   `keyFrom: batch` on a section (take the key of the nearest preceding occurrence of the named
-   repeating section when its own `key` finds none) would cover documents whose tables do not
-   repeat the batch, without a section tree. In now, or later when a document needs it?
-2. **One call per occurrence vs one labelled call.** 15 calls instead of 5 for `covalidation`.
-   Add a step option (`occurrences: each | together`) for short occurrences, with `together`
-   using labelled blocks and a model-filled key column?
-3. **Occurrence counts.** Should a section declare `minCount`/`count` (for example "exactly as
-   many as `batch`"), checked at segmentation and sending the job to review when it differs?
-4. **Spurious matches** (a list of tables at the front matching the table anchors): accept them
-   (short occurrences, usually no rows) or add a guard such as "occurrences only after section
-   X"? Anchors can usually avoid them.
-5. **Per-occurrence context**: should `context` on a repeating step show only the values of rows
-   with the same key (for example the batch's lot code from `batches`)?
-6. **Field steps per occurrence**: is "use a table" acceptable for per-batch single values, or do
-   we want per-occurrence fields?
+The open questions of the first draft, settled with the user:
+
+1. **`keyFrom` is in v1** (decision 1), without nesting.
+2. **One call per occurrence**, no single-call option (decision 2).
+3. **No declared counts**; the key check reports a batch missing a table (decision 7).
+4. **Spurious matches are accepted** and made visible by the grid and the key check
+   (decision 8).
+5. **Per-occurrence context is a follow-up** (below).
+6. **Per-batch single values are a table**; no per-occurrence fields (decision 3).
+
+## Follow-ups (not in this build)
+
+- **Per-occurrence context.** On a step with `keyColumn`, `context` paths into a table that has
+  the same key column could show only the rows with the occurrence's key (for example the
+  batch's lot code from `batches`). Useful, not needed for correctness.
+- **Re-running one occurrence** of a step from the Review screen.
