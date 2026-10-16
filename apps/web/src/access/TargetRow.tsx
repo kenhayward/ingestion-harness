@@ -1,0 +1,300 @@
+import { useId, useState } from 'react';
+import {
+  SSE_MODES,
+  STORAGE_CLASSES,
+  targetInUse,
+  type PublishTargetView,
+  type TargetPatchBody,
+  type TargetTestResult,
+} from '@ih/shared';
+import type { Api } from '../api/client.js';
+import { Icon } from '../ui/Icon.js';
+
+const plural = (n: number) => `${n} document type${n === 1 ? '' : 's'}`;
+
+function whereFrom(t: PublishTargetView): string {
+  if (t.source === 'env') return t.updatedBy ? `edited by ${t.updatedBy}` : 'from .env';
+  return `added here by ${t.updatedBy ?? 'an admin'}`;
+}
+
+/** The plain-words result of a connection test. */
+export function TestOutcome({ result }: { result: TargetTestResult | null }) {
+  if (!result) return null;
+  if (result.ok) return <p role="status">Connection works. {result.message}</p>;
+  return <p role="alert">{`Failed at ${result.step ?? 'connect'}: ${result.message}`}</p>;
+}
+
+/**
+ * One publishing target: a row that opens on its settings. Bucket, prefix, endpoint and region
+ * are read-only while anything uses the target; keys, label and encryption always change.
+ */
+export function TargetRow({
+  api,
+  target: t,
+  onChanged,
+}: {
+  api: Api;
+  target: PublishTargetView;
+  onChanged: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState(t.label);
+  const [bucket, setBucket] = useState(t.bucket);
+  const [prefix, setPrefix] = useState(t.prefix);
+  const [endpoint, setEndpoint] = useState(t.endpoint ?? '');
+  const [region, setRegion] = useState(t.region ?? '');
+  const [pathStyle, setPathStyle] = useState(t.forcePathStyle);
+  const [sse, setSse] = useState<string>(t.sse);
+  const [kms, setKms] = useState(t.kmsKeyId ?? '');
+  const [storageClass, setStorageClass] = useState(t.storageClass ?? '');
+  const [keys, setKeys] = useState<{ id: string; secret: string } | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<TargetTestResult | null>(null);
+  const bodyId = useId();
+  const external = t.kind === 'external';
+  const locked = targetInUse(t.usage);
+  const usedByText = `used by ${plural(t.usage.documentTypes.length)}`;
+
+  /** Only what differs from the stored target (keys always as a pair). */
+  const changes = (): TargetPatchBody => {
+    const c: TargetPatchBody = {};
+    if (label.trim() !== t.label) c.label = label.trim();
+    if (!locked) {
+      if (bucket.trim() !== t.bucket) c.bucket = bucket.trim();
+      if (prefix.trim() !== t.prefix) c.prefix = prefix.trim();
+    }
+    if (external) {
+      if (!locked) {
+        if (endpoint.trim() && endpoint.trim() !== (t.endpoint ?? '')) c.endpoint = endpoint.trim();
+        if (region.trim() && region.trim() !== (t.region ?? '')) c.region = region.trim();
+      }
+      if (pathStyle !== t.forcePathStyle) c.forcePathStyle = pathStyle;
+      if (sse !== t.sse) c.sse = sse as TargetPatchBody['sse'];
+      if (kms.trim() && kms.trim() !== (t.kmsKeyId ?? '')) c.kmsKeyId = kms.trim();
+      if (storageClass && storageClass !== (t.storageClass ?? '')) {
+        c.storageClass = storageClass as TargetPatchBody['storageClass'];
+      }
+      if (keys) {
+        c.accessKeyId = keys.id.trim();
+        c.secretAccessKey = keys.secret.trim();
+      }
+    }
+    return c;
+  };
+  const patch = changes();
+  const dirty = Object.keys(patch).length > 0;
+  const keysIncomplete = keys !== null && (!keys.id.trim() || !keys.secret.trim());
+
+  const act = async (action: () => Promise<unknown>, reload = true) => {
+    setError(null);
+    setBusy(true);
+    try {
+      await action();
+      if (reload) await onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    setResult(null);
+    await act(async () => setResult(await api.testPublishTarget({ id: t.id, ...patch })), false);
+  };
+
+  return (
+    <section
+      className={open ? 'endpoint-row open' : 'endpoint-row'}
+      aria-label={`Target ${t.label}`}
+    >
+      <button
+        type="button"
+        className="endpoint-toggle"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="chevronDown" />
+        <span>{t.label}</span>
+        <span className="mono endpoint-name">{t.id}</span>
+        <span className="tag tone-neutral">{external ? 'External' : 'Internal'}</span>
+        <span className="mono muted">
+          {t.bucket}/{t.prefix}
+        </span>
+        <span className="endpoint-count">{usedByText}</span>
+        <span className="muted endpoint-where">{whereFrom(t)}</span>
+      </button>
+      {open && (
+        <form
+          id={bodyId}
+          className="endpoint-body dialog-form"
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            if (dirty && !keysIncomplete) void act(() => api.updatePublishTarget(t.id, patch));
+          }}
+        >
+          <label>
+            Label
+            <input value={label} onChange={(ev) => setLabel(ev.target.value)} />
+          </label>
+          <label>
+            Bucket
+            <input value={bucket} readOnly={locked} onChange={(ev) => setBucket(ev.target.value)} />
+          </label>
+          <label>
+            Prefix
+            <input
+              value={prefix}
+              readOnly={locked}
+              placeholder="none"
+              onChange={(ev) => setPrefix(ev.target.value)}
+            />
+          </label>
+          {external && (
+            <>
+              <label>
+                Endpoint
+                <input
+                  value={endpoint}
+                  readOnly={locked}
+                  placeholder="AWS S3"
+                  onChange={(ev) => setEndpoint(ev.target.value)}
+                />
+              </label>
+              <label>
+                Region
+                <input
+                  value={region}
+                  readOnly={locked}
+                  onChange={(ev) => setRegion(ev.target.value)}
+                />
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={pathStyle}
+                  onChange={(ev) => setPathStyle(ev.target.checked)}
+                />
+                Path-style addressing
+              </label>
+              <label>
+                Server-side encryption
+                <select value={sse} onChange={(ev) => setSse(ev.target.value)}>
+                  {SSE_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {m === 'none' ? 'None' : m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {sse === 'aws:kms' && (
+                <label>
+                  KMS key id
+                  <input value={kms} onChange={(ev) => setKms(ev.target.value)} />
+                </label>
+              )}
+              <label>
+                Storage class
+                <select value={storageClass} onChange={(ev) => setStorageClass(ev.target.value)}>
+                  <option value="">Bucket default</option>
+                  {STORAGE_CLASSES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="field">
+                <span className="field-label">Credentials</span>
+                {keys === null ? (
+                  <span>
+                    <span>
+                      {t.keysFromEnv
+                        ? `Keys from .env (${t.keysFromEnv.accessKey}, ${t.keysFromEnv.secretKey})`
+                        : t.secretSet
+                          ? 'Secret stored (encrypted)'
+                          : 'No secret'}
+                    </span>{' '}
+                    <button type="button" onClick={() => setKeys({ id: '', secret: '' })}>
+                      Set secret
+                    </button>
+                  </span>
+                ) : (
+                  <span className="inline-edit">
+                    <input
+                      aria-label="New access key id"
+                      autoComplete="off"
+                      value={keys.id}
+                      onChange={(ev) => setKeys({ ...keys, id: ev.target.value })}
+                    />
+                    <input
+                      type="password"
+                      aria-label="New secret access key"
+                      autoComplete="off"
+                      value={keys.secret}
+                      onChange={(ev) => setKeys({ ...keys, secret: ev.target.value })}
+                    />
+                    <button type="button" onClick={() => setKeys(null)}>
+                      Cancel
+                    </button>
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+          {locked && (
+            <small className="muted">
+              In use: add a new target to move bucket, prefix, endpoint or region.
+            </small>
+          )}
+          {error && <p role="alert">{error}</p>}
+          <TestOutcome result={result} />
+          <div className="endpoint-actions">
+            <button
+              type="submit"
+              className="primary"
+              disabled={busy || !dirty || keysIncomplete || !label.trim()}
+            >
+              Save
+            </button>
+            <button type="button" disabled={busy || keysIncomplete} onClick={() => void test()}>
+              Test connection
+            </button>
+            {t.id !== 'default' && !confirmRemove && (
+              <button
+                type="button"
+                className="danger"
+                disabled={locked}
+                title={locked ? 'In use: a recipe version, output or key names it' : undefined}
+                onClick={() => setConfirmRemove(true)}
+              >
+                <Icon name="trash" />
+                Remove
+              </button>
+            )}
+          </div>
+          {confirmRemove && (
+            <p className="confirm-text">
+              Remove {t.label}?{' '}
+              <button
+                type="button"
+                className="danger"
+                aria-label={`Confirm remove ${t.label}`}
+                disabled={busy}
+                onClick={() => void act(() => api.deletePublishTarget(t.id))}
+              >
+                Remove
+              </button>{' '}
+              <button type="button" onClick={() => setConfirmRemove(false)}>
+                Cancel
+              </button>
+            </p>
+          )}
+        </form>
+      )}
+    </section>
+  );
+}

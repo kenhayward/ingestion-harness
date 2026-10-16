@@ -79,6 +79,11 @@ describe('help topics for the recipe tabs', () => {
     ['yaml', 'Editing the recipe as YAML', ['Apply YAML']],
     ['quality', 'Reading the Quality tab', ['Review rate', 'Avg attempts']],
     ['versions', 'Versions, labels and drafts', ['Replace draft', 'Label']],
+    [
+      'published-outputs',
+      'How publishing targets work',
+      ['Internal', 'External', 'default', 'new version', 'locked', 'S3 keys'],
+    ],
   ] as const)('%s: %s', async (topic, title, mentions) => {
     render(<HelpButton topic={topic} />);
     await userEvent.click(screen.getByRole('button', { name: `Help: ${title}` }));

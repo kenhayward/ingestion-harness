@@ -359,6 +359,20 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listSignIns: vi.fn(async () => []),
     listS3Keys: vi.fn(async () => ({ bucket: 'ingest-published', endpoint: null, consumers: [] })),
     listLlmEndpoints: vi.fn(async () => []),
+    listPublishTargets: vi.fn(async () => []),
+    listPublishTargetChoices: vi.fn(async () => []),
+    createPublishTarget: vi.fn(async () => {
+      throw new Error('createPublishTarget not stubbed');
+    }),
+    updatePublishTarget: vi.fn(async () => {
+      throw new Error('updatePublishTarget not stubbed');
+    }),
+    deletePublishTarget: vi.fn(async () => {
+      throw new Error('deletePublishTarget not stubbed');
+    }),
+    testPublishTarget: vi.fn(async () => {
+      throw new Error('testPublishTarget not stubbed');
+    }),
     listOntologies: vi.fn(async () => []),
     getLinkedData: vi.fn(async () => ({
       settings: {

@@ -58,6 +58,12 @@ import type {
   LlmChoicesView,
   LlmChoiceView,
   LlmEndpointView,
+  PublishTargetView,
+  TargetChoice,
+  TargetCreateBody,
+  TargetPatchBody,
+  TargetTestBody,
+  TargetTestResult,
   ModelChoice,
   PreparedText,
   ProjectListPage,
@@ -399,6 +405,15 @@ export interface Api {
   deleteS3Consumer(consumerId: string): Promise<void>;
   /** LLM endpoints and their models (admins; ADR 0010). */
   listLlmEndpoints(): Promise<LlmEndpointView[]>;
+  /** Publishing targets with what uses each (admins; Administration > Published outputs). */
+  listPublishTargets(): Promise<PublishTargetView[]>;
+  createPublishTarget(body: TargetCreateBody): Promise<PublishTargetView>;
+  updatePublishTarget(id: string, patch: TargetPatchBody): Promise<PublishTargetView>;
+  deletePublishTarget(id: string): Promise<void>;
+  /** Writes, reads back and deletes a small file; a blank secret tests the stored one. */
+  testPublishTarget(body: TargetTestBody): Promise<TargetTestResult>;
+  /** What a recipe's Publish to picker offers (any designer or admin). */
+  listPublishTargetChoices(): Promise<TargetChoice[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
   listOntologies(opts?: { retired?: boolean }): Promise<OntologyListItem[]>;
   /** One ontology with every version, newest first. */
@@ -971,6 +986,22 @@ export function createHttpApi(base = '/api'): Api {
       return apiFetch(`${base}/sign-ins${qs ? `?${qs}` : ''}`).then(json<SignInEvent[]>);
     },
     listLlmEndpoints: () => apiFetch(`${base}/llm/endpoints`).then(json<LlmEndpointView[]>),
+    listPublishTargets: () =>
+      apiFetch(`${base}/publish-targets`)
+        .then(json<{ targets: PublishTargetView[] }>)
+        .then((r) => r.targets),
+    createPublishTarget: (body) => post<PublishTargetView>(`${base}/publish-targets`, body),
+    updatePublishTarget: (id, patch) =>
+      post<PublishTargetView>(`${base}/publish-targets/${encodeURIComponent(id)}`, patch, 'PATCH'),
+    deletePublishTarget: (id) =>
+      noContent(
+        apiFetch(`${base}/publish-targets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      ),
+    testPublishTarget: (body) => post<TargetTestResult>(`${base}/publish-targets/test`, body),
+    listPublishTargetChoices: () =>
+      apiFetch(`${base}/publish-targets/choices`)
+        .then(json<{ choices: TargetChoice[] }>)
+        .then((r) => r.choices),
     listOntologies: (opts = {}) =>
       apiFetch(`${base}/ontologies${opts.retired ? '?retired=include' : ''}`).then(
         json<OntologyListItem[]>,
