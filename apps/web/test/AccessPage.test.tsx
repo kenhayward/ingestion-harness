@@ -298,8 +298,9 @@ describe('AccessPage', () => {
     expect(screen.getByText('Admins only.')).toBeInTheDocument();
   });
 
-  it('still has the data-lake S3 keys section', async () => {
+  it('leaves the data-lake S3 keys to the Integration tab', async () => {
     page();
-    expect(await screen.findByRole('heading', { name: 'Data lake S3 keys' })).toBeInTheDocument();
+    expect(await screen.findByRole('table', { name: 'Users' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Data lake S3 keys' })).toBeNull();
   });
 });

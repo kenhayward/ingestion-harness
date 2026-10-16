@@ -29,7 +29,7 @@ describe('AdminDialog', () => {
       within(tabs)
         .getAllByRole('tab')
         .map((t) => t.textContent),
-    ).toEqual(['Models', 'Linked data', 'Access']);
+    ).toEqual(['Models', 'Linked data', 'Users', 'Integration']);
     expect(within(tabs).getByRole('tab', { name: 'Models' })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -47,7 +47,7 @@ describe('AdminDialog', () => {
     await userEvent.click(within(dialog).getByRole('tab', { name: 'Linked data' }));
     expect(within(dialog).getByRole('tabpanel')).toHaveAccessibleName('Linked data');
     expect(within(header(dialog)).queryByRole('button')).toBeNull();
-    await userEvent.click(within(dialog).getByRole('tab', { name: 'Access' }));
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Users' }));
     expect(
       await within(header(dialog)).findByRole('button', { name: 'Add user' }),
     ).toBeInTheDocument();
@@ -60,7 +60,30 @@ describe('AdminDialog', () => {
     await userEvent.keyboard('{ArrowDown}');
     expect(within(dialog).getByRole('tab', { name: 'Linked data' })).toHaveFocus();
     await userEvent.keyboard('{ArrowUp}{ArrowUp}');
-    expect(within(dialog).getByRole('tab', { name: 'Access' })).toHaveAttribute(
+    expect(within(dialog).getByRole('tab', { name: 'Integration' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('keeps users on the Users tab and S3 keys on Integration', async () => {
+    const { dialog } = open();
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Users' }));
+    expect(await within(dialog).findByRole('table', { name: 'Users' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('heading', { name: 'Data lake S3 keys' })).toBeNull();
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Integration' }));
+    expect(within(dialog).getByRole('tabpanel')).toHaveAccessibleName('Integration');
+    expect(
+      await within(dialog).findByRole('heading', { name: 'Data lake S3 keys' }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole('table', { name: 'Users' })).toBeNull();
+    expect(within(header(dialog)).queryByRole('button')).toBeNull();
+  });
+
+  it('opens a remembered Access tab as Users', () => {
+    localStorage.setItem('ih.adminTab', 'access');
+    const { dialog } = open();
+    expect(within(dialog).getByRole('tab', { name: 'Users' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
@@ -68,11 +91,11 @@ describe('AdminDialog', () => {
 
   it('remembers the last tab in this browser', async () => {
     const first = open();
-    await userEvent.click(within(first.dialog).getByRole('tab', { name: 'Access' }));
-    expect(localStorage.getItem('ih.adminTab')).toBe('access');
+    await userEvent.click(within(first.dialog).getByRole('tab', { name: 'Users' }));
+    expect(localStorage.getItem('ih.adminTab')).toBe('users');
     first.unmount();
     const { dialog } = open();
-    expect(within(dialog).getByRole('tab', { name: 'Access' })).toHaveAttribute(
+    expect(within(dialog).getByRole('tab', { name: 'Users' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
@@ -89,7 +112,7 @@ describe('AdminDialog', () => {
 
   it('opens Add user above it, and Escape closes only that', async () => {
     const { dialog, onClose } = open();
-    await userEvent.click(within(dialog).getByRole('tab', { name: 'Access' }));
+    await userEvent.click(within(dialog).getByRole('tab', { name: 'Users' }));
     await userEvent.click(await within(header(dialog)).findByRole('button', { name: 'Add user' }));
     expect(screen.getByRole('dialog', { name: 'Add user' })).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
