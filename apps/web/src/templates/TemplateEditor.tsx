@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import {
   describeDefinitionChange,
@@ -666,7 +666,6 @@ export function TemplateEditor({
                     ['Section ID', '16rem'],
                     ['Anchor', undefined],
                     ['Required', '6rem'],
-                    ['Repeats', '16rem'],
                   ]}
                   items={sections}
                   onChange={(items) => update(['document', 'sections'], items)}
@@ -697,57 +696,90 @@ export function TemplateEditor({
                         update(['document', 'sections', i, 'required'], e.target.checked)
                       }
                     />,
-                    <div key="repeat" className="section-repeat">
-                      <input
-                        type="checkbox"
-                        aria-label={`Section ${i + 1} repeats`}
-                        checked={getIn(s, ['repeat']) === true}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            update(['document', 'sections', i, 'repeat'], true);
-                            return;
-                          }
-                          const rest = Object.fromEntries(
-                            Object.entries(s as Record<string, unknown>).filter(
-                              ([k]) => !['repeat', 'key', 'keyFrom'].includes(k),
-                            ),
-                          );
-                          update(['document', 'sections', i], rest);
-                        }}
-                      />
-                      {getIn(s, ['repeat']) === true && (
-                        <>
-                          <Text
-                            bare
-                            className="code"
-                            label={`Section ${i + 1} key`}
-                            hint="Regex naming each occurrence, e.g. Batch\s+(\w+)"
-                            value={getIn(s, ['key']) ?? ''}
-                            onChange={(v) =>
-                              update(['document', 'sections', i, 'key'], v || undefined)
-                            }
-                          />
-                          <select
-                            aria-label={`Section ${i + 1} key from`}
-                            value={getIn(s, ['keyFrom']) ?? ''}
-                            onChange={(e) =>
-                              update(
-                                ['document', 'sections', i, 'keyFrom'],
-                                e.target.value || undefined,
-                              )
-                            }
-                          >
-                            <option value="">None</option>
-                            {keyFromOptions(sections, getIn(s, ['id'])).map((id) => (
-                              <option key={id} value={id}>
-                                {id}
-                              </option>
-                            ))}
-                          </select>
-                        </>
-                      )}
-                    </div>,
                   ]}
+                  detail={(s, i) => {
+                    const repeats = getIn(s, ['repeat']) === true;
+                    return (
+                      <div
+                        className="section-repeat"
+                        role="group"
+                        aria-label={`Section ${i + 1} repeating`}
+                      >
+                        <label className="section-repeat-toggle">
+                          <input
+                            type="checkbox"
+                            aria-label={`Section ${i + 1} repeats`}
+                            checked={repeats}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                update(['document', 'sections', i, 'repeat'], true);
+                                return;
+                              }
+                              const rest = Object.fromEntries(
+                                Object.entries(s as Record<string, unknown>).filter(
+                                  ([k]) => !['repeat', 'key', 'keyFrom'].includes(k),
+                                ),
+                              );
+                              update(['document', 'sections', i], rest);
+                            }}
+                          />
+                          <span>
+                            <strong>Repeats</strong>
+                            <small className="muted">
+                              every match of the anchor starts an occurrence (one per batch, for
+                              example)
+                            </small>
+                          </span>
+                        </label>
+                        {repeats && (
+                          <>
+                            <label className="section-repeat-field">
+                              <span>Key</span>
+                              <input
+                                className="code"
+                                aria-label={`Section ${i + 1} key`}
+                                placeholder="e.g. Batch\s+(\w+)"
+                                value={getIn(s, ['key']) ?? ''}
+                                onChange={(e) =>
+                                  update(
+                                    ['document', 'sections', i, 'key'],
+                                    e.target.value || undefined,
+                                  )
+                                }
+                              />
+                              <small className="muted">
+                                names each occurrence: a regex read from its own text (group 1)
+                              </small>
+                            </label>
+                            <label className="section-repeat-field">
+                              <span>Key from</span>
+                              <select
+                                aria-label={`Section ${i + 1} key from`}
+                                value={getIn(s, ['keyFrom']) ?? ''}
+                                onChange={(e) =>
+                                  update(
+                                    ['document', 'sections', i, 'keyFrom'],
+                                    e.target.value || undefined,
+                                  )
+                                }
+                              >
+                                <option value="">None</option>
+                                {keyFromOptions(sections, getIn(s, ['id'])).map((id) => (
+                                  <option key={id} value={id}>
+                                    {id}
+                                  </option>
+                                ))}
+                              </select>
+                              <small className="muted">
+                                takes another repeating section's key (the batch heading above) when
+                                its own key finds none; lists repeating sections with a key
+                              </small>
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    );
+                  }}
                 />
                 {stageLink('sections', 'Ask the model in Sections')}
               </>
@@ -1092,6 +1124,7 @@ function RowTable<T extends Definition>({
   onChange,
   create,
   cells,
+  detail,
 }: {
   label: string;
   noun: string;
@@ -1101,6 +1134,8 @@ function RowTable<T extends Definition>({
   onChange: (items: T[]) => void;
   create: () => T;
   cells: (item: T, index: number) => ReactNode[];
+  /** A second line under each item, across its columns (settings with no column of their own). */
+  detail?: (item: T, index: number) => ReactNode;
 }) {
   return (
     <div className="row-table">
@@ -1118,40 +1153,48 @@ function RowTable<T extends Definition>({
         </thead>
         <tbody>
           {items.map((item, i) => (
-            <tr key={i}>
-              <td className="index">{i + 1}</td>
-              {cells(item, i).map((cell, c) => (
-                <td key={c}>{cell}</td>
-              ))}
-              <td>
-                <div className="step-tools">
-                  <button
-                    type="button"
-                    className="icon bordered"
-                    aria-label={`Move ${noun} ${i + 1} up`}
-                    onClick={() => onChange(moveItem(items, i, -1))}
-                  >
-                    <Icon name="chevronUp" />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon bordered"
-                    aria-label={`Move ${noun} ${i + 1} down`}
-                    onClick={() => onChange(moveItem(items, i, 1))}
-                  >
-                    <Icon name="chevronDown" />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon bordered danger"
-                    aria-label={`Remove ${noun} ${i + 1}`}
-                    onClick={() => onChange(removeAt(items, i))}
-                  >
-                    <Icon name="trash" />
-                  </button>
-                </div>
-              </td>
-            </tr>
+            <Fragment key={i}>
+              <tr className={detail ? 'has-detail' : undefined}>
+                <td className="index">{i + 1}</td>
+                {cells(item, i).map((cell, c) => (
+                  <td key={c}>{cell}</td>
+                ))}
+                <td>
+                  <div className="step-tools">
+                    <button
+                      type="button"
+                      className="icon bordered"
+                      aria-label={`Move ${noun} ${i + 1} up`}
+                      onClick={() => onChange(moveItem(items, i, -1))}
+                    >
+                      <Icon name="chevronUp" />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon bordered"
+                      aria-label={`Move ${noun} ${i + 1} down`}
+                      onClick={() => onChange(moveItem(items, i, 1))}
+                    >
+                      <Icon name="chevronDown" />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon bordered danger"
+                      aria-label={`Remove ${noun} ${i + 1}`}
+                      onClick={() => onChange(removeAt(items, i))}
+                    >
+                      <Icon name="trash" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              {detail && (
+                <tr className="row-detail">
+                  <td />
+                  <td colSpan={columns.length + 1}>{detail(item, i)}</td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
