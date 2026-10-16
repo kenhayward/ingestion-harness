@@ -88,6 +88,12 @@ const PATHS = {
       <path d="M12 7v6M12 16.5h.01" />
     </>
   ),
+  warning: (
+    <>
+      <path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z" />
+      <path d="M12 9.5v4.5M12 17.5h.01" />
+    </>
+  ),
   chevronLeft: <path d="M15 18l-6-6 6-6" />,
   chevronRight: <path d="M9 18l6-6-6-6" />,
   check: <path d="M5 12l5 5 9-10" />,
@@ -279,6 +285,7 @@ export function Icon({
     <svg
       aria-hidden="true"
       className="icon"
+      data-icon={name}
       width={size}
       height={size}
       viewBox="0 0 24 24"

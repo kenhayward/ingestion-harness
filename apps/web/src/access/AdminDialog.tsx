@@ -1,4 +1,5 @@
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import type { MaintenanceView } from '@ih/shared';
 import type { Api, Me } from '../api/client.js';
 import { LinkedDataPage } from '../linked-data/LinkedDataPage.js';
 import { ModelsPage } from '../models/ModelsPage.js';
@@ -7,14 +8,16 @@ import { useModalFocus } from '../ui/Dialog.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { AccessPage } from './AccessPage.js';
 import { IntegrationPage } from './IntegrationPage.js';
+import { MaintenancePage } from './MaintenancePage.js';
 
-export type AdminTab = 'models' | 'linked-data' | 'users' | 'integration';
+export type AdminTab = 'models' | 'linked-data' | 'users' | 'integration' | 'maintenance';
 
 const TABS: { id: AdminTab; label: string; icon: IconName }[] = [
   { id: 'models', label: 'Models', icon: 'chip' },
   { id: 'linked-data', label: 'Linked data', icon: 'link' },
   { id: 'users', label: 'Users', icon: 'users' },
   { id: 'integration', label: 'Integration', icon: 'plug' },
+  { id: 'maintenance', label: 'Maintenance', icon: 'warning' },
 ];
 
 const TAB_KEY = 'ih.adminTab';
@@ -38,12 +41,23 @@ function saveTab(tab: AdminTab) {
 }
 
 /**
- * The account menu's Administration (admins only): Models, Linked data, Users and Integration as
- * tabs of one
+ * The account menu's Administration (admins only): Models, Linked data, Users, Integration and
+ * Maintenance as tabs of one
  * dialog laid out like Profile, each tab's main button in the header. It has no address. Only
  * Close closes it: not a click outside, not Escape, so a half-typed key or URL is never lost.
  */
-export function AdminDialog({ api, me, onClose }: { api: Api; me: Me; onClose: () => void }) {
+export function AdminDialog({
+  api,
+  me,
+  onClose,
+  onMaintenanceChanged,
+}: {
+  api: Api;
+  me: Me;
+  onClose: () => void;
+  /** Maintenance mode was saved: the app's strip follows. */
+  onMaintenanceChanged?: (view: MaintenanceView) => void;
+}) {
   const [tab, setTab] = useState<AdminTab>(loadTab);
   /** The header's slot for the open tab's main button (Add endpoint, Add user). */
   const [actions, setActions] = useState<HTMLElement | null>(null);
@@ -126,6 +140,9 @@ export function AdminDialog({ api, me, onClose }: { api: Api; me: Me; onClose: (
             {tab === 'linked-data' && <LinkedDataPage api={api} me={me} />}
             {tab === 'users' && <AccessPage api={api} me={me} actions={actions} />}
             {tab === 'integration' && <IntegrationPage api={api} me={me} />}
+            {tab === 'maintenance' && (
+              <MaintenancePage api={api} me={me} onChanged={onMaintenanceChanged} />
+            )}
           </div>
           <footer className="profile-footer">
             <button type="button" onClick={onClose}>

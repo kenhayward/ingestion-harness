@@ -1,11 +1,13 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
-import type { Api, SignedIn } from '../api/client.js';
+import type { MaintenanceNotice } from '@ih/shared';
+import { maintenanceOf, type Api, type SignedIn } from '../api/client.js';
 import { API_DOCS } from '../shell/AppShell.js';
 import { pageTitle } from '../shell/derive.js';
 import { useDocumentTitle } from '../shell/useDocumentTitle.js';
 import { BrandMark } from '../ui/BrandMark.js';
 import { Icon } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
+import { MaintenanceBanner } from './MaintenanceBanner.js';
 import { lockedText } from './passwords.js';
 
 /** What the sign-in answer's refusal means, in words for the person signing in. */
@@ -60,11 +62,17 @@ export function AuthLayout({
 export function SignIn({
   api,
   ended,
+  maintenance = null,
+  onMaintenance,
   onSignedIn,
 }: {
   api: Api;
   /** The previous session ended (expired, disabled or the admin password rotated). */
   ended: boolean;
+  /** Maintenance mode, shown above the form while it is on (only admins can sign in). */
+  maintenance?: MaintenanceNotice | null;
+  /** Sign-in was refused for maintenance: with the notice to show. */
+  onMaintenance?: (notice: MaintenanceNotice) => void;
   onSignedIn: (me: SignedIn) => void;
 }) {
   const emailId = useId();
@@ -82,7 +90,9 @@ export function SignIn({
     try {
       onSignedIn(await api.login(login.trim(), password));
     } catch (err) {
-      setError(message(err));
+      const notice = maintenanceOf((err as { body?: unknown }).body);
+      if (notice && onMaintenance) onMaintenance(notice);
+      else setError(message(err));
     } finally {
       setBusy(false);
     }
@@ -95,6 +105,11 @@ export function SignIn({
 
   return (
     <AuthLayout title="Sign in">
+      {maintenance?.enabled && (
+        <MaintenanceBanner notice={maintenance}>
+          Only admins can sign in until it is over.
+        </MaintenanceBanner>
+      )}
       <form className="card auth-card" onSubmit={submit} aria-label="Sign in">
         {ended && (
           <div role="status" className="callout tone-info">

@@ -19,5 +19,6 @@ export * from './definition-diff.js';
 export * from './ontologies.js';
 export * from './ontology-suggestions.js';
 export * from './linked-data.js';
+export * from './maintenance.js';
 export * from './version-labels.js';
 export * from './profile.js';
