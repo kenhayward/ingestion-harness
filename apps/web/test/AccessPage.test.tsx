@@ -83,7 +83,7 @@ describe('AccessPage', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add user' });
     await userEvent.type(within(dialog).getByLabelText('Name'), 'Cat');
     await userEvent.type(within(dialog).getByLabelText('Email address'), 'cat@example.com');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Admin' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Administrator' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add user' }));
     expect(addUser).toHaveBeenCalledWith({ name: 'Cat', email: 'cat@example.com', role: 'admin' });
     const notice = await screen.findByRole('region', { name: 'One-time password for Cat' });
@@ -215,7 +215,7 @@ describe('AccessPage', () => {
     expect(reissue).toHaveAttribute('title', 'Change your own password from the account menu');
     await userEvent.click(within(ann).getByRole('button', { name: 'Edit Ann' }));
     const dialog = screen.getByRole('dialog', { name: 'Edit Ann' });
-    expect(within(dialog).getByRole('button', { name: 'User' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Designer' })).toBeDisabled();
   });
 
   it('shows a refusal from a row action', async () => {
@@ -287,7 +287,7 @@ describe('AccessPage', () => {
       <AccessPage
         api={fakeApi()}
         me={{
-          role: 'user',
+          role: 'designer',
           label: 'Ken',
           email: 'ken@example.com',
           mustChangePassword: false,

@@ -94,7 +94,7 @@ describe('http api: sign-in and users', () => {
     }));
 
   it('signs in with a login and a password', async () => {
-    const fetch = vi.fn(async () => respond(200, { role: 'user', label: 'Ken' }));
+    const fetch = vi.fn(async () => respond(200, { role: 'designer', label: 'Ken' }));
     vi.stubGlobal('fetch', fetch);
     await createHttpApi('/api').login('ken@example.com', 'a long phrase');
     expect(calls(fetch)).toEqual([
@@ -136,7 +136,7 @@ describe('http api: sign-in and users', () => {
     vi.stubGlobal('fetch', fetch);
     const api = createHttpApi('/api');
     await api.listUsers();
-    await api.addUser({ name: 'Ken', email: 'ken@example.com', role: 'user' });
+    await api.addUser({ name: 'Ken', email: 'ken@example.com', role: 'designer' });
     await api.updateUser('u1', { email: 'k@x.com' });
     await api.setUserEnabled('u1', false);
     await api.setUserEnabled('u1', true);
@@ -148,7 +148,7 @@ describe('http api: sign-in and users', () => {
       {
         url: '/api/users',
         method: 'POST',
-        body: { name: 'Ken', email: 'ken@example.com', role: 'user' },
+        body: { name: 'Ken', email: 'ken@example.com', role: 'designer' },
       },
       { url: '/api/users/u1', method: 'PATCH', body: { email: 'k@x.com' } },
       { url: '/api/users/u1/disable', method: 'POST', body: undefined },

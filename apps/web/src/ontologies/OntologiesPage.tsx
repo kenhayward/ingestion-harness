@@ -1,3 +1,4 @@
+import type { Role } from '@ih/shared';
 import { useCallback, useEffect, useState } from 'react';
 import type {
   EmbeddingProgress,
@@ -49,7 +50,7 @@ export function OntologiesPage({
   pollMs = 2000,
 }: {
   api: Api;
-  role: 'admin' | 'user';
+  role: Role;
   pollMs?: number;
 }) {
   const [items, setItems] = useState<OntologyListItem[] | null>(null);

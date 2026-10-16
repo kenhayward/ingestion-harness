@@ -81,7 +81,7 @@ describe('job creator', () => {
       app,
       access,
       'user',
-      'user',
+      'designer',
       'new@example.test',
     );
     expect(await list(newcomer, '?mine=1')).toEqual([]);

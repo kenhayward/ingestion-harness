@@ -1,3 +1,4 @@
+import type { Role } from '@ih/shared';
 import { useCallback, useEffect, useState } from 'react';
 import type { OntologyDetail, OntologyImport } from '@ih/shared';
 import { ontologySourceUrl, type Api } from '../api/client.js';
@@ -20,7 +21,7 @@ export function OntologyPage({
   graphRenderer,
 }: {
   api: Api;
-  role: 'admin' | 'user';
+  role: Role;
   ontologyId: string;
   pollMs?: number;
   searchDelayMs?: number;

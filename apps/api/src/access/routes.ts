@@ -1,4 +1,11 @@
-import { MAINTENANCE_ERROR, MaintenanceNoticeSchema, type Creator } from '@ih/shared';
+import {
+  MAINTENANCE_ERROR,
+  MaintenanceNoticeSchema,
+  OPERATOR_REFUSED,
+  RoleSchema,
+  operatorMayCall,
+  type Creator,
+} from '@ih/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ErrorBody, error, md, noContent, res } from '../openapi/zod.js';
@@ -63,7 +70,7 @@ const PasswordBody = z.object({
     ),
 });
 
-const Role = z.enum(['admin', 'user']);
+const Role = RoleSchema;
 
 /** The signed-in user, as login and me return it. */
 export const MeSchema = z.object({
@@ -177,6 +184,11 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
     }
     if (session.mustChangePassword && !WHILE_CHANGING.has(`${req.method} ${route}`)) {
       return reply.code(403).send({ error: CHANGE_FIRST });
+    }
+    // Operators run documents through and nothing else: an allow-list, so new routes stay closed.
+    const method = req.method === 'HEAD' ? 'GET' : req.method;
+    if (session.role === 'operator' && !operatorMayCall(method, route)) {
+      return reply.code(403).send({ error: OPERATOR_REFUSED });
     }
     req.auth = session;
   });

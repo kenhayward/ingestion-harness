@@ -33,7 +33,7 @@ function stubNotifications(permission: NotificationPermission, answer = permissi
 }
 
 /** An App whose jobs list answers `lists` in turn (the last one repeats), polling every 20 ms. */
-function app(lists: JobSummary[][], role: 'user' | 'admin' = 'user') {
+function app(lists: JobSummary[][], role: 'designer' | 'admin' = 'designer') {
   let call = 0;
   const api = fakeApi({
     me: vi.fn(async () => ({

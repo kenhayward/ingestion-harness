@@ -71,9 +71,9 @@ describe('ExportPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('needs an admin');
   });
 
-  it.each<['admin' | 'user', boolean]>([
+  it.each<['admin' | 'designer', boolean]>([
     ['admin', true],
-    ['user', false],
+    ['designer', false],
   ])('offers a local-only bundle download to %s: %s', async (role, offered) => {
     const api = fakeApi({ listExports: vi.fn(async () => [exp({ status: 'succeeded' })]) });
     render(<ExportPanel api={api} role={role} projectId="letter" dataPolicy="local" pollMs={10} />);
@@ -91,7 +91,7 @@ describe('ExportPanel', () => {
 
   it('offers the download to a user on an external project', async () => {
     const api = fakeApi({ listExports: vi.fn(async () => [exp({ status: 'succeeded' })]) });
-    render(<ExportPanel api={api} role="user" projectId="letter" dataPolicy="external" />);
+    render(<ExportPanel api={api} role="designer" projectId="letter" dataPolicy="external" />);
     expect(await screen.findByRole('link', { name: 'Download bundle' })).toBeInTheDocument();
   });
 
