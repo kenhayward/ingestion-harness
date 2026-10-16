@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  DRAFT_PROGRESS_EVENT,
   DraftChangeSchema,
+  DraftProgressSchema,
   answeredFeedback,
   applyChanges,
   blockingStage,
@@ -648,5 +650,32 @@ describe('a worker-shaped mapping proposal (ADR 0011)', () => {
     };
     expect(parseChangeBody('mapping', body)?.changes).toHaveLength(5);
     expect(parseChangeBody('outputs', body)).toBeNull();
+  });
+});
+
+const progressFixture = JSON.parse(
+  readFileSync(new URL('./fixtures/draft-progress.json', import.meta.url), 'utf8'),
+) as Record<string, unknown[]>;
+
+describe('drafting progress (issue #151)', () => {
+  it.each(
+    Object.entries(progressFixture).flatMap(([name, events]) =>
+      events.map((e, i) => [`${name} ${i}`, e] as const),
+    ),
+  )("parses the worker's event %s", (_name, event) => {
+    expect(DraftProgressSchema.parse(event)).toEqual(event);
+  });
+
+  it.each([
+    ['an unknown phase', { phase: 'thinking' }],
+    ['a zero attempt', { attempt: 0 }],
+    ['a missing round', { round: undefined }],
+  ])('refuses %s', (_name, over) => {
+    const base = progressFixture.surveyRetried![1] as Record<string, unknown>;
+    expect(DraftProgressSchema.safeParse({ ...base, ...over }).success).toBe(false);
+  });
+
+  it('is the event the worker writes', () => {
+    expect(DRAFT_PROGRESS_EVENT).toBe('drafting progress');
   });
 });

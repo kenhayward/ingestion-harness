@@ -20,6 +20,7 @@ import { Meter } from '../ui/Meter.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
 import { StaleBanner } from './StaleBanner.js';
 import { TabHeader } from './TabHeader.js';
+import { DraftRunProgress } from './DraftRunProgress.js';
 import {
   answerProgress,
   candidateCounts,
@@ -268,7 +269,14 @@ export function SurveyTab({
   return (
     <div className="survey-tab">
       {header}
-      {running && <p className="muted">Surveying the dev samples…</p>}
+      {running && (
+        <DraftRunProgress
+          stage="survey"
+          run={proposal.run}
+          label="Survey progress"
+          fallback={<p className="muted">Surveying the dev samples…</p>}
+        />
+      )}
       {error && <p role="alert">{error}</p>}
       {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
       {restored && unsavedAnswers && (

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DRAFT_PROGRESS_EVENT,
   EMPTY_BRIEF,
   draftingKey,
   preparedTriageKey,
@@ -156,6 +157,41 @@ describe('data policy', () => {
     const s = await add(1);
     await workbench.setDataPolicy('other', 'local', null);
     expect(repo.jobParams.get(s.prepareJobId!)).toEqual({ dataPolicy: 'external' });
+  });
+});
+
+describe('a running stage (issue #151)', () => {
+  const event = { stage: 'survey', phase: 'model', samples: 1, attempt: 1, of: 2, round: 1 };
+
+  it("is queued, then running with this attempt's latest progress, then done", async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    const started = (await start()).json() as ProposalView;
+    const { id } = started;
+    expect(started.run).toEqual({
+      status: 'queued',
+      since: repo.draftJobs.get(id)!.updatedAt,
+      progress: null,
+    });
+    const listed = async () =>
+      (
+        (await app.inject('/api/workbench/projects/letter/proposals')).json() as ProposalView[]
+      ).find((p) => p.id === id)!;
+    // An earlier attempt's event: the job was claimed again after it.
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, event);
+    const claimed = repo.now();
+    repo.draftJobs.set(id, { ...repo.draftJobs.get(id)!, status: 'running', updatedAt: claimed });
+    expect((await listed()).run).toEqual({ status: 'running', since: claimed, progress: null });
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { phase: 'reading' }); // malformed
+    expect((await listed()).run!.progress).toBeNull();
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, attempt: 2 });
+    expect((await listed()).run!.progress).toEqual({
+      ...event,
+      attempt: 2,
+      at: expect.any(String),
+    });
+    repo.draftJobs.set(id, { ...repo.draftJobs.get(id)!, status: 'needs_review', error: 'x' });
+    expect(await listed()).toMatchObject({ status: 'failed', run: null });
   });
 });
 

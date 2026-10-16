@@ -13,6 +13,7 @@ from ingest_worker.config import REPO_ROOT
 from ingest_worker.draft_stages import REVISE_SCHEMA
 from ingest_worker.drafting import (
     DRAFT_MAX_TOKENS,
+    DRAFT_PROGRESS,
     MAX_CONTEXT_SAMPLES,
     MAX_SAMPLE_CHARS,
     SURVEY,
@@ -264,6 +265,50 @@ def test_invalid_output_is_fed_back_then_needs_review(fixture_specs_dir: Path) -
     assert "draft-survey" in reason
 
 
+PROGRESS_FIXTURE = REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "draft-progress.json"
+
+
+def progress(queue: FakeQueue) -> list[dict[str, Any]]:
+    return [d for _, _, msg, d in queue.event_details if msg == DRAFT_PROGRESS]
+
+
+def expected_progress(case: str) -> list[dict[str, Any]]:
+    cases: dict[str, list[dict[str, Any]]] = json.loads(PROGRESS_FIXTURE.read_text("utf-8"))
+    return cases[case]
+
+
+def test_a_survey_reports_reading_the_samples_and_each_model_call(
+    fixture_specs_dir: Path,
+) -> None:
+    """Issue #151: a running survey says what it is doing (TS DraftProgressSchema, shared
+    fixture draft-progress.json): the samples read, then each model call with its attempt."""
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = ["not json", SURVEY_BODY]
+    queue = FakeQueue(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    assert progress(queue) == expected_progress("surveyRetried")
+
+
+def test_progress_is_advisory_a_failed_write_never_fails_the_survey(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [SURVEY_BODY]
+
+    class Flaky(FakeQueue):
+        def event(
+            self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
+        ) -> None:
+            if message == DRAFT_PROGRESS:
+                raise RuntimeError("database blip")
+            super().event(job_id, level, message, data)
+
+    queue = Flaky(jobs=[draft_job()])
+    run_once(queue, deps, "w1")
+    assert queue.completed == [("job-d", [])]
+
+
 def test_transient_provider_errors_retry_the_job(fixture_specs_dir: Path) -> None:
     provider, _, deps = make(fixture_specs_dir)
     provider.responses = [LLMError("503 overloaded")]
@@ -415,6 +460,7 @@ def test_sections_anchor_misses_are_fed_back_once_and_the_grid_is_kept(
     [row] = body["anchorCheck"]["samples"]
     assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is True
     assert store.get_optional("runs", "job-d/draft-sections-anchors/attempt-1.json") is not None
+    assert progress(queue) == expected_progress("sectionsAnchorRound")
 
 
 TIMEOUT = "preview took longer than 10s; an anchor may backtrack catastrophically"
@@ -818,6 +864,7 @@ def test_a_survey_queues_its_ontology_suggestions_and_finishes(fixture_specs_dir
     run_once(queue, deps, "w1")
 
     assert queue.completed and searched == []  # nothing matched while the survey ran
+    assert progress(queue) == expected_progress("surveyWithLibrary")
     assert store.get_optional("runs", ontology_suggestions_key("letter", "job-d")) is None
     [(project, params)] = queue.suggested
     assert project == "letter"
