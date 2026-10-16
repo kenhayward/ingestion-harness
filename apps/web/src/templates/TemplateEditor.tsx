@@ -3,15 +3,16 @@ import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import {
   describeDefinitionChange,
   VALUE_TYPES,
+  DEFAULT_TARGET_ID,
   type DataPolicy,
   type DeliveryFormat,
   type JobSummary,
   type OverviewItem,
   type Retirement,
   type PushOutcome,
+  type TargetChoice,
 } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
-import { DEFAULT_TARGET_ID, type TargetChoice } from '@ih/shared';
 import { TabHelp } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { keepDraft, loadKept } from '../ui/keptDraft.js';
