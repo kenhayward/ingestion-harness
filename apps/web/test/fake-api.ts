@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type {
+  GitHubLinkBody,
   Profile,
   OntologyDetail,
   OntologyListItem,
@@ -516,7 +517,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     saveTemplate: vi.fn(async (_id: string, _v: number, d: Record<string, unknown>) =>
       templateView(d),
     ),
-    publishTemplate: vi.fn(async () => templateView({ id: 'x', version: 1 }, 'published')),
+    publishTemplate: vi.fn(async () => ({
+      ...templateView({ id: 'x', version: 1 }, 'published'),
+      github: null,
+    })),
     newDraft: vi.fn(async () => templateView({ id: 'x', version: 2 })),
     renameTemplate: vi.fn(async (id: string, name: string) =>
       templateView({ id, version: 2, name }),
@@ -525,6 +529,36 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     setVersionLabel: vi.fn(async (id: string, version: number) => templateView({ id, version })),
     restoreVersion: vi.fn(async (id: string, version: number) => templateView({ id, version })),
     deleteDraft: vi.fn(async () => undefined),
+    getGitHubSync: vi.fn(async () => ({ link: null, versions: [], canPush: false, reason: null })),
+    setGitHubLink: vi.fn(async (_id: string, body: GitHubLinkBody) => ({
+      ...body,
+      setBy: 'admin',
+      setAt: '2026-10-16T00:00:00.000Z',
+    })),
+    removeGitHubLink: vi.fn(async () => undefined),
+    pushVersion: vi.fn(async () => ({ kind: 'skipped' as const, reason: 'not stubbed' })),
+    listGitHubRemote: vi.fn(async () => ({ versions: [], skipped: [] })),
+    takeGitHubLabel: vi.fn(async (id: string, version: number) => templateView({ id, version })),
+    useGitHubVersionAsDraft: vi.fn(async (id: string, body: { version: number }) =>
+      templateView({ id, version: body.version }),
+    ),
+    getGitHubSettings: vi.fn(async () => ({
+      instanceName: 'production',
+      instanceId: 'inst-1',
+      defaultRoot: 'ct-studio',
+      locked: false,
+    })),
+    setGitHubSettings: vi.fn(async (body: { instanceName: string; defaultRoot: string }) => ({
+      ...body,
+      instanceId: 'inst-1',
+      locked: false,
+    })),
+    listReadableGitHubRepos: vi.fn(async () => []),
+    browseGitHub: vi.fn(async () => ({ versions: [], skipped: [] })),
+    importFromGitHub: vi.fn(async () => ({
+      ...templateView({ id: 'memo', version: 1 }),
+      linked: false,
+    })),
     importTemplate: vi.fn(async () => templateView({ id: 'memo', version: 4 })),
     exportUrl: (id, version) => `/api/templates/${id}/versions/${version}/export`,
     testRun: vi.fn(async () => job({ test: true })),

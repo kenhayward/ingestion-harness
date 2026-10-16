@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { TemplateVersionItem } from '../src/api/client.js';
+import type { VersionSync } from '@ih/shared';
+import type { Api, TemplateVersionItem } from '../src/api/client.js';
 import { VersionsPanel } from '../src/templates/VersionsPanel.js';
 import { fakeApi, templateView } from './fake-api.js';
 
@@ -143,5 +144,198 @@ describe('VersionsPanel (#144)', () => {
     setup(withDraft, { retired: 'Letter is retired' });
     expect(await screen.findByRole('button', { name: 'Edit label of v1' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Replace draft v3 with v1' })).toBeDisabled();
+  });
+});
+
+describe('VersionsPanel GitHub sync', () => {
+  const link = {
+    repo: 'acme/recipes',
+    branch: 'main',
+    root: 'ct-studio',
+    alwaysPr: false,
+    pushOnPublish: true,
+    setBy: 'admin',
+    setAt: '2026-10-01T00:00:00.000Z',
+  };
+  const sync = (
+    over: Partial<VersionSync> & { version: number; state: VersionSync['state'] },
+  ): VersionSync => ({
+    commit: null,
+    commitUrl: null,
+    prNumber: null,
+    prUrl: null,
+    pushedBy: null,
+    pushedAt: null,
+    ...over,
+  });
+  const linked = (
+    versions: VersionSync[],
+    extra: Partial<{ canPush: boolean; reason: string | null }> = {},
+  ) => ({ link, versions, canPush: true, reason: null, ...extra });
+  const four = [
+    item({ version: 4, status: 'draft', publishedAt: null }),
+    item({ version: 3 }),
+    item({ version: 2 }),
+    item({ version: 1 }),
+  ];
+  const panel = (api: Api, props: Partial<Parameters<typeof VersionsPanel>[0]> = {}) => (
+    <VersionsPanel
+      api={api}
+      templateId="invoice"
+      openVersion={4}
+      openUpdatedAt="2026-10-03T00:00:00.000Z"
+      dirty={false}
+      retired={null}
+      refreshKey={0}
+      admin
+      onRestored={vi.fn()}
+      onStarted={vi.fn()}
+      {...props}
+    />
+  );
+
+  function withSync(
+    status: ReturnType<typeof linked>,
+    props: Partial<Parameters<typeof VersionsPanel>[0]> = {},
+    apiOver: Partial<Api> = {},
+  ) {
+    const api = fakeApi({
+      listVersions: vi.fn(async () => four),
+      getGitHubSync: vi.fn(async () => status),
+      ...apiOver,
+    });
+    render(panel(api, props));
+    return api;
+  }
+
+  it('offers admins Link to GitHub… on an unlinked type, and other users nothing', async () => {
+    const api = fakeApi({ listVersions: vi.fn(async () => four) });
+    const { rerender } = render(panel(api));
+    expect(await screen.findByRole('button', { name: 'Link to GitHub…' })).toBeInTheDocument();
+    rerender(panel(api, { admin: false }));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Link to GitHub…' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('shows the folder, Pull from GitHub… and Change… for a linked type', async () => {
+    const onPull = vi.fn();
+    withSync(linked([sync({ version: 3, state: 'absent' })]), { onPull });
+    expect(
+      await screen.findByText('GitHub: acme/recipes · main · ct-studio/production/invoice/'),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Pull from GitHub…' }));
+    expect(onPull).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Change…' })).toBeInTheDocument();
+  });
+
+  it('hides Pull without a handler, and Change… and the instance from non-admins', async () => {
+    const api = withSync(linked([sync({ version: 3, state: 'absent' })]), { admin: false });
+    expect(await screen.findByText('GitHub: acme/recipes · main · ct-studio/')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pull from GitHub…' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Change…' })).not.toBeInTheDocument();
+    expect(api.getGitHubSettings).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['on', 'On GitHub'],
+    ['label', 'Label changed since push'],
+    ['absent', 'Not on GitHub'],
+    ['differs', 'Different on GitHub'],
+  ] as const)('shows the %s chip', async (state, text) => {
+    withSync(linked([sync({ version: 3, state })]));
+    const row = await screen.findByRole('listitem', { name: 'v3 · Published' });
+    expect(within(row).getByText(text)).toBeInTheDocument();
+  });
+
+  it('shows an open pull request as a link', async () => {
+    withSync(linked([sync({ version: 3, state: 'pr', prNumber: 42, prUrl: 'https://gh/pr/42' })]));
+    const row = await screen.findByRole('listitem', { name: 'v3 · Published' });
+    expect(within(row).getByRole('link', { name: 'PR #42 open' })).toHaveAttribute(
+      'href',
+      'https://gh/pr/42',
+    );
+  });
+
+  it('links the commit of a version that is on GitHub', async () => {
+    withSync(
+      linked([
+        sync({
+          version: 3,
+          state: 'on',
+          commit: 'a1b2c3d4e5f6',
+          commitUrl: 'https://gh/c/a1b2c3d',
+        }),
+      ]),
+    );
+    const row = await screen.findByRole('listitem', { name: 'v3 · Published' });
+    expect(within(row).getByRole('link', { name: 'a1b2c3d' })).toHaveAttribute(
+      'href',
+      'https://gh/c/a1b2c3d',
+    );
+  });
+
+  it('says drafts stay in CT Studio', async () => {
+    withSync(linked([]));
+    const row = await screen.findByRole('listitem', { name: 'v4 · Draft' });
+    expect(row).toHaveTextContent('Drafts stay in CT Studio. Publish to push it.');
+  });
+
+  it('pushes a version and shows the commit link', async () => {
+    const pushVersion = vi.fn(async () => ({
+      kind: 'pushed' as const,
+      commit: 'a1b2c3d4e5f6',
+      commitUrl: 'https://gh/c/a1b2c3d',
+    }));
+    const api = withSync(linked([sync({ version: 1, state: 'absent' })]), {}, { pushVersion });
+    const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
+    await userEvent.click(within(row).getByRole('button', { name: 'Push v1' }));
+    expect(api.pushVersion).toHaveBeenCalledWith('invoice', 1);
+    expect(await within(row).findByRole('link', { name: 'a1b2c3d' })).toHaveAttribute(
+      'href',
+      'https://gh/c/a1b2c3d',
+    );
+    await waitFor(() => expect(api.getGitHubSync).toHaveBeenCalledTimes(2));
+  });
+
+  it('labels the button Push label when only the label changed', async () => {
+    withSync(linked([sync({ version: 1, state: 'label' })]));
+    const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
+    expect(within(row).getByRole('button', { name: 'Push label' })).toBeEnabled();
+  });
+
+  it('shows a pull request outcome as PR #n open', async () => {
+    const pushVersion = vi.fn(async () => ({
+      kind: 'pr' as const,
+      prNumber: 42,
+      prUrl: 'https://gh/pr/42',
+    }));
+    withSync(linked([sync({ version: 1, state: 'absent' })]), {}, { pushVersion });
+    const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
+    await userEvent.click(within(row).getByRole('button', { name: 'Push v1' }));
+    expect(await within(row).findByRole('link', { name: 'PR #42 open' })).toBeInTheDocument();
+  });
+
+  it('shows a refused push as an alert', async () => {
+    const pushVersion = vi.fn(async () => {
+      throw new Error('changed on GitHub: pull first');
+    });
+    withSync(linked([sync({ version: 1, state: 'absent' })]), {}, { pushVersion });
+    const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
+    await userEvent.click(within(row).getByRole('button', { name: 'Push v1' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('changed on GitHub: pull first');
+  });
+
+  it('disables pushing with the reason as the description', async () => {
+    withSync(
+      linked([sync({ version: 1, state: 'absent' })], {
+        canPush: false,
+        reason: 'Link your GitHub account in Profile to push.',
+      }),
+    );
+    const row = await screen.findByRole('listitem', { name: 'v1 · Published' });
+    const push = within(row).getByRole('button', { name: 'Push v1' });
+    expect(push).toBeDisabled();
+    expect(push).toHaveAccessibleDescription('Link your GitHub account in Profile to push.');
   });
 });
