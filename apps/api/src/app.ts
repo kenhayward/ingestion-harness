@@ -4,7 +4,8 @@ import multipart from '@fastify/multipart';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
 import type { JobWatch } from './jobs/watch.js';
-import type { GitHubOAuth } from './profile/github.js';
+import type { GitHubSyncRepo } from './github-sync/repo.js';
+import type { GitHubOAuth, GitHubRepoApi } from './profile/github.js';
 import type { ProfileRepo } from './profile/repo.js';
 import { registerOpenApi } from './openapi/plugin.js';
 import { jobLiveRoutes } from './routes/job-live.js';
@@ -56,8 +57,14 @@ export interface AppDeps {
   access: AccessRepo | null;
   /** Users' own profiles (docs/design/profile.md). */
   profiles: ProfileRepo;
+  /** GitHub recipe sync: settings, links and push records (migration 0048). */
+  githubSync: GitHubSyncRepo;
   /** The GitHub OAuth app (`GITHUB_CLIENT_ID`/`_SECRET`); null/absent: GitHub cannot be linked. */
   github?: GitHubOAuth | null;
+  /** GitHub repositories for recipe sync (the same `HttpGitHub`); null/absent: sync is unavailable. */
+  githubRepos?: GitHubRepoApi | null;
+  /** How long a publish waits for its automatic GitHub push (default 15 s; tests shorten it). */
+  githubAutoPushDeadlineMs?: number;
   /** `GITHUB_REDIRECT_URL`: the callback registered with GitHub; absent: from the request. */
   githubRedirectUrl?: string | null;
   /** Read-only S3 keys for the data lake (ADR 0008); null when the target isn't local SeaweedFS. */
@@ -70,7 +77,7 @@ export interface AppDeps {
   ontologyFetch: { hosts: string[]; maxBytes: number };
   /** The customer and the base IRI RDF is minted under (ADR 0011). */
   linkedData: LinkedDataRepo;
-  /** Maintenance mode (migration 0046): only admins get in while it is on. */
+  /** Maintenance mode (migration 0048): only admins get in while it is on. */
   maintenance: MaintenanceRepo;
   /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
   llmSecrets: SecretsKeys | null;

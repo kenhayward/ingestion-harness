@@ -227,6 +227,18 @@ describe('TemplateEditor', () => {
     expect(api.publishTemplate).toHaveBeenCalledWith('letter', 1);
   });
 
+  it('adds the GitHub push outcome to the publish status line', async () => {
+    const definition = { ...validDefinition(), version: 1 };
+    setup(view(definition), {
+      publishTemplate: vi.fn(async () => ({
+        ...view(definition, 'published'),
+        github: { kind: 'pr' as const, prNumber: 42, prUrl: 'https://gh/pr/42' },
+      })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /^Publish v1/ }));
+    expect(await screen.findByText('Published v1 · pull request #42 opened')).toBeInTheDocument();
+  });
+
   it('shows published versions read-only and starts new drafts from them', async () => {
     const { api, onNavigate } = setup(view({ ...validDefinition(), version: 1 }, 'published'), {
       newDraft: vi.fn(async () => view({ ...validDefinition(), version: 2 })),

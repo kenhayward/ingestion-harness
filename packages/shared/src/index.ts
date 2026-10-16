@@ -23,3 +23,4 @@ export * from './maintenance.js';
 export * from './roles.js';
 export * from './version-labels.js';
 export * from './profile.js';
+export * from './github-sync.js';

@@ -1,8 +1,23 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { VERSION_LABEL_MAX, VERSION_NOTE_MAX, versionName } from '@ih/shared';
-import type { Api, TemplateRecordView, TemplateVersionItem } from '../api/client.js';
+import {
+  VERSION_LABEL_MAX,
+  VERSION_NOTE_MAX,
+  versionName,
+  type PushOutcome,
+  type VersionSync,
+} from '@ih/shared';
+import type {
+  Api,
+  GitHubSyncView,
+  TemplateRecordView,
+  TemplateVersionItem,
+} from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
+import { HelpButton } from '../ui/Help.js';
 import { changeAtText } from './editor-derive.js';
+import { GitHubStrip } from './github/GitHubStrip.js';
+import { PullDialog } from './github/PullDialog.js';
+import { shortCommit, SyncChip } from './github/SyncChip.js';
 
 const DIRTY_REASON = 'Save or discard your changes first';
 
@@ -26,6 +41,7 @@ export function VersionsPanel({
   dirty,
   retired,
   refreshKey,
+  admin = false,
   onRestored,
   onStarted,
 }: {
@@ -40,6 +56,8 @@ export function VersionsPanel({
   /** Why nothing can be started (a retired type); labels can still be set. */
   retired: string | null;
   refreshKey: number;
+  /** The viewer is an admin: they link the type to GitHub and see the deployment's folder. */
+  admin?: boolean;
   onRestored: (draft: TemplateRecordView) => void;
   onStarted: (draft: TemplateRecordView) => void;
 }) {
@@ -50,6 +68,15 @@ export function VersionsPanel({
   const [replacing, setReplacing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [reloads, setReloads] = useState(0);
+  const [sync, setSync] = useState<GitHubSyncView | null>(null);
+  const [syncReloads, setSyncReloads] = useState(0);
+  /** What a push answered, by version, until the sync view reloads (then its state is shown). */
+  const [outcomes, setOutcomes] = useState<Record<number, PushOutcome>>({});
+  /** The push whose reload is pending: a skipped or failed answer stays beside its row. */
+  const lastPush = useRef<{ version: number; outcome: PushOutcome } | null>(null);
+  const [pushing, setPushing] = useState<number | null>(null);
+  const [pulling, setPulling] = useState(false);
+  const reasonId = useId();
   /** Numbers each load, so an older response never replaces a newer one. */
   const request = useRef(0);
 
@@ -66,6 +93,44 @@ export function VersionsPanel({
       },
     );
   }, [api, templateId, refreshKey, reloads]);
+
+  useEffect(() => {
+    let live = true;
+    api.getGitHubSync(templateId).then(
+      (v) => {
+        if (!live) return;
+        setSync(v);
+        const kept = lastPush.current;
+        lastPush.current = null;
+        setOutcomes(
+          kept && (kept.outcome.kind === 'skipped' || kept.outcome.kind === 'failed')
+            ? { [kept.version]: kept.outcome }
+            : {},
+        );
+      },
+      () => {
+        if (live) setSync(null); // sync is unavailable (no access control): the panel is as before
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, templateId, refreshKey, syncReloads]);
+
+  const push = async (version: number) => {
+    setPushing(version);
+    setError(null);
+    try {
+      const outcome = await api.pushVersion(templateId, version);
+      lastPush.current = { version, outcome };
+      setOutcomes((o) => ({ ...o, [version]: outcome }));
+      setSyncReloads((r) => r + 1);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPushing(null);
+    }
+  };
 
   const draft = versions?.find((v) => v.status === 'draft') ?? null;
   const next = Math.max(0, ...(versions ?? []).map((v) => v.version)) + 1;
@@ -86,11 +151,29 @@ export function VersionsPanel({
 
   return (
     <section className="card versions-panel" aria-labelledby={heading}>
-      <h3 id={heading}>Versions</h3>
+      <h3 id={heading}>
+        Versions <HelpButton topic="github-sync" />
+      </h3>
       <p className="muted">
         Label a version to say what it is for. To go back to a version, copy it into the draft and
         publish that.
       </p>
+      <GitHubStrip
+        api={api}
+        templateId={templateId}
+        admin={admin}
+        sync={sync}
+        onChanged={() => setSyncReloads((r) => r + 1)}
+        onPull={() => setPulling(true)}
+      />
+      {sync?.link &&
+        !sync.canPush &&
+        sync.reason &&
+        versions?.some((v) => v.status === 'published') && (
+          <p id={reasonId} className="muted github-reason">
+            {sync.reason}
+          </p>
+        )}
       {error && <p role="alert">{error}</p>}
       {versions === null && !error && <p className="muted">Loading…</p>}
       {versions !== null && (
@@ -111,6 +194,20 @@ export function VersionsPanel({
               </div>
               {v.note && <p className="version-note">{v.note}</p>}
               {v.labelSetBy && <p className="muted version-by">Labelled by {v.labelSetBy}</p>}
+              {sync?.link && v.status === 'draft' && (
+                <p className="muted version-sync">Drafts stay in CT Studio. Publish to push it.</p>
+              )}
+              {sync?.link && v.status === 'published' && (
+                <SyncRow
+                  version={v.version}
+                  sync={sync.versions.find((s) => s.version === v.version) ?? null}
+                  outcome={outcomes[v.version] ?? null}
+                  canPush={sync.canPush && pushing === null}
+                  reason={sync.canPush ? null : sync.reason}
+                  reasonId={reasonId}
+                  onPush={() => void push(v.version)}
+                />
+              )}
               {editing === v.version ? (
                 <LabelForm
                   item={v}
@@ -161,6 +258,29 @@ export function VersionsPanel({
             </li>
           ))}
         </ul>
+      )}
+      {pulling && (
+        <PullDialog
+          api={api}
+          templateId={templateId}
+          retired={retired}
+          dirty={openDraftDirty}
+          openUpdatedAt={draft && draft.version === openVersion ? openUpdatedAt : null}
+          onClose={() => setPulling(false)}
+          onTaken={() => {
+            // A label is not part of the definition: reload both lists and keep the dialog open.
+            setReloads((r) => r + 1);
+            setSyncReloads((r) => r + 1);
+          }}
+          onDraft={(view) => {
+            setPulling(false);
+            setReloads((r) => r + 1);
+            setSyncReloads((r) => r + 1);
+            // With a draft open the draft is replaced; otherwise the next one is started.
+            if (draft) onRestored(view);
+            else onStarted(view);
+          }}
+        />
       )}
       {replacing !== null && draft && (
         <ReplaceDialog
@@ -282,5 +402,61 @@ function ReplaceDialog({
       </p>
       {error && <p role="alert">{error}</p>}
     </Dialog>
+  );
+}
+
+/** A published row's GitHub state: its chip, what a push just answered, and the push button. */
+function SyncRow({
+  version,
+  sync,
+  outcome,
+  canPush,
+  reason,
+  reasonId,
+  onPush,
+}: {
+  version: number;
+  sync: VersionSync | null;
+  outcome: PushOutcome | null;
+  canPush: boolean;
+  reason: string | null;
+  reasonId: string;
+  onPush: () => void;
+}) {
+  const label =
+    sync?.state === 'absent' ? `Push v${version}` : sync?.state === 'label' ? 'Push label' : null;
+  const shown = outcome?.kind === 'pushed' || outcome?.kind === 'pr' ? outcome : null;
+  return (
+    <div className="version-sync">
+      {shown?.kind === 'pushed' ? (
+        <>
+          <span className="kind-tag tone-ok">On GitHub</span>
+          <a href={shown.commitUrl} target="_blank" rel="noreferrer">
+            {shortCommit(shown.commit)}
+          </a>
+        </>
+      ) : shown?.kind === 'pr' ? (
+        <a className="kind-tag tone-info" href={shown.prUrl} target="_blank" rel="noreferrer">
+          PR #{shown.prNumber} open
+        </a>
+      ) : (
+        sync && <SyncChip sync={sync} />
+      )}
+      {(outcome?.kind === 'skipped' || outcome?.kind === 'failed') && (
+        <span className="muted">{outcome.reason}</span>
+      )}
+      {label && !shown && (
+        <>
+          <button
+            type="button"
+            disabled={!canPush}
+            aria-describedby={reason ? reasonId : undefined}
+            onClick={onPush}
+          >
+            {label}
+          </button>
+        </>
+      )}
+    </div>
   );
 }

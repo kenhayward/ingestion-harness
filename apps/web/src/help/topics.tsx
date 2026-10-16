@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { GeneralHelp } from './GeneralHelp.js';
+import { GitHubSyncHelp } from './GitHubSyncHelp.js';
 import { MappingHelp } from './MappingHelp.js';
 import { OutputsHelp } from './OutputsHelp.js';
 import { PipelineHelp } from './PipelineHelp.js';
@@ -16,6 +17,7 @@ export interface HelpTopic {
 
 /** Every help topic, by id. Add a topic here, then `<HelpButton topic="id" />` where needed. */
 export const HELP_TOPICS = {
+  'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   general: { title: 'General recipe settings', body: <GeneralHelp /> },
   sections: { title: 'How sections work', body: <SectionsHelp /> },
   outputs: { title: 'Outputs: fields and tables', body: <OutputsHelp /> },

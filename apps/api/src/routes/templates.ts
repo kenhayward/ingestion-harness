@@ -3,11 +3,16 @@ import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import { z } from 'zod';
 import {
   PublishLabelSchema,
+  PushOutcomeSchema,
+  RECIPE_FILE_FORMAT,
   RetirementSchema,
   VersionLabelBodySchema,
   VersionLabelSchema,
   versionName,
 } from '@ih/shared';
+import { pushAfterPublish } from '../github-sync/auto.js';
+import { parseRecipeFile } from '../github-sync/file.js';
+import { ImportConflict, ImportInvalid, importRecipeFile } from '../github-sync/import.js';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
 import { binary, error, md, noContent, res } from '../openapi/zod.js';
 import {
@@ -68,7 +73,7 @@ const RestoreBody = z
       .describe('The draft `updatedAt` the user saw: a draft written since is a 409.'),
   })
   .strict();
-const DRAFT_CHANGED = 'the draft changed since you opened it; reload it to see the changes';
+export const DRAFT_CHANGED = 'the draft changed since you opened it; reload it to see the changes';
 const ImportBody = z
   .object({
     yaml: z.string().min(1).describe('A definition as YAML (or JSON), with `id` and `version`.'),
@@ -85,9 +90,18 @@ const VersionParams = z.object({
 const TypeParams = z.object({ id: z.string().describe('The document type id.') });
 
 /** A version with the validation issues of its definition (empty when valid). */
-const RecordView = z.object({
+export const RecordView = z.object({
   record: TemplateRecordSchema,
   issues: z.array(TemplateIssueSchema).describe('Validation issues; empty when valid.'),
+});
+
+/** A published version, with what the automatic GitHub push did. */
+const PublishedView = RecordView.extend({
+  github: PushOutcomeSchema.nullable().describe(
+    'The automatic push to GitHub: null when the document type is not linked or pushes only on ' +
+      'request. A skipped or failed push never fails the publish. A push still going after 15 s ' +
+      'is `failed` with `GitHub is slow: check Versions for the result.` and finishes afterwards.',
+  ),
 });
 
 const TemplateTypeSchema = z.object({
@@ -140,7 +154,7 @@ const VersionItem = z.object({
 const NOT_FOUND = error('`recipe not found`.');
 
 /** The record with its issues, the models its steps name included (ADR 0010). */
-const issuesOf = (app: FastifyInstance) => async (record: TemplateRecord) => ({
+export const issuesOf = (app: FastifyInstance) => async (record: TemplateRecord) => ({
   record,
   issues: await templateIssues(app.deps, record.definition, { draft: record.status === 'draft' }),
 });
@@ -531,7 +545,7 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         params: VersionParams,
         body: PublishLabelSchema,
         response: {
-          200: res('The published version.', RecordView),
+          200: res('The published version.', PublishedView),
           400: res(
             'Zod issues for an invalid label or note, or the definition is not valid: ' +
               '`recipe is not valid`, with `issues`.',
@@ -566,7 +580,9 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       );
       if (issues.length) return reply.code(400).send({ error: 'recipe is not valid', issues });
       await labelFirst(id, version, body.data, req.auth?.label ?? null);
-      return await withIssues((await repo().publish(id, version))!);
+      const published = (await repo().publish(id, version, req.auth?.label ?? null))!;
+      const github = await pushAfterPublish(app.deps, req, id, version);
+      return { ...(await withIssues(published)), github };
     },
   );
 
@@ -688,7 +704,8 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Delete a draft',
         description: md`
           Deletes a draft version. Published versions cannot be deleted: jobs and references
-          record the version they ran with.
+          record the version they ran with. Deleting a type's only version (a never-published
+          type) also removes its GitHub link and push records.
         `,
         params: VersionParams,
         response: {
@@ -698,7 +715,12 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
-      const deleted = await repo().deleteDraft(req.params.id, versionOf(req.params));
+      const { id } = req.params;
+      const deleted = await repo().deleteDraft(id, versionOf(req.params));
+      // A never-published type's only draft is the type: its GitHub link and pushes go with it.
+      if (deleted && !(await repo().list()).some((r) => r.id === id)) {
+        await app.deps.githubSync.forgetType(id);
+      }
       return deleted
         ? reply.code(204).send()
         : reply.code(409).send({ error: 'only existing drafts can be deleted' });
@@ -745,6 +767,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           Creates the version named by the definition's \`id\` and \`version\` (a new document
           type, or a new version of one): a draft, or published when \`publish\` is true and the
           definition is valid. A draft may be imported invalid and fixed in the editor. A
+          **CT Studio recipe file** (\`format: ct-recipe\`, as pushed to GitHub) is always
+          imported as a draft: a new document type's v1, or an existing type's next free
+          version (409 while a draft is open); its label and note are copied, and
+          \`publish: true\` is a 400. A
           Workbench document type can be imported as a draft but not published. See the
           [recipe format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).
         `,
@@ -753,11 +779,13 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           201: res('The imported version.', RecordView),
           400: res(
             'Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id ' +
-              'and version`, or `recipe is not valid` (with `issues`) when publishing.',
+              'and version`, `recipe is not valid` (with `issues`) when publishing, an unusable ' +
+              'recipe file, or `a CT Studio recipe file is always imported as a draft`.',
             z.object({ error: z.unknown(), issues: z.array(TemplateIssueSchema).optional() }),
           ),
           409: error(
-            'The version already exists, `publish {id} from the Workbench (holdout gate)`, or ' +
+            'The version already exists, `a draft already exists; edit or delete it first` (a ' +
+              'recipe file), `publish {id} from the Workbench (holdout gate)`, or ' +
               RETIRED_DOC +
               '.',
           ),
@@ -772,6 +800,33 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         definition = parseYaml(body.data.yaml);
       } catch (err) {
         return reply.code(400).send({ error: `not valid YAML: ${(err as Error).message}` });
+      }
+      if ((definition as { format?: unknown } | null)?.format === RECIPE_FILE_FORMAT) {
+        // A CT Studio recipe file (as pushed to GitHub): always a draft, at a free version.
+        if (body.data.publish) {
+          return reply
+            .code(400)
+            .send({ error: 'a CT Studio recipe file is always imported as a draft' });
+        }
+        const file = parseRecipeFile(body.data.yaml);
+        if ('error' in file) return reply.code(400).send({ error: file.error });
+        const target = typeof file.definition.id === 'string' ? file.definition.id : null;
+        if (!target || !Id.safeParse(target).success) {
+          return reply.code(400).send({ error: 'definition needs a valid id and version' });
+        }
+        const gone = await retiredProblem(app.deps, target);
+        if (gone) return reply.code(409).send({ error: gone });
+        try {
+          const record = await importRecipeFile(app.deps, file, {
+            commit: null,
+            by: req.auth?.label ?? null,
+          });
+          return reply.code(201).send(await withIssues(record));
+        } catch (err) {
+          if (err instanceof ImportInvalid) return reply.code(400).send({ error: err.message });
+          if (err instanceof ImportConflict) return reply.code(409).send({ error: err.message });
+          throw err;
+        }
       }
       const ident = z
         .object({ id: Id, version: z.number().int().positive() })

@@ -1,6 +1,7 @@
 import { DocumentSpecSchema, TemplateSchema, type Role } from '@ih/shared';
 import type { FastifyInstance } from 'fastify';
 import { MemoryAccessRepo, type AccessRepo } from '../src/access/repo.js';
+import { MemoryGitHubSyncRepo } from '../src/github-sync/repo.js';
 import { MemoryProfileRepo } from '../src/profile/repo.js';
 import { buildApp, type AppDeps } from '../src/app.js';
 import { MemoryLlmConfigRepo } from '../src/llm/repo.js';
@@ -70,7 +71,8 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
   const store = new MemoryObjectStore();
   const targetStore = new MemoryObjectStore();
   const templates = new MemoryTemplateRepo();
-  const workbench = new MemoryWorkbenchRepo(repo, templates);
+  const githubSync = new MemoryGitHubSyncRepo();
+  const workbench = new MemoryWorkbenchRepo(repo, templates, githubSync);
   const llm = new MemoryLlmConfigRepo();
   const ontologies = new MemoryOntologyRepo();
   const app = await buildApp({
@@ -89,6 +91,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     maxUploadBytes: 1024 * 1024,
     access: null, // access enforcement is covered by access.test.ts
     profiles: new MemoryProfileRepo(),
+    githubSync,
     llm,
     ontologies,
     ontologyFetch: { hosts: ['w3id.org'], maxBytes: 104857600 },
@@ -114,6 +117,7 @@ export async function testApp(overrides: Partial<AppDeps> = {}) {
     targetStore,
     templates,
     workbench,
+    githubSync: (overrides.githubSync ?? githubSync) as MemoryGitHubSyncRepo,
     llm: llmRepo,
     ontologies: ontologyRepo,
   };

@@ -3,6 +3,7 @@ import type { GitHubLinkResult, GitHubRepo, Profile } from '@ih/shared';
 import type { Api, Me } from '../api/client.js';
 import { Avatar } from '../shell/Avatar.js';
 import { Icon, type IconName } from '../ui/Icon.js';
+import { HelpButton } from '../ui/Help.js';
 import { useModalFocus } from '../ui/Dialog.js';
 import { ChangePassword } from './ChangePassword.js';
 
@@ -360,7 +361,9 @@ function GitHubSection({
 
   return (
     <fieldset className="profile-github">
-      <legend>GitHub</legend>
+      <legend>
+        GitHub <HelpButton topic="github-sync" />
+      </legend>
       {outcome &&
         (outcome.ok ? (
           <p role="status" className="callout tone-ok">
@@ -389,8 +392,8 @@ function GitHubSection({
       ) : profile.githubAvailable ? (
         <>
           <p className="muted">
-            Link your GitHub account: its picture becomes yours in CT Studio, and recipe YAML will
-            be stored in one of its repositories.
+            Link your GitHub account: its picture becomes yours in CT Studio, and recipe versions
+            can be pushed to and pulled from its repositories.
           </p>
           {dirty ? (
             <p className="muted">Save your details before linking GitHub.</p>
@@ -414,7 +417,7 @@ function GitHubSection({
   );
 }
 
-/** The repository recipe YAML will be stored in (the feature that writes it is still to come). */
+/** The repository offered first when a document type is linked or imported. */
 function RepoPicker({
   api,
   profile,
@@ -458,9 +461,9 @@ function RepoPicker({
 
   return (
     <div className="field github-repo">
-      <label htmlFor={id}>YAML repository</label>
+      <label htmlFor={id}>Suggested repository</label>
       <small className="muted">
-        Recipe YAML will be stored in this repository (coming soon).
+        Offered first when a document type is linked or imported.
         {chosen && (
           <>
             {' '}

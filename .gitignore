@@ -38,3 +38,6 @@ Thumbs.db
 
 # Large scanned sample stays local; tests use the recorded OCR fixture instead.
 docs/samples/IMAGE process validation protocol.pdf
+
+# Brainstorming mockups (superpowers visual companion)
+.superpowers/

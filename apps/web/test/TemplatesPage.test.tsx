@@ -475,3 +475,12 @@ describe('TemplatesPage Retire… (admins, D10 and D15)', () => {
     expect(screen.queryByRole('button', { name: /^Retire .*…$/ })).toBeNull();
   });
 });
+
+describe('TemplatesPage Import from GitHub…', () => {
+  it('opens the import dialog beside Import YAML', async () => {
+    render(<TemplatesPage api={fakeApi()} onNavigate={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Import from GitHub…' }));
+    expect(await screen.findByRole('dialog', { name: 'Import from GitHub' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import YAML' })).toBeInTheDocument();
+  });
+});

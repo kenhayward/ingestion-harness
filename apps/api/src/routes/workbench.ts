@@ -29,6 +29,7 @@ import {
   FeedbackItemSchema,
   GateViewSchema,
   PublishGateViewSchema,
+  PushOutcomeSchema,
   gateHints,
   IterationSummarySchema,
   KEEPABLE_STAGES,
@@ -126,6 +127,7 @@ import {
   ontologySelectionChangedAt,
   type Creator,
 } from '@ih/shared';
+import { pushAfterPublish } from '../github-sync/auto.js';
 import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
@@ -1594,7 +1596,16 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         response: {
           201: res(
             'Published.',
-            z.object({ publication: PublicationSchema, project: ProjectViewSchema }),
+            z.object({
+              publication: PublicationSchema,
+              project: ProjectViewSchema,
+              github: PushOutcomeSchema.nullable().describe(
+                'The automatic push to GitHub: null when the document type is not linked or ' +
+                  'pushes only on request. A skipped or failed push never fails the publish. A ' +
+                  'push still going after 15 s is `failed` with `GitHub is slow: check Versions ' +
+                  'for the result.` and finishes afterwards.',
+              ),
+            }),
           ),
           400: res(
             'Zod issues (an ignored override reason under 10 characters), or `the draft is not ' +
@@ -1669,7 +1680,10 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         },
         'workbench draft published',
       );
-      return reply.code(201).send({ publication, project: await projectView(app, project) });
+      const github = await pushAfterPublish(app.deps, req, projectId, draft);
+      return reply
+        .code(201)
+        .send({ publication, project: await projectView(app, project), github });
     },
   );
 

@@ -4878,6 +4878,4037 @@
         }
       }
     },
+    "/api/github/settings": {
+      "get": {
+        "operationId": "getGitHubSyncSettings",
+        "summary": "Get the GitHub sync settings",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "This deployment's instance name (the folder it writes under in a repository), its\ninstance id, the default repository folder, and whether the name is locked (once\nanything has been pushed).",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instanceName": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                      "description": "Lower-case letters, digits and hyphens, up to 63 characters."
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "defaultRoot": {
+                      "type": "string",
+                      "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                    },
+                    "locked": {
+                      "type": "boolean",
+                      "description": "True once anything has been pushed: the name can no longer change."
+                    }
+                  },
+                  "required": [
+                    "instanceName",
+                    "instanceId",
+                    "defaultRoot",
+                    "locked"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The settings."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateGitHubSyncSettings",
+        "summary": "Set the GitHub sync settings",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Renames this deployment's instance and sets the default repository folder. The name\nis fixed once this deployment has pushed to GitHub; the folder may always change.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instanceName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                    "description": "Lower-case letters, digits and hyphens, up to 63 characters."
+                  },
+                  "defaultRoot": {
+                    "type": "string",
+                    "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                  }
+                },
+                "required": [
+                  "instanceName",
+                  "defaultRoot"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The settings, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instanceName": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                      "description": "Lower-case letters, digits and hyphens, up to 63 characters."
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "defaultRoot": {
+                      "type": "string",
+                      "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                    },
+                    "locked": {
+                      "type": "boolean",
+                      "description": "True once anything has been pushed: the name can no longer change."
+                    }
+                  },
+                  "required": [
+                    "instanceName",
+                    "instanceId",
+                    "defaultRoot",
+                    "locked"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The settings, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Why a value is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Why a value is refused."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the instance name is fixed once this deployment has pushed to GitHub`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the instance name is fixed once this deployment has pushed to GitHub`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/github": {
+      "get": {
+        "operationId": "getRecipeGitHubStatus",
+        "summary": "Get a document type's GitHub link and sync status",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "The type's repository link (null without one) and, for every version, newest first,\nwhether GitHub has it: `on`, `label` (its label or note changed since the push),\n`pr` (waiting in an open pull request) or `absent` (never pushed, a closed pull\nrequest, and every draft: drafts stay in CT Studio; also a push to another repository\nor folder than the link names now). `differs` is reported by Pull only. When you have a linked GitHub account, open pull requests are checked and a\nmerge shows as `on`; if GitHub cannot be reached the stored state is kept.\n`canPush` and `reason` say whether you can push now and, if not, why.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link and versions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "link": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "repo": {
+                              "type": "string",
+                              "description": "`owner/name`."
+                            },
+                            "branch": {
+                              "type": "string",
+                              "description": "The branch recipes are stored on."
+                            },
+                            "root": {
+                              "type": "string",
+                              "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                            },
+                            "alwaysPr": {
+                              "type": "boolean",
+                              "description": "Push through a pull request every time."
+                            },
+                            "pushOnPublish": {
+                              "type": "boolean",
+                              "description": "Push each version when it is published."
+                            },
+                            "setBy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "setAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "repo",
+                            "branch",
+                            "root",
+                            "alwaysPr",
+                            "pushOnPublish",
+                            "setBy",
+                            "setAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The repository link; null without one."
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "on",
+                              "label",
+                              "absent",
+                              "pr",
+                              "differs"
+                            ]
+                          },
+                          "commit": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "commitUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "prNumber": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "prUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pushedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pushedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "state",
+                          "commit",
+                          "commitUrl",
+                          "prNumber",
+                          "prUrl",
+                          "pushedBy",
+                          "pushedAt"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Every version, newest first."
+                    },
+                    "canPush": {
+                      "type": "boolean",
+                      "description": "Whether you can push versions of this type now."
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Why you cannot push; null when you can."
+                    }
+                  },
+                  "required": [
+                    "link",
+                    "versions",
+                    "canPush",
+                    "reason"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The link and versions."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setRecipeGitHubLink",
+        "summary": "Link a document type to a GitHub repository",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Links the type to a repository, branch and folder, and sets whether every push goes\nthrough a pull request and whether publishing pushes at once. The repository must be\none your own linked GitHub account can read.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "description": "`owner/name`."
+                  },
+                  "branch": {
+                    "type": "string",
+                    "description": "The branch recipes are stored on."
+                  },
+                  "root": {
+                    "type": "string",
+                    "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                  },
+                  "alwaysPr": {
+                    "type": "boolean",
+                    "description": "Push through a pull request every time."
+                  },
+                  "pushOnPublish": {
+                    "type": "boolean",
+                    "description": "Push each version when it is published."
+                  }
+                },
+                "required": [
+                  "repo",
+                  "branch",
+                  "root",
+                  "alwaysPr",
+                  "pushOnPublish"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The link, saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string",
+                      "description": "`owner/name`."
+                    },
+                    "branch": {
+                      "type": "string",
+                      "description": "The branch recipes are stored on."
+                    },
+                    "root": {
+                      "type": "string",
+                      "description": "A folder: lower-case names joined by `/`, for example `ct-studio` or `data/ct`."
+                    },
+                    "alwaysPr": {
+                      "type": "boolean",
+                      "description": "Push through a pull request every time."
+                    },
+                    "pushOnPublish": {
+                      "type": "boolean",
+                      "description": "Push each version when it is published."
+                    },
+                    "setBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "setAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "branch",
+                    "root",
+                    "alwaysPr",
+                    "pushOnPublish",
+                    "setBy",
+                    "setAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The link, saved."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Why a value is refused, or `owner/name is not a repository your GitHub account can read`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Why a value is refused, or `owner/name is not a repository your GitHub account can read`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Link your GitHub account in Profile first`, or GitHub is not set up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`Link your GitHub account in Profile first`, or GitHub is not set up."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeRecipeGitHubLink",
+        "summary": "Remove a document type's GitHub link",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Removes the link. Files already in the repository stay there; push records are\nkept, so linking again picks up where it left off.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Removed (or there was none)."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/versions/{version}/github/push": {
+      "post": {
+        "operationId": "pushRecipeVersionToGitHub",
+        "summary": "Push a published version to GitHub",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Writes the published version as a YAML file in the type's repository with **your**\nlinked GitHub account, as a commit or, when the branch is protected or the link says\nso, a pull request. The answer is a `pushed`, `pr`, `skipped` (nothing to push,\nwith the reason, for example no linked account or a draft) or `failed` (GitHub\nrefused, with the reason) outcome. Pushing again changes only the label and note.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "pushed"
+                          ]
+                        },
+                        "commit": {
+                          "type": "string"
+                        },
+                        "commitUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "commit",
+                        "commitUrl"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "pr"
+                          ]
+                        },
+                        "prNumber": {
+                          "type": "integer"
+                        },
+                        "prUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "prNumber",
+                        "prUrl"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "skipped"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ],
+                  "description": "What happened."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`changed on GitHub: pull first`, or another conflict to resolve.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`changed on GitHub: pull first`, or another conflict to resolve."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/github/repos": {
+      "get": {
+        "operationId": "listReadableGitHubRepos",
+        "summary": "List the repositories your GitHub account can read",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Every repository **your** linked GitHub account can read (private ones too), for\nchoosing where to import recipes from. Not admin-only.",
+        "responses": {
+          "200": {
+            "description": "The repositories, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fullName": {
+                        "type": "string",
+                        "description": "`owner/name`."
+                      },
+                      "private": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "fullName",
+                      "private"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "description": "The repositories, by name."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Link your GitHub account in Profile to pull.`, GitHub is not set up, or GitHub no longer accepts your link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`Link your GitHub account in Profile to pull.`, GitHub is not set up, or GitHub no longer accepts your link."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/github/browse": {
+      "get": {
+        "operationId": "browseGitHubRecipes",
+        "summary": "List the recipe versions under a folder of a repository",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Reads the head of `branch` with **your** linked GitHub account and lists every\nrecipe version under `<root>/<instance>/<type-id>/` there, from any deployment\n(`mine` marks this deployment's own). Files that cannot be used are listed in\n`skipped` with the reason. Each version's `commit` is the head read; send it, with\nits `path`, to `POST /api/github/import`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "repo",
+            "required": true,
+            "description": "`owner/name`."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "branch",
+            "required": true,
+            "description": "The branch to read."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": "ct-studio"
+            },
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "description": "The folder recipes are stored under (default `ct-studio`)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The versions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "instance": {
+                            "type": "string"
+                          },
+                          "typeId": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "label": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "note": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "publishedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "publishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "definitionSha256": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The definition's name; null when it has none."
+                          },
+                          "commit": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "mine": {
+                            "type": "boolean",
+                            "description": "Written by this deployment."
+                          }
+                        },
+                        "required": [
+                          "instance",
+                          "typeId",
+                          "version",
+                          "label",
+                          "note",
+                          "publishedBy",
+                          "publishedAt",
+                          "definitionSha256",
+                          "name",
+                          "commit",
+                          "path",
+                          "mine"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "reason"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "versions",
+                    "skipped"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The versions."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Link your GitHub account in Profile to pull.`, the branch or repository is gone, or GitHub no longer accepts your link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`Link your GitHub account in Profile to pull.`, the branch or repository is gone, or GitHub no longer accepts your link."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/github/import": {
+      "post": {
+        "operationId": "importRecipeFromGitHub",
+        "summary": "Import a recipe version from GitHub as a new document type",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Reads the file at `path` (`<root>/<instance>/<type-id>/v<N>.yaml`) at `commit`\nwith **your** linked GitHub account and creates a new document type from it: a v1\n**draft**, never published. `id` defaults to the file's type id and `name` to the\ndefinition's name. The file's label and note are copied. An id that exists already is\na 409 (pull into it from its Versions tab, or import under another id), and so is a\nretired one. With `link: true` an admin also links the new type to the repository\n(this repo, branch and root; it pushes each published version, without pull\nrequests); for anyone else the type is created and `linked` is false.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "description": "`owner/name`."
+                  },
+                  "branch": {
+                    "type": "string",
+                    "description": "The branch the file was listed on."
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A listed version `path`: `<root>/<instance>/<type-id>/v<N>.yaml`."
+                  },
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40,64}$",
+                    "description": "The head commit the listing read (`commit` of a listed version)."
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]*$",
+                    "description": "The new type id; default the file's."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "The new type name; default the definition's."
+                  },
+                  "link": {
+                    "type": "boolean",
+                    "description": "Also link the new type to this repository (admins only)."
+                  }
+                },
+                "required": [
+                  "repo",
+                  "branch",
+                  "path",
+                  "commit",
+                  "link"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "publishedBy",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt",
+                        "importedFrom"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    },
+                    "linked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues",
+                    "linked"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The new draft."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, or a path that is not `<root>/<instance>/<type-id>/v<N>.yaml`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, or a path that is not `<root>/<instance>/<type-id>/v<N>.yaml`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`<id> already exists: pull into it from its Versions tab, or import under another id`, `{name} is retired: unretire it to use it again` for a retired document type, the file is missing or not usable at that commit, or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`<id> already exists: pull into it from its Versions tab, or import under another id`, `{name} is retired: unretire it to use it again` for a retired document type, the file is missing or not usable at that commit, or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/github/remote": {
+      "get": {
+        "operationId": "listRecipeVersionsOnGitHub",
+        "summary": "List a document type's versions on GitHub",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Reads the head of the link's branch with **your** linked GitHub account and lists\n          every version of this type there: this deployment's own folder (`mine`, found by\n          its instance id in `instance.yaml`) and the same type id in other deployments'\n          folders. Each of this deployment's versions is compared with the version of the\n          same number here (`compare`): `same`, `label` (same recipe, the label or note\n          differs), `differs` (another recipe: published versions never change) or\n          `missing-here`. Label and note are compared, not who set them or when. Files that\n          cannot be used are listed in `skipped` with the reason (`not valid YAML`, `not a\nCT Studio recipe file`, `format version N is not supported`, `drafts are not\nimported yet`, `the file does not match its path`, also for folder names that\n          are not an instance name and a type id). `commit` is the head commit read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The versions on GitHub.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "instance": {
+                            "type": "string"
+                          },
+                          "typeId": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "label": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "note": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "publishedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "publishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "definitionSha256": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The definition's name; null when it has none."
+                          },
+                          "commit": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "mine": {
+                            "type": "boolean",
+                            "description": "Written by this deployment."
+                          },
+                          "compare": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "same",
+                                  "label",
+                                  "differs",
+                                  "missing-here"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Against this deployment's version of the same number; null for other deployments."
+                          }
+                        },
+                        "required": [
+                          "instance",
+                          "typeId",
+                          "version",
+                          "label",
+                          "note",
+                          "publishedBy",
+                          "publishedAt",
+                          "definitionSha256",
+                          "name",
+                          "commit",
+                          "path",
+                          "mine",
+                          "compare"
+                        ],
+                        "additionalProperties": true
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "reason"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "versions",
+                    "skipped"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The versions on GitHub."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/versions/{version}/github/take-label": {
+      "post": {
+        "operationId": "takeRecipeLabelFromGitHub",
+        "summary": "Take GitHub's label for a version",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Sets the version's label and note to those of this deployment's file for it on\nGitHub at `commit`, when the recipe there is the same as here. `labelSetBy`\nbecomes `GitHub: <name>`, the name being the file's own `labelSetBy` (who set the\nlabel where it was pushed from; GitHub's commit author is not looked up), or plain\n`GitHub` without one. The version's push record then follows the file read, so\npushing again is not refused as changed on GitHub. Allowed for retired types.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40,64}$",
+                    "description": "The head commit the listing read (`commit` of a listed version)."
+                  }
+                },
+                "required": [
+                  "commit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "description": "The version number."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "publishedBy",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt",
+                        "importedFrom"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The version."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`vN on GitHub is a different recipe: published versions never change`, the file is missing or not usable at that commit, or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`vN on GitHub is a different recipe: published versions never change`, the file is missing or not usable at that commit, or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates/{id}/github/use-as-draft": {
+      "post": {
+        "operationId": "useGitHubVersionAsDraft",
+        "summary": "Use a version on GitHub as the draft",
+        "tags": [
+          "GitHub"
+        ],
+        "description": "Reads `<root>/<instance>/<typeId>/v<version>.yaml` at `commit` on the type's link\n          (any deployment's folder, any type id) and writes its definition into the open draft,\n          replacing it, or into the next draft started from the latest version when none is\n          open. The definition takes this type's id and the draft's own version number. Logged\n          in the draft's change log as an `import` change `Imported from GitHub:\n<instance>/<typeId> v<version> @ <short commit>` (Restore undoes it); the file's\n          label and note are copied to the draft (`labelSetBy` `GitHub: <name>`, as for\n          taking a label). Refused for a retired type.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instance": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                    "description": "The deployment folder the version is in."
+                  },
+                  "typeId": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]*$",
+                    "description": "The document type folder the version is in (another id may be used)."
+                  },
+                  "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "description": "The version number on GitHub."
+                  },
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40,64}$",
+                    "description": "The head commit the listing read (`commit` of a listed version)."
+                  },
+                  "baseUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "The open draft `updatedAt` the user saw: a draft written since is a 409."
+                  }
+                },
+                "required": [
+                  "instance",
+                  "typeId",
+                  "version",
+                  "commit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "published"
+                          ]
+                        },
+                        "definition": {
+                          "type": "object",
+                          "additionalProperties": {},
+                          "description": "The definition as authored: a draft may not be valid yet."
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "label": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "What the version is for; null when unlabelled."
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "A longer comment; null when there is none."
+                        },
+                        "labelSetBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Who last set the label or note; null when never set or without access control."
+                        },
+                        "labelSetAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "status",
+                        "definition",
+                        "createdAt",
+                        "updatedAt",
+                        "publishedAt",
+                        "publishedBy",
+                        "label",
+                        "note",
+                        "labelSetBy",
+                        "labelSetAt",
+                        "importedFrom"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Where in the definition, e.g. `outputs.fields.0.type`."
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "severity": {
+                            "type": "string",
+                            "enum": [
+                              "warning"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Validation issues; empty when valid."
+                    }
+                  },
+                  "required": [
+                    "record",
+                    "issues"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The draft."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`recipe not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`recipe not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not the open draft's `updatedAt`; `{name} is retired: unretire it to use it again` for a retired document type; the file is missing or not usable at that commit; or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the draft changed since you opened it; reload it to see the changes` when `baseUpdatedAt` is not the open draft's `updatedAt`; `{name} is retired: unretire it to use it again` for a retired document type; the file is missing or not usable at that commit; or `Link your GitHub account in Profile to pull.`, the type is not linked to a repository, GitHub is not set up, the branch or repository is gone, or GitHub no longer accepts your link (link the account again in Profile)."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "GitHub could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "GitHub could not be reached."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "liveness",
@@ -15005,6 +19036,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -15032,6 +19069,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -15042,10 +19114,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -15346,6 +19420,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -15373,6 +19453,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -15383,10 +19498,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -15666,6 +19783,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -15693,6 +19816,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -15703,10 +19861,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -15977,7 +20137,7 @@
         "tags": [
           "Recipes"
         ],
-        "description": "Deletes a draft version. Published versions cannot be deleted: jobs and references\nrecord the version they ran with.",
+        "description": "Deletes a draft version. Published versions cannot be deleted: jobs and references\nrecord the version they ran with. Deleting a type's only version (a never-published\ntype) also removes its GitHub link and push records.",
         "parameters": [
           {
             "schema": {
@@ -16257,6 +20417,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -16284,6 +20450,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16294,10 +20495,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -16957,6 +21160,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -16984,6 +21193,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -16994,10 +21238,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -17325,6 +21571,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -17352,6 +21604,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -17362,10 +21649,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -17395,11 +21684,108 @@
                         "additionalProperties": true
                       },
                       "description": "Validation issues; empty when valid."
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pushed"
+                                  ]
+                                },
+                                "commit": {
+                                  "type": "string"
+                                },
+                                "commitUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "commit",
+                                "commitUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pr"
+                                  ]
+                                },
+                                "prNumber": {
+                                  "type": "integer"
+                                },
+                                "prUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "prNumber",
+                                "prUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "skipped"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "failed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish. A push still going after 15 s is `failed` with `GitHub is slow: check Versions for the result.` and finishes afterwards."
                     }
                   },
                   "required": [
                     "record",
-                    "issues"
+                    "issues",
+                    "github"
                   ],
                   "additionalProperties": true,
                   "description": "The published version."
@@ -17718,6 +22104,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -17745,6 +22137,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -17755,10 +22182,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -18106,6 +22535,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -18133,6 +22568,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18143,10 +22613,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -18604,7 +23076,7 @@
         "tags": [
           "Recipes"
         ],
-        "description": "Creates the version named by the definition's `id` and `version` (a new document\ntype, or a new version of one): a draft, or published when `publish` is true and the\ndefinition is valid. A draft may be imported invalid and fixed in the editor. A\nWorkbench document type can be imported as a draft but not published. See the\n[recipe format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).",
+        "description": "Creates the version named by the definition's `id` and `version` (a new document\ntype, or a new version of one): a draft, or published when `publish` is true and the\ndefinition is valid. A draft may be imported invalid and fixed in the editor. A\n**CT Studio recipe file** (`format: ct-recipe`, as pushed to GitHub) is always\nimported as a draft: a new document type's v1, or an existing type's next free\nversion (409 while a draft is open); its label and note are copied, and\n`publish: true` is a 400. A\nWorkbench document type can be imported as a draft but not published. See the\n[recipe format](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0003-versioned-document-specs.md).",
         "requestBody": {
           "required": true,
           "content": {
@@ -18671,6 +23143,12 @@
                             "null"
                           ]
                         },
+                        "publishedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "label": {
                           "type": [
                             "string",
@@ -18698,6 +23176,41 @@
                             "null"
                           ],
                           "description": "When the label or note was last set."
+                        },
+                        "importedFrom": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "instance": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "instance",
+                                "typeId",
+                                "version",
+                                "commit"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -18708,10 +23221,12 @@
                         "createdAt",
                         "updatedAt",
                         "publishedAt",
+                        "publishedBy",
                         "label",
                         "note",
                         "labelSetBy",
-                        "labelSetAt"
+                        "labelSetAt",
+                        "importedFrom"
                       ],
                       "additionalProperties": true
                     },
@@ -18754,7 +23269,7 @@
             }
           },
           "400": {
-            "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, or `recipe is not valid` (with `issues`) when publishing.",
+            "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, `recipe is not valid` (with `issues`) when publishing, an unusable recipe file, or `a CT Studio recipe file is always imported as a draft`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18789,7 +23304,7 @@
                     }
                   },
                   "additionalProperties": true,
-                  "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, or `recipe is not valid` (with `issues`) when publishing."
+                  "description": "Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id and version`, `recipe is not valid` (with `issues`) when publishing, an unusable recipe file, or `a CT Studio recipe file is always imported as a draft`."
                 }
               }
             }
@@ -18874,7 +23389,7 @@
             }
           },
           "409": {
-            "description": "The version already exists, `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "description": "The version already exists, `a draft already exists; edit or delete it first` (a recipe file), `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18900,7 +23415,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "The version already exists, `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type."
+                  "description": "The version already exists, `a draft already exists; edit or delete it first` (a recipe file), `publish {id} from the Workbench (holdout gate)`, or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -25675,11 +30190,108 @@
                         "retired"
                       ],
                       "additionalProperties": true
+                    },
+                    "github": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pushed"
+                                  ]
+                                },
+                                "commit": {
+                                  "type": "string"
+                                },
+                                "commitUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "commit",
+                                "commitUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pr"
+                                  ]
+                                },
+                                "prNumber": {
+                                  "type": "integer"
+                                },
+                                "prUrl": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "prNumber",
+                                "prUrl"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "skipped"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "failed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "reason"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The automatic push to GitHub: null when the document type is not linked or pushes only on request. A skipped or failed push never fails the publish. A push still going after 15 s is `failed` with `GitHub is slow: check Versions for the result.` and finishes afterwards."
                     }
                   },
                   "required": [
                     "publication",
-                    "project"
+                    "project",
+                    "github"
                   ],
                   "additionalProperties": true,
                   "description": "Published."
@@ -61569,6 +66181,10 @@
       "description": "The deployment's customer and the base IRI its RDF is minted under (ADR 0011). One\ncustomer per deployment; without their own base, IRIs live under\n`https://id.stocks-hayward.com/<customer>/`."
     },
     {
+      "name": "GitHub",
+      "description": "Syncing transformation recipes with a GitHub repository: this deployment's instance name\nand default folder, a document type's repository link, and pushing a published version\nas a YAML file with the signed-in user's own linked GitHub account. Admins set the\nsettings and links; anyone with a linked account can push."
+    },
+    {
       "name": "Health",
       "description": "Liveness and readiness checks for load balancers and orchestrators. They need no session."
     }
@@ -61614,6 +66230,7 @@
         "Users",
         "Data-lake S3 keys",
         "Linked data",
+        "GitHub",
         "Health"
       ]
     }

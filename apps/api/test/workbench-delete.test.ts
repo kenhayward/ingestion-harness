@@ -306,6 +306,43 @@ describe('MemoryWorkbenchRepo.deleteProject', () => {
     expect(await templates.listChanges('other', 1)).toHaveLength(1);
   });
 
+  it("deletes the type's GitHub link and push records with a never-published project", async () => {
+    const { templates, workbench, githubSync } = await project();
+    await templates.create('other', 1, letter(1), 'draft');
+    const link = {
+      repo: 'acme/recipes',
+      branch: 'main',
+      root: 'ct-studio',
+      alwaysPr: false,
+      pushOnPublish: true,
+    };
+    const push = (typeId: string) => ({
+      typeId,
+      version: 1,
+      repo: 'acme/recipes',
+      branch: 'main',
+      path: `ct-studio/default/${typeId}/v1.yaml`,
+      commit: 'c1',
+      blobSha: 'b1',
+      labelSha: 'l1',
+      prNumber: null,
+      prUrl: null,
+      prState: null,
+      pushedBy: 'Ken',
+      pushedAt: '2026-10-16T10:00:00.000Z',
+    });
+    for (const id of ['letter', 'other']) {
+      await githubSync.setLink(id, link, 'Ken');
+      await githubSync.recordPush(push(id));
+    }
+
+    expect(await workbench.deleteProject('letter')).not.toBeNull();
+    expect(await githubSync.link('letter')).toBeNull();
+    expect(await githubSync.pushes('letter')).toEqual([]);
+    expect(await githubSync.link('other')).not.toBeNull();
+    expect(await githubSync.pushes('other')).toHaveLength(1);
+  });
+
   it('deletes the project-less test jobs of the type and their documents', async () => {
     const { repo, store, workbench, remove } = await project();
     const upload = testDoc('templates-page');

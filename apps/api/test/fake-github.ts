@@ -39,13 +39,19 @@ export class FakeGitHub implements GitHubOAuth {
 
   async user(token: string): Promise<GitHubUser> {
     const user = this.users.get(token);
-    if (!user) throw new GitHubError('GitHub no longer accepts this link: link the account again');
+    if (!user)
+      throw new GitHubError(
+        'GitHub no longer accepts this link: link the account again in Profile',
+      );
     return user;
   }
 
   async repos(token: string): Promise<GitHubRepo[]> {
     const repos = this.repoLists.get(token);
-    if (!repos) throw new GitHubError('GitHub no longer accepts this link: link the account again');
+    if (!repos)
+      throw new GitHubError(
+        'GitHub no longer accepts this link: link the account again in Profile',
+      );
     return repos;
   }
 

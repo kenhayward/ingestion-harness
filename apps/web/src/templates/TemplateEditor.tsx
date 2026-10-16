@@ -8,6 +8,7 @@ import {
   type JobSummary,
   type OverviewItem,
   type Retirement,
+  type PushOutcome,
 } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
 import { TabHelp } from '../ui/Help.js';
@@ -30,6 +31,7 @@ import { StepCard } from './StepCard.js';
 import { TestRail } from './TestRail.js';
 import { QualityPanel } from './QualityPanel.js';
 import { UnsavedBar } from './UnsavedBar.js';
+import { publishedMessage } from './github/outcome.js';
 import { VersionsPanel } from './VersionsPanel.js';
 import {
   checkPathOptions,
@@ -168,6 +170,20 @@ export function TemplateEditor({
   const [conflict, setConflict] = useState(false);
   /** Counts draft writes by this editor (save, reload), so the change log reloads after each. */
   const [saves, setSaves] = useState(0);
+  /** Admins link the type to GitHub (Versions); the API enforces it, this only shows the buttons. */
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.me().then(
+      (me) => {
+        if (live) setAdmin(me?.role === 'admin');
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [api]);
   /** A save is in flight: a second one would carry the same base and be refused as a conflict. */
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -341,13 +357,17 @@ export function TemplateEditor({
   };
   const publish = () =>
     act(async () => {
+      let github: PushOutcome | null | undefined;
       if (embedded) {
-        await api.publish(templateId);
+        github = (await api.publish(templateId)).github;
         accept(await api.getTemplate(templateId, version));
       } else {
-        accept(await api.publishTemplate(templateId, version));
+        const published = await api.publishTemplate(templateId, version);
+        github = published.github;
+        accept(published);
       }
-      setMessage(`Published v${version}.`);
+      setMessage(github ? publishedMessage(version, github) : `Published v${version}.`);
+      setSaves((n) => n + 1); // the Versions list reads GitHub again
       embedded?.onChanged();
     });
   const newDraft = () =>
@@ -550,6 +570,7 @@ export function TemplateEditor({
               dirty={dirty || yamlEdited}
               retired={blockedBy}
               refreshKey={saves}
+              admin={admin}
               onRestored={(draft) => {
                 if (draft.record.version === version) accept(draft);
                 setSaves((n) => n + 1);

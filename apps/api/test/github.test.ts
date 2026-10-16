@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GitHubError, HttpGitHub } from '../src/profile/github.js';
+import { GitHubError, HttpGitHub, UnauthorizedError } from '../src/profile/github.js';
 
 const config = { clientId: 'Iv1.client', clientSecret: 'shh' };
 const API_HEADERS = {
@@ -124,9 +124,7 @@ describe('HttpGitHub', () => {
       config,
       stubFetch(json({ message: 'Bad credentials' }, { status: 401 })),
     );
-    await expect(github.user('gho_token')).rejects.toThrow(
-      new GitHubError('GitHub no longer accepts this link: link the account again'),
-    );
+    await expect(github.user('gho_token')).rejects.toThrow(new UnauthorizedError());
   });
 
   it('revokes a token with the app credentials', async () => {

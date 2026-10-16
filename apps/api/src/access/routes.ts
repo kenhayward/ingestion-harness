@@ -21,6 +21,7 @@ import {
   type SessionInfo,
 } from './repo.js';
 import { registerUserRoutes } from './users-routes.js';
+import { registerGitHubSyncRoutes } from '../routes/github-sync.js';
 import { registerProfileRoutes } from '../profile/routes.js';
 import { maintenanceRefusal } from '../routes/maintenance.js';
 
@@ -435,4 +436,5 @@ export async function registerAccess(app: FastifyInstance): Promise<void> {
 
   registerUserRoutes(app, access);
   registerProfileRoutes(app, access);
+  registerGitHubSyncRoutes(app);
 }

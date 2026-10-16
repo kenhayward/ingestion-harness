@@ -1,4 +1,12 @@
 import type {
+  GitHubLinkBody,
+  GitHubLinkView,
+  PushOutcome,
+  RemoteListing,
+  RemoteListingView,
+  SyncSettingsBody,
+  SyncSettingsView,
+  VersionSync,
   GitHubRepo,
   Role,
   MaintenanceBody,
@@ -149,6 +157,17 @@ export interface TemplateSummary {
   /** A regression run of that version is still queued or running (no score yet). */
   regressionRunning: boolean;
 }
+
+/** `GET /api/templates/:id/github`: the type's link and every version's sync state. */
+export interface GitHubSyncView {
+  link: GitHubLinkView | null;
+  versions: VersionSync[];
+  canPush: boolean;
+  reason: string | null;
+}
+
+/** What a publish answers: the record, and the automatic push's outcome (null: not attempted). */
+export type PublishedTemplateView = TemplateRecordView & { github?: PushOutcome | null };
 
 export interface TemplateRecordView {
   record: {
@@ -499,7 +518,7 @@ export interface Api {
     definition: Record<string, unknown>,
     baseUpdatedAt?: string,
   ): Promise<TemplateRecordView>;
-  publishTemplate(id: string, version: number): Promise<TemplateRecordView>;
+  publishTemplate(id: string, version: number): Promise<PublishedTemplateView>;
   newDraft(id: string, from: number): Promise<TemplateRecordView>;
   /** Renames the type in its open draft (started when none is) and its Workbench project. */
   renameTemplate(id: string, name: string): Promise<TemplateRecordView>;
@@ -515,6 +534,46 @@ export interface Api {
     baseUpdatedAt?: string,
   ): Promise<TemplateRecordView>;
   deleteDraft(id: string, version: number): Promise<void>;
+  /** GitHub sync (admins link and change settings; anyone with a linked account pushes and pulls). */
+  getGitHubSync(id: string): Promise<GitHubSyncView>;
+  /** Admin: link the type to a repository, or change the link. */
+  setGitHubLink(id: string, body: GitHubLinkBody): Promise<GitHubLinkView>;
+  /** Admin: unlink (the files on GitHub stay). */
+  removeGitHubLink(id: string): Promise<void>;
+  /** Pushes a published version (or its changed label); 409 when GitHub changed since. */
+  pushVersion(id: string, version: number): Promise<PushOutcome>;
+  /** The versions on the type's repository, with how each compares with the version here. */
+  listGitHubRemote(id: string): Promise<RemoteListingView>;
+  /** Copies the label and note on GitHub (at `commit`) onto a published version. */
+  takeGitHubLabel(id: string, version: number, commit: string): Promise<TemplateRecordView>;
+  /** Writes a version on GitHub into the draft; `baseUpdatedAt` is the open draft's, if any. */
+  useGitHubVersionAsDraft(
+    id: string,
+    body: {
+      instance: string;
+      typeId: string;
+      version: number;
+      commit: string;
+      baseUpdatedAt?: string;
+    },
+  ): Promise<TemplateRecordView>;
+  /** Admin: this deployment's instance name and default folder. */
+  getGitHubSettings(): Promise<SyncSettingsView>;
+  setGitHubSettings(body: SyncSettingsBody): Promise<SyncSettingsView>;
+  /** Repositories the linked account can read (for browsing and importing). */
+  listReadableGitHubRepos(): Promise<GitHubRepo[]>;
+  /** Recipe versions under a folder of a repository, from any deployment. */
+  browseGitHub(query: { repo: string; branch: string; root: string }): Promise<RemoteListing>;
+  /** Creates a new document type from a version on GitHub (a v1 draft). */
+  importFromGitHub(body: {
+    repo: string;
+    branch: string;
+    path: string;
+    commit: string;
+    id?: string;
+    name?: string;
+    link: boolean;
+  }): Promise<TemplateRecordView & { linked: boolean }>;
   importTemplate(yaml: string, publish: boolean): Promise<TemplateRecordView>;
   exportUrl(id: string, version: number): string;
   /** Upload a sample against a (draft) version as a test run (never published). */
@@ -581,7 +640,7 @@ export interface Api {
   publish(
     projectId: string,
     overrideReason?: string,
-  ): Promise<{ publication: Publication; project: ProjectView }>;
+  ): Promise<{ publication: Publication; project: ProjectView; github?: PushOutcome | null }>;
   listPublications(projectId: string): Promise<Publication[]>;
   /** Evaluate the draft on every comparison model at once. */
   /** `models`: the choices to compare, in order (absent: every one the project may use). */
@@ -1212,7 +1271,7 @@ export function createHttpApi(base = '/api'): Api {
     getProjectOverview: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/overview`).then(json<ProjectOverview>),
     publish: (id, overrideReason) =>
-      post<{ publication: Publication; project: ProjectView }>(
+      post<{ publication: Publication; project: ProjectView; github?: PushOutcome | null }>(
         `${base}/workbench/projects/${id}/publish`,
         overrideReason ? { overrideReason } : {},
       ),
@@ -1357,7 +1416,7 @@ export function createHttpApi(base = '/api'): Api {
         'PUT',
       ),
     publishTemplate: (id, version) =>
-      post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}/publish`, {}),
+      post<PublishedTemplateView>(`${base}/templates/${id}/versions/${version}/publish`, {}),
     newDraft: (id, from) => post<TemplateRecordView>(`${base}/templates/${id}/drafts`, { from }),
     renameTemplate: (id, name) =>
       post<TemplateRecordView>(`${base}/templates/${id}/name`, { name }, 'PUT'),
@@ -1370,6 +1429,30 @@ export function createHttpApi(base = '/api'): Api {
         from,
         ...(baseUpdatedAt ? { baseUpdatedAt } : {}),
       }),
+    getGitHubSync: (id) => apiFetch(`${base}/templates/${id}/github`).then(json<GitHubSyncView>),
+    setGitHubLink: (id, body) =>
+      post<GitHubLinkView>(`${base}/templates/${id}/github`, body, 'PUT'),
+    removeGitHubLink: (id) =>
+      noContent(apiFetch(`${base}/templates/${id}/github`, { method: 'DELETE' })),
+    pushVersion: (id, version) =>
+      post<PushOutcome>(`${base}/templates/${id}/versions/${version}/github/push`, {}),
+    listGitHubRemote: (id) =>
+      apiFetch(`${base}/templates/${id}/github/remote`).then(json<RemoteListingView>),
+    takeGitHubLabel: (id, version, commit) =>
+      post<TemplateRecordView>(`${base}/templates/${id}/versions/${version}/github/take-label`, {
+        commit,
+      }),
+    useGitHubVersionAsDraft: (id, body) =>
+      post<TemplateRecordView>(`${base}/templates/${id}/github/use-as-draft`, body),
+    getGitHubSettings: () => apiFetch(`${base}/github/settings`).then(json<SyncSettingsView>),
+    setGitHubSettings: (body) => post<SyncSettingsView>(`${base}/github/settings`, body, 'PUT'),
+    listReadableGitHubRepos: () => apiFetch(`${base}/github/repos`).then(json<GitHubRepo[]>),
+    browseGitHub: ({ repo, branch, root }) =>
+      apiFetch(`${base}/github/browse?${new URLSearchParams({ repo, branch, root })}`).then(
+        json<RemoteListing>,
+      ),
+    importFromGitHub: (body) =>
+      post<TemplateRecordView & { linked: boolean }>(`${base}/github/import`, body),
     deleteDraft: async (id, version) => {
       const res = await apiFetch(`${base}/templates/${id}/versions/${version}`, {
         method: 'DELETE',

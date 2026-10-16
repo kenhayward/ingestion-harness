@@ -1,0 +1,422 @@
+import { describe, expect, it, vi } from 'vitest';
+import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
+import { MemoryProfileRepo } from '../src/profile/repo.js';
+import { FakeGitHubRepos } from './fake-github-repos.js';
+import { accessApp, letter, signInNewUser } from './helpers.js';
+
+const keys: SecretsKeys = { current: Buffer.alloc(32, 7), previous: null };
+const REPO = 'acme/recipes';
+const ADMIN_TOKEN = 'gho_admin';
+const USER_TOKEN = 'gho_user';
+
+const invoice = (version = 1) => ({
+  id: 'invoice',
+  version,
+  name: 'Invoice',
+  document: { sections: [{ id: 'all', anchor: '\\A' }] },
+  outputs: { fields: [{ id: 'total', type: 'decimal' }] },
+  pipeline: [{ type: 'extract', id: 'head', fields: ['total'], sections: ['all'] }],
+});
+
+const link = {
+  repo: REPO,
+  branch: 'main',
+  root: 'ct-studio',
+  alwaysPr: false,
+  pushOnPublish: false,
+};
+
+async function setup(over: { githubAutoPushDeadlineMs?: number } = {}) {
+  const github = new FakeGitHubRepos();
+  github.addRepo(REPO, { token: ADMIN_TOKEN, permission: 'push' });
+  github.addRepo(REPO, { token: USER_TOKEN, permission: 'push' });
+  const profiles = new MemoryProfileRepo();
+  const ctx = await accessApp({ githubRepos: github, profiles, llmSecrets: keys, ...over });
+  const admin = await signInNewUser(ctx.app, ctx.access, 'Alice Admin', 'admin');
+  const user = await signInNewUser(ctx.app, ctx.access, 'Ursula User');
+  const linkAccount = (id: string, login: string, token: string, ghId: number) =>
+    profiles.linkGitHub(id, {
+      id: ghId,
+      login,
+      avatarUrl: 'https://avatars.example/1',
+      tokenEnc: encryptSecret(token, keys),
+    });
+  await linkAccount(admin.user.id, 'alice', ADMIN_TOKEN, 1);
+  await linkAccount(user.user.id, 'ursula', USER_TOKEN, 2);
+  await ctx.templates.create('invoice', 1, invoice(1), 'draft');
+  await ctx.templates.publish('invoice', 1, 'Alice Admin');
+  await ctx.templates.create('invoice', 2, invoice(2), 'draft');
+  const call = (
+    method: 'GET' | 'PUT' | 'PATCH' | 'DELETE' | 'POST',
+    url: string,
+    cookie: string,
+    payload?: object,
+  ) => ctx.app.inject({ method, url, headers: { cookie }, payload });
+  return { ...ctx, github, profiles, admin, user, call };
+}
+type Ctx = Awaited<ReturnType<typeof setup>>;
+
+const STATUS = '/api/templates/invoice/github';
+const linkIt = (c: Ctx, over: object = {}) =>
+  c.call('PUT', STATUS, c.admin.cookie, { ...link, ...over });
+const pushV1 = (c: Ctx, cookie = c.user.cookie) =>
+  c.call('POST', '/api/templates/invoice/versions/1/github/push', cookie);
+type Row = { version: number; state: string; pushedBy: string | null };
+const statusOf = async (c: Ctx, cookie = c.user.cookie) =>
+  (await c.call('GET', STATUS, cookie)).json() as {
+    versions: Row[];
+    canPush: boolean;
+    reason: string | null;
+    link: { repo: string } | null;
+  };
+const row = (s: { versions: Row[] }, v: number) => s.versions.find((r) => r.version === v)!;
+
+describe('sync settings', () => {
+  it('are admin only', async () => {
+    const c = await setup();
+    expect((await c.call('GET', '/api/github/settings', c.user.cookie)).statusCode).toBe(403);
+    const res = await c.call('PUT', '/api/github/settings', c.user.cookie, {
+      instanceName: 'x',
+      defaultRoot: 'ct-studio',
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('are read, renamed and locked after a push', async () => {
+    const c = await setup();
+    const read = await c.call('GET', '/api/github/settings', c.admin.cookie);
+    expect(read.statusCode).toBe(200);
+    expect(read.json().locked).toBe(false);
+    const renamed = await c.call('PUT', '/api/github/settings', c.admin.cookie, {
+      instanceName: 'production',
+      defaultRoot: 'ct-studio',
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().instanceName).toBe('production');
+    await linkIt(c);
+    expect((await pushV1(c)).statusCode).toBe(200);
+    const locked = await c.call('PUT', '/api/github/settings', c.admin.cookie, {
+      instanceName: 'other',
+      defaultRoot: 'ct-studio',
+    });
+    expect(locked.statusCode).toBe(409);
+    expect(locked.json().error).toBe(
+      'the instance name is fixed once this deployment has pushed to GitHub',
+    );
+  });
+});
+
+describe('link', () => {
+  it('is set and removed by an admin only', async () => {
+    const c = await setup();
+    expect((await c.call('PUT', STATUS, c.user.cookie, link)).statusCode).toBe(403);
+    expect((await c.call('DELETE', STATUS, c.user.cookie)).statusCode).toBe(403);
+  });
+
+  it('is saved, read by any user and removed', async () => {
+    const c = await setup();
+    const saved = await linkIt(c);
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().repo).toBe(REPO);
+    expect((await statusOf(c)).link?.repo).toBe(REPO);
+    expect((await c.call('DELETE', STATUS, c.admin.cookie)).statusCode).toBe(204);
+    expect((await statusOf(c)).link).toBe(null);
+  });
+
+  it('refuses a repository the admin cannot read', async () => {
+    const c = await setup();
+    const res = await linkIt(c, { repo: 'acme/secret' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('acme/secret is not a repository your GitHub account can read');
+  });
+
+  it('is a 404 for an unknown document type', async () => {
+    const c = await setup();
+    const res = await c.call('PUT', '/api/templates/nope/github', c.admin.cookie, link);
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('push and status', () => {
+  it('pushes with the pushing user own token', async () => {
+    const c = await setup();
+    await linkIt(c);
+    const res = await pushV1(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().reason).toBeUndefined();
+    expect(res.json()).toMatchObject({ kind: 'pushed' });
+    expect(c.github.commits.at(-1)!.token).toBe(USER_TOKEN);
+  });
+
+  it('answers 404 for an unknown version', async () => {
+    const c = await setup();
+    await linkIt(c);
+    const res = await c.call(
+      'POST',
+      '/api/templates/invoice/versions/9/github/push',
+      c.user.cookie,
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('answers 409 when the folder belongs to another deployment', async () => {
+    const c = await setup();
+    await linkIt(c);
+    c.github.seed(REPO, 'main', {
+      'ct-studio/default/instance.yaml': 'instanceId: someone-else\nname: default\n',
+    });
+    const res = await pushV1(c);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('belongs to another CT Studio deployment');
+  });
+
+  it('lists every version with its state', async () => {
+    const c = await setup();
+    await linkIt(c);
+    let status = await statusOf(c);
+    expect(status.versions.map((v) => [v.version, v.state])).toEqual([
+      [2, 'absent'],
+      [1, 'absent'],
+    ]);
+    expect(status.canPush).toBe(true);
+    await pushV1(c);
+    status = await statusOf(c);
+    expect(row(status, 1).state).toBe('on');
+    expect(row(status, 1).pushedBy).toBe('Ursula User');
+    await c.call('PATCH', '/api/templates/invoice/versions/1', c.admin.cookie, { label: 'First' });
+    expect(row(await statusOf(c), 1).state).toBe('label');
+  });
+
+  it('shows a pull request, then follows it once merged', async () => {
+    const c = await setup();
+    await linkIt(c, { alwaysPr: true });
+    const pushed = (await pushV1(c)).json();
+    expect(pushed.kind).toBe('pr');
+    expect(row(await statusOf(c), 1).state).toBe('pr');
+    c.github.setPullRequestState(REPO, pushed.prNumber, 'merged');
+    expect(row(await statusOf(c), 1).state).toBe('on');
+  });
+
+  it('says why a user cannot push', async () => {
+    const c = await setup();
+    const bare = await signInNewUser(c.app, c.access, 'Nolink User');
+    expect(await statusOf(c)).toMatchObject({
+      canPush: false,
+      reason: expect.stringContaining('not linked'),
+    });
+    await linkIt(c);
+    c.github.grant(REPO, USER_TOKEN, 'read');
+    expect((await statusOf(c)).reason).toBe(
+      'Your GitHub account can read acme/recipes but not push to it.',
+    );
+    expect(await statusOf(c, bare.cookie)).toMatchObject({
+      canPush: false,
+      reason: 'Link your GitHub account in Profile to push.',
+    });
+  });
+});
+
+describe('a GitHub that cannot be reached', () => {
+  it('fails a push and keeps the status, with the reason', async () => {
+    const c = await setup();
+    await linkIt(c, { alwaysPr: true });
+    const pr = (await pushV1(c)).json();
+    expect(pr.kind).toBe('pr');
+    c.github.unreachable = true;
+    const res = await pushV1(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      kind: 'failed',
+      reason: 'GitHub could not be reached: fetch failed',
+    });
+    const status = await c.call('GET', STATUS, c.user.cookie);
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      canPush: false,
+      reason: 'GitHub could not be reached: fetch failed',
+    });
+    expect(row(status.json(), 1).state).toBe('pr');
+  });
+
+  it('is a 502 when linking', async () => {
+    const c = await setup();
+    c.github.unreachable = true;
+    const res = await linkIt(c);
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('GitHub could not be reached: fetch failed');
+  });
+});
+
+describe('status after the link moved', () => {
+  it('reads a push to another repository or folder as absent', async () => {
+    const c = await setup();
+    c.github.addRepo('acme/moved', { token: ADMIN_TOKEN, permission: 'push' });
+    c.github.addRepo('acme/moved', { token: USER_TOKEN, permission: 'push' });
+    await linkIt(c);
+    await pushV1(c);
+    expect(row(await statusOf(c), 1).state).toBe('on');
+    await linkIt(c, { repo: 'acme/moved' });
+    expect(row(await statusOf(c), 1)).toMatchObject({ state: 'absent', commit: null });
+    await linkIt(c, { root: 'data/ct' });
+    expect(row(await statusOf(c), 1).state).toBe('absent');
+    await linkIt(c);
+    expect(row(await statusOf(c), 1).state).toBe('on');
+  });
+});
+
+describe('link body', () => {
+  it.each(['../..', '../tags/v1', 'a b', '-x', '/main', 'main/', 'x.lock', 'a~1', 'a:b'])(
+    'refuses the branch %j',
+    async (branch) => {
+      const c = await setup();
+      expect((await linkIt(c, { branch })).statusCode).toBe(400);
+    },
+  );
+
+  it('refuses a repository that is not owner/name', async () => {
+    const c = await setup();
+    expect((await linkIt(c, { repo: '../..' })).statusCode).toBe(400);
+    expect((await linkIt(c, { branch: 'feature/recipes' })).statusCode).toBe(200);
+  });
+});
+
+describe('deleting the last version of a type', () => {
+  it('forgets its link and push records', async () => {
+    const c = await setup();
+    await c.templates.create('memo', 1, { ...invoice(1), id: 'memo' }, 'draft');
+    await c.call('PUT', '/api/templates/memo/github', c.admin.cookie, link);
+    await c.githubSync.recordPush({
+      typeId: 'memo',
+      version: 1,
+      repo: REPO,
+      branch: 'main',
+      path: 'ct-studio/default/memo/v1.yaml',
+      commit: 'c1',
+      blobSha: 'b1',
+      labelSha: 'l1',
+      prNumber: null,
+      prUrl: null,
+      prState: null,
+      pushedBy: 'Ken',
+      pushedAt: '2026-10-16T10:00:00.000Z',
+    });
+    expect(await c.githubSync.link('memo')).not.toBeNull();
+    // Deleting invoice's draft v2 leaves its published v1: the link stays.
+    await linkIt(c);
+    expect(
+      (await c.call('DELETE', '/api/templates/invoice/versions/2', c.admin.cookie)).statusCode,
+    ).toBe(204);
+    expect(await c.githubSync.link('invoice')).not.toBeNull();
+    expect(
+      (await c.call('DELETE', '/api/templates/memo/versions/1', c.admin.cookie)).statusCode,
+    ).toBe(204);
+    expect(await c.githubSync.link('memo')).toBeNull();
+    expect(await c.githubSync.pushes('memo')).toEqual([]);
+  });
+});
+
+describe('automatic push at publish', () => {
+  const publishV2 = (c: Ctx, cookie = c.user.cookie) =>
+    c.call('POST', '/api/templates/invoice/versions/2/publish', cookie, {});
+
+  it('pushes the version with the publisher own token', async () => {
+    const c = await setup();
+    await linkIt(c, { pushOnPublish: true });
+    const res = await publishV2(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toMatchObject({ kind: 'pushed' });
+    expect(c.github.commits.at(-1)!.token).toBe(USER_TOKEN);
+    const stored = await c.templates.get('invoice', 2);
+    expect(stored).toMatchObject({ status: 'published', publishedBy: 'Ursula User' });
+  });
+
+  it('answers null when the type is not linked or the switch is off', async () => {
+    const c = await setup();
+    expect((await publishV2(c)).json().github).toBe(null);
+    const d = await setup();
+    await linkIt(d, { pushOnPublish: false });
+    expect((await publishV2(d)).json().github).toBe(null);
+    expect(d.github.commits).toHaveLength(0);
+  });
+
+  it('skips, with the message, for a publisher without a linked account', async () => {
+    const c = await setup();
+    await linkIt(c, { pushOnPublish: true });
+    const bare = await signInNewUser(c.app, c.access, 'Nolink User');
+    const res = await publishV2(c, bare.cookie);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toEqual({
+      kind: 'skipped',
+      reason: 'Link your GitHub account in Profile to push.',
+    });
+    expect((await c.templates.get('invoice', 2))!.status).toBe('published');
+  });
+
+  it('reports a failed push and still publishes', async () => {
+    const c = await setup();
+    await linkIt(c, { pushOnPublish: true });
+    c.github.seed(REPO, 'main', {
+      'ct-studio/default/instance.yaml': 'instanceId: someone-else\nname: default\n',
+    });
+    const res = await publishV2(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toMatchObject({ kind: 'failed' });
+    expect(res.json().github.reason).toContain('belongs to another CT Studio deployment');
+    expect((await c.templates.get('invoice', 2))!.status).toBe('published');
+    // An unexpected error is a failure too.
+    const d = await setup();
+    await linkIt(d, { pushOnPublish: true });
+    d.github.revoked.add(USER_TOKEN);
+    const res2 = await publishV2(d);
+    expect(res2.statusCode).toBe(200);
+    expect(res2.json().github).toMatchObject({
+      kind: 'failed',
+      reason: expect.stringContaining('link the account again in Profile'),
+    });
+    expect((await d.templates.get('invoice', 2))!.status).toBe('published');
+  });
+
+  it('answers after the deadline when GitHub is slow, and records the push later', async () => {
+    const c = await setup({ githubAutoPushDeadlineMs: 20 });
+    await linkIt(c, { pushOnPublish: true });
+    let release!: () => void;
+    c.github.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const res = await publishV2(c);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().github).toEqual({
+      kind: 'failed',
+      reason: 'GitHub is slow: check Versions for the result.',
+    });
+    expect((await c.templates.get('invoice', 2))!.status).toBe('published');
+    c.github.gate = null;
+    release();
+    await vi.waitFor(async () => {
+      expect((await c.githubSync.pushes('invoice')).map((p) => p.version)).toEqual([2]);
+    });
+  });
+
+  it('does the same from the Workbench publish route, and records who published', async () => {
+    const c = await setup();
+    const made = await c.call('POST', '/api/workbench/projects', c.admin.cookie, {
+      id: 'letter',
+      name: 'Letter',
+    });
+    expect(made.statusCode).toBe(201);
+    await c.templates.updateDraft('letter', 1, letter(1));
+    const put = await c.call('PUT', '/api/templates/letter/github', c.admin.cookie, {
+      ...link,
+      pushOnPublish: true,
+    });
+    expect(put.statusCode).toBe(200);
+    const res = await c.call('POST', '/api/workbench/projects/letter/publish', c.user.cookie, {});
+    expect(res.statusCode).toBe(201);
+    expect(res.json().github).toMatchObject({ kind: 'pushed' });
+    expect(await c.templates.get('letter', 1)).toMatchObject({
+      status: 'published',
+      publishedBy: 'Ursula User',
+    });
+    expect(c.github.commits.at(-1)!.token).toBe(USER_TOKEN);
+  });
+});

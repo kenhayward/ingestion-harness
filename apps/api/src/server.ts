@@ -6,6 +6,7 @@ import { githubConfig, loadConfig, s3KeysConfig, targetConfig } from './config.j
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
+import { PgGitHubSyncRepo } from './github-sync/pg.js';
 import { HttpGitHub } from './profile/github.js';
 import { PgProfileRepo } from './profile/pg.js';
 import { PgLinkedDataRepo } from './linked-data/repo.js';
@@ -34,7 +35,8 @@ const workbench = new PgWorkbenchRepo(
 );
 const seeded = await seedTemplates(templates, config.SPECS_DIR);
 const access = new PgAccessRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }));
-const github = githubConfig(config);
+const githubOAuth = githubConfig(config);
+const githubHttp = githubOAuth && new HttpGitHub(githubOAuth);
 const s3 = {
   endpoint: config.S3_ENDPOINT,
   region: config.S3_REGION,
@@ -91,8 +93,10 @@ const app = await buildApp({
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
   access, // always enforced in production (ADR 0006)
   profiles: new PgProfileRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
-  github: github && new HttpGitHub(github),
-  githubRedirectUrl: github?.redirectUrl ?? null,
+  githubSync: new PgGitHubSyncRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  github: githubHttp,
+  githubRepos: githubHttp,
+  githubRedirectUrl: githubOAuth?.redirectUrl ?? null,
   s3Keys,
   llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
   ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),

@@ -1030,6 +1030,11 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
       expect(result.result).toBe('published');
       expect(await statusOf(projectId)).toMatchObject({ status: 'published' });
       expect((await statusOf(projectId)).published_at).not.toBeNull();
+      const by = await pool.query<{ published_by: string | null }>(
+        'SELECT published_by FROM templates WHERE id = $1 AND version = 1',
+        [projectId],
+      );
+      expect(by.rows[0]!.published_by).toBe('ken');
       const listed = await workbench.listPublications(projectId);
       expect(result).toEqual({ result: 'published', publication: listed[0] });
       expect(listed[0]).toMatchObject(publication(projectId));
@@ -1780,6 +1785,31 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     await templates.retire(projectId, 'ken');
     expect(await workbench.deleteProject(projectId)).not.toBeNull();
     expect(await templates.retirement(projectId)).toBeNull();
+  });
+
+  it("deletes the type's GitHub link and push records with a never-published project", async () => {
+    const projectId = await newProject();
+    const keep = await newProject();
+    await templates.create(projectId, 1, { id: projectId, version: 1, name: 'x' }, 'draft');
+    for (const id of [projectId, keep]) {
+      await pool.query(
+        `INSERT INTO template_github_links (type_id, repo, branch, root) VALUES ($1, 'a/b', 'main', 'ct')`,
+        [id],
+      );
+      await pool.query(
+        `INSERT INTO template_github_pushes
+           (type_id, version, repo, branch, path, commit_sha, blob_sha, label_sha, pushed_by, pushed_at)
+         VALUES ($1, 1, 'a/b', 'main', 'ct/x.yaml', 'c', 'b', 'l', 'ken', now())`,
+        [id],
+      );
+    }
+    expect(await workbench.deleteProject(projectId)).not.toBeNull();
+    const rows = (table: string, id: string) =>
+      pool.query(`SELECT 1 FROM ${table} WHERE type_id = $1`, [id]).then((r) => r.rowCount);
+    expect(await rows('template_github_links', projectId)).toBe(0);
+    expect(await rows('template_github_pushes', projectId)).toBe(0);
+    expect(await rows('template_github_links', keep)).toBe(1);
+    expect(await rows('template_github_pushes', keep)).toBe(1);
   });
 
   it('keeps the retirement with keepRetirement (a legacy spec file still has the id)', async () => {

@@ -46,6 +46,30 @@ describe('Sections help', () => {
   });
 });
 
+describe('GitHub sync help', () => {
+  it('covers the folder layout, drafts, the chips and who links', async () => {
+    render(<HelpButton topic="github-sync" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Help: How GitHub sync works' }));
+    const dialog = screen.getByRole('dialog', { name: 'How GitHub sync works' });
+    for (const text of [
+      'ct-studio/<deployment>/<document type>/v<N>.yaml',
+      'On GitHub',
+      'Label changed since push',
+      'Not on GitHub',
+      'PR #n open',
+      'Different on GitHub',
+      'Take GitHub',
+      'Use as draft',
+      'Drafts stay in CT Studio',
+      'Only admins',
+      'never blocks publishing',
+    ]) {
+      expect(dialog).toHaveTextContent(text);
+    }
+    expect(dialog).not.toHaveTextContent(/template/i);
+  });
+});
+
 describe('help topics for the recipe tabs', () => {
   it.each([
     ['general', 'General recipe settings', ['Preamble', 'Review', 'OCR', 'Delivered formats']],

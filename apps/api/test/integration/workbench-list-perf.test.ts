@@ -25,6 +25,7 @@ import { MemoryLlmConfigRepo } from '../../src/llm/repo.js';
 import { MemoryOntologyRepo } from '../../src/ontologies/repo.js';
 import { MemoryMaintenanceRepo } from '../../src/maintenance/repo.js';
 import { MemoryLinkedDataRepo } from '../../src/linked-data/repo.js';
+import { MemoryGitHubSyncRepo } from '../../src/github-sync/repo.js';
 import { MemoryProfileRepo } from '../../src/profile/repo.js';
 import { PgTemplateRepo } from '../../src/templates/repo.js';
 import { PgWorkbenchRepo } from '../../src/workbench/repo.js';
@@ -68,6 +69,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       maxUploadBytes: 1024 * 1024,
       access: null,
       profiles: new MemoryProfileRepo(),
+      githubSync: new MemoryGitHubSyncRepo(),
       s3Keys: null,
       llm: new MemoryLlmConfigRepo(),
       ontologies: new MemoryOntologyRepo(),

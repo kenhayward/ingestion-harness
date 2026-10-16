@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Publication, PublishGateView } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { publishedMessage } from '../templates/github/outcome.js';
 import { Meter } from '../ui/Meter.js';
 import { gateTag, gateTitle, HINT_LINK, hintText, parseThreshold } from './evaluate.js';
 
@@ -131,7 +132,7 @@ export function GateCard({
   }, [saved, edited]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [justPublished, setJustPublished] = useState<number | null>(null);
+  const [justPublished, setJustPublished] = useState<string | null>(null);
 
   const act = async (action: () => Promise<void>) => {
     if (busy) return;
@@ -156,7 +157,7 @@ export function GateCard({
   const publish = () =>
     act(async () => {
       const result = await api.publish(projectId, undefined);
-      setJustPublished(result.publication.version);
+      setJustPublished(publishedMessage(result.publication.version, result.github));
       onPublished();
       onChanged();
     });
@@ -275,7 +276,7 @@ export function GateCard({
         )}
       </div>
       {error && <p role="alert">{error}</p>}
-      {justPublished !== null && <p role="status">Published v{justPublished}</p>}
+      {justPublished !== null && <p role="status">{justPublished}</p>}
     </section>
   );
 }
