@@ -38,6 +38,7 @@ from .pipeline import (
     PipelineDeps,
     Prepared,
     ProcessResult,
+    StepProgress,
     check_cancelled,
     enforce_data_policy,
     page_images,
@@ -105,7 +106,7 @@ class RenderedGraph:
     entities: tuple[EntityRecord, ...] = ()
 
 
-Progress = Callable[[int, dict[str, Any] | None], None]
+Progress = StepProgress
 
 
 def step_reporter(job: ClaimedJob, queue: JobQueue, step_id: str, index: int, of: int) -> Progress:
@@ -114,7 +115,9 @@ def step_reporter(job: ClaimedJob, queue: JobQueue, step_id: str, index: int, of
     them live). Advisory: a failed write (job deleted mid-run, database blip) never fails the
     step."""
 
-    def report(attempt: int, chunk: dict[str, Any] | None) -> None:
+    def report(
+        attempt: int, chunk: dict[str, Any] | None, occurrence: dict[str, Any] | None = None
+    ) -> None:
         data = {
             "step": step_id,
             "index": index,

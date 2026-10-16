@@ -16,9 +16,12 @@ def render_prompt(
     section_ids: list[str],
     chunk: dict[str, Any] | None = None,
     context: dict[str, Any] | None = None,
+    occurrence: dict[str, Any] | None = None,
 ) -> str:
     """Render a Jinja2 prompt. Templates receive `sections` as [{id, text}, ...], `chunk`
-    ({index, count} for chunked extractions, else None) and any extra `context` variables."""
+    ({index, count} for chunked extractions, else None), `occurrence` ({index, count, key,
+    section} for a step reading a repeating section, else None) and any extra `context`
+    variables."""
     env = Environment(
         loader=ChoiceLoader(
             [
@@ -34,4 +37,5 @@ def render_prompt(
         **(context or {}),
         sections=[{"id": sid, "text": sections[sid]} for sid in section_ids],
         chunk=chunk,
+        occurrence=occurrence,
     )
