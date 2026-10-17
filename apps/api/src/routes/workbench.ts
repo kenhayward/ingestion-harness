@@ -421,8 +421,16 @@ async function draftRun(
   app: FastifyInstance,
   job: ProjectJob | null,
   events: readonly JobEventRecord[],
+  paused = false,
 ): Promise<DraftRun | null> {
-  if (job?.status === 'queued') return { status: 'queued', since: job.updatedAt, progress: null };
+  if (job?.status === 'queued') {
+    // Requeued after a failed try (the worker's backoff): it waits for the next one.
+    const retry =
+      (job.attempts ?? 0) > 0 && job.error
+        ? { attempt: job.attempts! + 1, of: job.maxAttempts ?? job.attempts! + 1, error: job.error }
+        : null;
+    return { status: 'queued', since: job.updatedAt, progress: null, paused, retry };
+  }
   if (job?.status !== 'running') return null;
   const latest = events.find((e) => e.jobId === job.id && e.message === DRAFT_PROGRESS_EVENT);
   const fresh = latest && Date.parse(latest.at) >= Date.parse(job.updatedAt);
@@ -448,6 +456,7 @@ async function proposalView(
   p: ProposalRecord,
   job: ProjectJob | null,
   events: readonly JobEventRecord[] = [],
+  paused = false,
 ): Promise<ProposalView> {
   const base = {
     id: p.id,
@@ -456,7 +465,7 @@ async function proposalView(
     createdAt: p.createdAt,
     decidedAt: p.decidedAt,
     acceptedChanges: p.acceptedChanges,
-    run: await draftRun(app, job, events),
+    run: await draftRun(app, job, events, paused),
   };
   const empty = { ...base, model: null, body: null };
   if (!job || job.status === 'queued' || job.status === 'running') {
@@ -3284,7 +3293,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           questions, or the stage's notes and typed changes. While its job is queued or running,
           \`run\` says since when and, once the worker reports it, what it is doing (its latest
           \`drafting progress\` event of this attempt: reading the samples, each model call,
-          testing anchors, queuing ontology suggestions).
+          testing anchors, queuing ontology suggestions). A queued run says why it waits:
+          \`paused\` while the job queue is paused (a restore), \`retry\` when it was queued again
+          after a failed try (the try it waits for, of how many, and the error).
         `,
         params: ProjectIdParams,
         response: {
@@ -3305,8 +3316,11 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         ? await app.deps.repo.latestEvents(running, [DRAFT_PROGRESS_EVENT])
         : [];
       const proposals = await workbench.listProposals(req.params.id);
+      const paused = [...jobs.values()].some((j) => j.status === 'queued')
+        ? await app.deps.repo.queuePaused()
+        : false;
       return Promise.all(
-        proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null, events)),
+        proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null, events, paused)),
       );
     },
   );
@@ -3347,6 +3361,56 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const log = await draftLog(app, pid, record.stage);
       if (!log) return reply.code(404).send({ error: 'no model log for this run' });
       return log;
+    },
+  );
+
+  app.post<{ Params: { id: string; pid: string } }>(
+    '/workbench/projects/:id/proposals/:pid/cancel',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'cancelProposal',
+        summary: "Cancel a proposal's drafting run",
+        description: md`
+          Cancels a drafting run that is waiting for a worker or running (also while the job
+          queue is paused, or between retries). A running worker stops at its next check, before
+          its next model call or tool turn, and writes nothing more; the model log keeps what
+          happened, ending in \`Cancelled.\`. The proposal then reads as \`failed\` with the
+          error \`Cancelled by {name}.\` (\`Cancelled.\` without access control). Run the stage
+          again to start a new proposal. Allowed for a retired document type (it queues nothing).
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          pid: z.string().uuid().describe('The proposal id.'),
+        }),
+        response: {
+          200: res('The proposal, now failed: cancelled.', ProposalViewSchema),
+          404: error('`proposal not found`.'),
+          409: error('`proposal is {status}: only a waiting or running run can be cancelled`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const params = ProposalParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'proposal not found' });
+      const { id: projectId, pid } = params.data;
+      const record = (await workbench.listProposals(projectId)).find((p) => p.id === pid);
+      if (!record) return reply.code(404).send({ error: 'proposal not found' });
+      const name = creatorOf(req)?.name;
+      const job = await app.deps.repo.cancelDraftJob(
+        projectId,
+        pid,
+        name ? `Cancelled by ${name}.` : 'Cancelled.',
+      );
+      if (!job) {
+        const current = (await app.deps.repo.listDraftJobs(projectId)).find((j) => j.id === pid);
+        const view = await proposalView(app, record, current ?? null);
+        return reply.code(409).send({
+          error: `proposal is ${view.status}: only a waiting or running run can be cancelled`,
+        });
+      }
+      req.log.info({ project: projectId, proposal: pid }, 'drafting run cancelled');
+      return proposalView(app, record, job);
     },
   );
 

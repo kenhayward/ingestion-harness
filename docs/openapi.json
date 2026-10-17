@@ -38935,6 +38935,37 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "paused": {
+                              "type": "boolean"
+                            },
+                            "retry": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "attempt": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "of": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "error": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "attempt",
+                                    "of",
+                                    "error"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -41803,7 +41834,7 @@
         "tags": [
           "Drafting stages & proposals"
         ],
-        "description": "Every drafting proposal, with its status (derived from its job): `running`,\n`ready` (waiting for a decision), `failed`, `accepted`,\n`partially_accepted` or `rejected`. A ready proposal's `body` is the survey's\nquestions, or the stage's notes and typed changes. While its job is queued or running,\n`run` says since when and, once the worker reports it, what it is doing (its latest\n`drafting progress` event of this attempt: reading the samples, each model call,\ntesting anchors, queuing ontology suggestions).",
+        "description": "Every drafting proposal, with its status (derived from its job): `running`,\n`ready` (waiting for a decision), `failed`, `accepted`,\n`partially_accepted` or `rejected`. A ready proposal's `body` is the survey's\nquestions, or the stage's notes and typed changes. While its job is queued or running,\n`run` says since when and, once the worker reports it, what it is doing (its latest\n`drafting progress` event of this attempt: reading the samples, each model call,\ntesting anchors, queuing ontology suggestions). A queued run says why it waits:\n`paused` while the job queue is paused (a restore), `retry` when it was queued again\nafter a failed try (the try it waits for, of how many, and the error).",
         "parameters": [
           {
             "schema": {
@@ -43479,6 +43510,37 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "paused": {
+                                "type": "boolean"
+                              },
+                              "retry": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "attempt": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "of": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      },
+                                      "error": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "attempt",
+                                      "of",
+                                      "error"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
@@ -44013,6 +44075,1950 @@
                     "error"
                   ],
                   "description": "`proposal not found`, or `no model log for this run`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/proposals/{pid}/cancel": {
+      "post": {
+        "operationId": "cancelProposal",
+        "summary": "Cancel a proposal's drafting run",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "Cancels a drafting run that is waiting for a worker or running (also while the job\nqueue is paused, or between retries). A running worker stops at its next check, before\nits next model call or tool turn, and writes nothing more; the model log keeps what\nhappened, ending in `Cancelled.`. The proposal then reads as `failed` with the\nerror `Cancelled by {name}.` (`Cancelled.` without access control). Run the stage\nagain to start a new proposal. Allowed for a retired document type (it queues nothing).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "description": "The proposal id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The proposal, now failed: cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "stage": {
+                      "type": "string",
+                      "enum": [
+                        "survey",
+                        "outputs",
+                        "sections",
+                        "steps",
+                        "references",
+                        "revise",
+                        "mapping"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "ready",
+                        "failed",
+                        "accepted",
+                        "partially_accepted",
+                        "rejected"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "briefVersion": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "body": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "structure": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "howToFind": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "description",
+                                      "howToFind"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "variants": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "candidates": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "where": {
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "field",
+                                          "table"
+                                        ]
+                                      },
+                                      "seenIn": {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "of": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "of"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "description",
+                                      "where",
+                                      "kind"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "questions": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "question": {
+                                        "type": "string"
+                                      },
+                                      "why": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "question",
+                                      "why"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "summary",
+                                "structure",
+                                "variants",
+                                "candidates",
+                                "questions"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "notes": {
+                                  "type": "string"
+                                },
+                                "changes": {
+                                  "type": "array",
+                                  "items": {
+                                    "oneOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putField"
+                                            ]
+                                          },
+                                          "field": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "type": {
+                                                "default": "text",
+                                                "type": "string",
+                                                "enum": [
+                                                  "text",
+                                                  "integer",
+                                                  "decimal",
+                                                  "date",
+                                                  "boolean",
+                                                  "enum",
+                                                  "list"
+                                                ]
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "enum": {
+                                                "minItems": 1,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "id"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "field",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putTable"
+                                            ]
+                                          },
+                                          "table": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "columns": {
+                                                "minItems": 1,
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "name": {
+                                                      "type": "string"
+                                                    },
+                                                    "type": {
+                                                      "default": "text",
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "text",
+                                                        "integer",
+                                                        "decimal",
+                                                        "date",
+                                                        "boolean",
+                                                        "enum",
+                                                        "list"
+                                                      ]
+                                                    },
+                                                    "description": {
+                                                      "type": "string"
+                                                    },
+                                                    "enum": {
+                                                      "minItems": 1,
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "columns"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "table",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeOutput"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putSection"
+                                            ]
+                                          },
+                                          "section": {
+                                            "type": "object",
+                                            "properties": {
+                                              "id": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              },
+                                              "anchor": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "required": {
+                                                "default": true,
+                                                "type": "boolean"
+                                              },
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "repeat": {
+                                                "type": "boolean"
+                                              },
+                                              "key": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "keyFrom": {
+                                                "type": "string",
+                                                "pattern": "^[a-z][a-z0-9_-]*$"
+                                              }
+                                            },
+                                            "required": [
+                                              "id",
+                                              "anchor"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "section",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeSection"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setCopies"
+                                            ]
+                                          },
+                                          "copies": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "anchor": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "select": {
+                                                    "default": "last",
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "first",
+                                                      "last"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "anchor"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "copies",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putStep"
+                                            ]
+                                          },
+                                          "step": {
+                                            "oneOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "extract"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "fields": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "table": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "sections": {
+                                                    "minItems": 1,
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "instructions": {
+                                                    "type": "string"
+                                                  },
+                                                  "prompt": {
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "default": "default",
+                                                    "type": "string"
+                                                  },
+                                                  "pageImages": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "integer",
+                                                      "exclusiveMinimum": 0
+                                                    }
+                                                  },
+                                                  "maxAttempts": {
+                                                    "default": 2,
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                    "maximum": 5
+                                                  },
+                                                  "maxTokens": {
+                                                    "default": 64000,
+                                                    "type": "integer",
+                                                    "minimum": 256,
+                                                    "maximum": 128000
+                                                  },
+                                                  "chunkPages": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "context": {
+                                                    "default": {},
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "keyColumn": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "sections"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "check"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "description": {
+                                                    "type": "string"
+                                                  },
+                                                  "values": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "reference": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "aliases": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "maxDistance": {
+                                                    "default": 2,
+                                                    "type": "integer",
+                                                    "minimum": 0
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "values",
+                                                  "reference"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "step",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeStep"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setPreamble"
+                                            ]
+                                          },
+                                          "preamble": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "preamble",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "setDocumentMapping"
+                                            ]
+                                          },
+                                          "document": {
+                                            "type": "object",
+                                            "properties": {
+                                              "class": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "class",
+                                              "iri"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "ontologies": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "version": {
+                                                  "type": "integer",
+                                                  "exclusiveMinimum": 0
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "version"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "prefixes": {
+                                            "type": "object",
+                                            "propertyNames": {
+                                              "type": "string",
+                                              "pattern": "^[A-Za-z][\\w-]*$"
+                                            },
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "format": "uri"
+                                            }
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "document",
+                                          "ontologies",
+                                          "prefixes",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putFieldMapping"
+                                            ]
+                                          },
+                                          "field": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "mapping": {
+                                            "type": "object",
+                                            "properties": {
+                                              "property": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "object": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "class": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "iri": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "label": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "class",
+                                                  "iri"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              "concepts": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "scheme": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "values": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "match": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "label"
+                                                    ]
+                                                  }
+                                                },
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "required": [
+                                              "property"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "field",
+                                          "mapping",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putTableMapping"
+                                            ]
+                                          },
+                                          "table": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "mapping": {
+                                            "type": "object",
+                                            "properties": {
+                                              "link": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "class": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "columns": {
+                                                "default": {},
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "property": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "object": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "class": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "iri": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "label": {
+                                                          "type": "boolean"
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "class",
+                                                        "iri"
+                                                      ],
+                                                      "additionalProperties": false
+                                                    },
+                                                    "concepts": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "scheme": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "values": {
+                                                          "type": "object",
+                                                          "additionalProperties": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          }
+                                                        },
+                                                        "match": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "label"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "property"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "link",
+                                              "class"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "table",
+                                          "mapping",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "removeMapping"
+                                            ]
+                                          },
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "id",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "op": {
+                                            "type": "string",
+                                            "enum": [
+                                              "putLocalTerm"
+                                            ]
+                                          },
+                                          "term": {
+                                            "type": "object",
+                                            "properties": {
+                                              "iri": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "class",
+                                                  "object_property",
+                                                  "datatype_property",
+                                                  "annotation_property",
+                                                  "concept"
+                                                ]
+                                              },
+                                              "label": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "definition": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "iri",
+                                              "kind",
+                                              "label"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "reason": {
+                                            "type": "string"
+                                          },
+                                          "answers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "confidence": {
+                                            "type": "string",
+                                            "enum": [
+                                              "high",
+                                              "medium",
+                                              "low"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "alternatives": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "iri": {
+                                                  "type": "string"
+                                                },
+                                                "label": {
+                                                  "type": "string"
+                                                },
+                                                "score": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "required": [
+                                                "iri",
+                                                "label",
+                                                "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "op",
+                                          "term",
+                                          "reason"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "anchorCheck": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "anchorErrors": {
+                                          "type": "object",
+                                          "additionalProperties": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "samples": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "firstPage": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
+                                              },
+                                              "pageCount": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                              },
+                                              "error": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "missingRequired": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "sections": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "id": {
+                                                      "type": "string"
+                                                    },
+                                                    "found": {
+                                                      "type": "boolean"
+                                                    },
+                                                    "page": {
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "integer",
+                                                          "exclusiveMinimum": 0
+                                                        },
+                                                        {
+                                                          "type": "null"
+                                                        }
+                                                      ]
+                                                    },
+                                                    "line": {
+                                                      "type": [
+                                                        "string",
+                                                        "null"
+                                                      ]
+                                                    },
+                                                    "chars": {
+                                                      "type": "integer",
+                                                      "minimum": 0
+                                                    },
+                                                    "occurrences": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "page": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "integer",
+                                                                "exclusiveMinimum": 0
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          },
+                                                          "line": {
+                                                            "type": [
+                                                              "string",
+                                                              "null"
+                                                            ]
+                                                          },
+                                                          "chars": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                          },
+                                                          "key": {
+                                                            "type": [
+                                                              "string",
+                                                              "null"
+                                                            ]
+                                                          },
+                                                          "keySource": {
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "own",
+                                                                  "inherited"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "null"
+                                                              }
+                                                            ]
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "page",
+                                                          "line",
+                                                          "chars",
+                                                          "key",
+                                                          "keySource"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "matches": {
+                                                      "type": "integer",
+                                                      "minimum": 0
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "id",
+                                                    "found",
+                                                    "page",
+                                                    "line",
+                                                    "chars"
+                                                  ]
+                                                }
+                                              },
+                                              "keyIssues": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            },
+                                            "required": [
+                                              "sampleId",
+                                              "firstPage",
+                                              "pageCount",
+                                              "error",
+                                              "missingRequired",
+                                              "sections"
+                                            ]
+                                          }
+                                        },
+                                        "suggestions": {
+                                          "default": [],
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "section": {
+                                                "type": "string"
+                                              },
+                                              "sampleId": {
+                                                "type": "string"
+                                              },
+                                              "anchor": {
+                                                "type": "string"
+                                              },
+                                              "reason": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "section",
+                                              "sampleId",
+                                              "anchor",
+                                              "reason"
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "anchorErrors",
+                                        "samples"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "notes",
+                                "changes"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "acceptedChanges": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "decidedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "run": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "running"
+                              ]
+                            },
+                            "since": {
+                              "type": "string"
+                            },
+                            "progress": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "stage": {
+                                      "type": "string",
+                                      "enum": [
+                                        "survey",
+                                        "outputs",
+                                        "sections",
+                                        "steps",
+                                        "references",
+                                        "revise",
+                                        "mapping"
+                                      ]
+                                    },
+                                    "phase": {
+                                      "type": "string",
+                                      "enum": [
+                                        "reading",
+                                        "model",
+                                        "anchors",
+                                        "suggestions"
+                                      ]
+                                    },
+                                    "samples": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "attempt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "of": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "exclusiveMinimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "round": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "tokens": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "tool": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "summary": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "summary"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "toolCalls": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    },
+                                    "phaseAt": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "stage",
+                                    "phase",
+                                    "samples",
+                                    "attempt",
+                                    "of",
+                                    "round",
+                                    "at",
+                                    "phaseAt"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "paused": {
+                              "type": "boolean"
+                            },
+                            "retry": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "attempt": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "of": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "error": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "attempt",
+                                    "of",
+                                    "error"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "since",
+                            "progress"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "stage",
+                    "status",
+                    "error",
+                    "briefVersion",
+                    "model",
+                    "body",
+                    "acceptedChanges",
+                    "createdAt",
+                    "decidedAt",
+                    "run"
+                  ],
+                  "description": "The proposal, now failed: cancelled."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`proposal not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`proposal not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`proposal is {status}: only a waiting or running run can be cancelled`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`proposal is {status}: only a waiting or running run can be cancelled`."
                 }
               }
             }
@@ -45781,6 +47787,37 @@
                                     "round",
                                     "at",
                                     "phaseAt"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "paused": {
+                              "type": "boolean"
+                            },
+                            "retry": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "attempt": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "of": {
+                                      "type": "integer",
+                                      "exclusiveMinimum": 0
+                                    },
+                                    "error": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "attempt",
+                                    "of",
+                                    "error"
                                   ]
                                 },
                                 {

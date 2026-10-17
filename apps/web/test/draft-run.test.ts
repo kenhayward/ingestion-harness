@@ -130,6 +130,29 @@ describe('draftRunView (issue #151)', () => {
     );
   });
 
+  it('says why a queued run waits: a paused queue, or a retry after an error', () => {
+    const queued = (over: Partial<DraftRun>): DraftRun => ({
+      status: 'queued',
+      since: at(0),
+      progress: null,
+      ...over,
+    });
+    const waiting = (run: DraftRun) => draftRunView('survey', run, T0 + 10_000).phases[0]!.detail;
+    expect(waiting(queued({}))).toBeNull();
+    expect(waiting(queued({ paused: true }))).toBe(
+      'The job queue is paused: this starts when an admin resumes it (Administration > Backup).',
+    );
+    expect(
+      waiting(queued({ retry: { attempt: 2, of: 3, error: 'LLMError: openai 503: busy' } })),
+    ).toBe(
+      'The last try failed, so it will be tried again (try 2 of 3): LLMError: openai 503: busy',
+    );
+    const long = 'x'.repeat(400);
+    expect(waiting(queued({ retry: { attempt: 3, of: 3, error: long } }))).toBe(
+      `The last try failed, so it will be tried again (try 3 of 3): ${'x'.repeat(200)}…`,
+    );
+  });
+
   it('times the model from when the try began, not from its latest token count (issue #181)', () => {
     // The try began at 30 s; the streamed reply's token counts arrive every few seconds.
     const v = draftRunView('survey', running(progress({ tokens: 900 }, 55, 30)), T0 + 58_000);

@@ -16,6 +16,7 @@ from .base import (
     ConversationRequest,
     LLMError,
     ModelDescriptor,
+    ModelUnavailableError,
     ProviderKind,
     RefusalError,
     TokenCallback,
@@ -26,6 +27,7 @@ from .base import (
     VisionRequest,
     dump_echo,
     is_context_exceeded,
+    is_model_unavailable,
     parse_tool_arguments,
 )
 
@@ -61,6 +63,12 @@ def _responses_input(prompt: str, images: tuple[bytes, ...]) -> str | list[dict[
 def _wrap_errors(exc: Exception) -> Exception:
     if isinstance(exc, openai.APIStatusError) and is_context_exceeded(exc.message, exc.body):
         return ContextExceededError(f"openai {exc.status_code}: {_server_message(exc)}")
+    if (
+        isinstance(exc, openai.APIStatusError)
+        and exc.status_code in (400, 404)
+        and is_model_unavailable(exc.message, exc.body)
+    ):
+        return ModelUnavailableError(f"openai {exc.status_code}: {exc.message}")
     if isinstance(exc, openai.APIStatusError) and (
         exc.status_code in (408, 409, 429) or exc.status_code >= 500
     ):
@@ -195,9 +203,12 @@ class _OpenAIBase:
         try:
             return stream(params, TokenCounter(on_tokens))
         except openai.APIStatusError as exc:
-            # A request too long for the context would not fit whole either.
-            if is_context_exceeded(exc.message, exc.body) or not isinstance(
-                exc, openai.BadRequestError
+            # A request too long for the context would not fit whole either, and a model the
+            # server does not have is not there for a whole reply.
+            if (
+                is_context_exceeded(exc.message, exc.body)
+                or is_model_unavailable(exc.message, exc.body)
+                or not isinstance(exc, openai.BadRequestError)
             ):
                 wrapped = _wrap_errors(exc)
                 if wrapped is exc:

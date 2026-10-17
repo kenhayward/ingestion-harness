@@ -365,3 +365,19 @@ def test_revise_reads_pages_of_a_dev_sample_left_out_of_the_prompt(
     assert "NINTH SAMPLE PAGE ONE" in result.content
     logged = [d for _, _, msg, d in queue.event_details if msg == "external model call"]
     assert logged[-1]["samples"] == ["s9"] and logged[-1]["purpose"] == "tool"
+
+
+def test_a_cancelled_run_stops_before_the_next_turn_and_logs_it(fixture_specs_dir: Path) -> None:
+    provider, store, deps = tool_deps(fixture_specs_dir)
+    provider.turns = [
+        [("test_anchors", {"changes": [put("approval", "^SIGNATURES")]})],
+        [(SUBMIT, sections_body("^PROTOCOL APPROVAL"))],
+    ]
+    queue = FakeQueue(jobs=[draft_job(stage="sections")])
+    # Cancelled while the first turn's tool ran: the next checkpoint stops the run.
+    queue.cancel_when = lambda: len(provider.converse_calls) >= 1
+    run_once(queue, deps, "w1")
+    assert len(provider.converse_calls) == 1
+    assert not queue.completed and not queue.reviewed and not queue.failed
+    entries = logged(store)["rounds"][0]["entries"]
+    assert entries[-1] == {"kind": "error", "message": "Cancelled."}

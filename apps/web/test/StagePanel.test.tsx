@@ -86,6 +86,31 @@ describe('StagePanel', () => {
     expect(within(alert).getByRole('button', { name: 'Model log' })).toBeInTheDocument();
   });
 
+  it('cancels a waiting or running run, then shows it as cancelled', async () => {
+    const p = changeProposalView();
+    const waiting = {
+      ...p,
+      status: 'running' as const,
+      body: null,
+      run: { status: 'queued' as const, since: p.createdAt, progress: null, paused: true },
+    };
+    const cancelled = { ...p, status: 'failed' as const, body: null, error: 'Cancelled by Ken.' };
+    let done = false;
+    const { api } = panel({
+      // The panel polls while a run waits: it reads as cancelled only once cancelled.
+      listProposals: vi.fn(async () => [done ? cancelled : waiting]),
+      cancelProposal: vi.fn(async () => {
+        done = true;
+        return cancelled;
+      }),
+    });
+    const progress = await screen.findByRole('group', { name: 'Drafting progress' });
+    expect(within(progress).getByText(/The job queue is paused/)).toBeInTheDocument();
+    await userEvent.click(within(progress).getByRole('button', { name: 'Cancel run' }));
+    expect(api.cancelProposal).toHaveBeenCalledWith('letter', p.id);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cancelled by Ken.');
+  });
+
   it('accepts a run that proposes no changes, sending none', async () => {
     const p = changeProposalView({ body: { notes: 'Nothing to add.', changes: [] } });
     const { api, onApplied } = panel({

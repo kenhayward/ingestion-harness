@@ -391,6 +391,14 @@ export function ReviseTab({
       </section>
       {running && latest && (
         <DraftRunProgress
+          onCancel={() =>
+            void act(async () => {
+              await api.cancelProposal(projectId, latest.id);
+              await load();
+              onChanged();
+            })
+          }
+          cancelling={busy}
           stage="revise"
           run={latest.run}
           label="Revision progress"

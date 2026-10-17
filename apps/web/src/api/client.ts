@@ -665,6 +665,8 @@ export interface Api {
   importBundle(file: File, fields: { id?: string; name?: string }): Promise<ProjectView>;
   startStage(projectId: string, stage: DraftStage): Promise<ProposalView>;
   listProposals(projectId: string): Promise<ProposalView[]>;
+  /** Cancel a waiting or running drafting run; the proposal then reads as failed: cancelled. */
+  cancelProposal(projectId: string, proposalId: string): Promise<ProposalView>;
   /** A proposal's model log: what the drafting model was sent and answered, tools included. */
   getProposalLog(projectId: string, proposalId: string): Promise<DraftLog>;
   decideProposal(
@@ -1364,6 +1366,8 @@ export function createHttpApi(base = '/api'): Api {
       post<ProposalView>(`${base}/workbench/projects/${id}/stages/${stage}`, {}),
     listProposals: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/proposals`).then(json<ProposalView[]>),
+    cancelProposal: (id, proposalId) =>
+      post<ProposalView>(`${base}/workbench/projects/${id}/proposals/${proposalId}/cancel`, {}),
     getProposalLog: (id, proposalId) =>
       apiFetch(`${base}/workbench/projects/${id}/proposals/${proposalId}/log`).then(json<DraftLog>),
     decideProposal: (id, proposalId, decision, changes) =>

@@ -31,9 +31,13 @@ export interface SegmentJob {
   id: string;
   projectId: string;
   status: JobStatus;
+  /** The last failure: on a queued job with `attempts`, the error it is retried after. */
   error: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Claims so far and the most allowed (drafting runs, `listDraftJobs`). */
+  attempts?: number;
+  maxAttempts?: number;
 }
 
 /** jobs.params of a graph preview (worker: graph_preview.GraphPreviewParams). */
@@ -290,6 +294,12 @@ export interface IngestionRepo {
   /** Draft jobs of a project, newest first. */
   listDraftJobs(projectId: string): Promise<ProjectJob[]>;
   /**
+   * A queued or running drafting run -> cancelled with `error` as its reason (+ a `cancelled`
+   * event). A running worker stops at its next check (before its next model call or turn) and
+   * writes nothing more. Null when the project has no such draft job, or it already finished.
+   */
+  cancelDraftJob(projectId: string, jobId: string, error: string): Promise<ProjectJob | null>;
+  /**
    * Queue a bundle export (document-less, task 'export'). One per project: earlier export jobs
    * of the project are deleted first; their ids are returned in `removed` (their zips are the
    * caller's to delete).
@@ -318,6 +328,8 @@ export interface IngestionRepo {
   ): Promise<string | null>;
   /** Queued and running document jobs, and the median duration of recent timed runs. */
   queueStats(): Promise<QueueStats>;
+  /** The job queue is paused (`queue_control`, a restore): no worker claims anything. */
+  queuePaused(): Promise<boolean>;
   /** The job's uploaded PDF in the inbox bucket (Jobs "Open PDF"). */
   getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null>;
   /** Non-test jobs with at least one published output, newest publish first. */

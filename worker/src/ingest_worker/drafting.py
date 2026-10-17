@@ -24,12 +24,19 @@ from .extract import (
     OutputTruncatedError,
     run_extraction,
 )
-from .llm.base import ContextExceededError, LLMProvider, RefusalError, ToolCapable
+from .llm.base import (
+    ContextExceededError,
+    LLMProvider,
+    ModelUnavailableError,
+    RefusalError,
+    ToolCapable,
+)
 from .llm.registry import ModelResolutionError
 from .mapping_stage import MAPPING as MAPPING_STAGE
 from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queue_suggestions
 from .pipeline import (
     DocumentError,
+    JobCancelled,
     PipelineDeps,
     advisory_event,
     check_cancelled,
@@ -211,6 +218,8 @@ def _failure(exc: Exception, limit: int) -> DocumentError | None:
         return DocumentError(f"drafting model refused: {exc}")
     if isinstance(exc, ContextExceededError):  # a retry would repeat it
         return DocumentError(context_reason(limit))
+    if isinstance(exc, ModelUnavailableError):  # likewise: the server has no such model
+        return DocumentError(unavailable_reason(exc))
     return None
 
 
@@ -229,6 +238,7 @@ def ask(
     tools: list[Tool],
     progress: CallProgress,
     retry_note: str = "Return corrected JSON only.",
+    checkpoint: Callable[[], None] | None = None,
 ) -> ExtractionResult:
     """One drafting or mapping proposal: a conversation with `tools` when there are any (the
     endpoint allows them), else single replies as before. Errors become the DocumentErrors a
@@ -253,6 +263,7 @@ def ask(
                 on_tool=progress.on_tool,
                 retry_note=retry_note,
                 transcript=entries,
+                checkpoint=checkpoint,
             )
         else:
             result = run_extraction(
@@ -269,10 +280,14 @@ def ask(
                 on_tokens=progress.on_tokens,
                 retry_note=retry_note,
                 transcript=entries,
+                checkpoint=checkpoint,
             )
     except Exception as exc:
         failure = _failure(exc, limit)
-        entries.append({"kind": "error", "message": str(failure or exc)})
+        cancelled = isinstance(exc, JobCancelled)
+        entries.append(
+            {"kind": "error", "message": "Cancelled." if cancelled else str(failure or exc)}
+        )
         log_to.write()
         if failure is not None:
             raise failure from exc
@@ -293,6 +308,16 @@ def truncated_reason(limit: int) -> str:
         f"The drafting model's reply was cut off at its output limit ({limit:,} tokens). "
         "An admin can raise the model's Max output tokens under Administration > Models, or the stage "
         "can be run again with less to propose."
+    )
+
+
+def unavailable_reason(error: Exception) -> str:
+    """Why a drafting stage stopped when its model is not on its server (no model ref, as
+    `truncated_reason`; the server's own words usually name it)."""
+    return (
+        "The drafting model is not available on its server, so the stage cannot run: an admin "
+        "can load it there (e.g. in LM Studio) or choose another drafting model under "
+        f"Administration > Models. The server said: {error}"
     )
 
 
@@ -698,6 +723,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             tools=tools,
             progress=CallProgress(report, round=round, tools=bool(tools)),
             retry_note=DRAFT_RETRY_NOTE,
+            checkpoint=lambda: check_cancelled(job, queue),
         )
         body = stage.convert(result.data)[0] if stage.convert else result.data
         if stage.fit is not None:

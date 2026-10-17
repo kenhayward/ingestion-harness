@@ -23,21 +23,40 @@ export function DraftRunProgress({
   run,
   label,
   fallback,
+  onCancel,
+  cancelling = false,
 }: {
   stage: DraftStage;
   run: DraftRun | null;
   /** The group's name, e.g. "Survey progress". */
   label: string;
   fallback: ReactNode;
+  /** Given: a Cancel run button (waiting or running runs). */
+  onCancel?: () => void;
+  /** A cancel (or another action) is in flight: the button waits. */
+  cancelling?: boolean;
 }) {
   const now = useNow();
-  if (!run) return <>{fallback}</>;
+  const cancel = onCancel && (
+    <button type="button" className="draft-run-cancel" onClick={onCancel} disabled={cancelling}>
+      Cancel run
+    </button>
+  );
+  if (!run) {
+    return (
+      <>
+        {fallback}
+        {cancel}
+      </>
+    );
+  }
   const view = draftRunView(stage, run, now);
   return (
     <div role="group" aria-label={label} className="draft-run">
       <p className="draft-run-head">
         <span className="draft-run-pulse" aria-hidden="true" />
         <strong>{view.headline}</strong>
+        {cancel}
       </p>
       <ol className="draft-run-phases">
         {view.phases.map((p) => (

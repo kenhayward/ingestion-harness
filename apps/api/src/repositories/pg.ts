@@ -62,6 +62,8 @@ interface SegmentRow {
   error: string | null;
   created_at: Date;
   updated_at: Date;
+  attempts?: number;
+  max_attempts?: number;
 }
 
 const toSegmentJob = (r: SegmentRow): SegmentJob => ({
@@ -71,6 +73,8 @@ const toSegmentJob = (r: SegmentRow): SegmentJob => ({
   error: r.error,
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
+  ...(r.attempts === undefined ? {} : { attempts: r.attempts }),
+  ...(r.max_attempts === undefined ? {} : { maxAttempts: r.max_attempts }),
 });
 
 interface JobRow {
@@ -368,7 +372,8 @@ export class PgRepo implements IngestionRepo {
 
   async listDraftJobs(projectId: string) {
     const { rows } = await this.pool.query<SegmentRow>(
-      `SELECT id, project_id, status, error, created_at, updated_at FROM jobs
+      `SELECT id, project_id, status, error, created_at, updated_at, attempts, max_attempts
+         FROM jobs
         WHERE project_id = $1 AND task = 'draft' ORDER BY created_at DESC, id DESC`,
       [projectId],
     );
@@ -669,6 +674,28 @@ export class PgRepo implements IngestionRepo {
       [jobId, message, since, JSON.stringify(match)],
     );
     return rows[0]?.at?.toISOString() ?? null;
+  }
+
+  async cancelDraftJob(projectId: string, jobId: string, error: string) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `WITH cancelled AS (
+         UPDATE jobs SET status = 'cancelled', error = $3, locked_by = NULL, locked_at = NULL,
+                updated_at = now()
+          WHERE id = $1 AND project_id = $2 AND task = 'draft' AND status IN ('queued', 'running')
+          RETURNING id, project_id, status, error, created_at, updated_at, attempts, max_attempts),
+       logged AS (
+         INSERT INTO job_events (job_id, level, message) SELECT id, 'warn', 'cancelled' FROM cancelled)
+       SELECT * FROM cancelled`,
+      [jobId, projectId, error],
+    );
+    return rows[0] ? toSegmentJob(rows[0]) : null;
+  }
+
+  async queuePaused(): Promise<boolean> {
+    const { rows } = await this.pool.query<{ paused: boolean }>(
+      'SELECT EXISTS (SELECT 1 FROM queue_control WHERE paused) AS paused',
+    );
+    return rows[0]?.paused ?? false;
   }
 
   async queueStats(): Promise<QueueStats> {

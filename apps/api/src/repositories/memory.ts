@@ -61,6 +61,8 @@ export class MemoryRepo implements IngestionRepo {
   readonly graphJobs = new Map<string, ProjectJob & { params: GraphJobParams }>();
   /** Draft jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly draftJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
+  /** `queuePaused()` (tests set it). */
+  queuePausedNow = false;
   /** Ontology suggestion refreshes (document-less, one per project). */
   readonly suggestJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** Export jobs (document-less, one per project): kept apart like draft jobs. */
@@ -195,7 +197,7 @@ export class MemoryRepo implements IngestionRepo {
       createdAt: now,
       updatedAt: now,
     };
-    this.draftJobs.set(job.id, { ...job, params });
+    this.draftJobs.set(job.id, { ...job, attempts: 0, maxAttempts: 3, params });
     return job;
   }
 
@@ -211,14 +213,31 @@ export class MemoryRepo implements IngestionRepo {
     return [...this.draftJobs.values()]
       .filter((j) => j.projectId === projectId)
       .reverse()
-      .map(({ id, projectId: p, status, error, createdAt, updatedAt }) => ({
+      .map(({ id, projectId: p, status, error, createdAt, updatedAt, attempts, maxAttempts }) => ({
         id,
         projectId: p,
         status,
         error,
         createdAt,
         updatedAt,
+        attempts: attempts ?? 0,
+        maxAttempts: maxAttempts ?? 3,
       }));
+  }
+
+  async queuePaused() {
+    return this.queuePausedNow;
+  }
+
+  async cancelDraftJob(projectId: string, jobId: string, error: string) {
+    const job = this.draftJobs.get(jobId);
+    if (!job || job.projectId !== projectId) return null;
+    if (job.status !== 'queued' && job.status !== 'running') return null;
+    const cancelled = { ...job, status: 'cancelled' as const, error, updatedAt: this.now() };
+    this.draftJobs.set(jobId, cancelled);
+    this.addEvent(jobId, 'warn', 'cancelled', {});
+    const { id, status, createdAt, updatedAt, attempts, maxAttempts } = cancelled;
+    return { id, projectId, status, error, createdAt, updatedAt, attempts, maxAttempts };
   }
 
   async createExportJob(projectId: string, params: Record<string, unknown>) {

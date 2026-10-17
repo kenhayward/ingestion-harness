@@ -173,6 +173,37 @@ _CONTEXT_EXCEEDED = re.compile(
 )
 
 
+class ModelUnavailableError(Exception):
+    """The server does not have the model asked for (not downloaded or loaded, a typo, no access).
+    Deterministic, like ContextExceededError: callers route it to needs_review at once with what
+    to change (`model_unavailable_reason`) instead of retrying."""
+
+
+#: How servers say a model is not there: LM Studio ("Invalid model identifier"), OpenAI and vLLM
+#: ("The model `x` does not exist", `model_not_found`), Ollama and llama.cpp ("model 'x' not
+#: found"), Anthropic (404 not_found_error "model: x").
+_MODEL_UNAVAILABLE = re.compile(
+    r"invalid model identifier"
+    r"|model_not_found"
+    r"|\bmodel\b[^.]{0,80}\b(does not exist|not found)"
+    r"|\bno such model\b",
+    re.IGNORECASE,
+)
+
+
+def is_model_unavailable(*texts: object) -> bool:
+    """Whether an error's message or body says the server does not have the model."""
+    return any(_MODEL_UNAVAILABLE.search(str(t)) for t in texts if t)
+
+
+def model_unavailable_reason(where: str, model_ref: str, error: Exception) -> str:
+    """The needs_review reason for a `ModelUnavailableError`: where, which model, what to do."""
+    return (
+        f"{where}: the model {model_ref} is not available on its server; load it there (e.g. in "
+        f"LM Studio) or choose another model under Administration > Models (server said: {error})"
+    )
+
+
 def is_context_exceeded(*texts: object) -> bool:
     """Whether an error's message or body says the request did not fit the context window."""
     return any(_CONTEXT_EXCEEDED.search(str(t)) for t in texts if t)
