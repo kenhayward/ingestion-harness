@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PublishTargetView } from '@ih/shared';
 import type { Api, Me } from '../api/client.js';
-import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { InSlot } from '../ui/InSlot.js';
 import { AddTargetDialog } from './AddTargetDialog.js';
@@ -61,12 +60,9 @@ export function PublishedOutputsPage({
         <section className="admin-section" aria-label="Targets">
           <div className="admin-section-head">
             <div>
-              <div className="profile-actions">
-                <h3>
-                  Publishing targets <span className="muted">· {targets.length}</span>
-                </h3>
-                <HelpButton topic="published-outputs" />
-              </div>
+              <h3>
+                Publishing targets <span className="muted">· {targets.length}</span>
+              </h3>
               <p className="muted">Open a target to change its settings or test its connection.</p>
             </div>
           </div>
