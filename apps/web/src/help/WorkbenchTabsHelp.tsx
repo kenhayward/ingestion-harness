@@ -189,8 +189,8 @@ export function WbStepsHelp() {
   return (
     <>
       <p>
-        The model proposes the extraction steps: which step fills which outputs, which sections it
-        reads, and its instructions.
+        The model proposes the pipeline, the recipe's extraction steps: which outputs each step
+        fills, which sections it reads, and its instructions.
       </p>
       <h3>Coverage</h3>
       <p>

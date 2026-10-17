@@ -131,8 +131,8 @@ describe('ReviseTab', () => {
   it('warns when another stage has a proposal waiting, with a link to decide it', async () => {
     tab({ listProposals: vi.fn(async () => [changeProposalView({ stage: 'steps' })]) });
     const note = await screen.findByRole('note');
-    expect(note).toHaveTextContent('Steps has an open proposal.');
-    expect(within(note).getByRole('link', { name: 'Open Steps' })).toHaveAttribute(
+    expect(note).toHaveTextContent('Pipeline has an open proposal.');
+    expect(within(note).getByRole('link', { name: 'Open Pipeline' })).toHaveAttribute(
       'href',
       '#/workbench/letter/steps',
     );

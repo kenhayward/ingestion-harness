@@ -439,7 +439,7 @@ function NeedsStrip({
       {noStep.length > 0 && (
         <p>
           {noStep.map((n) => n.id).join(', ')} {noStep.length === 1 ? 'has' : 'have'} no step yet —
-          add one on <a href={`#/workbench/${projectId}/steps`}>the Steps tab</a>.
+          add one on <a href={`#/workbench/${projectId}/steps`}>the Pipeline tab</a>.
         </p>
       )}
     </section>

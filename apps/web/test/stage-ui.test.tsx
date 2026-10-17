@@ -131,7 +131,7 @@ describe('ProgressStrip', () => {
       screen.getByRole('img', {
         name:
           'Progress: Samples Accepted, Brief Accepted, Survey Accepted, Outputs Accepted, ' +
-          'Sections Accepted, Steps Needs you, Mapping Not started, References Not started, ' +
+          'Sections Accepted, Pipeline Needs you, Mapping Not started, References Not started, ' +
           'Evaluate Not started, ' +
           'Revise Not started, Publish Locked',
       }),
@@ -143,7 +143,7 @@ describe('ProgressStrip', () => {
     const segments = [...container.querySelectorAll('.seg')];
     expect(segments).toHaveLength(11);
     expect(segments[5]).toHaveClass('seg-proposed');
-    expect(segments[5]).toHaveAttribute('title', 'Steps: Needs you');
+    expect(segments[5]).toHaveAttribute('title', 'Pipeline: Needs you');
     expect(segments[10]).toHaveClass('seg-locked'); // publish, now the eleventh stage
   });
 });

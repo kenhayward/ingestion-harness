@@ -43,13 +43,13 @@ describe('issueSubTab', () => {
 });
 
 describe('templateChecks', () => {
-  it('names an output no step fills, linking to Steps and marking Outputs and Pipeline', () => {
+  it('names an output no step fills, linking to Pipeline and marking Outputs and Pipeline', () => {
     const checks = run({ issues: ['field "due_date" is not filled by any step'] });
     expect(checks).toEqual([
       {
         tone: 'warn',
         text: 'due_date is not filled by any step.',
-        link: { label: 'Add it to a step in Steps', hash: '#/workbench/invoice/steps' },
+        link: { label: 'Add it to a step in Pipeline', hash: '#/workbench/invoice/steps' },
         subTabs: ['outputs', 'pipeline'],
       },
     ]);
@@ -122,7 +122,7 @@ describe('templateChecks', () => {
       {
         tone: 'warn',
         text: 'total is filled by more than one step.',
-        link: { label: 'Review in Steps', hash: '#/workbench/invoice/steps' },
+        link: { label: 'Review in Pipeline', hash: '#/workbench/invoice/steps' },
         subTabs: ['pipeline'],
       },
     ]);

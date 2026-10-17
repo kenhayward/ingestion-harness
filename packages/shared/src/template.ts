@@ -117,7 +117,7 @@ const looseIds = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 
 /**
- * Which extract step fills each output. Reads any definition, parsed or a raw draft (the Steps
+ * Which extract step fills each output. Reads any definition, parsed or a raw draft (the Pipeline
  * tab's coverage strip), skipping malformed parts. The template validation's "is not filled by
  * any step" / "is filled by more than one step" issues come from this.
  */

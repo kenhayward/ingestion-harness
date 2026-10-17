@@ -612,10 +612,9 @@ describe('TemplateEditor', () => {
 
     it('ends each part with a link to the stage that drafts it', async () => {
       setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
-      expect(await screen.findByRole('link', { name: 'Ask the model in Steps' })).toHaveAttribute(
-        'href',
-        '#/workbench/letter/steps',
-      );
+      expect(
+        await screen.findByRole('link', { name: 'Ask the model on the Pipeline tab' }),
+      ).toHaveAttribute('href', '#/workbench/letter/steps');
       await userEvent.click(await tab(/^Outputs/));
       expect(screen.getByRole('link', { name: 'Ask the model in Outputs' })).toHaveAttribute(
         'href',

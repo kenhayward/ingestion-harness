@@ -142,10 +142,12 @@ describe('StagePanel', () => {
   it('keeps the tab header when the proposals cannot be loaded', async () => {
     panel(
       { listProposals: vi.fn().mockRejectedValue(new Error('network down')) },
-      { stage: 'steps', title: 'Extraction steps' },
+      { stage: 'steps', title: 'Extraction pipeline' },
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('network down');
-    expect(screen.getByRole('heading', { level: 2, name: 'Extraction steps' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Extraction pipeline' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
@@ -240,17 +242,17 @@ describe('StagePanel', () => {
       { listProposals: vi.fn(async () => [changeProposalView({ stage: 'steps' })]) },
       {
         stage: 'steps',
-        title: 'Extraction steps',
+        title: 'Extraction pipeline',
         item: { stage: 'steps', state: 'proposed', status: 'Needs your decision', metrics: [] },
       },
     );
     await screen.findByRole('button', { name: 'Propose again' });
     const header = screen
-      .getByRole('heading', { level: 2, name: 'Extraction steps' })
+      .getByRole('heading', { level: 2, name: 'Extraction pipeline' })
       .closest('header')!;
     expect(header).not.toBeNull();
     expect(
-      within(header).getByRole('heading', { level: 2, name: 'Extraction steps' }),
+      within(header).getByRole('heading', { level: 2, name: 'Extraction pipeline' }),
     ).toBeInTheDocument();
     expect(within(header).getByText('Needs your decision')).toBeInTheDocument();
     expect(
@@ -412,5 +414,41 @@ describe('StagePanel', () => {
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Keep these outputs' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('not stale');
+  });
+
+  it('names the steps stage Pipeline: Keep, Propose and the link after Sections', async () => {
+    panel(
+      {
+        listProposals: vi.fn(async () => [
+          changeProposalView({ stage: 'steps', status: 'accepted', acceptedChanges: [0, 1] }),
+        ]),
+      },
+      {
+        stage: 'steps',
+        title: 'Extraction pipeline',
+        item: { stage: 'steps', state: 'stale', status: 'Stale — Sections changed', metrics: [] },
+      },
+    );
+    const banner = await screen.findByRole('note');
+    expect(banner).toHaveTextContent('Check the pipeline below');
+    expect(within(banner).getByRole('button', { name: 'Keep this pipeline' })).toBeInTheDocument();
+  });
+
+  it('proposes a pipeline before the first proposal', async () => {
+    panel({ listProposals: vi.fn(async () => []) }, { stage: 'steps' });
+    expect(await screen.findByRole('button', { name: 'Propose a pipeline' })).toBeInTheDocument();
+  });
+
+  it('points from Sections to the Pipeline tab once applied', async () => {
+    const p = changeProposalView({
+      stage: 'sections',
+      status: 'accepted',
+      acceptedChanges: [0, 1],
+    });
+    panel({ listProposals: vi.fn(async () => [p]) }, { stage: 'sections' });
+    expect(await screen.findByRole('link', { name: 'Go to Pipeline' })).toHaveAttribute(
+      'href',
+      '#/workbench/letter/steps',
+    );
   });
 });

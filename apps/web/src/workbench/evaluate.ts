@@ -253,7 +253,7 @@ export function hintText(h: GateHint): string {
 }
 
 export const HINT_LINK: Record<GateHint['stage'], string> = {
-  steps: 'Open Steps',
+  steps: 'Open Pipeline',
   revise: 'Open Revise',
 };
 
