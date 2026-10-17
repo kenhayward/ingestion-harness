@@ -1,0 +1,464 @@
+format: ct-recipe
+formatVersion: 1
+instance: default
+version:
+  number: 4
+  status: published
+  label: null
+  note: null
+  labelSetBy: null
+  labelSetAt: null
+  publishedBy: Ken Hayward
+  publishedAt: 2026-10-17T17:24:16.254Z
+  basedOn: 3
+  importedFrom: null
+  definitionSha256: f82ae4cc1b77e51656bf3df5873ed4e5cbed6137217c828a94c1922ddc84700c
+definition:
+  id: covalidation
+  name: Covalidation
+  review:
+    required: on_warnings
+  outputs:
+    fields: []
+    tables:
+      - id: batches
+        name: Batches
+        columns:
+          - id: sequence
+            name: Sequence
+            type: integer
+            description: Order of the batch in the report (1, 2, 3, …).
+          - id: study_id
+            name: Study ID
+            type: text
+            description: Study number from the batch heading (e.g. 202432).
+          - id: batch_number
+            name: Batch Number
+            type: text
+            description: Numeric batch identifier from the heading (e.g. 4586783).
+          - id: internal_code
+            name: Internal Code
+            type: text
+            description: Short internal batch code in parentheses (e.g. LDLS000).
+          - id: packaging
+            name: Packaging
+            type: text
+            description: Packaging description from the heading (e.g. '30 CT IN 75 CC HDPE BOTTLE WITH
+              DESICCANT').
+        description: Each batch with its identifiers and packaging configuration, extracted from top-level
+          numbered headings.
+      - id: appearance_water_content_table
+        name: Appearance & Water Content Table
+        columns:
+          - id: batch_number
+            name: Batch Number
+            type: text
+            description: Batch identifier this row belongs to, from the enclosing batch heading or table
+              caption.
+          - id: study_id
+            name: Study ID
+            type: text
+            description: Study identifier this row belongs to.
+          - id: storage_condition
+            name: Storage Condition
+            type: text
+            description: e.g. '5 °C', '25 °C/60% RH', 'Light ICH (Unprotected)'.
+          - id: storage_time_months
+            name: Storage Time (Months)
+            type: integer
+            description: Number of months stored; use null for 'Initial'.
+          - id: appearance
+            name: Appearance
+            type: text
+            description: Pass/Fail or descriptive text as written.
+          - id: water_content_kf
+            name: Water Content by KF (% w/w)
+            type: decimal
+            description: Numeric value if present; null if blank or below threshold.
+          - id: water_content_nir
+            name: Water Content by NIR (% w/w)
+            type: decimal
+            description: Numeric value if present; null if blank or below threshold.
+        description: Appearance, water content by KF and NIR per storage condition and time point, per batch.
+      - id: assay_chromatographic_purity_table
+        name: Assay & Chromatographic Purity Table
+        columns:
+          - id: batch_number
+            name: Batch Number
+            type: text
+            description: Batch identifier this row belongs to.
+          - id: study_id
+            name: Study ID
+            type: text
+            description: Study identifier this row belongs to.
+          - id: storage_condition
+            name: Storage Condition
+            type: text
+            description: e.g. '5 °C', '25 °C/60% RH'.
+          - id: storage_time_months
+            name: Storage Time (Months)
+            type: integer
+            description: Number of months stored; use null for 'Initial'.
+          - id: assay
+            name: Assay (%)
+            type: decimal
+            description: Numeric assay value.
+          - id: degradation_product_specified
+            name: Each Specified Degradation Product (%)
+            type: decimal
+            description: Numeric value; null if below reporting threshold.
+          - id: degradation_product_specified_below_threshold
+            name: Specified DP Below Threshold
+            type: boolean
+            description: True if the cell shows a '<' value (e.g. '<0.05').
+          - id: degradation_product_unspecified
+            name: Any Unspecified Degradation Product (%)
+            type: decimal
+            description: Numeric value; null if below reporting threshold.
+          - id: degradation_product_unspecified_below_threshold
+            name: Unspecified DP Below Threshold
+            type: boolean
+            description: True if the cell shows a '<' value (e.g. '<0.05').
+          - id: total_degradation_products
+            name: Total Degradation Products (%)
+            type: decimal
+            description: Numeric value; null if below reporting threshold.
+          - id: total_degradation_products_below_threshold
+            name: Total DP Below Threshold
+            type: boolean
+            description: True if the cell shows a '<' value (e.g. '<0.05').
+        description: Assay and chromatographic purity results per storage condition and time point, per batch.
+      - id: dissolution_results_table
+        name: Dissolution Results Table
+        columns:
+          - id: batch_number
+            name: Batch Number
+            type: text
+            description: Batch identifier this row belongs to.
+          - id: study_id
+            name: Study ID
+            type: text
+            description: Study identifier this row belongs to.
+          - id: storage_condition
+            name: Storage Condition
+            type: text
+            description: e.g. '5 °C', '25 °C/60% RH'.
+          - id: storage_time_months
+            name: Storage Time (Months)
+            type: integer
+            description: Number of months stored; use null for 'Initial'.
+          - id: time_point_min
+            name: Time Point (min)
+            type: integer
+            description: Dissolution time point in minutes (5, 10, 15, 20, 25, 30, 45).
+          - id: mean_percent
+            name: Mean (%)
+            type: decimal
+            description: Mean dissolution percentage.
+          - id: min_percent
+            name: Min (%)
+            type: decimal
+            description: Minimum value in the range.
+          - id: max_percent
+            name: Max (%)
+            type: decimal
+            description: Maximum value in the range.
+        description: Mean (Min-Max) dissolution percentages at each time point, one row per time point per
+          storage condition per batch.
+      - id: solid_state_nir_table
+        name: Solid State by NIR Table
+        columns:
+          - id: batch_number
+            name: Batch Number
+            type: text
+            description: Batch identifier this row belongs to.
+          - id: study_id
+            name: Study ID
+            type: text
+            description: Study identifier this row belongs to.
+          - id: storage_condition
+            name: Storage Condition
+            type: text
+            description: e.g. '5 °C', '25 °C/60% RH'.
+          - id: storage_time_months
+            name: Storage Time (Months)
+            type: integer
+            description: Number of months stored; use null for 'Initial'.
+          - id: solid_state_nir_percent
+            name: Solid State by NIR (%)
+            type: decimal
+            description: Numeric value if present; null if below reporting threshold.
+          - id: solid_state_nir_below_threshold
+            name: Solid State NIR Below Threshold
+            type: boolean
+            description: True if the cell shows a '<' value (e.g. '<5.0').
+        description: Solid state by NIR results per storage condition and time point, per batch.
+      - id: microbial_purity_table
+        name: Microbial Purity Table
+        columns:
+          - id: batch_number
+            name: Batch Number
+            type: text
+            description: Batch identifier this row belongs to.
+          - id: study_id
+            name: Study ID
+            type: text
+            description: Study identifier this row belongs to.
+          - id: storage_condition
+            name: Storage Condition
+            type: text
+            description: e.g. '25 °C/60% RH', '30 °C/75% RH'.
+          - id: storage_time_months
+            name: Storage Time (Months)
+            type: integer
+            description: Number of months stored; use null for 'Initial'.
+          - id: t_amc_count
+            name: Total Aerobic Microbial Count (CFU/g)
+            type: decimal
+            description: Numeric value if present; null if below reporting threshold.
+          - id: t_amc_below_threshold
+            name: TAMC Below Threshold
+            type: boolean
+            description: True if the cell shows a '<' value (e.g. '<100').
+          - id: tymc_count
+            name: Total Combined Yeasts and Molds Count (CFU/g)
+            type: decimal
+            description: Numeric value if present; null if below reporting threshold.
+          - id: tymc_below_threshold
+            name: TYMC Below Threshold
+            type: boolean
+            description: True if the cell shows a '<' value (e.g. '<50').
+          - id: ecoli_pass_fail
+            name: E. coli Pass/Fail
+            type: text
+            description: Pass or Fail as written.
+        description: Microbial purity counts and E. coli pass/fail per storage condition and time point, per
+          batch.
+  version: 4
+  document:
+    ocr: auto
+    sections:
+      - id: appearance_water_content_table
+        key: BATCH\s+(\w+)
+        anchor: (?i)^\s*(?:\d+\.\d+\.\s*)?Appearance.*Water Content
+        repeat: true
+        required: true
+        description: Table with appearance, water content by KF (% w/w), and water content by NIR (% w/w)
+          per storage condition and time point. May appear as a table caption (no sub-section
+          number, first batch) or as a numbered sub-heading like '2.1. Appearance, Water Content by
+          KF and Water Content by NIR Results'.
+      - id: assay_chromatographic_purity_table
+        key: BATCH\s+(\w+)
+        anchor: (?i)^\s*\d+\.\d+\.\s*Assay.*Chromatographic Purity
+        repeat: true
+        required: true
+        description: Table with assay (%), each specified degradation product (%), any unspecified
+          degradation product (%), and total degradation products (%) per storage condition and time
+          point.
+      - id: dissolution_results_table
+        key: BATCH\s+(\w+)
+        anchor: (?i)^\s*\d+\.\d+\.\s*Dissolution Results
+        repeat: true
+        required: true
+        description: Wide table of dissolution Mean (Min-Max) at time points 5, 10, 15, 20, 25, 30, 45 min
+          per storage condition and storage time. Extracted in long format (one row per time point).
+      - id: solid_state_nir_table
+        key: BATCH\s+(\w+)
+        anchor: (?i)^\s*\d+\.\d+\.\s*Solid state by NIR Results
+        repeat: true
+        required: true
+        description: Table with solid state by NIR (%) per storage condition and time point. Values are
+          often below the 5.0% reporting threshold (shown as '<5.0').
+      - id: microbial_purity_table
+        key: BATCH\s+(\w+)
+        anchor: (?i)^\s*\d+\.\d+\.\s*Microbial Purity Results
+        repeat: true
+        required: true
+        description: Table with TAMC (CFU/g), TYMC (CFU/g), and E. coli pass/fail per storage condition and
+          time point. Typically has fewer rows than other tables (only Initial and select time
+          points).
+      - id: batch_header
+        anchor: (?i)^\s*\d+\.\s+STUDY-\d+\s*-\s*BATCH
+        required: true
+        description: Top-level numbered heading identifying the study ID, batch number, internal code, and
+          packaging configuration for each batch.
+  pipeline:
+    - id: extract_batches
+      type: extract
+      model: default
+      table: batches
+      fields: []
+      context: {}
+      sections:
+        - batch_header
+      maxTokens: 64000
+      pageImages: []
+      maxAttempts: 2
+      instructions: >-
+        For each top‑level heading that matches the pattern '^[0-9]+\.\s+STUDY-(\d+) - BATCH (\S+)
+        \(([^)]+)\) PACKED AS (.+)$', extract:
+
+        - sequence: the numeric prefix before the period.
+
+        - study_id: group 1.
+
+        - batch_number: group 2.
+
+        - internal_code: group 3.
+
+        - packaging: group 4. Trim leading/trailing whitespace.
+
+        Ignore any non‑matching lines.
+    - id: extract_appearance_water_content
+      type: extract
+      model: default
+      table: appearance_water_content_table
+      fields: []
+      context: {}
+      sections:
+        - appearance_water_content_table
+      maxTokens: 64000
+      pageImages: []
+      maxAttempts: 2
+      instructions: >-
+        For each occurrence of the Appearance & Water Content table:
+
+        1. Identify the batch by reading the preceding heading or the table caption (e.g.,
+        'Study-202432 - Batch 4586783 ...'). Use this as keyColumn.
+
+        2. For every row, extract:
+           - storage_condition: first column text.
+           - storage_time_months: second column; if the value is 'Initial' set null, else parse integer.
+           - appearance: third column text.
+           - water_content_kf: fourth column numeric; if it starts with '<', store null and set water_content_kf_below_threshold to true (add this boolean column).
+           - water_content_nir: fifth column numeric; same handling for '<'.
+        3. Preserve the order of rows as they appear.
+
+        Ignore any footnotes or annotations after the table.
+    - id: extract_assay_chromatographic_purity
+      type: extract
+      model: default
+      table: assay_chromatographic_purity_table
+      fields: []
+      context: {}
+      sections:
+        - assay_chromatographic_purity_table
+      maxTokens: 64000
+      pageImages: []
+      maxAttempts: 2
+      instructions: >-
+        For each Assay & Chromatographic Purity table:
+
+        1. Use the preceding heading or caption to set batch_number.
+
+        2. For every row, extract:
+           - storage_condition: first column.
+           - storage_time_months: second column; 'Initial' → null else integer.
+           - assay: third column numeric.
+           - degradation_product_specified: fourth column numeric; if '<', set null and degradation_product_specified_below_threshold = true.
+           - degradation_product_unspecified: fifth column numeric; same handling for '<'.
+           - total_degradation_products: sixth column numeric; same handling for '<'.
+        3. Skip any footnote lines.
+    - id: extract_dissolution_results
+      type: extract
+      model: default
+      table: dissolution_results_table
+      fields: []
+      context: {}
+      sections:
+        - dissolution_results_table
+      maxTokens: 64000
+      pageImages: []
+      maxAttempts: 2
+      instructions: >-
+        For each Dissolution Results table:
+
+        1. Use the heading or caption to set batch_number.
+
+        2. For every row, extract:
+           - storage_condition: first column.
+           - storage_time_months: second column; 'Initial' → null else integer.
+           - time_point_min: parse the minute value from the column header (e.g., '5 min').
+           - mean_percent, min_percent, max_percent: split the cell text by '-' and parentheses. Example "48(43-51)" gives mean=48, min=43, max=51.
+        3. If a row contains only a single value like "100", treat mean=max=min=100.
+
+        4. Ignore footnotes.
+    - id: extract_solid_state_nir
+      type: extract
+      model: default
+      table: solid_state_nir_table
+      fields: []
+      context: {}
+      sections:
+        - solid_state_nir_table
+      maxTokens: 64000
+      pageImages: []
+      maxAttempts: 2
+      instructions: >-
+        For each Solid State by NIR table:
+
+        1. Use the heading or caption to set batch_number.
+
+        2. For every row, extract:
+           - storage_condition: first column.
+           - storage_time_months: second column; 'Initial' → null else integer.
+           - solid_state_nir_percent: numeric value; if starts with '<', store null and set solid_state_nir_below_threshold = true.
+        3. Skip footnotes.
+    - id: extract_microbial_purity
+      type: extract
+      model: default
+      table: microbial_purity_table
+      fields: []
+      context: {}
+      sections:
+        - microbial_purity_table
+      maxTokens: 64000
+      pageImages: []
+      maxAttempts: 2
+      instructions: >-
+        For each Microbial Purity table:
+
+        1. Use the heading or caption to set batch_number.
+
+        2. For every row, extract:
+           - storage_condition: first column.
+           - storage_time_months: second column; 'Initial' → null else integer.
+           - t_amc_count: third column numeric; if '<', store null and set t_amc_below_threshold = true.
+           - tymc_count: fourth column numeric; same handling for '<'.
+           - ecoli_pass_fail: fifth column text (Pass/Fail).
+        3. Ignore footnotes.
+    - id: check_batch_numbers
+      type: check
+      values: appearance_water_content_table.batch_number
+      reference: batches.batch_number
+      description: Verify that every batch_number appearing in any result table matches a row in the
+        batches table.
+      maxDistance: 2
+    - id: check_batch_numbers_assay
+      type: check
+      values: assay_chromatographic_purity_table.batch_number
+      reference: batches.batch_number
+      description: Verify that every batch_number appearing in the assay table matches a row in the
+        batches table.
+      maxDistance: 2
+    - id: check_batch_numbers_dissolution
+      type: check
+      values: dissolution_results_table.batch_number
+      reference: batches.batch_number
+      description: Verify that every batch_number appearing in the dissolution table matches a row in the
+        batches table.
+      maxDistance: 2
+    - id: check_batch_numbers_nir
+      type: check
+      values: solid_state_nir_table.batch_number
+      reference: batches.batch_number
+      description: Verify that every batch_number appearing in the solid state NIR table matches a row in
+        the batches table.
+      maxDistance: 2
+    - id: check_batch_numbers_microbial
+      type: check
+      values: microbial_purity_table.batch_number
+      reference: batches.batch_number
+      description: Verify that every batch_number appearing in the microbial purity table matches a row in
+        the batches table.
+      maxDistance: 2
