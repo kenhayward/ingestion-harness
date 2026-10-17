@@ -110,6 +110,7 @@ const buckets = {
   backups: config.S3_BUCKET_BACKUPS,
 };
 const version = versionFromConfig(config);
+const maintenance = new PgMaintenanceRepo(makePool(2));
 // Backup and restore (Administration > Backup): every backup is encrypted under LLM_SECRETS_KEY,
 // so without it there are none. Data-lake identities cannot be carried on SeaweedFS 4.48
 // (seaweed-iam-file.ts).
@@ -129,6 +130,7 @@ const backup =
     baseIri: async () => effectiveBaseIri(await linkedData.get()) ?? '',
     now: () => new Date(),
     queue: new PgQueueControlRepo(makePool(1)),
+    maintenance,
     log: { error: (obj, msg) => logBackupError(obj, msg) },
   });
 
@@ -155,7 +157,7 @@ const app = await buildApp({
   llm: new PgLlmConfigRepo(makePool(2)),
   ontologies: new PgOntologyRepo(makePool(2)),
   linkedData,
-  maintenance: new PgMaintenanceRepo(makePool(2)),
+  maintenance,
   ontologyFetch: {
     hosts: config.ONTOLOGY_FETCH_ALLOW.split(',')
       .map((h) => h.trim())
@@ -198,6 +200,10 @@ if (seedOutcome === 'differs') {
 // and its sessions end (ADR 0013). Rotated before listening, so a failure stops startup rather
 // than serving without an admin.
 const adminToken = await access.rotateAdminPassword();
+// A restore cut off by this restart is marked failed, and maintenance stays on (restore.ts).
+await backup
+  ?.recover()
+  .catch((err: unknown) => app.log.error({ err }, 'interrupted restores could not be checked'));
 // Written straight to stdout (not the logger): printed whatever LOG_LEVEL is, and in a fixed
 // shape deploy/scripts/admin-token.sh matches exactly (request URLs can't forge it - no spaces).
 process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${adminToken}\n`);

@@ -69335,6 +69335,12 @@
                                       "enum": [
                                         true
                                       ]
+                                    },
+                                    "lakeKeysToReissue": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
                                     }
                                   },
                                   "required": [
@@ -69344,7 +69350,8 @@
                                     "copy",
                                     "triples",
                                     "previousDatabase",
-                                    "adminTokenRotated"
+                                    "adminTokenRotated",
+                                    "lakeKeysToReissue"
                                   ],
                                   "additionalProperties": true
                                 },

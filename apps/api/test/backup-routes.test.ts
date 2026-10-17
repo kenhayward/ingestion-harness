@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { OPERATOR_REFUSED, type BackupView } from '@ih/shared';
 import { MemoryQueueControlRepo } from '../src/backup/queue-control.js';
 import { BackupService } from '../src/backup/service.js';
+import { MemoryMaintenanceRepo } from '../src/maintenance/repo.js';
 import { FakeDatabaseTools, fakeBackupDeps } from './backup-fakes.js';
 import { accessApp, signInNewUser } from './helpers.js';
 
@@ -24,7 +25,7 @@ class HeldDatabase extends FakeDatabaseTools {
 async function setup(db = new FakeDatabaseTools()) {
   const deps = fakeBackupDeps({ db });
   const queue = new MemoryQueueControlRepo();
-  const backup = new BackupService({ ...deps, queue });
+  const backup = new BackupService({ ...deps, queue, maintenance: new MemoryMaintenanceRepo() });
   const ctx = await accessApp({ backup });
   const as = (cookie: string) => ({
     status: () => ctx.app.inject({ url: '/api/backup', headers: { cookie } }),
@@ -227,7 +228,11 @@ describe('BackupService', () => {
       return getStream(bucket, key);
     };
     puts.length = 0;
-    const service = new BackupService({ ...deps, queue: new MemoryQueueControlRepo() });
+    const service = new BackupService({
+      ...deps,
+      queue: new MemoryQueueControlRepo(),
+      maintenance: new MemoryMaintenanceRepo(),
+    });
     service.startBackup('Ada');
     await service.settled();
     // The first write when it starts, one about two seconds in, and the final one.
@@ -252,7 +257,11 @@ describe('BackupService', () => {
       Buffer.from(JSON.stringify({ ...view, fileName: null })),
       'application/json',
     );
-    const service = new BackupService({ ...deps, queue: new MemoryQueueControlRepo() });
+    const service = new BackupService({
+      ...deps,
+      queue: new MemoryQueueControlRepo(),
+      maintenance: new MemoryMaintenanceRepo(),
+    });
     expect((await service.status()).backup).toMatchObject({
       status: 'failed',
       error: 'the API restarted during the backup',
@@ -262,7 +271,11 @@ describe('BackupService', () => {
 
   it('download returns the stream, its size and the file name', async () => {
     const deps = fakeBackupDeps();
-    const service = new BackupService({ ...deps, queue: new MemoryQueueControlRepo() });
+    const service = new BackupService({
+      ...deps,
+      queue: new MemoryQueueControlRepo(),
+      maintenance: new MemoryMaintenanceRepo(),
+    });
     const { id } = service.startBackup('Ada');
     await service.settled();
     const file = await service.download(id);

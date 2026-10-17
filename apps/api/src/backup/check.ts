@@ -17,6 +17,18 @@ export class BackupTooNewError extends Error {
   }
 }
 
+/** What the check learnt that a restore needs: the manifest, the key, and objects' types. */
+export interface CheckedBackup {
+  manifest: BackupManifest;
+  /** The master key that opened the file. */
+  master: Buffer;
+  /**
+   * Content type of each object, by entry name (`objects/<bucket>/<key>`): the index comes after
+   * the objects in the file, so a restore writing objects as they arrive needs them from here.
+   */
+  contentTypes: Map<string, string>;
+}
+
 const IndexLineSchema = z.object({
   role: z.string(),
   bucket: z.string(),
@@ -42,7 +54,7 @@ export async function checkBackup(
   masters: Buffer[],
   localMigrations: string[],
   onProgress: (p: CheckProgress) => void,
-): Promise<{ manifest: BackupManifest; master: Buffer }> {
+): Promise<CheckedBackup> {
   const source = await input();
   const decrypt = decryptStream(masters);
   pipeline(source, decrypt, () => {});
@@ -51,7 +63,7 @@ export async function checkBackup(
   const tail: ArchiveTail = { rest: Buffer.alloc(0) };
 
   const hashes = new Map<string, { size: number; sha256: string }>();
-  const index = new Map<string, { size: number; sha256: string }>();
+  const index = new Map<string, IndexEntry>();
   let manifestBytes: Buffer | null = null;
   let bytes = 0;
   let count = 0;
@@ -143,10 +155,16 @@ export async function checkBackup(
 
   const master = decrypt.openedWith();
   if (!master) throw new BackupCorruptError('the backup has no content');
-  return { manifest, master };
+  const contentTypes = new Map<string, string>();
+  for (const [name, entry] of index) {
+    if (entry.contentType) contentTypes.set(name, entry.contentType);
+  }
+  return { manifest, master, contentTypes };
 }
 
-function addIndexLine(index: Map<string, { size: number; sha256: string }>, line: string): void {
+type IndexEntry = { size: number; sha256: string; contentType?: string | undefined };
+
+function addIndexLine(index: Map<string, IndexEntry>, line: string): void {
   if (line === '') return;
   let parsed: z.infer<typeof IndexLineSchema>;
   try {
@@ -159,5 +177,6 @@ function addIndexLine(index: Map<string, { size: number; sha256: string }>, line
   index.set(name, {
     size: parsed.size,
     sha256: parsed.sha256,
+    contentType: parsed.contentType,
   });
 }

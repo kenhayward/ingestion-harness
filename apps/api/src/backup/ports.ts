@@ -1,5 +1,6 @@
 import type { Readable } from 'node:stream';
 import type { ObjectStore } from '../storage/object-store.js';
+import type { CopyResult, KeptState } from './copy-rules.js';
 
 /**
  * What a backup and a restore need from the stack, as ports: the real adapters are `pg-tools.ts`
@@ -29,6 +30,8 @@ export interface TripleStoreDump {
   dump(): Promise<Readable>;
   /** Replaces the whole dataset with these N-Quads. */
   replace(body: Readable): Promise<void>;
+  /** Removes one named graph (absent already is success). */
+  deleteGraph(iri: string): Promise<void>;
 }
 
 export interface LakeIdentities {
@@ -60,4 +63,51 @@ export interface BackupDeps {
   instanceName(): Promise<string>;
   baseIri(): Promise<string>;
   now(): Date;
+}
+
+/**
+ * What a restore does in the live database, the one it is about to replace: stop the queue and
+ * the jobs running, and read what a copy keeps from this server. `restore-pg.ts` is the adapter.
+ */
+export interface LiveDatabase {
+  /** Pauses the job queue (`queue_control`): no worker claims a job until an admin resumes it. */
+  pauseQueue(by: string, reason: string): Promise<void>;
+  /** How many jobs are running. */
+  runningJobs(): Promise<number>;
+  /** Cancels every running job with that reason; returns how many. */
+  cancelRunning(reason: string): Promise<number>;
+  readKeptState(): Promise<KeptState>;
+}
+
+/** An object a row of the restored database names. */
+export interface ObjectRef {
+  bucket: string;
+  key: string;
+}
+
+/** What a restore does in the side database, the restored backup, before it is swapped in. */
+export interface SideDatabase {
+  /** The copy rules (restore as a copy), in their own transaction. */
+  applyCopyRules(kept: KeptState): Promise<CopyResult>;
+  /**
+   * Every restore: ends every session, pauses the queue, turns maintenance on with `message`,
+   * and renames the buckets rows record (`documents`, `job_outputs`) from the backup's own
+   * buckets to this server's (`from` → `to`).
+   */
+  prepare(opts: {
+    message: string;
+    by: string;
+    buckets: { from: string; to: string }[];
+  }): Promise<void>;
+  /** Every document's file and every published, live output of an internal target. */
+  referencedObjects(): Promise<ObjectRef[]>;
+  /** The data-lake consumers' access keys not revoked (label, IAM user, key id). */
+  lakeAccessKeys(): Promise<{ consumer: string; userName: string; accessKeyId: string }[]>;
+  /** Queues a `rebuild` job (it runs once the queue is resumed). */
+  queueRebuild(mode: 'remint' | 'rebuild', by: string): Promise<void>;
+  /** The `embedding_model` pipeline setting, if any. */
+  embeddingModel(): Promise<string | null>;
+  /** Row counts of the main tables, for the report. */
+  tableCounts(): Promise<{ table: string; rows: number }[]>;
+  close(): Promise<void>;
 }

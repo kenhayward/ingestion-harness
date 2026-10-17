@@ -38,15 +38,20 @@ export class FusekiTripleStore implements TripleStoreDump {
     return this.opts.endpoint.trim() !== '';
   }
 
-  private async send(init: RequestInit & { duplex?: 'half' }, what: string): Promise<Response> {
-    const res = await this.fetchFn(datasetUrl(this.opts), {
+  private async send(
+    init: RequestInit & { duplex?: 'half' },
+    what: string,
+    url = datasetUrl(this.opts),
+    absent?: number,
+  ): Promise<Response> {
+    const res = await this.fetchFn(url, {
       ...init,
       headers: {
         ...(init.headers as Record<string, string>),
         authorization: basicAuth(this.opts.user, this.opts.password),
       },
     });
-    if (!res.ok) {
+    if (!res.ok && res.status !== absent) {
       const text = (await res.text().catch(() => '')).slice(0, 300);
       throw new Error(`the triple store refused to ${what}: ${res.status} ${text}`.trim());
     }
@@ -69,6 +74,13 @@ export class FusekiTripleStore implements TripleStoreDump {
       },
       'replace its dataset',
     );
+    await res.body?.cancel();
+  }
+
+  /** DELETE `?graph=<iri>`; a graph that is not there (404) is already gone. */
+  async deleteGraph(iri: string): Promise<void> {
+    const url = `${datasetUrl(this.opts)}?graph=${encodeURIComponent(iri)}`;
+    const res = await this.send({ method: 'DELETE', headers: {} }, `delete graph ${iri}`, url, 404);
     await res.body?.cancel();
   }
 }

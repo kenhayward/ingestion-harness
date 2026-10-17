@@ -107,6 +107,12 @@ export const RestoreReportSchema = z.object({
   triples: z.enum(['restored', 'none-in-backup', 'no-triple-store', 'reminting']),
   previousDatabase: z.string(),
   adminTokenRotated: z.literal(true),
+  /**
+   * Data-lake consumers (by label) whose access keys this server's SeaweedFS does not hold: a
+   * backup cannot carry their identities, so an admin re-issues them. Empty for a copy, which
+   * keeps this server's consumers.
+   */
+  lakeKeysToReissue: z.array(z.string()),
 });
 export type RestoreReport = z.infer<typeof RestoreReportSchema>;
 

@@ -1,8 +1,12 @@
 import { Readable } from 'node:stream';
+import type { CopyResult, KeptState } from '../src/backup/copy-rules.js';
 import type {
   BackupDeps,
   DatabaseTools,
   LakeIdentities,
+  LiveDatabase,
+  ObjectRef,
+  SideDatabase,
   TripleStoreDump,
 } from '../src/backup/ports.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
@@ -79,6 +83,12 @@ export class FakeTripleStore implements TripleStoreDump {
   async replace(body: Readable): Promise<void> {
     this.content = (await readAll(body)).toString('utf8');
   }
+
+  readonly deletedGraphs: string[] = [];
+
+  async deleteGraph(iri: string): Promise<void> {
+    this.deletedGraphs.push(iri);
+  }
 }
 
 /** SeaweedFS identities: `replace` keeps every non-lake one, as the real adapter must. */
@@ -129,4 +139,91 @@ export function fakeBackupDeps(over: Partial<BackupDeps> = {}): BackupDeps & {
     ...over,
     store,
   };
+}
+
+/** The live database's restore side: the queue switch, running jobs and the kept state. */
+export class FakeLiveDatabase implements LiveDatabase {
+  paused: { by: string; reason: string } | null = null;
+  readonly calls: string[] = [];
+  readonly kept = { marker: 'staging' } as unknown as KeptState;
+
+  constructor(public running = 0) {}
+
+  async pauseQueue(by: string, reason: string): Promise<void> {
+    this.calls.push('pause');
+    this.paused = { by, reason };
+  }
+
+  async runningJobs(): Promise<number> {
+    return this.running;
+  }
+
+  async cancelRunning(reason: string): Promise<number> {
+    this.calls.push(`cancel ${reason}`);
+    const n = this.running;
+    this.running = 0;
+    return n;
+  }
+
+  async readKeptState(): Promise<KeptState> {
+    this.calls.push('read kept');
+    return this.kept;
+  }
+}
+
+/** The side database's restore steps, recorded; what it answers is set by the test. */
+export class FakeSideDatabase implements SideDatabase {
+  readonly calls: string[] = [];
+  url: string | null = null;
+  keptGiven: KeptState | null = null;
+  prepared: Parameters<SideDatabase['prepare']>[0] | null = null;
+  rebuilds: string[] = [];
+  closed = false;
+  references: ObjectRef[] = [];
+  accessKeys: { consumer: string; userName: string; accessKeyId: string }[] = [];
+  embedding: string | null = null;
+  copyResult: CopyResult = {
+    cancelledJobs: 2,
+    droppedTargets: ['prod-ext'],
+    withdrawnOutputs: 3,
+    recipesNeedingModel: ['invoice'],
+    recipesNeedingTarget: [],
+    droppedGraphs: ['https://id.example.com/acme/graph/1'],
+  };
+
+  async applyCopyRules(kept: KeptState): Promise<CopyResult> {
+    this.calls.push('copy rules');
+    this.keptGiven = kept;
+    return this.copyResult;
+  }
+
+  async prepare(opts: Parameters<SideDatabase['prepare']>[0]): Promise<void> {
+    this.calls.push('prepare');
+    this.prepared = opts;
+  }
+
+  async referencedObjects(): Promise<ObjectRef[]> {
+    return this.references;
+  }
+
+  async lakeAccessKeys() {
+    return this.accessKeys;
+  }
+
+  async queueRebuild(mode: 'remint' | 'rebuild'): Promise<void> {
+    this.calls.push(`rebuild ${mode}`);
+    this.rebuilds.push(mode);
+  }
+
+  async embeddingModel(): Promise<string | null> {
+    return this.embedding;
+  }
+
+  async tableCounts() {
+    return [{ table: 'jobs', rows: 4 }];
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+  }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BackupManifestSchema,
+  RestoreReportSchema,
   RestoreStartBodySchema,
   UploadStartBodySchema,
   copyPlan,
@@ -53,6 +54,23 @@ describe('backup contract', () => {
   it('refuses an empty upload', () => {
     expect(UploadStartBodySchema.safeParse({ size: 0, fileName: 'b.zip' }).success).toBe(false);
     expect(UploadStartBodySchema.safeParse({ size: 5, fileName: 'b.zip' }).success).toBe(true);
+  });
+
+  it('parses a restore report naming the data-lake keys to re-issue', () => {
+    const report = {
+      restored: [{ table: 'jobs', rows: 3 }],
+      objects: 12,
+      missingObjects: [{ bucket: 'inbox', key: 'a.pdf' }],
+      copy: null,
+      triples: 'restored',
+      previousDatabase: 'ingestion_before_restore_202610171200',
+      adminTokenRotated: true,
+      lakeKeysToReissue: ['Acme lake'],
+    };
+    expect(RestoreReportSchema.parse(report)).toEqual(report);
+    expect(RestoreReportSchema.safeParse({ ...report, lakeKeysToReissue: undefined }).success).toBe(
+      false,
+    );
   });
 
   it('gives the fixed copy plan', () => {

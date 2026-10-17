@@ -171,6 +171,21 @@ describe('Fuseki triple store', () => {
     expect(sent).toBe('<s> <p> <o> <g> .\n');
   });
 
+  it('deletes one named graph, a missing one included', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const store = new FusekiTripleStore(opts, async (url, init) => {
+      calls.push({ url: String(url), init: init! });
+      return new Response(null, { status: calls.length === 1 ? 204 : 404 });
+    });
+    await store.deleteGraph('https://id.example.com/g?x=1');
+    await store.deleteGraph('https://id.example.com/gone');
+    expect(calls[0]!.url).toBe(
+      'http://fuseki:3030/ct/data?graph=https%3A%2F%2Fid.example.com%2Fg%3Fx%3D1',
+    );
+    expect(calls[0]!.init.method).toBe('DELETE');
+    expect(calls[0]!.init.headers).toEqual({ authorization: basicAuth('ct-writer', 'pw') });
+  });
+
   it('reports a refusal with its status', async () => {
     const store = new FusekiTripleStore(
       opts,

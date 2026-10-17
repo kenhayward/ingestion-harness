@@ -7,9 +7,16 @@ import {
   type RestoreStatus,
 } from '@ih/shared';
 import { z } from 'zod';
+import type { MaintenanceRepo } from '../maintenance/repo.js';
 import { backupFileKey, createBackup } from './create.js';
 import type { BackupDeps } from './ports.js';
 import type { QueueControlRepo } from './queue-control.js';
+import {
+  readRestoreStatuses,
+  RESTORE_INTERRUPTED,
+  RESTORE_MESSAGE,
+  saveRestoreStatus,
+} from './restore.js';
 
 /** The 409 for a second backup, or a restore, while one runs. */
 export const BUSY = 'a backup or restore is already running';
@@ -29,6 +36,8 @@ export class BackupBusyError extends Error {
 
 export interface BackupServiceDeps extends BackupDeps {
   queue: QueueControlRepo;
+  /** The maintenance row, set on when an interrupted restore is found at start. */
+  maintenance: Pick<MaintenanceRepo, 'set'>;
   /** Where a failed backup's error is logged too (it is always in its record). */
   log?: { error(obj: object, msg: string): void };
 }
@@ -103,6 +112,34 @@ export class BackupService {
       this.busy = null;
     });
     return viewOf(record);
+  }
+
+  /** True while a backup or restore runs (an upload start is refused meanwhile). */
+  isBusy(): boolean {
+    return this.busy !== null;
+  }
+
+  /**
+   * On API start: a restore still `restoring` was cut off by the restart. It is saved as failed
+   * and maintenance is switched on in the row (the database may be the live one or the restored
+   * one, depending on whether the swap happened), so non-admins stay out until an admin looks.
+   */
+  async recover(): Promise<void> {
+    const { store, buckets } = this.deps;
+    let interrupted = false;
+    for (const status of await readRestoreStatuses(store, buckets.backups)) {
+      if (status.phase !== 'restoring') continue;
+      interrupted = true;
+      await saveRestoreStatus(store, buckets.backups, {
+        ...status,
+        phase: 'failed',
+        error: RESTORE_INTERRUPTED,
+        updatedAt: this.deps.now().toISOString(),
+      });
+    }
+    if (interrupted) {
+      await this.deps.maintenance.set({ enabled: true, message: RESTORE_MESSAGE }, null);
+    }
   }
 
   /** Resolves once nothing runs (tests wait on it). */
