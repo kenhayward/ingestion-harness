@@ -235,6 +235,30 @@ describe('POST /api/publish-targets', () => {
   });
 });
 
+describe('inert publishing targets (a copy restore)', () => {
+  it('an inert target is not listed and is a 404', async () => {
+    const c = await setup();
+    await c.targets.create(financeRecord(), 'Ken');
+    await c.targets.makeInert('finance-lake');
+    const list = (await c.call('GET', '/publish-targets')).json() as {
+      targets: PublishTargetView[];
+    };
+    expect(list.targets.map((t) => t.id)).toEqual(['default']);
+    const choices = (await c.call('GET', '/publish-targets/choices')).json() as {
+      choices: { id: string }[];
+    };
+    expect(choices.choices.map((t) => t.id)).toEqual(['default']);
+    for (const res of [
+      await c.call('PATCH', '/publish-targets/finance-lake', { label: 'x' }),
+      await c.call('DELETE', '/publish-targets/finance-lake'),
+      await c.call('POST', '/publish-targets/test', { id: 'finance-lake' }),
+    ]) {
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error).toBe('publishing target not found');
+    }
+  });
+});
+
 describe('PATCH /api/publish-targets/:id', () => {
   it('is a 404 for an unknown target', async () => {
     const c = await setup();

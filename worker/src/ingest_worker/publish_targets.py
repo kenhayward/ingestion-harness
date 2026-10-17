@@ -189,7 +189,11 @@ class PgPublishTargetStore:
 
     def load(self) -> list[TargetRow]:
         def work(conn: psycopg.Connection[Any]) -> list[TargetRow]:
-            rows = conn.execute(f"SELECT {_COLUMNS} FROM publish_targets ORDER BY id").fetchall()
+            # An inert row (a copy restore's dropped external target, kept for the foreign keys
+            # only) does not exist here: nothing resolves or delivers to it (TargetMissing).
+            rows = conn.execute(
+                f"SELECT {_COLUMNS} FROM publish_targets WHERE inert_at IS NULL ORDER BY id"
+            ).fetchall()
             return [TargetRow(*r) for r in rows]
 
         return self._run(work)

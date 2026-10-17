@@ -42,8 +42,8 @@ import {
   WORKBENCH_PRIORITY,
   type WorkbenchJobOptions,
   type WithdrawalStatus,
-  REPUBLISH_JOB,
-  WITHDRAW_JOB,
+  BACKGROUND_JOBS,
+  type BackgroundTask,
   graphWithdrawals,
   type WithdrawnGraph,
 } from './types.js';
@@ -87,7 +87,7 @@ export class MemoryRepo implements IngestionRepo {
   /** Document-less withdraw/republish jobs queued (ADR 0011 step 7). */
   readonly backgroundJobs: {
     id: string;
-    task: 'withdraw' | 'republish';
+    task: BackgroundTask;
     priority: number;
     maxAttempts: number;
     params: unknown;
@@ -542,12 +542,12 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   private queueBackground(
-    task: 'withdraw' | 'republish',
+    task: BackgroundTask,
     params: unknown,
     by: string | null,
   ): string {
     const id = randomUUID();
-    const { priority, maxAttempts } = task === 'withdraw' ? WITHDRAW_JOB : REPUBLISH_JOB;
+    const { priority, maxAttempts } = BACKGROUND_JOBS[task];
     this.backgroundJobs.push({
       id,
       task,

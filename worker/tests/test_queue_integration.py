@@ -81,6 +81,17 @@ def test_a_deleted_job_counts_as_cancelled_for_its_worker(
     assert q.is_cancelled(claimed)
 
 
+def test_claim_skips_while_paused(queue_with_queued_job: tuple[PgJobQueue, str]) -> None:
+    q, job_id = queue_with_queued_job
+    q._conn.execute("UPDATE queue_control SET paused = true")
+    try:
+        assert q.claim("w1") is None
+    finally:
+        q._conn.execute("UPDATE queue_control SET paused = false")
+    claimed = q.claim("w1")
+    assert claimed is not None and claimed.id == job_id
+
+
 def test_a_retried_and_reclaimed_job_is_no_longer_the_old_workers(
     queue_with_queued_job: tuple[PgJobQueue, str],
 ) -> None:

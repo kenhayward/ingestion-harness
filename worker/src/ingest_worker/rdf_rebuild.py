@@ -23,10 +23,10 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import psycopg
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .graph_store import GraphStoreUnavailable
 from .pipeline import DocumentError, PipelineDeps, Target
@@ -346,6 +346,37 @@ def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[s
     lines.append(
         f"remint under {base}: {moved} re-minted, {already} already there, {failed} failed"
     )
+    return lines
+
+
+class RebuildParams(BaseModel):
+    """A `rebuild` job's params (a copy restore queues `remint`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["remint", "rebuild"]
+
+
+#: Job event of a finished `rebuild` job (`{mode, summary}`: the command's last line).
+REBUILT = "rebuilt"
+
+
+def run_rebuild_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[str]:
+    """The `rebuild` task: the operator command as a job, so a copy restore can re-mint the
+    graphs under this server's base once an admin resumes the worker. Per-graph failures are
+    lines of the summary, as for the command (run it again); nothing is output."""
+    try:
+        params = RebuildParams.model_validate(job.params or {})
+    except ValidationError as exc:
+        raise DocumentError(f"invalid rebuild parameters: {exc}") from exc
+    if params.mode == "remint":
+        source = deps.delivered_jobs
+        if source is None:
+            raise DocumentError("re-minting needs the database")
+        lines = remint(deps, queue, source)
+    else:
+        lines = rebuild(deps)
+    queue.event(job.id, "info", REBUILT, {"mode": params.mode, "summary": lines[-1]})
     return lines
 
 

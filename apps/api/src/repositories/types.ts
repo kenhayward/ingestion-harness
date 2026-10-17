@@ -116,6 +116,16 @@ export interface WithdrawalStatus {
 /** `withdraw` and `republish` jobs: priority, attempts (a withdrawal retries until it succeeds). */
 export const WITHDRAW_JOB = { priority: 0, maxAttempts: 100 } as const;
 export const REPUBLISH_JOB = { priority: -10, maxAttempts: 10 } as const;
+/** `rebuild`: a copy restore's re-mint of the graphs under this server's base (params `{mode}`). */
+export const REBUILD_JOB = { priority: -10, maxAttempts: 10 } as const;
+
+/** Document- and project-less jobs the API queues for the worker. */
+export type BackgroundTask = 'withdraw' | 'republish' | 'rebuild';
+export const BACKGROUND_JOBS: Record<BackgroundTask, { priority: number; maxAttempts: number }> = {
+  withdraw: WITHDRAW_JOB,
+  republish: REPUBLISH_JOB,
+  rebuild: REBUILD_JOB,
+};
 
 /** One graph of a `withdraw` job's params: its version copies on one publishing target. */
 export interface WithdrawnGraph {

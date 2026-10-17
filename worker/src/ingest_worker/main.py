@@ -43,7 +43,7 @@ from .pipeline import (
 )
 from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
-from .rdf_rebuild import PgRebuildSource
+from .rdf_rebuild import PgRebuildSource, run_rebuild_job
 from .specs import LoadedTemplate, load_specs
 from .storage import S3ObjectStore
 from .template_pipeline import (
@@ -72,8 +72,9 @@ def run_once(
     heartbeat: JobHeartbeat | None = None,
     heartbeat_s: float = HEARTBEAT_S,
 ) -> bool:
-    """Claim and run one job (process, publish, rerun, prepare, segment, draft, export or
-    ontology), beating its heartbeat while it runs (heartbeat.py).
+    """Claim and run one job (any task: process, publish, rerun, prepare, segment, draft,
+    export, ontology, graph, suggest, embed, withdraw, republish or rebuild), beating its
+    heartbeat while it runs (heartbeat.py). Nothing is claimed while the queue is paused.
     Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
@@ -172,6 +173,11 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
             count = run_republish(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s re-delivered %d jobs", job.id, count)
+            return
+        if job.task == "rebuild":
+            lines = run_rebuild_job(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s: %s", job.id, lines[-1])
             return
         if job.task == "ontology":
             parsed = run_ontology_import(job, deps, queue)
