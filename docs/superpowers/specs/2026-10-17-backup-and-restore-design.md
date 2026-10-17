@@ -1,6 +1,6 @@
 # Backup and restore
 
-Status: design, 2026-10-17. Owner: Ken Hayward.
+Status: implemented, 2026-10-17 ([ADR 0015](../../adr/0015-backup-and-restore.md); see Deviations at the end). Owner: Ken Hayward.
 
 ## Why
 
@@ -272,3 +272,15 @@ Consequences the restore handles and reports:
 - The data model for production's external targets kept as non-delivering rows in a copy.
 - How the restore treats objects in this server's buckets that the backup does not have (deleted, so
   the buckets equal the backup's, is the expected result).
+
+## Deviations
+
+What the build did differently from this design:
+
+- **Data-lake identities are not backed up.** SeaweedFS 4.48 keeps one file per identity and a filer write breaks its IAM, so a backup carries none; a restore reports the consumers whose keys must be re-issued (`SEAWEEDFS_FILER_URL` was not added).
+- **Triple store through Graph Store Protocol.** Whole-dataset GET and PUT on `/{dataset}/data` worked on Fuseki 6.2.0, so the `rdf_rebuild` fallback is used only for a copy's re-minted graphs.
+- **Target objects keep their recorded bucket names in a copy**, so every recorded `job_outputs` key still resolves; the cost is unused objects on staging for ids staging has as external.
+- **Side database and rename swap**, with running jobs given up to 2 minutes before they are cancelled, and the queue paused (`queue_control`) rather than the worker stopped.
+- **A checked restore expires after 30 minutes** (drops the decrypted key, frees the lock); *Cancel restore* does the same.
+- **A copy keeps no secret from the backup** (`applyCopyRules` has no `secretsFrom`/`secretsTo`); maintenance is not a kept table, the restore forces it on with its message.
+- **`status()` also returns `lastSucceeded`**, so a failed backup leaves the previous one downloadable.

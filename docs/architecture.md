@@ -176,6 +176,10 @@ migration 0010) holds metadata only. Revocation deletes the key immediately; a r
 API deletes expired keys and anything `lake-*` it has no record of, every minute. The proxy in
 front of the S3 port allows only GET/HEAD on the bucket (`deploy/README.md`).
 
+## Backup and restore
+
+An admin makes a whole-deployment backup from Administration > Backup: one encrypted `.ctbak` file holding the Postgres dump, the objects of the inbox, outputs, runs and internal publishing-target buckets, and the Fuseki dataset, kept in a backups bucket (only the newest successful one). A restore checks the entire file first, pauses the job queue and turns on maintenance mode, restores the dump into a second database and swaps it in by renaming, either as the same deployment or as a copy that keeps the target server's own models, publishing targets and identity. The engine is in the API (`apps/api/src/backup/`); see [ADR 0015](adr/0015-backup-and-restore.md).
+
 ## LLM provider layer
 
 `config/llm-providers.yaml` declares providers; each has a `kind`:
