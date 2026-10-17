@@ -25,3 +25,4 @@ export * from './version-labels.js';
 export * from './profile.js';
 export * from './github-sync.js';
 export * from './publish-targets.js';
+export * from './build-version.js';

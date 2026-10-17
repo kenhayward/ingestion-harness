@@ -79,10 +79,10 @@ describe.skipIf(!url)('migrations over existing data', { timeout: 60_000 }, () =
     }
   });
 
-  it('0050 names the default target in pending withdrawals and grants it to consumers', async () => {
+  it('202610170019 names the default target in pending withdrawals and grants it to consumers', async () => {
     await admin.query(`DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`);
     await admin.query(`CREATE DATABASE ${DB}`);
-    const before = migrationsBefore('0050');
+    const before = migrationsBefore('202610170019');
     try {
       await migrate(dbUrl, before);
     } finally {

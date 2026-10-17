@@ -8,7 +8,9 @@ import { BrandMark } from '../ui/BrandMark.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { ThemeSwitch } from '../ui/ThemeSwitch.js';
 import { Avatar } from './Avatar.js';
+import { BUILD_VERSION } from '../version.js';
 import { attentionCount, sectionOf } from './derive.js';
+import { NavVersion } from './NavVersion.js';
 
 /** The API reference (served by the API, public: docs/design/api-docs.md). */
 export const API_DOCS = '/api/docs/';
@@ -439,6 +441,7 @@ export function AppShell({
               </a>
             </>
           )}
+          <NavVersion info={BUILD_VERSION} compact={compact} />
         </nav>
         <main className="page">{children}</main>
       </div>

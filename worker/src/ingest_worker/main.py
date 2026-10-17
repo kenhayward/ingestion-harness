@@ -52,6 +52,7 @@ from .template_pipeline import (
     publish_template_job,
     rerun_template_job,
 )
+from .version import app_version
 from .withdrawal import run_republish, run_withdraw
 from .workbench import prepare_sample, run_segment
 
@@ -265,6 +266,7 @@ def idle(queue: JobQueue, stop: threading.Event, timeout_s: float) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    log.info("ingest-worker %s", app_version())
     settings = Settings.from_env()
     specs = load_specs(settings.specs_dir)
     llm_config = load_llm_config(settings.llm_config)

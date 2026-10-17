@@ -16,5 +16,10 @@ ENV PATH=/opt/venv/bin:$PATH \
     SPECS_DIR=/app/specs \
     LLM_CONFIG=/app/config/llm-providers.yaml
 RUN useradd --system --no-create-home worker
+# The build's calendar version (ADR 0014). Last, so a new version reuses every layer above.
+ARG APP_VERSION=dev
+ARG APP_VERSION_PREVIOUS=
+ARG APP_COMMIT=unknown
+ENV APP_VERSION=$APP_VERSION     APP_VERSION_PREVIOUS=$APP_VERSION_PREVIOUS     APP_COMMIT=$APP_COMMIT
 USER worker
 CMD ["ingest-worker"]

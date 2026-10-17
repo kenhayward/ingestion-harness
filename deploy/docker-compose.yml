@@ -150,6 +150,11 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/api.Dockerfile
+      args:
+        # The build's calendar version (ADR 0014), set by deploy/scripts/deploy.{sh,ps1}.
+        APP_VERSION: ${APP_VERSION:-dev}
+        APP_VERSION_PREVIOUS: ${APP_VERSION_PREVIOUS:-}
+        APP_COMMIT: ${APP_COMMIT:-unknown}
     restart: unless-stopped
     environment:
       <<: [*db-env, *s3-env]
@@ -188,6 +193,11 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/worker.Dockerfile
+      args:
+        # The build's calendar version (ADR 0014), set by deploy/scripts/deploy.{sh,ps1}.
+        APP_VERSION: ${APP_VERSION:-dev}
+        APP_VERSION_PREVIOUS: ${APP_VERSION_PREVIOUS:-}
+        APP_COMMIT: ${APP_COMMIT:-unknown}
     restart: unless-stopped
     environment:
       <<: [*db-env, *s3-env]
@@ -243,6 +253,11 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/app.Dockerfile
+      args:
+        # The build's calendar version (ADR 0014), set by deploy/scripts/deploy.{sh,ps1}.
+        APP_VERSION: ${APP_VERSION:-dev}
+        APP_VERSION_PREVIOUS: ${APP_VERSION_PREVIOUS:-}
+        APP_COMMIT: ${APP_COMMIT:-unknown}
     restart: unless-stopped
     environment:
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}

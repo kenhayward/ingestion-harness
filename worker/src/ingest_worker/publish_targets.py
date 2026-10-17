@@ -1,6 +1,6 @@
 """Publishing targets (S3 destinations of published outputs) read from the database.
 
-The API owns the table (migration 0050, apps/api/src/publish-targets/); the worker only reads it,
+The API owns the table (migration 202610170019, apps/api/src/publish-targets/); the worker only reads it,
 and seeds the `default` row from `.env` when it is first to start. The seed rule, the prefix rule
 and the delivery cases are held in step with the API by
 packages/shared/test/fixtures/publish-targets.json.

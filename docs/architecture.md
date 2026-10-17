@@ -53,7 +53,7 @@ The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`
 outputs back from the target each output was delivered to (`job_outputs.target_id`;
 [ADR 0004](adr/0004-api-reads-publish-target.md)).
 
-**Publishing targets** (migration 0050): published outputs go to a *publishing target*, an S3
+**Publishing targets** (migration 202610170019): published outputs go to a *publishing target*, an S3
 destination an admin manages under Administration > Published outputs (`publish_targets`; internal
 = the deployment's SeaweedFS, external = any S3 endpoint with its own keys, encrypted under
 `LLM_SECRETS_KEY`). A recipe picks one with `delivery.publishTo`; absent means `default`, which the

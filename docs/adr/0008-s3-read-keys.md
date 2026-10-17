@@ -2,7 +2,7 @@
 
 **Status:** accepted · 2026-10-12
 
-**Update (migration 0050):** the publish bucket is now an admin-managed *publishing target*. A key
+**Update (migration 202610170019):** the publish bucket is now an admin-managed *publishing target*. A key
 consumer is granted one or more *internal* targets (`s3_consumer_targets`; existing consumers keep
 `default`) and its read-only policy covers each target's bucket and prefix; external targets are not
 grantable. `TARGET_S3_*` only seeds the `default` target on first start.

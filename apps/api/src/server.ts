@@ -2,7 +2,12 @@ import pg from 'pg';
 import { PgAccessRepo } from './access/pg.js';
 import { SIGN_IN_RETENTION_DAYS } from './access/repo.js';
 import { buildApp } from './app.js';
-import { githubConfig, loadConfig, s3KeysConfig } from './config.js';
+import {
+  githubConfig,
+  loadConfig,
+  s3KeysConfig,
+  versionFromConfig,
+} from './config.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
@@ -51,7 +56,7 @@ const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err)
 
 // Throws on a malformed key: better a failed start than keys that can't be read back.
 const llmSecrets = secretsKeys(process.env);
-// Publishing targets (migration 0050): .env seeds `default` once; the database wins afterwards.
+// Publishing targets (migration 202610170019): .env seeds `default` once; the database wins afterwards.
 const targets = new PgPublishTargetRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
 );
@@ -123,6 +128,7 @@ const app = await buildApp({
   llmSecrets,
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   frameAncestors: config.FRAME_ANCESTORS,
+  version: versionFromConfig(config),
   rdfPublicUrl: config.RDF_PUBLIC_URL ?? null,
   logger: { level: config.LOG_LEVEL },
 });

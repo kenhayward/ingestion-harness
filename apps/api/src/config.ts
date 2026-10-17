@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { baseIriProblem, CUSTOMER_SLUG_RE } from '@ih/shared';
+import { baseIriProblem, CUSTOMER_SLUG_RE, DEV_VERSION, type VersionInfo } from '@ih/shared';
 
 const defaultSpecsDir = fileURLToPath(new URL('../../../specs', import.meta.url));
 
@@ -78,6 +78,10 @@ const EnvSchema = z
     GITHUB_CLIENT_SECRET: optional(z.string()),
     /** The callback registered with that app; unset: from the request (proxy headers). */
     GITHUB_REDIRECT_URL: optional(z.string().url()),
+    /** The build's calendar version, the tag before it and the commit (ADR 0014; image build args). */
+    APP_VERSION: optional(z.string()),
+    APP_VERSION_PREVIOUS: optional(z.string()),
+    APP_COMMIT: optional(z.string()),
   })
   .superRefine((env, ctx) => {
     if (Boolean(env.GITHUB_CLIENT_ID) !== Boolean(env.GITHUB_CLIENT_SECRET)) {
@@ -105,6 +109,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`Invalid API configuration:\n  ${issues.join('\n  ')}`);
   }
   return parsed.data;
+}
+
+/** The build this API runs (`GET /api/version`); a dev build when the image set nothing. */
+export function versionFromConfig(c: Config): VersionInfo {
+  return {
+    version: c.APP_VERSION ?? DEV_VERSION.version,
+    previous: c.APP_VERSION_PREVIOUS ?? null,
+    commit: c.APP_COMMIT ?? DEV_VERSION.commit,
+  };
 }
 
 /**
