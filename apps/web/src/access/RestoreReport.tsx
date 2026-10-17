@@ -6,10 +6,20 @@ const KEY_ERROR_TEXT = 'This key does not open the backup, or the file is damage
 
 const TRIPLES: Record<RestoreReport['triples'], string> = {
   restored: 'The triple store was restored.',
-  'none-in-backup': 'The backup has no triple store: rebuild it with rdf_rebuild.',
+  'none-in-backup':
+    'The backup has no triple store: a rebuild job reloads the graphs once the job queue is resumed.',
   'no-triple-store': 'This server has no triple store: graphs were not loaded.',
-  reminting: "Graphs are being re-minted under this server's base IRI.",
+  reminting:
+    "Graphs are re-minted under this server's base IRI by a job that runs once the job queue is resumed.",
 };
+
+/**
+ * True from the moment a restore turns maintenance on and pauses the queue (its first step) and
+ * after: a report means the swap happened (the restored database has both on). A restore that
+ * failed with no step (the check, a cancel, a refusal before step 1) changed nothing.
+ */
+const MAINTENANCE_LINE =
+  'Maintenance mode is on and the job queue is paused: switch them back once you have looked around.';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -26,8 +36,10 @@ export function RestoreOutcome({ restore }: { restore: RestoreStatus }) {
           {keyRefused ? KEY_ERROR_TEXT : `The restore failed: ${restore.error ?? 'no reason'}`}
         </p>
       )}
-      {restore.report && (
+      {restore.report ? (
         <RestoreReportView report={restore.report} succeeded={restore.phase === 'succeeded'} />
+      ) : (
+        restore.phase === 'failed' && restore.step !== null && <p>{MAINTENANCE_LINE}</p>
       )}
     </>
   );
@@ -64,10 +76,7 @@ export function RestoreReportView({
         {report.lakeKeysToReissue.length > 0 && (
           <li>Data-lake keys to re-issue: {report.lakeKeysToReissue.join(', ')}</li>
         )}
-        <li>
-          Maintenance mode is on and the job queue is paused: switch them back once you have looked
-          around.
-        </li>
+        <li>{MAINTENANCE_LINE}</li>
       </ul>
       {copy && (
         <>

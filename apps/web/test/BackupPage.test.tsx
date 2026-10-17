@@ -6,6 +6,7 @@ import type { BackupStatus } from '../src/api/client.js';
 import { AdminDialog } from '../src/access/AdminDialog.js';
 import { BackupPage } from '../src/access/BackupPage.js';
 import { RestoreDialog } from '../src/access/RestoreDialog.js';
+import { RestoreOutcome } from '../src/access/RestoreReport.js';
 import { RESTORE_KEY, UPLOAD_KEY } from '../src/access/backup-upload.js';
 import { fakeApi } from './fake-api.js';
 
@@ -566,5 +567,56 @@ describe('a restore that ended the session', () => {
     expect(within(last).getByRole('alert')).toHaveTextContent(
       'the check expired: start the restore again',
     );
+  });
+});
+
+describe('RestoreOutcome', () => {
+  const MAINTENANCE = /Maintenance mode is on and the job queue is paused/;
+
+  it('says a rebuild job reloads the graphs once the queue is resumed', () => {
+    render(
+      <RestoreOutcome
+        restore={restore({ phase: 'succeeded', report: { ...REPORT, triples: 'none-in-backup' } })}
+      />,
+    );
+    expect(
+      screen.getByText(
+        'The backup has no triple store: a rebuild job reloads the graphs once the job queue is resumed.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/rdf_rebuild/)).toBeNull();
+  });
+
+  it('says graphs are re-minted once the queue is resumed', () => {
+    render(
+      <RestoreOutcome
+        restore={restore({ phase: 'succeeded', report: { ...REPORT, triples: 'reminting' } })}
+      />,
+    );
+    expect(screen.getByText(/re-minted under this server's base IRI/)).toHaveTextContent(
+      /once the job queue is resumed/,
+    );
+  });
+
+  it('a restore that failed before changing anything says nothing of maintenance', () => {
+    render(
+      <RestoreOutcome
+        restore={restore({ phase: 'failed', step: null, error: 'a database named x exists' })}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('a database named x exists');
+    expect(screen.queryByText(MAINTENANCE)).toBeNull();
+  });
+
+  it('a restore that failed after it started says maintenance is on and the queue paused', () => {
+    render(
+      <RestoreOutcome restore={restore({ phase: 'failed', step: 'objects', error: 'boom' })} />,
+    );
+    expect(screen.getByText(MAINTENANCE)).toBeInTheDocument();
+  });
+
+  it('a report says maintenance is on and the queue paused', () => {
+    render(<RestoreOutcome restore={restore({ phase: 'succeeded', report: REPORT })} />);
+    expect(screen.getByText(MAINTENANCE)).toBeInTheDocument();
   });
 });
