@@ -106,7 +106,8 @@ export const RestoreReportSchema = z.object({
     .nullable(),
   triples: z.enum(['restored', 'none-in-backup', 'no-triple-store', 'reminting']),
   previousDatabase: z.string(),
-  adminTokenRotated: z.literal(true),
+  /** False only when the restore failed after the swap, before the token was rotated. */
+  adminTokenRotated: z.boolean(),
   /**
    * Data-lake consumers (by label) whose access keys this server's SeaweedFS does not hold: a
    * backup cannot carry their identities, so an admin re-issues them. Empty for a copy, which

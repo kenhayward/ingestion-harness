@@ -287,6 +287,19 @@ export async function runRestore(
   const failed = async (error: string) => {
     await status({ phase: 'failed', error }).catch(() => {});
   };
+  /**
+   * After a failure the maintenance row keeps everyone but admins out (after a restart too), and
+   * the gate goes back to following it, so an admin can switch maintenance off on its tab. If
+   * the row cannot be written, the gate stays forced: better locked out than half-restored.
+   */
+  const holdByRow = async () => {
+    try {
+      await deps.gate.set({ enabled: true, message: RESTORE_MESSAGE }, r.by);
+      deps.gate.release();
+    } catch {
+      // Stays forced until the API restarts (recover() then sets the row).
+    }
+  };
 
   let plan: BucketPlan;
   try {
@@ -413,8 +426,7 @@ export async function runRestore(
   } catch (err) {
     await side?.close().catch(() => {});
     if (sideCreated && !swapped) await deps.db.dropDatabase(sideName).catch(() => {});
-    // The gate stays forced in this process; the row holds it on after a restart too.
-    await deps.gate.set({ enabled: true, message: RESTORE_MESSAGE }, r.by).catch(() => {});
+    await holdByRow();
     const message = messageOf(err);
     await failed(replaced ? `${message} (${PARTLY_REPLACED})` : message);
     throw err;
@@ -423,20 +435,25 @@ export async function runRestore(
   }
 
   // 9. Everyone signs in again; the restored row keeps maintenance on until an admin ends it.
+  let rotated = false;
+  const finalReport = () =>
+    RestoreReportSchema.parse({ ...report, previousDatabase: keepAs, adminTokenRotated: rotated });
   try {
     await step('finishing');
     await deps.rotateAdminToken();
+    rotated = true;
     if (embedding) await deps.createEmbedJobs(embedding);
     deps.gate.release();
   } catch (err) {
-    await failed(`the database was restored, but ${messageOf(err)}`);
+    await holdByRow();
+    await status({
+      phase: 'failed',
+      error: `the database WAS restored (the previous one is kept as ${keepAs}), but ${messageOf(err)}`,
+      report: finalReport(),
+    }).catch(() => {});
     throw err;
   }
-  const final = RestoreReportSchema.parse({
-    ...report,
-    previousDatabase: keepAs,
-    adminTokenRotated: true,
-  });
+  const final = finalReport();
   await status({ phase: 'succeeded', step: null, done: STEPS, of: STEPS, report: final });
   return final;
 }

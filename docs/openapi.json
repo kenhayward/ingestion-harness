@@ -69331,10 +69331,7 @@
                                       "type": "string"
                                     },
                                     "adminTokenRotated": {
-                                      "type": "boolean",
-                                      "enum": [
-                                        true
-                                      ]
+                                      "type": "boolean"
                                     },
                                     "lakeKeysToReissue": {
                                       "type": "array",

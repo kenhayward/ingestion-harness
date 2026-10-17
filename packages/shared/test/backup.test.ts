@@ -68,6 +68,9 @@ describe('backup contract', () => {
       lakeKeysToReissue: ['Acme lake'],
     };
     expect(RestoreReportSchema.parse(report)).toEqual(report);
+    expect(RestoreReportSchema.parse({ ...report, adminTokenRotated: false })).toMatchObject({
+      adminTokenRotated: false,
+    });
     expect(RestoreReportSchema.safeParse({ ...report, lakeKeysToReissue: undefined }).success).toBe(
       false,
     );

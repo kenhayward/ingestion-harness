@@ -307,6 +307,32 @@ describe('runRestore', () => {
     expect(s.live.paused).not.toBeNull();
     expect(await s.deps.gate.current()).toMatchObject({ enabled: true, message: RESTORE_MESSAGE });
     expect(await s.maintenance.get()).toMatchObject({ enabled: true, message: RESTORE_MESSAGE });
+    // The row keeps everyone out; the admin keeps control: the gate follows the row again.
+    await s.deps.gate.set({ enabled: false, message: '' }, 'Admin');
+    expect((await s.deps.gate.current()).enabled).toBe(false);
+  });
+
+  it('keeps the report when a step after the swap fails', async () => {
+    const { file, checked } = await backupOf();
+    const s = await server(file, {
+      rotateAdminToken: async () => {
+        throw new Error('the access database is unreachable');
+      },
+    });
+    const { seen, status } = statuses();
+
+    await expect(runRestore(s.deps, request(checked), status)).rejects.toThrow('unreachable');
+
+    const last = seen.at(-1)!;
+    expect(last.phase).toBe('failed');
+    expect(last.report!.previousDatabase).toMatch(/^ingestion_before_restore_\d{12}$/);
+    expect(last.report!.adminTokenRotated).toBe(false);
+    expect(last.error).toBe(
+      `the database WAS restored (the previous one is kept as ${last.report!.previousDatabase}), but the access database is unreachable`,
+    );
+    expect(s.db.databases.get('ingestion')!.toString()).toBe('PGDMP production');
+    expect(await s.deps.gate.current()).toEqual(await s.maintenance.get());
+    expect((await s.maintenance.get()).enabled).toBe(true);
   });
 
   it('does not say objects were replaced when none were', async () => {
