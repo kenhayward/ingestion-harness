@@ -352,6 +352,99 @@ def fit_key_columns(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, An
     return {**body, "notes": notes, "changes": changes}
 
 
+def _context_order(pipeline: list[dict[str, Any]]) -> list[str] | None:
+    """The pipeline's step ids with every step after the steps filling what its context reads,
+    otherwise in their current order (a stable topological sort); None on a cycle."""
+    filler: dict[str, str] = {}
+    for s in pipeline:
+        for f in s.get("fields") or []:
+            filler.setdefault(f, s["id"])
+        if s.get("table"):
+            filler.setdefault(s["table"], s["id"])
+    needs = {
+        s["id"]: {
+            filler[head]
+            for path in (s.get("context") or {}).values()
+            if (head := str(path).partition(".")[0]) in filler and filler[head] != s["id"]
+        }
+        for s in pipeline
+    }
+    order: list[str] = []
+    todo = [s["id"] for s in pipeline]
+    while todo:
+        ready = next((i for i in todo if needs[i] <= set(order)), None)
+        if ready is None:
+            return None
+        order.append(ready)
+        todo.remove(ready)
+    return order
+
+
+def fit_step_order(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """Steps run in pipeline order and a step's context must come from earlier steps, but a new
+    step goes last and a changed one keeps its place: a step added to fill what an existing
+    step's context reads would run after it, and no order of putSteps can fix that. Reorder
+    instead (as the model meant): the steps from the first one out of place are removed and put
+    again in dependency order, each move said in the notes. A cycle is left for the check."""
+    pipeline = apply_changes(draft, body["changes"]).get("pipeline") or []
+    if any(not isinstance(s.get("id"), str) for s in pipeline):
+        return body
+    ids = [s["id"] for s in pipeline]
+    target = _context_order(pipeline)
+    if target is None or target == ids:
+        return body
+    first = next(i for i, (a, b) in enumerate(zip(ids, target, strict=True)) if a != b)
+    moved = target[first:]
+    by_id = {s["id"]: s for s in pipeline}
+    reasons = {
+        c["step"]["id"]: c.get("reason", "")
+        for c in body["changes"]
+        if c["op"] == "putStep" and c["step"].get("id") in moved
+    }
+    kept = [
+        c for c in body["changes"] if not (c["op"] == "putStep" and c["step"].get("id") in moved)
+    ]
+    present = {s.get("id") for s in apply_changes(draft, kept).get("pipeline") or []}
+    position = {sid: i for i, sid in enumerate(ids)}
+    notes: list[str] = []
+    changes = list(kept)
+    for sid in moved:
+        step = by_id[sid]
+        # Its context's fillers that ran after it before: what it now moves after.
+        after = sorted(
+            {
+                o["id"]
+                for o in pipeline
+                if o["id"] != sid
+                and position[o["id"]] > position[sid]
+                and target.index(o["id"]) < target.index(sid)
+                and any(
+                    str(p).partition(".")[0] in [*(o.get("fields") or []), o.get("table")]
+                    for p in (step.get("context") or {}).values()
+                )
+            }
+        )
+        why = (
+            f"Moved after {', '.join(repr(a) for a in after)}, which fills what its context reads."
+            if after
+            else "Moved to keep the pipeline in order."
+        )
+        if sid in present:
+            changes.append({"op": "removeStep", "id": sid, "reason": why})
+        changes.append({"op": "putStep", "step": step, "reason": reasons.get(sid) or why})
+        if after:
+            notes.append(
+                f"Moved {sid!r} after {', '.join(repr(a) for a in after)}, which fills what its context reads."
+            )
+    text = "\n".join([body["notes"], *notes] if body.get("notes") else notes)
+    return {**body, "notes": text, "changes": changes}
+
+
+def fit_steps(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """The Steps and Revise stages' repairs: unusable keyColumns dropped, steps put in order."""
+    return fit_step_order(fit_key_columns(body, draft), draft)
+
+
 def _unfinished_mapping(draft: dict[str, Any]) -> bool:
     """The draft's ontology mapping does not parse on its own, e.g. it was started without a
     document class yet (applyChanges' `mapping()`, the Mapping editor): the Mapping stage's job."""
@@ -452,13 +545,15 @@ Task: propose the extraction pipeline that fills every output in the current dra
   heading or table caption: say so in its instructions.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
-- Steps run in the order given; context may only use outputs filled by earlier steps.
+- Steps run in pipeline order; context may only use outputs filled by earlier steps. A putStep
+  for a step the draft has keeps its place and a new step goes last; the steps are then
+  reordered so each runs after the steps whose outputs its context reads.
 - Use null for keys that do not apply. reason: one sentence.
 Return JSON only.""",
     STEPS_SCHEMA,
     convert_steps,
     check_steps,
-    fit_key_columns,
+    fit_steps,
     pipeline_problems,
 )
 
@@ -743,6 +838,6 @@ Return JSON only.""",
     REVISE_SCHEMA,
     convert_revise,
     check_revise,
-    fit_key_columns,
+    fit_steps,
     pipeline_problems,
 )
