@@ -81,6 +81,13 @@ describe.skipIf(!url)('PgDatabaseTools (Postgres)', () => {
     expect(left.rows.map((r: { datname: string }) => r.datname)).toEqual(['ih_bk_live']);
   });
 
+  it('a swap with a missing side database leaves the live database accepting connections', async () => {
+    const tools = new PgDatabaseTools(databaseUrl(url!, 'ih_bk_live'));
+    await expect(tools.swap('ih_bk_side', 'ih_bk_previous')).rejects.toThrow(/does not exist/);
+    const live = await onDb('ih_bk_live', (c) => c.query('SELECT count(*)::int AS n FROM things'));
+    expect(live.rows[0]).toEqual({ n: 1 });
+  });
+
   it('reports a pg_restore failure', async () => {
     const tools = new PgDatabaseTools(databaseUrl(url!, 'ih_bk_live'));
     const side = await tools.createSideDatabase('ih_bk_side');

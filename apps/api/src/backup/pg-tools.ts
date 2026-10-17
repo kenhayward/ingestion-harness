@@ -189,8 +189,9 @@ export class PgDatabaseTools implements DatabaseTools {
     const { close, rename } = swapStatements(this.live, side, keepAs);
     const names = [this.live, side];
     await this.withClient('postgres', async (c) => {
-      for (const sql of close) await c.query(sql);
       try {
+        // Inside the try: if closing the side fails, the live database must open again.
+        for (const sql of close) await c.query(sql);
         await c.query(TERMINATE, [names]);
         for (let i = 0; i < 100; i += 1) {
           const { rows } = await c.query<{ n: number }>(CONNECTED, [names]);
@@ -206,7 +207,7 @@ export class PgDatabaseTools implements DatabaseTools {
           throw err;
         }
       } catch (err) {
-        // Nothing was renamed: let connections back in where they were.
+        // Nothing was renamed: let connections back in (harmless for one never closed).
         for (const name of names) {
           await c
             .query(`ALTER DATABASE ${ident(name)} WITH ALLOW_CONNECTIONS true`)
