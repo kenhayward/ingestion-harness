@@ -451,6 +451,24 @@ describe('restore routes', () => {
     expect((await s.cancel(status.id, s.admin)).statusCode).toBe(409);
   });
 
+  it('a successful restore removes the uploaded file; a failed check keeps it', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const fileKey = `uploads/${uploadId}.ctbak`;
+    const wrong = Buffer.alloc(32, 9).toString('base64');
+    await s.start({ uploadId, mode: 'copy', key: wrong });
+    await s.backup.settled();
+    expect(await s.store.get('backups', fileKey)).not.toBeNull();
+
+    const { status, token } = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    await s.confirm(status.id, 'production', { 'x-restore-token': token });
+    await s.backup.settled();
+    expect((await s.read(status.id, s.admin)).json()).toMatchObject({ phase: 'succeeded' });
+    expect(await s.store.get('backups', fileKey)).toBeNull();
+    expect(await s.store.get('backups', `uploads/${uploadId}.json`)).toBeNull();
+  });
+
   it('the token reads status after the session is gone', async () => {
     const s = await restoreSetup();
     const uploadId = await s.upload(await backupFile());

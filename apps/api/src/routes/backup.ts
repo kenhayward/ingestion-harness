@@ -463,7 +463,14 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
       if (!uploadKey) return reply.code(409).send({ error: NOT_COMPLETE });
       try {
         const by = req.auth?.label ?? 'admin';
-        const started = service().startRestore({ uploadKey, mode: body.data.mode, key, by });
+        const uploads = app.deps.backupUploads!;
+        const started = service().startRestore({
+          uploadKey,
+          mode: body.data.mode,
+          key,
+          by,
+          discardUpload: () => uploads.abort(body.data.uploadId),
+        });
         req.log.warn({ id: started.status.id, mode: body.data.mode, by }, 'restore check started');
         return reply.code(202).send(started);
       } catch (err) {

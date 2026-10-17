@@ -77,6 +77,8 @@ const statusOf = ({ tokenSha256: _hash, ...status }: RestoreRecord): RestoreStat
 interface RestoreRun {
   record: RestoreRecord;
   uploadKey: string;
+  /** Removes the uploaded file and its state; run once the restore succeeded. */
+  discardUpload: (() => Promise<void>) | null;
   /** Set once the check passed; the opening key stays in memory only. */
   checked: CheckedBackup | null;
   /** Cancels the checked restore once `CHECK_EXPIRY_MS` passes unconfirmed. */
@@ -184,8 +186,16 @@ export class BackupService {
    * the lock (`BackupBusyError` while anything runs). Deployment mode opens the file with this
    * server's key, then its previous one; copy mode with the pasted `key` only. The token, returned
    * once, lets whoever started it follow and confirm it after every session has ended.
+   * `discardUpload` runs after a successful restore (the file may be gigabytes); a failed check
+   * or restore keeps the upload, so it can be checked again.
    */
-  startRestore(opts: { uploadKey: string; mode: RestoreMode; key: Buffer | null; by: string }): {
+  startRestore(opts: {
+    uploadKey: string;
+    mode: RestoreMode;
+    key: Buffer | null;
+    by: string;
+    discardUpload?: () => Promise<void>;
+  }): {
     status: RestoreStatus;
     token: string;
   } {
@@ -215,6 +225,7 @@ export class BackupService {
         tokenSha256: sha256(token).toString('hex'),
       },
       uploadKey: opts.uploadKey,
+      discardUpload: opts.discardUpload ?? null,
       checked: null,
       expiry: null,
     };
@@ -276,7 +287,12 @@ export class BackupService {
     this.track(
       runRestore(deps, request, (s) => this.updateRestore(run, s))
         .then(
-          () => undefined,
+          () =>
+            run
+              .discardUpload?.()
+              .catch((err: unknown) =>
+                this.deps.log?.error({ err }, 'the restored upload could not be removed'),
+              ),
           (err: unknown) => this.deps.log?.error({ err }, 'restore failed'),
         )
         .finally(() => this.release(run)),
