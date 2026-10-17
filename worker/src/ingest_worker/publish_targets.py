@@ -173,6 +173,9 @@ class PgPublishTargetStore:
 
         return cls(open_conn(), reconnect=open_conn)
 
+    def close(self) -> None:
+        self._conn.close()
+
     def _run(self, work: Callable[[psycopg.Connection[Any]], _T]) -> _T:
         import psycopg
 

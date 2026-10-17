@@ -212,7 +212,10 @@ Changing a password needs `deploy/scripts/compose.sh up -d fuseki worker`.
   `deploy/.env` elsewhere, it is not in the backup. Restore (this deployment, or as a copy for
   staging) is on the same tab ([ADR 0015](../docs/adr/0015-backup-and-restore.md)); a restore
   keeps the previous database under a name in its report, drop it when satisfied
-  (`docker exec ingestion-postgres-1 dropdb -U <POSTGRES_USER> <name>`).
+  (`docker exec ingestion-postgres-1 dropdb -U <POSTGRES_USER> <name>`). The swap ends every
+  connection to the old database: the workers log `the database connection was lost …:
+  reconnecting` and connect to the restored one a few seconds later (no restart needed); they
+  claim nothing until the queue is resumed on the Backup tab.
 
   As an extra safety net the triple store can still be dumped nightly, from the deploy host's cron,
   to an N-Quads file in the volume (`/fuseki/run/backups/ct_<date>.nq.gz`); copy it off the host.

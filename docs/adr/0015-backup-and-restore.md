@@ -32,7 +32,9 @@ and refreshing staging with production's data while staging stays staging.
   report. The restore pauses the job queue (`queue_control`, migration 202610171218; a claim query
   skips while paused), turns maintenance mode on, gives running jobs 2 minutes and cancels the
   rest. Afterwards sessions end, the admin-from-the-log token is rotated, and the queue stays
-  paused and maintenance on until an admin resumes them.
+  paused and maintenance on until an admin resumes them. The swap ends every connection to the
+  old database; workers reconnect (`main.serve`: a `psycopg.OperationalError` closes every
+  connection and opens them again after `RECONNECT_S`, as a restart would) instead of exiting.
 - **Two modes.** *As this deployment* restores everything. *As a copy* (`copy-rules.ts`) keeps this
   server's model endpoints, choices and settings, publishing targets, GitHub settings, linked-data
   settings and data-lake consumers; drops the backup's GitHub links and tokens and its external
