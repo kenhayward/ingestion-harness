@@ -43,6 +43,8 @@ class Stage:
     convert: Converter | None = None
     check: Checker | None = None
     fit: Fitter | None = None
+    #: What is already wrong with the draft that this stage's changes can fix (shown up front).
+    problems: Callable[[dict[str, Any]], list[str]] | None = None
 
 
 def _object(props: dict[str, Any]) -> dict[str, Any]:
@@ -409,6 +411,15 @@ Return JSON only.""",
     check_outputs,
 )
 
+
+def pipeline_problems(draft: dict[str, Any]) -> list[str]:
+    """What is wrong with the draft's own pipeline (steps reading removed sections or filling
+    removed outputs, outputs filled twice or not at all), so a change stage fixes it on purpose
+    instead of learning it from a rejected reply. None for a draft without steps yet: there
+    every output is unfilled, which the task already says."""
+    return check_steps({"changes": []}, draft) if draft.get("pipeline") else []
+
+
 STEPS = Stage(
     "steps",
     """\
@@ -448,6 +459,7 @@ Return JSON only.""",
     convert_steps,
     check_steps,
     fit_key_columns,
+    pipeline_problems,
 )
 
 SECTIONS_SCHEMA = _body(
@@ -732,4 +744,5 @@ Return JSON only.""",
     convert_revise,
     check_revise,
     fit_key_columns,
+    pipeline_problems,
 )

@@ -43,6 +43,23 @@ def test_retries_with_validation_errors_fed_back() -> None:
     assert result.data == {"total": 12}
     retry_prompt = provider.calls[1][1].prompt
     assert "twelve" in retry_prompt and "is not of type 'number'" in retry_prompt
+    assert retry_prompt.endswith("</validation_errors>\nReturn corrected JSON only.")
+
+
+def test_a_caller_may_word_the_retry_request() -> None:
+    provider = FakeProvider(responses=[{"total": "twelve"}, {"total": 12}])
+    run_extraction(
+        extraction_id="totals",
+        provider=provider,
+        model_id="m1",
+        prompt="extract",
+        schema=SCHEMA,
+        max_attempts=2,
+        retry_note="Send the whole answer again.",
+    )
+    assert provider.calls[1][1].prompt.endswith(
+        "</validation_errors>\nSend the whole answer again."
+    )
 
 
 def test_retries_on_non_json() -> None:

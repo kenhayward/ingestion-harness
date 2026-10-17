@@ -241,6 +241,33 @@ def clamp_seen_in(body: dict[str, Any], samples: int) -> dict[str, Any]:
     return {**body, "candidates": candidates}
 
 
+#: Ends a drafting retry: a reply is the whole proposal, never a patch on the rejected one
+#: (a model that sent only the removals, then only the additions, never passed).
+DRAFT_RETRY_NOTE = (
+    "Your corrected response replaces your previous response entirely: repeat every change "
+    "from it that you still want, then fix the errors above. Return corrected JSON only."
+)
+#: How many of the draft's own problems the prompt lists.
+MAX_DRAFT_PROBLEMS = 30
+
+
+def problems_block(problems: list[str]) -> str:
+    """The draft's own problems as a prompt block (empty without any), ahead of the task."""
+    if not problems:
+        return ""
+    shown = problems[:MAX_DRAFT_PROBLEMS]
+    more = len(problems) - len(shown)
+    lines = "\n".join(f"- {p}" for p in shown) + (f"\n- and {more} more" if more else "")
+    return (
+        "<current_draft_problems>\n"
+        "The current draft already fails these checks; your changes must fix every one:\n"
+        f"{lines}\n"
+        "A putStep with an existing id replaces that step; removeStep drops a step that reads "
+        "a section or fills an output the draft no longer has.\n"
+        "</current_draft_problems>\n\n"
+    )
+
+
 STAGES: dict[str, Stage] = {
     s.id: s for s in (SURVEY, OUTPUTS, SECTIONS, STEPS, REVISE, MAPPING_STAGE)
 }
@@ -493,6 +520,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 check=check if (stage.convert or stage.check) else None,
                 on_attempt=on_attempt,
                 on_tokens=lambda t: tokens[0](t),
+                retry_note=DRAFT_RETRY_NOTE,
             )
         except OutputTruncatedError as exc:
             _audit(deps, job, label, exc.attempts)
@@ -510,7 +538,8 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             body = stage.fit(body, draft)
         return result, body
 
-    prompt = f"{context}\n\n{stage.instructions}"
+    problems = stage.problems(draft) if stage.problems is not None else []
+    prompt = f"{context}\n\n{problems_block(problems)}{stage.instructions}"
     result, body = propose(prompt, f"draft-{stage.id}")
     if stage.id == "revise":
         body = resolve_answers(body, labels)

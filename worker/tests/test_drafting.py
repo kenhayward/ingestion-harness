@@ -495,6 +495,98 @@ def test_steps_with_an_unusable_key_column_complete_with_a_note(
     assert "Ignored keyColumn on 'results_step'" in body["notes"]
 
 
+def _step(op: str, id: str, sections: list[str] | None, fields: list[str] | None) -> dict[str, Any]:
+    return {
+        "op": op,
+        "id": id,
+        "type": "extract",
+        "fields": fields,
+        "table": None,
+        "sections": sections,
+        "instructions": None,
+        "pageImages": None,
+        "chunkPages": None,
+        "keyColumn": None,
+        "context": None,
+        "description": None,
+        "values": None,
+        "reference": None,
+        "aliases": None,
+        "preamble": None,
+        "reason": "r",
+    }
+
+
+#: A draft whose pipeline later Sections and Outputs changes broke: its step reads a removed
+#: section and fills a removed field (project aqn1-co-val-2, job 2e33d6ab).
+BROKEN_DRAFT = {
+    **DRAFT,
+    "document": {"sections": [{"id": "header", "anchor": "^Owning"}]},
+    "outputs": {"fields": [{"id": "title"}], "tables": []},
+    "pipeline": [
+        {"id": "old_title", "type": "extract", "sections": ["all"], "fields": ["title", "compound"]}
+    ],
+}
+
+
+def test_steps_prompt_names_the_drafts_own_pipeline_problems(fixture_specs_dir: Path) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [
+        {
+            "notes": "",
+            "changes": [
+                _step("removeStep", "old_title", None, None),
+                _step("putStep", "title", ["header"], ["title"]),
+            ],
+        }
+    ]
+    queue = FakeQueue(jobs=[draft_job(stage="steps", draft=BROKEN_DRAFT)])
+    run_once(queue, deps, "w1")
+    assert queue.completed, queue.reviewed
+    prompt = provider.calls[0][1].prompt
+    assert "<current_draft_problems>" in prompt
+    problems = prompt.split("<current_draft_problems>")[1].split("</current_draft_problems>")[0]
+    assert "step 'old_title': unknown section 'all'" in problems
+    assert "step 'old_title': unknown field 'compound'" in problems
+    assert "putStep with an existing id replaces that step" in problems
+
+
+def test_a_valid_or_empty_pipeline_has_no_problems_block(fixture_specs_dir: Path) -> None:
+    provider, _, deps = make(fixture_specs_dir)
+    draft = {**BROKEN_DRAFT, "pipeline": []}  # a first Steps run: nothing is filled yet
+    provider.responses = [
+        {"notes": "", "changes": [_step("putStep", "title", ["header"], ["title"])]}
+    ]
+    queue = FakeQueue(jobs=[draft_job(stage="steps", draft=draft)])
+    run_once(queue, deps, "w1")
+    assert queue.completed, queue.reviewed
+    assert "<current_draft_problems>" not in provider.calls[0][1].prompt
+
+
+def test_a_drafting_retry_says_the_reply_replaces_the_previous_one(
+    fixture_specs_dir: Path,
+) -> None:
+    """Attempt 1 removed the broken step, attempt 2 added its replacement but forgot the
+    removal: the retry must say a reply is the whole proposal, not a patch on the last one."""
+    provider, _, deps = make(fixture_specs_dir)
+    provider.responses = [
+        {"notes": "", "changes": [_step("removeStep", "old_title", None, None)]},
+        {
+            "notes": "",
+            "changes": [
+                _step("removeStep", "old_title", None, None),
+                _step("putStep", "title", ["header"], ["title"]),
+            ],
+        },
+    ]
+    queue = FakeQueue(jobs=[draft_job(stage="steps", draft=BROKEN_DRAFT)])
+    run_once(queue, deps, "w1")
+    assert queue.completed, queue.reviewed
+    retry = provider.calls[1][1].prompt.split("</validation_errors>")[1]
+    assert "replaces your previous response entirely" in retry
+    assert "repeat every change from it that you still want" in retry
+
+
 def test_change_stage_without_a_draft_needs_review(fixture_specs_dir: Path) -> None:
     provider, _, deps = make(fixture_specs_dir)
     queue = FakeQueue(jobs=[draft_job(stage="outputs", draft=None)])

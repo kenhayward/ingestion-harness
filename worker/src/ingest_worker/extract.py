@@ -87,12 +87,14 @@ def run_extraction(
     check: Callable[[dict[str, Any]], list[str]] | None = None,
     on_attempt: Callable[[int], None] | None = None,
     on_tokens: Callable[[int], None] | None = None,
+    retry_note: str = "Return corrected JSON only.",
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out. `check` adds rules JSON Schema
     cannot express; its errors are fed back the same way. `on_attempt(n)` is called before each
     model call (progress reporting). With `on_tokens` the reply streams and its estimated
-    tokens so far are reported as they arrive (providers that cannot stream answer whole)."""
+    tokens so far are reported as they arrive (providers that cannot stream answer whole).
+    `retry_note` ends a retry prompt, after the errors."""
     validator = Draft202012Validator(schema)
     # Only a counting caller asks to stream: every other call is made exactly as before.
     counting = {"on_tokens": on_tokens} if on_tokens is not None else {}
@@ -141,6 +143,6 @@ def run_extraction(
             f"{prompt}\n\nYour previous response was rejected:\n<previous_response>\n"
             f"{result.text}\n</previous_response>\n<validation_errors>\n"
             + "\n".join(errors)
-            + "\n</validation_errors>\nReturn corrected JSON only."
+            + f"\n</validation_errors>\n{retry_note}"
         )
     raise ExtractionFailedError(extraction_id, attempts)
