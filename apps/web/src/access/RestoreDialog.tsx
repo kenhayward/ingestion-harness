@@ -1,14 +1,20 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import type { BackupManifest, RestoreMode, RestoreReport, RestoreStatus } from '@ih/shared';
+import type { BackupManifest, RestoreMode, RestoreStatus } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { useModalFocus } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
 import { Meter } from '../ui/Meter.js';
-import { formatSize, storedUploadFor, UPLOAD_KEY, uploadBackup } from './backup-upload.js';
-
-/** The check's answer to a key that does not open the file (`BackupKeyError`). */
-const KEY_ERROR = 'this key does not open the backup';
-const KEY_ERROR_TEXT = 'This key does not open the backup, or the file is damaged.';
+import {
+  followRestore,
+  forgetFollowedRestore,
+  forgetUpload,
+  formatSize,
+  readStored,
+  storedUploadFor,
+  uploadBackup,
+  type FollowedRestore,
+} from './backup-upload.js';
+import { RestoreOutcome } from './RestoreReport.js';
 
 const STEPS: Record<string, string> = {
   maintenance: 'Holding everyone else out',
@@ -22,27 +28,9 @@ const STEPS: Record<string, string> = {
   finishing: 'Finishing',
 };
 
-const TRIPLES: Record<RestoreReport['triples'], string> = {
-  restored: 'The triple store was restored.',
-  'none-in-backup': 'The backup has no triple store: rebuild it with rdf_rebuild.',
-  'no-triple-store': 'This server has no triple store: graphs were not loaded.',
-  reminting: "Graphs are being re-minted under this server's base IRI.",
-};
-
 const when = (iso: string) => new Date(iso).toLocaleString();
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const ACTIVE: RestoreStatus['phase'][] = ['checking', 'checked', 'restoring'];
-
-/** The name of the file whose upload this browser started and did not finish, else null. */
-function interruptedUpload(): string | null {
-  try {
-    const raw = localStorage.getItem(UPLOAD_KEY);
-    const name = raw ? (JSON.parse(raw) as { name?: unknown }).name : null;
-    return typeof name === 'string' ? name : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Restore a backup (Administration > Backup > Restore…): upload the file in resumable parts,
@@ -55,12 +43,15 @@ export function RestoreDialog({
   api,
   onClose,
   onSignOut,
+  resume,
   pollMs = 2000,
 }: {
   api: Api;
   onClose: () => void;
   /** Sign in again after the restore ended every session. */
   onSignOut?: () => void;
+  /** A restore this tab was following when its session ended: follow it again. */
+  resume?: FollowedRestore | null;
   pollMs?: number;
 }) {
   const titleId = useId();
@@ -75,18 +66,66 @@ export function RestoreDialog({
   const [mode, setMode] = useState<RestoreMode>('deployment');
   const [key, setKey] = useState('');
   const [upload, setUpload] = useState<{ sent: number; total: number } | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(resume?.token ?? null);
+  const [uploadId, setUploadId] = useState<string | null>(resume?.uploadId ?? null);
   const [restore, setRestore] = useState<RestoreStatus | null>(null);
+  /** Reading the restore handed in by `resume` (until Try again starts a new one). */
+  const [resuming, setResuming] = useState(resume != null);
   const [typed, setTyped] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
-  const [interrupted] = useState(interruptedUpload);
+  /** The upload this browser remembers, once the server said whether it is complete. */
+  const [stored, setStored] = useState<{ id: string; name: string; complete: boolean } | null>(
+    null,
+  );
 
   const phase = restore?.phase ?? null;
   const active = phase !== null && ACTIVE.includes(phase);
 
   useEffect(() => () => abort.current?.abort(), []);
+
+  // Only an upload the server still has, and has only partly, was "partly uploaded".
+  useEffect(() => {
+    const remembered = readStored();
+    if (!remembered || resume) return;
+    let live = true;
+    api.getUpload(remembered.id).then(
+      (view) => {
+        if (live) {
+          const complete = view.received.length >= view.parts;
+          setStored({ id: remembered.id, name: remembered.name, complete });
+        }
+      },
+      () => {
+        // Gone, or unreadable: nothing to resume.
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, resume]);
+
+  // Follow again the restore this tab followed before its session ended.
+  useEffect(() => {
+    if (!resume) return;
+    api.getRestore(resume.restoreId, resume.token).then(setRestore, (err: unknown) => {
+      forgetFollowedRestore(resume.restoreId);
+      setError((err as Error).message);
+    });
+  }, [api, resume]);
+
+  // While it runs, this tab remembers the restore; once it is over, it forgets it (and, after a
+  // success, the upload it came from).
+  useEffect(() => {
+    if (!restore || !token) return;
+    if (active) {
+      followRestore({ restoreId: restore.id, token, uploadId });
+      return;
+    }
+    forgetFollowedRestore(restore.id);
+    if (restore.phase === 'succeeded' && uploadId) forgetUpload(uploadId);
+  }, [restore, token, uploadId, active]);
 
   // Follow the check and the restore (sessions end during it: the token keeps working).
   const restoreId = restore?.id ?? null;
@@ -125,13 +164,14 @@ export function RestoreDialog({
     abort.current = controller;
     setUpload({ sent: 0, total: file.size });
     try {
-      const uploadId = await uploadBackup(api, file, {
+      const id = await uploadBackup(api, file, {
         signal: controller.signal,
         onProgress: (sent, total) => setUpload({ sent, total }),
       });
+      setUploadId(id);
       setBusy(true);
       const started = await api.startRestore({
-        uploadId,
+        uploadId: id,
         mode,
         ...(mode === 'copy' ? { key } : {}),
       });
@@ -165,6 +205,7 @@ export function RestoreDialog({
     setError(null);
     try {
       await api.cancelRestore(restore.id, token);
+      forgetFollowedRestore(restore.id);
       setBusy(false);
       onClose();
     } catch (err) {
@@ -174,6 +215,7 @@ export function RestoreDialog({
   };
 
   const startAgain = () => {
+    setResuming(false);
     setRestore(null);
     setToken(null);
     setUpload(null);
@@ -181,19 +223,21 @@ export function RestoreDialog({
     setError(null);
   };
 
-  const resumes = file !== null && storedUploadFor(file) !== null;
+  const sameFile = file !== null && stored !== null && storedUploadFor(file) === stored.id;
   const canCheck = file !== null && (mode === 'deployment' || key.trim() !== '');
   const ended = phase === 'succeeded' || (phase === 'failed' && restore?.report);
 
   let body;
   let actions;
-  if (restore === null && !uploading) {
+  if (resuming && restore === null) {
+    body = error ? <p role="alert">{error}</p> : <p>Reading the restore…</p>;
+  } else if (restore === null && !uploading) {
     body = (
       <form id={`${titleId}-form`} className="form-rows" onSubmit={check}>
         {error && <p role="alert">{error}</p>}
-        {interrupted && !file && (
+        {stored && !stored.complete && !file && (
           <p className="muted">
-            {interrupted} was partly uploaded: choose it again to continue the upload.
+            {stored.name} was partly uploaded: choose it again to continue the upload.
           </p>
         )}
         <div className="maintenance-field">
@@ -204,9 +248,11 @@ export function RestoreDialog({
             accept=".ctbak"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
-          {resumes && (
+          {sameFile && (
             <small className="muted">
-              This file was partly uploaded: the upload continues where it stopped.
+              {stored.complete
+                ? 'This file is already uploaded: it is checked without uploading it again.'
+                : 'This file was partly uploaded: the upload continues where it stopped.'}
             </small>
           )}
         </div>
@@ -249,7 +295,9 @@ export function RestoreDialog({
             <input
               id={keyId}
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
               aria-describedby={keyHintId}
               value={key}
               onChange={(e) => setKey(e.target.value)}
@@ -365,17 +413,7 @@ export function RestoreDialog({
       </div>
     );
   } else if (restore && (phase === 'succeeded' || phase === 'failed')) {
-    const keyRefused = restore.error?.startsWith(KEY_ERROR) ?? false;
-    body = (
-      <>
-        {phase === 'failed' && (
-          <p role="alert">
-            {keyRefused ? KEY_ERROR_TEXT : `The restore failed: ${restore.error ?? 'no reason'}`}
-          </p>
-        )}
-        {restore.report && <Report report={restore.report} succeeded={phase === 'succeeded'} />}
-      </>
-    );
+    body = <RestoreOutcome restore={restore} />;
     actions = (
       <>
         {phase === 'failed' && !restore.report && (
@@ -448,76 +486,5 @@ function ManifestSummary({ manifest }: { manifest: BackupManifest }) {
       <dt>Data-lake identities</dt>
       <dd>{manifest.lakeIdentities}</dd>
     </dl>
-  );
-}
-
-function Report({ report, succeeded }: { report: RestoreReport; succeeded: boolean }) {
-  const rows = report.restored.reduce((sum, t) => sum + t.rows, 0);
-  const copy = report.copy;
-  return (
-    <section className="restore-report" aria-label="Restore report">
-      <h3>{succeeded ? 'Restored' : 'What was restored'}</h3>
-      <ul>
-        <li>
-          {plural(rows, 'row')} in {plural(report.restored.length, 'table')} and{' '}
-          {plural(report.objects, 'file')}.
-        </li>
-        <li>{TRIPLES[report.triples]}</li>
-        <li>The previous database is kept as {report.previousDatabase}.</li>
-        {report.adminTokenRotated ? (
-          <li>The admin-from-the-log token was rotated: see the API log.</li>
-        ) : (
-          <li>
-            The admin-from-the-log token was NOT rotated: the restore stopped before it. The token
-            in the API log still signs in.
-          </li>
-        )}
-        {report.lakeKeysToReissue.length > 0 && (
-          <li>Data-lake keys to re-issue: {report.lakeKeysToReissue.join(', ')}</li>
-        )}
-        <li>
-          Maintenance mode is on and the job queue is paused: switch them back once you have looked
-          around.
-        </li>
-      </ul>
-      {copy && (
-        <>
-          <h3>As a copy</h3>
-          <ul>
-            <li>{plural(copy.cancelledJobs, 'queued or running job')} cancelled.</li>
-            <li>{plural(copy.withdrawnOutputs, 'delivered output')} marked withdrawn.</li>
-            {copy.droppedTargets.length > 0 && (
-              <li>External publishing targets dropped: {copy.droppedTargets.join(', ')}</li>
-            )}
-            {copy.recipesNeedingModel.length > 0 && (
-              <li>
-                Recipes naming a model choice this server lacks:{' '}
-                {copy.recipesNeedingModel.join(', ')}
-              </li>
-            )}
-            {copy.recipesNeedingTarget.length > 0 && (
-              <li>
-                Recipes naming a publishing target this server lacks:{' '}
-                {copy.recipesNeedingTarget.join(', ')}
-              </li>
-            )}
-          </ul>
-        </>
-      )}
-      {report.missingObjects.length > 0 && (
-        <>
-          <h3>Files the database names but the backup lacks</h3>
-          <ul className="restore-missing">
-            {report.missingObjects.map((o) => (
-              <li key={`${o.bucket}/${o.key}`}>
-                <code>
-                  {o.bucket}/{o.key}
-                </code>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </section>
   );
 }

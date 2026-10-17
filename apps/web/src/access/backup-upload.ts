@@ -6,14 +6,15 @@ export const UPLOAD_KEY = 'ih.backupUpload';
 /** Tries per part after the first one fails. */
 const RETRIES = 3;
 
-interface StoredUpload {
+export interface StoredUpload {
   id: string;
   name: string;
   size: number;
   lastModified: number;
 }
 
-function readStored(): StoredUpload | null {
+/** The upload this browser remembers, else null. */
+export function readStored(): StoredUpload | null {
   try {
     const raw = localStorage.getItem(UPLOAD_KEY);
     const value = raw ? (JSON.parse(raw) as Partial<StoredUpload>) : null;
@@ -28,6 +29,60 @@ function writeStored(value: StoredUpload): void {
     localStorage.setItem(UPLOAD_KEY, JSON.stringify(value));
   } catch {
     // Storage blocked: an interrupted upload starts again from the first part.
+  }
+}
+
+/** Forgets the remembered upload once a restore from it succeeded (only that upload). */
+export function forgetUpload(id: string): void {
+  try {
+    if (readStored()?.id === id) localStorage.removeItem(UPLOAD_KEY);
+  } catch {
+    // Storage blocked: nothing was remembered.
+  }
+}
+
+/**
+ * Where this tab remembers the restore it follows while it runs: the swap ends every session,
+ * which unmounts the dialog, so after signing in again the Backup tab carries on following it.
+ * Session storage only (this tab), never the key.
+ */
+export const RESTORE_KEY = 'ih.backupRestore';
+
+export interface FollowedRestore {
+  restoreId: string;
+  token: string;
+  /** The upload restored from, forgotten once the restore succeeds. */
+  uploadId: string | null;
+}
+
+export function readFollowedRestore(): FollowedRestore | null {
+  try {
+    const raw = sessionStorage.getItem(RESTORE_KEY);
+    const value = raw ? (JSON.parse(raw) as Partial<FollowedRestore>) : null;
+    return value && typeof value.restoreId === 'string' && typeof value.token === 'string'
+      ? { restoreId: value.restoreId, token: value.token, uploadId: value.uploadId ?? null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function followRestore(value: FollowedRestore): void {
+  try {
+    sessionStorage.setItem(RESTORE_KEY, JSON.stringify(value));
+  } catch {
+    // Storage blocked: the restore's outcome still shows on the Backup tab once it ends.
+  }
+}
+
+/** Stops following `restoreId` (any restore without one). */
+export function forgetFollowedRestore(restoreId?: string): void {
+  try {
+    if (!restoreId || readFollowedRestore()?.restoreId === restoreId) {
+      sessionStorage.removeItem(RESTORE_KEY);
+    }
+  } catch {
+    // Storage blocked: nothing was remembered.
   }
 }
 

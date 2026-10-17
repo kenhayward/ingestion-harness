@@ -6,7 +6,7 @@ import type { BackupStatus } from '../src/api/client.js';
 import { AdminDialog } from '../src/access/AdminDialog.js';
 import { BackupPage } from '../src/access/BackupPage.js';
 import { RestoreDialog } from '../src/access/RestoreDialog.js';
-import { UPLOAD_KEY } from '../src/access/backup-upload.js';
+import { RESTORE_KEY, UPLOAD_KEY } from '../src/access/backup-upload.js';
 import { fakeApi } from './fake-api.js';
 
 const admin = {
@@ -266,7 +266,10 @@ async function chooseAndCheck(mode: 'deployment' | 'copy' = 'deployment', key = 
 }
 
 describe('RestoreDialog', () => {
-  afterEach(() => localStorage.removeItem(UPLOAD_KEY));
+  afterEach(() => {
+    localStorage.removeItem(UPLOAD_KEY);
+    sessionStorage.removeItem(RESTORE_KEY);
+  });
 
   it('copy mode needs a key', async () => {
     render(<RestoreDialog api={fakeApi()} onClose={vi.fn()} pollMs={5} />);
@@ -277,6 +280,10 @@ describe('RestoreDialog', () => {
     await userEvent.click(screen.getByRole('radio', { name: /Restore as a copy/ }));
     const key = screen.getByLabelText('Key');
     expect(key).toHaveAttribute('type', 'password');
+    // The key is never stored: no password manager is invited to keep it.
+    expect(key).toHaveAttribute('autocomplete', 'new-password');
+    expect(key).toHaveAttribute('data-1p-ignore');
+    expect(key).toHaveAttribute('data-lpignore', 'true');
     expect(key).toHaveAccessibleDescription(
       /the LLM_SECRETS_KEY of the deployment the backup came from/i,
     );
@@ -415,9 +422,133 @@ describe('RestoreDialog', () => {
       UPLOAD_KEY,
       JSON.stringify({ id: 'up-1', name: f.name, size: f.size, lastModified: f.lastModified }),
     );
-    render(<RestoreDialog api={fakeApi()} onClose={vi.fn()} pollMs={5} />);
-    expect(screen.getByText(/ct-backup\.ctbak was partly uploaded/)).toBeInTheDocument();
+    const api = fakeApi({
+      getUpload: vi.fn(async () => ({
+        id: 'up-1',
+        size: 10,
+        partBytes: 4,
+        parts: 3,
+        received: [0],
+      })),
+    });
+    render(<RestoreDialog api={api} onClose={vi.fn()} pollMs={5} />);
+    expect(await screen.findByText(/ct-backup\.ctbak was partly uploaded/)).toBeInTheDocument();
     await userEvent.upload(screen.getByLabelText('Backup file'), f);
     expect(screen.getByText(/continues where it stopped/)).toBeInTheDocument();
+  });
+
+  it('does not call a complete upload partly uploaded', async () => {
+    const f = backupFile();
+    localStorage.setItem(
+      UPLOAD_KEY,
+      JSON.stringify({ id: 'up-1', name: f.name, size: f.size, lastModified: f.lastModified }),
+    );
+    const api = fakeApi({
+      getUpload: vi.fn(async () => ({
+        id: 'up-1',
+        size: 10,
+        partBytes: 4,
+        parts: 3,
+        received: [0, 1, 2],
+      })),
+    });
+    render(<RestoreDialog api={api} onClose={vi.fn()} pollMs={5} />);
+    await waitFor(() => expect(api.getUpload).toHaveBeenCalledWith('up-1'));
+    await userEvent.upload(screen.getByLabelText('Backup file'), f);
+    expect(screen.getByText(/already uploaded/)).toBeInTheDocument();
+    expect(screen.queryByText(/partly uploaded/)).toBeNull();
+  });
+
+  it('forgets the upload once a restore from it succeeded', async () => {
+    const api = restoreApi([restore({ phase: 'succeeded', manifest: MANIFEST, report: REPORT })]);
+    render(<RestoreDialog api={api} onClose={vi.fn()} pollMs={5} />);
+    await chooseAndCheck();
+    await screen.findByRole('heading', { name: 'Restored' });
+    expect(localStorage.getItem(UPLOAD_KEY)).toBeNull();
+    expect(sessionStorage.getItem(RESTORE_KEY)).toBeNull();
+  });
+
+  it('keeps the upload after a failed check, to check it again', async () => {
+    const api = restoreApi([
+      restore({ phase: 'failed', error: 'this key does not open the backup' }),
+    ]);
+    render(<RestoreDialog api={api} onClose={vi.fn()} pollMs={5} />);
+    await chooseAndCheck();
+    await screen.findByRole('alert');
+    expect(JSON.parse(localStorage.getItem(UPLOAD_KEY)!)).toMatchObject({ id: 'up-1' });
+  });
+});
+
+describe('a restore that ended the session', () => {
+  afterEach(() => {
+    localStorage.removeItem(UPLOAD_KEY);
+    sessionStorage.removeItem(RESTORE_KEY);
+    localStorage.removeItem('ih.adminTab');
+  });
+
+  it('is followed again after the Backup tab is mounted again', async () => {
+    const api = restoreApi([restore({ phase: 'restoring', step: 'swap', done: 7, of: 9 })]);
+    const first = render(<RestoreDialog api={api} onClose={vi.fn()} pollMs={5} />);
+    await chooseAndCheck();
+    await screen.findByText(/Switching to the restored database/);
+    expect(JSON.parse(sessionStorage.getItem(RESTORE_KEY)!)).toEqual({
+      restoreId: 'r-1',
+      token: 'tok-1',
+      uploadId: 'up-1',
+    });
+    // The swap ended the session: the app unmounted everything; the admin signs in again.
+    first.unmount();
+    vi.mocked(api.getRestore).mockReset();
+    vi.mocked(api.getRestore)
+      .mockResolvedValueOnce(restore({ phase: 'restoring', step: 'finishing', done: 8, of: 9 }))
+      .mockResolvedValue(restore({ phase: 'succeeded', manifest: MANIFEST, report: REPORT }));
+    render(<BackupPage api={api} me={admin} pollMs={5} />);
+    const dialog = await screen.findByRole('dialog', { name: 'Restore a backup' });
+    expect(await within(dialog).findByText(/Finishing/)).toBeInTheDocument();
+    expect(api.getRestore).toHaveBeenCalledWith('r-1', 'tok-1');
+    expect(await within(dialog).findByRole('heading', { name: 'Restored' })).toBeInTheDocument();
+    expect(sessionStorage.getItem(RESTORE_KEY)).toBeNull();
+    expect(localStorage.getItem(UPLOAD_KEY)).toBeNull();
+  });
+
+  it('shows its report on the Backup tab once it succeeded', async () => {
+    sessionStorage.setItem(
+      RESTORE_KEY,
+      JSON.stringify({ restoreId: 'r-1', token: 'tok-1', uploadId: 'up-1' }),
+    );
+    localStorage.setItem(
+      UPLOAD_KEY,
+      JSON.stringify({ id: 'up-1', name: 'b.ctbak', size: 10, lastModified: 1 }),
+    );
+    const done = restore({ phase: 'succeeded', manifest: MANIFEST, report: REPORT });
+    const api = fakeApi({
+      getBackupStatus: vi.fn(async () => status({ restore: done })),
+      getRestore: vi.fn(async () => done),
+    });
+    localStorage.setItem('ih.adminTab', 'backup');
+    render(<AdminDialog api={api} me={admin} onClose={vi.fn()} />);
+    const last = await screen.findByRole('group', { name: 'Last restore' });
+    expect(within(last).getByRole('heading', { name: 'Restored' })).toBeInTheDocument();
+    expect(within(last).getByText(/ingestion_before_restore_20261017/)).toBeInTheDocument();
+    await waitFor(() => expect(sessionStorage.getItem(RESTORE_KEY)).toBeNull());
+    expect(localStorage.getItem(UPLOAD_KEY)).toBeNull();
+  });
+
+  it('shows the error of a restore that failed', async () => {
+    const api = fakeApi({
+      getBackupStatus: vi.fn(async () =>
+        status({
+          restore: restore({
+            phase: 'failed',
+            error: 'the check expired: start the restore again',
+          }),
+        }),
+      ),
+    });
+    render(<BackupPage api={api} me={admin} />);
+    const last = await screen.findByRole('group', { name: 'Last restore' });
+    expect(within(last).getByRole('alert')).toHaveTextContent(
+      'the check expired: start the restore again',
+    );
   });
 });

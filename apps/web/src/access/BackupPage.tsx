@@ -5,8 +5,14 @@ import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { InSlot } from '../ui/InSlot.js';
 import { Meter } from '../ui/Meter.js';
-import { formatSize } from './backup-upload.js';
+import {
+  forgetFollowedRestore,
+  forgetUpload,
+  formatSize,
+  readFollowedRestore,
+} from './backup-upload.js';
 import { RestoreDialog } from './RestoreDialog.js';
+import { RestoreOutcome } from './RestoreReport.js';
 
 export const ENV_WARNING =
   'Keep a copy of deploy/.env somewhere other than this server. Without its LLM_SECRETS_KEY this backup cannot be opened.';
@@ -49,7 +55,7 @@ export function BackupPage({
   onOpenMaintenance?: () => void;
   /** A restore ended every session: Sign in again. */
   onSignOut?: () => void;
-  /** How often a running backup is read again. */
+  /** How often a running backup (and the restore dialog's restore) is read again. */
   pollMs?: number;
 }) {
   const isAdmin = me.role === 'admin';
@@ -57,7 +63,9 @@ export function BackupPage({
   const [maintenanceOn, setMaintenanceOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-  const [restoring, setRestoring] = useState(false);
+  /** A restore this tab followed when the swap ended its session: the dialog follows it again. */
+  const [followed, setFollowed] = useState(() => (isAdmin ? readFollowedRestore() : null));
+  const [restoring, setRestoring] = useState(followed !== null);
 
   const load = useCallback(async () => {
     try {
@@ -75,6 +83,17 @@ export function BackupPage({
       () => setMaintenanceOn(false),
     );
   }, [api, isAdmin, load]);
+
+  // The newest restore is over: its outcome shows here, so stop following it.
+  const lastRestore = status?.restore ?? null;
+  const restoreOver = lastRestore?.phase === 'succeeded' || lastRestore?.phase === 'failed';
+  useEffect(() => {
+    if (!lastRestore || !restoreOver) return;
+    const stored = readFollowedRestore();
+    if (stored?.restoreId !== lastRestore.id) return;
+    forgetFollowedRestore(lastRestore.id);
+    if (lastRestore.phase === 'succeeded' && stored.uploadId) forgetUpload(stored.uploadId);
+  }, [lastRestore, restoreOver]);
 
   const running = status?.backup?.status === 'running';
   useEffect(() => {
@@ -198,8 +217,23 @@ export function BackupPage({
                   A restore started by {status.restore.startedBy} is {status.restore.phase}.
                 </p>
               )}
+            {lastRestore && restoreOver && (
+              <div className="restore-last" aria-label="Last restore" role="group">
+                <p className="muted">
+                  Last restore, started by {lastRestore.startedBy}, ended{' '}
+                  {when(lastRestore.updatedAt)}.
+                </p>
+                <RestoreOutcome restore={lastRestore} />
+              </div>
+            )}
             <div>
-              <button type="button" onClick={() => setRestoring(true)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setFollowed(null);
+                  setRestoring(true);
+                }}
+              >
                 Restore…
               </button>
             </div>
@@ -226,8 +260,11 @@ export function BackupPage({
         <RestoreDialog
           api={api}
           onSignOut={onSignOut}
+          resume={followed}
+          pollMs={pollMs}
           onClose={() => {
             setRestoring(false);
+            setFollowed(null);
             void load();
           }}
         />
