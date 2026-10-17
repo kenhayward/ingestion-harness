@@ -60,7 +60,9 @@ sudo -e /etc/ingestion-harness/staging.env   # start from deploy/.env.example
 ## Local deploy runner on a Windows dev machine (WSL2)
 
 `deploy.yml` needs a Linux runner, so on Windows run the Linux runner inside WSL2 and let it use
-Docker Desktop's engine. (CI needs no local runner; it runs on GitHub-hosted runners.)
+Docker Desktop's engine. (CI needs no local runner; it runs on GitHub-hosted runners.) The full
+walkthrough for Windows staging and production hosts, including Windows-side settings, ports and
+upkeep, is [deploy-windows.md](deploy-windows.md).
 
 1. **Actions must be enabled** for the repo (Settings → Actions → General).
 2. **WSL + Docker:** `wsl --install -d Ubuntu`, then Docker Desktop → Settings → Resources →

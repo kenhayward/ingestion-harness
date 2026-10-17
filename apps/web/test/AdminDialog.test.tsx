@@ -53,7 +53,12 @@ describe('AdminDialog', () => {
     const { dialog } = open();
     await userEvent.click(within(dialog).getByRole('tab', { name: 'Linked data' }));
     expect(within(dialog).getByRole('tabpanel')).toHaveAccessibleName('Linked data');
-    expect(within(header(dialog)).queryByRole('button')).toBeNull();
+    // Linked data has no main button: only its help.
+    expect(
+      within(header(dialog))
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Help: Linked data settings']);
     await userEvent.click(within(dialog).getByRole('tab', { name: 'Users' }));
     expect(
       await within(header(dialog)).findByRole('button', { name: 'Add user' }),
@@ -86,6 +91,22 @@ describe('AdminDialog', () => {
     ).toBeInTheDocument();
     expect(within(dialog).queryByRole('table', { name: 'Users' })).toBeNull();
     expect(within(header(dialog)).queryByRole('button')).toBeNull();
+  });
+
+  it.each([
+    ['Models', 'Models and model choices', 'Add endpoint'],
+    ['Linked data', 'Linked data settings', null],
+    ['Published outputs', 'How publishing targets work', 'Add target'],
+    ['Users', 'Users and sign-in', 'Add user'],
+  ])('the %s tab has its help last in the header', async (tab, title, main) => {
+    const { dialog } = open();
+    await userEvent.click(within(dialog).getByRole('tab', { name: tab }));
+    if (main) await within(header(dialog)).findByRole('button', { name: main });
+    const buttons = within(header(dialog)).getAllByRole('button');
+    const help = within(header(dialog)).getByRole('button', { name: `Help: ${title}` });
+    expect(buttons.at(-1)).toBe(help);
+    await userEvent.click(help);
+    expect(screen.getByRole('dialog', { name: title })).toBeInTheDocument();
   });
 
   it('opens a remembered Access tab as Users', () => {

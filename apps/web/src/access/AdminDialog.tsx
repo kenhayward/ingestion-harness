@@ -10,6 +10,8 @@ import { AccessPage } from './AccessPage.js';
 import { IntegrationPage } from './IntegrationPage.js';
 import { MaintenancePage } from './MaintenancePage.js';
 import { PublishedOutputsPage } from './PublishedOutputsPage.js';
+import type { HelpTopicId } from '../help/topics.js';
+import { HelpButton } from '../ui/Help.js';
 
 export type AdminTab =
   'models' | 'linked-data' | 'published-outputs' | 'users' | 'integration' | 'maintenance';
@@ -22,6 +24,15 @@ const TABS: { id: AdminTab; label: string; icon: IconName }[] = [
   { id: 'integration', label: 'Integration', icon: 'plug' },
   { id: 'maintenance', label: 'Maintenance', icon: 'warning' },
 ];
+
+/** Each tab's help, last in the header after the tab's main button (Integration's sections carry
+ * their own). */
+const TAB_HELP: Partial<Record<AdminTab, HelpTopicId>> = {
+  models: 'adminModels',
+  'linked-data': 'adminLinkedData',
+  'published-outputs': 'published-outputs',
+  users: 'adminUsers',
+};
 
 const TAB_KEY = 'ih.adminTab';
 
@@ -132,6 +143,7 @@ export function AdminDialog({
             <h2 id={titleId}>Administration</h2>
             <span className="muted">/ {current.label}</span>
             <span className="admin-header-actions" ref={setActions} />
+            {TAB_HELP[tab] && <HelpButton key={tab} topic={TAB_HELP[tab]} />}
           </header>
           <div
             className="profile-body admin-body"
