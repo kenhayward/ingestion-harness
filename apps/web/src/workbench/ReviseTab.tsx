@@ -12,6 +12,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { ModelLogButton } from './DraftLogDialog.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import {
@@ -411,9 +412,14 @@ export function ReviseTab({
           {evaluateBlocked}. <a href={`#/workbench/${projectId}/references`}>Open References</a>
         </p>
       )}
-      {latest?.status === 'failed' && <p role="alert">{latest.error}</p>}
+      {latest?.status === 'failed' && (
+        <p role="alert">
+          {latest.error} <ModelLogButton api={api} projectId={projectId} proposalId={latest.id} />
+        </p>
+      )}
       {latest && body && (
         <ProposalCard
+          api={api}
           models={models}
           projectId={projectId}
           proposal={latest}

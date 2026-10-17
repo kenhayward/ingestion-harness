@@ -10,6 +10,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { ModelLogButton } from './DraftLogDialog.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { DeliveryTargets } from './DeliveryTargets.js';
 import { OutputsView } from './OutputsView.js';
@@ -339,6 +340,7 @@ export function StagePanel({
   const card =
     body && proposal ? (
       <ProposalCard
+        api={api}
         models={models}
         projectId={projectId}
         proposal={proposal}
@@ -403,7 +405,12 @@ export function StagePanel({
         />
       )}
       {error && <p role="alert">{error}</p>}
-      {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
+      {proposal?.status === 'failed' && (
+        <p role="alert">
+          {proposal.error}{' '}
+          <ModelLogButton api={api} projectId={projectId} proposalId={proposal.id} />
+        </p>
+      )}
       {message && <p role="status">{message}</p>}
       {title !== undefined && item?.state === 'stale' && stage !== 'revise' && (
         <StaleBanner

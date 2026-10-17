@@ -81,5 +81,12 @@ def test_pg_concepts_by_label() -> None:
     assert store.concept_by_label(pins, SCHEME, "Drying") is None
     assert store.concept_by_label([("stages-worker-test", 2)], SCHEME, "Granulation") is None
     assert store.concept_by_label([], SCHEME, "Granulation") is None
+    # The mapping stage's term lookup (term_detail).
+    term = store.term(pins, GRANULATION)
+    assert term is not None and term.label == "Granulation" and term.scheme == SCHEME
+    assert term.alt_labels == ["Wet granulation"]
+    assert store.term(pins, "https://ex.example/nothing") is None
+    assert store.term([("stages-worker-test", 2)], GRANULATION) is None
+    assert store.term([], GRANULATION) is None
     conn.execute("DELETE FROM ontologies WHERE id = 'stages-worker-test'")
     conn.close()

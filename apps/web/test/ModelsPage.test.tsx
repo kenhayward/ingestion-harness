@@ -30,6 +30,7 @@ function endpoint(over: Partial<LlmEndpointView> = {}): LlmEndpointView {
     baseUrl: 'http://host:1234/v1',
     location: 'local',
     enabled: true,
+    toolCalls: true,
     source: 'env',
     editedAt: null,
     updatedBy: null,
@@ -106,6 +107,17 @@ describe('ModelsPage: endpoints', () => {
     ).toEqual([expect.stringContaining('qwen')]);
     await userEvent.click(within(local).getByRole('button', { expanded: true }));
     expect(within(local).queryByText('http://host:1234/v1')).toBeNull();
+  });
+
+  it('turns tool calls off and on for an endpoint', async () => {
+    const updateLlmEndpoint = vi.fn(async () => endpoint({ toolCalls: false }));
+    page([endpoint()], { updateLlmEndpoint });
+    const local = await opened('local');
+    const tools = within(local).getByRole('checkbox', { name: 'Tool calls' });
+    expect(tools).toBeChecked();
+    expect(within(local).getByText(/Workbench drafting may test anchors/)).toBeInTheDocument();
+    await userEvent.click(tools);
+    expect(updateLlmEndpoint).toHaveBeenLastCalledWith('local', { toolCalls: false });
   });
 
   it("sets an offered model's output limit", async () => {

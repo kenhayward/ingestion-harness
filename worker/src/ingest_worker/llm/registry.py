@@ -10,7 +10,14 @@ from typing import Any, Literal, cast
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .base import EMBEDDING_KINDS, EmbeddingProvider, LLMProvider, ModelDescriptor, ProviderKind
+from .base import (
+    EMBEDDING_KINDS,
+    EmbeddingProvider,
+    LLMProvider,
+    ModelDescriptor,
+    ProviderKind,
+    ToolCapable,
+)
 from .secrets import SecretError, decrypt_secret, secrets_keys
 
 log = logging.getLogger(__name__)
@@ -47,6 +54,9 @@ class ProviderConfig(BaseModel):
     #: Where requests go (ADR 0007 data policy). Undeclared providers count as external.
     location: Location = "external"
     options: dict[str, Any] = Field(default_factory=dict)
+    #: Workbench drafting may hold a conversation with tools on this endpoint (Administration >
+    #: Models, *Tool calls*); off: one reply per call, as before tools.
+    tool_calls: bool = Field(default=True, alias="toolCalls")
     #: An admin's output limit per offered model id (Administration > Models, migration 0043): the most
     #: tokens one reply may use where the step does not say (drafting, mapping).
     max_output_tokens: dict[str, int] = Field(default_factory=dict, alias="maxOutputTokens")
@@ -255,6 +265,18 @@ class ModelRegistry:
                 f"model {ref} is not offered on endpoint {provider_name}: add it under Administration > Models"
             )
         return provider, model_id
+
+    def supports_tools(self, provider_name: str) -> bool:
+        """Whether drafting may hold a conversation with tools on this provider: its adapter
+        can (`ToolCapable`) and its endpoint allows it (`tool_calls`)."""
+        provider = self._providers.get(provider_name)
+        config = self._configs.get(provider_name)
+        return (
+            provider is not None
+            and config is not None
+            and config.tool_calls
+            and isinstance(provider, ToolCapable)
+        )
 
     def location(self, provider_name: str) -> Location:
         """Data-policy location of a configured provider; unknown names count as external."""

@@ -30,6 +30,7 @@ describe('help index', () => {
       'wbRevise',
       'wbRecipe',
       'wbRuns',
+      'draftModelLog',
     ]);
     const jobs = HELP_INDEX.find((e) => e.topic === 'jobs')!;
     expect(jobs.children?.map((c) => c.topic)).toEqual(['review']);

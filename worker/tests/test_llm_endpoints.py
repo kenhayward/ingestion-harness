@@ -25,6 +25,7 @@ from ingest_worker.llm.endpoints import (
 )
 from ingest_worker.llm.registry import (
     LLMConfig,
+    ModelRegistry,
     ModelResolutionError,
     OcrConfig,
     ProviderConfig,
@@ -32,7 +33,7 @@ from ingest_worker.llm.registry import (
     load_llm_config,
 )
 
-from .fakes import FakeProvider, MemoryLlmConfigStore
+from .fakes import FakeProvider, MemoryLlmConfigStore, ToolFakeProvider
 
 
 def fake_factories(made: list[str] | None = None):  # type: ignore[no-untyped-def]
@@ -537,11 +538,30 @@ def test_the_stored_endpoint_round_trips(harness: StoreHarness) -> None:
         modelFilter="^llama",
         options={"temperature": 0, "timeoutS": 900},
         enabled=False,
+        toolCalls=False,
         models=["b", "a"],
     )
     store.seed(Seed([full]))
     (loaded,) = store.load().endpoints
     assert loaded.model_dump() == {**full.model_dump(), "models": ["a", "b"], "optional": True}
+
+
+def test_tools_run_only_where_the_endpoint_allows_and_the_adapter_can() -> None:
+    providers: dict[str, Any] = {
+        "tools": ToolFakeProvider("tools"),
+        "off": ToolFakeProvider("off"),
+        "plain": FakeProvider("plain"),
+    }
+    configs = {
+        "tools": endpoint("tools"),
+        "off": endpoint("off", toolCalls=False),
+        "plain": endpoint("plain"),
+    }
+    registry = ModelRegistry(providers, configs, {})
+    assert registry.supports_tools("tools")
+    assert not registry.supports_tools("off")  # an admin turned them off
+    assert not registry.supports_tools("plain")  # the adapter cannot hold a conversation
+    assert not registry.supports_tools("unknown")
 
 
 def test_llm_config_without_ocr_has_no_ocr_model() -> None:

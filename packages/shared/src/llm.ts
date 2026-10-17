@@ -44,6 +44,8 @@ export const LlmEndpointViewSchema = z.object({
   /** Data policy (ADR 0007): where requests to this endpoint go. */
   location: z.enum(ENDPOINT_LOCATIONS),
   enabled: z.boolean(),
+  /** Workbench drafting may hold a conversation with tools on it (off: single replies). */
+  toolCalls: z.boolean(),
   /** env: seeded from .env (until an admin edits it); ui: added by an admin. */
   source: z.enum(['env', 'ui']),
   /** When an admin last changed it; .env no longer changes it after that. */
@@ -77,6 +79,8 @@ export const EndpointCreateBodySchema = z
     kind: z.enum(PROVIDER_KINDS),
     baseUrl: BaseUrl.default(null),
     location: z.enum(ENDPOINT_LOCATIONS),
+    /** Let Workbench drafting use tools on it (default on). */
+    toolCalls: z.boolean().default(true),
     /** Stored encrypted (needs LLM_SECRETS_KEY). */
     apiKey: ApiKey.optional(),
     models: z.array(ModelId).max(200).default([]),
@@ -96,6 +100,7 @@ export const EndpointPatchBodySchema = z
     baseUrl: BaseUrl.optional(),
     location: z.enum(ENDPOINT_LOCATIONS).optional(),
     enabled: z.boolean().optional(),
+    toolCalls: z.boolean().optional(),
     /** A new key (stored encrypted), or null to remove the stored one. */
     apiKey: ApiKey.nullable().optional(),
   })

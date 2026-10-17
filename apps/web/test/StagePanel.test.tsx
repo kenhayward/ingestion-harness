@@ -57,6 +57,35 @@ describe('StagePanel', () => {
     expect(await screen.findByText(/1 of 2 changes applied/)).toBeInTheDocument();
   });
 
+  it("opens a proposal's model log, from the card and from a failed run", async () => {
+    const p = changeProposalView();
+    const log = {
+      stage: 'outputs' as const,
+      model: 'local/qwen',
+      tools: false,
+      legacy: false,
+      rounds: [
+        { label: 'draft-outputs', entries: [{ kind: 'prompt' as const, text: 'ctx', images: 0 }] },
+      ],
+    };
+    const { api } = panel({
+      listProposals: vi.fn(async () => [p]),
+      getProposalLog: vi.fn(async () => log),
+    });
+    const card = await screen.findByRole('region', { name: 'Proposal' });
+    await userEvent.click(within(card).getByRole('button', { name: 'Model log' }));
+    expect(await screen.findByRole('dialog', { name: 'Model log' })).toBeInTheDocument();
+    expect(api.getProposalLog).toHaveBeenCalledWith('letter', p.id);
+  });
+
+  it('offers the model log of a failed run beside its error', async () => {
+    const p = changeProposalView({ status: 'failed', body: null, error: 'drafting model refused' });
+    panel({ listProposals: vi.fn(async () => [p]) });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('drafting model refused');
+    expect(within(alert).getByRole('button', { name: 'Model log' })).toBeInTheDocument();
+  });
+
   it('accepts a run that proposes no changes, sending none', async () => {
     const p = changeProposalView({ body: { notes: 'Nothing to add.', changes: [] } });
     const { api, onApplied } = panel({

@@ -6,8 +6,10 @@ import type {
   ProposalStatus,
   ProposalView,
 } from '@ih/shared';
+import type { Api } from '../api/client.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import { StageStatusIcon } from '../ui/StageStatusIcon.js';
+import { ModelLogButton } from './DraftLogDialog.js';
 import { stageStyle, TONE_COLOR, type DisplayState } from '../ui/stageStyle.js';
 import { changeDiff, changeLabel, changeParts, changeVerb, type ChangeVerb } from './changes.js';
 
@@ -60,9 +62,12 @@ export function ProposalCard({
   badge,
   footerNote,
   models,
+  api,
 }: {
   /** The model choices: the drafting model shows by its name. */
   models: readonly ModelChoice[];
+  /** Given: the card offers the proposal's Model log. */
+  api?: Api;
   projectId: string;
   proposal: ProposalView;
   body: ChangeBody;
@@ -95,6 +100,12 @@ export function ProposalCard({
       <code>{proposal.model === null ? '—' : draftingModelName(proposal.model, models)}</code> ·
       brief v{proposal.briefVersion ?? '–'} · {proposal.status.replace('_', ' ')} ·{' '}
       {relativeTime(proposal.createdAt, now)}
+      {api && (
+        <>
+          {' '}
+          <ModelLogButton api={api} projectId={projectId} proposalId={proposal.id} />
+        </>
+      )}
     </p>
   );
 

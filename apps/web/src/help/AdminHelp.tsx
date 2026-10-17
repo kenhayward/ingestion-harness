@@ -85,6 +85,12 @@ export function AdminModelsHelp() {
           unless changed). Raise it when drafting replies are cut off.
         </li>
         <li>
+          <strong>Tool calls</strong> (on by default) let Workbench drafting work things out as it
+          goes: try section anchors on the dev samples, search the pinned ontologies and read more
+          pages of a dev sample, before it proposes changes. Turn it off for a server that
+          mishandles tools; drafting then asks for one reply at a time, as before.
+        </li>
+        <li>
           Disable an endpoint to stop using it for a while. Only endpoints added here can be
           removed; those from .env can only be disabled.
         </li>

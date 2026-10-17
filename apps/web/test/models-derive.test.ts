@@ -17,6 +17,7 @@ const endpoint = (over: Partial<LlmEndpointView> = {}): LlmEndpointView => ({
   baseUrl: null,
   location: 'local',
   enabled: true,
+  toolCalls: true,
   source: 'env',
   editedAt: null,
   updatedBy: null,

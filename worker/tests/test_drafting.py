@@ -30,7 +30,12 @@ from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import load_specs
-from ingest_worker.storage import MemoryObjectStore, drafting_key, prepared_text_key
+from ingest_worker.storage import (
+    MemoryObjectStore,
+    draft_log_key,
+    drafting_key,
+    prepared_text_key,
+)
 from ingest_worker.workbench import segment_with_timeout as real_segment
 
 from .fakes import FakeProvider, FakeQueue
@@ -236,7 +241,13 @@ def test_survey_job_writes_the_validated_body(fixture_specs_dir: Path) -> None:
     assert request.json_schema == SURVEY.schema
     assert DRAFT_MAX_TOKENS == 16_000
     assert request.max_tokens == DRAFT_MAX_TOKENS
-    assert store.get_optional("runs", "job-d/draft-survey/attempt-1.json") is not None
+    # The model log replaces the per-attempt audit files for drafting.
+    model_log = json.loads(store.get("runs", draft_log_key("job-d")))
+    assert model_log["stage"] == "survey" and model_log["tools"] is False
+    [round_] = model_log["rounds"]
+    assert round_["label"] == "draft-survey"
+    assert [e["kind"] for e in round_["entries"]] == ["prompt", "reply"]
+    assert store.get_optional("runs", "job-d/draft-survey/attempt-1.json") is None
     assert not any(msg == "external model call" for _, _, msg in queue.events)  # local provider
 
 
@@ -627,7 +638,8 @@ def test_sections_anchor_misses_are_fed_back_once_and_the_grid_is_kept(
     body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
     [row] = body["anchorCheck"]["samples"]
     assert {c["id"]: c["found"] for c in row["sections"]}["approval"] is True
-    assert store.get_optional("runs", "job-d/draft-sections-anchors/attempt-1.json") is not None
+    rounds = json.loads(store.get("runs", draft_log_key("job-d")))["rounds"]
+    assert [r["label"] for r in rounds] == ["draft-sections", "draft-sections-anchors"]
     assert progress(queue) == expected_progress("sectionsAnchorRound")
 
 

@@ -11,6 +11,7 @@ import {
   type StageView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { ModelLogButton } from './DraftLogDialog.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { Icon } from '../ui/Icon.js';
@@ -278,7 +279,12 @@ export function SurveyTab({
         />
       )}
       {error && <p role="alert">{error}</p>}
-      {proposal?.status === 'failed' && <p role="alert">{proposal.error}</p>}
+      {proposal?.status === 'failed' && (
+        <p role="alert">
+          {proposal.error}{' '}
+          <ModelLogButton api={api} projectId={projectId} proposalId={proposal.id} />
+        </p>
+      )}
       {restored && unsavedAnswers && (
         <p role="status" className="kept-note">
           <Icon name="info" size={14} />
@@ -330,6 +336,7 @@ export function SurveyTab({
                   {proposal.model === null ? 'model' : draftingModelName(proposal.model, models)} ·
                   brief v{proposal.briefVersion ?? '–'} · {relativeTime(proposal.createdAt, now)}
                 </span>
+                <ModelLogButton api={api} projectId={projectId} proposalId={proposal.id} />
               </div>
               <p>{body.summary}</p>
               {body.variants.length > 0 && (

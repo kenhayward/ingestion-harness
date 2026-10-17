@@ -57,6 +57,7 @@ export const HELP_INDEX: HelpEntry[] = [
       { topic: 'wbRevise', label: 'Revise' },
       { topic: 'wbRecipe', label: 'Recipe' },
       { topic: 'wbRuns', label: 'Test runs' },
+      { topic: 'draftModelLog', label: 'Model log' },
     ],
   },
   {

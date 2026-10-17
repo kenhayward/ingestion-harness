@@ -7,6 +7,7 @@
  *   runs bucket:    prepared/{sha256}/text.json | triage.json   (workbench prepare task)
  *   runs bucket:    segmentation/{projectId}/{jobId}.json   (workbench segment task)
  *   runs bucket:    drafting/{projectId}/{jobId}.json   (workbench draft task)
+ *   runs bucket:    {jobId}/draft-log.json   (a draft job's model log: prompts, replies, tools)
  *   runs bucket:    ontologies/{ontologyId}/sources/{sha256}.{ext}   (imported ontology files)
  *   runs bucket:    ontologies/{ontologyId}/v{version}/normalized.nt   (ontology task)
  */
@@ -84,6 +85,16 @@ export function ontologySuggestionsKey(projectId: string, jobId: string): string
 /** A drafting stage's result for a workbench project (runs bucket, worker draft task). */
 export function draftingKey(projectId: string, jobId: string): string {
   return `drafting/${projectId}/${jobId}.json`;
+}
+
+/** A drafting job's model log (runs bucket; worker `draft_log_key`, `DraftLogSchema`). */
+export function draftLogKey(jobId: string): string {
+  return `${jobId}/draft-log.json`;
+}
+
+/** A drafting run's audit of one model call, from before the model log (runs bucket). */
+export function runAttemptKey(jobId: string, label: string, attempt: number): string {
+  return `${jobId}/${label}/attempt-${attempt}.json`;
 }
 
 /** A project's exported drafting bundle (runs bucket, export task). */

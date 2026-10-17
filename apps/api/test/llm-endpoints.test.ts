@@ -49,6 +49,7 @@ describe('LLM endpoints API', () => {
         baseUrl: 'http://host:1234/v1',
         location: 'local',
         enabled: true,
+        toolCalls: true,
         source: 'env',
         editedAt: null,
         updatedBy: null,
@@ -122,6 +123,30 @@ describe('LLM endpoints API', () => {
   ])('refuses an invalid endpoint %o', async (body) => {
     const { call } = await setup();
     expect((await call('POST', '/endpoints', body)).statusCode).toBe(400);
+  });
+
+  it('turns tool calls off and on for an endpoint (drafting falls back to single replies)', async () => {
+    const { call } = await setup();
+    const off = await call('PATCH', '/endpoints/local', { toolCalls: false });
+    expect(off.statusCode).toBe(200);
+    expect(off.json()).toMatchObject({ toolCalls: false, updatedBy: null });
+    expect(off.json().editedAt).not.toBeNull();
+    const created = await call('POST', '/endpoints', {
+      name: 'gpu2',
+      kind: 'openai-chat',
+      baseUrl: 'http://x/v1',
+      location: 'local',
+      toolCalls: false,
+    });
+    expect(created.json().toolCalls).toBe(false);
+    const defaulted = await call('POST', '/endpoints', {
+      name: 'gpu3',
+      kind: 'openai-chat',
+      baseUrl: 'http://x/v1',
+      location: 'local',
+    });
+    expect(defaulted.json().toolCalls).toBe(true);
+    expect((await call('PATCH', '/endpoints/local', { toolCalls: 'no' })).statusCode).toBe(400);
   });
 
   it('lets an Anthropic endpoint go without a base URL', async () => {

@@ -3699,3 +3699,63 @@ label.inline.list-select {
 .draft-phase-text small {
   font-size: var(--ih-text-sm);
 }
+
+/* A drafting proposal's model log (DraftLogDialog): rounds of prompt, replies, tool calls. */
+.model-log-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 0.85em;
+}
+.dialog.model-log-dialog {
+  width: min(960px, calc(100vw - 32px));
+}
+.model-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.model-log-head p {
+  margin: 0;
+}
+.model-log-round h3 {
+  margin: 0 0 8px;
+}
+.model-log {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--ih-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.model-log-entry {
+  margin: 0;
+}
+.model-log-entry summary {
+  cursor: pointer;
+}
+.model-log-entry pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--ih-code-bg);
+  border: 1px solid var(--ih-border);
+  border-radius: 8px;
+  font-size: 0.85em;
+}
+.model-log-result.is-error summary,
+.model-log-rejected,
+.model-log-error {
+  color: var(--ih-danger-fg);
+}
+.model-log-rejected ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}

@@ -63,7 +63,12 @@ import {
   failureDiffs,
   revisionFailures,
   type RevisionFeedback,
+  DraftLogSchema,
+  type DraftLog,
+  type DraftLogEntry,
+  draftLogKey,
   draftingKey,
+  runAttemptKey,
   finishedJob,
   firstIncomplete,
   inboxKey,
@@ -345,6 +350,51 @@ export async function stagesOf(app: FastifyInstance, projectId: string): Promise
     app.deps.workbench.listConfirms(projectId),
   ]);
   return stageStates(proposals, skips, confirms);
+}
+
+/** Model calls one proposal round made before the model log (worker DRAFT_ATTEMPTS). */
+const LEGACY_ATTEMPTS = 2;
+
+/**
+ * A drafting run's model log (`draftLogKey`), or, for a run from before it, one rebuilt from
+ * its per-attempt audit (`{job}/draft-{stage}/attempt-{n}.json`, the sections anchor round
+ * under `draft-sections-anchors`): prompts, replies and rejections only. Null when neither
+ * exists (a run still queued, or one that ended before calling the model).
+ */
+async function draftLog(
+  app: FastifyInstance,
+  jobId: string,
+  stage: DraftStage,
+): Promise<DraftLog | null> {
+  const raw = await readJsonSafe(app, draftLogKey(jobId));
+  if (raw != null) {
+    const parsed = DraftLogSchema.safeParse(raw);
+    if (parsed.success) return parsed.data;
+  }
+  const AttemptSchema = z.object({
+    prompt: z.string(),
+    response: z.string(),
+    errors: z.array(z.string()),
+  });
+  const labels = [`draft-${stage}`, ...(stage === 'sections' ? ['draft-sections-anchors'] : [])];
+  const rounds: DraftLog['rounds'] = [];
+  for (const label of labels) {
+    const entries: DraftLogEntry[] = [];
+    for (let n = 1; n <= LEGACY_ATTEMPTS; n++) {
+      const attempt = AttemptSchema.safeParse(
+        await readJsonSafe(app, runAttemptKey(jobId, label, n)),
+      );
+      if (!attempt.success) break;
+      const { prompt, response, errors } = attempt.data;
+      entries.push(
+        { kind: 'prompt', text: prompt, images: 0 },
+        { kind: 'reply', text: response, inputTokens: null, outputTokens: null },
+      );
+      if (errors.length) entries.push({ kind: 'rejected', errors });
+    }
+    if (entries.length) rounds.push({ label, entries });
+  }
+  return rounds.length ? { stage, model: null, tools: false, rounds, legacy: true } : null;
 }
 
 /** The body of the latest accepted survey, or null (context for the change stages). */
@@ -3258,6 +3308,45 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       return Promise.all(
         proposals.map((p) => proposalView(app, p, jobs.get(p.id) ?? null, events)),
       );
+    },
+  );
+
+  app.get<{ Params: { id: string; pid: string } }>(
+    '/workbench/projects/:id/proposals/:pid/log',
+    {
+      schema: {
+        tags: ['Drafting stages & proposals'],
+        operationId: 'getProposalLog',
+        summary: "Read a proposal's model log",
+        description: md`
+          What the drafting model was sent and answered while it made the proposal, round by
+          round (the sections stage's anchor round is a second one): the prompt, each reply,
+          the tools it called (\`test_anchors\`, \`read_sample_pages\`, \`search_terms\`,
+          \`term_detail\`) with what they returned, answers rejected and why, and the error
+          that ended a failed run. Written by the worker after every round, so a running
+          proposal shows the rounds finished so far. A run from before the log is rebuilt from
+          its per-attempt audit (\`legacy\`: prompts, replies and rejections only). Prompts hold
+          the dev samples' text, never a holdout sample's.
+        `,
+        params: z.object({
+          id: z.string().describe('The project id.'),
+          pid: z.string().uuid().describe('The proposal id.'),
+        }),
+        response: {
+          200: res('The model log.', DraftLogSchema),
+          404: error('`proposal not found`, or `no model log for this run`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const params = ProposalParams.safeParse(req.params);
+      if (!params.success) return reply.code(404).send({ error: 'proposal not found' });
+      const { id: projectId, pid } = params.data;
+      const record = (await workbench.listProposals(projectId)).find((p) => p.id === pid);
+      if (!record) return reply.code(404).send({ error: 'proposal not found' });
+      const log = await draftLog(app, pid, record.stage);
+      if (!log) return reply.code(404).send({ error: 'no model log for this run' });
+      return log;
     },
   );
 

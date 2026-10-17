@@ -13,8 +13,11 @@ from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
     CompletionRequest,
     CompletionResult,
+    ConversationRequest,
     ModelDescriptor,
     ProviderKind,
+    ToolCall,
+    TurnResult,
     VisionRequest,
 )
 from ingest_worker.llm.endpoints import Choice, Seed
@@ -106,6 +109,52 @@ class FakeProvider:
         if isinstance(response, Exception):
             raise response
         return CompletionResult(text=response, model=model)
+
+
+#: A scripted conversation turn: a TurnResult, an Exception (raised), a str (a text-only reply)
+#: or a list of (tool name, arguments) calls, the arguments a dict or a raw string.
+ScriptedTurn = TurnResult | Exception | str | list[tuple[str, dict[str, Any] | str]]
+
+
+class ToolFakeProvider(FakeProvider):
+    """A FakeProvider that can also hold a conversation with tools: `turns` replay in order.
+    Plain FakeProvider has no `converse`, so code under test treats it as tool-less."""
+
+    def __init__(self, *args: Any, turns: list[ScriptedTurn] | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.turns: list[ScriptedTurn] = list(turns or [])
+        self.converse_calls: list[tuple[str, ConversationRequest]] = []
+
+    def converse(
+        self,
+        model: str,
+        request: ConversationRequest,
+        on_tokens: Callable[[int], None] | None = None,
+    ) -> TurnResult:
+        self.converse_calls.append((model, request))
+        if on_tokens is not None:
+            for n in self.token_stream:
+                on_tokens(n)
+        turn = self.turns.pop(0)
+        if isinstance(turn, Exception):
+            raise turn
+        if isinstance(turn, TurnResult):
+            return turn
+        if isinstance(turn, str):
+            return TurnResult(
+                text=turn, tool_calls=(), model=model, input_tokens=10, output_tokens=5
+            )
+        n = len(self.converse_calls)
+        calls = tuple(
+            ToolCall(
+                id=f"call-{n}-{i}",
+                name=name,
+                input=args if isinstance(args, dict) else None,
+                raw=json.dumps(args) if isinstance(args, dict) else args,
+            )
+            for i, (name, args) in enumerate(turn)
+        )
+        return TurnResult(text="", tool_calls=calls, model=model, input_tokens=10, output_tokens=5)
 
 
 @dataclass
@@ -554,6 +603,14 @@ class MemoryOntologyStore:
 
     def has_embeddings(self, versions: list[tuple[str, int]], model_ref: str) -> bool:
         return any(self.embeddings.get((*v, model_ref)) for v in versions)
+
+    def term(self, versions: list[tuple[str, int]], iri: str) -> Term | None:
+        for version in versions:
+            parsed = self.saved.get(version)
+            for term in parsed.terms if parsed else []:
+                if term.iri == iri:
+                    return term
+        return None
 
     def concept_by_label(
         self, versions: list[tuple[str, int]], scheme: str, label: str

@@ -88,6 +88,48 @@ describe('draftRunView (issue #151)', () => {
     );
   });
 
+  it('says which tool is running on the same line as the token count', () => {
+    const tool = { name: 'test_anchors', summary: 'Testing 4 anchors on 6 dev samples' };
+    const testing = draftRunView(
+      'sections',
+      running(progress({ stage: 'sections', tokens: 1300, tool, toolCalls: 3 }, 30)),
+      T0 + 40_000,
+    );
+    expect(testing.phases.find((p) => p.state === 'current')!.detail).toBe(
+      '~1,300 tokens received so far · Testing 4 anchors on 6 dev samples.',
+    );
+    const between = draftRunView(
+      'sections',
+      running(progress({ stage: 'sections', tokens: 2100, tool: null, toolCalls: 5 }, 30)),
+      T0 + 40_000,
+    );
+    expect(between.phases.find((p) => p.state === 'current')!.detail).toBe(
+      '~2,100 tokens received so far · 5 tool calls.',
+    );
+    const one = draftRunView(
+      'revise',
+      running(progress({ stage: 'revise', tokens: null, tool: null, toolCalls: 1 }, 30)),
+      T0 + 40_000,
+    );
+    expect(one.phases.find((p) => p.state === 'current')!.detail).toBe('1 tool call.');
+    const unstreamed = draftRunView(
+      'sections',
+      running(progress({ stage: 'sections', tokens: null, tool, toolCalls: 1 }, 30)),
+      T0 + 40_000,
+    );
+    expect(unstreamed.phases.find((p) => p.state === 'current')!.detail).toBe(
+      'Testing 4 anchors on 6 dev samples.',
+    );
+    const started = draftRunView(
+      'sections',
+      running(progress({ stage: 'sections', tokens: null, tool: null, toolCalls: 0 }, 30)),
+      T0 + 40_000,
+    );
+    expect(started.phases.find((p) => p.state === 'current')!.detail).toBe(
+      'This can take several minutes.',
+    );
+  });
+
   it('times the model from when the try began, not from its latest token count (issue #181)', () => {
     // The try began at 30 s; the streamed reply's token counts arrive every few seconds.
     const v = draftRunView('survey', running(progress({ tokens: 900 }, 55, 30)), T0 + 58_000);
