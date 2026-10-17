@@ -67,6 +67,34 @@ def test_rebuild_task_reloads_the_store(monkeypatch: pytest.MonkeyPatch) -> None
     assert queue.completed
 
 
+def test_rebuild_remint_reloads_then_remints_in_one_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A copy restore from a backup without triples: the store is reloaded from the copies, then
+    every graph is re-minted under this server's base, in one job (two replicas never interleave)."""
+    calls: list[str] = []
+
+    def rebuild(_d: PipelineDeps) -> list[str]:
+        calls.append("rebuild")
+        return ["rebuild: 0 ontology graphs, 2 document graphs, 0 missing"]
+
+    def remint(_deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[str]:
+        calls.append("remint")
+        assert source is SOURCE
+        return ["remint under https://staging.example/: 2 re-minted, 0 already there, 0 failed"]
+
+    monkeypatch.setattr(rdf_rebuild, "rebuild", rebuild)
+    monkeypatch.setattr(rdf_rebuild, "remint", remint)
+    queue = FakeQueue(jobs=[rebuild_job({"mode": "rebuild-remint"})])
+    assert run_once(queue, deps(), "w1")
+    assert calls == ["rebuild", "remint"]
+    assert queue.completed == [("44444444-4444-4444-8444-444444444444", [])]
+    [event] = [e for e in queue.event_details if e[2] == rdf_rebuild.REBUILT]
+    assert event[3] == {
+        "mode": "rebuild-remint",
+        "summary": "rebuild: 0 ontology graphs, 2 document graphs, 0 missing; "
+        "remint under https://staging.example/: 2 re-minted, 0 already there, 0 failed",
+    }
+
+
 @pytest.mark.parametrize("params", [{}, {"mode": "backfill"}, {"mode": "remint", "extra": 1}])
 def test_rebuild_task_with_bad_params_goes_to_review(params: dict[str, Any]) -> None:
     queue = FakeQueue(jobs=[rebuild_job(params)])

@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { REBUILD_JOB } from '../repositories/types.js';
 import { applyCopyRules, readKeptState, type CopyResult, type KeptState } from './copy-rules.js';
-import type { LiveDatabase, ObjectRef, SideDatabase } from './ports.js';
+import type { LiveDatabase, ObjectRef, RebuildMode, SideDatabase } from './ports.js';
 
 /** The restore's SQL on Postgres: the live database through the API's pool, the side one direct. */
 
@@ -142,7 +142,7 @@ export class PgSideDatabase implements SideDatabase {
     return rows;
   }
 
-  async queueRebuild(mode: 'remint' | 'rebuild', by: string): Promise<void> {
+  async queueRebuild(mode: RebuildMode, by: string): Promise<void> {
     // As the API's queueBackground: no document, no project.
     await this.client.query(
       `INSERT INTO jobs (task, priority, max_attempts, params, created_by)

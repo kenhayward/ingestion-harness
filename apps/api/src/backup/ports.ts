@@ -81,6 +81,13 @@ export interface LiveDatabase {
   readKeptState(): Promise<KeptState>;
 }
 
+/**
+ * A `rebuild` job's mode (the worker's `RebuildParams`): `rebuild` reloads the triple store from
+ * the published copies, `remint` re-renders the graphs under this server's base, and
+ * `rebuild-remint` does both in one job (a copy from a backup without triples).
+ */
+export type RebuildMode = 'rebuild' | 'remint' | 'rebuild-remint';
+
 /** An object a row of the restored database names. */
 export interface ObjectRef {
   bucket: string;
@@ -106,7 +113,7 @@ export interface SideDatabase {
   /** The data-lake consumers' access keys not revoked (label, IAM user, key id). */
   lakeAccessKeys(): Promise<{ consumer: string; userName: string; accessKeyId: string }[]>;
   /** Queues a `rebuild` job (it runs once the queue is resumed). */
-  queueRebuild(mode: 'remint' | 'rebuild', by: string): Promise<void>;
+  queueRebuild(mode: RebuildMode, by: string): Promise<void>;
   /** The `embedding_model` pipeline setting, if any. */
   embeddingModel(): Promise<string | null>;
   /** Row counts of the main tables, for the report. */

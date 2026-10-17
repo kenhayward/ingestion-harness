@@ -389,6 +389,17 @@ describe('runRestore', () => {
     expect(s.side.rebuilds).toEqual(['rebuild']);
   });
 
+  it('a copy from a backup without triples reloads and re-mints in one job', async () => {
+    const { file, checked } = await backupOf({ triples: new FakeTripleStore(null) });
+    const s = await server(file);
+    const { status } = statuses();
+
+    const report = await runRestore(s.deps, request(checked, 'copy'), status);
+
+    expect(report.triples).toBe('reminting');
+    expect(s.side.rebuilds).toEqual(['rebuild-remint']);
+  });
+
   it('reports when this server has no triple store', async () => {
     const { file, checked } = await backupOf();
     const s = await server(file, { triples: new FakeTripleStore(null) });

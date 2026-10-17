@@ -38,7 +38,10 @@ and refreshing staging with production's data while staging stays staging.
   settings and data-lake consumers; drops the backup's GitHub links and tokens and its external
   targets (kept inert for the foreign keys, `inert_at`, their deliveries hidden as withdrawn);
   cancels queued and running jobs; queues embedding jobs; and queues one `rebuild` job that
-  re-mints the graphs under this server's base IRI. Objects of internal targets keep their
+  re-mints the graphs under this server's base IRI (`remint`; from a backup without triples,
+  `rebuild-remint` reloads the store from the published copies and then re-mints, in one job, so
+  two worker replicas never interleave the two). A deployment restore from a backup without
+  triples queues a plain `rebuild`. Objects of internal targets keep their
   recorded bucket names in a copy, so every recorded `job_outputs` key still resolves.
 - **Data-lake identities are not restored.** SeaweedFS 4.48 keeps one file per identity and a
   filer write breaks its IAM, so a backup carries none (`NoLakeIdentities`); the report lists the

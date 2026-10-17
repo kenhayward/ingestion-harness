@@ -6,6 +6,7 @@ import type {
   LakeIdentities,
   LiveDatabase,
   ObjectRef,
+  RebuildMode,
   SideDatabase,
   TripleStoreDump,
 } from '../src/backup/ports.js';
@@ -214,7 +215,7 @@ export class FakeSideDatabase implements SideDatabase {
     return this.accessKeys;
   }
 
-  async queueRebuild(mode: 'remint' | 'rebuild'): Promise<void> {
+  async queueRebuild(mode: RebuildMode): Promise<void> {
     this.calls.push(`rebuild ${mode}`);
     this.rebuilds.push(mode);
   }

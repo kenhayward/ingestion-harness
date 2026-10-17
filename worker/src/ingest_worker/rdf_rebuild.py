@@ -350,11 +350,14 @@ def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[s
 
 
 class RebuildParams(BaseModel):
-    """A `rebuild` job's params (a copy restore queues `remint`)."""
+    """A `rebuild` job's params. A restore queues them: a deployment restore from a backup
+    without triples `rebuild`; a copy `remint`, or `rebuild-remint` when its backup had no
+    triples (the store is reloaded from the published copies, then re-minted under this
+    server's base, in one job so two worker replicas never interleave the two)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["remint", "rebuild"]
+    mode: Literal["remint", "rebuild", "rebuild-remint"]
 
 
 #: Job event of a finished `rebuild` job (`{mode, summary}`: the command's last line).
@@ -369,14 +372,21 @@ def run_rebuild_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> lis
         params = RebuildParams.model_validate(job.params or {})
     except ValidationError as exc:
         raise DocumentError(f"invalid rebuild parameters: {exc}") from exc
-    if params.mode == "remint":
-        source = deps.delivered_jobs
-        if source is None:
-            raise DocumentError("re-minting needs the database")
-        lines = remint(deps, queue, source)
-    else:
-        lines = rebuild(deps)
-    queue.event(job.id, "info", REBUILT, {"mode": params.mode, "summary": lines[-1]})
+    source = deps.delivered_jobs
+    if params.mode != "rebuild" and source is None:
+        raise DocumentError("re-minting needs the database")
+    summary: list[str] = []
+    lines: list[str] = []
+    if params.mode in ("rebuild", "rebuild-remint"):
+        reloaded = rebuild(deps)
+        lines += reloaded
+        summary.append(reloaded[-1])
+    if params.mode in ("remint", "rebuild-remint"):
+        assert source is not None
+        reminted = remint(deps, queue, source)
+        lines += reminted
+        summary.append(reminted[-1])
+    queue.event(job.id, "info", REBUILT, {"mode": params.mode, "summary": "; ".join(summary)})
     return lines
 
 

@@ -414,6 +414,10 @@ export async function runRestore(
       } else {
         triples = 'restored';
       }
+    } else if (r.mode === 'copy') {
+      // Reloaded from the published copies, which name production's IRIs: re-minted after.
+      await side.queueRebuild('rebuild-remint', r.by);
+      triples = 'reminting';
     } else {
       await side.queueRebuild('rebuild', r.by);
       triples = 'none-in-backup';
