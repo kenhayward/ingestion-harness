@@ -322,6 +322,28 @@ describe('use a version as the draft', () => {
       ...body,
     });
 
+  it('keeps a publishing target this deployment lacks, with the publishing issue', async () => {
+    const c = await setup();
+    const head = c.github.seed(REPO, 'main', {
+      [path('prod', 'invoice', 'v12.yaml')]: file('prod', {
+        ...invoice(12),
+        delivery: { publishTo: 'finance-lake' },
+      }),
+    });
+    const res = await use(c, { version: 12, commit: head });
+    expect(res.statusCode).toBe(200);
+    expect((await c.templates.get('invoice', 4))!.definition.delivery).toEqual({
+      publishTo: 'finance-lake',
+    });
+    const view = await c.call('GET', '/api/templates/invoice/versions/4');
+    expect(view.json().issues).toEqual([
+      {
+        path: 'delivery.publishTo',
+        message: 'no publishing target finance-lake on this deployment',
+      },
+    ]);
+  });
+
   it('replaces the open draft, logs the import and copies the label', async () => {
     const c = await setup();
     const draft = (await c.templates.get('invoice', 4))!;

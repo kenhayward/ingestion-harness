@@ -456,6 +456,7 @@ describe('ReviewPage graph (ADR 0011 step 5)', () => {
     bucket: 'outputs',
     key: `${JOB_ID}/graph.ttl`,
     rowCount: null,
+    targetId: null,
   };
 
   it('has no Graph tab without a graph output', async () => {

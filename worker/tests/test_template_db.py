@@ -14,7 +14,7 @@ from ingest_worker.pipeline import Buckets, PipelineDeps, Target
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
 
-from .fakes import FakeProvider, FakeQueue
+from .fakes import FakeProvider, FakeQueue, FakeTargets
 from .test_template_pipeline import JOB, PAGES, RESPONSES, TEMPLATE
 
 
@@ -37,7 +37,7 @@ def make(tmp_path: Path, file_template: dict[str, Any] | None = None):  # type: 
         extract_text=lambda _pdf: PAGES,
         buckets=Buckets("inbox", "outputs", "runs"),
         render_preview=lambda pdf, i: b"jpg",
-        target=Target(target, "published"),
+        targets=FakeTargets({"default": Target(target, "published")}),
     )
     return deps, provider, target
 

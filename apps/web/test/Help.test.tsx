@@ -72,13 +72,22 @@ describe('GitHub sync help', () => {
 
 describe('help topics for the recipe tabs', () => {
   it.each([
-    ['general', 'General recipe settings', ['Preamble', 'Review', 'OCR', 'Delivered formats']],
+    [
+      'general',
+      'General recipe settings',
+      ['Preamble', 'Review', 'OCR', 'Delivered formats', 'Publish to'],
+    ],
     ['outputs', 'Outputs: fields and tables', ['Type', 'Description', 'exactly one step']],
     ['pipeline', 'How the pipeline runs', ['Extract steps', 'Check steps', 'Pages per call']],
     ['mapping', 'Mapping outputs to an ontology', ['literal', 'entity', 'concept', 'Shapes']],
     ['yaml', 'Editing the recipe as YAML', ['Apply YAML']],
     ['quality', 'Reading the Quality tab', ['Review rate', 'Avg attempts']],
     ['versions', 'Versions, labels and drafts', ['Replace draft', 'Label']],
+    [
+      'published-outputs',
+      'How publishing targets work',
+      ['Internal', 'External', 'default', 'new version', 'locked', 'S3 keys'],
+    ],
   ] as const)('%s: %s', async (topic, title, mentions) => {
     render(<HelpButton topic={topic} />);
     await userEvent.click(screen.getByRole('button', { name: `Help: ${title}` }));

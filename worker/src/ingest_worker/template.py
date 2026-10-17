@@ -167,8 +167,16 @@ class Semantics(_Model):
 DeliveryFormat = Literal["csv", "json", "rdf"]
 
 
+#: The id of a publishing target (TARGET_ID in TS); `default` is the seeded one.
+DEFAULT_PUBLISH_TARGET = "default"
+PublishTargetId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,39}$")]
+
+
 class Delivery(_Model):
-    formats: list[DeliveryFormat] = Field(min_length=1)
+    #: What publishing delivers (absent: CSV and JSON).
+    formats: list[DeliveryFormat] | None = Field(default=None, min_length=1)
+    #: The publishing target to deliver to (absent: the default target).
+    publish_to: PublishTargetId | None = Field(default=None, alias="publishTo")
 
 
 class TemplateDocument(DocumentLayout):
@@ -221,7 +229,15 @@ class Template(_Model):
 
     def delivery_formats(self) -> list[DeliveryFormat]:
         """What publishing delivers (deliveryFormats in TS)."""
-        return list(self.delivery.formats) if self.delivery else ["csv", "json"]
+        if self.delivery and self.delivery.formats:
+            return list(self.delivery.formats)
+        return ["csv", "json"]
+
+    def publish_to(self) -> str:
+        """The publishing target id (`delivery.publishTo`, else `default`)."""
+        if self.delivery and self.delivery.publish_to:
+            return self.delivery.publish_to
+        return DEFAULT_PUBLISH_TARGET
 
     def filler_of_field(self, field_id: str) -> ExtractStep:
         return next(s for s in self.extract_steps() if field_id in s.fields)
@@ -278,7 +294,7 @@ class Template(_Model):
     def _semantics_errors(self) -> list[str]:
         """Delivery and mapping rules beyond the schema (TemplateSchema.superRefine in TS)."""
         errors: list[str] = []
-        formats = list(self.delivery.formats) if self.delivery else []
+        formats = list(self.delivery.formats or []) if self.delivery else []
         errors += [
             f"delivery: {f!r} is listed twice"
             for f in sorted({f for f in formats if formats.count(f) > 1})

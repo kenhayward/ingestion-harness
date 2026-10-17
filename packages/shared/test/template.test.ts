@@ -8,6 +8,7 @@ import {
   TemplateSchema,
   type DeliveryTarget,
 } from '../src/template.js';
+import { deliveryPublishTo } from '../src/publish-targets.js';
 
 const valid = {
   id: 'demo',
@@ -301,5 +302,33 @@ describe('repeating sections (shared with the worker)', () => {
       expect(Object.keys(s)).not.toContain('keyFrom');
     }
     for (const s of plain.pipeline) expect(Object.keys(s)).not.toContain('keyColumn');
+  });
+});
+
+describe('delivery.publishTo (publishing targets, shared with the worker)', () => {
+  const cases = (
+    JSON.parse(
+      readFileSync(new URL('./fixtures/publish-targets.json', import.meta.url), 'utf8'),
+    ) as {
+      delivery: { name: string; definition: object; formats: string[]; publishTo: string }[];
+    }
+  ).delivery;
+  it.each(cases.map((c) => [c.name, c] as const))('%s', (_n, c) => {
+    const t = TemplateSchema.parse({ ...valid, ...c.definition });
+    expect(deliveryFormats(t)).toEqual(c.formats);
+    expect(deliveryPublishTo(t)).toBe(c.publishTo);
+  });
+  it('names the default target when none is set', () => {
+    expect(deliveryPublishTo({})).toBe('default');
+  });
+  it('refuses a bad target id', () => {
+    const r = TemplateSchema.safeParse({ ...valid, delivery: { publishTo: 'Bad Id' } });
+    expect(r.success).toBe(false);
+  });
+  it('keeps publishTo when a delivery switch changes', () => {
+    const def = { ...valid, delivery: { publishTo: 'finance-lake' } };
+    const rdf = setDeliveryTarget(def, 'rdf', true) as { delivery: unknown };
+    expect(rdf.delivery).toEqual({ formats: ['csv', 'json', 'rdf'], publishTo: 'finance-lake' });
+    expect(setDeliveryTarget(rdf, 'rdf', false)).toEqual(def);
   });
 });

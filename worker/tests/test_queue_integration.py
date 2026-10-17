@@ -297,3 +297,32 @@ def test_a_claimed_job_carries_its_documents_file_name(
     claimed = q.claim("w1")
     assert claimed is not None and claimed.id == job_id
     assert claimed.filename == "a.pdf"
+
+
+def test_published_outputs_record_their_publishing_target(
+    queue_and_job: tuple[PgJobQueue, ClaimedJob],
+) -> None:
+    from ingest_worker.outputs import RenderedOutput
+    from ingest_worker.publish_targets import Target
+    from ingest_worker.rdf_rebuild import PgRebuildSource
+    from ingest_worker.storage import MemoryObjectStore
+
+    q, job = queue_and_job
+    q._conn.execute(
+        """INSERT INTO publish_targets (id, label, kind, bucket)
+           VALUES ('finance-lake', 'Finance lake', 'internal', 'finance')
+           ON CONFLICT (id) DO NOTHING"""
+    )
+    key = f"fin/demo/v2/fields/{job.document_id}.csv"
+    output = RenderedOutput("fields", "csv", key, b"a\n", 1)
+    q.record_published(
+        job, [output], Target(MemoryObjectStore(), "finance", "fin/", "finance-lake")
+    )
+    row = q._conn.execute(
+        "SELECT bucket, object_key, target_id FROM job_outputs WHERE job_id = %s AND stage = 'published'",
+        (job.id,),
+    ).fetchone()
+    assert row == ("finance", key, "finance-lake")
+    source = PgRebuildSource(q._conn)
+    assert source.object_live("finance-lake", "finance", key)
+    assert not source.object_live("default", "finance", key)

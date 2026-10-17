@@ -58,6 +58,12 @@ import type {
   LlmChoicesView,
   LlmChoiceView,
   LlmEndpointView,
+  PublishTargetView,
+  TargetChoice,
+  TargetCreateBody,
+  TargetPatchBody,
+  TargetTestBody,
+  TargetTestResult,
   ModelChoice,
   PreparedText,
   ProjectListPage,
@@ -388,7 +394,8 @@ export interface Api {
   /** Read-only S3 keys for the data lake (ADR 0008). Rejects with a 404 ApiError when off. */
   listS3Keys(): Promise<S3KeysOverview>;
   /** A new consumer and key: `secretAccessKey` is only ever returned here and by rotate. */
-  createS3Key(label: string, expiresInDays: number | null): Promise<IssuedS3Key>;
+  createS3Key(label: string, expiresInDays: number | null, targets: string[]): Promise<IssuedS3Key>;
+  setS3KeyTargets(consumerId: string, targets: string[]): Promise<S3Consumer>;
   /** Another key for the consumer; its other active keys expire within `graceDays`. */
   rotateS3Key(
     consumerId: string,
@@ -399,6 +406,15 @@ export interface Api {
   deleteS3Consumer(consumerId: string): Promise<void>;
   /** LLM endpoints and their models (admins; ADR 0010). */
   listLlmEndpoints(): Promise<LlmEndpointView[]>;
+  /** Publishing targets with what uses each (admins; Administration > Published outputs). */
+  listPublishTargets(): Promise<PublishTargetView[]>;
+  createPublishTarget(body: TargetCreateBody): Promise<PublishTargetView>;
+  updatePublishTarget(id: string, patch: TargetPatchBody): Promise<PublishTargetView>;
+  deletePublishTarget(id: string): Promise<void>;
+  /** Writes, reads back and deletes a small file; a blank secret tests the stored one. */
+  testPublishTarget(body: TargetTestBody): Promise<TargetTestResult>;
+  /** What a recipe's Publish to picker offers (any designer or admin). */
+  listPublishTargetChoices(): Promise<TargetChoice[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
   listOntologies(opts?: { retired?: boolean }): Promise<OntologyListItem[]>;
   /** One ontology with every version, newest first. */
@@ -767,12 +783,15 @@ export interface S3Consumer {
   userName: string;
   createdAt: string;
   keys: S3Key[];
+  /** The internal publishing targets (ids) its keys may read. */
+  targets: string[];
 }
 
 /** What the lake is configured with besides a key pair; `endpoint` null = not configured. */
 export interface S3KeysOverview {
-  bucket: string;
   endpoint: string | null;
+  /** The internal publishing targets a key can be granted on. */
+  internalTargets: TargetChoice[];
   consumers: S3Consumer[];
 }
 
@@ -780,7 +799,6 @@ export interface IssuedS3Key {
   consumer: S3Consumer;
   key: S3Key;
   secretAccessKey: string;
-  bucket: string;
   endpoint: string | null;
 }
 
@@ -971,6 +989,22 @@ export function createHttpApi(base = '/api'): Api {
       return apiFetch(`${base}/sign-ins${qs ? `?${qs}` : ''}`).then(json<SignInEvent[]>);
     },
     listLlmEndpoints: () => apiFetch(`${base}/llm/endpoints`).then(json<LlmEndpointView[]>),
+    listPublishTargets: () =>
+      apiFetch(`${base}/publish-targets`)
+        .then(json<{ targets: PublishTargetView[] }>)
+        .then((r) => r.targets),
+    createPublishTarget: (body) => post<PublishTargetView>(`${base}/publish-targets`, body),
+    updatePublishTarget: (id, patch) =>
+      post<PublishTargetView>(`${base}/publish-targets/${encodeURIComponent(id)}`, patch, 'PATCH'),
+    deletePublishTarget: (id) =>
+      noContent(
+        apiFetch(`${base}/publish-targets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      ),
+    testPublishTarget: (body) => post<TargetTestResult>(`${base}/publish-targets/test`, body),
+    listPublishTargetChoices: () =>
+      apiFetch(`${base}/publish-targets/choices`)
+        .then(json<{ choices: TargetChoice[] }>)
+        .then((r) => r.choices),
     listOntologies: (opts = {}) =>
       apiFetch(`${base}/ontologies${opts.retired ? '?retired=include' : ''}`).then(
         json<OntologyListItem[]>,
@@ -1111,8 +1145,10 @@ export function createHttpApi(base = '/api'): Api {
       noContent(apiFetch(`${base}/llm/choices/${encodeURIComponent(id)}`, { method: 'DELETE' })),
     setLlmSettings: (body) => post<LlmChoicesView>(`${base}/llm/settings`, body, 'PUT'),
     listS3Keys: () => apiFetch(`${base}/access/s3-keys`).then(json<S3KeysOverview>),
-    createS3Key: (label, expiresInDays) =>
-      post<IssuedS3Key>(`${base}/access/s3-keys`, { label, expiresInDays }),
+    createS3Key: (label, expiresInDays, targets) =>
+      post<IssuedS3Key>(`${base}/access/s3-keys`, { label, expiresInDays, targets }),
+    setS3KeyTargets: (consumerId, targets) =>
+      post<S3Consumer>(`${base}/access/s3-keys/${consumerId}/targets`, { targets }, 'PUT'),
     rotateS3Key: (consumerId, expiresInDays, graceDays) =>
       post<IssuedS3Key>(`${base}/access/s3-keys/${consumerId}/rotate`, {
         expiresInDays,

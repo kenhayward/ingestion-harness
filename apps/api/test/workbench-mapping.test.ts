@@ -80,6 +80,7 @@ async function project() {
         bucket: 'outputs',
         key,
         rowCount: null,
+        targetId: null,
       },
     ]);
     const doc = {

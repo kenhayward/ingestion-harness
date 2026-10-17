@@ -5,14 +5,16 @@
     docker exec ingestion-worker-1 python -m ingest_worker.rdf_rebuild --remint
 
 - **rebuild** loads every ontology graph (its normalised N-Triples, runs bucket) and every
-  current document graph (its versioned Turtle copy in the target) into the store, for an empty
-  or restored dataset. Nothing is re-rendered.
+  current document graph (its versioned Turtle copy, read from the publishing target it was
+  recorded with) into the store, for an empty or restored dataset. Nothing is re-rendered.
 - **--backfill TYPE** publishes the graphs of TYPE's delivered documents that have none, from
   their reviewed documents, with TYPE's newest published recipe that maps to ontologies (the
-  provenance records that version).
+  provenance records that version); each copy goes to the publishing target of the job's own
+  recipe version.
 - **--remint** re-renders every current graph not yet under the Linked data base, from its
   reviewed document and the recipe version it was rendered with, as the next version of its
-  graph under the new base; the graph under the old base is dropped.
+  graph under the new base (its copy to the target of the job's own recipe version); the graph
+  under the old base is dropped.
 """
 
 from __future__ import annotations
@@ -27,7 +29,8 @@ import psycopg
 from pydantic import ValidationError
 
 from .graph_store import GraphStoreUnavailable
-from .pipeline import DocumentError, PipelineDeps
+from .pipeline import DocumentError, PipelineDeps, Target
+from .publish_targets import DEFAULT_TARGET_ID
 from .queue import ClaimedJob, JobQueue
 from .storage import (
     graph_version_key,
@@ -67,8 +70,9 @@ class RebuildSource(Protocol):
         """Jobs of the type whose delivered outputs a retirement withdrew (ADR 0011 step 7)."""
         ...
 
-    def object_live(self, bucket: str, key: str) -> bool:
-        """A delivered, not withdrawn output has this target object: a withdrawal spares it."""
+    def object_live(self, target_id: str, bucket: str, key: str) -> bool:
+        """A delivered, not withdrawn output has this object of this publishing target: a
+        withdrawal spares it."""
         ...
 
     def is_retired(self, template_id: str) -> bool: ...
@@ -79,14 +83,15 @@ class MemoryRebuildSource:
     jobs: list[DeliveredJob] = field(default_factory=list)
     templates: dict[int, dict[str, Any]] = field(default_factory=dict)
     withdrawn: list[DeliveredJob] = field(default_factory=list)
-    live: set[tuple[str, str]] = field(default_factory=set)
+    #: (target id, bucket, key) of live delivered outputs.
+    live: set[tuple[str, str, str]] = field(default_factory=set)
     retired: set[str] = field(default_factory=set)
 
     def withdrawn_jobs(self, template_id: str) -> list[DeliveredJob]:
         return [j for j in self.withdrawn if j.template_id == template_id]
 
-    def object_live(self, bucket: str, key: str) -> bool:
-        return (bucket, key) in self.live
+    def object_live(self, target_id: str, bucket: str, key: str) -> bool:
+        return (target_id, bucket, key) in self.live
 
     def is_retired(self, template_id: str) -> bool:
         return template_id in self.retired
@@ -122,11 +127,11 @@ class PgRebuildSource:
         row = self._conn.execute(self._JOBS + " AND j.id = %s", (job_id,)).fetchone()
         return DeliveredJob(*row) if row else None
 
-    def object_live(self, bucket: str, key: str) -> bool:
+    def object_live(self, target_id: str, bucket: str, key: str) -> bool:
         row = self._conn.execute(
-            """SELECT 1 FROM job_outputs WHERE bucket = %s AND object_key = %s
+            """SELECT 1 FROM job_outputs WHERE target_id = %s AND bucket = %s AND object_key = %s
                   AND stage = 'published' AND withdrawn_at IS NULL LIMIT 1""",
-            (bucket, key),
+            (target_id, bucket, key),
         ).fetchone()
         return row is not None
 
@@ -188,24 +193,45 @@ def delivered_document(deps: PipelineDeps, job: DeliveredJob) -> dict[str, Any] 
     return document
 
 
+def job_target(deps: PipelineDeps, source: RebuildSource, job: DeliveredJob) -> Target:
+    """The publishing target of the job's own recipe version (a version not published as a
+    recipe, a legacy spec: the default)."""
+    if deps.targets is None:
+        raise DocumentError("no publishing targets")
+    definition = source.published_templates(job.template_id).get(job.template_version)
+    if definition is None:
+        return deps.targets.get(DEFAULT_TARGET_ID)
+    try:
+        template = Template.model_validate(definition)
+    except ValidationError as exc:
+        raise DocumentError(f"recipe {job.template_id} v{job.template_version} is invalid") from exc
+    return deps.targets.get(template.publish_to())
+
+
 def _publish(
-    deps: PipelineDeps, queue: JobQueue, job: DeliveredJob, template: Template
+    deps: PipelineDeps,
+    queue: JobQueue,
+    source: RebuildSource,
+    job: DeliveredJob,
+    template: Template,
 ) -> int | None:
-    """Render a delivered job's reviewed document with `template` and publish its graph."""
+    """Render a delivered job's reviewed document with `template` and publish its graph, its
+    copy to the target of the job's own recipe version."""
     document = delivered_document(deps, job)
     if document is None:
         return None
+    target = job_target(deps, source, job)
     run = claimed(job, template.version)
     graph = build_graph(run, deps, queue, template, document)
     if graph is None:
         return None
-    return publish_graph(run, deps, queue, template, document, graph)
+    return publish_graph(run, deps, queue, template, document, graph, target)
 
 
 def rebuild(deps: PipelineDeps) -> list[str]:
-    store, registry, target = deps.graph_store, deps.graph_registry, deps.target
-    if store is None or registry is None or target is None:
-        return ["rebuild needs RDF_ENDPOINT, the database and the target"]
+    store, registry, targets = deps.graph_store, deps.graph_registry, deps.targets
+    if store is None or registry is None or targets is None:
+        return ["rebuild needs RDF_ENDPOINT, the database and the publishing targets"]
     lines: list[str] = []
     ontologies = graphs = missing = 0
     for ontology_id, version, _base, graph_iri in registry.all_ontologies():
@@ -220,6 +246,12 @@ def rebuild(deps: PipelineDeps) -> list[str]:
         ontologies += 1
         lines.append(f"loaded {graph_iri}")
     for g in registry.all_current():
+        try:
+            target = targets.get(g.target_id)  # where this version's copy was written
+        except DocumentError as exc:
+            missing += 1
+            lines.append(f"missing {g.graph_iri} v{g.version}: {exc}")
+            continue
         key = target.prefix + graph_version_key(g.sha256, g.template_id, g.version)
         body = target.store.get_optional(target.bucket, key)
         if body is None:
@@ -263,7 +295,7 @@ def backfill(
             continue
         seen.add(job.sha256)
         try:
-            version = _publish(deps, queue, job, template)
+            version = _publish(deps, queue, source, job, template)
         except DocumentError as exc:
             version = None
             lines.append(f"skipped {job.job_id}: {exc}")
@@ -297,9 +329,10 @@ def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[s
             lines.append(f"skipped {g.graph_iri}: its job or recipe version is gone")
             continue
         try:
+            job_target(deps, source, job)  # a missing target fails before the drop
             if store is not None:
                 store.delete(g.graph_iri)
-            version = _publish(deps, queue, job, template)
+            version = _publish(deps, queue, source, job, template)
         except (DocumentError, GraphStoreUnavailable) as exc:
             failed += 1
             lines.append(f"failed {g.graph_iri}: {exc} (run --remint again)")
@@ -324,7 +357,8 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     from .llm.registry import ModelRegistry
     from .ontology import PgOntologyStore
     from .pdf import extract_pages
-    from .pipeline import Buckets, Target
+    from .pipeline import Buckets
+    from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings
     from .queue import PgJobQueue
     from .specs import load_specs
     from .storage import S3ObjectStore
@@ -347,15 +381,14 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         models=ModelRegistry({}, {}, {}),
         extract_text=extract_pages,
         buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
-        target=Target(
-            store=S3ObjectStore(
-                settings.target_endpoint,
-                settings.target_region,
-                settings.target_access_key,
-                settings.target_secret_key,
+        targets=LiveTargets(
+            PgPublishTargetStore.connect(settings.database_url),
+            S3Settings(
+                settings.s3_endpoint,
+                settings.s3_region,
+                settings.s3_access_key,
+                settings.s3_secret_key,
             ),
-            bucket=settings.target_bucket,
-            prefix=settings.target_prefix,
         ),
         ontologies=PgOntologyStore(library),
         linked_data=PgLinkedDataSettings(library),

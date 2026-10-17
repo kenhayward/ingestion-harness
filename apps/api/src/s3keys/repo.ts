@@ -22,6 +22,9 @@ export const S3ConsumerSchema = z.object({
   userName: z.string().describe('The SeaweedFS identity: `lake-{id}`.'),
   createdAt: z.string(),
   keys: z.array(S3KeySchema).describe('Newest first; at most two active.'),
+  targets: z
+    .array(z.string())
+    .describe('The internal publishing targets (ids) its keys may read, sorted.'),
 });
 export type S3Consumer = z.infer<typeof S3ConsumerSchema>;
 
@@ -42,6 +45,10 @@ export interface S3KeyRepo {
   /** Make the consumer's active keys (except `exceptKeyId`) expire within `days`, never later. */
   capExpiry(consumerId: string, days: number, exceptKeyId: string): Promise<void>;
   deleteConsumer(id: string): Promise<void>;
+  /** The publishing target ids the consumer may read, sorted. */
+  grants(consumerId: string): Promise<string[]>;
+  /** Replace the consumer's grants. */
+  setGrants(consumerId: string, targetIds: string[]): Promise<void>;
 }
 
 interface KeyRow {
@@ -64,6 +71,7 @@ export class MemoryS3KeyRepo implements S3KeyRepo {
     { id: string; label: string; userName: string; createdAt: number }
   >();
   private readonly keys = new Map<string, KeyRow>();
+  private readonly granted = new Map<string, string[]>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -120,7 +128,21 @@ export class MemoryS3KeyRepo implements S3KeyRepo {
     }
   }
 
+  async grants(consumerId: string): Promise<string[]> {
+    return [...(this.granted.get(consumerId) ?? [])];
+  }
+
+  async setGrants(consumerId: string, targetIds: string[]): Promise<void> {
+    this.granted.set(consumerId, [...new Set(targetIds)].sort());
+  }
+
+  /** Test inspection: how many consumers may read the target (for the target's usage). */
+  grantCount(targetId: string): number {
+    return [...this.granted.values()].filter((g) => g.includes(targetId)).length;
+  }
+
   async deleteConsumer(id: string): Promise<void> {
+    this.granted.delete(id);
     this.consumers.delete(id);
     for (const [keyId, row] of this.keys) if (row.consumerId === id) this.keys.delete(keyId);
   }
@@ -142,6 +164,7 @@ export class MemoryS3KeyRepo implements S3KeyRepo {
       userName: c.userName,
       createdAt: new Date(c.createdAt).toISOString(),
       keys,
+      targets: [...(this.granted.get(id) ?? [])],
     };
   }
 

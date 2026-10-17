@@ -247,3 +247,31 @@ def test_compile_step_merges_rows_for_a_repeating_step() -> None:
     steps = {s.id: s for s in t.extract_steps()}
     assert compile_step(t, steps["appearance"]).merge_path == "rows"
     assert compile_step(t, steps["header"]).merge_path is None
+
+
+PUBLISH_FIXTURE = json.loads(
+    (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "publish-targets.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    "case", PUBLISH_FIXTURE["delivery"], ids=[c["name"] for c in PUBLISH_FIXTURE["delivery"]]
+)
+def test_delivery_cases_match_the_shared_fixture(case: dict[str, Any]) -> None:
+    t = Template.model_validate({**SEMANTICS_FIXTURE["base"], **case["definition"]})
+    assert t.delivery_formats() == case["formats"]
+    assert t.publish_to() == case["publishTo"]
+
+
+@pytest.mark.parametrize("bad", ["Lake", "-x", "a b", "x" * 41, ""])
+def test_publish_to_must_be_a_target_id(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        Template.model_validate({**SEMANTICS_FIXTURE["base"], "delivery": {"publishTo": bad}})
+
+
+def test_delivery_still_refuses_unknown_keys_and_empty_formats() -> None:
+    for delivery in ({"target": "x"}, {"formats": []}):
+        with pytest.raises(ValidationError):
+            Template.model_validate({**SEMANTICS_FIXTURE["base"], "delivery": delivery})

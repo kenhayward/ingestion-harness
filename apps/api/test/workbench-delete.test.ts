@@ -126,6 +126,7 @@ describe('DELETE /api/workbench/projects/:id', () => {
         bucket: 'outputs',
         key: draftKey,
         rowCount: null,
+        targetId: null,
       },
     ]);
     repo.jobs.set(run.id, { ...run, status: 'succeeded' });

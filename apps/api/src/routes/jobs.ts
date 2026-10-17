@@ -25,7 +25,7 @@ import {
   runnableModels,
 } from '../templates/definitions.js';
 import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
-import { storeFor } from '../storage/stage.js';
+import { OutputUnavailableError, readOutput } from '../storage/stage.js';
 import { creatorOf } from '../access/routes.js';
 
 const ListQuery = z.object({
@@ -428,7 +428,8 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         description: md`
           One output file of a job, as CSV or JSON. A reviewed job has two copies of each
           output: the draft and the published one. The published copy is served unless
-          \`stage=draft\` asks for the draft. Published copies are read from the final target.
+          \`stage=draft\` asks for the draft. Published copies are read from the publishing
+          target recorded with them.
           \`inline=1\` asks the browser to show the file instead of downloading it.
         `,
         params: z.object({
@@ -445,7 +446,10 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           404: error(
             '`not found`, `output not found`, or the object is missing from storage or the target.',
           ),
-          502: error('The outputs storage or the target storage is unreachable.'),
+          502: error(
+            '`storage unavailable` (a draft), or `publishing target {label} unavailable`: the ' +
+              'target is missing, its credentials cannot be used, or it does not answer.',
+          ),
         },
       },
     },
@@ -467,12 +471,11 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       const where = output.stage === 'published' ? 'target' : 'storage';
       let body: Buffer | null;
       try {
-        body = await storeFor(app.deps, output.stage).get(output.bucket, output.key);
+        body = await readOutput(app.deps, output);
       } catch (err) {
-        req.log.warn({ err, bucket: output.bucket }, 'output read failed');
-        return reply
-          .code(502)
-          .send({ error: `${where === 'target' ? 'target ' : ''}storage unavailable` });
+        if (!(err instanceof OutputUnavailableError)) throw err;
+        req.log.warn({ err: err.cause, bucket: output.bucket }, 'output read failed');
+        return reply.code(502).send({ error: err.message });
       }
       if (!body) return reply.code(404).send({ error: `output object missing from ${where}` });
       const filename =

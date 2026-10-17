@@ -22,6 +22,7 @@ const draft = (jobId: string): JobOutput => ({
   bucket: 'outputs',
   key: `tdemo/v1/document/${jobId}.json`,
   rowCount: null,
+  targetId: null,
 });
 const published = (jobId: string): JobOutput => ({
   outputId: 'document',
@@ -30,6 +31,7 @@ const published = (jobId: string): JobOutput => ({
   bucket: 'published',
   key: `pub/tdemo/v1/document/${jobId}.json`,
   rowCount: null,
+  targetId: 'default',
 });
 
 /** A finished job with a draft, a published copy, run files and its inbox PDF in storage. */

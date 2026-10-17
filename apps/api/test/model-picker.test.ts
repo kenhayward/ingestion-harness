@@ -218,6 +218,7 @@ describe('Workbench evaluations pick model choices', () => {
           bucket: 'outputs',
           key,
           rowCount: null,
+          targetId: null,
         },
       ]);
       repo.jobs.set(run.job.id, { ...run.job, status: 'succeeded' });

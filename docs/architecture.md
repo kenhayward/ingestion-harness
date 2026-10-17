@@ -46,12 +46,23 @@ Reviewers add edits (`POST /api/jobs/:id/edits`, recorded in `review_edits` with
 editor, reason) and approve or reject. Approval re-queues the job as a *publish* task: the
 worker applies the edits to the draft `document.json` (re-normalised by type, issues for edited
 values replaced, checks re-run), renders the outputs with a `review` block and writes them to
-the final target (`TARGET_S3_*`: any S3 endpoint/bucket/prefix). Drafts are never modified.
+the recipe's publishing target (`delivery.publishTo`, default `default`: an admin-managed S3 endpoint/bucket/prefix, see below). Drafts are never modified.
 
 The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`, and
 `GET /api/results/:jobId/archive` for every published output as one ZIP) reads published
-outputs back from the target. The API resolves `TARGET_S3_*` like the worker
-([ADR 0004](adr/0004-api-reads-publish-target.md)).
+outputs back from the target each output was delivered to (`job_outputs.target_id`;
+[ADR 0004](adr/0004-api-reads-publish-target.md)).
+
+**Publishing targets** (migration 202610170019): published outputs go to a *publishing target*, an S3
+destination an admin manages under Administration > Published outputs (`publish_targets`; internal
+= the deployment's SeaweedFS, external = any S3 endpoint with its own keys, encrypted under
+`LLM_SECRETS_KEY`). A recipe picks one with `delivery.publishTo`; absent means `default`, which the
+API and worker seed once from `TARGET_S3_*` on first start (later `.env` changes only log a
+warning). Every delivered object, graph version and withdrawal records or names its target, so older
+outputs are read and withdrawn where they were written even after the recipe moves on. The API's
+`TargetStores` and the worker's `LiveTargets` rebuild their clients when a counter row moves, so
+edits and rotated secrets apply without a restart. S3 keys for the data lake
+([ADR 0008](adr/0008-s3-read-keys.md)) are granted per internal target.
 
 1. **Upload** (`POST /api/documents`): PDF magic-byte check, spec resolved (latest version unless
    pinned), optional model override validated against discovered models. PDF stored at

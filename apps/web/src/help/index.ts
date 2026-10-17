@@ -71,6 +71,7 @@ export const HELP_INDEX: HelpEntry[] = [
     ],
   },
   { topic: 'github-sync', label: 'GitHub sync' },
+  { topic: 'published-outputs', label: 'Publishing targets' },
 ];
 
 /** Every entry of the menu, parents before their children. */

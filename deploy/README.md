@@ -140,9 +140,9 @@ Session cookies are `Secure` over HTTPS and still work over plain HTTP on the LA
 ## Data lake access to published outputs (S3 keys)
 
 An external system (e.g. a data lake feeding a semantic index) can read the publish bucket
-(`TARGET_S3_BUCKET`, default `ingest-published`) with its own **read-only** S3 key
-([ADR 0008](../docs/adr/0008-s3-read-keys.md)). This works when the publish target is the local
-SeaweedFS (`TARGET_S3_ENDPOINT` empty).
+(the `default` publishing target, seeded from `TARGET_S3_BUCKET`, default `ingest-published`; or any internal target under Administration > Published outputs) with its own **read-only** S3 key
+([ADR 0008](../docs/adr/0008-s3-read-keys.md)). This works for *internal* publishing targets (the
+local SeaweedFS; the seeded `default` is one while `TARGET_S3_ENDPOINT` is empty); pick the targets per key.
 
 1. **Proxy host** in NGINX Proxy Manager, e.g. `lake-s3.example.com`:
    - forward to `http://<docker-host>:8335` (`S3_PUBLIC_PORT`; set `S3_PUBLIC_BIND` so NPM can reach
@@ -162,7 +162,7 @@ SeaweedFS (`TARGET_S3_ENDPOINT` empty).
      # allow 203.0.113.0/24; deny all;
      ```
 
-     Use your bucket name if `TARGET_S3_BUCKET` differs.
+     Use your bucket name if the target's bucket differs.
 2. **Show the URL in the app:** set `S3_PUBLIC_URL=https://lake-s3.example.com` in the env file
    (optional; it's displayed with each new key).
 3. **Issue a key:** sign in as admin → **Access** → **Data lake S3 keys** → name the consumer,
@@ -259,10 +259,20 @@ errors, and the Zscaler root CA will need adding to the images.
   out, no published ports). The worker reaches it at `CONVERTER_URL` (default
   `http://converter:3000`; set it empty to disable Word documents, which then need review).
   Converted PDFs are cached in the runs bucket under `converted/`.
-- **Final target (`TARGET_S3_*`):** the worker writes published outputs there and the API reads
-  them back for the Results page. Empty values fall back to the internal SeaweedFS (`S3_*`). For
-  an external target, give the credentials write access for the worker and at least read access
-  for the API.
+- **Publishing targets:** the worker writes published outputs to the recipe's target and the API
+  reads them back for the Results page. `TARGET_S3_*` only seed the `default` target on the first
+  start (empty values fall back to the internal SeaweedFS, `S3_*`); afterwards add and edit targets
+  under Administration > Published outputs (keys entered there are encrypted under
+  `LLM_SECRETS_KEY`). For an external target, give the credentials write access for the worker and
+  at least read access for the API.
+- **A stand-in external S3** for trying an external publishing target: `deploy/scripts/external-s3.sh up`
+  (or `.ps1`) runs a throwaway SeaweedFS (`ih-external-s3`, the same pinned image as compose, its
+  own keys `IH_EXTERNAL_S3_ACCESS_KEY`/`_SECRET_KEY`, default `ext-test-access`/`ext-test-secret`)
+  on `127.0.0.1:8433` with the bucket `ext-published`; `env` prints the `IH_TEST_EXTERNAL_S3_*`
+  variables its integration tests read, `down` stops it (no volume, the data goes with it). From
+  the stack's containers the endpoint is `http://host.docker.internal:8433` (path style on). Note
+  that SeaweedFS creates a missing bucket on the first write instead of refusing it (Test
+  connection checks an external target's bucket first).
 - Back up both volumes: `postgres-data` (`pg_dump`) and `seaweedfs-data` (or replicate buckets
   with `weed filer.sync` / an S3 sync to the final target).
 - The worker reaches a host-local LLM server at `host.docker.internal` (mapped via

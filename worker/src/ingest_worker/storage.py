@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 if TYPE_CHECKING:
     from types_boto3_s3 import S3Client
@@ -139,19 +139,36 @@ class MemoryObjectStore:
 
 
 class S3ObjectStore:
-    """boto3 against SeaweedFS (path-style addressing)."""
+    """boto3 against SeaweedFS or any S3 (path-style addressing unless told otherwise)."""
 
-    def __init__(self, endpoint: str, region: str, access_key: str, secret_key: str) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        region: str,
+        access_key: str,
+        secret_key: str,
+        *,
+        path_style: bool = True,
+        sse: str = "none",
+        kms_key_id: str | None = None,
+        storage_class: str | None = None,
+    ) -> None:
         import boto3
         from botocore.config import Config
 
+        self._sse = sse
+        self._kms_key_id = kms_key_id
+        self._storage_class = storage_class
         self._client: S3Client = boto3.client(
             "s3",
             endpoint_url=endpoint,
             region_name=region,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
-            config=Config(s3={"addressing_style": "path"}, retries={"mode": "standard"}),
+            config=Config(
+                s3={"addressing_style": "path" if path_style else "virtual"},
+                retries={"mode": "standard"},
+            ),
         )
 
     def get(self, bucket: str, key: str) -> bytes:
@@ -164,7 +181,16 @@ class S3ObjectStore:
             return None
 
     def put(self, bucket: str, key: str, body: bytes, content_type: str) -> None:
-        self._client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+        extra: dict[str, Any] = {}
+        if self._sse != "none":
+            extra["ServerSideEncryption"] = self._sse
+            if self._sse == "aws:kms" and self._kms_key_id:
+                extra["SSEKMSKeyId"] = self._kms_key_id
+        if self._storage_class:
+            extra["StorageClass"] = self._storage_class
+        self._client.put_object(
+            Bucket=bucket, Key=key, Body=body, ContentType=content_type, **extra
+        )
 
     def delete(self, bucket: str, key: str) -> None:
         self._client.delete_object(Bucket=bucket, Key=key)

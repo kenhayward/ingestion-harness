@@ -15,6 +15,7 @@ import {
 } from './OntologyTermsHelp.js';
 import { OutputsHelp } from './OutputsHelp.js';
 import { PipelineHelp } from './PipelineHelp.js';
+import { PublishedOutputsHelp } from './PublishedOutputsHelp.js';
 import { QualityHelp } from './QualityHelp.js';
 import { ResultHelp } from './ResultHelp.js';
 import { ResultsHelp } from './ResultsHelp.js';
@@ -76,6 +77,7 @@ export const HELP_TOPICS = {
   ontologyConcepts: { title: 'Concepts and schemes', body: <OntologyConceptsHelp /> },
   ontologyShapes: { title: 'Shapes', body: <OntologyShapesHelp /> },
   'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
+  'published-outputs': { title: 'How publishing targets work', body: <PublishedOutputsHelp /> },
   general: { title: 'General recipe settings', body: <GeneralHelp /> },
   sections: { title: 'How sections work', body: <SectionsHelp /> },
   outputs: { title: 'Outputs: fields and tables', body: <OutputsHelp /> },

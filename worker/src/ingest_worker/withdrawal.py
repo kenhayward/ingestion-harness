@@ -10,10 +10,19 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
 from .graph_registry import PublishedGraph
-from .pipeline import DocumentError, PipelineDeps, Target, load_definition, publish_outputs
+from .pipeline import (
+    DocumentError,
+    PipelineDeps,
+    Targets,
+    load_definition,
+    publish_outputs,
+)
 from .queue import ClaimedJob, JobQueue
 from .specs import LoadedTemplate
 from .storage import graph_version_key
+
+#: Held in step with `TARGET_ID` in packages/shared/src/publish-targets.ts.
+TARGET_ID = r"^[a-z0-9][a-z0-9_-]{0,39}$"
 
 
 class _Strict(BaseModel):
@@ -23,13 +32,18 @@ class _Strict(BaseModel):
 class TargetObject(_Strict):
     bucket: str = Field(min_length=1)
     key: str = Field(min_length=1)
+    #: The publishing target the object was delivered to: it is deleted through that target.
+    target: str = Field(pattern=TARGET_ID)
 
 
 class WithdrawnGraph(_Strict):
     sha256: str = Field(min_length=1)
     template_id: str = Field(alias="templateId", min_length=1)
-    #: Set: drop the graph itself (else only the listed versions' copies go).
+    #: Set: drop the graph itself (else only the listed versions' copies go). One graph may have
+    #: an entry per target holding copies; only the one holding the current graph names it.
     graph_iri: str | None = Field(alias="graphIri", min_length=1)
+    #: The publishing target holding the listed versions' copies (under its prefix).
+    target: str = Field(pattern=TARGET_ID)
     versions: list[PositiveInt]
 
 
@@ -57,63 +71,77 @@ def _params(job: ClaimedJob, model: type[_Strict], task: str) -> Any:
 
 
 def run_withdraw(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> tuple[int, int]:
-    """Remove the target objects, every listed version copy and each graph named. Idempotent:
-    what is already gone is no error, so a retry after a crash completes the withdrawal. What was
-    delivered again since the withdrawal was queued is spared: an object a live output has, a
-    version with a row, and a graph with a current version (checked under the graph's lock)."""
+    """Remove the target objects, every listed version copy and each graph named, each through
+    the publishing target it was delivered to (every target is resolved first: a missing one
+    deletes nothing). Idempotent: what is already gone is no error, so a retry after a crash
+    completes the withdrawal. What was delivered again since the withdrawal was queued is
+    spared: an object a live output of the same target has, a version with a row, and a graph
+    with a current version (checked under the graph's lock)."""
     params: WithdrawParams = _params(job, WithdrawParams, "withdraw")
-    target, source, registry = deps.target, deps.delivered_jobs, deps.graph_registry
-    if target is None:
-        raise DocumentError("no publish target: nothing can be withdrawn")
+    targets, source, registry = deps.targets, deps.delivered_jobs, deps.graph_registry
+    if targets is None:
+        raise DocumentError("no publishing targets: nothing can be withdrawn")
+    for name in dict.fromkeys(
+        [o.target for o in params.objects] + [g.target for g in params.graphs]
+    ):
+        targets.get(name)
     objects = 0
     for o in params.objects:
-        if source is not None and source.object_live(o.bucket, o.key):
+        if source is not None and source.object_live(o.target, o.bucket, o.key):
             continue
-        target.store.delete(o.bucket, o.key)
+        targets.get(o.target).store.delete(o.bucket, o.key)
         objects += 1
-    dropped: list[int] = []
+    by_graph: dict[tuple[str, str], list[WithdrawnGraph]] = {}
     for g in params.graphs:
-        work = functools.partial(_withdraw_graph, deps, target, g, dropped)
+        by_graph.setdefault((g.sha256, g.template_id), []).append(g)
+    dropped: list[int] = []
+    for (sha256, template_id), entries in by_graph.items():
+        work = functools.partial(_withdraw_graph, deps, targets, entries, dropped)
         if registry is None:
             work(None, set())
         else:
-            registry.locked(g.sha256, g.template_id, work)
+            registry.locked(sha256, template_id, work)
     queue.event(job.id, "info", WITHDRAWN, {"objects": objects, "graphs": sum(dropped)})
     return objects, sum(dropped)
 
 
 def _withdraw_graph(
     deps: PipelineDeps,
-    target: Target,
-    g: WithdrawnGraph,
+    targets: Targets,
+    entries: list[WithdrawnGraph],
     dropped: list[int],
     current: PublishedGraph | None,
     versions: set[int],
 ) -> None:
-    """One graph's copies, and the graph itself, sparing a version published since."""
-    for version in g.versions:
-        if version in versions:
-            continue  # published again since: its copy is the new one
-        target.store.delete(
-            target.bucket, target.prefix + graph_version_key(g.sha256, g.template_id, version)
-        )
-    if g.graph_iri is not None and current is None and deps.graph_store is not None:
-        deps.graph_store.delete(g.graph_iri)
+    """One graph's copies, each entry's through its own target, and the graph itself (once),
+    sparing a version published since."""
+    for g in entries:
+        target = targets.get(g.target)
+        for version in g.versions:
+            if version in versions:
+                continue  # published again since: its copy is the new one
+            target.store.delete(
+                target.bucket, target.prefix + graph_version_key(g.sha256, g.template_id, version)
+            )
+    graph_iri = next((g.graph_iri for g in entries if g.graph_iri is not None), None)
+    if graph_iri is not None and current is None and deps.graph_store is not None:
+        deps.graph_store.delete(graph_iri)
         dropped.append(1)
 
 
 def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> int:
     """Deliver each withdrawn job of the type again, from its reviewed document (else its draft)
-    with its own recipe version: outputs to the target, its graph as a new version, then the
-    record (a failure before it leaves the job withdrawn, so the retry finds it again). A type
-    retired again meanwhile is left withdrawn; a job that cannot be rendered is skipped."""
+    with its own recipe version: outputs to that version's publishing target, its graph as a new
+    version, then the record (a failure before it leaves the job withdrawn, so the retry finds it
+    again; a missing target is a DocumentError for the whole run). A type retired again
+    meanwhile is left withdrawn; a job that cannot be rendered is skipped."""
     from .rdf_rebuild import claimed, delivered_document
     from .template_pipeline import build_graph, publish_graph, render_document
 
     params: RepublishParams = _params(job, RepublishParams, "republish")
-    source, target = deps.delivered_jobs, deps.target
-    if source is None or target is None:
-        raise DocumentError("republishing needs the database and a publish target")
+    source, targets = deps.delivered_jobs, deps.targets
+    if source is None or targets is None:
+        raise DocumentError("republishing needs the database and the publishing targets")
     if source.is_retired(params.template_id):
         queue.event(job.id, "info", "republish skipped: retired", {"type": params.template_id})
         return 0
@@ -134,12 +162,13 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> int:
                 job.id, "warn", "republish skipped", {"job": withdrawn.job_id, "reason": str(exc)}
             )
             continue
+        target = targets.get(template.publish_to())  # the job's version's own target
         formats = template.delivery_formats()
         rendered = render_document(template, document, graph)
-        published = publish_outputs(deps, [o for o in rendered if o.format in formats])
+        published = publish_outputs(deps, [o for o in rendered if o.format in formats], target)
         if graph is not None and "rdf" in formats:
-            publish_graph(run, deps, queue, template, document, graph)
-        queue.record_published(run, published, target.bucket)
+            publish_graph(run, deps, queue, template, document, graph, target)
+        queue.record_published(run, published, target)
         count += 1
     queue.event(job.id, "info", REPUBLISHED, {"jobs": count})
     return count

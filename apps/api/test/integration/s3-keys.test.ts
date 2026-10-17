@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { migrate } from '../../src/db/migrate.js';
 import { USER_PREFIX } from '../../src/s3keys/issuer.js';
+import { PgPublishTargetRepo } from '../../src/publish-targets/pg.js';
 import { PgS3KeyRepo } from '../../src/s3keys/pg.js';
 import { iamClientConfig, SeaweedIamIssuer } from '../../src/s3keys/seaweed-iam.js';
 import { S3KeyService } from '../../src/s3keys/service.js';
@@ -67,6 +68,11 @@ const denied = async (call: Promise<unknown>) => {
 let pool: pg.Pool;
 let service: S3KeyService;
 let issuer: SeaweedIamIssuer;
+const issue = async (label: string, days: number | null) => {
+  const r = await service.issue(label, days, ['default']);
+  if ('problem' in r) throw new Error(r.problem);
+  return r;
+};
 
 beforeAll(async () => {
   await migrate(env('DATABASE_URL'), migrations);
@@ -79,12 +85,9 @@ beforeAll(async () => {
     await s3.send(new CreateBucketCommand({ Bucket: bucket })).catch(() => undefined);
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: 'a/b.json', Body: '{"ok":true}' }));
   }
-  service = new S3KeyService({
-    repo: new PgS3KeyRepo(pool),
-    issuer,
-    bucket: BUCKET,
-    endpoint: null,
-  });
+  const targets = new PgPublishTargetRepo(pool);
+  await targets.update('default', { bucket: BUCKET, prefix: '' }, null);
+  service = new S3KeyService({ repo: new PgS3KeyRepo(pool), issuer, targets, endpoint: null });
 });
 
 afterAll(async () => {
@@ -95,7 +98,7 @@ afterAll(async () => {
 
 describe('S3 read keys on SeaweedFS + Postgres', () => {
   it('issues a key that can list and read the publish bucket and nothing else', async () => {
-    const issued = await service.issue('Integration lake', 1);
+    const issued = await issue('Integration lake', 1);
     const client = lake(issued.key.accessKeyId, issued.secretAccessKey);
 
     await eventually(async () => {
@@ -122,7 +125,7 @@ describe('S3 read keys on SeaweedFS + Postgres', () => {
   });
 
   it('rotates: both keys work, then reconcile removes the old one once its grace ends', async () => {
-    const issued = await service.issue('Rotating lake', null);
+    const issued = await issue('Rotating lake', null);
     const rotated = await service.rotate(issued.consumer.id, 30, 1);
     if (typeof rotated === 'string') throw new Error(rotated);
     const oldClient = lake(issued.key.accessKeyId, issued.secretAccessKey);
@@ -147,14 +150,14 @@ describe('S3 read keys on SeaweedFS + Postgres', () => {
   });
 
   it('removes orphaned lake users and deletes consumers with their users', async () => {
-    await issuer.createUser(`${USER_PREFIX}orphan`, BUCKET);
+    await issuer.createUser(`${USER_PREFIX}orphan`, [{ bucket: BUCKET, prefix: '' }]);
     await issuer.createKey(`${USER_PREFIX}orphan`);
     const before = await service.reconcile();
     expect(before.deletedUsers).toBe(1);
     const names = (await issuer.listUsers(USER_PREFIX)).map((u) => u.userName);
     expect(names).not.toContain(`${USER_PREFIX}orphan`);
 
-    const issued = await service.issue('Short-lived', 1);
+    const issued = await issue('Short-lived', 1);
     expect(await service.remove(issued.consumer.id)).toBe('ok');
     const after = (await issuer.listUsers(USER_PREFIX)).map((u) => u.userName);
     expect(after).not.toContain(issued.consumer.userName);

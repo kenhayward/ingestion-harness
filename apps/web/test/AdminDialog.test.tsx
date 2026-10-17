@@ -29,7 +29,14 @@ describe('AdminDialog', () => {
       within(tabs)
         .getAllByRole('tab')
         .map((t) => t.textContent),
-    ).toEqual(['Models', 'Linked data', 'Users', 'Integration', 'Maintenance']);
+    ).toEqual([
+      'Models',
+      'Linked data',
+      'Published outputs',
+      'Users',
+      'Integration',
+      'Maintenance',
+    ]);
     expect(within(tabs).getByRole('tab', { name: 'Models' })).toHaveAttribute(
       'aria-selected',
       'true',

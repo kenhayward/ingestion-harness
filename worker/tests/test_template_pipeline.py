@@ -23,7 +23,7 @@ from ingest_worker.rdf import CT
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
 
-from .fakes import FakeProvider, FakeQueue, MemoryLinkedDataSettings
+from .fakes import FakeProvider, FakeQueue, FakeTargets, MemoryLinkedDataSettings
 
 TEMPLATE = {
     "id": "demo",
@@ -300,7 +300,7 @@ def mapped_deps(
         ),
         extract_text=lambda _pdf: PAGES,
         buckets=Buckets("inbox", "outputs", "runs"),
-        target=Target(store=target, bucket="published", prefix="pvp/"),
+        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
         linked_data=MemoryLinkedDataSettings(base),
     )
     return deps, target
@@ -810,3 +810,156 @@ def test_delivered_outputs_are_recorded_even_when_the_store_then_fails(tmp_path:
     [(_, published, _)] = queue.published  # written to the target, so recorded
     assert {o.format for o in published} == {"json", "rdf"}
     assert has(target, "published", "pvp/" + GRAPH_KEY)
+
+
+# --- publishing targets: each recipe version delivers to its own target ------------------------
+
+
+def finance_deps(
+    tmp_path: Path, template: dict[str, Any]
+) -> tuple[PipelineDeps, MemoryObjectStore, MemoryObjectStore, FakeQueue]:
+    """v1 of `template` (no publishTo) as a file; v2, naming finance-lake, in the database."""
+    from ingest_worker.graph_registry import MemoryGraphRegistry
+
+    from .fakes import FakeGraphStore
+
+    deps, default = mapped_deps(tmp_path, template, BASE_IRI)
+    finance = MemoryObjectStore()
+    targets = FakeTargets(
+        {
+            "default": Target(store=default, bucket="published", prefix="pvp/"),
+            "finance-lake": Target(finance, "finance", "fin/", "finance-lake"),
+        }
+    )
+    deps = replace(
+        deps,
+        targets=targets,
+        graph_registry=MemoryGraphRegistry(),
+        graph_store=FakeGraphStore(),
+    )
+    v2 = {
+        **template,
+        "version": 2,
+        "delivery": {**template["delivery"], "publishTo": "finance-lake"},
+    }
+    queue = FakeQueue(templates={("demo", 2): v2})
+    return deps, default, finance, queue
+
+
+DELIVERED_TEMPLATE = {
+    **TEMPLATE,
+    "review": {"required": "never"},
+    "semantics": ENTITY,
+    "delivery": {"formats": ["json", "rdf"]},
+}
+V2 = replace(JOB, spec_version=2)
+
+
+def test_a_version_naming_a_target_delivers_its_outputs_and_graph_there(tmp_path: Path) -> None:
+    deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    assert queue.completed, queue.reviewed or queue.failed
+    [(_, published, target_id)] = queue.published
+    assert target_id == "finance-lake"
+    assert all(o.key.startswith("fin/demo/v2/") for o in published)
+    assert has(finance, "finance", "fin/demo/v2/document/doc-1.json")
+    assert has(finance, "finance", f"fin/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    assert not default.objects
+    current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
+    assert current is not None and current.target_id == "finance-lake"
+
+
+def test_a_version_naming_no_target_delivers_to_the_default(tmp_path: Path) -> None:
+    deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    [(_, _, target_id)] = queue.published
+    assert target_id == "default"
+    assert has(default, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    assert not finance.objects
+    current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
+    assert current is not None and current.target_id == "default"
+
+
+def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: Path) -> None:
+    deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    assert isinstance(deps.targets, FakeTargets)
+    del deps.targets.targets["finance-lake"]
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert reason == "no publishing target finance-lake"
+    assert not queue.published and not queue.completed
+    assert not default.objects and not finance.objects
+    assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
+    provider = deps.models._providers["local"]
+    assert isinstance(provider, FakeProvider) and provider.calls == []  # no model was called
+    assert not queue.drafts
+
+
+def test_an_approval_whose_target_is_missing_goes_to_review_unwritten(tmp_path: Path) -> None:
+    template = {**DELIVERED_TEMPLATE, "review": {"required": "always"}}
+    deps, default, finance, queue = finance_deps(tmp_path, template)
+    assert isinstance(deps.targets, FakeTargets)
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    assert queue.awaiting
+    del deps.targets.targets["finance-lake"]  # removed while the job awaited review
+    queue.jobs = [replace(V2, task="publish")]
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert reason == "no publishing target finance-lake"
+    assert not queue.published and not default.objects and not finance.objects
+    assert ("runs", "job-1/reviewed-document.json") not in deps.store.objects  # type: ignore[attr-defined]
+
+
+def test_an_approval_delivers_to_the_jobs_version_target(tmp_path: Path) -> None:
+    template = {**DELIVERED_TEMPLATE, "review": {"required": "always"}}
+    deps, default, finance, queue = finance_deps(tmp_path, template)
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    queue.jobs = [replace(V2, task="publish")]
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    [(_, _, target_id)] = queue.published
+    assert target_id == "finance-lake"
+    assert has(finance, "finance", f"fin/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    assert not default.objects
+
+
+def test_a_draft_test_run_never_touches_a_target(tmp_path: Path) -> None:
+    deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    assert isinstance(deps.targets, FakeTargets)
+    queue.jobs = [replace(V2, test=True)]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    assert queue.completed and not queue.published
+    reviewed = {**DELIVERED_TEMPLATE, "review": {"required": "always"}}
+    queue.templates[("demo", 2)] = {**reviewed, "version": 2}
+    queue.jobs = [replace(V2, test=True, task="publish")]
+    run_once(queue, deps, "w1")
+    assert deps.targets.gets == []
+    assert not default.objects and not finance.objects
+
+
+def test_a_legacy_spec_always_delivers_to_the_default(specs_dir: Path) -> None:
+    from ingest_worker.pipeline import target_for
+
+    legacy = load_specs(specs_dir).get("process-validation-protocol", 2)
+    default = Target(MemoryObjectStore(), "published")
+    targets = FakeTargets({"default": default})
+    deps = PipelineDeps(
+        store=MemoryObjectStore(),
+        specs=load_specs(specs_dir),
+        models=ModelRegistry({}, {}, {}),
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        targets=targets,
+    )
+    assert target_for(deps, legacy) is default
+    assert target_for(replace(deps, targets=None), legacy) is None

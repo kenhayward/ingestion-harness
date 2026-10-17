@@ -79,6 +79,7 @@ async function project() {
         bucket: 'outputs',
         key,
         rowCount: null,
+        targetId: null,
       },
     ]);
     ctx.repo.jobs.set(jobId, { ...job, status: 'succeeded' });
@@ -204,6 +205,7 @@ describe('evaluations', () => {
         bucket: 'outputs',
         key,
         rowCount: null,
+        targetId: null,
       },
     ]);
     repo.jobs.set(jobB!, { ...job, status: 'succeeded' });

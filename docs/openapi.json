@@ -10330,11 +10330,12 @@
                                     ]
                                   },
                                   "minItems": 1
+                                },
+                                "publishTo": {
+                                  "type": "string",
+                                  "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                                 }
                               },
-                              "required": [
-                                "formats"
-                              ],
                               "additionalProperties": false
                             }
                           },
@@ -12250,6 +12251,12 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "targetId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -12258,7 +12265,8 @@
                           "format",
                           "bucket",
                           "key",
-                          "rowCount"
+                          "rowCount",
+                          "targetId"
                         ],
                         "additionalProperties": true
                       }
@@ -14130,7 +14138,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "One output file of a job, as CSV or JSON. A reviewed job has two copies of each\noutput: the draft and the published one. The published copy is served unless\n`stage=draft` asks for the draft. Published copies are read from the final target.\n`inline=1` asks the browser to show the file instead of downloading it.",
+        "description": "One output file of a job, as CSV or JSON. A reviewed job has two copies of each\noutput: the draft and the published one. The published copy is served unless\n`stage=draft` asks for the draft. Published copies are read from the publishing\ntarget recorded with them.\n`inline=1` asks the browser to show the file instead of downloading it.",
         "parameters": [
           {
             "schema": {
@@ -14308,7 +14316,7 @@
             }
           },
           "502": {
-            "description": "The outputs storage or the target storage is unreachable.",
+            "description": "`storage unavailable` (a draft), or `publishing target {label} unavailable`: the target is missing, its credentials cannot be used, or it does not answer.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14334,7 +14342,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "The outputs storage or the target storage is unreachable."
+                  "description": "`storage unavailable` (a draft), or `publishing target {label} unavailable`: the target is missing, its credentials cannot be used, or it does not answer."
                 }
               }
             }
@@ -15502,6 +15510,12 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "targetId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
                             "required": [
@@ -15510,7 +15524,8 @@
                               "format",
                               "bucket",
                               "key",
-                              "rowCount"
+                              "rowCount",
+                              "targetId"
                             ],
                             "additionalProperties": true
                           }
@@ -16446,11 +16461,12 @@
                                 ]
                               },
                               "minItems": 1
+                            },
+                            "publishTo": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                             }
                           },
-                          "required": [
-                            "formats"
-                          ],
                           "additionalProperties": false
                         }
                       },
@@ -25998,7 +26014,7 @@
         "tags": [
           "Results"
         ],
-        "description": "One published result: the job, where it was delivered (`target` bucket and prefix),\nits published outputs, and for recipe jobs the published document read back from the\ntarget with the definition of its fields and tables. If the document cannot be read,\n`document` is null and `documentError` says why; the rest is still returned.",
+        "description": "One published result: the job, where it was delivered (`target`: the publishing\ntarget's id and label, the bucket and the target's prefix),\nits published outputs, and for recipe jobs the published document read back from the\ntarget with the definition of its fields and tables. If the document cannot be read,\n`document` is null and `documentError` says why; the rest is still returned.",
         "parameters": [
           {
             "schema": {
@@ -26205,6 +26221,12 @@
                     "target": {
                       "type": "object",
                       "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
                         "bucket": {
                           "type": "string"
                         },
@@ -26213,6 +26235,8 @@
                         }
                       },
                       "required": [
+                        "id",
+                        "label",
                         "bucket",
                         "prefix"
                       ],
@@ -26259,6 +26283,12 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "targetId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -26267,7 +26297,8 @@
                           "format",
                           "bucket",
                           "key",
-                          "rowCount"
+                          "rowCount",
+                          "targetId"
                         ],
                         "additionalProperties": true
                       }
@@ -26831,7 +26862,7 @@
             }
           },
           "502": {
-            "description": "`target storage unavailable`.",
+            "description": "`publishing target {label} unavailable`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -26857,7 +26888,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`target storage unavailable`."
+                  "description": "`publishing target {label} unavailable`."
                 }
               }
             }
@@ -53489,7 +53520,7 @@
         "tags": [
           "Data-lake S3 keys"
         ],
-        "description": "**Admins only.** The data-lake consumers (one read-only SeaweedFS identity\neach, `lake-{id}`) and their keys, never their secrets, with the bucket and\nendpoint the data lake is configured with. See [ADR 0008](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md).",
+        "description": "**Admins only.** The data-lake consumers (one read-only SeaweedFS identity\neach, `lake-{id}`) and their keys, never their secrets, with the bucket and\nendpoint the data lake is configured with. `internalTargets` are the internal\npublishing targets a key can be granted on (none when there is no internal\ntarget); each consumer lists its granted ids in `targets`. See\n[ADR 0008](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md).",
         "x-admin": true,
         "responses": {
           "200": {
@@ -53499,16 +53530,44 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "bucket": {
-                      "type": "string",
-                      "description": "The publish bucket the keys can read."
-                    },
                     "endpoint": {
                       "type": [
                         "string",
                         "null"
                       ],
                       "description": "The S3 endpoint the data lake uses, if configured."
+                    },
+                    "internalTargets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "internal",
+                              "external"
+                            ]
+                          },
+                          "bucket": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "kind",
+                          "bucket"
+                        ],
+                        "additionalProperties": true
+                      }
                     },
                     "consumers": {
                       "type": "array",
@@ -53576,6 +53635,13 @@
                               "additionalProperties": true
                             },
                             "description": "Newest first; at most two active."
+                          },
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "The internal publishing targets (ids) its keys may read, sorted."
                           }
                         },
                         "required": [
@@ -53583,15 +53649,16 @@
                           "label",
                           "userName",
                           "createdAt",
-                          "keys"
+                          "keys",
+                          "targets"
                         ],
                         "additionalProperties": true
                       }
                     }
                   },
                   "required": [
-                    "bucket",
                     "endpoint",
+                    "internalTargets",
                     "consumers"
                   ],
                   "additionalProperties": true,
@@ -53690,7 +53757,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -53716,7 +53783,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -53775,7 +53842,7 @@
         "tags": [
           "Data-lake S3 keys"
         ],
-        "description": "**Admins only.** Creates a consumer with read-only access to the publish\nbucket and its first key. The `secretAccessKey` is in this response only:\nSeaweedFS holds it and it is never shown again.",
+        "description": "**Admins only.** Creates a consumer with read-only access to the buckets and\nprefixes of the given internal publishing `targets` and its first key. The `secretAccessKey` is in this response only:\nSeaweedFS holds it and it is never shown again.",
         "requestBody": {
           "required": true,
           "content": {
@@ -53824,11 +53891,21 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "description": "Internal publishing target ids the keys may read (at least one)."
                   }
                 },
                 "required": [
                   "label",
-                  "expiresInDays"
+                  "expiresInDays",
+                  "targets"
                 ],
                 "additionalProperties": true
               }
@@ -53908,6 +53985,13 @@
                             "additionalProperties": true
                           },
                           "description": "Newest first; at most two active."
+                        },
+                        "targets": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The internal publishing targets (ids) its keys may read, sorted."
                         }
                       },
                       "required": [
@@ -53915,7 +53999,8 @@
                         "label",
                         "userName",
                         "createdAt",
-                        "keys"
+                        "keys",
+                        "targets"
                       ],
                       "additionalProperties": true
                     },
@@ -53967,10 +54052,6 @@
                       "type": "string",
                       "description": "Shown only in this response."
                     },
-                    "bucket": {
-                      "type": "string",
-                      "description": "The publish bucket the keys can read."
-                    },
                     "endpoint": {
                       "type": [
                         "string",
@@ -53983,7 +54064,6 @@
                     "consumer",
                     "key",
                     "secretAccessKey",
-                    "bucket",
                     "endpoint"
                   ],
                   "additionalProperties": true,
@@ -53993,7 +54073,7 @@
             }
           },
           "400": {
-            "description": "`label (1-100 chars) and expiresInDays are required`.",
+            "description": "`label (1-100 chars) and expiresInDays are required`, `grant at least one publishing target` or `<id> is not an internal publishing target`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -54019,7 +54099,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`label (1-100 chars) and expiresInDays are required`."
+                  "description": "`label (1-100 chars) and expiresInDays are required`, `grant at least one publishing target` or `<id> is not an internal publishing target`."
                 }
               }
             }
@@ -54129,7 +54209,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -54155,7 +54235,426 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`add an internal publishing target first`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`add an internal publishing target first`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`SeaweedFS could not be reached: …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`SeaweedFS could not be reached: …`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/access/s3-keys/{id}/targets": {
+      "put": {
+        "operationId": "setS3KeyTargets",
+        "summary": "Change the targets a consumer may read",
+        "tags": [
+          "Data-lake S3 keys"
+        ],
+        "description": "**Admins only.** Replaces the internal publishing targets the consumer's keys can\nread; its SeaweedFS policy is rewritten at once (and again by the reconciler if\nit is ever changed behind our back).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targets": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "description": "Internal publishing target ids the keys may read (at least one)."
+                  }
+                },
+                "required": [
+                  "targets"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The consumer id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The consumer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "userName": {
+                      "type": "string",
+                      "description": "The SeaweedFS identity: `lake-{id}`."
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "accessKeyId": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "revokedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "accessKeyId",
+                          "createdAt",
+                          "expiresAt",
+                          "revokedAt",
+                          "status"
+                        ],
+                        "additionalProperties": true
+                      },
+                      "description": "Newest first; at most two active."
+                    },
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The internal publishing targets (ids) its keys may read, sorted."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "userName",
+                    "createdAt",
+                    "keys",
+                    "targets"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The consumer."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`grant at least one publishing target` or `<id> is not an internal publishing target`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`grant at least one publishing target` or `<id> is not an internal publishing target`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -54396,6 +54895,13 @@
                             "additionalProperties": true
                           },
                           "description": "Newest first; at most two active."
+                        },
+                        "targets": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The internal publishing targets (ids) its keys may read, sorted."
                         }
                       },
                       "required": [
@@ -54403,7 +54909,8 @@
                         "label",
                         "userName",
                         "createdAt",
-                        "keys"
+                        "keys",
+                        "targets"
                       ],
                       "additionalProperties": true
                     },
@@ -54455,10 +54962,6 @@
                       "type": "string",
                       "description": "Shown only in this response."
                     },
-                    "bucket": {
-                      "type": "string",
-                      "description": "The publish bucket the keys can read."
-                    },
                     "endpoint": {
                       "type": [
                         "string",
@@ -54471,7 +54974,6 @@
                     "consumer",
                     "key",
                     "secretAccessKey",
-                    "bucket",
                     "endpoint"
                   ],
                   "additionalProperties": true,
@@ -54617,7 +55119,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -54643,7 +55145,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -54891,7 +55393,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -54917,7 +55419,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -55133,7 +55635,7 @@
             }
           },
           "404": {
-            "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`.",
+            "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service).",
             "content": {
               "application/json": {
                 "schema": {
@@ -55159,7 +55661,7 @@
                     "error"
                   ],
                   "additionalProperties": true,
-                  "description": "`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or `not found`."
+                  "description": "`not found` (no such consumer or key), or `S3 keys are not available on this deployment` (an API built without the key service)."
                 }
               }
             }
@@ -66080,6 +66582,2228 @@
         }
       }
     },
+    "/api/publish-targets/choices": {
+      "get": {
+        "operationId": "listPublishTargetChoices",
+        "summary": "List the publishing targets a recipe may name",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "What the recipe editor's _Publish to_ picker offers: each target's id, label, kind and\nbucket, the default first, then by label. No endpoints or credentials.",
+        "responses": {
+          "200": {
+            "description": "The choices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "choices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "internal",
+                              "external"
+                            ]
+                          },
+                          "bucket": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "kind",
+                          "bucket"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "choices"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The choices."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/publish-targets": {
+      "get": {
+        "operationId": "listPublishTargets",
+        "summary": "List publishing targets",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** Every publishing target with what uses it (`usage`: published\nrecipe versions naming it, delivered outputs and graph copies recording it, S3 key\nconsumers granted it). The `default` target is seeded from `.env` on first start.\nA secret is never returned, only `secretSet`.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The targets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "internal",
+                              "external"
+                            ]
+                          },
+                          "bucket": {
+                            "type": "string"
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "endpoint": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "region": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "accessKeyId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "secretSet": {
+                            "type": "boolean"
+                          },
+                          "keysFromEnv": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "accessKey": {
+                                    "type": "string"
+                                  },
+                                  "secretKey": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "accessKey",
+                                  "secretKey"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "forcePathStyle": {
+                            "type": "boolean"
+                          },
+                          "sse": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "AES256",
+                              "aws:kms"
+                            ]
+                          },
+                          "kmsKeyId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "storageClass": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "env",
+                              "ui"
+                            ]
+                          },
+                          "editedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "usage": {
+                            "type": "object",
+                            "properties": {
+                              "publishedVersions": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "documentTypes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "deliveredOutputs": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "consumers": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "pendingJobs": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "publishedVersions",
+                              "documentTypes",
+                              "deliveredOutputs",
+                              "consumers",
+                              "pendingJobs"
+                            ],
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "kind",
+                          "bucket",
+                          "prefix",
+                          "endpoint",
+                          "region",
+                          "accessKeyId",
+                          "secretSet",
+                          "keysFromEnv",
+                          "forcePathStyle",
+                          "sse",
+                          "kmsKeyId",
+                          "storageClass",
+                          "source",
+                          "editedAt",
+                          "updatedBy",
+                          "createdAt",
+                          "usage"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "targets"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The targets."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPublishTarget",
+        "summary": "Add a publishing target",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** An internal target (a bucket on this deployment's SeaweedFS, whose\nbucket is created here when missing) or an external S3 bucket. The id is made from\nthe label when not given (`-2`, `-3`… when taken); `default` is reserved. Use the\nsame id on every deployment for the same recipient: recipes carry it. A secret is\nstored encrypted with `LLM_SECRETS_KEY` (409 without it).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "internal",
+                      "external"
+                    ]
+                  },
+                  "bucket": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9!_.'()/-]*$",
+                    "default": ""
+                  },
+                  "endpoint": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "accessKeyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "secretAccessKey": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "forcePathStyle": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "sse": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "AES256",
+                      "aws:kms"
+                    ],
+                    "default": "none"
+                  },
+                  "kmsKeyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "storageClass": {
+                    "type": "string",
+                    "enum": [
+                      "STANDARD",
+                      "STANDARD_IA",
+                      "ONEZONE_IA",
+                      "INTELLIGENT_TIERING",
+                      "GLACIER_IR"
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "kind",
+                  "bucket"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "201": {
+            "description": "The target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "internal",
+                        "external"
+                      ]
+                    },
+                    "bucket": {
+                      "type": "string"
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "region": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "accessKeyId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "secretSet": {
+                      "type": "boolean"
+                    },
+                    "keysFromEnv": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "accessKey": {
+                              "type": "string"
+                            },
+                            "secretKey": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "accessKey",
+                            "secretKey"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forcePathStyle": {
+                      "type": "boolean"
+                    },
+                    "sse": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "AES256",
+                        "aws:kms"
+                      ]
+                    },
+                    "kmsKeyId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "storageClass": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "env",
+                        "ui"
+                      ]
+                    },
+                    "editedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "usage": {
+                      "type": "object",
+                      "properties": {
+                        "publishedVersions": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "documentTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "deliveredOutputs": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "consumers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "pendingJobs": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "publishedVersions",
+                        "documentTypes",
+                        "deliveredOutputs",
+                        "consumers",
+                        "pendingJobs"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "kind",
+                    "bucket",
+                    "prefix",
+                    "endpoint",
+                    "region",
+                    "accessKeyId",
+                    "secretSet",
+                    "keysFromEnv",
+                    "forcePathStyle",
+                    "sse",
+                    "kmsKeyId",
+                    "storageClass",
+                    "source",
+                    "editedAt",
+                    "updatedBy",
+                    "createdAt",
+                    "usage"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The target."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`a publishing target {id} already exists`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`a publishing target {id} already exists`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`could not create bucket {bucket}: {message}`; nothing is stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`could not create bucket {bucket}: {message}`; nothing is stored."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/publish-targets/{id}": {
+      "patch": {
+        "operationId": "updatePublishTarget",
+        "summary": "Change a publishing target",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** Fields left out are kept; `null` clears the endpoint, KMS key or\nstorage class, and the KMS key is cleared whenever the encryption is not\n`aws:kms`. An internal target cannot move onto CT Studio's own inbox, outputs or\nruns bucket (400). While the target is in use (a published recipe version names it,\nan output or graph copy was delivered to it, an S3 key consumer is granted it, or a\nwithdrawal still to run names it) its bucket, prefix, endpoint and region cannot\nchange (409):\nadd a new target and publish a version naming it instead. The label, credentials,\npath style, encryption and storage class may always change, so a key is rotated\nwithout a new version. Keys read from `.env` are replaced only as a pair.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "bucket": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9!_.'()/-]*$",
+                    "default": ""
+                  },
+                  "endpoint": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "accessKeyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "secretAccessKey": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "forcePathStyle": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "sse": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "AES256",
+                      "aws:kms"
+                    ],
+                    "default": "none"
+                  },
+                  "kmsKeyId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "storageClass": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "STANDARD",
+                          "STANDARD_IA",
+                          "ONEZONE_IA",
+                          "INTELLIGENT_TIERING",
+                          "GLACIER_IR"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The publishing target id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The target.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "internal",
+                        "external"
+                      ]
+                    },
+                    "bucket": {
+                      "type": "string"
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "region": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "accessKeyId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "secretSet": {
+                      "type": "boolean"
+                    },
+                    "keysFromEnv": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "accessKey": {
+                              "type": "string"
+                            },
+                            "secretKey": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "accessKey",
+                            "secretKey"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forcePathStyle": {
+                      "type": "boolean"
+                    },
+                    "sse": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "AES256",
+                        "aws:kms"
+                      ]
+                    },
+                    "kmsKeyId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "storageClass": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "env",
+                        "ui"
+                      ]
+                    },
+                    "editedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "updatedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "usage": {
+                      "type": "object",
+                      "properties": {
+                        "publishedVersions": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "documentTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "deliveredOutputs": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "consumers": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "pendingJobs": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "publishedVersions",
+                        "documentTypes",
+                        "deliveredOutputs",
+                        "consumers",
+                        "pendingJobs"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "kind",
+                    "bucket",
+                    "prefix",
+                    "endpoint",
+                    "region",
+                    "accessKeyId",
+                    "secretSet",
+                    "keysFromEnv",
+                    "forcePathStyle",
+                    "sse",
+                    "kmsKeyId",
+                    "storageClass",
+                    "source",
+                    "editedAt",
+                    "updatedBy",
+                    "createdAt",
+                    "usage"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The target."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, `set the access key and the secret together`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues, `set the access key and the secret together`, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`publishing target not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`publishing target not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`{label} is used by {what}: add a new target instead`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`{label} is used by {what}: add a new target instead`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`could not create bucket {bucket}: {message}`; nothing is changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`could not create bucket {bucket}: {message}`; nothing is changed."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deletePublishTarget",
+        "summary": "Remove a publishing target",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it, no S3 key consumer is granted it and no withdrawal still\nto run names it. The `default`\ntarget is never removed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The publishing target id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`publishing target not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`publishing target not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`default cannot be removed`, or `{label} is used by {what}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`default cannot be removed`, or `{label} is used by {what}`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/publish-targets/test": {
+      "post": {
+        "operationId": "testPublishTarget",
+        "summary": "Test a publishing target",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** For an external target, checks the bucket exists (a missing one\nfails at `connect`: some servers would create it on the first write), then writes\na small file under the target's prefix, reads it back and deletes it. With an `id`,\nthe stored target's settings overlaid with the body as a save would overlay them\n(`null` clears, its stored secret when the body has none); without one, a full set\nof new settings (before saving). An internal target on CT Studio's own inbox, outputs\nor runs bucket is refused (400). Always 200 for a test that ran: `ok: false` names\nthe step that failed in plain words. A secret sent here is never stored, logged or\nechoed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "internal",
+                      "external"
+                    ]
+                  },
+                  "bucket": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9!_.'()/-]*$",
+                    "default": ""
+                  },
+                  "endpoint": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "accessKeyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "secretAccessKey": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "forcePathStyle": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "sse": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "AES256",
+                      "aws:kms"
+                    ],
+                    "default": "none"
+                  },
+                  "kmsKeyId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "storageClass": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "STANDARD",
+                          "STANDARD_IA",
+                          "ONEZONE_IA",
+                          "INTELLIGENT_TIERING",
+                          "GLACIER_IR"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The outcome.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "step": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "connect",
+                            "write",
+                            "read",
+                            "delete"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "step",
+                    "message"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The outcome."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues of the body or of the merged settings, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Zod issues of the body or of the merged settings, or `{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`publishing target not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`publishing target not found`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/version": {
       "get": {
         "operationId": "version",
@@ -66150,7 +68874,7 @@
     },
     {
       "name": "Results",
-      "description": "Published outputs, read from the final target bucket: the documents a job delivered, their\nvalues and their files."
+      "description": "Published outputs, read from the publishing target each was delivered to: the documents a job delivered, their\nvalues and their files."
     },
     {
       "name": "Specs",
@@ -66225,6 +68949,10 @@
       "description": "The deployment's customer and the base IRI its RDF is minted under (ADR 0011). One\ncustomer per deployment; without their own base, IRIs live under\n`https://id.stocks-hayward.com/<customer>/`."
     },
     {
+      "name": "Published outputs",
+      "description": "Publishing targets: the S3 buckets published outputs are delivered to. Each recipe names one\n(`delivery.publishTo`, absent = `default`, seeded from `.env`); every delivered output\nrecords its target, so it is read and withdrawn there whatever changes later. A target in\nuse keeps its bucket, prefix, endpoint and region."
+    },
+    {
       "name": "GitHub",
       "description": "Syncing transformation recipes with a GitHub repository: this deployment's instance name\nand default folder, a document type's repository link, and pushing a published version\nas a YAML file with the signed-in user's own linked GitHub account. Admins set the\nsettings and links; anyone with a linked account can push."
     },
@@ -66273,6 +69001,7 @@
         "Profile",
         "Users",
         "Data-lake S3 keys",
+        "Published outputs",
         "Linked data",
         "GitHub",
         "Health"

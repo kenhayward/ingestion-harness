@@ -1,5 +1,6 @@
 import { CreateUserCommand, ListAccessKeysCommand, ListUsersCommand } from '@aws-sdk/client-iam';
 import { describe, expect, it, vi } from 'vitest';
+import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { iamClientConfig, SeaweedIamIssuer } from '../src/s3keys/seaweed-iam.js';
 
 type Cmd = { input: Record<string, unknown> };
@@ -32,9 +33,12 @@ describe('iamClientConfig', () => {
 });
 
 describe('SeaweedIamIssuer', () => {
-  it('creates a user with a read-only inline policy on the bucket', async () => {
+  it('creates a user with a read-only inline policy per granted bucket and prefix', async () => {
     const { issuer, calls } = stub();
-    await issuer.createUser('lake-1', 'ingest-published');
+    await issuer.createUser('lake-1', [
+      { bucket: 'ingest-published', prefix: '' },
+      { bucket: 'finance', prefix: 'out/' },
+    ]);
     const [create, policy] = calls();
     expect(create).toEqual(['CreateUserCommand', { UserName: 'lake-1' }]);
     expect(policy![0]).toBe('PutUserPolicyCommand');
@@ -46,11 +50,47 @@ describe('SeaweedIamIssuer', () => {
       Statement: [
         {
           Effect: 'Allow',
-          Action: ['s3:GetObject', 's3:ListBucket', 's3:GetBucketLocation'],
-          Resource: ['arn:aws:s3:::ingest-published', 'arn:aws:s3:::ingest-published/*'],
+          Action: ['s3:GetBucketLocation'],
+          Resource: ['arn:aws:s3:::ingest-published'],
         },
+        { Effect: 'Allow', Action: ['s3:ListBucket'], Resource: ['arn:aws:s3:::ingest-published'] },
+        {
+          Effect: 'Allow',
+          Action: ['s3:GetObject'],
+          Resource: ['arn:aws:s3:::ingest-published/*'],
+        },
+        { Effect: 'Allow', Action: ['s3:GetBucketLocation'], Resource: ['arn:aws:s3:::finance'] },
+        {
+          Effect: 'Allow',
+          Action: ['s3:ListBucket'],
+          Resource: ['arn:aws:s3:::finance'],
+          Condition: { StringLike: { 's3:prefix': ['out/*'] } },
+        },
+        { Effect: 'Allow', Action: ['s3:GetObject'], Resource: ['arn:aws:s3:::finance/out/*'] },
       ],
     });
+  });
+
+  it('replaces the policy when grants change, and drops it when none are left', async () => {
+    const { issuer, calls } = stub();
+    await issuer.setGrants('lake-1', [{ bucket: 'b', prefix: '' }]);
+    await issuer.setGrants('lake-1', []);
+    expect(calls().map(([name]) => name)).toEqual([
+      'PutUserPolicyCommand',
+      'DeleteUserPolicyCommand',
+    ]);
+  });
+
+  it.each([
+    { bucket: 'b', prefix: 'a*' },
+    { bucket: 'b', prefix: 'a?b/' },
+    { bucket: 'b', prefix: '${aws:username}/' },
+    { bucket: 'b*', prefix: '' },
+  ])('refuses a grant that is not literal: %j', async (grant) => {
+    const { issuer, send } = stub();
+    await expect(issuer.setGrants('lake-1', [grant])).rejects.toThrow(/wildcard/);
+    expect(send).not.toHaveBeenCalled();
+    await expect(new MemoryS3KeyIssuer().createUser('lake-1', [grant])).rejects.toThrow(/wildcard/);
   });
 
   it('treats an existing user as created (and still sets the policy)', async () => {
@@ -58,7 +98,7 @@ describe('SeaweedIamIssuer', () => {
       if (cmd instanceof CreateUserCommand) throw iamError('EntityAlreadyExistsException');
       return {};
     });
-    await issuer.createUser('lake-1', 'ingest-published');
+    await issuer.createUser('lake-1', [{ bucket: 'ingest-published', prefix: '' }]);
     expect(calls().map(([name]) => name)).toEqual(['CreateUserCommand', 'PutUserPolicyCommand']);
   });
 

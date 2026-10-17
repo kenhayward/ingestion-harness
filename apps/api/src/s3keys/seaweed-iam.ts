@@ -11,7 +11,7 @@ import {
   PutUserPolicyCommand,
 } from '@aws-sdk/client-iam';
 import type { S3Options } from '../storage/s3.js';
-import { READ_ONLY_ACTIONS, type IssuedSecret, type S3KeyIssuer } from './issuer.js';
+import { lakePolicy, type Grant, type IssuedSecret, type S3KeyIssuer } from './issuer.js';
 
 /** The one inline policy each consumer has. */
 export const POLICY_NAME = 'lake-read';
@@ -49,25 +49,27 @@ export class SeaweedIamIssuer implements S3KeyIssuer {
     this.client = client ?? new IAMClient(iamClientConfig(opts));
   }
 
-  async createUser(userName: string, bucket: string): Promise<void> {
+  async createUser(userName: string, grants: Grant[]): Promise<void> {
     await tolerate('EntityAlreadyExists', () =>
       this.client.send(new CreateUserCommand({ UserName: userName })),
     );
-    const policy = {
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Effect: 'Allow',
-          Action: READ_ONLY_ACTIONS,
-          Resource: [`arn:aws:s3:::${bucket}`, `arn:aws:s3:::${bucket}/*`],
-        },
-      ],
-    };
+    await this.setGrants(userName, grants);
+  }
+
+  async setGrants(userName: string, grants: Grant[]): Promise<void> {
+    if (grants.length === 0) {
+      await tolerate('NoSuchEntity', () =>
+        this.client.send(
+          new DeleteUserPolicyCommand({ UserName: userName, PolicyName: POLICY_NAME }),
+        ),
+      );
+      return;
+    }
     await this.client.send(
       new PutUserPolicyCommand({
         UserName: userName,
         PolicyName: POLICY_NAME,
-        PolicyDocument: JSON.stringify(policy),
+        PolicyDocument: JSON.stringify(lakePolicy(grants)),
       }),
     );
   }

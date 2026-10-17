@@ -2,6 +2,10 @@
 
 **Status:** accepted · 2026-10-11
 
+**Update (migration 202610170019):** the single `TARGET_S3_*` target became admin-managed publishing
+targets chosen per recipe (`delivery.publishTo`); the API reads each output through the target
+recorded on `job_outputs.target_id`. `TARGET_S3_*` only seeds `default`.
+
 ## Context
 Published outputs go to a deployment-wide final target (`TARGET_S3_*`), which may be a
 different S3 endpoint from the internal SeaweedFS. The Results page must show what was actually

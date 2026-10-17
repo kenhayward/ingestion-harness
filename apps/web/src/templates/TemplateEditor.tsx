@@ -3,12 +3,14 @@ import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import {
   describeDefinitionChange,
   VALUE_TYPES,
+  DEFAULT_TARGET_ID,
   type DataPolicy,
   type DeliveryFormat,
   type JobSummary,
   type OverviewItem,
   type Retirement,
   type PushOutcome,
+  type TargetChoice,
 } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
 import { TabHelp } from '../ui/Help.js';
@@ -158,6 +160,18 @@ export function TemplateEditor({
   const [error, setError] = useState<string | null>(null);
   const models = useModelChoices(api);
   const modelName = (id: string) => choiceName(id, models);
+  /** The publishing targets a recipe may name (any designer may list them); [] until loaded. */
+  const [targets, setTargets] = useState<TargetChoice[]>([]);
+  useEffect(() => {
+    let live = true;
+    api.listPublishTargetChoices().then(
+      (choices) => live && setTargets(choices),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [api]);
   /** The document type's model choice, which steps naming none inherit ('' = the default). */
   const typeModel = typeof def.model === 'string' && def.model !== 'default' ? def.model : '';
   /** The one pipeline step whose card is open (null: all collapsed). */
@@ -602,6 +616,14 @@ export function TemplateEditor({
                       onChange={(id) => update(['model'], id || undefined)}
                     />
                   </div>
+                  <div className="model-row">
+                    <span>Publish to</span>
+                    <PublishToPicker
+                      choices={targets}
+                      value={def.delivery?.publishTo}
+                      onChange={(id) => update(['delivery'], withPublishTo(def.delivery, id))}
+                    />
+                  </div>
                   <Area
                     label="Description"
                     rows={3}
@@ -675,7 +697,13 @@ export function TemplateEditor({
                                 f === format ? !on : formats.includes(f),
                               );
                               const isDefault = next.join() === 'csv,json';
-                              update(['delivery'], isDefault ? undefined : { formats: next });
+                              update(
+                                ['delivery'],
+                                withPublishTo(
+                                  isDefault ? undefined : { formats: next },
+                                  def.delivery?.publishTo,
+                                ),
+                              );
                             }}
                           />
                           {label}
@@ -1382,5 +1410,48 @@ function TableOutputs({
         </section>
       )}
     </div>
+  );
+}
+
+/** A delivery with `publishTo` set (or removed for ''/undefined); no `delivery` at all when nothing is left. */
+function withPublishTo(
+  delivery: object | undefined,
+  id: string | undefined,
+): Record<string, unknown> | undefined {
+  const rest: Record<string, unknown> = { ...delivery };
+  delete rest.publishTo;
+  const next = id ? { ...rest, publishTo: id } : rest;
+  return Object.keys(next).length === 0 ? undefined : next;
+}
+
+/** The recipe's publishing target: empty = the default target; a stored id nobody offers stays visible. */
+function PublishToPicker({
+  choices,
+  value,
+  onChange,
+}: {
+  choices: readonly TargetChoice[];
+  value: string | undefined;
+  onChange: (id: string) => void;
+}) {
+  const describe = (c: TargetChoice) => `${c.label} · ${c.kind} · ${c.bucket}`;
+  const def = choices.find((c) => c.id === DEFAULT_TARGET_ID);
+  const defaultLabel = def ? describe(def) : 'Default';
+  const stored = value && value !== DEFAULT_TARGET_ID ? value : '';
+  // Loading: a stored id is not yet known to be missing, so it is not flagged until choices arrive.
+  const missing = stored && choices.length > 0 && !choices.some((c) => c.id === stored);
+  return (
+    <select aria-label="Publish to" value={stored} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{`Default (${defaultLabel})`}</option>
+      {choices
+        .filter((c) => c.id !== DEFAULT_TARGET_ID)
+        .map((c) => (
+          <option key={c.id} value={c.id}>
+            {describe(c)}
+          </option>
+        ))}
+      {missing && <option value={stored}>{`${stored} (not on this deployment)`}</option>}
+      {stored && choices.length === 0 && <option value={stored}>{stored}</option>}
+    </select>
   );
 }
