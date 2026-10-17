@@ -2,12 +2,7 @@ import pg from 'pg';
 import { PgAccessRepo } from './access/pg.js';
 import { SIGN_IN_RETENTION_DAYS } from './access/repo.js';
 import { buildApp } from './app.js';
-import {
-  githubConfig,
-  loadConfig,
-  s3KeysConfig,
-  versionFromConfig,
-} from './config.js';
+import { githubConfig, loadConfig, s3KeysConfig, versionFromConfig } from './config.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
