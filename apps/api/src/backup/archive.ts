@@ -61,12 +61,19 @@ export class ArchiveWriter {
 }
 
 /**
+ * Filled in when the reader meets the terminator: the input bytes already read past it. Passing
+ * one to `readArchive` also leaves the input open, for the caller to drain and check.
+ */
+export type ArchiveTail = { rest: Buffer };
+
+/**
  * Reads entries in order. The consumer must drain each `body` before asking for the next entry
  * (an undrained one is an error). A stream that ends before the terminator, or inside a header or
  * body, is `ArchiveError` "truncated".
  */
 export async function* readArchive(
-  input: Readable,
+  input: AsyncIterable<Buffer>,
+  tail?: ArchiveTail,
 ): AsyncGenerator<{ name: string; size: number; body: Readable }> {
   const source = input[Symbol.asyncIterator]() as AsyncIterator<Buffer>;
   let leftover: Buffer = Buffer.alloc(0);
@@ -108,7 +115,10 @@ export async function* readArchive(
   try {
     for (;;) {
       const headerLength = (await exactly(4)).readUInt32BE();
-      if (headerLength === 0) return;
+      if (headerLength === 0) {
+        if (tail) tail.rest = leftover;
+        return;
+      }
       if (headerLength > MAX_HEADER_BYTES) {
         throw new ArchiveError(
           `the backup archive has an impossible header (${headerLength} bytes)`,
@@ -159,6 +169,6 @@ export async function* readArchive(
       if (remaining > 0) throw new ArchiveError(`entry ${name} was not read to its end`);
     }
   } finally {
-    await source.return?.();
+    if (!tail) await source.return?.();
   }
 }

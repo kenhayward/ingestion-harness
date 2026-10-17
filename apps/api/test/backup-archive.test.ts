@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { PassThrough, Readable } from 'node:stream';
-import { describe, expect, it } from 'vitest';
-import { ArchiveWriter, readArchive } from '../src/backup/archive.js';
+import { describe, expect, it, vi } from 'vitest';
+import { ArchiveWriter, readArchive, type ArchiveTail } from '../src/backup/archive.js';
 
 async function write(build: (w: ArchiveWriter) => Promise<void>): Promise<Buffer> {
   const out = new PassThrough();
@@ -100,5 +100,19 @@ describe('backup archive framing', () => {
     const bad = Buffer.alloc(4);
     bad.writeUInt32BE(10_000_000);
     await expect(readAll(bad)).rejects.toThrow(/header/);
+  });
+
+  it('hands back what follows the terminator and leaves the input open', async () => {
+    const bytes = await write(async (w) => {
+      await w.entry('a', Buffer.from('one'), 3);
+    });
+    const tail: ArchiveTail = { rest: Buffer.alloc(0) };
+    const next = vi.fn();
+    const source = Readable.from([Buffer.concat([bytes, Buffer.from('extra')])]);
+    source.on('close', next);
+    for await (const e of readArchive(source, tail)) for await (const _ of e.body) void _;
+    expect(tail.rest.toString()).toBe('extra');
+    expect(source.destroyed).toBe(false);
+    source.destroy();
   });
 });

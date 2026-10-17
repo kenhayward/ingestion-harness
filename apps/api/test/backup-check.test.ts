@@ -1,9 +1,15 @@
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { ArchiveWriter } from '../src/backup/archive.js';
+import { ArchiveWriter, readArchive } from '../src/backup/archive.js';
 import { checkBackup } from '../src/backup/check.js';
 import { createBackup } from '../src/backup/create.js';
-import { BackupCorruptError, BackupKeyError, encryptStream } from '../src/backup/crypto.js';
+import {
+  BackupCorruptError,
+  BackupKeyError,
+  decryptStream,
+  encryptStream,
+} from '../src/backup/crypto.js';
 import { BackupTooNewError } from '../src/backup/check.js';
 import type { MemoryObjectStore } from '../src/storage/object-store.js';
 import { fakeBackupDeps, FakeDatabaseTools, TEST_MASTER } from './backup-fakes.js';
@@ -106,28 +112,103 @@ describe('checkBackup', () => {
   });
 });
 
-/** Decrypts, maps each entry's body, and re-encrypts (optionally with bytes after the end). */
-async function rewrite(
+type Entry = { name: string; body: Buffer };
+
+/** Decrypts a backup into its entries, lets `change` reshape them, and re-encrypts. */
+async function reshape(
   file: Buffer,
-  map: (name: string, body: Buffer) => Buffer,
+  change: (entries: Entry[]) => Entry[],
   trailing?: Buffer,
 ): Promise<Buffer> {
-  const { decryptStream } = await import('../src/backup/crypto.js');
-  const { readArchive } = await import('../src/backup/archive.js');
   const plain = Readable.from([file]).pipe(decryptStream([TEST_MASTER]));
-  const entries: { name: string; body: Buffer }[] = [];
+  const entries: Entry[] = [];
   for await (const e of readArchive(plain)) {
     const chunks: Buffer[] = [];
     for await (const c of e.body) chunks.push(c as Buffer);
-    entries.push({ name: e.name, body: map(e.name, Buffer.concat(chunks)) });
+    entries.push({ name: e.name, body: Buffer.concat(chunks) });
   }
   const enc = encryptStream(TEST_MASTER);
   const out: Buffer[] = [];
   enc.on('data', (c: Buffer) => out.push(c));
   const writer = new ArchiveWriter(enc);
-  for (const e of entries) await writer.entry(e.name, e.body, e.body.length);
+  for (const e of change(entries)) await writer.entry(e.name, e.body, e.body.length);
   await writer.end();
   if (trailing) enc.write(trailing);
   await new Promise<void>((resolve) => enc.end(resolve));
   return Buffer.concat(out);
 }
+
+const rewrite = (file: Buffer, map: (name: string, body: Buffer) => Buffer, trailing?: Buffer) =>
+  reshape(file, (es) => es.map((e) => ({ name: e.name, body: map(e.name, e.body) })), trailing);
+
+const find = (es: Entry[], name: string): Entry => es.find((e) => e.name === name)!;
+
+const NL = String.fromCharCode(10);
+
+describe('checkBackup refusals', () => {
+  const refused = async (change: (es: Entry[]) => Entry[], message: RegExp) => {
+    const { file } = await make();
+    const changed = await reshape(file, change);
+    const err = await checkBackup(input(changed), [TEST_MASTER], LOCAL, noProgress).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(BackupCorruptError);
+    expect((err as Error).message).toMatch(message);
+  };
+  const indexLines = (es: Entry[]) =>
+    find(es, 'objects/index.jsonl').body.toString('utf8').split(NL).filter(Boolean);
+  /** Replaces the index and keeps the manifest's record of it true, so only the index is wrong. */
+  const withIndex = (es: Entry[], body: string): Entry[] => {
+    const buf = Buffer.from(body);
+    return es.map((e) => {
+      if (e.name === 'objects/index.jsonl') return { name: e.name, body: buf };
+      if (e.name !== 'manifest.json') return e;
+      const manifest = JSON.parse(e.body.toString('utf8')) as {
+        parts: { name: string; bytes: number; sha256: string }[];
+      };
+      for (const part of manifest.parts) {
+        if (part.name === 'objects/index.jsonl') {
+          part.bytes = buf.length;
+          part.sha256 = createHash('sha256').update(buf).digest('hex');
+        }
+      }
+      return { name: e.name, body: Buffer.from(JSON.stringify(manifest)) };
+    });
+  };
+
+  it('an entry after the manifest', () =>
+    refused((es) => [...es, { name: 'extra', body: Buffer.from('x') }], /after its manifest/));
+  it('a duplicate entry', () => refused((es) => [es[0]!, ...es], /twice/));
+  it('no manifest', () =>
+    refused((es) => es.filter((e) => e.name !== 'manifest.json'), /no manifest/));
+  it('a damaged manifest', () =>
+    refused(
+      (es) =>
+        es.map((e) => (e.name === 'manifest.json' ? { name: e.name, body: Buffer.from('{}') } : e)),
+      /manifest is damaged/,
+    ));
+  it('an unknown entry that is not an object', () =>
+    refused(
+      (es) => [{ name: 'surprise.bin', body: Buffer.from('x') }, ...es],
+      /unknown entry surprise\.bin/,
+    ));
+  it('an object missing from the index', () =>
+    refused(
+      (es) => withIndex(es, indexLines(es).slice(1).join(NL) + NL),
+      /not in the object index/,
+    ));
+  it('an index line with no entry', () =>
+    refused(
+      (es) => es.filter((e) => e.name !== 'objects/inbox/a/doc.pdf'),
+      /missing objects\/inbox\/a\/doc\.pdf/,
+    ));
+  it('a damaged index line', () =>
+    refused((es) => withIndex(es, 'not json' + NL), /index is damaged/));
+  it('an index without its final newline', () =>
+    refused((es) => withIndex(es, indexLines(es).join(NL)), /newline/));
+  it('a duplicate index key', () =>
+    refused(
+      (es) => withIndex(es, indexLines(es).concat(indexLines(es)[0]!).join(NL) + NL),
+      /twice/,
+    ));
+});

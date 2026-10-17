@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { pipeline, type Readable } from 'node:stream';
 import { BackupManifestSchema, type BackupManifest } from '@ih/shared';
 import { z } from 'zod';
-import { ArchiveError, readArchive } from './archive.js';
+import { ArchiveError, readArchive, type ArchiveTail } from './archive.js';
 import { BackupCorruptError, decryptStream } from './crypto.js';
 
 export { BackupCorruptError, BackupKeyError } from './crypto.js';
@@ -48,35 +48,20 @@ export async function checkBackup(
   pipeline(source, decrypt, () => {});
 
   const it = decrypt[Symbol.asyncIterator]() as AsyncIterator<Buffer>;
-  let served = 0;
-  // readArchive stops at the terminator without draining and would destroy the stream on exit;
-  // this view keeps it open so the rest can be read to its end.
-  const view = {
-    [Symbol.asyncIterator]: () => ({
-      next: async () => {
-        const r = await it.next();
-        if (!r.done) served += r.value.length;
-        return r;
-      },
-      return: async () => ({ done: true as const, value: undefined }),
-    }),
-  } as unknown as Readable;
+  const tail: ArchiveTail = { rest: Buffer.alloc(0) };
 
   const hashes = new Map<string, { size: number; sha256: string }>();
   const index = new Map<string, { size: number; sha256: string }>();
   let manifestBytes: Buffer | null = null;
-  let consumed = 4; // the terminator
   let bytes = 0;
   let count = 0;
 
   try {
-    for await (const entry of readArchive(view)) {
+    for await (const entry of readArchive({ [Symbol.asyncIterator]: () => it }, tail)) {
       if (manifestBytes) throw new BackupCorruptError('the backup has entries after its manifest');
       if (hashes.has(entry.name)) {
         throw new BackupCorruptError(`the backup has ${entry.name} twice`);
       }
-      consumed += 4 + Buffer.byteLength(JSON.stringify({ name: entry.name, size: entry.size }));
-      consumed += entry.size;
 
       const hash = createHash('sha256');
       const isManifest = entry.name === 'manifest.json';
@@ -105,16 +90,14 @@ export async function checkBackup(
       onProgress({ entries: count, bytes });
     }
 
-    // Anything the archive did not account for is a damaged file; reading to the end also
-    // checks the final chunk's tag.
+    // Nothing may follow the terminator; reading to the end also checks the final chunk's tag.
+    let extra = tail.rest.length;
     for (;;) {
       const r = await it.next();
       if (r.done) break;
-      served += r.value.length;
+      extra += r.value.length;
     }
-    if (served !== consumed) {
-      throw new BackupCorruptError('the backup has data after its archive ends');
-    }
+    if (extra > 0) throw new BackupCorruptError('the backup has data after its archive ends');
   } catch (err) {
     decrypt.destroy();
     if (err instanceof ArchiveError) throw new BackupCorruptError(err.message);
@@ -171,7 +154,9 @@ function addIndexLine(index: Map<string, { size: number; sha256: string }>, line
   } catch {
     throw new BackupCorruptError('the object index is damaged');
   }
-  index.set(`${OBJECT_PREFIX}${parsed.bucket}/${parsed.key}`, {
+  const name = `${OBJECT_PREFIX}${parsed.bucket}/${parsed.key}`;
+  if (index.has(name)) throw new BackupCorruptError(`the object index lists ${name} twice`);
+  index.set(name, {
     size: parsed.size,
     sha256: parsed.sha256,
   });
