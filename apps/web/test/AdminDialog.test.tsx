@@ -91,7 +91,11 @@ describe('AdminDialog', () => {
       await within(dialog).findByRole('heading', { name: 'Data lake S3 keys' }),
     ).toBeInTheDocument();
     expect(within(dialog).queryByRole('table', { name: 'Users' })).toBeNull();
-    expect(within(header(dialog)).queryByRole('button')).toBeNull();
+    expect(
+      within(header(dialog))
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Help: How GitHub sync works']);
   });
 
   it.each([
@@ -99,6 +103,8 @@ describe('AdminDialog', () => {
     ['Linked data', 'Linked data settings', null],
     ['Published outputs', 'How publishing targets work', 'Add target'],
     ['Users', 'Users and sign-in', 'Add user'],
+    ['Integration', 'How GitHub sync works', null],
+    ['Maintenance', 'Maintenance mode', null],
     ['Backup', 'Backing up and restoring CT Studio', 'Create backup'],
   ])('the %s tab has its help last in the header', async (tab, title, main) => {
     const { dialog } = open();

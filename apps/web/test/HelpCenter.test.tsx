@@ -44,6 +44,7 @@ describe('help index', () => {
       'published-outputs',
       'adminUsers',
       'github-sync',
+      'adminMaintenance',
       'backup',
     ]);
   });

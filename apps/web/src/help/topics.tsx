@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   AdministrationHelp,
   AdminLinkedDataHelp,
+  AdminMaintenanceHelp,
   AdminModelsHelp,
   AdminUsersHelp,
 } from './AdminHelp.js';
@@ -87,6 +88,7 @@ export const HELP_TOPICS = {
   adminModels: { title: 'Models and model choices', body: <AdminModelsHelp /> },
   adminLinkedData: { title: 'Linked data settings', body: <AdminLinkedDataHelp /> },
   adminUsers: { title: 'Users and sign-in', body: <AdminUsersHelp /> },
+  adminMaintenance: { title: 'Maintenance mode', body: <AdminMaintenanceHelp /> },
   'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   'published-outputs': { title: 'How publishing targets work', body: <PublishedOutputsHelp /> },
   backup: { title: 'Backing up and restoring CT Studio', body: <BackupHelp /> },

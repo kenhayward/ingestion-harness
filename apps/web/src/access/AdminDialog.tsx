@@ -35,13 +35,14 @@ const TABS: { id: AdminTab; label: string; icon: IconName; adminOnly?: boolean }
 ];
 
 const tabsFor = (me: Me) => TABS.filter((t) => !t.adminOnly || me.role === 'admin');
-/** Each tab's help, last in the header after the tab's main button (Integration's sections carry
- * their own). */
+/** Each tab's help, last in the header after the tab's main button. */
 const TAB_HELP: Partial<Record<AdminTab, HelpTopicId>> = {
   models: 'adminModels',
   'linked-data': 'adminLinkedData',
   'published-outputs': 'published-outputs',
   users: 'adminUsers',
+  integration: 'github-sync',
+  maintenance: 'adminMaintenance',
   backup: 'backup',
 };
 
