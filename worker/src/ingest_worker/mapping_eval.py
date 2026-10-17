@@ -43,7 +43,7 @@ from .mapping_stage import (
     stage_shortlists,
 )
 from .ontology import OntologyStore
-from .pipeline import PipelineDeps, enforce_data_policy
+from .pipeline import DocumentError, PipelineDeps, enforce_data_policy
 from .queue import ClaimedJob
 from .rdf import CURIE_PREFIXES
 
@@ -341,11 +341,33 @@ def per_output_picks(
     return propose(params.draft or {}, inputs, store, versions, choose=choose, embed=embed)
 
 
-def model_chooser(deps: PipelineDeps, model_ref: str, counter: list[int]) -> Chooser:
-    """Answer each ChoiceRequest with one structured model call (enum per output)."""
+def check_policy(deps: PipelineDeps, params: DraftParams, model_ref: str) -> None:
+    """The mapping stage's data-policy checks, before any model call: a local-only project, or a
+    local-only pinned ontology (or one its terms were imported from), never reaches an external
+    model (`run_mapping` does the same for the stage itself)."""
+    provider, _ = deps.models.resolve(model_ref)
+    enforce_data_policy(_job(params), deps, provider, model_ref)
+    inputs = MappingInputs.model_validate(params.mapping or {})
+    versions = [(v.id, v.version) for v in inputs.versions]
+    store = deps.ontologies
+    restricted = {f"{v.id} v{v.version}" for v in inputs.versions if v.local_only} | set(
+        store.local_only_sources(versions) if store is not None else []
+    )
+    if restricted and deps.models.location(provider.name) == "external":
+        raise DocumentError(
+            f"{', '.join(sorted(restricted))} is local only: the mapping needs a local model"
+        )
+
+
+def model_chooser(
+    deps: PipelineDeps, params: DraftParams, model_ref: str, counter: list[int]
+) -> Chooser:
+    """Answer each ChoiceRequest with one structured model call (enum per output), after the
+    data-policy checks (`check_policy`)."""
     from . import drafting
     from .extract import run_extraction
 
+    check_policy(deps, params, model_ref)
     provider, model_id = deps.models.resolve(model_ref)
     limit = drafting.output_limit(deps, f"{provider.name}/{model_id}")
 
@@ -576,13 +598,14 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         store = deps.ontologies
         assert store is not None
         results: dict[str, Scores] = {}
+        check_policy(deps, params, args.model)  # before any matcher calls the model
         for matcher in matchers:
             started, calls = time.monotonic(), [0]
             if matcher == "current":
                 picks = current_picks(deps, params, args.model)
                 calls[0] = 1
             elif matcher == "per-output":
-                choose = model_chooser(deps, args.model, calls)
+                choose = model_chooser(deps, params, args.model, calls)
                 picks = per_output_picks(params, store, choose, _embedding(deps, params))
             else:
                 raise SystemExit(f"unknown matcher {matcher}")

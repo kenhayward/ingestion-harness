@@ -212,3 +212,41 @@ def test_a_gold_template_lists_every_output_with_a_matchers_picks() -> None:
     assert again.expected["lot"].terms == frozenset({f"{PH}batchNumber"})
     assert again.expected["notes"].terms == frozenset()  # no pick: unmapped, to check
     assert "# notes" in text  # each output says what it is, for the expert
+
+
+@pytest.mark.parametrize(
+    ("policy", "local_only", "refused"),
+    [
+        ("local", False, "data policy"),  # a local-only project never reaches an external model
+        ("external", True, "local only"),  # nor does a local-only pinned ontology
+        ("external", False, None),
+    ],
+)
+def test_the_model_chooser_keeps_the_data_policy_before_any_call(
+    policy: str, local_only: bool, refused: str | None
+) -> None:
+    from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
+    from ingest_worker.mapping_eval import model_chooser
+    from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
+    from ingest_worker.storage import MemoryObjectStore
+
+    provider = FakeProvider("cloud")
+    config = ProviderConfig(name="cloud", kind="openai-chat", location="external")  # type: ignore[arg-type]
+    deps = PipelineDeps(
+        store=MemoryObjectStore(),
+        specs={},
+        models=ModelRegistry({"cloud": provider}, {"cloud": config}, {"draft": "cloud/big"}),
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        ontologies=store(),
+    )
+    params = draft_params(gold(), None)
+    mapping = dict(params.mapping or {})
+    mapping["versions"] = [{**v, "localOnly": local_only} for v in mapping["versions"]]
+    params = params.model_copy(update={"data_policy": policy, "mapping": mapping})
+    if refused is None:
+        model_chooser(deps, params, "draft", [0])
+        return
+    with pytest.raises(DocumentError, match=refused):
+        model_chooser(deps, params, "draft", [0])
+    assert provider.calls == []
