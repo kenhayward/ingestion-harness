@@ -6,6 +6,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A push to main runs only `tag`: main requires every PR to be up to date and to pass these checks
+# (strict required checks, admins included), so the code that lands was tested exactly as it is,
+# and re-running the tests would cost ~9 minutes per merge for nothing (ADR 0014).
+#
 # Pull requests cancel their superseded runs. Every push to main is its own group: GitHub replaces
 # a pending run in a shared group even without cancel-in-progress, and a merge whose run never
 # finished would never get its calendar tag (job `tag`, ADR 0014).
@@ -21,6 +25,7 @@ permissions:
 jobs:
   node:
     name: Node (lint, typecheck, test, build)
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -38,6 +43,7 @@ jobs:
 
   worker:
     name: Worker (ruff, mypy, pytest)
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -58,6 +64,7 @@ jobs:
   stack:
     name: Images + compose smoke test
     needs: [node, worker]
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -116,11 +123,10 @@ jobs:
           docker image ls --filter "reference=${IMAGE_PREFIX}/*:${IMAGE_TAG}" -q | xargs -r docker image rm -f
 
   tag:
-    # The build's calendar version (ADR 0014): every merge to main whose checks pass gets the next
-    # YYYY.MM.DD.N tag. No concurrency group (it would replace pending jobs): version.mjs retries
+    # The build's calendar version (ADR 0014): every merge to main gets the next YYYY.MM.DD.N tag
+    # straight away (its PR passed these checks up to date with main; see the top of the file). No concurrency group (it would replace pending jobs): version.mjs retries
     # with the next number when another run took this one.
     name: Tag the build
-    needs: [node, worker, stack]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kenhayward/ingestion-harness'
     runs-on: ubuntu-24.04
     timeout-minutes: 5

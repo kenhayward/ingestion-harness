@@ -29,7 +29,7 @@ ENV_FILE=/etc/ingestion-harness/production.env deploy/scripts/deploy.sh
 
 ### Versions ([ADR 0014](../docs/adr/0014-calendar-versions.md))
 
-CI tags every merge to `main` whose checks pass `YYYY.MM.DD.N` (UTC date, `N` from 1 each day).
+CI tags every merge to `main` `YYYY.MM.DD.N` (UTC date, `N` from 1 each day).
 Before building, the deploy scripts fetch tags and run `node deploy/scripts/version.mjs resolve`
 (**Node 24 is needed on the deploy host**):
 
@@ -41,7 +41,7 @@ Before building, the deploy scripts fetch tags and run `node deploy/scripts/vers
 | no tag in its history | `dev+abc1234` | short hash |
 
 A merge on `main` (its first-parent line, the commits CI tags) that CI has not tagged yet (CI
-takes 6–9 minutes) makes the script wait, checking every 30 seconds for up to 15 minutes, then
+tags a merge within a minute: the tests ran on the PR) makes the script wait, checking every 30 seconds for up to 15 minutes, then
 stop with an error; `--untagged` builds it straight away as `<previous tag>+<hash>`. Nothing else
 waits: a branch or local commit, a PR's own commits, an older commit a later tag already contains
 (CI passed something newer, so it will never be tagged), or any commit when `git fetch` fails (the

@@ -126,7 +126,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
   migration must not depend on another open PR's migration: an existing database applies a late
   merge after newer timestamps, a fresh one in timestamp order.
 - **Versions ([ADR 0014](docs/adr/0014-calendar-versions.md)):** no file holds a version. CI's
-  `tag` job tags every merge to `main` whose checks pass `YYYY.MM.DD.N` (UTC date, `N` from 1 each
+  `tag` job tags every merge to `main` `YYYY.MM.DD.N` (UTC date, `N` from 1 each
   day; `deploy/scripts/version.mjs tag`, retrying on a taken number; `main` runs never share a
   concurrency group). The deploy scripts run `version.mjs resolve` (Node 24): the commit's tag,
   else `<nearest tag>+<hash>` (look-alike tags skipped) or `dev+<hash>`, `+dirty`/`.dirty` for
@@ -221,7 +221,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 Public repo (Apache-2.0). **CI runs on GitHub-hosted runners**; only deploys use self-hosted
 runners on the deploy hosts. Never target a self-hosted runner from a `pull_request` workflow
 (see [docs/runners.md](docs/runners.md)). `main` is protected: PRs only, CI must be green.
-`ci.yml`: node + worker jobs, then images build + compose smoke test. `deploy.yml`: main →
+`ci.yml`: node + worker jobs, then images build + compose smoke test, all three required checks on PRs; a push to `main` runs only the `tag` job (strict required checks mean the PR already passed them up to date with `main`). `deploy.yml`: main →
 staging after green CI (once repo variable `AUTO_DEPLOY_STAGING=true`); manual dispatch for production / rollbacks (`no_build` + older ref).
 
 ## Definition of done
