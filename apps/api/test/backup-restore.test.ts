@@ -135,11 +135,11 @@ describe('runRestore', () => {
     const report = await runRestore(s.deps, request(checked), status);
 
     expect(s.db.databases.get('ingestion')!.toString()).toBe('PGDMP production');
-    expect(report.previousDatabase).toMatch(/^ingestion_before_restore_\d{12}$/);
+    expect(report.previousDatabase).toMatch(/^ingestion_before_restore_\d{14}_[0-9a-f]{4}$/);
     expect(s.db.databases.get(report.previousDatabase)!.toString()).toBe('PGDMP staging');
     expect([...s.db.databases.keys()].some((n) => n.startsWith('ingestion_restore_'))).toBe(false);
     const created = s.db.calls.find((c) => c.startsWith('create '))!.slice(7);
-    expect(created).toMatch(/^ingestion_restore_\d{12}$/);
+    expect(created).toMatch(/^ingestion_restore_\d{14}_[0-9a-f]{4}$/);
     expect(s.db.calls.at(-1)).toBe(`swap ${created} ${report.previousDatabase}`);
 
     expect(await text(s.store, 'inbox', 'docs/a.pdf')).toBe('%PDF-1 a');
@@ -286,6 +286,36 @@ describe('runRestore', () => {
     ]);
   });
 
+  it('two restores in one second get databases of their own', async () => {
+    const { file, checked } = await backupOf();
+    const at = new Date('2026-10-17T12:00:00.000Z');
+    const s = await server(file, { now: () => at });
+
+    const first = await runRestore(s.deps, request(checked), statuses().status);
+    const second = await runRestore(s.deps, request(checked), statuses().status);
+
+    expect(first.previousDatabase).toMatch(/^ingestion_before_restore_20261017120000_[0-9a-f]{4}$/);
+    expect(second.previousDatabase).not.toBe(first.previousDatabase);
+    expect(s.db.databases.has(first.previousDatabase)).toBe(true);
+    expect(s.db.databases.has(second.previousDatabase)).toBe(true);
+  });
+
+  it('refuses before changing anything when a database name is taken', async () => {
+    const { file, checked } = await backupOf();
+    const s = await server(file);
+    s.db.databaseExists = async (name) => name.startsWith('ingestion_before_restore_');
+    const { seen, status } = statuses();
+
+    await expect(runRestore(s.deps, request(checked), status)).rejects.toThrow(
+      /^a database named ingestion_before_restore_\d{14}_[0-9a-f]{4} already exists: restore again$/,
+    );
+    expect(s.db.calls).toEqual([]);
+    expect(s.live.calls).toEqual([]);
+    expect(seen.map((x) => x.phase)).toEqual(['failed']);
+    expect((await s.deps.gate.current()).enabled).toBe(false);
+    expect((await s.maintenance.get()).enabled).toBe(false);
+  });
+
   it('a failure before the swap drops the side database and keeps the live one', async () => {
     const { file, checked } = await backupOf();
     const s = await server(file, {
@@ -325,7 +355,7 @@ describe('runRestore', () => {
 
     const last = seen.at(-1)!;
     expect(last.phase).toBe('failed');
-    expect(last.report!.previousDatabase).toMatch(/^ingestion_before_restore_\d{12}$/);
+    expect(last.report!.previousDatabase).toMatch(/^ingestion_before_restore_\d{14}_[0-9a-f]{4}$/);
     expect(last.report!.adminTokenRotated).toBe(false);
     expect(last.error).toBe(
       `the database WAS restored (the previous one is kept as ${last.report!.previousDatabase}), but the access database is unreachable`,

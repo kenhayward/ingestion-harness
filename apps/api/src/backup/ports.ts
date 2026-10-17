@@ -14,6 +14,8 @@ export interface DatabaseTools {
   dump(): Promise<{ body: Readable; done: Promise<void> }>;
   /** `schema_migrations.filename` of the live database, sorted. */
   migrations(): Promise<string[]>;
+  /** Whether a database of that name exists on the server. */
+  databaseExists(name: string): Promise<boolean>;
   /** Creates an empty database next to the live one; returns its connection URL. */
   createSideDatabase(name: string): Promise<string>;
   /** Loads a dump into the database at `url`. */

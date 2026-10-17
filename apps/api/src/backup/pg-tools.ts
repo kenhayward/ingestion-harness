@@ -157,6 +157,13 @@ export class PgDatabaseTools implements DatabaseTools {
     });
   }
 
+  async databaseExists(name: string): Promise<boolean> {
+    return this.withClient('postgres', async (c) => {
+      const { rows } = await c.query('SELECT 1 FROM pg_database WHERE datname = $1', [name]);
+      return rows.length > 0;
+    });
+  }
+
   async createSideDatabase(name: string): Promise<string> {
     checkDatabaseName(name);
     await this.withClient('postgres', (c) => c.query(`CREATE DATABASE ${ident(name)}`));

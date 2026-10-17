@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,7 @@ import type { S3KeyIssuer } from '../s3keys/issuer.js';
 import type { ObjectStore } from '../storage/object-store.js';
 import { ArchiveError, readArchive, type ArchiveTail } from './archive.js';
 import { BackupCorruptError, decryptStream } from './crypto.js';
+import { checkDatabaseName } from './pg-tools.js';
 import type { BackupDeps, LiveDatabase, SideDatabase } from './ports.js';
 
 /**
@@ -123,9 +125,12 @@ type Step =
 const STEPS = 9;
 
 const pad = (n: number) => String(n).padStart(2, '0');
-/** `yyyyMMddHHmm` in UTC. */
+/**
+ * `yyyyMMddHHmmss_xxxx` in UTC with four random hex digits, so two restores in one second still
+ * name databases of their own (`<live>_before_restore_` + this stays within Postgres's 63).
+ */
 const stampOf = (d: Date) =>
-  `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}`;
+  `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}_${randomBytes(2).toString('hex')}`;
 
 const OBJECT_PREFIX = 'objects/';
 const INDEX = 'objects/index.jsonl';
@@ -301,6 +306,11 @@ export async function runRestore(
     }
   };
 
+  const stamp = stampOf(deps.now());
+  const sideName = `${deps.liveDatabaseName}_restore_${stamp}`;
+  const keepAs = `${deps.liveDatabaseName}_before_restore_${stamp}`;
+
+  // Everything that can refuse without changing anything, before step 1 changes something.
   let plan: BucketPlan;
   try {
     plan = bucketPlan(deps, r.manifest);
@@ -308,14 +318,16 @@ export async function runRestore(
     const unknown = r.manifest.migrations.find((m) => !local.has(m));
     if (unknown)
       throw new Error(`this backup needs migration ${unknown}: upgrade this server first`);
+    for (const name of [sideName, keepAs]) {
+      checkDatabaseName(name);
+      if (await deps.db.databaseExists(name)) {
+        throw new Error(`a database named ${name} already exists: restore again`);
+      }
+    }
   } catch (err) {
     await failed(messageOf(err));
     throw err;
   }
-
-  const stamp = stampOf(deps.now());
-  const sideName = `${deps.liveDatabaseName}_restore_${stamp}`;
-  const keepAs = `${deps.liveDatabaseName}_before_restore_${stamp}`;
   let sideCreated = false;
   let side: SideDatabase | null = null;
   let replaced = false;

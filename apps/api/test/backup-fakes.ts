@@ -39,6 +39,10 @@ export class FakeDatabaseTools implements DatabaseTools {
     return [...this.applied].sort();
   }
 
+  async databaseExists(name: string): Promise<boolean> {
+    return this.databases.has(name);
+  }
+
   async createSideDatabase(name: string): Promise<string> {
     this.calls.push(`create ${name}`);
     this.databases.set(name, Buffer.alloc(0));
