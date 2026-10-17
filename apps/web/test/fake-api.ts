@@ -331,6 +331,43 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       updatedBy: 'admin',
       updatedAt: '2026-10-16T13:00:00.000Z',
     })),
+    getBackupStatus: vi.fn(async () => ({
+      backup: null,
+      lastSucceeded: null,
+      restore: null,
+      queue: { paused: false, pausedAt: null, pausedBy: null, reason: null },
+    })),
+    startBackup: vi.fn(async () => {
+      throw new Error('startBackup not stubbed');
+    }),
+    backupDownloadUrl: (id: string) => `/api/backup/backups/${id}/file`,
+    setQueuePaused: vi.fn(async () => {
+      throw new Error('setQueuePaused not stubbed');
+    }),
+    startUpload: vi.fn(async () => {
+      throw new Error('startUpload not stubbed');
+    }),
+    getUpload: vi.fn(async () => {
+      throw new Error('getUpload not stubbed');
+    }),
+    uploadPart: vi.fn(async () => {
+      throw new Error('uploadPart not stubbed');
+    }),
+    completeUpload: vi.fn(async () => {
+      throw new Error('completeUpload not stubbed');
+    }),
+    startRestore: vi.fn(async () => {
+      throw new Error('startRestore not stubbed');
+    }),
+    getRestore: vi.fn(async () => {
+      throw new Error('getRestore not stubbed');
+    }),
+    confirmRestore: vi.fn(async () => {
+      throw new Error('confirmRestore not stubbed');
+    }),
+    cancelRestore: vi.fn(async () => {
+      throw new Error('cancelRestore not stubbed');
+    }),
     me: vi.fn(async () => ADMIN_ME),
     login: vi.fn(async () => ({ ...ADMIN_ME, failedSinceLastSignIn: 0, lastFailedAt: null })),
     logout: vi.fn(async () => undefined),

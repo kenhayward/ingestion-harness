@@ -1,4 +1,10 @@
 import type {
+  BackupView,
+  QueueControlView,
+  RestoreStartBody,
+  RestoreStatus,
+  UploadStartBody,
+  UploadView,
   GitHubLinkBody,
   GitHubLinkView,
   PushOutcome,
@@ -343,6 +349,16 @@ export interface OntologyTermQuery {
   limit?: number;
 }
 
+/** `GET /api/backup`. */
+export interface BackupStatus {
+  /** The running backup, else the newest one (a failed one carries its error). */
+  backup: BackupView | null;
+  /** The newest successful backup: the one to download. */
+  lastSucceeded: BackupView | null;
+  restore: RestoreStatus | null;
+  queue: QueueControlView;
+}
+
 export interface Api {
   /** Current session, or null when not signed in (401). */
   me(): Promise<Me | null>;
@@ -379,6 +395,33 @@ export interface Api {
   getMaintenance(): Promise<MaintenanceView>;
   /** Admins: switch maintenance on or off, with the message for users. */
   setMaintenance(body: MaintenanceBody): Promise<MaintenanceView>;
+  /** Admins: the latest backup, the newest successful one, the restore and the job queue. */
+  getBackupStatus(): Promise<BackupStatus>;
+  /** Admins: start a backup in the background (409 while a backup or restore runs). */
+  startBackup(): Promise<BackupView>;
+  /** Where the browser goes to download a finished backup. */
+  backupDownloadUrl(id: string): string;
+  /** Admins: pause or resume the job queue. */
+  setQueuePaused(paused: boolean): Promise<QueueControlView>;
+  /** Admins: start a resumable upload of a backup to restore. */
+  startUpload(body: UploadStartBody): Promise<UploadView>;
+  /** Which parts of an upload have arrived. */
+  getUpload(id: string): Promise<UploadView>;
+  /** One part as raw bytes; with `onProgress`, the bytes of this part sent so far. */
+  uploadPart(
+    id: string,
+    n: number,
+    blob: Blob,
+    onProgress?: (sent: number, total: number) => void,
+  ): Promise<UploadView>;
+  /** Joins the parts once every one has arrived. */
+  completeUpload(id: string): Promise<{ key: string }>;
+  /** Starts the check of a completed upload; `token` follows the restore once sessions end. */
+  startRestore(body: RestoreStartBody): Promise<{ status: RestoreStatus; token: string }>;
+  getRestore(id: string, token: string): Promise<RestoreStatus>;
+  confirmRestore(id: string, instanceName: string, token: string): Promise<RestoreStatus>;
+  /** Gives up a checked restore that was not confirmed. */
+  cancelRestore(id: string, token: string): Promise<void>;
   listUsers(): Promise<User[]>;
   /** A new user: the one-time `password` is only ever returned here and by reissuePassword. */
   addUser(user: { name: string; email: string; role: User['role'] }): Promise<WithPassword>;
@@ -909,9 +952,20 @@ function xhrPost<T>(
   body: FormData,
   onProgress: (sent: number, total: number) => void,
 ): Promise<T> {
+  return xhrSend<T>('POST', url, body, onProgress);
+}
+
+function xhrSend<T>(
+  method: string,
+  url: string,
+  body: FormData | Blob,
+  onProgress: (sent: number, total: number) => void,
+  contentType?: string,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', url);
+    xhr.open(method, url);
+    if (contentType) xhr.setRequestHeader('content-type', contentType);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded, e.total);
     };
@@ -1171,6 +1225,48 @@ export function createHttpApi(base = '/api'): Api {
     getMaintenanceNotice: () => fetch(`${base}/maintenance`).then(json<MaintenanceNotice>),
     getMaintenance: () => apiFetch(`${base}/maintenance/settings`).then(json<MaintenanceView>),
     setMaintenance: (body) => post<MaintenanceView>(`${base}/maintenance`, body, 'PUT'),
+    getBackupStatus: () => apiFetch(`${base}/backup`).then(json<BackupStatus>),
+    startBackup: () =>
+      apiFetch(`${base}/backup/backups`, { method: 'POST' }).then(json<BackupView>),
+    backupDownloadUrl: (id) => `${base}/backup/backups/${encodeURIComponent(id)}/file`,
+    setQueuePaused: (paused) => post<QueueControlView>(`${base}/backup/queue`, { paused }, 'PUT'),
+    startUpload: (body) => post<UploadView>(`${base}/backup/uploads`, body),
+    getUpload: (id) =>
+      apiFetch(`${base}/backup/uploads/${encodeURIComponent(id)}`).then(json<UploadView>),
+    uploadPart: (id, n, blob, onProgress) => {
+      const url = `${base}/backup/uploads/${encodeURIComponent(id)}/parts/${n}`;
+      const type = 'application/octet-stream';
+      // fetch cannot report upload progress; XMLHttpRequest can.
+      if (onProgress) return xhrSend<UploadView>('PUT', url, blob, onProgress, type);
+      return apiFetch(url, {
+        method: 'PUT',
+        headers: { 'content-type': type },
+        body: blob,
+      }).then(json<UploadView>);
+    },
+    completeUpload: (id) =>
+      apiFetch(`${base}/backup/uploads/${encodeURIComponent(id)}/complete`, {
+        method: 'POST',
+      }).then(json<{ key: string }>),
+    startRestore: (body) =>
+      post<{ status: RestoreStatus; token: string }>(`${base}/backup/restores`, body),
+    getRestore: (id, token) =>
+      apiFetch(`${base}/backup/restores/${encodeURIComponent(id)}`, {
+        headers: { 'x-restore-token': token },
+      }).then(json<RestoreStatus>),
+    confirmRestore: (id, instanceName, token) =>
+      apiFetch(`${base}/backup/restores/${encodeURIComponent(id)}/confirm`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-restore-token': token },
+        body: JSON.stringify({ instanceName }),
+      }).then(json<RestoreStatus>),
+    cancelRestore: (id, token) =>
+      noContent(
+        apiFetch(`${base}/backup/restores/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: { 'x-restore-token': token },
+        }),
+      ),
     listSpecs: (options) =>
       apiFetch(`${base}/specs${options?.retired ? `?retired=${options.retired}` : ''}`).then(
         json<SpecSummary[]>,

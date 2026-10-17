@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { BackupHelp } from './BackupHelp.js';
 import { GeneralHelp } from './GeneralHelp.js';
 import { HomeHelp } from './HomeHelp.js';
 import { IntroductionHelp } from './IntroductionHelp.js';
@@ -78,6 +79,7 @@ export const HELP_TOPICS = {
   ontologyShapes: { title: 'Shapes', body: <OntologyShapesHelp /> },
   'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   'published-outputs': { title: 'How publishing targets work', body: <PublishedOutputsHelp /> },
+  backup: { title: 'Backing up and restoring CT Studio', body: <BackupHelp /> },
   general: { title: 'General recipe settings', body: <GeneralHelp /> },
   sections: { title: 'How sections work', body: <SectionsHelp /> },
   outputs: { title: 'Outputs: fields and tables', body: <OutputsHelp /> },

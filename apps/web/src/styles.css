@@ -4872,3 +4872,63 @@ img.avatar {
 .review-header > .review-queue {
   margin-left: auto;
 }
+
+/* Administration > Backup: the restore dialog (radio cards for the mode, the check, the report). */
+.restore-dialog {
+  width: min(640px, 100vw - 32px);
+}
+.restore-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.restore-modes legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: var(--ih-text-sm);
+  font-weight: 500;
+  color: var(--ih-muted);
+}
+.restore-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+  cursor: pointer;
+}
+.restore-mode:has(input:checked) {
+  border-color: var(--ih-accent);
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.restore-manifest {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+.restore-manifest dt {
+  color: var(--ih-muted);
+}
+.restore-manifest dd {
+  margin: 0;
+}
+.restore-plan {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.restore-plan h3,
+.restore-report h3 {
+  margin: 8px 0 4px;
+  font-size: var(--ih-text-md);
+}
+.restore-missing {
+  max-height: 160px;
+  overflow: auto;
+}

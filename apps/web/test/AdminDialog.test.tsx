@@ -36,6 +36,7 @@ describe('AdminDialog', () => {
       'Users',
       'Integration',
       'Maintenance',
+      'Backup',
     ]);
     expect(within(tabs).getByRole('tab', { name: 'Models' })).toHaveAttribute(
       'aria-selected',
@@ -68,7 +69,7 @@ describe('AdminDialog', () => {
     expect(within(dialog).getByRole('tab', { name: 'Linked data' })).toHaveFocus();
     // Up from the first tab wraps to the last.
     await userEvent.keyboard('{ArrowUp}{ArrowUp}');
-    expect(within(dialog).getByRole('tab', { name: 'Maintenance' })).toHaveAttribute(
+    expect(within(dialog).getByRole('tab', { name: 'Backup' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
