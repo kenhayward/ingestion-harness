@@ -68804,6 +68804,1539 @@
         }
       }
     },
+    "/api/backup": {
+      "get": {
+        "operationId": "getBackupStatus",
+        "summary": "The latest backup, the restore and the job queue",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** The running backup with its progress, else the newest one (when, who,\nsize; a failed one with its reason), the restore in progress (none yet), and whether\nthe job queue is paused.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "Backup status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "backup": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "running",
+                                "succeeded",
+                                "failed"
+                              ]
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "finishedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "createdBy": {
+                              "type": "string"
+                            },
+                            "bytes": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "error": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "progress": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "phase": {
+                                      "type": "string",
+                                      "enum": [
+                                        "database",
+                                        "objects",
+                                        "identities",
+                                        "triples",
+                                        "finishing"
+                                      ]
+                                    },
+                                    "done": {
+                                      "type": "number"
+                                    },
+                                    "of": {
+                                      "type": "number"
+                                    },
+                                    "bytes": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "phase",
+                                    "done",
+                                    "of",
+                                    "bytes"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "status",
+                            "startedAt",
+                            "finishedAt",
+                            "createdBy",
+                            "bytes",
+                            "error",
+                            "progress"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "The running backup, else the newest one (a failed one shows its reason)."
+                    },
+                    "restore": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "deployment",
+                                "copy"
+                              ]
+                            },
+                            "phase": {
+                              "type": "string",
+                              "enum": [
+                                "checking",
+                                "checked",
+                                "restoring",
+                                "succeeded",
+                                "failed"
+                              ]
+                            },
+                            "step": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "done": {
+                              "type": "number"
+                            },
+                            "of": {
+                              "type": "number"
+                            },
+                            "manifest": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "format": {
+                                      "type": "string",
+                                      "enum": [
+                                        "ct-backup"
+                                      ]
+                                    },
+                                    "formatVersion": {
+                                      "type": "number",
+                                      "enum": [
+                                        1
+                                      ]
+                                    },
+                                    "appVersion": {
+                                      "type": "string"
+                                    },
+                                    "commit": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "lastMigration": {
+                                      "type": "string"
+                                    },
+                                    "migrations": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "instanceName": {
+                                      "type": "string"
+                                    },
+                                    "baseIri": {
+                                      "type": "string"
+                                    },
+                                    "startedAt": {
+                                      "type": "string"
+                                    },
+                                    "finishedAt": {
+                                      "type": "string"
+                                    },
+                                    "createdBy": {
+                                      "type": "string"
+                                    },
+                                    "buckets": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "role": {
+                                            "type": "string",
+                                            "enum": [
+                                              "inbox",
+                                              "outputs",
+                                              "runs",
+                                              "target"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "objects": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "bytes": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "role",
+                                          "name",
+                                          "objects",
+                                          "bytes"
+                                        ],
+                                        "additionalProperties": true
+                                      }
+                                    },
+                                    "parts": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "bytes": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "sha256": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "bytes",
+                                          "sha256"
+                                        ],
+                                        "additionalProperties": true
+                                      }
+                                    },
+                                    "fuseki": {
+                                      "type": "boolean"
+                                    },
+                                    "lakeIdentities": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "format",
+                                    "formatVersion",
+                                    "appVersion",
+                                    "commit",
+                                    "lastMigration",
+                                    "migrations",
+                                    "instanceName",
+                                    "baseIri",
+                                    "startedAt",
+                                    "finishedAt",
+                                    "createdBy",
+                                    "buckets",
+                                    "parts",
+                                    "fuseki",
+                                    "lakeIdentities"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "plan": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dropped": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "kept": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "dropped",
+                                    "kept"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "error": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "report": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "restored": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "table": {
+                                            "type": "string"
+                                          },
+                                          "rows": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "required": [
+                                          "table",
+                                          "rows"
+                                        ],
+                                        "additionalProperties": true
+                                      }
+                                    },
+                                    "objects": {
+                                      "type": "number"
+                                    },
+                                    "missingObjects": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "bucket": {
+                                            "type": "string"
+                                          },
+                                          "key": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "bucket",
+                                          "key"
+                                        ],
+                                        "additionalProperties": true
+                                      }
+                                    },
+                                    "copy": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "cancelledJobs": {
+                                              "type": "number"
+                                            },
+                                            "droppedTargets": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "withdrawnOutputs": {
+                                              "type": "number"
+                                            },
+                                            "recipesNeedingModel": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "recipesNeedingTarget": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "cancelledJobs",
+                                            "droppedTargets",
+                                            "withdrawnOutputs",
+                                            "recipesNeedingModel",
+                                            "recipesNeedingTarget"
+                                          ],
+                                          "additionalProperties": true
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "triples": {
+                                      "type": "string",
+                                      "enum": [
+                                        "restored",
+                                        "none-in-backup",
+                                        "no-triple-store",
+                                        "reminting"
+                                      ]
+                                    },
+                                    "previousDatabase": {
+                                      "type": "string"
+                                    },
+                                    "adminTokenRotated": {
+                                      "type": "boolean",
+                                      "enum": [
+                                        true
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "restored",
+                                    "objects",
+                                    "missingObjects",
+                                    "copy",
+                                    "triples",
+                                    "previousDatabase",
+                                    "adminTokenRotated"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "startedBy": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "mode",
+                            "phase",
+                            "step",
+                            "done",
+                            "of",
+                            "manifest",
+                            "plan",
+                            "error",
+                            "report",
+                            "startedBy",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queue": {
+                      "type": "object",
+                      "properties": {
+                        "paused": {
+                          "type": "boolean"
+                        },
+                        "pausedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "pausedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "paused",
+                        "pausedAt",
+                        "pausedBy",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "backup",
+                    "restore",
+                    "queue"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Backup status."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/backups": {
+      "post": {
+        "operationId": "startBackup",
+        "summary": "Create a backup",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** Starts an encrypted backup of the whole stack in the background: the\ndatabase, every object of CT Studio's buckets and of internal publishing targets'\nbuckets, and the triple store when there is one. Jobs keep running. Poll\n`GET /api/backup` for progress. Once it succeeds the previous backup is deleted; a\nfailed one leaves the previous one in place. One backup or restore at a time.",
+        "x-admin": true,
+        "responses": {
+          "202": {
+            "description": "The backup, started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "succeeded",
+                        "failed"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "progress": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "phase": {
+                              "type": "string",
+                              "enum": [
+                                "database",
+                                "objects",
+                                "identities",
+                                "triples",
+                                "finishing"
+                              ]
+                            },
+                            "done": {
+                              "type": "number"
+                            },
+                            "of": {
+                              "type": "number"
+                            },
+                            "bytes": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "phase",
+                            "done",
+                            "of",
+                            "bytes"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "startedAt",
+                    "finishedAt",
+                    "createdBy",
+                    "bytes",
+                    "error",
+                    "progress"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The backup, started."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`a backup or restore is already running`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`a backup or restore is already running`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/backups/{id}/file": {
+      "get": {
+        "operationId": "downloadBackup",
+        "summary": "Download a backup",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** The finished backup file,\n`ct-backup-<instance>-<yyyyMMdd-HHmm>.ctbak` (UTC), streamed from the backups\nbucket. It opens only with this deployment's `LLM_SECRETS_KEY`: keep a copy of\n`deploy/.env` somewhere other than this server.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The backup id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The encrypted backup.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`backup not found`: no finished backup has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`backup not found`: no finished backup has that id."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/queue": {
+      "put": {
+        "operationId": "setQueuePaused",
+        "summary": "Pause or resume the job queue",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** Paused, no worker starts a job (running ones finish); who paused it\nand when are recorded. A restore pauses it and leaves it paused. Resuming wakes idle\nworkers at once.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paused": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "paused"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The queue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "pausedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pausedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "paused",
+                    "pausedAt",
+                    "pausedBy",
+                    "reason"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The queue."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "A malformed body."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/version": {
       "get": {
         "operationId": "version",
@@ -68957,6 +70490,10 @@
       "description": "Syncing transformation recipes with a GitHub repository: this deployment's instance name\nand default folder, a document type's repository link, and pushing a published version\nas a YAML file with the signed-in user's own linked GitHub account. Admins set the\nsettings and links; anyone with a linked account can push."
     },
     {
+      "name": "Backup",
+      "description": "Encrypted backups of the whole stack (database, objects, triple store) that an admin makes,\ndownloads and restores from Administration > Backup, and the job queue's pause switch. A\nbackup opens only with the `LLM_SECRETS_KEY` it was made under."
+    },
+    {
       "name": "Health",
       "description": "Liveness and readiness checks for load balancers and orchestrators. They need no session."
     }
@@ -69004,6 +70541,7 @@
         "Published outputs",
         "Linked data",
         "GitHub",
+        "Backup",
         "Health"
       ]
     }

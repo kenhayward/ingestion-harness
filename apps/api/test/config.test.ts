@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { githubConfig, loadConfig, s3KeysConfig } from '../src/config.js';
+import { fusekiConfig, githubConfig, loadConfig, s3KeysConfig } from '../src/config.js';
 
 const base = {
   DATABASE_URL: 'postgres://u:p@localhost:5432/ih',
@@ -142,5 +142,36 @@ describe('s3KeysConfig (ADR 0008)', () => {
 
   it('rejects a malformed public URL', () => {
     expect(() => loadConfig({ ...base, S3_PUBLIC_URL: 'lake-s3' })).toThrow(/S3_PUBLIC_URL/);
+  });
+});
+
+describe('backup settings', () => {
+  it('default to the ingest-backups bucket and no triple store', () => {
+    const cfg = loadConfig({ ...base, RDF_ENDPOINT: '', RDF_PASSWORD: '' });
+    expect(cfg.S3_BUCKET_BACKUPS).toBe('ingest-backups');
+    expect(fusekiConfig(cfg)).toEqual({
+      endpoint: '',
+      dataset: 'ct',
+      user: 'ct-writer',
+      password: '',
+    });
+  });
+
+  it('read the triple store the worker writes to', () => {
+    const cfg = loadConfig({
+      ...base,
+      S3_BUCKET_BACKUPS: 'b',
+      RDF_ENDPOINT: 'http://fuseki:3030',
+      RDF_DATASET: 'acme',
+      RDF_USER: 'ct-writer',
+      RDF_PASSWORD: 'pw',
+    });
+    expect(cfg.S3_BUCKET_BACKUPS).toBe('b');
+    expect(fusekiConfig(cfg)).toEqual({
+      endpoint: 'http://fuseki:3030',
+      dataset: 'acme',
+      user: 'ct-writer',
+      password: 'pw',
+    });
   });
 });

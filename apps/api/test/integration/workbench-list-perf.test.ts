@@ -91,6 +91,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       linkedData: new MemoryLinkedDataRepo(),
       maintenance: new MemoryMaintenanceRepo(),
       llmSecrets: null,
+      backup: null,
       logger: { level: 'error' }, // a 500 prints its stack
     });
   }, 600_000);
