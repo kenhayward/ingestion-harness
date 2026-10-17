@@ -163,11 +163,17 @@ export function encryptStream(master: Buffer): Transform {
  * Tries each master key (current, then previous) on the first chunk and keeps the one that opens
  * it. A first chunk no key opens is a `BackupKeyError`; any later failure is corruption.
  */
-export function decryptStream(masters: Buffer[]): Transform {
+export type DecryptStream = Transform & {
+  /** The master key that opened the first chunk, once it has been read. */
+  openedWith(): Buffer | null;
+};
+
+export function decryptStream(masters: Buffer[]): DecryptStream {
   const pending = new ByteQueue();
   let salt: Buffer | null = null;
   let chunkSize = 0;
   let key: Buffer | null = null;
+  let opened: Buffer | null = null;
   let index = 0n;
   let done = false;
 
@@ -186,10 +192,11 @@ export function decryptStream(masters: Buffer[]): Transform {
   /** Opens one frame, the last flag first tried as set: only that chunk's tag matches it. */
   const open = (body: Buffer, tag: Buffer): { plain: Buffer; last: boolean } | null => {
     const keys = key ? [key] : masters.map((m) => backupKey(m, salt!));
-    for (const candidate of keys) {
+    for (const [at, candidate] of keys.entries()) {
       for (const last of [false, true]) {
         const plain = openChunk(candidate, index, last, body, tag);
         if (plain) {
+          if (!key) opened = masters[at]!;
           key = candidate;
           return { plain, last };
         }
@@ -225,7 +232,7 @@ export function decryptStream(masters: Buffer[]): Transform {
     }
   };
 
-  return new Transform({
+  const stream = new Transform({
     transform(chunk: Buffer, _encoding, callback: TransformCallback) {
       pending.push(chunk);
       try {
@@ -255,4 +262,5 @@ export function decryptStream(masters: Buffer[]): Transform {
       callback(done ? null : new BackupCorruptError('the backup is truncated'));
     },
   });
+  return Object.assign(stream, { openedWith: () => opened });
 }
