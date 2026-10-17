@@ -20,7 +20,7 @@ export interface MapBox {
   row: 0 | 1 | 2;
 }
 
-/** The draft row holds five boxes (survey to steps, then the optional mapping): narrower ones. */
+/** The draft row holds five boxes (survey to pipeline, then the optional mapping): narrower ones. */
 const DRAFT_ROW = { x: (col: number) => 20 + 202 * col, w: 176 };
 const boxStyle = (b: MapBox): CSSProperties =>
   b.row === 1
@@ -61,14 +61,14 @@ const FLOW = [
   'M740 106H798', // Template → Test runs
   'M196 306H220', // Survey → Outputs
   'M398 306H422', // Outputs → Sections
-  'M600 306H624', // Sections → Steps
+  'M600 306H624', // Sections → Pipeline
   'M220 506H278', // References → Evaluate
   'M480 506H538', // Evaluate → Revise
   'M380 168V206H108V242', // Brief → Survey
-  'M714 368V404H120V442', // Steps → References
+  'M714 368V404H120V442', // Pipeline → References
   'M380 568V606H900V570', // Evaluate → Publish
 ];
-// Template → Sections, Revise → Sections, Steps → Mapping (optional)
+// Template → Sections, Revise → Sections, Pipeline → Mapping (optional)
 const SIDE = ['M640 168V206H512V242', 'M640 444V406H512V370', 'M802 306H826'];
 
 const BOX_TOP = [44, 244, 444];

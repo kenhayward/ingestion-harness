@@ -262,7 +262,7 @@ describe('ReferencesTab', () => {
     expect(await screen.findByText(/across 2 verified dev references/)).toBeInTheDocument();
   });
 
-  it('counts per output where the draft model needed you, and links an output without a step to Steps', async () => {
+  it('counts per output where the draft model needed you, and links an output without a step to Pipeline', async () => {
     tab({
       dev: [
         saved('a.pdf', {
@@ -283,11 +283,11 @@ describe('ReferencesTab', () => {
       'total 1 — corrected',
       'due_date 2 — entered by hand',
     ]);
-    expect(within(strip).getByRole('link', { name: 'the Steps tab' })).toHaveAttribute(
+    expect(within(strip).getByRole('link', { name: 'the Pipeline tab' })).toHaveAttribute(
       'href',
       '#/workbench/letter/steps',
     );
-    expect(strip).toHaveTextContent('due_date has no step yet — add one on the Steps tab.');
+    expect(strip).toHaveTextContent('due_date has no step yet — add one on the Pipeline tab.');
   });
 });
 

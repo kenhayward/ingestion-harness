@@ -33,7 +33,7 @@ export const STAGE_NAME: Partial<Record<DraftStage, string>> = {
   survey: 'Survey',
   outputs: 'Outputs',
   sections: 'Sections',
-  steps: 'Steps',
+  steps: 'Pipeline',
 };
 
 type Def = Record<string, unknown>;

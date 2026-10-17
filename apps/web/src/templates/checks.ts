@@ -21,7 +21,7 @@ export interface TemplateCheck {
   subTabs: SubTab[];
 }
 
-/** The coverage issues, which the Checks panel words itself (with a link to Steps). */
+/** The coverage issues, which the Checks panel words itself (with a link to the Pipeline tab). */
 const COVERAGE = /is (not filled by any step|filled by more than one step)$/;
 
 /** The sub-tab where a validation issue (as `validateDefinition` words it) is fixed. */
@@ -58,13 +58,13 @@ export function templateChecks(input: {
     ...coverage.uncovered.map((id): TemplateCheck => ({
       tone: 'warn',
       text: `${id} is not filled by any step.`,
-      link: { label: 'Add it to a step in Steps', hash: tab('steps') },
+      link: { label: 'Add it to a step in Pipeline', hash: tab('steps') },
       subTabs: ['outputs', 'pipeline'],
     })),
     ...coverage.multiple.map((id): TemplateCheck => ({
       tone: 'warn',
       text: `${id} is filled by more than one step.`,
-      link: { label: 'Review in Steps', hash: tab('steps') },
+      link: { label: 'Review in Pipeline', hash: tab('steps') },
       subTabs: ['pipeline'],
     })),
   ];

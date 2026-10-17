@@ -491,7 +491,7 @@ export type GateView = z.infer<typeof GateViewSchema>;
 
 /** Why an output lowers the holdout score (handoff EV1): no step fills it, or it is often wrong. */
 export const GATE_HINT_CAUSES = ['no_step', 'low_accuracy'] as const;
-/** The tab that fixes each cause: Steps adds the missing step; Revise improves one from dev feedback. */
+/** The tab that fixes each cause: Pipeline (the `steps` stage) adds the missing step; Revise improves one from dev feedback. */
 export const GATE_HINT_STAGES = ['steps', 'revise'] as const;
 /** At most this many hints, worst first. */
 export const MAX_GATE_HINTS = 5;

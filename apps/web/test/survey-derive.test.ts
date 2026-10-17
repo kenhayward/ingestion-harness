@@ -105,7 +105,7 @@ describe('skipBanner', () => {
 
   it('names the stages that will go stale', () => {
     expect(skipBannerText({ skippedAt: T1, later: ['outputs', 'sections', 'steps'] })).toMatch(
-      /^You skipped this stage on .+, then ran it again\. Accepting replaces the skip — Outputs, Sections and Steps were completed without it and will be marked stale so you can re-propose them\.$/,
+      /^You skipped this stage on .+, then ran it again\. Accepting replaces the skip — Outputs, Sections and Pipeline were completed without it and will be marked stale so you can re-propose them\.$/,
     );
     expect(skipBannerText({ skippedAt: T1, later: ['outputs'] })).toMatch(
       /Outputs was completed without it and will be marked stale so you can re-propose it\.$/,

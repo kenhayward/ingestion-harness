@@ -67,7 +67,7 @@ describe('TabHeader help', () => {
     const buttons = screen.getAllByRole('button');
     expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual([
       'Propose again',
-      'Help: Proposing extraction steps',
+      'Help: Proposing the pipeline',
     ]);
   });
 

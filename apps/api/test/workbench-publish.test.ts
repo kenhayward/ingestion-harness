@@ -667,7 +667,7 @@ describe('publish gate hints (EV1)', () => {
     });
   });
 
-  it('names a referenced value no step of the draft fills, fixed on Steps', async () => {
+  it('names a referenced value no step of the draft fills, fixed on Pipeline', async () => {
     const ctx = await project();
     const h = await ctx.add(9);
     await ctx.setRole(h.id, 'holdout');

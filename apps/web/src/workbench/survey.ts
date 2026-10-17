@@ -67,7 +67,7 @@ export function skipBanner(
 const STAGE_NAME: Partial<Record<DraftStage, string>> = {
   outputs: 'Outputs',
   sections: 'Sections',
-  steps: 'Steps',
+  steps: 'Pipeline',
 };
 const listOf = (names: string[]) =>
   names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;

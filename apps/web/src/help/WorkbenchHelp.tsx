@@ -10,10 +10,10 @@ export function WorkbenchHelp() {
       <h3>How a project goes</h3>
       <p>
         Add samples, write a brief (what you need from the documents), then work through the stages:
-        Survey, Outputs, Sections, Steps and, for linked data, Mapping. Each stage proposes changes
-        you accept or reject. Then verify references, evaluate the recipe on the samples, revise
-        from feedback, and publish. A project's Overview tab shows where it stands and what to do
-        next.
+        Survey, Outputs, Sections, Pipeline and, for linked data, Mapping. Each stage proposes
+        changes you accept or reject. Then verify references, evaluate the recipe on the samples,
+        revise from feedback, and publish. A project's Overview tab shows where it stands and what
+        to do next.
       </p>
 
       <h3>Starting a project</h3>

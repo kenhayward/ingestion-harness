@@ -29,7 +29,7 @@ describe('ChecksPanel', () => {
           {
             tone: 'warn',
             text: 'due_date is not filled by any step.',
-            link: { label: 'Add it to a step in Steps', hash: '#/workbench/invoice/steps' },
+            link: { label: 'Add it to a step in Pipeline', hash: '#/workbench/invoice/steps' },
             subTabs: ['outputs', 'pipeline'],
           },
           {
@@ -46,7 +46,7 @@ describe('ChecksPanel', () => {
     const items = within(panel).getAllByRole('listitem');
     expect(items[0]).toHaveTextContent('Needs you: due_date is not filled by any step.');
     expect(
-      within(items[0]!).getByRole('link', { name: 'Add it to a step in Steps' }),
+      within(items[0]!).getByRole('link', { name: 'Add it to a step in Pipeline' }),
     ).toHaveAttribute('href', '#/workbench/invoice/steps');
     expect(items[1]).toHaveTextContent('Error:');
     await userEvent.click(within(items[1]!).getByRole('button', { name: 'Open Pipeline' }));

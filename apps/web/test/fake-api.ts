@@ -846,7 +846,7 @@ export function projectListItem(overrides: Partial<ProjectListItem> = {}): Proje
     stages: OVERVIEW_STAGES.map((stage, i) => ({ stage, state: states[i]! })),
     phase: 'draft',
     done: 5,
-    next: { kind: 'decide', stage: 'steps', label: 'Decide on Steps' },
+    next: { kind: 'decide', stage: 'steps', label: 'Decide on Pipeline' },
     holdoutScore: null,
     devSamples: 4,
     holdoutSamples: 2,
