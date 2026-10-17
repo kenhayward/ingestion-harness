@@ -50,7 +50,7 @@ export const HELP_INDEX: HelpEntry[] = [
       { topic: 'wbSurvey', label: 'Survey' },
       { topic: 'wbOutputs', label: 'Outputs stage' },
       { topic: 'wbSections', label: 'Sections stage' },
-      { topic: 'wbSteps', label: 'Steps stage' },
+      { topic: 'wbSteps', label: 'Pipeline stage' },
       { topic: 'wbMapping', label: 'Mapping stage' },
       { topic: 'wbReferences', label: 'References' },
       { topic: 'wbEvaluate', label: 'Evaluate' },

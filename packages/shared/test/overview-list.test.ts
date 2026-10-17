@@ -73,7 +73,7 @@ describe('listItemFrom', () => {
     expect(i.stages[5]).toEqual({ stage: 'steps', state: 'proposed' });
     expect(i.phase).toBe('draft');
     expect(i.done).toBe(7); // the mapping, not used, counts as done
-    expect(i.next).toEqual({ kind: 'decide', stage: 'steps', label: 'Decide on Steps' });
+    expect(i.next).toEqual({ kind: 'decide', stage: 'steps', label: 'Decide on Pipeline' });
     expect(i.flags).toEqual({ attention: true, running: false, ready: false });
   });
 

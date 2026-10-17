@@ -32,8 +32,8 @@ const KEEP: Record<ChangeStage, { label: string; text: string }> = {
     text: 'The anchors may still work: check where they land below, then keep them or let the model propose new ones.',
   },
   steps: {
-    label: 'Keep these steps',
-    text: 'Check the steps below, then keep them as they are or propose again.',
+    label: 'Keep this pipeline',
+    text: 'Check the pipeline below, then keep it as it is or propose again.',
   },
   revise: { label: 'Keep', text: '' }, // revise is never stale (not in STAGE_ORDER)
   mapping: {
@@ -57,7 +57,7 @@ const DESCRIPTION: Record<ChangeStage, string | undefined> = {
 const PROPOSE: Record<ChangeStage, string> = {
   outputs: 'Propose outputs',
   sections: 'Propose section anchors',
-  steps: 'Propose extraction steps',
+  steps: 'Propose a pipeline',
   revise: 'Propose a revision',
   mapping: 'Propose a mapping',
 };
@@ -77,7 +77,7 @@ const NEXT: Record<ChangeStage, { tab: string; label: string; text: string }> = 
   },
   sections: {
     tab: 'steps',
-    label: 'Go to Steps',
+    label: 'Go to Pipeline',
     text: 'Next, decide which step reads which sections and fills which outputs.',
   },
   steps: {
@@ -135,7 +135,7 @@ export function StagePanel({
    */
   onConfirmed?: () => void;
   onSkipped: () => void;
-  /** Outputs/Steps: the open draft and live versions shown beside the proposal; omit to hide. */
+  /** Outputs/Pipeline: the open draft and live versions shown beside the proposal; omit to hide. */
   draft?: number | null;
   published?: number | null;
   /** The project's current brief version (stale-proposal banner). */

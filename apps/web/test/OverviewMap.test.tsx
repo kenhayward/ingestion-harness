@@ -140,7 +140,7 @@ describe('OverviewStack', () => {
       'Survey',
       'Outputs',
       'Sections',
-      'Steps',
+      'Pipeline',
       'Mapping',
       'References',
       'Evaluate',

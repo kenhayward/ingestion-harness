@@ -149,7 +149,7 @@ export function PipelineEditor({
           }}
         />
       ) : (
-        <p className="muted">No steps yet: add one, or ask the model in Steps.</p>
+        <p className="muted">No steps yet: add one, or ask the model on the Pipeline tab.</p>
       )}
     </div>
   );

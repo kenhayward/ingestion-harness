@@ -1072,7 +1072,7 @@ export function TemplateEditor({
               </button>
             </div>
           )}
-          {tab === 'pipeline' && stageLink('steps', 'Ask the model in Steps')}
+          {tab === 'pipeline' && stageLink('steps', 'Ask the model on the Pipeline tab')}
         </div>
         {!embedded && (
           <TestRail

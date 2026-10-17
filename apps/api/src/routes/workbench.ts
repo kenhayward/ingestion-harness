@@ -1551,7 +1551,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
 
           \`hints\` (handoff EV1) are the deciding iteration's fields and \`table.column\`s
           below the threshold, worst first, at most 5: \`no_step\` when no step of the draft
-          fills the output (fix on the Steps tab, \`stage: steps\`), else \`low_accuracy\`
+          fills the output (fix on the Pipeline tab, \`stage: steps\`), else \`low_accuracy\`
           (\`stage: revise\`). Empty without a deciding iteration. The overview's \`gate\`
           carries no hints.
         `,

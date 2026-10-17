@@ -27,7 +27,7 @@ const ids = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** The draft's pipeline as the Steps tab's cards, numbered in order. */
+/** The draft's pipeline as the Pipeline tab's cards, numbered in order. */
 export function stepCards(definition: Def): StepCard[] {
   return list(definition.pipeline)
     .filter((s): s is Def & { id: string } => typeof s.id === 'string')
@@ -124,7 +124,7 @@ export function stepFigures(m: StepMetric | undefined) {
   };
 }
 
-/** `here`: shown beside the step's own form (the Template tab), not on the Steps tab. */
+/** `here`: shown beside the step's own form (the Template tab), not on the Pipeline tab. */
 export function retryWarning(m: StepMetric | undefined, here = false): string | null {
   if (!m || m.runs === 0 || m.avgAttempts < RETRY_WARN_ATTEMPTS) return null;
   const where = here ? 'below' : 'on the Recipe tab';

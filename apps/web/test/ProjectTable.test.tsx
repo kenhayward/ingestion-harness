@@ -75,7 +75,7 @@ describe('ProjectTable', () => {
       'true',
     );
     expect(within(first!).getByText('Draft · 5 of 10 done')).toBeInTheDocument();
-    expect(within(first!).getByRole('link', { name: 'Decide on Steps' })).toHaveAttribute(
+    expect(within(first!).getByRole('link', { name: 'Decide on Pipeline' })).toHaveAttribute(
       'href',
       '#/workbench/letter/steps',
     );

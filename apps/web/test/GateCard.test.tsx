@@ -120,7 +120,7 @@ describe('GateCard', () => {
     expect(items[0]).toHaveTextContent(
       'due_date scores 0% on holdout: no step of the draft fills it.',
     );
-    expect(within(items[0]!).getByRole('link', { name: 'Open Steps' })).toHaveAttribute(
+    expect(within(items[0]!).getByRole('link', { name: 'Open Pipeline' })).toHaveAttribute(
       'href',
       '#/workbench/letter/steps',
     );
@@ -229,7 +229,7 @@ describe('GateCard', () => {
       projectId: 'a b',
       gate: { ...below, hints: [{ key: 'k', accuracy: 0, cause: 'no_step', stage: 'steps' }] },
     });
-    expect(screen.getByRole('link', { name: 'Open Steps' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open Pipeline' })).toHaveAttribute(
       'href',
       '#/workbench/a%20b/steps',
     );

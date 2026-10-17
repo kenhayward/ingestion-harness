@@ -243,7 +243,7 @@ describe('nextAction', () => {
           steps: 'proposed',
         }),
       }),
-      { kind: 'decide', stage: 'steps', label: 'Decide on Steps' },
+      { kind: 'decide', stage: 'steps', label: 'Decide on Pipeline' },
     ],
     [
       'revise proposal',
@@ -670,7 +670,7 @@ describe('overviewNext', () => {
       }),
       {
         stage: 'steps',
-        title: 'Next: decide on Steps',
+        title: 'Next: decide on Pipeline',
         reason: 'A proposal is waiting for your decision.',
       },
     ],

@@ -66,7 +66,7 @@ secondary path for edge cases, built from the same context assembly the drafting
    edits each one.
 6. **Sections:** it proposes anchors, which are checked against every dev sample before the user
    sees them. The segmentation grid shows a hit or miss per sample and section.
-7. **Steps:** it proposes extract steps, instructions, `pageImages`, `chunkPages`, `context` and
+7. **Pipeline** (stage id `steps`): it proposes extract steps, instructions, `pageImages`, `chunkPages`, `context` and
    check steps.
 8. **References:** it proposes expected values for each sample, with page evidence. The user
    verifies each one in the Review screen (reference runs always stop for review), approves it
@@ -406,14 +406,14 @@ New nav item **Workbench** in the app shell, using the existing tokens and `ui/`
 
 - **Project list:** name, version under development, stage, last dev and holdout score, data
   policy badge.
-- **Project page:** a stage rail on the left (Samples · Brief · Survey · Outputs · Sections · Steps ·
+- **Project page:** a stage rail on the left (Samples · Brief · Survey · Outputs · Sections · Pipeline ·
   References · Evaluate · History), each marked pending, accepted, skipped or stale. A persistent
   data-policy badge shows *Local only* or *External allowed*, and wherever an action would send text
   to an external model it says so before the action runs.
   - **Samples:** upload, triage, dev/holdout toggle, prepared-text viewer with page markers.
   - **Brief:** form plus version history.
   - **Survey:** notes and questions; answers are written back into the brief.
-  - **Outputs / Steps:** the embedded `TemplateEditor` plus a proposals panel (diff, accept or
+  - **Outputs / Pipeline:** the embedded `TemplateEditor` plus a proposals panel (diff, accept or
     reject per change).
   - **Sections:** the segmentation grid (samples × sections; hit, line, length; empty or oversized
     sections flagged), an anchor editor, and a text pane with section boundaries marked.
