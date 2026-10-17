@@ -61,6 +61,7 @@ describe('backup routes', () => {
     });
     expect(status.backup.bytes).toBeGreaterThan(0);
     expect(status.backup.finishedAt).toEqual(expect.any(String));
+    expect(status.lastSucceeded).toEqual(status.backup);
     expect(status.restore).toBeNull();
     expect(status.queue).toEqual({ paused: false, pausedAt: null, pausedBy: null, reason: null });
     // The record lives in the backups bucket, beside the file.
@@ -108,7 +109,30 @@ describe('backup routes', () => {
       status: 'failed',
       error: 'the database has no migrations applied',
     });
+    expect(status.lastSucceeded).toMatchObject({ id: first.id, status: 'succeeded' });
     expect(await deps.store.get('backups', `${first.id}.ctbak`)).not.toBeNull();
+    expect((await admin.download(first.id)).statusCode).toBe(200);
+  });
+
+  it('a success whose record cannot be saved fails and keeps the previous backup', async () => {
+    const { admin, backup, deps } = await setup();
+    const first = (await admin.start()).json<BackupView>();
+    await backup.settled();
+    const put = deps.store.put.bind(deps.store);
+    let failSucceeded = true;
+    deps.store.put = async (bucket, key, body, type) => {
+      if (failSucceeded && key.endsWith('.json') && body.toString('utf8').includes('"succeeded"')) {
+        throw new Error('S3 is down');
+      }
+      return put(bucket, key, body, type);
+    };
+    const second = (await admin.start()).json<BackupView>();
+    await backup.settled();
+    failSucceeded = false;
+    const status = (await admin.status()).json();
+    expect(status.backup).toMatchObject({ id: second.id, status: 'failed', error: 'S3 is down' });
+    expect(status.lastSucceeded).toMatchObject({ id: first.id });
+    expect(await deps.store.get('backups', `${second.id}.ctbak`)).toBeNull();
     expect((await admin.download(first.id)).statusCode).toBe(200);
   });
 
@@ -170,6 +194,11 @@ describe('backup routes', () => {
     expect(resumed.json()).toEqual({ paused: false, pausedAt: null, pausedBy: null, reason: null });
     expect(queue.wakes).toBe(1);
     expect((await admin.queue('yes' as unknown as boolean)).statusCode).toBe(400);
+  });
+
+  it('has no last success before the first backup', async () => {
+    const { admin } = await setup();
+    expect((await admin.status()).json()).toMatchObject({ backup: null, lastSucceeded: null });
   });
 
   it('without a backup service every route is a 503', async () => {

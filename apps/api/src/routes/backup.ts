@@ -17,6 +17,9 @@ const BackupStatusSchema = z.object({
   backup: BackupViewSchema.nullable().describe(
     'The running backup, else the newest one (a failed one shows its reason).',
   ),
+  lastSucceeded: BackupViewSchema.nullable().describe(
+    'The newest successful backup, the one that can be downloaded (may be `backup` itself).',
+  ),
   restore: RestoreStatusSchema.nullable(),
   queue: QueueControlViewSchema,
 });
@@ -43,7 +46,8 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
         summary: 'The latest backup, the restore and the job queue',
         description: md`
           **Admins only.** The running backup with its progress, else the newest one (when, who,
-          size; a failed one with its reason), the restore in progress (none yet), and whether
+          size; a failed one with its reason), the newest successful one (kept after a failed
+          backup, and the one to download), the restore in progress (none yet), and whether
           the job queue is paused.
         `,
         'x-admin': true,

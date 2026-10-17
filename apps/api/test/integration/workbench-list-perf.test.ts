@@ -79,7 +79,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       templates: new PgTemplateRepo(templatesPool),
       workbench: new PgWorkbenchRepo(workbenchPool),
       specs: SpecRegistry.fromDefinitions([]),
-      buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
+      buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs', backups: 'backups' },
       maxUploadBytes: 1024 * 1024,
       access: null,
       profiles: new MemoryProfileRepo(),

@@ -66,13 +66,21 @@ export class BackupService {
 
   async status(): Promise<{
     backup: BackupView | null;
+    lastSucceeded: BackupView | null;
     restore: RestoreStatus | null;
     queue: QueueControlView;
   }> {
     const queue = await this.deps.queue.get();
     const running = this.busy?.kind === 'backup' ? this.busy.record : null;
-    const latest = running ?? (await this.records())[0] ?? null;
-    return { backup: latest && viewOf(latest), restore: null, queue };
+    const stored = await this.records();
+    const latest = running ?? stored[0] ?? null;
+    const succeeded = stored.find((r) => r.status === 'succeeded') ?? null;
+    return {
+      backup: latest && viewOf(latest),
+      lastSucceeded: succeeded && viewOf(succeeded),
+      restore: null,
+      queue,
+    };
   }
 
   /** Starts a backup in the background; throws `BackupBusyError` while anything runs. */
@@ -127,6 +135,7 @@ export class BackupService {
     };
     let lastWrite = deps.now().getTime();
     await write({ ...record });
+    let written = false;
     try {
       const startedAt = new Date(record.startedAt);
       const fileName = backupFileName(await deps.instanceName(), startedAt);
@@ -138,19 +147,35 @@ export class BackupService {
           void write({ ...record });
         }
       });
+      written = true;
+      // The success is saved for sure before anything older goes: a lost record would leave
+      // a file nobody can download, and the previous backup deleted.
+      await writes;
+      await this.save({
+        ...record,
+        status: 'succeeded',
+        finishedAt: deps.now().toISOString(),
+        bytes: result.bytes,
+        fileName,
+      });
       Object.assign(record, {
         status: 'succeeded',
         finishedAt: deps.now().toISOString(),
         bytes: result.bytes,
         fileName,
       });
-      await write({ ...record });
       // The new backup is safe; a failure to tidy the old one leaves an extra file, no more.
       await this.removeOlder(record.id).catch((err: unknown) =>
         deps.log?.error({ err }, 'the previous backup could not be removed'),
       );
     } catch (err) {
       deps.log?.error({ err }, 'backup failed');
+      // createBackup removes its own partial file; a finished one without its record goes here.
+      if (written) {
+        await deps.store
+          .delete(deps.buckets.backups, backupFileKey(record.id))
+          .catch((e: unknown) => deps.log?.error({ err: e }, 'the failed backup was not removed'));
+      }
       Object.assign(record, {
         status: 'failed',
         finishedAt: deps.now().toISOString(),

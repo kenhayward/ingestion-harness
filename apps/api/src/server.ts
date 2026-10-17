@@ -106,20 +106,20 @@ const buckets = {
   inbox: config.S3_BUCKET_INBOX,
   outputs: config.S3_BUCKET_OUTPUTS,
   runs: config.S3_BUCKET_RUNS,
+  backups: config.S3_BUCKET_BACKUPS,
 };
 const version = versionFromConfig(config);
 // Backup and restore (Administration > Backup): every backup is encrypted under LLM_SECRETS_KEY,
 // so without it there are none. Data-lake identities cannot be carried on SeaweedFS 4.48
 // (seaweed-iam-file.ts).
 let logBackupError: (obj: object, msg: string) => void = () => {};
-const backupBuckets = { ...buckets, backups: config.S3_BUCKET_BACKUPS };
 const backup =
   llmSecrets &&
   new BackupService({
     db: new PgDatabaseTools(config.DATABASE_URL),
     store,
-    buckets: backupBuckets,
-    internalTargetBuckets: () => internalTargetBuckets(targets, Object.values(backupBuckets)),
+    buckets,
+    internalTargetBuckets: () => internalTargetBuckets(targets, Object.values(buckets)),
     triples: new FusekiTripleStore(fusekiConfig(config)),
     lake: new NoLakeIdentities(),
     master: llmSecrets.current,

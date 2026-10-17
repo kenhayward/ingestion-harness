@@ -175,7 +175,7 @@ describe('POST /api/publish-targets', () => {
 
   it("refuses CT Studio's own buckets for an internal target", async () => {
     const c = await setup();
-    for (const bucket of ['inbox', 'outputs', 'runs']) {
+    for (const bucket of ['inbox', 'outputs', 'runs', 'backups']) {
       const res = await c.call('POST', '/publish-targets', {
         label: 'Oops',
         kind: 'internal',
@@ -333,6 +333,8 @@ describe('PATCH /api/publish-targets/:id', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("inbox is CT Studio's own inbox bucket: pick another");
     expect((await c.targets.get('default'))!.bucket).toBe('published');
+    const backups = await c.call('PATCH', '/publish-targets/default', { bucket: 'backups' });
+    expect(backups.json().error).toBe("backups is CT Studio's own backups bucket: pick another");
   });
 
   it('clears optional settings with null, and the KMS key once encryption leaves KMS', async () => {
@@ -628,6 +630,13 @@ describe('POST /api/publish-targets/test', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("runs is CT Studio's own runs bucket: pick another");
+    const backups = await c.call('POST', '/publish-targets/test', {
+      label: 'Oops',
+      kind: 'internal',
+      bucket: 'backups',
+    });
+    expect(backups.statusCode).toBe(400);
+    expect(backups.json().error).toBe("backups is CT Studio's own backups bucket: pick another");
     const overlay = await c.call('POST', '/publish-targets/test', {
       id: 'default',
       bucket: 'outputs',

@@ -51,15 +51,18 @@ export function usageText(u: TargetUsage): string {
 
 const issuesOf = (e: z.ZodError) => e.issues;
 
-const OWN_BUCKET = "`{bucket} is CT Studio's own {inbox|outputs|runs} bucket: pick another`";
+const OWN_BUCKET =
+  "`{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`";
 
 /** Which of the deployment's own buckets an internal target would name, else null. */
 function ownBucketProblem(
   target: { kind: string; bucket: string },
-  buckets: { inbox: string; outputs: string; runs: string },
+  buckets: { inbox: string; outputs: string; runs: string; backups: string },
 ): string | null {
   if (target.kind !== 'internal') return null;
-  const which = (['inbox', 'outputs', 'runs'] as const).find((k) => buckets[k] === target.bucket);
+  const which = (['inbox', 'outputs', 'runs', 'backups'] as const).find(
+    (k) => buckets[k] === target.bucket,
+  );
   return which ? `${target.bucket} is CT Studio's own ${which} bucket: pick another` : null;
 }
 
@@ -307,9 +310,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           md`
             **Admins only.** Fields left out are kept; \`null\` clears the endpoint, KMS key or
             storage class, and the KMS key is cleared whenever the encryption is not
-            \`aws:kms\`. An internal target cannot move onto CT Studio's own inbox, outputs or
-            runs bucket (400). While the target is in use (a published recipe version names it,
-            an output or graph copy was delivered to it, an S3 key consumer is granted it, or a
+            \`aws:kms\`. An internal target cannot move onto CT Studio's own inbox, outputs,
+            runs or backups bucket (400). While the target is in use (a published recipe
+            version names it, an output or graph copy was delivered to it, an S3 key consumer is granted it, or a
             withdrawal still to run names it) its bucket, prefix, endpoint and region cannot
             change (409):
             add a new target and publish a version naming it instead. The label, credentials,
@@ -451,10 +454,10 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
             a small file under the target's prefix, reads it back and deletes it. With an \`id\`,
             the stored target's settings overlaid with the body as a save would overlay them
             (\`null\` clears, its stored secret when the body has none); without one, a full set
-            of new settings (before saving). An internal target on CT Studio's own inbox, outputs
-            or runs bucket is refused (400). Always 200 for a test that ran: \`ok: false\` names
-            the step that failed in plain words. A secret sent here is never stored, logged or
-            echoed.
+            of new settings (before saving). An internal target on CT Studio's own inbox, outputs,
+            runs or backups bucket is refused (400). Always 200 for a test that ran:
+            \`ok: false\` names the step that failed in plain words. A secret sent here is never
+            stored, logged or echoed.
           `,
         ),
         body: TargetTestBodySchema,

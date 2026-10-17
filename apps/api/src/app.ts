@@ -59,7 +59,8 @@ export interface AppDeps {
   templates: TemplateRepo;
   /** Workbench projects, samples and briefs (ADR 0007). */
   workbench: WorkbenchRepo;
-  buckets: { inbox: string; outputs: string; runs: string };
+  /** CT Studio's own buckets; `backups` holds backups and restore uploads. */
+  buckets: { inbox: string; outputs: string; runs: string; backups: string };
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */
   access: AccessRepo | null;
