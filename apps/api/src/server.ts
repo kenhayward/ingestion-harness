@@ -9,6 +9,7 @@ import { PgDatabaseTools } from './backup/pg-tools.js';
 import { PgQueueControlRepo } from './backup/queue-control.js';
 import { NoLakeIdentities } from './backup/seaweed-iam-file.js';
 import { BackupService } from './backup/service.js';
+import { BackupUploads } from './backup/uploads.js';
 import {
   fusekiConfig,
   githubConfig,
@@ -131,6 +132,8 @@ const backup =
     log: { error: (obj, msg) => logBackupError(obj, msg) },
   });
 
+const backupUploads = llmSecrets && new BackupUploads({ store, bucket: buckets.backups });
+
 const app = await buildApp({
   repo,
   jobWatch,
@@ -161,6 +164,7 @@ const app = await buildApp({
   },
   llmSecrets,
   backup,
+  backupUploads,
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   frameAncestors: config.FRAME_ANCESTORS,
   version,

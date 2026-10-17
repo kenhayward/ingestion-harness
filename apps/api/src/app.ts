@@ -5,6 +5,7 @@ import type { VersionInfo } from '@ih/shared';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
 import type { BackupService } from './backup/service.js';
+import type { BackupUploads } from './backup/uploads.js';
 import type { JobWatch } from './jobs/watch.js';
 import type { GitHubSyncRepo } from './github-sync/repo.js';
 import type { GitHubOAuth, GitHubRepoApi } from './profile/github.js';
@@ -92,6 +93,8 @@ export interface AppDeps {
   llmSecrets: SecretsKeys | null;
   /** Backup and restore under Administration > Backup; null without `LLM_SECRETS_KEY`. */
   backup: BackupService | null;
+  /** Chunked upload of a backup to restore; null without `LLM_SECRETS_KEY`. */
+  backupUploads: BackupUploads | null;
   /** Job change notifications for live streams (Postgres NOTIFY); null: heartbeats only. */
   jobWatch?: JobWatch | null;
   /** How often a live job stream re-reads its job and pings (default 15 s; tests shorten it). */

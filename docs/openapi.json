@@ -70435,6 +70435,1210 @@
         }
       }
     },
+    "/api/backup/uploads": {
+      "post": {
+        "operationId": "startBackupUpload",
+        "summary": "Start uploading a backup",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** Starts a resumable upload of a backup file to restore: send the file\nin parts of `partBytes` (64 MiB; the last one is what remains) with\n`PUT /api/backup/uploads/{id}/parts/{n}`, then `POST …/complete`. One upload at a\ntime: starting one discards the previous upload.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1099511627776
+                  },
+                  "fileName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "size",
+                  "fileName"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "201": {
+            "description": "The upload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "number"
+                    },
+                    "partBytes": {
+                      "type": "number"
+                    },
+                    "parts": {
+                      "type": "number"
+                    },
+                    "received": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "size",
+                    "partBytes",
+                    "parts",
+                    "received"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The upload."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "A malformed body."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/uploads/{id}": {
+      "get": {
+        "operationId": "getBackupUpload",
+        "summary": "Which parts of an upload have arrived",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** Where an upload stands, to resume it after a lost connection: send\nthe parts missing from `received` (0-based).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The upload id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The upload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "number"
+                    },
+                    "partBytes": {
+                      "type": "number"
+                    },
+                    "parts": {
+                      "type": "number"
+                    },
+                    "received": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "size",
+                    "partBytes",
+                    "parts",
+                    "received"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The upload."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`upload not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`upload not found`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/uploads/{id}/parts/{n}": {
+      "put": {
+        "operationId": "putBackupUploadPart",
+        "summary": "Upload one part",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** One part of the file as raw `application/octet-stream`: exactly\n`partBytes` bytes (67108864), except the last part, which is what remains\nof `size`. Sending a part again replaces it. Parts may arrive in any order.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "description": "The part."
+              }
+            }
+          },
+          "description": "The part."
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The upload id."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "in": "path",
+            "name": "n",
+            "required": true,
+            "description": "The part, counting from 0."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The upload, with this part received.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "number"
+                    },
+                    "partBytes": {
+                      "type": "number"
+                    },
+                    "parts": {
+                      "type": "number"
+                    },
+                    "received": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "size",
+                    "partBytes",
+                    "parts",
+                    "received"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The upload, with this part received."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`part n must be X bytes`, or no such part.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`part n must be X bytes`, or no such part."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`upload not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`upload not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the upload is already complete`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the upload is already complete`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/uploads/{id}/complete": {
+      "post": {
+        "operationId": "completeBackupUpload",
+        "summary": "Finish an upload",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** Joins the parts into the file `uploads/<id>.ctbak` of the backups bucket.\nEvery part must have arrived, else the answer names the missing ones. Asking again\nafter it succeeded answers the same.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The upload id."
+          }
+        ],
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The stored file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The stored file."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`upload not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`upload not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`parts missing: …` (0-based).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`parts missing: …` (0-based)."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/version": {
       "get": {
         "operationId": "version",

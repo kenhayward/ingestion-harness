@@ -168,6 +168,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     maintenance: new MemoryMaintenanceRepo(),
     llmSecrets: null,
     backup: null,
+    backupUploads: null,
     s3Keys: new S3KeyService({
       repo: s3KeyRepo,
       issuer: new MemoryS3KeyIssuer(),
