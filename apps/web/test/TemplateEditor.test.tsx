@@ -1556,16 +1556,22 @@ describe('TemplateEditor of a retired type (D17: read-only)', () => {
 });
 
 describe('delivered formats (ADR 0011)', () => {
-  it('offers RDF only once the recipe has a mapping', async () => {
-    setup(view(validDefinition()));
+  it('turns RDF on before a mapping exists, as the Outputs switch does', async () => {
+    const { api } = setup(view(validDefinition()));
     await userEvent.click(await tab(/General/));
     const rdf = screen.getByRole('checkbox', { name: /RDF/ });
-    expect(rdf).toBeDisabled();
+    expect(rdf).toBeEnabled();
+    expect(rdf).not.toBeChecked();
     expect(
       screen.getByText('Add an ontology mapping on the Mapping tab to deliver RDF.'),
     ).toBeTruthy();
     expect(screen.getByRole('checkbox', { name: 'CSV' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'JSON' })).toBeChecked();
+    await userEvent.click(rdf);
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+    const saved = vi.mocked(api.saveTemplate).mock.calls.at(-1)![2];
+    expect(saved.delivery).toEqual({ formats: ['csv', 'json', 'rdf'] });
   });
 
   it('saves the formats ticked', async () => {

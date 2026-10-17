@@ -685,13 +685,14 @@ export function TemplateEditor({
                     {FORMATS.map(([format, label]) => {
                       const formats: DeliveryFormat[] = def.delivery?.formats ?? ['csv', 'json'];
                       const on = formats.includes(format);
-                      const noMapping = format === 'rdf' && !def.semantics && !on;
+                      // RDF may go on before the mapping exists (as the Outputs tab's switch):
+                      // the recipe's checks then ask for the mapping before it publishes.
                       return (
                         <label key={format}>
                           <input
                             type="checkbox"
                             checked={on}
-                            disabled={noMapping || (on && formats.length === 1)}
+                            disabled={on && formats.length === 1}
                             onChange={() => {
                               const next = FORMATS.map(([f]) => f).filter((f) =>
                                 f === format ? !on : formats.includes(f),

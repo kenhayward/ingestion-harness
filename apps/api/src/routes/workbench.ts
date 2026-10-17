@@ -149,6 +149,7 @@ import {
   blockingIssues,
   templateIssues,
   validateTemplate,
+  type TemplateIssue,
 } from '../templates/definitions.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 import {
@@ -988,6 +989,71 @@ function gateFingerprint(jobIds: string[], jobs: (JobSummary | null)[]): string 
   return createHash('sha256').update(stableJson(parts)).digest('hex');
 }
 
+/** What publishing a project's open draft came to (`publishProjectDraft`). */
+export type ProjectPublishOutcome =
+  | { result: 'no-draft' }
+  | { result: 'invalid'; issues: TemplateIssue[] }
+  | { result: 'changed' }
+  | { result: 'published'; publication: Publication; version: number };
+
+/**
+ * Publish a Workbench project's open draft: the one way a Workbench document type is published,
+ * from the project page or the Document types page. The gate is recorded, never required; the
+ * re-check of the draft, the publish and the publication share one transaction.
+ */
+export async function publishProjectDraft(
+  app: FastifyInstance,
+  req: FastifyRequest,
+  project: WorkbenchProject,
+  labels: { label?: string | null; note?: string | null },
+): Promise<ProjectPublishOutcome> {
+  const { templates, workbench } = app.deps;
+  const projectId = project.id;
+  const { draft, definition, ...gate } = await gateFor(app, project);
+  if (draft === null) return { result: 'no-draft' };
+  const issues = blockingIssues(
+    await templateIssues(app.deps, (await templates.get(projectId, draft))!.definition, {
+      draft: true,
+    }),
+  );
+  if (issues.length) return { result: 'invalid', issues };
+  if (labels.label !== undefined || labels.note !== undefined) {
+    // Set on the draft first: harmless when the publish is then refused.
+    const { label, note } = labels;
+    await templates.setLabel(projectId, draft, { label, note }, req.auth?.label ?? null);
+  }
+  // The gate was decided for the draft as it was read then; an edit since then voids it.
+  const outcome = await workbench.publishDraft({
+    projectId,
+    version: draft,
+    definition: definition!,
+    publication: {
+      projectId,
+      version: draft,
+      iterationId: gate.iterationId,
+      score: gate.score,
+      threshold: gate.threshold,
+      // References and evaluation are optional: the gate never blocks, so nothing is overridden.
+      overrideReason: null,
+      publishedBy: req.auth?.label ?? null,
+    },
+  });
+  if (outcome.result === 'changed') return { result: 'changed' };
+  if (outcome.result === 'not-draft') return { result: 'no-draft' };
+  req.log.info(
+    {
+      projectId,
+      version: draft,
+      iterationId: gate.iterationId,
+      score: gate.score,
+      threshold: gate.threshold,
+      passes: gate.passes,
+    },
+    'workbench draft published',
+  );
+  return { result: 'published', publication: outcome.publication, version: draft };
+}
+
 /**
  * The publish gate for the open draft (ADR 0007). Only holdout iterations that ran exactly this
  * draft (version and definition) with the template's own models count; their scores are computed
@@ -1587,8 +1653,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           with the publication. \`overrideReason\` is still accepted but ignored (no override is
           needed or recorded). \`label\` and \`note\`, when given, are set on the version
           (#144; it keeps the draft's otherwise). If the draft changes after the gate was decided, nothing is published: check the gate
-          again. Every publication is logged (\`GET …/publications\`). This is the only way to
-          publish a Workbench document type. See
+          again. Every publication is logged (\`GET …/publications\`). The Templates route
+          (\`POST /api/templates/{id}/versions/{version}/publish\`) publishes a Workbench
+          document type the same way. See
           [ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).
         `,
         params: ProjectIdParams,
@@ -1630,56 +1697,19 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       const projectId = req.params.id;
       const project = await workbench.getProject(projectId);
       if (!project) return reply.code(404).send({ error: 'project not found' });
-      const { draft, definition, ...gate } = await gateFor(app, project);
-      if (draft === null) return reply.code(409).send({ error: 'no open draft to publish' });
-      const issues = blockingIssues(
-        await templateIssues(app.deps, (await templates.get(projectId, draft))!.definition, {
-          draft: true,
-        }),
-      );
-      if (issues.length) return reply.code(400).send({ error: 'the draft is not valid', issues });
-      if (body.data.label !== undefined || body.data.note !== undefined) {
-        // Set on the draft first: harmless when the publish is then refused.
-        const { label, note } = body.data;
-        await templates.setLabel(projectId, draft, { label, note }, req.auth?.label ?? null);
+      const outcome = await publishProjectDraft(app, req, project, body.data);
+      if (outcome.result === 'no-draft') {
+        return reply.code(409).send({ error: 'no open draft to publish' });
       }
-      // The gate was decided for the draft as it was read then; an edit since then voids it. The
-      // re-check, the publish and the publication record share one transaction.
-      const outcome = await workbench.publishDraft({
-        projectId,
-        version: draft,
-        definition: definition!,
-        publication: {
-          projectId,
-          version: draft,
-          iterationId: gate.iterationId,
-          score: gate.score,
-          threshold: gate.threshold,
-          // References and evaluation are optional: the gate never blocks, so nothing is overridden.
-          overrideReason: null,
-          publishedBy: req.auth?.label ?? null,
-        },
-      });
+      if (outcome.result === 'invalid') {
+        return reply.code(400).send({ error: 'the draft is not valid', issues: outcome.issues });
+      }
       if (outcome.result === 'changed') {
         return reply
           .code(409)
           .send({ error: 'the draft changed while publishing; check the gate again' });
       }
-      if (outcome.result === 'not-draft') {
-        return reply.code(409).send({ error: 'no open draft to publish' });
-      }
-      const { publication } = outcome;
-      req.log.info(
-        {
-          projectId,
-          version: draft,
-          iterationId: gate.iterationId,
-          score: gate.score,
-          threshold: gate.threshold,
-          passes: gate.passes,
-        },
-        'workbench draft published',
-      );
+      const { publication, version: draft } = outcome;
       const github = await pushAfterPublish(app.deps, req, projectId, draft);
       return reply
         .code(201)
