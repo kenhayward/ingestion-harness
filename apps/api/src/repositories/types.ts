@@ -117,6 +117,42 @@ export interface WithdrawalStatus {
 export const WITHDRAW_JOB = { priority: 0, maxAttempts: 100 } as const;
 export const REPUBLISH_JOB = { priority: -10, maxAttempts: 10 } as const;
 
+/** One graph of a `withdraw` job's params: its version copies on one publishing target. */
+export interface WithdrawnGraph {
+  sha256: string;
+  templateId: string;
+  graphIri: string | null;
+  target: string;
+  versions: number[];
+}
+
+/**
+ * A graph's withdrawal, one entry per publishing target its version copies were written to (each
+ * is deleted through its own target, with that target's prefix). `current` is the graph's current
+ * row when it goes too: its IRI rides on the entry of the target it was published to, so the
+ * triple store graph is dropped once.
+ */
+export function graphWithdrawals(
+  graph: { sha256: string; templateId: string },
+  versions: { version: number; targetId: string }[],
+  current: { graphIri: string; targetId: string } | null,
+): WithdrawnGraph[] {
+  const byTarget = new Map<string, number[]>();
+  for (const v of [...versions].sort((a, b) => a.version - b.version)) {
+    byTarget.set(v.targetId, [...(byTarget.get(v.targetId) ?? []), v.version]);
+  }
+  if (current && !byTarget.has(current.targetId)) byTarget.set(current.targetId, []);
+  return [...byTarget.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([target, vs]) => ({
+      sha256: graph.sha256,
+      templateId: graph.templateId,
+      graphIri: current?.targetId === target ? current.graphIri : null,
+      target,
+      versions: vs,
+    }));
+}
+
 export type DeleteJobResult =
   | { result: 'deleted'; removed: RemovedJob }
   | { result: 'not_found' }

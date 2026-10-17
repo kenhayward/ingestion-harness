@@ -55,6 +55,7 @@ async function processedJob(
       bucket: 'outputs',
       key,
       rowCount: null,
+      targetId: null,
     },
   ]);
   ctx.repo.jobs.set(job.id, { ...ctx.repo.jobs.get(job.id)!, status });
@@ -167,6 +168,7 @@ describe('regression runs', () => {
         bucket: 'outputs',
         key,
         rowCount: null,
+        targetId: null,
       },
     ]);
     ctx.repo.jobs.set(run.id, { ...ctx.repo.jobs.get(run.id)!, status: 'succeeded' });
@@ -226,6 +228,7 @@ describe('document type summaries (GET /api/templates)', () => {
         bucket: 'outputs',
         key,
         rowCount: null,
+        targetId: null,
       },
     ]);
     ctx.repo.jobs.set(run.id, {

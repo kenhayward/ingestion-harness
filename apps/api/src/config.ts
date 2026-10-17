@@ -120,35 +120,12 @@ export function versionFromConfig(c: Config): VersionInfo {
   };
 }
 
-export interface TargetConfig {
-  endpoint: string;
-  region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  bucket: string;
-  prefix: string;
-}
-
-/** The publish target, resolved exactly like worker/src/ingest_worker/config.py. */
-export function targetConfig(c: Config): TargetConfig {
-  return {
-    endpoint: c.TARGET_S3_ENDPOINT ?? c.S3_ENDPOINT,
-    region: c.TARGET_S3_REGION ?? c.S3_REGION,
-    accessKeyId: c.TARGET_S3_ACCESS_KEY ?? c.S3_ACCESS_KEY,
-    secretAccessKey: c.TARGET_S3_SECRET_KEY ?? c.S3_SECRET_KEY,
-    bucket: c.TARGET_S3_BUCKET,
-    prefix: c.TARGET_S3_PREFIX,
-  };
-}
-
 /**
- * Read-only S3 keys (ADR 0008) are issued by the local SeaweedFS, so they're only offered when
- * the publish target is that SeaweedFS. null = off.
+ * Read-only S3 keys (ADR 0008) are issued through the local SeaweedFS's IAM, for the internal
+ * publishing targets; whether any can be issued depends on whether one exists.
  */
-export function s3KeysConfig(c: Config): { bucket: string; endpoint: string | null } | null {
-  const target = targetConfig(c);
-  if (target.endpoint !== c.S3_ENDPOINT) return null;
-  return { bucket: target.bucket, endpoint: c.S3_PUBLIC_URL ?? null };
+export function s3KeysConfig(c: Config): { endpoint: string | null } {
+  return { endpoint: c.S3_PUBLIC_URL ?? null };
 }
 
 /** The GitHub OAuth app, or null when users cannot link GitHub accounts. */

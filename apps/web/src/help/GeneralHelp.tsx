@@ -20,6 +20,15 @@ export function GeneralHelp() {
         uploaded or retried overrides both.
       </p>
 
+      <h3>Publish to</h3>
+      <p>
+        Where this recipe&apos;s published outputs are delivered: one of the publishing targets an
+        administrator set up under Administration &gt; Published outputs. Left on Default, they go
+        to the default target. A target named here that this deployment does not have blocks
+        publishing until you pick another. Outputs already delivered stay where they were delivered;
+        a new version delivers to its own target from then on.
+      </p>
+
       <h3>Preamble</h3>
       <p>
         Domain guidance placed at the top of every extraction prompt: what kind of document this is,

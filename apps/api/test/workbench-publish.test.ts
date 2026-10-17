@@ -85,6 +85,7 @@ async function project() {
         bucket: 'outputs',
         key,
         rowCount: null,
+        targetId: null,
       },
     ]);
     ctx.repo.jobs.set(jobId, { ...job, status: 'succeeded' });
@@ -298,6 +299,23 @@ describe('publish gate', () => {
     expect((await ctx.app.inject('/api/workbench/projects/letter/publications')).json()).toEqual(
       [],
     );
+  });
+
+  it('refuses a draft naming a publishing target this deployment lacks', async () => {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, {
+      ...letter(1),
+      delivery: { publishTo: 'nope' },
+    });
+    const res = await publish(ctx);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: 'the draft is not valid',
+      issues: [
+        { path: 'delivery.publishTo', message: 'no publishing target nope on this deployment' },
+      ],
+    });
+    expect((await ctx.templates.get('letter', 1))!.status).toBe('draft');
   });
 
   it('does not count a holdout run of another version with the same definition', async () => {

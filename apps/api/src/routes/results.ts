@@ -8,13 +8,14 @@ import {
   type PublishedDocument,
   type ResultDefinition,
   type ResultDetail,
+  DEFAULT_TARGET_ID,
   outputExtension,
 } from '@ih/shared';
 import { zipSync } from 'fflate';
 import { z } from 'zod';
 import { binary, error, md, res } from '../openapi/zod.js';
 import { contentDisposition } from './jobs.js';
-import { storeFor } from '../storage/stage.js';
+import { OutputUnavailableError, readOutput } from '../storage/stage.js';
 import { resolveDefinition } from '../templates/definitions.js';
 
 const UUID = z.string().uuid();
@@ -79,7 +80,8 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'getResult',
         summary: 'Get a published result',
         description: md`
-          One published result: the job, where it was delivered (\`target\` bucket and prefix),
+          One published result: the job, where it was delivered (\`target\`: the publishing
+          target's id and label, the bucket and the target's prefix),
           its published outputs, and for recipe jobs the published document read back from the
           target with the definition of its fields and tables. If the document cannot be read,
           \`document\` is null and \`documentError\` says why; the rest is still returned.
@@ -117,10 +119,14 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
       if (docOutput && definition.kind !== 'spec') {
         let body: Buffer | null = null;
         try {
-          body = await storeFor(app.deps, 'published').get(docOutput.bucket, docOutput.key);
+          body = await readOutput(app.deps, docOutput);
           if (!body) documentError = 'missing from target';
         } catch (err) {
-          req.log.warn({ err, bucket: docOutput.bucket }, 'published document read failed');
+          if (!(err instanceof OutputUnavailableError)) throw err;
+          req.log.warn(
+            { err: err.cause, bucket: docOutput.bucket },
+            'published document read failed',
+          );
           documentError = 'target storage unavailable';
         }
         if (body) {
@@ -136,9 +142,18 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
+      // A job delivers to one target: the one its outputs recorded (the recorded bucket wins).
+      const delivered = docOutput ?? outputs[0]!;
+      const targetId = delivered.targetId ?? DEFAULT_TARGET_ID;
+      const target = await app.deps.targets.get(targetId);
       const detail: ResultDetail = {
         job,
-        target: app.deps.target,
+        target: {
+          id: targetId,
+          label: target?.label ?? targetId,
+          bucket: delivered.bucket,
+          prefix: target?.prefix ?? '',
+        },
         publishedAt: (await app.deps.repo.getPublishedAt(job.id)) ?? job.updatedAt,
         outputs,
         document,
@@ -166,7 +181,7 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
         response: {
           200: binary('The ZIP archive.', 'application/zip'),
           404: error('`result not found`, or `output object missing from target`.'),
-          502: error('`target storage unavailable`.'),
+          502: error('`publishing target {label} unavailable`.'),
         },
       },
     },
@@ -183,10 +198,11 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
       for (const o of outputs) {
         let body: Buffer | null;
         try {
-          body = await storeFor(app.deps, 'published').get(o.bucket, o.key);
+          body = await readOutput(app.deps, o);
         } catch (err) {
-          req.log.warn({ err, bucket: o.bucket }, 'output read failed');
-          return reply.code(502).send({ error: 'target storage unavailable' });
+          if (!(err instanceof OutputUnavailableError)) throw err;
+          req.log.warn({ err: err.cause, bucket: o.bucket }, 'output read failed');
+          return reply.code(502).send({ error: err.message });
         }
         // A partial archive would look complete: fail instead.
         if (!body) return reply.code(404).send({ error: 'output object missing from target' });

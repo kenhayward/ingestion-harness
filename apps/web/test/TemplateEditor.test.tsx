@@ -1593,6 +1593,77 @@ describe('delivered formats (ADR 0011)', () => {
   });
 });
 
+describe('Publish to (publishing targets)', () => {
+  const CHOICES = [
+    { id: 'default', label: 'Main store', kind: 'internal' as const, bucket: 'ingest-published' },
+    { id: 'finance-lake', label: 'Finance lake', kind: 'internal' as const, bucket: 'fin' },
+  ];
+  const withChoices = { listPublishTargetChoices: vi.fn(async () => CHOICES) };
+  const saved = (api: ReturnType<typeof setup>['api']) =>
+    vi.mocked(api.saveTemplate).mock.calls.at(-1)![2];
+
+  it('writes delivery.publishTo for the target picked', async () => {
+    const { api } = setup(view(validDefinition()), withChoices);
+    await userEvent.click(await tab(/General/));
+    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
+    expect(
+      within(pick).getByRole('option', {
+        name: 'Default (Main store · internal · ingest-published)',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(pick).getByRole('option', { name: 'Finance lake · internal · fin' }),
+    ).toBeTruthy();
+    await userEvent.selectOptions(pick, 'finance-lake');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+    expect(saved(api).delivery).toEqual({ publishTo: 'finance-lake' });
+  });
+
+  it('picking Default removes publishTo and keeps the formats', async () => {
+    const def = {
+      ...validDefinition(),
+      delivery: { formats: ['json'], publishTo: 'finance-lake' },
+    };
+    const { api } = setup(view(def), withChoices);
+    await userEvent.click(await tab(/General/));
+    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
+    await waitFor(() => expect(pick).toHaveValue('finance-lake'));
+    await userEvent.selectOptions(pick, '');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+    expect(saved(api).delivery).toEqual({ formats: ['json'] });
+  });
+
+  it('keeps a stored id that is no choice, marked as not on this deployment', async () => {
+    const def = { ...validDefinition(), delivery: { publishTo: 'gone' } };
+    setup(view(def), withChoices);
+    await userEvent.click(await tab(/General/));
+    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
+    expect(
+      within(pick).getByRole('option', { name: 'gone (not on this deployment)' }),
+    ).toBeTruthy();
+    expect(pick).toHaveValue('gone');
+  });
+
+  it('says Default when the choices have not loaded', async () => {
+    setup(view(validDefinition()));
+    await userEvent.click(await tab(/General/));
+    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
+    expect(within(pick).getByRole('option', { name: 'Default (Default)' })).toBeTruthy();
+  });
+
+  it('keeps publishTo when a delivered format is ticked', async () => {
+    const def = { ...validDefinition(), delivery: { publishTo: 'finance-lake' } };
+    const { api } = setup(view(def), withChoices);
+    await userEvent.click(await tab(/General/));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'CSV' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+    expect(saved(api).delivery).toEqual({ formats: ['json'], publishTo: 'finance-lake' });
+  });
+});
+
 const REPEAT_SECTIONS = [
   { id: 'front', anchor: '\\A' },
   { id: 'batch', anchor: '^\\d+\\. STUDY', repeat: true, key: 'BATCH (.+)' },

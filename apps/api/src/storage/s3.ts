@@ -1,4 +1,6 @@
 import {
+  BucketAlreadyOwnedByYou,
+  CreateBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   type DeleteObjectsCommandOutput,
@@ -10,6 +12,7 @@ import {
   PutObjectCommand,
   S3Client,
   type S3ClientConfig,
+  type StorageClass,
 } from '@aws-sdk/client-s3';
 import type { ObjectStore } from './object-store.js';
 
@@ -18,6 +21,12 @@ export interface S3Options {
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /** Path-style addressing; true (the default) is what SeaweedFS needs. */
+  forcePathStyle?: boolean;
+  /** Server-side encryption applied to every put. */
+  sse?: 'none' | 'AES256' | 'aws:kms';
+  kmsKeyId?: string | null;
+  storageClass?: string | null;
 }
 
 /**
@@ -28,7 +37,7 @@ export function s3ClientConfig(opts: S3Options): S3ClientConfig {
   return {
     endpoint: opts.endpoint,
     region: opts.region,
-    forcePathStyle: true,
+    forcePathStyle: opts.forcePathStyle ?? true,
     credentials: { accessKeyId: opts.accessKeyId, secretAccessKey: opts.secretAccessKey },
     requestHandler: { connectionTimeout: 5_000, requestTimeout: 30_000 },
   };
@@ -37,9 +46,11 @@ export function s3ClientConfig(opts: S3Options): S3ClientConfig {
 /** S3-compatible store. SeaweedFS requires path-style addressing. */
 export class S3ObjectStore implements ObjectStore {
   private readonly client: Pick<S3Client, 'send'>;
+  private readonly opts: S3Options;
 
   /** `client` is for tests (a stub `send`); production builds one from `opts`. */
   constructor(opts: S3Options, client?: Pick<S3Client, 'send'>) {
+    this.opts = opts;
     this.client = client ?? new S3Client(s3ClientConfig(opts));
   }
 
@@ -83,9 +94,28 @@ export class S3ObjectStore implements ObjectStore {
   }
 
   async put(bucket: string, key: string, body: Buffer, contentType: string): Promise<void> {
+    const { sse, kmsKeyId, storageClass } = this.opts;
     await this.client.send(
-      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }),
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        ...(sse && sse !== 'none' ? { ServerSideEncryption: sse } : {}),
+        ...(sse === 'aws:kms' && kmsKeyId ? { SSEKMSKeyId: kmsKeyId } : {}),
+        ...(storageClass ? { StorageClass: storageClass as StorageClass } : {}),
+      }),
     );
+  }
+
+  async ensureBucket(bucket: string): Promise<void> {
+    try {
+      await this.client.send(new CreateBucketCommand({ Bucket: bucket }));
+    } catch (err) {
+      if (err instanceof BucketAlreadyOwnedByYou) return;
+      if ((err as { name?: string }).name === 'BucketAlreadyOwnedByYou') return;
+      throw err;
+    }
   }
 
   async get(bucket: string, key: string): Promise<Buffer | null> {

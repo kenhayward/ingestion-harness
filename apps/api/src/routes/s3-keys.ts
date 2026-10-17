@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { TargetChoiceSchema } from '@ih/shared';
 import { z } from 'zod';
 import { error, md, noContent, res } from '../openapi/zod.js';
 import { IssuedKeySchema } from '../s3keys/service.js';
@@ -13,7 +14,16 @@ const Expiry = z.union([
   z.literal(365),
   z.null(),
 ]);
-const CreateBody = z.object({ label: z.string().trim().min(1).max(100), expiresInDays: Expiry });
+const Targets = z
+  .array(z.string().min(1))
+  .min(1)
+  .describe('Internal publishing target ids the keys may read (at least one).');
+const CreateBody = z.object({
+  label: z.string().trim().min(1).max(100),
+  expiresInDays: Expiry,
+  targets: Targets,
+});
+const TargetsBody = z.object({ targets: Targets });
 const RotateBody = z.object({
   expiresInDays: Expiry,
   graceDays: z.union([z.literal(1), z.literal(7), z.literal(30)]),
@@ -23,14 +33,16 @@ const RotateBody = z.object({
 const ADR =
   'https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0008-s3-read-keys.md';
 const Settings = {
-  bucket: z.string().describe('The publish bucket the keys can read.'),
   endpoint: z.string().nullable().describe('The S3 endpoint the data lake uses, if configured.'),
 };
 const IssuedView = IssuedKeySchema.extend(Settings);
+const BAD_TARGETS = error(
+  '`grant at least one publishing target` or `<id> is not an internal publishing target`.',
+);
 const ADMINS_ONLY = error('`admins only`.');
 const NOT_HERE = error(
-  '`S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)`, or ' +
-    '`not found`.',
+  '`not found` (no such consumer or key), or `S3 keys are not available on this deployment` ' +
+    '(an API built without the key service).',
 );
 const UNREACHABLE = error('`SeaweedFS could not be reached: …`.');
 const base = (operationId: string, summary: string, description: string) => ({
@@ -42,8 +54,7 @@ const base = (operationId: string, summary: string, description: string) => ({
 });
 const ConsumerParams = z.object({ id: z.string().uuid().describe('The consumer id.') });
 
-const NOT_AVAILABLE =
-  'S3 keys are not available: the publish target is not the local SeaweedFS (ADR 0008)';
+const NOT_AVAILABLE = 'S3 keys are not available on this deployment';
 const unreachable = (err: unknown) =>
   `SeaweedFS could not be reached: ${err instanceof Error ? err.message : String(err)}`;
 
@@ -74,12 +85,19 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
           md`
             **Admins only.** The data-lake consumers (one read-only SeaweedFS identity
             each, \`lake-{id}\`) and their keys, never their secrets, with the bucket and
-            endpoint the data lake is configured with. See [ADR 0008](${ADR}).`,
+            endpoint the data lake is configured with. \`internalTargets\` are the internal
+            publishing targets a key can be granted on (none when there is no internal
+            target); each consumer lists its granted ids in \`targets\`. See
+            [ADR 0008](${ADR}).`,
         ),
         response: {
           200: res(
             'The consumers.',
-            z.object({ ...Settings, consumers: z.array(S3ConsumerSchema) }),
+            z.object({
+              ...Settings,
+              internalTargets: z.array(TargetChoiceSchema),
+              consumers: z.array(S3ConsumerSchema),
+            }),
           ),
           403: ADMINS_ONLY,
           404: NOT_HERE,
@@ -97,15 +115,71 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
           'createS3Key',
           'Create a data-lake consumer and key',
           md`
-            **Admins only.** Creates a consumer with read-only access to the publish
-            bucket and its first key. The \`secretAccessKey\` is in this response only:
+            **Admins only.** Creates a consumer with read-only access to the buckets and
+            prefixes of the given internal publishing \`targets\` and its first key. The \`secretAccessKey\` is in this response only:
             SeaweedFS holds it and it is never shown again.
           `,
         ),
         body: CreateBody,
         response: {
           200: res('The consumer, key and secret.', IssuedView),
-          400: error('`label (1-100 chars) and expiresInDays are required`.'),
+          400: error(
+            '`label (1-100 chars) and expiresInDays are required`, `grant at least one ' +
+              'publishing target` or `<id> is not an internal publishing target`.',
+          ),
+          403: ADMINS_ONLY,
+          404: NOT_HERE,
+          409: error('`add an internal publishing target first`.'),
+          502: UNREACHABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      if ((await service!.internalTargets()).length === 0) {
+        return reply.code(409).send({ error: 'add an internal publishing target first' });
+      }
+      const body = CreateBody.safeParse(req.body ?? {});
+      if (!body.success) {
+        const noTargets = body.error.issues.some((i) => i.path[0] === 'targets');
+        return reply.code(400).send({
+          error: noTargets
+            ? 'grant at least one publishing target'
+            : 'label (1-100 chars) and expiresInDays are required',
+        });
+      }
+      try {
+        const issued = await service!.issue(
+          body.data.label,
+          body.data.expiresInDays,
+          body.data.targets,
+        );
+        if ('problem' in issued) return reply.code(issued.status).send({ error: issued.problem });
+        return { ...issued, ...service!.settings };
+      } catch (err) {
+        req.log.error({ err }, 'issuing an S3 key failed');
+        return reply.code(502).send({ error: unreachable(err) });
+      }
+    },
+  );
+
+  app.put<{ Params: { id: string } }>(
+    '/access/s3-keys/:id/targets',
+    {
+      schema: {
+        ...base(
+          'setS3KeyTargets',
+          'Change the targets a consumer may read',
+          md`
+            **Admins only.** Replaces the internal publishing targets the consumer's keys can
+            read; its SeaweedFS policy is rewritten at once (and again by the reconciler if
+            it is ever changed behind our back).
+          `,
+        ),
+        params: ConsumerParams,
+        body: TargetsBody,
+        response: {
+          200: res('The consumer.', S3ConsumerSchema),
+          400: BAD_TARGETS,
           403: ADMINS_ONLY,
           404: NOT_HERE,
           502: UNREACHABLE,
@@ -113,17 +187,18 @@ export async function s3KeyRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const body = CreateBody.safeParse(req.body ?? {});
+      if (!validId(req.params.id, reply)) return reply;
+      const body = TargetsBody.safeParse(req.body ?? {});
       if (!body.success) {
-        return reply
-          .code(400)
-          .send({ error: 'label (1-100 chars) and expiresInDays are required' });
+        return reply.code(400).send({ error: 'grant at least one publishing target' });
       }
       try {
-        const issued = await service!.issue(body.data.label, body.data.expiresInDays);
-        return { ...issued, ...service!.settings };
+        const result = await service!.setTargets(req.params.id, body.data.targets);
+        if (result === 'not_found') return reply.code(404).send({ error: 'not found' });
+        if (result !== 'ok') return reply.code(result.status).send({ error: result.problem });
+        return (await service!.list()).consumers.find((c) => c.id === req.params.id);
       } catch (err) {
-        req.log.error({ err }, 'issuing an S3 key failed');
+        req.log.error({ err }, 'changing the targets of an S3 key consumer failed');
         return reply.code(502).send({ error: unreachable(err) });
       }
     },

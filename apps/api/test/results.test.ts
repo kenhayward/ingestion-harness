@@ -25,6 +25,7 @@ const out = (
   bucket: stage === 'published' ? 'published' : 'outputs',
   key: `${stage === 'published' ? 'pub/' : ''}tdemo/v1/${outputId}/doc.${outputId === 'document' ? 'json' : 'csv'}`,
   rowCount,
+  targetId: stage === 'published' ? 'default' : null,
 });
 
 /** Mark a job published at `at` with the given outputs. */
@@ -229,7 +230,12 @@ describe('GET /api/results/:jobId', () => {
     const body = res.json();
     expect(body.job).toMatchObject({ id: job.id, filename: 'a.pdf' });
     expect(body.job.outputs).toBeUndefined();
-    expect(body.target).toEqual({ bucket: 'published', prefix: 'pub/' });
+    expect(body.target).toEqual({
+      id: 'default',
+      label: 'Default',
+      bucket: 'published',
+      prefix: 'pub/',
+    });
     expect(body.publishedAt).toBe('2026-10-02T00:00:01.000Z');
     expect(body.outputs.map((o: JobOutput) => `${o.outputId}:${o.stage}`)).toEqual([
       'document:published',
@@ -353,6 +359,7 @@ describe('GET /api/results/:jobId/archive', () => {
         bucket: 'published',
         key: 'pub/tdemo/v1/graph/doc.ttl',
         rowCount: 1,
+        targetId: 'default',
       },
     ]);
     await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
@@ -404,6 +411,6 @@ describe('GET /api/results/:jobId/archive', () => {
     publish(down, other.id, '2026-10-02T00:00:00.000Z', [out('document', 'published', null)]);
     const res = await down.app.inject(`/api/results/${other.id}/archive`);
     expect(res.statusCode).toBe(502);
-    expect(res.json().error).toBe('target storage unavailable');
+    expect(res.json().error).toBe('publishing target Default unavailable');
   });
 });

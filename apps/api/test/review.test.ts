@@ -52,6 +52,7 @@ async function seed(status: 'awaiting_review' | 'queued' = 'awaiting_review') {
       bucket: 'outputs',
       key,
       rowCount: null,
+      targetId: null,
     },
   ]);
   ctx.repo.jobs.set(job.id, {

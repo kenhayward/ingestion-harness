@@ -38,6 +38,7 @@ def record(template_id: str = "letter", **over: Any) -> GraphPublish:
         "base_iri": BASE,
         "triples": 10,
         "entities": [EntityRecord(BATCH, "https://a/Batch", ["pv-1"])],
+        "target_id": "default",
     }
     values.update(over)
     return GraphPublish(**values)
@@ -50,25 +51,39 @@ def _pg_url() -> str:
     return url
 
 
+def _reset(conn: Any) -> None:
+    for table in (
+        "published_entity_sources",
+        "published_entities",
+        "published_graph_versions",
+        "published_graphs",
+        "published_ontology_graphs",
+    ):
+        conn.execute(f"DELETE FROM {table}")
+
+
 def _pg(reset: bool = True) -> PgGraphRegistry:
     import psycopg
 
     conn = psycopg.connect(_pg_url(), autocommit=True)
     if reset:
-        for table in (
-            "published_entity_sources",
-            "published_entities",
-            "published_graph_versions",
-            "published_graphs",
-            "published_ontology_graphs",
-        ):
-            conn.execute(f"DELETE FROM {table}")
+        _reset(conn)
+        conn.execute(
+            """INSERT INTO publish_targets (id, label, kind, bucket)
+               VALUES ('finance-lake', 'Finance lake', 'internal', 'finance')
+               ON CONFLICT (id) DO NOTHING"""
+        )
     return PgGraphRegistry(conn)
 
 
 @pytest.fixture(params=["memory", pytest.param("pg", marks=pytest.mark.integration)])
 def registry(request: pytest.FixtureRequest) -> Iterator[GraphRegistry]:
-    yield MemoryGraphRegistry() if request.param == "memory" else _pg()
+    if request.param == "memory":
+        yield MemoryGraphRegistry()
+        return
+    pg = _pg()
+    yield pg
+    _reset(pg._conn)  # nothing left recording a test target (publish_targets tests remove them)
 
 
 def test_nothing_is_published_at_first(registry: GraphRegistry) -> None:
@@ -87,6 +102,16 @@ def test_each_publish_is_the_next_version(registry: GraphRegistry) -> None:
     assert current.graph_iri == f"{BASE}graph/source/{SHA}/letter"
     assert current.job_id == JOB
     assert [g.version for g in registry.all_current()] == [2]
+
+
+def test_each_version_records_its_publishing_target(registry: GraphRegistry) -> None:
+    registry.publish(record(), lambda _v: None)
+    current = registry.current(SHA, "letter")
+    assert current is not None and current.target_id == "default"
+    registry.publish(record(target_id="finance-lake"), lambda _v: None)
+    current = registry.current(SHA, "letter")
+    assert current is not None and current.target_id == "finance-lake"
+    assert [g.target_id for g in registry.all_current()] == ["finance-lake"]
 
 
 def test_a_failed_write_records_nothing(registry: GraphRegistry) -> None:

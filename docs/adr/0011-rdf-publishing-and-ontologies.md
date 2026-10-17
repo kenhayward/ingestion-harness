@@ -4,7 +4,7 @@
 
 ## Context
 Content Transformation Studio (CT Studio) publishes each approved document as CSV and JSON to
-one S3 target (`TARGET_S3_*`, [ADR 0004](0004-api-reads-publish-target.md)). Consumers want the
+one S3 target (`TARGET_S3_*` at the time, now a recipe's publishing target; [ADR 0004](0004-api-reads-publish-target.md)). Consumers want the
 same data as a knowledge graph, expressed in the customer and industry ontologies they already
 use (for pharmaceutical documents that might be IDMP-O plus a customer extension). They want to
 query it with SPARQL, joined with those ontologies. The chief architect recommends Apache Jena

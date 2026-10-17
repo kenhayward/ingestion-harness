@@ -1,0 +1,205 @@
+{
+  "prefixes": [
+    {
+      "input": "",
+      "expected": ""
+    },
+    {
+      "input": "ingest",
+      "expected": "ingest/"
+    },
+    {
+      "input": "/ingest/",
+      "expected": "ingest/"
+    },
+    {
+      "input": " a/b ",
+      "expected": "a/b/"
+    }
+  ],
+  "delivery": [
+    {
+      "name": "no delivery",
+      "definition": {},
+      "formats": ["csv", "json"],
+      "publishTo": "default"
+    },
+    {
+      "name": "target only",
+      "definition": {
+        "delivery": {
+          "publishTo": "finance-lake"
+        }
+      },
+      "formats": ["csv", "json"],
+      "publishTo": "finance-lake"
+    },
+    {
+      "name": "formats only",
+      "definition": {
+        "delivery": {
+          "formats": ["json"]
+        }
+      },
+      "formats": ["json"],
+      "publishTo": "default"
+    },
+    {
+      "name": "both",
+      "definition": {
+        "delivery": {
+          "formats": ["csv"],
+          "publishTo": "lake_2"
+        }
+      },
+      "formats": ["csv"],
+      "publishTo": "lake_2"
+    }
+  ],
+  "seed": [
+    {
+      "name": "all blank: internal",
+      "env": {
+        "S3_ENDPOINT": "http://seaweed:8333",
+        "S3_ACCESS_KEY": "k",
+        "S3_SECRET_KEY": "s"
+      },
+      "expected": {
+        "kind": "internal",
+        "bucket": "ingest-published",
+        "prefix": "",
+        "endpoint": null,
+        "region": null,
+        "accessKeyEnv": null,
+        "secretKeyEnv": null,
+        "forcePathStyle": true
+      }
+    },
+    {
+      "name": "same endpoint, same keys: internal",
+      "env": {
+        "S3_ENDPOINT": "http://seaweed:8333",
+        "S3_ACCESS_KEY": "k",
+        "S3_SECRET_KEY": "s",
+        "TARGET_S3_ENDPOINT": "http://seaweed:8333",
+        "TARGET_S3_ACCESS_KEY": "k",
+        "TARGET_S3_SECRET_KEY": "s",
+        "TARGET_S3_BUCKET": "pub"
+      },
+      "expected": {
+        "kind": "internal",
+        "bucket": "pub",
+        "prefix": "",
+        "endpoint": null,
+        "region": null,
+        "accessKeyEnv": null,
+        "secretKeyEnv": null,
+        "forcePathStyle": true
+      }
+    },
+    {
+      "name": "same endpoint, other keys: external",
+      "env": {
+        "S3_ENDPOINT": "http://seaweed:8333",
+        "S3_ACCESS_KEY": "k",
+        "S3_SECRET_KEY": "s",
+        "TARGET_S3_ENDPOINT": "http://seaweed:8333",
+        "TARGET_S3_ACCESS_KEY": "other",
+        "TARGET_S3_SECRET_KEY": "other-secret"
+      },
+      "expected": {
+        "kind": "external",
+        "bucket": "ingest-published",
+        "prefix": "",
+        "endpoint": "http://seaweed:8333",
+        "region": "us-east-1",
+        "accessKeyEnv": "TARGET_S3_ACCESS_KEY",
+        "secretKeyEnv": "TARGET_S3_SECRET_KEY",
+        "forcePathStyle": true
+      }
+    },
+    {
+      "name": "other endpoint: external",
+      "env": {
+        "S3_ENDPOINT": "http://seaweed:8333",
+        "S3_ACCESS_KEY": "k",
+        "S3_SECRET_KEY": "s",
+        "TARGET_S3_ENDPOINT": "https://s3.eu-west-2.amazonaws.com",
+        "TARGET_S3_REGION": "eu-west-2",
+        "TARGET_S3_ACCESS_KEY": "aws-k",
+        "TARGET_S3_SECRET_KEY": "aws-s",
+        "TARGET_S3_BUCKET": "lake"
+      },
+      "expected": {
+        "kind": "external",
+        "bucket": "lake",
+        "prefix": "",
+        "endpoint": "https://s3.eu-west-2.amazonaws.com",
+        "region": "eu-west-2",
+        "accessKeyEnv": "TARGET_S3_ACCESS_KEY",
+        "secretKeyEnv": "TARGET_S3_SECRET_KEY",
+        "forcePathStyle": true
+      }
+    },
+    {
+      "name": "endpoint blank, other keys: external, endpoint from S3_ENDPOINT",
+      "env": {
+        "S3_ENDPOINT": "http://seaweed:8333",
+        "S3_ACCESS_KEY": "k",
+        "S3_SECRET_KEY": "s",
+        "TARGET_S3_ACCESS_KEY": "other",
+        "TARGET_S3_SECRET_KEY": "other-secret"
+      },
+      "expected": {
+        "kind": "external",
+        "bucket": "ingest-published",
+        "prefix": "",
+        "endpoint": "http://seaweed:8333",
+        "region": "us-east-1",
+        "accessKeyEnv": "TARGET_S3_ACCESS_KEY",
+        "secretKeyEnv": "TARGET_S3_SECRET_KEY",
+        "forcePathStyle": true
+      }
+    },
+    {
+      "name": "other endpoint, keys blank: external, keys fall back to S3_*",
+      "env": {
+        "S3_ENDPOINT": "http://seaweed:8333",
+        "S3_ACCESS_KEY": "k",
+        "S3_SECRET_KEY": "s",
+        "TARGET_S3_ENDPOINT": "https://s3.eu-west-2.amazonaws.com",
+        "TARGET_S3_REGION": "eu-west-2",
+        "TARGET_S3_BUCKET": "lake"
+      },
+      "expected": {
+        "kind": "external",
+        "bucket": "lake",
+        "prefix": "",
+        "endpoint": "https://s3.eu-west-2.amazonaws.com",
+        "region": "eu-west-2",
+        "accessKeyEnv": "S3_ACCESS_KEY",
+        "secretKeyEnv": "S3_SECRET_KEY",
+        "forcePathStyle": true
+      }
+    },
+    {
+      "name": "prefix kept as .env had it (no slash added)",
+      "env": {
+        "S3_ENDPOINT": "http://seaweed:8333",
+        "S3_ACCESS_KEY": "k",
+        "S3_SECRET_KEY": "s",
+        "TARGET_S3_PREFIX": "ingest"
+      },
+      "expected": {
+        "kind": "internal",
+        "bucket": "ingest-published",
+        "prefix": "ingest",
+        "endpoint": null,
+        "region": null,
+        "accessKeyEnv": null,
+        "secretKeyEnv": null,
+        "forcePathStyle": true
+      }
+    }
+  ]
+}

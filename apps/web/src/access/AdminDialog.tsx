@@ -9,12 +9,15 @@ import { Icon, type IconName } from '../ui/Icon.js';
 import { AccessPage } from './AccessPage.js';
 import { IntegrationPage } from './IntegrationPage.js';
 import { MaintenancePage } from './MaintenancePage.js';
+import { PublishedOutputsPage } from './PublishedOutputsPage.js';
 
-export type AdminTab = 'models' | 'linked-data' | 'users' | 'integration' | 'maintenance';
+export type AdminTab =
+  'models' | 'linked-data' | 'published-outputs' | 'users' | 'integration' | 'maintenance';
 
 const TABS: { id: AdminTab; label: string; icon: IconName }[] = [
   { id: 'models', label: 'Models', icon: 'chip' },
   { id: 'linked-data', label: 'Linked data', icon: 'link' },
+  { id: 'published-outputs', label: 'Published outputs', icon: 'upload' },
   { id: 'users', label: 'Users', icon: 'users' },
   { id: 'integration', label: 'Integration', icon: 'plug' },
   { id: 'maintenance', label: 'Maintenance', icon: 'warning' },
@@ -138,6 +141,9 @@ export function AdminDialog({
           >
             {tab === 'models' && <ModelsPage api={api} me={me} actions={actions} />}
             {tab === 'linked-data' && <LinkedDataPage api={api} me={me} />}
+            {tab === 'published-outputs' && (
+              <PublishedOutputsPage api={api} me={me} actions={actions} />
+            )}
             {tab === 'users' && <AccessPage api={api} me={me} actions={actions} />}
             {tab === 'integration' && <IntegrationPage api={api} me={me} />}
             {tab === 'maintenance' && (

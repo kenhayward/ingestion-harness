@@ -20,7 +20,8 @@ describe('ResultDetailView', () => {
       'pvp v3',
     );
     expect(valueOf('Review')).toHaveTextContent('Approved by Ken — Checked');
-    expect(valueOf('Target')).toHaveTextContent('ingest-published/pvp/');
+    expect(valueOf('Publishing target')).toHaveTextContent('Default');
+    expect(valueOf('Publishing target')).toHaveTextContent('ingest-published/pvp/');
     const downloads = screen.getByRole('navigation', { name: 'Downloads' });
     expect(within(downloads).getByRole('link', { name: 'results.csv' })).toHaveAttribute(
       'href',
@@ -129,6 +130,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/lines.csv',
           rowCount: 501,
+          targetId: 'default',
         },
         {
           outputId: 'all',
@@ -137,6 +139,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/all.json',
           rowCount: null,
+          targetId: 'default',
         },
         {
           outputId: 'gone',
@@ -145,6 +148,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/gone.csv',
           rowCount: 1,
+          targetId: 'default',
         },
       ],
     });
@@ -243,6 +247,7 @@ describe('ResultDetailView', () => {
           bucket: 'b',
           key: 'k/lines.csv',
           rowCount: 1,
+          targetId: 'default',
         },
       ],
     });

@@ -21,7 +21,7 @@ from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
 from ingest_worker.template import Template
 
-from .fakes import FakeProvider, FakeQueue
+from .fakes import FakeProvider, FakeQueue, FakeTargets
 from .test_template_pipeline import JOB, PAGES, RESPONSES, TEMPLATE
 
 
@@ -41,7 +41,7 @@ def make_deps(tmp_path: Path, template: dict[str, Any]) -> tuple[PipelineDeps, M
         ),
         extract_text=lambda _pdf: PAGES,
         buckets=Buckets("inbox", "outputs", "runs"),
-        target=Target(store=target, bucket="published", prefix="pvp/"),
+        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
     )
     return deps, target
 
@@ -171,8 +171,8 @@ def test_documents_without_review_are_published_straight_away(tmp_path: Path) ->
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, deps, "w1")
     assert queue.completed and not queue.awaiting
-    [(_, published, bucket)] = queue.published
-    assert bucket == "published"
+    [(_, published, target_id)] = queue.published
+    assert target_id == "default"
     assert published[0].key.startswith("pvp/demo/v1/")
     assert target_csv(target, "pvp/demo/v1/fields/doc-1.csv")[0]["product"] == "Richfer capsules"
 

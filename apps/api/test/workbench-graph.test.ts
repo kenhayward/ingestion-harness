@@ -71,6 +71,7 @@ async function project({ base = true, definition = mapped as object } = {}) {
         bucket: 'outputs',
         key: `letter/v1/document/${job.documentId}.json`,
         rowCount: null,
+        targetId: null,
       },
     ]);
     return id;

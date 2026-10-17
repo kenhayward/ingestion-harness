@@ -28,6 +28,7 @@ const output = (o: Partial<JobOutput>): JobOutput => ({
   key: 'x/line_items.csv',
   rowCount: 14,
   ...o,
+  targetId: null,
 });
 
 const defaults = {
@@ -110,6 +111,7 @@ describe('JobDetailPanel', () => {
             format: 'json',
             key: 'pub/doc.json',
             rowCount: null,
+            targetId: 'default',
           }),
           output({ outputId: 'doc', format: 'json', key: 'x/doc.json', rowCount: null }),
         ],

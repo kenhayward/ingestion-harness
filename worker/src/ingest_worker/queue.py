@@ -13,10 +13,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from .llm.base import ModelDescriptor
 from .outputs import RenderedOutput
+
+if TYPE_CHECKING:
+    from .publish_targets import Target
 
 Level = Literal["debug", "info", "warn", "error"]
 
@@ -83,8 +86,10 @@ class JobQueue(Protocol):
         ...
 
     def record_published(
-        self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str
-    ) -> None: ...
+        self, job: ClaimedJob, outputs: list[RenderedOutput], target: Target
+    ) -> None:
+        """Record outputs delivered to `target` (its id and bucket, the keys as written)."""
+        ...
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         """Reviewer edits in the order they were made."""
@@ -191,17 +196,23 @@ class PgJobQueue:
             self._record_outputs(job, outputs, outputs_bucket, "draft")
 
     def _record_outputs(
-        self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str, stage: str
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        bucket: str,
+        stage: str,
+        target_id: str | None = None,
     ) -> None:
         for o in outputs:
             self._conn.execute(
-                """INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key, row_count)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key,
+                       row_count, target_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (job_id, output_id, stage) DO UPDATE
                      SET bucket = EXCLUDED.bucket, object_key = EXCLUDED.object_key,
-                         row_count = EXCLUDED.row_count, created_at = now(),
-                         withdrawn_at = NULL""",
-                (job.id, o.output_id, stage, o.format, bucket, o.key, o.row_count),
+                         row_count = EXCLUDED.row_count, target_id = EXCLUDED.target_id,
+                         created_at = now(), withdrawn_at = NULL""",
+                (job.id, o.output_id, stage, o.format, bucket, o.key, o.row_count, target_id),
             )
 
     def await_review(
@@ -225,8 +236,10 @@ class PgJobQueue:
     def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
         self._record_outputs(job, outputs, bucket, "draft")
 
-    def record_published(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
-        self._record_outputs(job, outputs, bucket, "published")
+    def record_published(
+        self, job: ClaimedJob, outputs: list[RenderedOutput], target: Target
+    ) -> None:
+        self._record_outputs(job, outputs, target.bucket, "published", target.id)
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         cur = self._conn.execute(

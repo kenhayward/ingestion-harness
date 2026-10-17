@@ -28,8 +28,8 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
     await repo?.close();
   });
 
-  /** A succeeded, delivered job of `type` with one published output and one draft. */
-  async function delivered(type: string, sha: string) {
+  /** A succeeded, delivered job of `type` with one published output (on `target`) and one draft. */
+  async function delivered(type: string, sha: string, target = 'default') {
     const id = randomUUID();
     const job = await repo.createDocumentAndJob(
       {
@@ -46,26 +46,34 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
     );
     await pool.query(`UPDATE jobs SET status = 'succeeded' WHERE id = $1`, [job.id]);
     await pool.query(
-      `INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key)
-       VALUES ($1, 'fields', 'published', 'csv', 'pub', $2), ($1, 'fields', 'draft', 'csv', 'out', $2)`,
-      [job.id, `${type}/${job.id}.csv`],
+      `INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key, target_id)
+       VALUES ($1, 'fields', 'published', 'csv', 'pub', $2, $3),
+              ($1, 'fields', 'draft', 'csv', 'out', $2, NULL)`,
+      [job.id, `${type}/${job.id}.csv`, target],
     );
     return job;
   }
 
-  async function publishGraph(sha: string, type: string, jobId: string, version: number) {
+  async function publishGraph(
+    sha: string,
+    type: string,
+    jobId: string,
+    version: number,
+    target = 'default',
+  ) {
     const iri = `https://d.example/graph/source/${sha}/${type}`;
-    const values = [sha, type, iri, version, jobId, randomUUID()];
+    const values = [sha, type, iri, version, jobId, randomUUID(), target];
     await pool.query(
       `INSERT INTO published_graphs (sha256, template_id, graph_iri, version, job_id, document_id,
-         template_version, base_iri, triples) VALUES ($1, $2, $3, $4, $5, $6, 1, 'https://d.example/', 3)
-       ON CONFLICT (sha256, template_id) DO UPDATE SET version = $4, job_id = $5`,
+         template_version, base_iri, triples, target_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, 'https://d.example/', 3, $7)
+       ON CONFLICT (sha256, template_id) DO UPDATE SET version = $4, job_id = $5, target_id = $7`,
       values,
     );
     await pool.query(
       `INSERT INTO published_graph_versions (sha256, template_id, graph_iri, version, job_id,
-         document_id, template_version, base_iri, triples)
-       VALUES ($1, $2, $3, $4, $5, $6, 1, 'https://d.example/', 3)`,
+         document_id, template_version, base_iri, triples, target_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, 'https://d.example/', 3, $7)`,
       values,
     );
     await pool.query(
@@ -105,8 +113,10 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
       priority: 0,
       max_attempts: 100,
       params: {
-        objects: [{ bucket: 'pub', key: `${type}/${first.id}.csv` }],
-        graphs: [{ sha256: sha, templateId: type, graphIri: null, versions: [1] }],
+        objects: [{ bucket: 'pub', key: `${type}/${first.id}.csv`, target: 'default' }],
+        graphs: [
+          { sha256: sha, templateId: type, graphIri: null, target: 'default', versions: [1] },
+        ],
       },
     });
     expect(
@@ -116,8 +126,8 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
     const newest = await repo.deleteJob(second.id);
     const dropped = newest.result === 'deleted' ? newest.removed.withdrawJobId : null;
     expect((await params(dropped))!.params).toEqual({
-      objects: [{ bucket: 'pub', key: `${type}/${second.id}.csv` }],
-      graphs: [{ sha256: sha, templateId: type, graphIri: iri, versions: [2] }],
+      objects: [{ bucket: 'pub', key: `${type}/${second.id}.csv`, target: 'default' }],
+      graphs: [{ sha256: sha, templateId: type, graphIri: iri, target: 'default', versions: [2] }],
     });
     for (const table of [
       'published_graphs',
@@ -137,6 +147,49 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
     ).toBe(0);
   });
 
+  it('names the recorded target of every object and graph copy', async () => {
+    await pool.query(
+      `INSERT INTO publish_targets (id, label, kind, bucket) VALUES ('finance-lake', 'Finance', 'external', 'fin')
+       ON CONFLICT DO NOTHING`,
+    );
+    const type = `tg-${randomUUID().slice(0, 8)}`;
+    const sha = randomUUID().replaceAll('-', '');
+    const v1 = await delivered(type, sha);
+    const v2 = await delivered(type, sha, 'finance-lake');
+    await publishGraph(sha, type, v1.id, 1);
+    const iri = await publishGraph(sha, type, v2.id, 2, 'finance-lake');
+    expect((await repo.getJob(v2.id))!.outputs.map((o) => [o.stage, o.targetId])).toEqual([
+      ['draft', null],
+      ['published', 'finance-lake'],
+    ]);
+
+    const withdrawId = await repo.withdrawType(type, 'admin');
+    expect((await params(withdrawId))!.params).toEqual({
+      objects: [
+        { bucket: 'pub', key: `${type}/${v1.id}.csv`, target: 'default' },
+        { bucket: 'pub', key: `${type}/${v2.id}.csv`, target: 'finance-lake' },
+      ].sort((a, b) => a.key.localeCompare(b.key)),
+      graphs: [
+        { sha256: sha, templateId: type, graphIri: null, target: 'default', versions: [1] },
+        { sha256: sha, templateId: type, graphIri: iri, target: 'finance-lake', versions: [2] },
+      ],
+    });
+
+    const other = `tg-${randomUUID().slice(0, 8)}`;
+    const sha2 = randomUUID().replaceAll('-', '');
+    const job = await delivered(other, sha2, 'finance-lake');
+    const iri2 = await publishGraph(sha2, other, job.id, 1, 'finance-lake');
+    const deleted = await repo.deleteJob(job.id);
+    const id = deleted.result === 'deleted' ? deleted.removed.withdrawJobId : null;
+    expect((await params(id))!.params).toEqual({
+      objects: [{ bucket: 'pub', key: `${other}/${job.id}.csv`, target: 'finance-lake' }],
+      graphs: [
+        { sha256: sha2, templateId: other, graphIri: iri2, target: 'finance-lake', versions: [1] },
+      ],
+    });
+    await pool.query(`DELETE FROM jobs WHERE task IN ('withdraw', 'republish')`);
+  });
+
   it('retiring withdraws once, readers skip withdrawn outputs, unretiring republishes', async () => {
     const type = `rt-${randomUUID().slice(0, 8)}`;
     const sha = randomUUID().replaceAll('-', '');
@@ -145,8 +198,8 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
 
     const withdrawId = await repo.withdrawType(type, 'admin');
     expect((await params(withdrawId))!.params).toEqual({
-      objects: [{ bucket: 'pub', key: `${type}/${job.id}.csv` }],
-      graphs: [{ sha256: sha, templateId: type, graphIri: iri, versions: [1] }],
+      objects: [{ bucket: 'pub', key: `${type}/${job.id}.csv`, target: 'default' }],
+      graphs: [{ sha256: sha, templateId: type, graphIri: iri, target: 'default', versions: [1] }],
     });
     expect((await repo.getJob(job.id))!.outputs.map((o) => o.stage)).toEqual(['draft']);
     expect(await repo.getPublishedAt(job.id)).toBeNull();

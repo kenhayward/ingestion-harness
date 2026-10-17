@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { Api } from '../src/api/client.js';
@@ -222,6 +222,33 @@ describe('Outputs tab: delivered outputs (S3 and RDF)', () => {
     await userEvent.click(await toggle(/RDF/));
     await userEvent.click(screen.getByRole('button', { name: 'Turn RDF off' }));
     expect(api.saveTemplate).toHaveBeenCalledWith('letter', 4, DRAFT, '2026-10-15T09:00:00.000Z');
+  });
+
+  it('keeps a recipe publishing target when RDF is switched on and off', async () => {
+    const targeted = { ...DRAFT, delivery: { publishTo: 'finance-lake' } };
+    const { api } = withDraft(targeted);
+    await userEvent.click(await toggle(/RDF/));
+    expect(api.saveTemplate).toHaveBeenLastCalledWith(
+      'letter',
+      4,
+      { ...DRAFT, delivery: { formats: ['csv', 'json', 'rdf'], publishTo: 'finance-lake' } },
+      '2026-10-15T09:00:00.000Z',
+    );
+    const mapped = {
+      ...DRAFT,
+      semantics: MAPPING,
+      delivery: { formats: ['csv', 'json', 'rdf'], publishTo: 'finance-lake' },
+    };
+    cleanup();
+    const again = withDraft(mapped);
+    await userEvent.click(await toggle(/RDF/));
+    await userEvent.click(screen.getByRole('button', { name: 'Turn RDF off' }));
+    expect(again.api.saveTemplate).toHaveBeenLastCalledWith(
+      'letter',
+      4,
+      targeted,
+      '2026-10-15T09:00:00.000Z',
+    );
   });
 
   it('turns S3 off without asking', async () => {

@@ -40,6 +40,7 @@ from .pipeline import (
     ProcessResult,
     RepeatPlan,
     StepProgress,
+    Target,
     check_cancelled,
     enforce_data_policy,
     page_images,
@@ -48,6 +49,7 @@ from .pipeline import (
     resolve_models,
     run_check_with_event,
     run_step_extraction,
+    target_for,
 )
 from .queue import ClaimedJob, JobQueue
 from .rdf import GraphContext, ShaclReport, render, to_turtle, validate, with_version
@@ -226,7 +228,11 @@ def process_template_job(
     formats: list[str] = list(template.delivery_formats())
     delivered_graph = graph
     deliver_graph = (
-        (lambda: publish_graph(job, deps, queue, template, document, delivered_graph))
+        (
+            lambda target: publish_graph(
+                job, deps, queue, template, document, delivered_graph, target
+            )
+        )
         if delivered_graph is not None and "rdf" in formats
         else None
     )
@@ -240,12 +246,14 @@ def publish_template_job(
     loaded: LoadedTemplate,
     *,
     deliver: bool = True,
-    on_published: Callable[[list[RenderedOutput]], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target], None] | None = None,
 ) -> list[RenderedOutput]:
     """Apply the reviewer's edits to the draft (never modified), keep the reviewed document in
-    the runs bucket and, when `deliver`, publish it to the final target. Approved test runs
-    (workbench references) pass `deliver=False`: reviewed, never delivered."""
+    the runs bucket and, when `deliver`, publish it to the publishing target of the job's recipe
+    version (resolved first: a missing target writes nothing). Approved test runs (workbench
+    references) pass `deliver=False`: reviewed, never delivered, no target resolved."""
     template = loaded.template
+    target = target_for(deps, loaded) if deliver else None
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     draft = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
     edits = queue.review_edits(job.id)
@@ -292,11 +300,14 @@ def publish_template_job(
     if report is not None and report.violations() and "rdf" in formats:
         raise ShapesViolated([v.reason() for v in report.violations()])
     rendered = render_document(template, document, graph)
-    published = publish_outputs(deps, [o for o in rendered if o.format in formats])
-    if on_published is not None:
-        on_published(published)  # recorded before the graph: a store failure keeps the record
-    if graph is not None and "rdf" in formats:
-        publish_graph(job, deps, queue, template, document, graph)
+    published: list[RenderedOutput] = []
+    if target is not None:  # None: no publishing targets, nothing is delivered
+        published = publish_outputs(deps, [o for o in rendered if o.format in formats], target)
+        if on_published is not None:
+            # Recorded before the graph: a store failure keeps the record.
+            on_published(published, target)
+        if graph is not None and "rdf" in formats:
+            publish_graph(job, deps, queue, template, document, graph, target)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
 
@@ -308,13 +319,14 @@ def publish_graph(
     template: Template,
     document: dict[str, Any],
     rendered: RenderedGraph,
+    target: Target,
 ) -> int | None:
     """Publish a delivered graph as the next version of its (file, document type) graph: the
-    versioned copy in the target, the pinned ontologies' TBox graphs not loaded yet under this
-    base, and the store's PUT, then the version and its entities (one transaction, holding the
-    graph's lock). None when nothing is delivered (no target or no registry)."""
-    registry, target, store = deps.graph_registry, deps.target, deps.graph_store
-    if registry is None or target is None:
+    versioned copy in `target` (recorded with it), the pinned ontologies' TBox graphs not loaded
+    yet under this base, and the store's PUT, then the version and its entities (one
+    transaction, holding the graph's lock). None when nothing is recorded (no registry)."""
+    registry, store = deps.graph_registry, deps.graph_store
+    if registry is None:
         return None
     sha = str(document["source_sha256"])
     record = GraphPublish(
@@ -327,6 +339,7 @@ def publish_graph(
         base_iri=rendered.base,
         triples=rendered.triples,
         entities=list(rendered.entities),
+        target_id=target.id,
     )
     published_at = datetime.now(UTC).isoformat()
 

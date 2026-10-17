@@ -519,16 +519,19 @@ describe('http api: evaluation', () => {
 describe('http api: S3 keys (ADR 0008)', () => {
   it('lists, issues, rotates, revokes and deletes through /api/access/s3-keys', async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
-      init?.method === 'POST' && !String(_url).endsWith('/revoke')
-        ? respond(200, { secretAccessKey: 's' })
-        : init?.method
-          ? new Response(null, { status: 204 })
-          : respond(200, { bucket: 'b', endpoint: null, consumers: [] }),
+      init?.method === 'PUT'
+        ? respond(200, { id: 'c1', targets: ['default'] })
+        : init?.method === 'POST' && !String(_url).endsWith('/revoke')
+          ? respond(200, { secretAccessKey: 's' })
+          : init?.method
+            ? new Response(null, { status: 204 })
+            : respond(200, { endpoint: null, internalTargets: [], consumers: [] }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const api = createHttpApi('/api');
     await api.listS3Keys();
-    await api.createS3Key('Lake', 90);
+    await api.createS3Key('Lake', 90, ['default']);
+    await api.setS3KeyTargets('c1', ['default', 'x']);
     await api.rotateS3Key('c1', 365, 7);
     await api.revokeS3Key('k1');
     await api.deleteS3Consumer('c1');
@@ -539,7 +542,8 @@ describe('http api: S3 keys (ADR 0008)', () => {
     ]);
     expect(calls).toEqual([
       ['GET', '/api/access/s3-keys', undefined],
-      ['POST', '/api/access/s3-keys', { label: 'Lake', expiresInDays: 90 }],
+      ['POST', '/api/access/s3-keys', { label: 'Lake', expiresInDays: 90, targets: ['default'] }],
+      ['PUT', '/api/access/s3-keys/c1/targets', { targets: ['default', 'x'] }],
       ['POST', '/api/access/s3-keys/c1/rotate', { expiresInDays: 365, graceDays: 7 }],
       ['POST', '/api/access/s3-keys/keys/k1/revoke', undefined],
       ['DELETE', '/api/access/s3-keys/c1', undefined],

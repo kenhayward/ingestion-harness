@@ -14,7 +14,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
   });
   return {
     job: j,
-    target: { bucket: 'ingest-published', prefix: 'pvp/' },
+    target: { id: 'default', label: 'Default', bucket: 'ingest-published', prefix: 'pvp/' },
     publishedAt: '2026-10-02T08:00:01.000Z',
     outputs: [
       {
@@ -24,6 +24,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
         bucket: 'ingest-published',
         key: 'pvp/x/document/d.json',
         rowCount: null,
+        targetId: 'default',
       },
       {
         outputId: 'results',
@@ -32,6 +33,7 @@ export function resultDetail(overrides: Partial<ResultDetail> = {}): ResultDetai
         bucket: 'ingest-published',
         key: 'pvp/x/results/d.csv',
         rowCount: 2,
+        targetId: 'default',
       },
     ],
     document: {

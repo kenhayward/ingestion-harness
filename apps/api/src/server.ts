@@ -2,13 +2,7 @@ import pg from 'pg';
 import { PgAccessRepo } from './access/pg.js';
 import { SIGN_IN_RETENTION_DAYS } from './access/repo.js';
 import { buildApp } from './app.js';
-import {
-  githubConfig,
-  loadConfig,
-  s3KeysConfig,
-  targetConfig,
-  versionFromConfig,
-} from './config.js';
+import { githubConfig, loadConfig, s3KeysConfig, versionFromConfig } from './config.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
@@ -18,6 +12,9 @@ import { PgProfileRepo } from './profile/pg.js';
 import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { secretsKeys } from './llm/secrets.js';
+import { PgPublishTargetRepo } from './publish-targets/pg.js';
+import { defaultSeed, seedDifferences } from './publish-targets/seed.js';
+import { TargetStores } from './publish-targets/stores.js';
 import { PgRepo } from './repositories/pg.js';
 import { PgS3KeyRepo } from './s3keys/pg.js';
 import { startReconciler } from './s3keys/reconciler.js';
@@ -31,7 +28,6 @@ import { warmListCache } from './workbench/list.js';
 import { PgWorkbenchRepo } from './workbench/repo.js';
 
 const config = loadConfig();
-const target = targetConfig(config);
 const repo = PgRepo.fromUrl(config.DATABASE_URL);
 const templates = new PgTemplateRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 5 }),
@@ -49,20 +45,33 @@ const s3 = {
   accessKeyId: config.S3_ACCESS_KEY,
   secretAccessKey: config.S3_SECRET_KEY,
 };
-// Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
-// identity; only when the publish target is that SeaweedFS.
-const s3KeySettings = s3KeysConfig(config);
-const s3Keys =
-  s3KeySettings &&
-  new S3KeyService({
-    repo: new PgS3KeyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
-    issuer: new SeaweedIamIssuer(s3),
-    ...s3KeySettings,
-  });
-
 // One LISTEN connection for every live job stream; errors are logged once the app has a logger.
 let logWatchError: (err: unknown) => void = () => {};
 const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err));
+
+// Throws on a malformed key: better a failed start than keys that can't be read back.
+const llmSecrets = secretsKeys(process.env);
+// Publishing targets (migration 202610170019): .env seeds `default` once; the database wins afterwards.
+const targets = new PgPublishTargetRepo(
+  new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
+);
+const seed = defaultSeed(config);
+const seedOutcome = await targets.seedDefault(seed);
+const targetStores = new TargetStores({
+  repo: targets,
+  internal: s3,
+  secrets: llmSecrets,
+  env: process.env,
+});
+
+// Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
+// identity, granted per internal publishing target.
+const s3Keys = new S3KeyService({
+  repo: new PgS3KeyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  issuer: new SeaweedIamIssuer(s3),
+  targets,
+  ...s3KeysConfig(config),
+});
 
 const linkedData = new PgLinkedDataRepo(
   new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
@@ -83,13 +92,8 @@ const app = await buildApp({
   templates,
   workbench,
   store: new S3ObjectStore(s3),
-  targetStore: new S3ObjectStore({
-    endpoint: target.endpoint,
-    region: target.region,
-    accessKeyId: target.accessKeyId,
-    secretAccessKey: target.secretAccessKey,
-  }),
-  target: { bucket: target.bucket, prefix: target.prefix },
+  targets,
+  targetStores,
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
   buckets: {
     inbox: config.S3_BUCKET_INBOX,
@@ -116,8 +120,7 @@ const app = await buildApp({
       .filter(Boolean),
     maxBytes: config.ONTOLOGY_MAX_BYTES,
   },
-  // Throws on a malformed key: better a failed start than keys that can't be read back.
-  llmSecrets: secretsKeys(process.env),
+  llmSecrets,
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   frameAncestors: config.FRAME_ANCESTORS,
   version: versionFromConfig(config),
@@ -139,6 +142,12 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 if (seeded.length) app.log.info({ seeded }, 'imported template files into the database');
+if (seedOutcome === 'seeded') app.log.info('publishing target default seeded from .env');
+if (seedOutcome === 'differs') {
+  const stored = await targets.get('default');
+  const fields = stored ? seedDifferences(stored, seed).join(', ') : '';
+  app.log.warn(`publishing target default differs from .env (${fields}): .env is ignored now`);
+}
 // A new password for the admin from the log on every start (deploy/restart); the previous one
 // and its sessions end (ADR 0013). Rotated before listening, so a failure stops startup rather
 // than serving without an admin.

@@ -1,6 +1,8 @@
 /** Object storage port. `S3ObjectStore` (SeaweedFS) in production, `MemoryObjectStore` in tests. */
 export interface ObjectStore {
   ping(bucket: string): Promise<void>;
+  /** Create the bucket when it does not exist; already owned by us is success. */
+  ensureBucket(bucket: string): Promise<void>;
   put(bucket: string, key: string, body: Buffer, contentType: string): Promise<void>;
   get(bucket: string, key: string): Promise<Buffer | null>;
   delete(bucket: string, key: string): Promise<void>;
@@ -11,7 +13,13 @@ export interface ObjectStore {
 export class MemoryObjectStore implements ObjectStore {
   readonly objects = new Map<string, { body: Buffer; contentType: string }>();
 
+  readonly ensured: string[] = [];
+
   async ping(): Promise<void> {}
+
+  async ensureBucket(bucket: string): Promise<void> {
+    this.ensured.push(bucket);
+  }
 
   async put(bucket: string, key: string, body: Buffer, contentType: string): Promise<void> {
     this.objects.set(`${bucket}/${key}`, { body, contentType });
