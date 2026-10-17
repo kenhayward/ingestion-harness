@@ -70,13 +70,33 @@ export const HELP_INDEX: HelpEntry[] = [
       { topic: 'ontologyShapes', label: 'Shapes' },
     ],
   },
-  { topic: 'github-sync', label: 'GitHub sync' },
-  { topic: 'published-outputs', label: 'Publishing targets' },
+  {
+    topic: 'administration',
+    label: 'Administration',
+    children: [
+      { topic: 'adminModels', label: 'Models' },
+      { topic: 'adminLinkedData', label: 'Linked data' },
+      { topic: 'published-outputs', label: 'Publishing targets' },
+      { topic: 'adminUsers', label: 'Users' },
+      { topic: 'github-sync', label: 'GitHub sync' },
+    ],
+  },
 ];
 
 /** Every entry of the menu, parents before their children. */
 export function helpEntries(index: readonly HelpEntry[] = HELP_INDEX): HelpEntry[] {
   return index.flatMap((e) => [e, ...helpEntries(e.children ?? [])]);
+}
+
+/** The main topic a topic belongs to: itself, or the entry whose children list it. */
+export function mainTopicOf(topic: HelpTopicId): HelpTopicId {
+  return HELP_INDEX.find((e) => e.topic === topic || e.children?.some((c) => c.topic === topic))!
+    .topic;
+}
+
+/** The menu as shown: every main topic, and the children of the open one only. */
+export function visibleEntries(open: HelpTopicId): HelpEntry[] {
+  return HELP_INDEX.flatMap((e) => (e.topic === open ? [e, ...(e.children ?? [])] : [e]));
 }
 
 /** A topic id from an address (`#/help/<topic>`), or null when there is no such topic. */

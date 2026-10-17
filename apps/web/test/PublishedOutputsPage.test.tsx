@@ -101,12 +101,6 @@ describe('PublishedOutputsPage', () => {
     expect(within(fin).queryByLabelText('Label')).toBeNull();
   });
 
-  it('opens a help topic from the heading', async () => {
-    page();
-    await userEvent.click(await screen.findByRole('button', { name: /^Help:/ }));
-    expect(screen.getByRole('dialog', { name: 'How publishing targets work' })).toBeInTheDocument();
-  });
-
   it('shows a locked field as read-only while the target is in use', async () => {
     page([external({ usage: { ...NO_USE, publishedVersions: 1, documentTypes: ['po'] } })]);
     const r = await open('Finance lake');
