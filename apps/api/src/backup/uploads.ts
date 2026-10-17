@@ -153,8 +153,14 @@ export class BackupUploads {
     for await (const { key } of this.deps.store.list(this.deps.bucket, PREFIX)) keys.push(key);
     for (const key of keys) {
       if (!key.endsWith('.json')) continue;
-      const state = await this.load(key.slice(PREFIX.length, -'.json'.length));
+      const id = key.slice(PREFIX.length, -'.json'.length);
+      const state = await this.load(id);
       if (state) await this.discard(state);
+      else {
+        // A damaged state file: its upload cannot be aborted, but its files can go.
+        await this.deps.store.delete(this.deps.bucket, uploadFileKey(id));
+        await this.deps.store.delete(this.deps.bucket, key);
+      }
     }
   }
 
@@ -169,10 +175,17 @@ export class BackupUploads {
     await store.delete(bucket, stateKey(state.id));
   }
 
+  /** The upload's state; null when it has none or its file is damaged. */
   private async load(id: string): Promise<State | null> {
     const raw = await this.deps.store.get(this.deps.bucket, stateKey(id));
     if (!raw) return null;
-    const parsed = StateSchema.safeParse(JSON.parse(raw.toString('utf8')));
+    let json: unknown;
+    try {
+      json = JSON.parse(raw.toString('utf8'));
+    } catch {
+      return null;
+    }
+    const parsed = StateSchema.safeParse(json);
     return parsed.success ? parsed.data : null;
   }
 

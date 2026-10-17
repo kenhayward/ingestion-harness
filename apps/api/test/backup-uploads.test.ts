@@ -76,6 +76,28 @@ describe('BackupUploads', () => {
     expect(await store.get('backups', `uploads/${first.id}.json`)).toBeNull();
     await expect(put(uploads, first.id, 1, 'efgh')).rejects.toMatchObject({ status: 404 });
   });
+
+  it('a damaged state file reads as no upload, and the next start removes it', async () => {
+    const { uploads, store } = await setup();
+    await store.put('backups', 'uploads/bad.json', Buffer.from('{not json'), 'application/json');
+    await store.put(
+      'backups',
+      'uploads/bad.ctbak',
+      Buffer.from('half'),
+      'application/octet-stream',
+    );
+    await store.put('backups', 'uploads/odd.json', Buffer.from('{"id":1}'), 'application/json');
+
+    expect(await uploads.get('bad')).toBeNull();
+    expect(await uploads.completedKey('bad')).toBeNull();
+    await expect(put(uploads, 'bad', 0, 'abcd')).rejects.toMatchObject({ status: 404 });
+
+    const started = await uploads.start({ size: 4, fileName: 'a.ctbak' }, 'Admin');
+    expect(await store.get('backups', 'uploads/bad.json')).toBeNull();
+    expect(await store.get('backups', 'uploads/bad.ctbak')).toBeNull();
+    expect(await store.get('backups', 'uploads/odd.json')).toBeNull();
+    expect(await uploads.get(started.id)).not.toBeNull();
+  });
 });
 
 describe('backup upload routes', () => {
