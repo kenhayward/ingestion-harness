@@ -1,9 +1,11 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { ApiError, type Me } from '../src/api/client.js';
 import { fakeApi } from './fake-api.js';
+
+afterEach(() => vi.useRealTimers());
 
 const statusError = (status: number, message: string, body: Record<string, unknown> = {}) =>
   new ApiError(message, status, body);
@@ -86,28 +88,40 @@ describe('sign-in gate', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
   });
 
-  it('a locked account reads the time it unlocks, in local time', async () => {
-    const until = new Date(Date.now() + 15 * 60_000).toISOString();
+  // The clock is pinned: a lock ending after midnight reads its date too, so "now + 15 min"
+  // read as a time alone failed between 23:45 and midnight.
+  const lockedAt = async (now: Date) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    const until = new Date(now.getTime() + 15 * 60_000);
     const api = fakeApi({
       me: vi.fn(async () => null),
       login: vi.fn(async () => {
         throw statusError(
           429,
-          `too many failed sign-ins for this account: try again after ${until}`,
-          {
-            lockedUntil: until,
-          },
+          `too many failed sign-ins for this account: try again after ${until.toISOString()}`,
+          { lockedUntil: until.toISOString() },
         );
       }),
     });
     render(<App api={api} pollMs={0} />);
     await signInWith('ken@example.com', 'x');
-    const time = new Date(until).toLocaleTimeString(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    expect(await screen.findByRole('alert')).toHaveTextContent(
+    const time = until.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return { alert: await screen.findByRole('alert'), until, time };
+  };
+
+  it('a locked account reads the time it unlocks, in local time', async () => {
+    const { alert, time } = await lockedAt(new Date(2026, 9, 16, 12, 0));
+    expect(alert).toHaveTextContent(
       `Too many failed sign-ins for this account. Try again after ${time}.`,
+    );
+  });
+
+  it('a lock ending after midnight reads its date too', async () => {
+    const { alert, until, time } = await lockedAt(new Date(2026, 9, 16, 23, 50));
+    const day = until.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    expect(alert).toHaveTextContent(
+      `Too many failed sign-ins for this account. Try again after ${day}, ${time}.`,
     );
   });
 
