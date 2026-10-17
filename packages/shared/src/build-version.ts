@@ -20,14 +20,15 @@ export const REPO_URL = 'https://github.com/kenhayward/ingestion-harness';
 
 const CALENDAR_TAG = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 
-/** GitHub's view of what this build added: the comparison with the previous tag, else null. */
+/**
+ * GitHub's view of this build: a tagged build's tag page (the merged PR's title, its commit), an
+ * untagged one's comparison with the tag before it (the commits since), else null.
+ */
 export function versionLink(info: VersionInfo, repo = REPO_URL): string | null {
   const plus = info.version.indexOf('+');
   const base = plus < 0 ? info.version : info.version.slice(0, plus);
   const suffix = plus < 0 ? null : info.version.slice(plus + 1);
   if (!CALENDAR_TAG.test(base)) return null;
-  if (suffix === null || suffix === 'dirty') {
-    return info.previous ? `${repo}/compare/${info.previous}...${base}` : `${repo}/tree/${base}`;
-  }
+  if (suffix === null || suffix === 'dirty') return `${repo}/releases/tag/${base}`;
   return info.previous ? `${repo}/compare/${info.previous}...${info.commit}` : null;
 }

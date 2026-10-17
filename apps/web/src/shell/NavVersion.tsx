@@ -2,8 +2,8 @@ import { versionLink, type VersionInfo } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
 
 /**
- * The build's version at the bottom of the nav (ADR 0014), linking to GitHub's comparison with the
- * previous tag: what this build added. A dev build shows its name without a link.
+ * The build's version at the bottom of the nav (ADR 0014), linking to its tag's page on GitHub (the
+ * merged PR), or an untagged build's changes since the previous tag. A dev build has no link.
  */
 export function NavVersion({ info, compact }: { info: VersionInfo; compact: boolean }) {
   const text = /^\d/.test(info.version) ? `v${info.version}` : info.version;

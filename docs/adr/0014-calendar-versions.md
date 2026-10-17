@@ -19,8 +19,8 @@ had to renumber.
   production deploy the same tag and show the same number. A commit CI has not tagged yet is
   waited for (up to 15 minutes) rather than built under another name; an untagged or locally
   changed build says so (`2026.10.17.2+abc1234`, `+dirty`).
-- **Where it shows:** the bottom of the app's nav, linking to GitHub's comparison with the previous
-  tag (what the build added); `GET /api/version`; the worker's start-up log.
+- **Where it shows:** the bottom of the app's nav, linking to the tag's page on GitHub (the merged
+  PR's title and commit; an untagged build links to the changes since the previous tag); `GET /api/version`; the worker's start-up log.
 - **No GitHub Releases yet.** While every merge is deployed, a release per tag would be noise;
   adding releases later needs only a step that creates one for a tag.
 - **Timestamped migrations.** New migrations are `YYYYMMDDHHMM_description.sql`; `0001`–`0049`

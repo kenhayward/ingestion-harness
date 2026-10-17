@@ -50,7 +50,8 @@ with `--untagged`.
 
 The version is baked into the `api`, `worker` and `app` images (build args `APP_VERSION`,
 `APP_VERSION_PREVIOUS`, `APP_COMMIT`), shown at the bottom of the app's nav (linking to the
-changes since the previous tag on GitHub), served by `GET /api/version` and logged by the worker
+tag's page on GitHub, which names the merged PR; an untagged build links to the changes since the
+previous tag), served by `GET /api/version` and logged by the worker
 at start. The scripts print it at the start and end of a deploy. With `--no-build` nothing is
 worked out: the images already carry their version, and without `IMAGE_TAG` the script reuses the
 images a clean build of HEAD made (its calendar tag, else the hash; `version.mjs image-tag`).
