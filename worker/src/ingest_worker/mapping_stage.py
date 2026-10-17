@@ -33,6 +33,7 @@ from .tool_loop import Tool, ToolError
 if TYPE_CHECKING:
     from .drafting import DraftParams
     from .llm.base import LLMProvider
+    from .ontology import OntologyStore
 
 #: Terms in one mapping prompt; the worst-ranked candidates are dropped first.
 MAX_MAPPING_TERMS = 300
@@ -773,6 +774,35 @@ def _embedder(
     return _Embedder(provider, model_id, ref)
 
 
+def stage_shortlists(
+    store: OntologyStore,
+    versions: list[tuple[str, int]],
+    outputs: list[OutputSpec],
+    queries: dict[str, str],
+    vectors: dict[str, list[float]],
+    model_ref: str | None,
+) -> dict[str, list[Candidate]]:
+    """Each output's candidates before the term budget (`_cap`): properties for everything but
+    the document, classes, concepts and schemes for the document, tables, enums and text."""
+    shortlists: dict[str, list[Candidate]] = {}
+    for o in outputs:
+        vector = vectors.get(o.path)
+        found: list[Candidate] = []
+        if o.kind != "document":
+            found += shortlist(
+                store, versions, queries[o.path], PROPERTY_KINDS, vector=vector,
+                model_ref=model_ref, k=PROPERTY_CANDIDATES,
+            )[0]  # fmt: skip
+        if o.kind in ("document", "table") or o.enum or o.type in ("text", "enum"):
+            found += shortlist(
+                store, versions, queries[o.path], CLASS_KINDS, vector=vector,
+                model_ref=model_ref, k=CLASS_CANDIDATES,
+            )[0]  # fmt: skip
+        if found:
+            shortlists[o.path] = found
+    return shortlists
+
+
 def run_mapping(
     job: ClaimedJob,
     deps: PipelineDeps,
@@ -856,24 +886,11 @@ def run_mapping(
                         "ontologies": [f"{i} v{v}" for i, v in versions],
                     },
                 )
-    shortlists: dict[str, list[Candidate]] = {}
-    for o in outputs:
-        model_ref_for = embedder.model_ref if embedder else None
-        vector = vectors.get(o.path)
-        found: list[Candidate] = []
-        if o.kind != "document":
-            found += shortlist(
-                store, versions, queries[o.path], PROPERTY_KINDS, vector=vector,
-                model_ref=model_ref_for, k=PROPERTY_CANDIDATES,
-            )[0]  # fmt: skip
-        if o.kind in ("document", "table") or o.enum or o.type in ("text", "enum"):
-            found += shortlist(
-                store, versions, queries[o.path], CLASS_KINDS, vector=vector,
-                model_ref=model_ref_for, k=CLASS_CANDIDATES,
-            )[0]  # fmt: skip
-        if found:
-            shortlists[o.path] = found
-    shortlists = _cap(shortlists)
+    shortlists = _cap(
+        stage_shortlists(
+            store, versions, outputs, queries, vectors, embedder.model_ref if embedder else None
+        )
+    )
 
     context = mapping_context(
         brief_text=drafting._brief_text(params.brief),
