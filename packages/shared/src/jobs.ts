@@ -341,7 +341,7 @@ export const EditRequestSchema = z.union([
   z
     .object({
       field: z.string().min(1),
-      value: z.unknown(),
+      value: z.unknown().optional(),
       editor: z.string().optional(),
       reason: z.string().optional(),
     })
@@ -351,7 +351,7 @@ export const EditRequestSchema = z.union([
       table: z.string().min(1),
       row: z.number().int().positive(),
       column: z.string().min(1),
-      value: z.unknown(),
+      value: z.unknown().optional(),
       editor: z.string().optional(),
       reason: z.string().optional(),
     })
@@ -368,8 +368,8 @@ export const ReviewEditSchema = z.object({
   row: z.number().int().nullable(),
   column: z.string().nullable(),
   /** The value before this edit: the previous edit's value, or the draft's. */
-  oldValue: z.unknown(),
-  newValue: z.unknown(),
+  oldValue: z.unknown().optional(),
+  newValue: z.unknown().optional(),
   editor: z.string().nullable(),
   reason: z.string().nullable(),
 });
@@ -422,7 +422,7 @@ export const ReferenceSchema = z.object({
   /** The reference it was carried forward from (a copy for the next version). */
   copiedFrom: z.string().uuid().nullable(),
   /** The outputs definition the expected values were verified against (null: unpinned). */
-  verifiedOutputs: z.unknown(),
+  verifiedOutputs: z.unknown().optional(),
   /** Set when a re-verified reference replaced this one; kept for older iterations. */
   supersededAt: z.string().nullable(),
   expected: z.object({

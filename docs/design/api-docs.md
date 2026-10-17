@@ -42,13 +42,14 @@ an OpenAPI 3.1 document generated from the routes themselves, and a public docs 
 - Non-JSON routes: multipart uploads (documents, samples, template import, bundle import with
   `id`/`name` fields before the file), binary downloads (PDF, page PNG, results archive, bundle
   zip) and YAML export.
-- Zod is 3.25.76.
+- Zod is 4 (3.25.76 when this was written).
 
 ## Approach
 
 Route docs sit next to each handler as a Fastify route `schema`. `@fastify/swagger` collects them
 into an OpenAPI 3.1 document; a swagger `transform` (`apps/api/src/openapi/zod.ts`) converts the
-Zod 3 schemas with `zod-to-json-schema`. (`fastify-type-provider-zod` now requires Zod 4.)
+Zod schemas with Zod 4's own `z.toJSONSchema` (input side, draft 7; until the Zod 4 upgrade,
+`zod-to-json-schema`).
 `@scalar/fastify-api-reference` serves the browser. A route without `tags` is treated as not
 documented yet and left out of the document, so the browser only ever shows grouped, described
 calls.
@@ -244,7 +245,7 @@ Each PR is red-tests-first and leaves `npm run check` green.
 - **Pass-through compilers hide wrong schemas at runtime.** The conformance helper catches them
   only for responses the tests exercise; routes with thin tests get thin checking. Each rollout
   PR adds a test for any documented status code no test reaches.
-- **Library compatibility.** `zod-to-json-schema` covers Zod 3. A later Zod 4 migration moves
-  to Zod's own `toJSONSchema` or `fastify-type-provider-zod`.
+- **Library compatibility.** `zod-to-json-schema` covered Zod 3; the Zod 4 upgrade moved to
+  Zod's own `toJSONSchema`.
 - **Description size.** Long Markdown in route files makes them longer. Accepted: keeping the
   docs beside the code is the point.

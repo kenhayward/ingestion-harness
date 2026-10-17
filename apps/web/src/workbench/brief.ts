@@ -112,9 +112,13 @@ const draftKey = (projectId: string) => `ih.briefDraft.${projectId}`;
 const briefChanges = (value: unknown): Partial<BriefBody> | null => {
   const changes = BriefBodySchema.partial().safeParse(value);
   if (!changes.success) return null;
+  // Only the sections that were kept: a partial schema still fills the others' defaults.
+  const kept = Object.keys(value as object);
+  const rest = Object.fromEntries(
+    Object.entries(changes.data).filter(([key]) => kept.includes(key)),
+  ) as Partial<BriefBody>;
   // Ontologies are chosen on the Survey tab and saved at once: a kept draft (from a build that
   // edited them here) must never put old picks back.
-  const rest: Partial<BriefBody> = { ...changes.data };
   delete rest.ontologies;
   delete rest.ontologyGuidance;
   return rest;

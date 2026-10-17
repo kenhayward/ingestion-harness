@@ -5,7 +5,7 @@ import { md, res } from '../openapi/zod.js';
 const Readiness = z.object({
   status: z.enum(['ok', 'degraded']),
   checks: z
-    .record(z.string())
+    .record(z.string(), z.string())
     .describe("Each dependency's result: `ok`, or the error message of the failed check."),
 });
 

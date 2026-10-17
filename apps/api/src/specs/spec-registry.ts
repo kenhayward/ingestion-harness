@@ -20,8 +20,8 @@ export const DefinitionSummarySchema = SpecSummarySchema.extend({
 });
 export type DefinitionSummary = z.infer<typeof DefinitionSummarySchema>;
 
-const issuesOf = (error: { issues: { path: (string | number)[]; message: string }[] }) =>
-  error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+const issuesOf = (error: { issues: { path: PropertyKey[]; message: string }[] }) =>
+  error.issues.map((i) => `${i.path.map(String).join('.')}: ${i.message}`).join('; ');
 
 export class SpecRegistry {
   private constructor(private readonly defs: Map<string, Definition[]>) {}
