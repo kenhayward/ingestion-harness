@@ -1,4 +1,5 @@
 import type { BackupManifest, BackupView, RestoreReport, RestoreStatus } from '@ih/shared';
+import { HELP_TOPICS } from '../src/help/topics.js';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -90,20 +91,10 @@ const REPORT: RestoreReport = {
 };
 
 describe('BackupPage', () => {
-  it('the ? opens Backing up and restoring CT Studio', async () => {
-    render(<BackupPage api={fakeApi()} me={admin} />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Help: Backing up and restoring CT Studio' }),
-    );
-    const dialog = await screen.findByRole('dialog', {
-      name: 'Backing up and restoring CT Studio',
-    });
-    expect(
-      within(dialog).getByRole('heading', { name: 'What a backup holds' }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole('heading', { name: 'Moving to a new server' }),
-    ).toBeInTheDocument();
+  it('the help explains what a backup holds and how to move servers', () => {
+    render(<>{HELP_TOPICS.backup.body}</>);
+    expect(screen.getByRole('heading', { name: 'What a backup holds' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Moving to a new server' })).toBeInTheDocument();
   });
 
   it('shows the .env warning', async () => {

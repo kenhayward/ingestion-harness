@@ -101,12 +101,6 @@ describe('PublishedOutputsPage', () => {
     expect(within(fin).queryByLabelText('Label')).toBeNull();
   });
 
-  it('opens a help topic from the heading', async () => {
-    page();
-    await userEvent.click(await screen.findByRole('button', { name: /^Help:/ }));
-    expect(screen.getByRole('dialog', { name: 'How publishing targets work' })).toBeInTheDocument();
-  });
-
   it('shows a locked field as read-only while the target is in use', async () => {
     page([external({ usage: { ...NO_USE, publishedVersions: 1, documentTypes: ['po'] } })]);
     const r = await open('Finance lake');
@@ -360,6 +354,69 @@ describe('PublishedOutputsPage', () => {
     expect(api.testPublishTarget).toHaveBeenCalledWith(body);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
     await waitFor(() => expect(api.createPublishTarget).toHaveBeenCalledWith(body));
+  });
+
+  it('lays the add dialog out in labelled groups, encryption folded away', async () => {
+    page([target()]);
+    await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add publishing target' });
+    expect(dialog).toHaveAccessibleDescription(/where a recipe delivers its published outputs/i);
+    const where = within(dialog).getByRole('group', { name: 'Where' });
+    expect(within(where).getByLabelText('Label')).toBeInTheDocument();
+    expect(within(where).getByLabelText('Bucket')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('group', { name: 'Connection' })).toBeNull();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
+    const connection = within(dialog).getByRole('group', { name: 'Connection' });
+    expect(within(connection).getByLabelText('Region')).toBeInTheDocument();
+    expect(within(connection).getByLabelText('Secret access key')).toBeInTheDocument();
+    const more = within(dialog).getByText('Encryption and storage class').closest('details')!;
+    expect(more).not.toHaveAttribute('open');
+    expect(more).toHaveTextContent('None · bucket default');
+    expect(within(more).getByLabelText('Server-side encryption')).toHaveValue('none');
+  });
+
+  it('shows the chosen encryption and storage class on the folded section', async () => {
+    const api = page([target()], { createPublishTarget: vi.fn(async () => external()) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add publishing target' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
+    await userEvent.type(within(dialog).getByLabelText('Label'), 'Archive');
+    await userEvent.type(within(dialog).getByLabelText('Bucket'), 'archive');
+    await userEvent.type(within(dialog).getByLabelText('Region'), 'eu-west-1');
+    await userEvent.type(within(dialog).getByLabelText('Access key id'), 'AKIA1');
+    await userEvent.type(within(dialog).getByLabelText('Secret access key'), 'shh');
+    const more = within(dialog).getByText('Encryption and storage class').closest('details')!;
+    await userEvent.click(within(more).getByText('Encryption and storage class'));
+    expect(more).toHaveAttribute('open');
+    await userEvent.selectOptions(within(more).getByLabelText('Server-side encryption'), 'aws:kms');
+    await userEvent.selectOptions(within(more).getByLabelText('Storage class'), 'GLACIER_IR');
+    await userEvent.type(within(more).getByLabelText('KMS key id'), 'key-1');
+    expect(more).toHaveTextContent('aws:kms · GLACIER_IR');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+    await waitFor(() =>
+      expect(api.createPublishTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'GLACIER_IR' }),
+      ),
+    );
+  });
+
+  it('keeps the browser from filling the id with a saved email', async () => {
+    page([target()]);
+    await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add publishing target' });
+    const id = within(dialog).getByLabelText('Id');
+    expect(id).toHaveAttribute('autocomplete', 'off');
+    expect(id).toHaveAttribute('name', 'publish-target-id');
+    expect(id).toHaveAccessibleDescription(
+      'Use the same id on every deployment for the same recipient.',
+    );
+    expect(within(dialog).getByLabelText('Label')).toHaveAttribute('autocomplete', 'off');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
+    expect(within(dialog).getByLabelText('Secret access key')).toHaveAttribute(
+      'autocomplete',
+      'new-password',
+    );
   });
 
   it('keeps a refusal in the dialog', async () => {

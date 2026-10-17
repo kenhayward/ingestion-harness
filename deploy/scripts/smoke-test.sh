@@ -5,6 +5,7 @@
 #   ADMIN_TOKEN  required: the admin token the API logged at startup ("ADMIN TOKEN ..."), the
 #                password of the user "admin".
 #   S3_URL       the SeaweedFS S3 port as the lake sees it (default: localhost:S3_PUBLIC_PORT).
+#   FRAME_ANCESTORS  as in the env file: which framing headers the app must send (blank: none).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -49,12 +50,24 @@ check /readyz
 # normalisation (eol=lf) turned a raw one into a newline once, which joined every header into one
 # line so no '^Header:' check could match.
 headers() { curl -fsSI "$BASE_URL$1" | tr -d '\r'; }
+# Framing follows FRAME_ANCESTORS (ADR 0012, frame-ancestors.conf.template): blank = nobody (DENY
+# and 'none'), set = those sites and 'self', with no X-Frame-Options at all.
+frame_headers() {
+  if [[ -z "${FRAME_ANCESTORS:-}" ]]; then
+    printf '%s\n' 'X-Frame-Options: DENY' "Content-Security-Policy: frame-ancestors 'none'"
+  else
+    printf '%s\n' "Content-Security-Policy: frame-ancestors 'self' $FRAME_ANCESTORS"
+  fi
+}
 security_headers() { # path label
-  local h
+  local h want
   h="$(headers "$1")"
-  for want in 'X-Content-Type-Options: nosniff' 'X-Frame-Options: DENY'     'Referrer-Policy: no-referrer' "Content-Security-Policy: frame-ancestors 'none'"; do
+  while IFS= read -r want; do
     grep -qiF "$want" <<<"$h" || fail "$2 is missing '$want'"
-  done
+  done <<<"$(printf '%s\n' 'X-Content-Type-Options: nosniff' 'Referrer-Policy: no-referrer'; frame_headers)"
+  if [[ -n "${FRAME_ANCESTORS:-}" ]] && grep -qi '^X-Frame-Options:' <<<"$h"; then
+    fail "$2 sends X-Frame-Options although FRAME_ANCESTORS allows framing"
+  fi
 }
 grep -qi '^Cache-Control: no-cache' <<<"$(headers /)" || fail "index.html must be no-cache"
 security_headers / "index.html"

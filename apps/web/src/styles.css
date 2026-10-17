@@ -2667,6 +2667,109 @@ a.button.icon.bordered {
   color: var(--ih-muted);
   opacity: 1;
 }
+/* Add publishing target: wide enough for two columns, so every field fits on a laptop screen
+   without scrolling; encryption and storage class fold away (rarely changed). */
+.dialog.dialog-rich.target-dialog {
+  width: min(840px, 100%);
+}
+.target-dialog .dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.target-form {
+  display: flex;
+  gap: 16px;
+}
+.target-kind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.target-kind .field-label {
+  min-width: 40px;
+}
+.target-group {
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0 0;
+  border: 0;
+  border-top: 1px solid var(--ih-border-soft);
+}
+.target-group legend,
+.target-more summary > span:first-child {
+  padding: 0;
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ih-muted);
+}
+.target-group legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.target-group legend + * {
+  clear: both;
+}
+.target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  align-items: start;
+}
+.target-grid input:not([type='checkbox']),
+.target-grid select {
+  width: 100%;
+}
+.target-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.target-span {
+  grid-column: 1 / -1;
+}
+.target-more {
+  padding-top: 14px;
+  border-top: 1px solid var(--ih-border-soft);
+}
+.target-more summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  list-style: none;
+  cursor: pointer;
+}
+.target-more summary::-webkit-details-marker {
+  display: none;
+}
+/* A chevron: right when folded, down when open. */
+.target-more summary::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin: 0 2px 0 3px;
+  border-right: 2px solid var(--ih-muted);
+  border-bottom: 2px solid var(--ih-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.target-more[open] summary::before {
+  transform: rotate(45deg);
+}
+.target-more summary > .muted {
+  font-size: var(--ih-text-sm);
+}
+.target-more[open] summary {
+  margin-bottom: 12px;
+}
+@media (max-width: 640px) {
+  .target-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 480px) {
   .dialog-icon {
     width: 48px;
@@ -4931,4 +5034,28 @@ img.avatar {
 .restore-missing {
   max-height: 160px;
   overflow: auto;
+}
+/* Help menu: a main topic with parts shows a chevron, turned down while its list is open. */
+.help-center-menu button[aria-expanded] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.help-center-menu button[aria-expanded]::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  opacity: 0.6;
+  transition: transform 0.15s;
+}
+.help-center-menu button[aria-expanded='true']::after {
+  transform: rotate(45deg);
+}
+/* Administration: a tab's help sits after its main button, at the header's right. */
+.admin-header > .help-button {
+  align-self: center;
 }

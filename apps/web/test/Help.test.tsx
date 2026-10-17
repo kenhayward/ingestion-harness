@@ -161,3 +161,25 @@ describe('help topics for the Workbench tabs and Review', () => {
     for (const m of mentions) expect(dialog).toHaveTextContent(m);
   });
 });
+
+describe('help topics for Administration', () => {
+  it.each([
+    [
+      'administration',
+      'Administration',
+      ['Models', 'Linked data', 'Users', 'Maintenance', 'Integration'],
+    ],
+    [
+      'adminModels',
+      'Models and model choices',
+      ['model choice', 'endpoint', 'Max output', 'Discover'],
+    ],
+    ['adminLinkedData', 'Linked data settings', ['base IRI', 'Customer id', 'triple store']],
+    ['adminUsers', 'Users and sign-in', ['one-time password', 'Operator', 'Designer', 'locked']],
+  ] as const)('%s: %s', async (topic, title, mentions) => {
+    render(<HelpButton topic={topic} />);
+    await userEvent.click(screen.getByRole('button', { name: `Help: ${title}` }));
+    const dialog = screen.getByRole('dialog', { name: title });
+    for (const m of mentions) expect(dialog).toHaveTextContent(m);
+  });
+});

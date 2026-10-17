@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BackupView, QueueControlView } from '@ih/shared';
 import type { Api, BackupStatus, Me } from '../api/client.js';
-import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { InSlot } from '../ui/InSlot.js';
 import { Meter } from '../ui/Meter.js';
@@ -159,10 +158,7 @@ export function BackupPage({
           <section className="admin-section" aria-label="Backup">
             <div className="admin-section-head">
               <div>
-                <div className="profile-actions">
-                  <h3>Backup</h3>
-                  <HelpButton topic="backup" />
-                </div>
+                <h3>Backup</h3>
                 <p className="muted">Download it and keep it off this server.</p>
               </div>
             </div>
