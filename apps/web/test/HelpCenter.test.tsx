@@ -35,6 +35,18 @@ describe('help index', () => {
     expect(jobs.children?.map((c) => c.topic)).toEqual(['review']);
   });
 
+  it('gathers the administration topics under Administration, last', () => {
+    const admin = HELP_INDEX.at(-1)!;
+    expect(admin.topic).toBe('administration');
+    expect(admin.children?.map((c) => c.topic)).toEqual([
+      'adminModels',
+      'adminLinkedData',
+      'published-outputs',
+      'adminUsers',
+      'github-sync',
+    ]);
+  });
+
   it('nests the parts of a screen under it', () => {
     const types = HELP_INDEX.find((e) => e.topic === 'templates')!;
     expect(types.children?.map((c) => c.topic)).toEqual([
@@ -74,9 +86,56 @@ describe('HelpCenter', () => {
     ).toBeInTheDocument();
   });
 
+  it('lists only the main topics until one is opened', async () => {
+    render(<HelpCenter onClose={vi.fn()} />);
+    const menu = screen.getByRole('navigation', { name: 'Help topics' });
+    expect(
+      within(menu)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(HELP_INDEX.map((e) => e.label));
+    const types = within(menu).getByRole('button', { name: 'Document types' });
+    expect(types).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(types);
+    expect(types).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('/ Using the Document types page')).toBeInTheDocument();
+    expect(within(menu).getByRole('button', { name: 'Pipeline' })).toBeInTheDocument();
+    // Opening another main topic closes the first one's list.
+    await userEvent.click(within(menu).getByRole('button', { name: 'Administration' }));
+    expect(within(menu).queryByRole('button', { name: 'Pipeline' })).toBeNull();
+    expect(within(menu).getByRole('button', { name: 'Users' })).toBeInTheDocument();
+  });
+
+  it('opens with the list of the topic it starts on', () => {
+    render(<HelpCenter topic="pipeline" onClose={vi.fn()} />);
+    const menu = screen.getByRole('navigation', { name: 'Help topics' });
+    expect(within(menu).getByRole('button', { name: 'Pipeline' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(menu).getByRole('button', { name: 'Document types' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(within(menu).queryByRole('button', { name: 'Overview' })).toBeNull();
+  });
+
+  it('moves through the open menu with the arrow keys', async () => {
+    render(<HelpCenter topic="results" onClose={vi.fn()} />);
+    const menu = screen.getByRole('navigation', { name: 'Help topics' });
+    within(menu).getByRole('button', { name: 'Results' }).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(within(menu).getByRole('button', { name: 'A published result' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    // The next main topic: its list opens and the Results list closes.
+    expect(within(menu).getByRole('button', { name: 'Document types' })).toHaveFocus();
+    expect(within(menu).queryByRole('button', { name: 'A published result' })).toBeNull();
+  });
+
   it('shows the topic picked in the menu, nested items included', async () => {
     render(<HelpCenter onClose={vi.fn()} />);
     const menu = screen.getByRole('navigation', { name: 'Help topics' });
+    await userEvent.click(within(menu).getByRole('button', { name: 'Document types' }));
     await userEvent.click(within(menu).getByRole('button', { name: 'Sections' }));
     expect(within(menu).getByRole('button', { name: 'Sections' })).toHaveAttribute(
       'aria-current',

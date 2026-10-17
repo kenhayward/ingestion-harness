@@ -4872,3 +4872,28 @@ img.avatar {
 .review-header > .review-queue {
   margin-left: auto;
 }
+
+/* Help menu: a main topic with parts shows a chevron, turned down while its list is open. */
+.help-center-menu button[aria-expanded] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.help-center-menu button[aria-expanded]::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  opacity: 0.6;
+  transition: transform 0.15s;
+}
+.help-center-menu button[aria-expanded='true']::after {
+  transform: rotate(45deg);
+}
+/* Administration: a tab's help sits after its main button, at the header's right. */
+.admin-header > .help-button {
+  align-self: center;
+}
