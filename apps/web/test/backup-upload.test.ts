@@ -86,9 +86,7 @@ describe('uploadBackup', () => {
       }),
       completeUpload: vi.fn(async () => ({ key: 'k' })),
     });
-    expect(await uploadBackup(api, file(), { onProgress: vi.fn(), retryDelayMs: 0 })).toBe(
-      'up-1',
-    );
+    expect(await uploadBackup(api, file(), { onProgress: vi.fn(), retryDelayMs: 0 })).toBe('up-1');
     const parts = vi.mocked(api.uploadPart).mock.calls.map(([, n]) => n);
     expect(parts).toEqual([0, 1, 1, 1, 2]);
   });

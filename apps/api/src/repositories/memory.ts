@@ -541,11 +541,7 @@ export class MemoryRepo implements IngestionRepo {
     });
   }
 
-  private queueBackground(
-    task: BackgroundTask,
-    params: unknown,
-    by: string | null,
-  ): string {
+  private queueBackground(task: BackgroundTask, params: unknown, by: string | null): string {
     const id = randomUUID();
     const { priority, maxAttempts } = BACKGROUND_JOBS[task];
     this.backgroundJobs.push({
