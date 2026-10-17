@@ -89,6 +89,22 @@ const REPORT: RestoreReport = {
 };
 
 describe('BackupPage', () => {
+  it('the ? opens Backing up and restoring CT Studio', async () => {
+    render(<BackupPage api={fakeApi()} me={admin} />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: Backing up and restoring CT Studio' }),
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Backing up and restoring CT Studio',
+    });
+    expect(
+      within(dialog).getByRole('heading', { name: 'What a backup holds' }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('heading', { name: 'Moving to a new server' }),
+    ).toBeInTheDocument();
+  });
+
   it('shows the .env warning', async () => {
     render(<BackupPage api={fakeApi()} me={admin} />);
     expect(
