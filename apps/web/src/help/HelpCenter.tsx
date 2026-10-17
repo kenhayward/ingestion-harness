@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { BrandMark } from '../ui/BrandMark.js';
 import { useModalFocus } from '../ui/Dialog.js';
-import { HELP_INDEX, helpEntries, type HelpEntry } from './index.js';
+import { HELP_INDEX, mainTopicOf, visibleEntries, type HelpEntry } from './index.js';
 import { HELP_TOPICS, type HelpTopicId } from './topics.js';
 
 /**
  * The account menu's Help: every help topic in one place, laid out like Profile. The app mark and
- * the topic menu (HELP_INDEX: the screens, each with its parts) on the left; the open topic on the
+ * the topic menu (HELP_INDEX: the main topics, the open one's parts listed under it) on the left; the open topic on the
  * right. Escape, a click outside or Close closes it (there is nothing to lose).
  */
 export function HelpCenter({
@@ -22,11 +22,18 @@ export function HelpCenter({
   const body = useRef<HTMLDivElement>(null);
   const trapTab = useModalFocus(box);
   const { title } = HELP_TOPICS[topic];
-  const entries = helpEntries();
+  // Only the main topics are listed, and the parts of the one the open topic belongs to.
+  const open = mainTopicOf(topic);
+  const entries = visibleEntries(open);
 
-  // A new topic starts at its top.
+  const focusNext = useRef(false);
+
+  // A new topic starts at its top; one reached with the arrow keys takes the focus.
   useEffect(() => {
     body.current?.scrollTo?.({ top: 0 });
+    if (!focusNext.current) return;
+    focusNext.current = false;
+    box.current?.querySelector<HTMLButtonElement>(`[data-topic="${topic}"]`)?.focus();
   }, [topic]);
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -43,7 +50,8 @@ export function HelpCenter({
       const i = entries.findIndex((x) => x.topic === topic);
       const next = entries[(i + step + entries.length) % entries.length]!;
       setTopic(next.topic);
-      box.current?.querySelector<HTMLButtonElement>(`[data-topic="${next.topic}"]`)?.focus();
+      // Its button may only appear once its list opens: focused after the render (below).
+      focusNext.current = true;
       return;
     }
     trapTab(e);
@@ -55,11 +63,12 @@ export function HelpCenter({
         type="button"
         data-topic={e.topic}
         aria-current={e.topic === topic ? 'page' : undefined}
+        aria-expanded={e.children ? e.topic === open : undefined}
         onClick={() => setTopic(e.topic)}
       >
         {e.label}
       </button>
-      {e.children && <ul>{e.children.map(item)}</ul>}
+      {e.children && e.topic === open && <ul>{e.children.map(item)}</ul>}
     </li>
   );
 

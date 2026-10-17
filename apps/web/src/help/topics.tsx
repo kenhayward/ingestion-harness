@@ -1,4 +1,10 @@
 import type { ReactNode } from 'react';
+import {
+  AdministrationHelp,
+  AdminLinkedDataHelp,
+  AdminModelsHelp,
+  AdminUsersHelp,
+} from './AdminHelp.js';
 import { GeneralHelp } from './GeneralHelp.js';
 import { HomeHelp } from './HomeHelp.js';
 import { IntroductionHelp } from './IntroductionHelp.js';
@@ -76,6 +82,10 @@ export const HELP_TOPICS = {
   ontologyProperties: { title: 'Properties', body: <OntologyPropertiesHelp /> },
   ontologyConcepts: { title: 'Concepts and schemes', body: <OntologyConceptsHelp /> },
   ontologyShapes: { title: 'Shapes', body: <OntologyShapesHelp /> },
+  administration: { title: 'Administration', body: <AdministrationHelp /> },
+  adminModels: { title: 'Models and model choices', body: <AdminModelsHelp /> },
+  adminLinkedData: { title: 'Linked data settings', body: <AdminLinkedDataHelp /> },
+  adminUsers: { title: 'Users and sign-in', body: <AdminUsersHelp /> },
   'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   'published-outputs': { title: 'How publishing targets work', body: <PublishedOutputsHelp /> },
   general: { title: 'General recipe settings', body: <GeneralHelp /> },
