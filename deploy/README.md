@@ -205,8 +205,20 @@ Changing a password needs `deploy/scripts/compose.sh up -d fuseki worker`.
   job that removes the published S3 objects and the graphs; unretiring queues a `republish`.
   The Linked data page counts those waiting and failed (failures retry up to 100 times; see the
   worker logs).
-- **Backups:** nightly, from the deploy host's cron. Each one is an N-Quads dump in the volume
-  (`/fuseki/run/backups/ct_<date>.nq.gz`); copy it off the host with the other backups.
+- **Backups:** Administration > Backup makes one encrypted `.ctbak` file of the whole deployment
+  (database, uploads, outputs, run records, internal publishing targets and the triple store); only
+  the newest successful one is kept on the server (bucket `S3_BUCKET_BACKUPS`), so download it and
+  keep it off the host. It opens only with this deployment's `LLM_SECRETS_KEY`: keep a copy of
+  `deploy/.env` elsewhere, it is not in the backup. Restore (this deployment, or as a copy for
+  staging) is on the same tab ([ADR 0015](../docs/adr/0015-backup-and-restore.md)); a restore
+  keeps the previous database under a name in its report, drop it when satisfied
+  (`docker exec ingestion-postgres-1 dropdb -U <POSTGRES_USER> <name>`). The swap ends every
+  connection to the old database: the workers log `the database connection was lost …:
+  reconnecting` and connect to the restored one a few seconds later (no restart needed); they
+  claim nothing until the queue is resumed on the Backup tab.
+
+  As an extra safety net the triple store can still be dumped nightly, from the deploy host's cron,
+  to an N-Quads file in the volume (`/fuseki/run/backups/ct_<date>.nq.gz`); copy it off the host.
 
   ```bash
   15 2 * * * cd /opt/ingestion-harness && deploy/scripts/compose.sh exec -T fuseki /opt/fuseki/admin.sh backup

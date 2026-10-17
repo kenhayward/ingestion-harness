@@ -132,6 +132,7 @@ CLAIM_SQL = """
 WITH next AS (
   SELECT id FROM jobs
    WHERE status = 'queued' AND run_after <= now()
+     AND NOT EXISTS (SELECT 1 FROM queue_control WHERE paused)  -- a restore pauses the queue
    ORDER BY priority DESC, run_after, created_at
    FOR UPDATE SKIP LOCKED
    LIMIT 1

@@ -6,9 +6,10 @@ python -m ingest_worker.admin init-buckets
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from .config import Settings
@@ -47,10 +48,14 @@ def target_buckets(load: Callable[[], list[TargetRow]], fallback: list[str]) -> 
     return list(dict.fromkeys(r.bucket for r in rows if r.kind == "internal"))
 
 
+def backups_bucket(env: Mapping[str, str]) -> str:
+    """The bucket the API keeps backups and restore uploads in (`S3_BUCKET_BACKUPS`, as the API
+    reads it: blank means the default)."""
+    return env.get("S3_BUCKET_BACKUPS") or "ingest-backups"
+
+
 def _stored_targets(s: Settings) -> list[TargetRow]:
     """Seed the default target from .env (first start), then read every target."""
-    import os
-
     import psycopg
 
     from .publish_targets import PgPublishTargetStore, default_seed
@@ -78,7 +83,7 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         aws_secret_access_key=s.s3_secret_key,
         config=Config(s3={"addressing_style": "path"}),
     )
-    buckets = [s.bucket_inbox, s.bucket_outputs, s.bucket_runs]
+    buckets = [s.bucket_inbox, s.bucket_outputs, s.bucket_runs, backups_bucket(os.environ)]
     fallback = [s.target_bucket] if s.target_endpoint == s.s3_endpoint else []
     buckets += target_buckets(lambda: _stored_targets(s), fallback)
     created = ensure_buckets(client, list(dict.fromkeys(buckets)))

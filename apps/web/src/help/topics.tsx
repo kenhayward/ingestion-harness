@@ -2,9 +2,11 @@ import type { ReactNode } from 'react';
 import {
   AdministrationHelp,
   AdminLinkedDataHelp,
+  AdminMaintenanceHelp,
   AdminModelsHelp,
   AdminUsersHelp,
 } from './AdminHelp.js';
+import { BackupHelp } from './BackupHelp.js';
 import { GeneralHelp } from './GeneralHelp.js';
 import { HomeHelp } from './HomeHelp.js';
 import { IntroductionHelp } from './IntroductionHelp.js';
@@ -86,8 +88,10 @@ export const HELP_TOPICS = {
   adminModels: { title: 'Models and model choices', body: <AdminModelsHelp /> },
   adminLinkedData: { title: 'Linked data settings', body: <AdminLinkedDataHelp /> },
   adminUsers: { title: 'Users and sign-in', body: <AdminUsersHelp /> },
+  adminMaintenance: { title: 'Maintenance mode', body: <AdminMaintenanceHelp /> },
   'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   'published-outputs': { title: 'How publishing targets work', body: <PublishedOutputsHelp /> },
+  backup: { title: 'Backing up and restoring CT Studio', body: <BackupHelp /> },
   general: { title: 'General recipe settings', body: <GeneralHelp /> },
   sections: { title: 'How sections work', body: <SectionsHelp /> },
   outputs: { title: 'Outputs: fields and tables', body: <OutputsHelp /> },

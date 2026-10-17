@@ -31,6 +31,10 @@ export function AdministrationHelp() {
           <strong>Maintenance</strong>: take CT Studio down for everyone but administrators while
           you work on it, with a message they see instead.
         </li>
+        <li>
+          <strong>Backup</strong>: make an encrypted backup of everything, download it, and restore
+          one on this or another server.
+        </li>
       </ul>
       <p>The topics below explain each tab in full; the ? on a tab opens its topic.</p>
     </>
@@ -183,6 +187,66 @@ export function AdminUsersHelp() {
       <p>
         Every sign-in attempt and password change of the last 90 days, for everyone or one person:
         useful when someone is locked out, or to spot guessing.
+      </p>
+    </>
+  );
+}
+
+export function AdminMaintenanceHelp() {
+  return (
+    <>
+      <p>
+        Maintenance mode takes CT Studio down for everyone but administrators while you work on it:
+        swapping models, running a deploy, or restoring a backup. Administrators carry on as normal
+        and see a <strong>Maintenance mode is on</strong> strip above every page.
+      </p>
+      <h3>What everyone else sees</h3>
+      <ul>
+        <li>
+          The sign-in page shows your message, and since when CT Studio has been under maintenance.
+          Only administrators can sign in until it is over.
+        </li>
+        <li>
+          Someone already signed in sees a maintenance page with <strong>Check again</strong> and{' '}
+          <strong>Sign out</strong> instead of the app. They stay signed in, and carry on where they
+          were once maintenance is off.
+        </li>
+      </ul>
+      <h3>Switching it on and off</h3>
+      <p>
+        Tick <strong>Under maintenance</strong>, write a <strong>Message to users</strong> (up to
+        1,000 characters; left blank, they see “CT Studio is down for maintenance. Please try again
+        later.”), check the preview under <strong>What users see</strong>, and Save. It takes effect
+        within a few seconds. Untick it and Save to end it; the message is kept for next time. The
+        line under the switch says since when it has been on and who last changed it.
+      </p>
+      <p>
+        Maintenance only stops people. Jobs that are queued or running keep going, and the workers
+        are not touched. To stop jobs as well, pause the queue on the <strong>Backup</strong> tab.
+      </p>
+      <h3>During and after a restore</h3>
+      <p>
+        Restoring a backup turns maintenance on by itself, with the message “CT Studio is being
+        restored from a backup.”, replacing any message you had written. The restore also pauses the
+        job queue, and signs everyone out once the restored database is in place.
+      </p>
+      <p>
+        Maintenance stays on when the restore finishes, and also when it fails, so you can look
+        around before anyone else comes back. When you are satisfied:
+      </p>
+      <ol>
+        <li>
+          On the <strong>Backup</strong> tab, read the restore report and choose{' '}
+          <strong>Resume queue</strong>, so jobs run again.
+        </li>
+        <li>
+          Here, untick <strong>Under maintenance</strong> and Save, so everyone can sign in again.
+        </li>
+      </ol>
+      <p>
+        You can end maintenance before resuming the queue, or the other way round: they are separate
+        switches. A restore copied onto another server (staging, say) brings the same rule: it stays
+        under maintenance until you switch it off here.
       </p>
     </>
   );

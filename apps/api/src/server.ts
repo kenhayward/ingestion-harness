@@ -1,8 +1,26 @@
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { effectiveBaseIri } from '@ih/shared';
 import { PgAccessRepo } from './access/pg.js';
 import { SIGN_IN_RETENTION_DAYS } from './access/repo.js';
 import { buildApp } from './app.js';
-import { githubConfig, loadConfig, s3KeysConfig, versionFromConfig } from './config.js';
+import { internalTargetBuckets } from './backup/create.js';
+import { FusekiTripleStore } from './backup/fuseki.js';
+import { databaseName, PgDatabaseTools } from './backup/pg-tools.js';
+import { PgQueueControlRepo } from './backup/queue-control.js';
+import { PgLiveDatabase, PgSideDatabase } from './backup/restore-pg.js';
+import { NoLakeIdentities } from './backup/seaweed-iam-file.js';
+import { BackupService } from './backup/service.js';
+import { BackupUploads } from './backup/uploads.js';
+import {
+  fusekiConfig,
+  githubConfig,
+  loadConfig,
+  s3KeysConfig,
+  versionFromConfig,
+} from './config.js';
+import { migrate } from './db/migrate.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
@@ -28,15 +46,20 @@ import { warmListCache } from './workbench/list.js';
 import { PgWorkbenchRepo } from './workbench/repo.js';
 
 const config = loadConfig();
-const repo = PgRepo.fromUrl(config.DATABASE_URL);
-const templates = new PgTemplateRepo(
-  new pg.Pool({ connectionString: config.DATABASE_URL, max: 5 }),
-);
-const workbench = new PgWorkbenchRepo(
-  new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }),
-);
+// An idle pooled connection the server ends (a restore's database swap terminates them all) emits
+// 'error' on its pool; unhandled, that would crash the API. Logged through the app once it exists.
+let logPoolError = (err: unknown) => console.error('database connection lost', err);
+/** Every pool of the API: on the live database, with that error logged instead of thrown. */
+const makePool = (max: number): pg.Pool => {
+  const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max });
+  pool.on('error', (err) => logPoolError(err));
+  return pool;
+};
+const repo = new PgRepo(makePool(10));
+const templates = new PgTemplateRepo(makePool(5));
+const workbench = new PgWorkbenchRepo(makePool(3));
 const seeded = await seedTemplates(templates, config.SPECS_DIR);
-const access = new PgAccessRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 3 }));
+const access = new PgAccessRepo(makePool(3));
 const githubOAuth = githubConfig(config);
 const githubHttp = githubOAuth && new HttpGitHub(githubOAuth);
 const s3 = {
@@ -52,9 +75,7 @@ const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err)
 // Throws on a malformed key: better a failed start than keys that can't be read back.
 const llmSecrets = secretsKeys(process.env);
 // Publishing targets (migration 202610170019): .env seeds `default` once; the database wins afterwards.
-const targets = new PgPublishTargetRepo(
-  new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
-);
+const targets = new PgPublishTargetRepo(makePool(2));
 const seed = defaultSeed(config);
 const seedOutcome = await targets.seedDefault(seed);
 const targetStores = new TargetStores({
@@ -67,15 +88,13 @@ const targetStores = new TargetStores({
 // Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
 // identity, granted per internal publishing target.
 const s3Keys = new S3KeyService({
-  repo: new PgS3KeyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  repo: new PgS3KeyRepo(makePool(2)),
   issuer: new SeaweedIamIssuer(s3),
   targets,
   ...s3KeysConfig(config),
 });
 
-const linkedData = new PgLinkedDataRepo(
-  new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
-);
+const linkedData = new PgLinkedDataRepo(makePool(2));
 // .env seeds the customer and base once; Administration > Linked data wins afterwards.
 if (config.LINKED_DATA_CUSTOMER) {
   const [slug, ...name] = config.LINKED_DATA_CUSTOMER.split('=');
@@ -86,34 +105,65 @@ if (config.LINKED_DATA_CUSTOMER) {
   });
 }
 
+const store = new S3ObjectStore(s3);
+const ontologies = new PgOntologyRepo(makePool(2));
+const githubSync = new PgGitHubSyncRepo(makePool(2));
+const buckets = {
+  inbox: config.S3_BUCKET_INBOX,
+  outputs: config.S3_BUCKET_OUTPUTS,
+  runs: config.S3_BUCKET_RUNS,
+  backups: config.S3_BUCKET_BACKUPS,
+};
+const version = versionFromConfig(config);
+const maintenance = new PgMaintenanceRepo(makePool(2));
+// Backup and restore (Administration > Backup): every backup is encrypted under LLM_SECRETS_KEY,
+// so without it there are none. Data-lake identities cannot be carried on SeaweedFS 4.48
+// (seaweed-iam-file.ts).
+let logBackupError: (obj: object, msg: string) => void = () => {};
+const backup =
+  llmSecrets &&
+  new BackupService({
+    db: new PgDatabaseTools(config.DATABASE_URL),
+    store,
+    buckets,
+    internalTargetBuckets: () => internalTargetBuckets(targets, Object.values(buckets)),
+    triples: new FusekiTripleStore(fusekiConfig(config)),
+    lake: new NoLakeIdentities(),
+    master: llmSecrets.current,
+    previousMaster: llmSecrets.previous,
+    version: { appVersion: version.version, commit: version.commit },
+    instanceName: async () => (await githubSync.settings()).instanceName,
+    baseIri: async () => effectiveBaseIri(await linkedData.get()) ?? '',
+    now: () => new Date(),
+    queue: new PgQueueControlRepo(makePool(1)),
+    maintenance,
+    log: { error: (obj, msg) => logBackupError(obj, msg) },
+  });
+
+const backupUploads = llmSecrets && new BackupUploads({ store, bucket: buckets.backups });
+
 const app = await buildApp({
   repo,
   jobWatch,
   templates,
   workbench,
-  store: new S3ObjectStore(s3),
+  store,
   targets,
   targetStores,
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
-  buckets: {
-    inbox: config.S3_BUCKET_INBOX,
-    outputs: config.S3_BUCKET_OUTPUTS,
-    runs: config.S3_BUCKET_RUNS,
-  },
+  buckets,
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
   access, // always enforced in production (ADR 0006)
-  profiles: new PgProfileRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
-  githubSync: new PgGitHubSyncRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  profiles: new PgProfileRepo(makePool(2)),
+  githubSync,
   github: githubHttp,
   githubRepos: githubHttp,
   githubRedirectUrl: githubOAuth?.redirectUrl ?? null,
   s3Keys,
-  llm: new PgLlmConfigRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
-  ontologies: new PgOntologyRepo(new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 })),
+  llm: new PgLlmConfigRepo(makePool(2)),
+  ontologies,
   linkedData,
-  maintenance: new PgMaintenanceRepo(
-    new pg.Pool({ connectionString: config.DATABASE_URL, max: 2 }),
-  ),
+  maintenance,
   ontologyFetch: {
     hosts: config.ONTOLOGY_FETCH_ALLOW.split(',')
       .map((h) => h.trim())
@@ -121,14 +171,48 @@ const app = await buildApp({
     maxBytes: config.ONTOLOGY_MAX_BYTES,
   },
   llmSecrets,
+  backup,
+  backupUploads,
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   frameAncestors: config.FRAME_ANCESTORS,
-  version: versionFromConfig(config),
+  version,
   rdfPublicUrl: config.RDF_PUBLIC_URL ?? null,
   logger: { level: config.LOG_LEVEL },
 });
 
 logWatchError = (err) => app.log.warn({ err }, 'job change notifications lost; reconnecting');
+logPoolError = (err) => app.log.warn({ err }, 'database connection lost; the pool reconnects');
+logBackupError = (obj, msg) => app.log.error(obj, msg);
+
+// Written straight to stdout (not the logger): printed whatever LOG_LEVEL is, and in a fixed
+// shape deploy/scripts/admin-token.sh matches exactly (request URLs can't forge it - no spaces).
+const printAdminToken = (token: string) => {
+  process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${token}\n`);
+  process.stdout.write('Sign in as "admin" with that token as the password.\n');
+};
+
+// A restore (backup/restore.ts) migrates the restored database with this server's migrations,
+// then rotates the admin token as a restart would: the restored database has its own sessions.
+const migrationsDir =
+  process.env.MIGRATIONS_DIR ?? fileURLToPath(new URL('../../../db/migrations', import.meta.url));
+backup?.enableRestore({
+  gate: app.maintenance,
+  localMigrations: async () =>
+    readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort(),
+  migrate: async (url) => {
+    await migrate(url, migrationsDir);
+  },
+  rotateAdminToken: async () => printAdminToken(await access.rotateAdminPassword()),
+  createEmbedJobs: (model) => ontologies.createEmbedJobs(model),
+  liveDatabaseName: databaseName(config.DATABASE_URL),
+  live: new PgLiveDatabase(makePool(2)),
+  openSide: (url) => PgSideDatabase.open(url),
+  lakeIssuer: new SeaweedIamIssuer(s3),
+  // The restored database's version counters may equal the old one's: forget the stores now.
+  onSwapped: () => targetStores.invalidate(),
+});
 
 let stopReconciler = () => {};
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -152,10 +236,11 @@ if (seedOutcome === 'differs') {
 // and its sessions end (ADR 0013). Rotated before listening, so a failure stops startup rather
 // than serving without an admin.
 const adminToken = await access.rotateAdminPassword();
-// Written straight to stdout (not the logger): printed whatever LOG_LEVEL is, and in a fixed
-// shape deploy/scripts/admin-token.sh matches exactly (request URLs can't forge it - no spaces).
-process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${adminToken}\n`);
-process.stdout.write('Sign in as "admin" with that token as the password.\n');
+// A restore cut off by this restart is marked failed, and maintenance stays on (restore.ts).
+await backup
+  ?.recover()
+  .catch((err: unknown) => app.log.error({ err }, 'interrupted restores could not be checked'));
+printAdminToken(adminToken);
 await app.listen({ host: config.HOST, port: config.PORT });
 // Sign-in events are kept SIGN_IN_RETENTION_DAYS (D11): pruned now and every hour.
 const pruneSignIns = () =>

@@ -7,6 +7,7 @@ import { Avatar } from '../shell/Avatar.js';
 import { useModalFocus } from '../ui/Dialog.js';
 import { Icon, type IconName } from '../ui/Icon.js';
 import { AccessPage } from './AccessPage.js';
+import { BackupPage } from './BackupPage.js';
 import { IntegrationPage } from './IntegrationPage.js';
 import { MaintenancePage } from './MaintenancePage.js';
 import { PublishedOutputsPage } from './PublishedOutputsPage.js';
@@ -14,33 +15,44 @@ import type { HelpTopicId } from '../help/topics.js';
 import { HelpButton } from '../ui/Help.js';
 
 export type AdminTab =
-  'models' | 'linked-data' | 'published-outputs' | 'users' | 'integration' | 'maintenance';
+  | 'models'
+  | 'linked-data'
+  | 'published-outputs'
+  | 'users'
+  | 'integration'
+  | 'maintenance'
+  | 'backup';
 
-const TABS: { id: AdminTab; label: string; icon: IconName }[] = [
+/** `adminOnly`: not even listed for anyone else (the others say "Admins only."). */
+const TABS: { id: AdminTab; label: string; icon: IconName; adminOnly?: boolean }[] = [
   { id: 'models', label: 'Models', icon: 'chip' },
   { id: 'linked-data', label: 'Linked data', icon: 'link' },
   { id: 'published-outputs', label: 'Published outputs', icon: 'upload' },
   { id: 'users', label: 'Users', icon: 'users' },
   { id: 'integration', label: 'Integration', icon: 'plug' },
   { id: 'maintenance', label: 'Maintenance', icon: 'warning' },
+  { id: 'backup', label: 'Backup', icon: 'archive', adminOnly: true },
 ];
 
-/** Each tab's help, last in the header after the tab's main button (Integration's sections carry
- * their own). */
+const tabsFor = (me: Me) => TABS.filter((t) => !t.adminOnly || me.role === 'admin');
+/** Each tab's help, last in the header after the tab's main button. */
 const TAB_HELP: Partial<Record<AdminTab, HelpTopicId>> = {
   models: 'adminModels',
   'linked-data': 'adminLinkedData',
   'published-outputs': 'published-outputs',
   users: 'adminUsers',
+  integration: 'github-sync',
+  maintenance: 'adminMaintenance',
+  backup: 'backup',
 };
 
 const TAB_KEY = 'ih.adminTab';
 
-function loadTab(): AdminTab {
+function loadTab(tabs: typeof TABS): AdminTab {
   try {
     // The Users tab was called Access: a browser that remembers it opens on Users.
     const stored = localStorage.getItem(TAB_KEY)?.replace(/^access$/, 'users');
-    return TABS.find((t) => t.id === stored)?.id ?? 'models';
+    return tabs.find((t) => t.id === stored)?.id ?? 'models';
   } catch {
     return 'models';
   }
@@ -55,8 +67,8 @@ function saveTab(tab: AdminTab) {
 }
 
 /**
- * The account menu's Administration (admins only): Models, Linked data, Users, Integration and
- * Maintenance as tabs of one
+ * The account menu's Administration (admins only): Models, Linked data, Users, Integration,
+ * Maintenance and Backup as tabs of one
  * dialog laid out like Profile, each tab's main button in the header. It has no address. Only
  * Close closes it: not a click outside, not Escape, so a half-typed key or URL is never lost.
  */
@@ -65,14 +77,18 @@ export function AdminDialog({
   me,
   onClose,
   onMaintenanceChanged,
+  onSignOut,
 }: {
   api: Api;
   me: Me;
   onClose: () => void;
   /** Maintenance mode was saved: the app's strip follows. */
   onMaintenanceChanged?: (view: MaintenanceView) => void;
+  /** A restore ended every session: Sign in again. */
+  onSignOut?: () => void;
 }) {
-  const [tab, setTab] = useState<AdminTab>(loadTab);
+  const tabs = tabsFor(me);
+  const [tab, setTab] = useState<AdminTab>(() => loadTab(tabs));
   /** The header's slot for the open tab's main button (Add endpoint, Add user). */
   const [actions, setActions] = useState<HTMLElement | null>(null);
   const titleId = useId();
@@ -80,7 +96,7 @@ export function AdminDialog({
   const box = useRef<HTMLDivElement>(null);
   const trapTab = useModalFocus(box);
   const tabRefs = useRef(new Map<AdminTab, HTMLButtonElement>());
-  const current = TABS.find((t) => t.id === tab)!;
+  const current = tabs.find((t) => t.id === tab)!;
 
   const choose = (next: AdminTab) => {
     setTab(next);
@@ -91,7 +107,7 @@ export function AdminDialog({
     const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
     if (!step) return;
     e.preventDefault();
-    const next = TABS[(TABS.indexOf(current) + step + TABS.length) % TABS.length]!;
+    const next = tabs[(tabs.indexOf(current) + step + tabs.length) % tabs.length]!;
     choose(next.id);
     tabRefs.current.get(next.id)?.focus();
   };
@@ -118,7 +134,7 @@ export function AdminDialog({
             className="profile-tabs"
             onKeyDown={onTabKey}
           >
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <button
                 key={t.id}
                 ref={(el) => {
@@ -160,6 +176,15 @@ export function AdminDialog({
             {tab === 'integration' && <IntegrationPage api={api} me={me} />}
             {tab === 'maintenance' && (
               <MaintenancePage api={api} me={me} onChanged={onMaintenanceChanged} />
+            )}
+            {tab === 'backup' && (
+              <BackupPage
+                api={api}
+                me={me}
+                actions={actions}
+                onOpenMaintenance={() => choose('maintenance')}
+                onSignOut={onSignOut}
+              />
             )}
           </div>
           <footer className="profile-footer">

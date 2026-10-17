@@ -79,6 +79,8 @@ export const HELP_INDEX: HelpEntry[] = [
       { topic: 'published-outputs', label: 'Publishing targets' },
       { topic: 'adminUsers', label: 'Users' },
       { topic: 'github-sync', label: 'GitHub sync' },
+      { topic: 'adminMaintenance', label: 'Maintenance' },
+      { topic: 'backup', label: 'Backup and restore' },
     ],
   },
 ];

@@ -85,12 +85,4 @@ describe('GitHub sync settings (Administration > Integration)', () => {
     await userEvent.click(within(region).getByRole('button', { name: 'Save' }));
     expect(await within(region).findByRole('alert')).toHaveTextContent('is fixed once anything');
   });
-
-  it('has the GitHub sync help button', async () => {
-    const { region } = await section();
-    await userEvent.click(
-      within(region).getByRole('button', { name: 'Help: How GitHub sync works' }),
-    );
-    expect(screen.getByRole('dialog', { name: 'How GitHub sync works' })).toBeInTheDocument();
-  });
 });

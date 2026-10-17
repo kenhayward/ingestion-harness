@@ -1,7 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import type { SyncSettingsView } from '@ih/shared';
 import type { Api } from '../api/client.js';
-import { HelpButton } from '../ui/Help.js';
 
 /**
  * Administration > Integration: how this deployment appears in GitHub when recipe versions are
@@ -58,10 +57,7 @@ export function GitHubSyncSection({ api }: { api: Api }) {
   return (
     <section className="s3-keys" aria-labelledby={headingId}>
       <div>
-        <div className="profile-actions">
-          <h2 id={headingId}>GitHub sync</h2>
-          <HelpButton topic="github-sync" />
-        </div>
+        <h2 id={headingId}>GitHub sync</h2>
         <p className="muted">
           How this deployment is named in GitHub when recipe versions are pushed there, so several
           deployments can share one repository.

@@ -175,7 +175,7 @@ describe('POST /api/publish-targets', () => {
 
   it("refuses CT Studio's own buckets for an internal target", async () => {
     const c = await setup();
-    for (const bucket of ['inbox', 'outputs', 'runs']) {
+    for (const bucket of ['inbox', 'outputs', 'runs', 'backups']) {
       const res = await c.call('POST', '/publish-targets', {
         label: 'Oops',
         kind: 'internal',
@@ -232,6 +232,30 @@ describe('POST /api/publish-targets', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('LLM_SECRETS_KEY is not set: the API cannot store keys');
     expect((await c.targets.list()).map((t) => t.id)).toEqual(['default']);
+  });
+});
+
+describe('inert publishing targets (a copy restore)', () => {
+  it('an inert target is not listed and is a 404', async () => {
+    const c = await setup();
+    await c.targets.create(financeRecord(), 'Ken');
+    await c.targets.makeInert('finance-lake');
+    const list = (await c.call('GET', '/publish-targets')).json() as {
+      targets: PublishTargetView[];
+    };
+    expect(list.targets.map((t) => t.id)).toEqual(['default']);
+    const choices = (await c.call('GET', '/publish-targets/choices')).json() as {
+      choices: { id: string }[];
+    };
+    expect(choices.choices.map((t) => t.id)).toEqual(['default']);
+    for (const res of [
+      await c.call('PATCH', '/publish-targets/finance-lake', { label: 'x' }),
+      await c.call('DELETE', '/publish-targets/finance-lake'),
+      await c.call('POST', '/publish-targets/test', { id: 'finance-lake' }),
+    ]) {
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error).toBe('publishing target not found');
+    }
   });
 });
 
@@ -309,6 +333,8 @@ describe('PATCH /api/publish-targets/:id', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("inbox is CT Studio's own inbox bucket: pick another");
     expect((await c.targets.get('default'))!.bucket).toBe('published');
+    const backups = await c.call('PATCH', '/publish-targets/default', { bucket: 'backups' });
+    expect(backups.json().error).toBe("backups is CT Studio's own backups bucket: pick another");
   });
 
   it('clears optional settings with null, and the KMS key once encryption leaves KMS', async () => {
@@ -604,6 +630,13 @@ describe('POST /api/publish-targets/test', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("runs is CT Studio's own runs bucket: pick another");
+    const backups = await c.call('POST', '/publish-targets/test', {
+      label: 'Oops',
+      kind: 'internal',
+      bucket: 'backups',
+    });
+    expect(backups.statusCode).toBe(400);
+    expect(backups.json().error).toBe("backups is CT Studio's own backups bucket: pick another");
     const overlay = await c.call('POST', '/publish-targets/test', {
       id: 'default',
       bucket: 'outputs',

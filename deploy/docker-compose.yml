@@ -12,6 +12,8 @@ x-s3-env: &s3-env
   S3_BUCKET_INBOX: ${S3_BUCKET_INBOX:-ingest-inbox}
   S3_BUCKET_OUTPUTS: ${S3_BUCKET_OUTPUTS:-ingest-outputs}
   S3_BUCKET_RUNS: ${S3_BUCKET_RUNS:-ingest-runs}
+  # Backups and restore uploads (Administration > Backup); created by init-buckets, never backed up.
+  S3_BUCKET_BACKUPS: ${S3_BUCKET_BACKUPS:-ingest-backups}
   # Final target for approved outputs; empty endpoint/keys = same SeaweedFS as above.
   TARGET_S3_ENDPOINT: ${TARGET_S3_ENDPOINT:-}
   TARGET_S3_REGION: ${TARGET_S3_REGION:-}
@@ -179,6 +181,14 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_REDIRECT_URL: ${GITHUB_REDIRECT_URL:-}
+      # The triple store a backup dumps and a restore replaces, as the worker writes to it;
+      # empty (no rdf profile): backups carry no triples.
+      RDF_ENDPOINT: ${RDF_ENDPOINT:-}
+      RDF_DATASET: ${RDF_DATASET:-ct}
+      RDF_USER: ct-writer
+      RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
+    # `rdf` reaches Fuseki when the rdf profile is on (as for the worker); the network exists either way.
+    networks: [default, rdf]
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
@@ -275,7 +285,7 @@ networks:
   # Only the worker and the converter: no route out of it (ADR 0009).
   converter:
     internal: true
-  # Only the worker and Fuseki (ADR 0011).
+  # Only the worker, the API (backup and restore) and Fuseki (ADR 0011).
   rdf:
     internal: true
 

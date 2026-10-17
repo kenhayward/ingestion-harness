@@ -12,6 +12,8 @@ COPY apps/api apps/api
 RUN npm run build -w @ih/shared && npm run build -w @ih/api && npm prune --omit=dev
 
 FROM node:24-alpine
+# pg_dump/pg_restore for Administration > Backup: the same major version as the server (17).
+RUN apk add --no-cache postgresql17-client
 ENV NODE_ENV=production \
     SPECS_DIR=/app/specs \
     MIGRATIONS_DIR=/app/db/migrations
