@@ -133,11 +133,18 @@ export async function checkBackup(
       throw new BackupCorruptError(`${part.name} does not match its recorded hash`);
     }
   }
+  const buckets = new Set(manifest.buckets.map((b) => b.name));
   for (const [name, found] of hashes) {
     if (!name.startsWith(OBJECT_PREFIX) || name === INDEX) {
       if (!listed.has(name))
         throw new BackupCorruptError(`the backup has an unknown entry ${name}`);
       continue;
+    }
+    // A restore writes each object into its bucket's place on this server: there must be one.
+    const rest = name.slice(OBJECT_PREFIX.length);
+    const slash = rest.indexOf('/');
+    if (slash < 1 || !buckets.has(rest.slice(0, slash))) {
+      throw new BackupCorruptError(`${name} is in no bucket of the manifest`);
     }
     const expected = index.get(name);
     if (!expected) throw new BackupCorruptError(`${name} is not in the object index`);

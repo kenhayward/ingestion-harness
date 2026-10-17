@@ -206,6 +206,26 @@ describe('checkBackup refusals', () => {
     refused((es) => withIndex(es, 'not json' + NL), /index is damaged/));
   it('an index without its final newline', () =>
     refused((es) => withIndex(es, indexLines(es).join(NL)), /newline/));
+  /** An object entry at `name`, listed in the index, so only its bucket is wrong. */
+  const withObject = (es: Entry[], bucket: string, key: string): Entry[] => {
+    const body = Buffer.from('stray');
+    const line = JSON.stringify({
+      role: 'target',
+      bucket,
+      key,
+      size: body.length,
+      sha256: createHash('sha256').update(body).digest('hex'),
+    });
+    const withEntry = [{ name: `objects/${bucket}/${key}`, body }, ...es];
+    return withIndex(withEntry, indexLines(es).concat(line).join(NL) + NL);
+  };
+  it('an object in a bucket the manifest does not list', () =>
+    refused(
+      (es) => withObject(es, 'elsewhere', 'x.json'),
+      /objects\/elsewhere\/x\.json is in no bucket/,
+    ));
+  it('an object outside any bucket', () =>
+    refused((es) => withObject(es, '', 'flat.json'), /is in no bucket of the manifest/));
   it('a duplicate index key', () =>
     refused(
       (es) => withIndex(es, indexLines(es).concat(indexLines(es)[0]!).join(NL) + NL),
