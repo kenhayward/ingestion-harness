@@ -6,13 +6,24 @@ import {
   BackupViewSchema,
   QueueControlBodySchema,
   QueueControlViewSchema,
+  RestoreConfirmBodySchema,
+  RestoreStartBodySchema,
   RestoreStatusSchema,
   UploadStartBodySchema,
   UploadViewSchema,
 } from '@ih/shared';
-import { BackupBusyError, BUSY, type BackupService } from '../backup/service.js';
+import { adminOf } from '../access/routes.js';
+import { parseMasterKey } from '../backup/crypto.js';
+import {
+  BackupBusyError,
+  BUSY,
+  NOT_WAITING,
+  RESTORE_CANCELLED,
+  RestoreRefusal,
+  type BackupService,
+} from '../backup/service.js';
 import { UploadError, type BackupUploads } from '../backup/uploads.js';
-import { binary, error, md, res } from '../openapi/zod.js';
+import { binary, error, md, noContent, res } from '../openapi/zod.js';
 
 const ADMINS_ONLY = error('`admins only`.');
 export const NOT_CONFIGURED = 'backups need LLM_SECRETS_KEY: set it in deploy/.env';
@@ -31,6 +42,15 @@ const BackupStatusSchema = z.object({
 
 const IdParams = z.object({ id: z.string().uuid().describe('The backup id.') });
 const UploadParams = z.object({ id: z.string().uuid().describe('The upload id.') });
+const RestoreParams = z.object({ id: z.string().uuid().describe('The restore id.') });
+const TokenHeaders = z.object({
+  'x-restore-token': z
+    .string()
+    .optional()
+    .describe("The restore's token, when not signed in as an admin."),
+});
+/** The 409 for a restore of an upload whose parts were not joined yet. */
+const NOT_COMPLETE = 'the upload is not complete';
 const PartParams = UploadParams.extend({
   n: z.coerce.number().int().min(0).describe('The part, counting from 0.'),
 });
@@ -75,8 +95,8 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
         description: md`
           **Admins only.** The running backup with its progress, else the newest one (when, who,
           size; a failed one with its reason), the newest successful one (kept after a failed
-          backup, and the one to download), the restore in progress (none yet), and whether
-          the job queue is paused.
+          backup, and the one to download), the restore holding the lock, else the newest one,
+          and whether the job queue is paused.
         `,
         'x-admin': true,
         response: {
@@ -209,7 +229,8 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
           **Admins only.** Starts a resumable upload of a backup file to restore: send the file
           in parts of \`partBytes\` (64 MiB; the last one is what remains) with
           \`PUT /api/backup/uploads/{id}/parts/{n}\`, then \`POST …/complete\`. One upload at a
-          time: starting one discards the previous upload.
+          time: starting one discards the previous upload, so none starts while a backup or
+          restore runs.
         `,
         'x-admin': true,
         body: UploadStartBodySchema,
@@ -217,6 +238,7 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
           201: res('The upload.', UploadViewSchema),
           400: error('A malformed body.'),
           403: ADMINS_ONLY,
+          409: error(`\`${BUSY}\`.`),
           503: UNAVAILABLE,
         },
       },
@@ -224,6 +246,8 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const body = UploadStartBodySchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      // Starting an upload discards the previous one: never the file a restore is reading.
+      if (app.deps.backup?.isBusy()) return reply.code(409).send({ error: BUSY });
       const view = await uploads().start(body.data, req.auth?.label ?? 'admin');
       return reply.code(201).send(view);
     },
@@ -339,6 +363,228 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
         return await uploads().complete(params.data.id);
       } catch (err) {
         return refuse(reply, err);
+      }
+    },
+  );
+
+  // A restore ends every session (the restored database has none), so whoever started it
+  // follows, confirms or cancels it with its token too: these routes are public at the access
+  // hook and decide here, answering 404 to anyone without an admin session or the token.
+  const RESTORE_NOT_FOUND = error(
+    '`restore not found`: no such restore, or neither an admin session nor its token.',
+  );
+  const TOKEN_ACCESS = md`
+    An admin session, or the restore's token (from \`POST /api/backup/restores\`) in the
+    \`X-Restore-Token\` header: a restore ends every session, so the token outlives them. Without
+    either, the answer is the same \`404\` as for a restore that does not exist.
+  `;
+  const restoreAvailable = (reply: FastifyReply) => {
+    if (app.deps.backup) return true;
+    void reply.code(503).send({ error: NOT_CONFIGURED });
+    return false;
+  };
+  /** Who asks: an admin (their name), or the token from the header. */
+  const caller = async (req: FastifyRequest) => {
+    const header = req.headers['x-restore-token'];
+    return {
+      admin: await adminOf(app, req),
+      token: typeof header === 'string' && header !== '' ? header : null,
+    };
+  };
+  /** The restore, when the caller may see it. */
+  const visible = async (req: FastifyRequest) => {
+    const params = RestoreParams.safeParse(req.params);
+    if (!params.success) return null;
+    const who = await caller(req);
+    const status = await service().restoreStatus(params.data.id, {
+      admin: who.admin !== null,
+      token: who.token,
+    });
+    return status && { status, admin: who.admin };
+  };
+  const refuseRestore = (reply: FastifyReply, err: unknown) => {
+    if (err instanceof RestoreRefusal) return reply.code(err.status).send({ error: err.message });
+    throw err;
+  };
+
+  app.post(
+    '/backup/restores',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags: ['Backup'],
+        operationId: 'startRestore',
+        summary: 'Check an uploaded backup before restoring it',
+        description: md`
+          **Admins only.** Starts the check of a completed upload in the background: the whole
+          file is decrypted and verified, and nothing changes yet. \`deployment\` (disaster
+          recovery, a server move) opens it with this server's \`LLM_SECRETS_KEY\`, then
+          \`LLM_SECRETS_KEY_PREVIOUS\`; \`copy\` (production into staging) with \`key\`, the
+          \`LLM_SECRETS_KEY\` of the deployment it came from, used for this restore only and never
+          stored. A key that does not open the file ends the check as failed with
+          \`this key does not open the backup\`.
+
+          The answer carries \`token\`, shown once: keep it to follow the restore
+          (\`GET /api/backup/restores/{id}\`) and confirm it once \`phase\` is \`checked\`, since a
+          restore signs everyone out. From here until the restore ends or is cancelled, no
+          backup, upload or other restore can start.
+        `,
+        'x-admin': true,
+        body: RestoreStartBodySchema,
+        response: {
+          202: res(
+            'The check, started, and the token for this restore.',
+            z.object({
+              status: RestoreStatusSchema,
+              token: z.string().describe('Send it as `X-Restore-Token`; it is not shown again.'),
+            }),
+          ),
+          400: error('A malformed body, or a `key` that is not 32 bytes, base64.'),
+          403: ADMINS_ONLY,
+          409: error(`\`${BUSY}\`, or \`${NOT_COMPLETE}\`.`),
+          503: UNAVAILABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = RestoreStartBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      let key: Buffer | null = null;
+      if (body.data.mode === 'copy') {
+        try {
+          key = parseMasterKey(body.data.key ?? '');
+        } catch (err) {
+          return reply.code(400).send({ error: (err as Error).message });
+        }
+      }
+      const uploadKey = await app.deps.backupUploads?.completedKey(body.data.uploadId);
+      if (!uploadKey) return reply.code(409).send({ error: NOT_COMPLETE });
+      try {
+        const by = req.auth?.label ?? 'admin';
+        const started = service().startRestore({ uploadKey, mode: body.data.mode, key, by });
+        req.log.warn({ id: started.status.id, mode: body.data.mode, by }, 'restore check started');
+        return reply.code(202).send(started);
+      } catch (err) {
+        if (err instanceof BackupBusyError) return reply.code(409).send({ error: BUSY });
+        throw err;
+      }
+    },
+  );
+
+  app.get(
+    '/backup/restores/:id',
+    {
+      config: { public: true },
+      schema: {
+        tags: ['Backup'],
+        operationId: 'getRestore',
+        summary: 'Follow a restore',
+        description: md`
+          Where a restore stands: \`checking\` (with bytes read in \`done\` of \`of\`),
+          \`checked\` (the backup's manifest and, for a copy, \`plan\`: what it drops and keeps),
+          \`restoring\` (\`step\`, \`done\` of \`of\` steps), then \`succeeded\` with its \`report\`
+          or \`failed\` with \`error\`.
+
+          ${TOKEN_ACCESS}
+        `,
+        params: RestoreParams,
+        headers: TokenHeaders,
+        response: {
+          200: res('The restore.', RestoreStatusSchema),
+          404: RESTORE_NOT_FOUND,
+          503: UNAVAILABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!restoreAvailable(reply)) return reply;
+      const found = await visible(req);
+      if (!found) return reply.code(404).send({ error: 'restore not found' });
+      return found.status;
+    },
+  );
+
+  app.post(
+    '/backup/restores/:id/confirm',
+    {
+      config: { public: true },
+      schema: {
+        tags: ['Backup'],
+        operationId: 'confirmRestore',
+        summary: 'Confirm a checked restore',
+        description: md`
+          Runs a restore whose check passed (\`phase\` \`checked\`), in the background, once
+          \`instanceName\` is the backup's instance name as the check read it. Everyone but
+          admins is held out by maintenance, the job queue is paused, the database, files and
+          triple store are replaced, every session ends and the admin token from the log is
+          rotated. Follow it with \`GET /api/backup/restores/{id}\`.
+
+          ${TOKEN_ACCESS}
+        `,
+        params: RestoreParams,
+        headers: TokenHeaders,
+        body: RestoreConfirmBodySchema,
+        response: {
+          202: res('The restore, started.', RestoreStatusSchema),
+          400: error('`type <instance> to confirm`, or a malformed body.'),
+          404: RESTORE_NOT_FOUND,
+          409: error(`\`${NOT_WAITING}\`: it is still being checked, or over.`),
+          503: UNAVAILABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!restoreAvailable(reply)) return reply;
+      const found = await visible(req);
+      if (!found) return reply.code(404).send({ error: 'restore not found' });
+      const body = RestoreConfirmBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const by = found.admin?.label ?? found.status.startedBy;
+      try {
+        const status = await service().confirmRestore(found.status.id, body.data.instanceName, by);
+        req.log.warn({ id: status.id, mode: status.mode, by }, 'restore confirmed');
+        return reply.code(202).send(status);
+      } catch (err) {
+        return refuseRestore(reply, err);
+      }
+    },
+  );
+
+  app.delete(
+    '/backup/restores/:id',
+    {
+      config: { public: true },
+      schema: {
+        tags: ['Backup'],
+        operationId: 'cancelRestore',
+        summary: 'Cancel a checked restore',
+        description: md`
+          Gives up a restore whose check passed and that was not confirmed: nothing was
+          changed. It is kept as \`failed\` with \`${RESTORE_CANCELLED}\`, and backups, uploads
+          and restores can start again. The uploaded file stays, so it can be checked again.
+
+          ${TOKEN_ACCESS}
+        `,
+        params: RestoreParams,
+        headers: TokenHeaders,
+        response: {
+          204: noContent('Cancelled.'),
+          404: RESTORE_NOT_FOUND,
+          409: error(`\`${NOT_WAITING}\`: it is still being checked, running, or over.`),
+          503: UNAVAILABLE,
+        },
+      },
+    },
+    async (req, reply) => {
+      if (!restoreAvailable(reply)) return reply;
+      const found = await visible(req);
+      if (!found) return reply.code(404).send({ error: 'restore not found' });
+      try {
+        await service().cancelRestore(found.status.id);
+        req.log.warn({ id: found.status.id }, 'restore cancelled');
+        return reply.code(204).send();
+      } catch (err) {
+        return refuseRestore(reply, err);
       }
     },
   );

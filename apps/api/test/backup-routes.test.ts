@@ -1,10 +1,19 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { OPERATOR_REFUSED, type BackupView } from '@ih/shared';
+import { copyPlan, OPERATOR_REFUSED, type BackupView, type RestoreStatus } from '@ih/shared';
+import { createBackup } from '../src/backup/create.js';
 import { MemoryQueueControlRepo } from '../src/backup/queue-control.js';
 import { BackupService } from '../src/backup/service.js';
+import { BackupUploads } from '../src/backup/uploads.js';
 import { MemoryMaintenanceRepo } from '../src/maintenance/repo.js';
-import { FakeDatabaseTools, fakeBackupDeps } from './backup-fakes.js';
+import { MemoryObjectStore } from '../src/storage/object-store.js';
+import {
+  FakeDatabaseTools,
+  fakeBackupDeps,
+  FakeLiveDatabase,
+  FakeSideDatabase,
+  TEST_MASTER,
+} from './backup-fakes.js';
 import { accessApp, signInNewUser } from './helpers.js';
 
 /** A database whose dump waits until `release()`, so a backup can be caught running. */
@@ -282,5 +291,247 @@ describe('BackupService', () => {
     expect(file?.fileName).toBe('ct-backup-production-20261017-1200.ctbak');
     expect(file?.body).toBeInstanceOf(Readable);
     file?.body.resume();
+  });
+});
+
+const LOCAL = ['0001_init.sql', '202610171218_backup_restore.sql'];
+
+/** Production's backup file, made with the fakes' key (TEST_MASTER). */
+async function backupFile(): Promise<Buffer> {
+  const source = fakeBackupDeps({ db: new FakeDatabaseTools(Buffer.from('PGDMP production')) });
+  await source.store.put('inbox', 'docs/a.pdf', Buffer.from('%PDF-1 a'), 'application/pdf');
+  const { key } = await createBackup(source, 'b1', 'Pat', () => {});
+  return (await source.store.get('backups', key))!;
+}
+
+/** This server, with restores set up on fakes. */
+async function restoreSetup(db: FakeDatabaseTools = new FakeDatabaseTools()) {
+  const store = new MemoryObjectStore();
+  const deps = fakeBackupDeps({ db, store });
+  const backup = new BackupService({
+    ...deps,
+    previousMaster: null,
+    queue: new MemoryQueueControlRepo(),
+    maintenance: new MemoryMaintenanceRepo(),
+  });
+  const backupUploads = new BackupUploads({ store, bucket: 'backups' });
+  const ctx = await accessApp({ backup, backupUploads, store });
+  const rotated: string[] = [];
+  backup.enableRestore({
+    gate: ctx.app.maintenance,
+    localMigrations: async () => LOCAL,
+    migrate: async () => {},
+    rotateAdminToken: async () => void rotated.push('rotated'),
+    createEmbedJobs: async () => 0,
+    liveDatabaseName: 'ingestion',
+    live: new FakeLiveDatabase(),
+    openSide: async () => new FakeSideDatabase(),
+    lakeIssuer: null,
+    jobWaitMs: 0,
+  });
+  const admin = { cookie: ctx.adminCookie };
+  /** Uploads the file through the routes (one part) and returns the upload id. */
+  const upload = async (file: Buffer, complete = true) => {
+    const started = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/backup/uploads',
+      headers: admin,
+      payload: { size: file.length, fileName: 'prod.ctbak' },
+    });
+    const { id } = started.json<{ id: string }>();
+    await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/backup/uploads/${id}/parts/0`,
+      headers: { ...admin, 'content-type': 'application/octet-stream' },
+      payload: file,
+    });
+    if (complete) {
+      await ctx.app.inject({
+        method: 'POST',
+        url: `/api/backup/uploads/${id}/complete`,
+        headers: admin,
+      });
+    }
+    return id;
+  };
+  const start = (payload: object, headers: Record<string, string> = admin) =>
+    ctx.app.inject({ method: 'POST', url: '/api/backup/restores', headers, payload });
+  const read = (id: string, headers: Record<string, string> = {}) =>
+    ctx.app.inject({ url: `/api/backup/restores/${id}`, headers });
+  const confirm = (id: string, instanceName: string, headers: Record<string, string>) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/backup/restores/${id}/confirm`,
+      headers,
+      payload: { instanceName },
+    });
+  const cancel = (id: string, headers: Record<string, string>) =>
+    ctx.app.inject({ method: 'DELETE', url: `/api/backup/restores/${id}`, headers });
+  const overview = () => ctx.app.inject({ url: '/api/backup', headers: admin });
+  return { ...ctx, backup, store, admin, rotated, upload, start, read, confirm, cancel, overview };
+}
+
+type Started = { status: RestoreStatus; token: string };
+
+describe('restore routes', () => {
+  it('copy mode without a key is a 400', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const res = await s.start({ uploadId, mode: 'copy' });
+    expect(res.statusCode).toBe(400);
+    const malformed = await s.start({ uploadId, mode: 'copy', key: 'not a key' });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().error).toMatch(/must be 32 bytes, base64/);
+    expect(s.backup.isBusy()).toBe(false);
+  });
+
+  it('a wrong key ends the check as failed with "this key does not open the backup"', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const key = Buffer.alloc(32, 9).toString('base64');
+    const res = await s.start({ uploadId, mode: 'copy', key });
+    expect(res.statusCode).toBe(202);
+    const { status, token } = res.json<Started>();
+    expect(status).toMatchObject({ mode: 'copy', phase: 'checking', startedBy: 'Admin' });
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    await s.backup.settled();
+    const read = await s.read(status.id, { 'x-restore-token': token });
+    expect(read.json()).toMatchObject({
+      phase: 'failed',
+      error: 'this key does not open the backup',
+    });
+    // A failed check lets go of the lock, and there is nothing to confirm.
+    expect(s.backup.isBusy()).toBe(false);
+    const confirm = await s.confirm(status.id, 'production', { 'x-restore-token': token });
+    expect([confirm.statusCode, confirm.json()]).toEqual([
+      409,
+      { error: 'the restore is not waiting to be confirmed' },
+    ]);
+    // The status file keeps only the token's hash.
+    const raw = (await s.store.get('backups', `restores/${status.id}.json`))!.toString('utf8');
+    expect(raw).not.toContain(token);
+  });
+
+  it('a checked copy carries its plan and the manifest', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const key = TEST_MASTER.toString('base64');
+    const { status, token } = (await s.start({ uploadId, mode: 'copy', key })).json<Started>();
+    await s.backup.settled();
+    const read = (await s.read(status.id, { 'x-restore-token': token })).json<RestoreStatus>();
+    expect(read).toMatchObject({ phase: 'checked', error: null, plan: copyPlan() });
+    expect(read.manifest?.instanceName).toBe('production');
+    expect((await s.read(status.id, s.admin)).json()).toEqual(read);
+    expect((await s.overview()).json().restore).toEqual(read);
+  });
+
+  it('confirm needs the instance name', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const { status, token } = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    const wrong = await s.confirm(status.id, 'staging', { 'x-restore-token': token });
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json()).toEqual({ error: 'type production to confirm' });
+    const ok = await s.confirm(status.id, 'production', { 'x-restore-token': token });
+    expect(ok.statusCode).toBe(202);
+    expect(ok.json()).toMatchObject({ phase: 'restoring' });
+    await s.backup.settled();
+    const done = (await s.read(status.id, { 'x-restore-token': token })).json<RestoreStatus>();
+    expect(done).toMatchObject({ phase: 'succeeded', error: null, plan: null });
+    expect(done.report?.previousDatabase).toMatch(/^ingestion_before_restore_/);
+    expect(s.rotated).toEqual(['rotated']);
+    expect(s.backup.isBusy()).toBe(false);
+    // Over: nothing more to confirm or cancel.
+    expect((await s.confirm(status.id, 'production', s.admin)).statusCode).toBe(409);
+    expect((await s.cancel(status.id, s.admin)).statusCode).toBe(409);
+  });
+
+  it('the token reads status after the session is gone', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const { status, token } = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    await s.app.inject({ method: 'POST', url: '/api/auth/logout', headers: s.admin });
+    expect((await s.read(status.id, s.admin)).statusCode).toBe(404);
+    const read = await s.read(status.id, { 'x-restore-token': token });
+    expect(read.statusCode).toBe(200);
+    expect(read.json()).toMatchObject({ id: status.id, phase: 'checked' });
+  });
+
+  it('without token or admin the status is a 404', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const { status } = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    const wrongToken = { 'x-restore-token': 'A'.repeat(43) };
+    const designer = { cookie: s.userCookie };
+    for (const headers of [{}, wrongToken, designer]) {
+      const res = await s.read(status.id, headers);
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: 'restore not found' });
+      expect((await s.confirm(status.id, 'production', headers)).statusCode).toBe(404);
+      expect((await s.cancel(status.id, headers)).statusCode).toBe(404);
+    }
+    expect((await s.read('not-an-id', s.admin)).statusCode).toBe(404);
+    expect((await s.start({ uploadId, mode: 'deployment' }, designer)).statusCode).toBe(403);
+  });
+
+  it('a restore while a backup runs is a 409', async () => {
+    const db = new HeldDatabase();
+    const s = await restoreSetup(db);
+    const uploadId = await s.upload(await backupFile());
+    const backup = await s.app.inject({
+      method: 'POST',
+      url: '/api/backup/backups',
+      headers: s.admin,
+    });
+    expect(backup.statusCode).toBe(202);
+    const res = await s.start({ uploadId, mode: 'deployment' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'a backup or restore is already running' });
+    db.release();
+    await s.backup.settled();
+  });
+
+  it('a checked restore holds the lock until it is cancelled', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const { status, token } = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    const busy = { error: 'a backup or restore is already running' };
+    const backup = await s.app.inject({
+      method: 'POST',
+      url: '/api/backup/backups',
+      headers: s.admin,
+    });
+    expect([backup.statusCode, backup.json()]).toEqual([409, busy]);
+    const upload = await s.app.inject({
+      method: 'POST',
+      url: '/api/backup/uploads',
+      headers: s.admin,
+      payload: { size: 10, fileName: 'x.ctbak' },
+    });
+    expect([upload.statusCode, upload.json()]).toEqual([409, busy]);
+    expect((await s.start({ uploadId, mode: 'deployment' })).statusCode).toBe(409);
+    const cancelled = await s.cancel(status.id, { 'x-restore-token': token });
+    expect(cancelled.statusCode).toBe(204);
+    expect(s.backup.isBusy()).toBe(false);
+    expect((await s.read(status.id, s.admin)).json()).toMatchObject({
+      phase: 'failed',
+      error: 'cancelled: nothing was changed',
+    });
+    // The upload is still there: the same file can be checked again.
+    expect((await s.start({ uploadId, mode: 'deployment' })).statusCode).toBe(202);
+    await s.backup.settled();
+  });
+
+  it('an upload that is not complete is a 409', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile(), false);
+    const res = await s.start({ uploadId, mode: 'deployment' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'the upload is not complete' });
+    expect(s.backup.isBusy()).toBe(false);
   });
 });

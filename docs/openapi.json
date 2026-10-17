@@ -68811,7 +68811,7 @@
         "tags": [
           "Backup"
         ],
-        "description": "**Admins only.** The running backup with its progress, else the newest one (when, who,\nsize; a failed one with its reason), the newest successful one (kept after a failed\nbackup, and the one to download), the restore in progress (none yet), and whether\nthe job queue is paused.",
+        "description": "**Admins only.** The running backup with its progress, else the newest one (when, who,\nsize; a failed one with its reason), the newest successful one (kept after a failed\nbackup, and the one to download), the restore holding the lock, else the newest one,\nand whether the job queue is paused.",
         "x-admin": true,
         "responses": {
           "200": {
@@ -70446,7 +70446,7 @@
         "tags": [
           "Backup"
         ],
-        "description": "**Admins only.** Starts a resumable upload of a backup file to restore: send the file\nin parts of `partBytes` (64 MiB; the last one is what remains) with\n`PUT /api/backup/uploads/{id}/parts/{n}`, then `POST …/complete`. One upload at a\ntime: starting one discards the previous upload.",
+        "description": "**Admins only.** Starts a resumable upload of a backup file to restore: send the file\nin parts of `partBytes` (64 MiB; the last one is what remains) with\n`PUT /api/backup/uploads/{id}/parts/{n}`, then `POST …/complete`. One upload at a\ntime: starting one discards the previous upload, so none starts while a backup or\nrestore runs.",
         "requestBody": {
           "required": true,
           "content": {
@@ -70647,6 +70647,38 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`a backup or restore is already running`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`a backup or restore is already running`."
                 }
               }
             }
@@ -71636,6 +71668,1875 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/restores": {
+      "post": {
+        "operationId": "startRestore",
+        "summary": "Check an uploaded backup before restoring it",
+        "tags": [
+          "Backup"
+        ],
+        "description": "**Admins only.** Starts the check of a completed upload in the background: the whole\nfile is decrypted and verified, and nothing changes yet. `deployment` (disaster\nrecovery, a server move) opens it with this server's `LLM_SECRETS_KEY`, then\n`LLM_SECRETS_KEY_PREVIOUS`; `copy` (production into staging) with `key`, the\n`LLM_SECRETS_KEY` of the deployment it came from, used for this restore only and never\nstored. A key that does not open the file ends the check as failed with\n`this key does not open the backup`.\n\nThe answer carries `token`, shown once: keep it to follow the restore\n(`GET /api/backup/restores/{id}`) and confirm it once `phase` is `checked`, since a\nrestore signs everyone out. From here until the restore ends or is cancelled, no\nbackup, upload or other restore can start.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uploadId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "deployment",
+                      "copy"
+                    ]
+                  },
+                  "key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uploadId",
+                  "mode"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "202": {
+            "description": "The check, started, and the token for this restore.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "deployment",
+                            "copy"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "checking",
+                            "checked",
+                            "restoring",
+                            "succeeded",
+                            "failed"
+                          ]
+                        },
+                        "step": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "done": {
+                          "type": "number"
+                        },
+                        "of": {
+                          "type": "number"
+                        },
+                        "manifest": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "format": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ct-backup"
+                                  ]
+                                },
+                                "formatVersion": {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                "appVersion": {
+                                  "type": "string"
+                                },
+                                "commit": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "lastMigration": {
+                                  "type": "string"
+                                },
+                                "migrations": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "instanceName": {
+                                  "type": "string"
+                                },
+                                "baseIri": {
+                                  "type": "string"
+                                },
+                                "startedAt": {
+                                  "type": "string"
+                                },
+                                "finishedAt": {
+                                  "type": "string"
+                                },
+                                "createdBy": {
+                                  "type": "string"
+                                },
+                                "buckets": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "inbox",
+                                          "outputs",
+                                          "runs",
+                                          "target"
+                                        ]
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "objects": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "bytes": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "role",
+                                      "name",
+                                      "objects",
+                                      "bytes"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                "parts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "bytes": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "sha256": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "bytes",
+                                      "sha256"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                "fuseki": {
+                                  "type": "boolean"
+                                },
+                                "lakeIdentities": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "format",
+                                "formatVersion",
+                                "appVersion",
+                                "commit",
+                                "lastMigration",
+                                "migrations",
+                                "instanceName",
+                                "baseIri",
+                                "startedAt",
+                                "finishedAt",
+                                "createdBy",
+                                "buckets",
+                                "parts",
+                                "fuseki",
+                                "lakeIdentities"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "plan": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dropped": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "kept": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "dropped",
+                                "kept"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "report": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "restored": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "table": {
+                                        "type": "string"
+                                      },
+                                      "rows": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "table",
+                                      "rows"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                "objects": {
+                                  "type": "number"
+                                },
+                                "missingObjects": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "bucket": {
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "bucket",
+                                      "key"
+                                    ],
+                                    "additionalProperties": true
+                                  }
+                                },
+                                "copy": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "cancelledJobs": {
+                                          "type": "number"
+                                        },
+                                        "droppedTargets": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "withdrawnOutputs": {
+                                          "type": "number"
+                                        },
+                                        "recipesNeedingModel": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "recipesNeedingTarget": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "cancelledJobs",
+                                        "droppedTargets",
+                                        "withdrawnOutputs",
+                                        "recipesNeedingModel",
+                                        "recipesNeedingTarget"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "triples": {
+                                  "type": "string",
+                                  "enum": [
+                                    "restored",
+                                    "none-in-backup",
+                                    "no-triple-store",
+                                    "reminting"
+                                  ]
+                                },
+                                "previousDatabase": {
+                                  "type": "string"
+                                },
+                                "adminTokenRotated": {
+                                  "type": "boolean"
+                                },
+                                "lakeKeysToReissue": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "restored",
+                                "objects",
+                                "missingObjects",
+                                "copy",
+                                "triples",
+                                "previousDatabase",
+                                "adminTokenRotated",
+                                "lakeKeysToReissue"
+                              ],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "startedBy": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "mode",
+                        "phase",
+                        "step",
+                        "done",
+                        "of",
+                        "manifest",
+                        "plan",
+                        "error",
+                        "report",
+                        "startedBy",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "token": {
+                      "type": "string",
+                      "description": "Send it as `X-Restore-Token`; it is not shown again."
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "token"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The check, started, and the token for this restore."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A malformed body, or a `key` that is not 32 bytes, base64.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "A malformed body, or a `key` that is not 32 bytes, base64."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`a backup or restore is already running`, or `the upload is not complete`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`a backup or restore is already running`, or `the upload is not complete`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with. Or: Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "additionalProperties": true,
+                      "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                    },
+                    {
+                      "type": "object",
+                      "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "CT Studio is under maintenance"
+                          ]
+                        },
+                        "maintenance": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "since": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "message",
+                            "since"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "maintenance"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/restores/{id}": {
+      "get": {
+        "operationId": "getRestore",
+        "summary": "Follow a restore",
+        "tags": [
+          "Backup"
+        ],
+        "description": "Where a restore stands: `checking` (with bytes read in `done` of `of`),\n          `checked` (the backup's manifest and, for a copy, `plan`: what it drops and keeps),\n          `restoring` (`step`, `done` of `of` steps), then `succeeded` with its `report`\n          or `failed` with `error`.\n\n          An admin session, or the restore's token (from `POST /api/backup/restores`) in the\n`X-Restore-Token` header: a restore ends every session, so the token outlives them. Without\neither, the answer is the same `404` as for a restore that does not exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The restore id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-restore-token",
+            "required": false,
+            "description": "The restore's token, when not signed in as an admin."
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The restore.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "deployment",
+                        "copy"
+                      ]
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "checking",
+                        "checked",
+                        "restoring",
+                        "succeeded",
+                        "failed"
+                      ]
+                    },
+                    "step": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "done": {
+                      "type": "number"
+                    },
+                    "of": {
+                      "type": "number"
+                    },
+                    "manifest": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "format": {
+                              "type": "string",
+                              "enum": [
+                                "ct-backup"
+                              ]
+                            },
+                            "formatVersion": {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "appVersion": {
+                              "type": "string"
+                            },
+                            "commit": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "lastMigration": {
+                              "type": "string"
+                            },
+                            "migrations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "instanceName": {
+                              "type": "string"
+                            },
+                            "baseIri": {
+                              "type": "string"
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "finishedAt": {
+                              "type": "string"
+                            },
+                            "createdBy": {
+                              "type": "string"
+                            },
+                            "buckets": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "role": {
+                                    "type": "string",
+                                    "enum": [
+                                      "inbox",
+                                      "outputs",
+                                      "runs",
+                                      "target"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "objects": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "role",
+                                  "name",
+                                  "objects",
+                                  "bytes"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "parts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "sha256": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "bytes",
+                                  "sha256"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "fuseki": {
+                              "type": "boolean"
+                            },
+                            "lakeIdentities": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "format",
+                            "formatVersion",
+                            "appVersion",
+                            "commit",
+                            "lastMigration",
+                            "migrations",
+                            "instanceName",
+                            "baseIri",
+                            "startedAt",
+                            "finishedAt",
+                            "createdBy",
+                            "buckets",
+                            "parts",
+                            "fuseki",
+                            "lakeIdentities"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "plan": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "dropped": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "kept": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "dropped",
+                            "kept"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "report": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "restored": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "table": {
+                                    "type": "string"
+                                  },
+                                  "rows": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "table",
+                                  "rows"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "objects": {
+                              "type": "number"
+                            },
+                            "missingObjects": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "bucket": {
+                                    "type": "string"
+                                  },
+                                  "key": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "bucket",
+                                  "key"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "copy": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "cancelledJobs": {
+                                      "type": "number"
+                                    },
+                                    "droppedTargets": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "withdrawnOutputs": {
+                                      "type": "number"
+                                    },
+                                    "recipesNeedingModel": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "recipesNeedingTarget": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "cancelledJobs",
+                                    "droppedTargets",
+                                    "withdrawnOutputs",
+                                    "recipesNeedingModel",
+                                    "recipesNeedingTarget"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "triples": {
+                              "type": "string",
+                              "enum": [
+                                "restored",
+                                "none-in-backup",
+                                "no-triple-store",
+                                "reminting"
+                              ]
+                            },
+                            "previousDatabase": {
+                              "type": "string"
+                            },
+                            "adminTokenRotated": {
+                              "type": "boolean"
+                            },
+                            "lakeKeysToReissue": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "restored",
+                            "objects",
+                            "missingObjects",
+                            "copy",
+                            "triples",
+                            "previousDatabase",
+                            "adminTokenRotated",
+                            "lakeKeysToReissue"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "startedBy": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mode",
+                    "phase",
+                    "step",
+                    "done",
+                    "of",
+                    "manifest",
+                    "plan",
+                    "error",
+                    "report",
+                    "startedBy",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The restore."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`restore not found`: no such restore, or neither an admin session nor its token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`restore not found`: no such restore, or neither an admin session nor its token."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "cancelRestore",
+        "summary": "Cancel a checked restore",
+        "tags": [
+          "Backup"
+        ],
+        "description": "Gives up a restore whose check passed and that was not confirmed: nothing was\n          changed. It is kept as `failed` with `cancelled: nothing was changed`, and backups, uploads\n          and restores can start again. The uploaded file stays, so it can be checked again.\n\n          An admin session, or the restore's token (from `POST /api/backup/restores`) in the\n`X-Restore-Token` header: a restore ends every session, so the token outlives them. Without\neither, the answer is the same `404` as for a restore that does not exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The restore id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-restore-token",
+            "required": false,
+            "description": "The restore's token, when not signed in as an admin."
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Cancelled."
+          },
+          "403": {
+            "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "cross-site request refused"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`restore not found`: no such restore, or neither an admin session nor its token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`restore not found`: no such restore, or neither an admin session nor its token."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the restore is not waiting to be confirmed`: it is still being checked, running, or over.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the restore is not waiting to be confirmed`: it is still being checked, running, or over."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backup/restores/{id}/confirm": {
+      "post": {
+        "operationId": "confirmRestore",
+        "summary": "Confirm a checked restore",
+        "tags": [
+          "Backup"
+        ],
+        "description": "Runs a restore whose check passed (`phase` `checked`), in the background, once\n          `instanceName` is the backup's instance name as the check read it. Everyone but\n          admins is held out by maintenance, the job queue is paused, the database, files and\n          triple store are replaced, every session ends and the admin token from the log is\n          rotated. Follow it with `GET /api/backup/restores/{id}`.\n\n          An admin session, or the restore's token (from `POST /api/backup/restores`) in the\n`X-Restore-Token` header: a restore ends every session, so the token outlives them. Without\neither, the answer is the same `404` as for a restore that does not exist.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instanceName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "instanceName"
+                ],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The restore id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "header",
+            "name": "x-restore-token",
+            "required": false,
+            "description": "The restore's token, when not signed in as an admin."
+          }
+        ],
+        "security": [],
+        "responses": {
+          "202": {
+            "description": "The restore, started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "deployment",
+                        "copy"
+                      ]
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "checking",
+                        "checked",
+                        "restoring",
+                        "succeeded",
+                        "failed"
+                      ]
+                    },
+                    "step": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "done": {
+                      "type": "number"
+                    },
+                    "of": {
+                      "type": "number"
+                    },
+                    "manifest": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "format": {
+                              "type": "string",
+                              "enum": [
+                                "ct-backup"
+                              ]
+                            },
+                            "formatVersion": {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "appVersion": {
+                              "type": "string"
+                            },
+                            "commit": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "lastMigration": {
+                              "type": "string"
+                            },
+                            "migrations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "instanceName": {
+                              "type": "string"
+                            },
+                            "baseIri": {
+                              "type": "string"
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "finishedAt": {
+                              "type": "string"
+                            },
+                            "createdBy": {
+                              "type": "string"
+                            },
+                            "buckets": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "role": {
+                                    "type": "string",
+                                    "enum": [
+                                      "inbox",
+                                      "outputs",
+                                      "runs",
+                                      "target"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "objects": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "role",
+                                  "name",
+                                  "objects",
+                                  "bytes"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "parts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "sha256": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "bytes",
+                                  "sha256"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "fuseki": {
+                              "type": "boolean"
+                            },
+                            "lakeIdentities": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "format",
+                            "formatVersion",
+                            "appVersion",
+                            "commit",
+                            "lastMigration",
+                            "migrations",
+                            "instanceName",
+                            "baseIri",
+                            "startedAt",
+                            "finishedAt",
+                            "createdBy",
+                            "buckets",
+                            "parts",
+                            "fuseki",
+                            "lakeIdentities"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "plan": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "dropped": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "kept": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "dropped",
+                            "kept"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "report": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "restored": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "table": {
+                                    "type": "string"
+                                  },
+                                  "rows": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "table",
+                                  "rows"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "objects": {
+                              "type": "number"
+                            },
+                            "missingObjects": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "bucket": {
+                                    "type": "string"
+                                  },
+                                  "key": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "bucket",
+                                  "key"
+                                ],
+                                "additionalProperties": true
+                              }
+                            },
+                            "copy": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "cancelledJobs": {
+                                      "type": "number"
+                                    },
+                                    "droppedTargets": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "withdrawnOutputs": {
+                                      "type": "number"
+                                    },
+                                    "recipesNeedingModel": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "recipesNeedingTarget": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "cancelledJobs",
+                                    "droppedTargets",
+                                    "withdrawnOutputs",
+                                    "recipesNeedingModel",
+                                    "recipesNeedingTarget"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "triples": {
+                              "type": "string",
+                              "enum": [
+                                "restored",
+                                "none-in-backup",
+                                "no-triple-store",
+                                "reminting"
+                              ]
+                            },
+                            "previousDatabase": {
+                              "type": "string"
+                            },
+                            "adminTokenRotated": {
+                              "type": "boolean"
+                            },
+                            "lakeKeysToReissue": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "restored",
+                            "objects",
+                            "missingObjects",
+                            "copy",
+                            "triples",
+                            "previousDatabase",
+                            "adminTokenRotated",
+                            "lakeKeysToReissue"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "startedBy": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "mode",
+                    "phase",
+                    "step",
+                    "done",
+                    "of",
+                    "manifest",
+                    "plan",
+                    "error",
+                    "report",
+                    "startedBy",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The restore, started."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`type <instance> to confirm`, or a malformed body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`type <instance> to confirm`, or a malformed body."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "cross-site request refused"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`restore not found`: no such restore, or neither an admin session nor its token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`restore not found`: no such restore, or neither an admin session nor its token."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`the restore is not waiting to be confirmed`: it is still being checked, or over.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`the restore is not waiting to be confirmed`: it is still being checked, or over."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": true
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": true,
+                  "description": "`backups need LLM_SECRETS_KEY: set it in deploy/.env`: the key every backup is encrypted with."
                 }
               }
             }

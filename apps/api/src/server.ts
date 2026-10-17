@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { effectiveBaseIri } from '@ih/shared';
 import { PgAccessRepo } from './access/pg.js';
@@ -5,8 +7,9 @@ import { SIGN_IN_RETENTION_DAYS } from './access/repo.js';
 import { buildApp } from './app.js';
 import { internalTargetBuckets } from './backup/create.js';
 import { FusekiTripleStore } from './backup/fuseki.js';
-import { PgDatabaseTools } from './backup/pg-tools.js';
+import { databaseName, PgDatabaseTools } from './backup/pg-tools.js';
 import { PgQueueControlRepo } from './backup/queue-control.js';
+import { PgLiveDatabase, PgSideDatabase } from './backup/restore-pg.js';
 import { NoLakeIdentities } from './backup/seaweed-iam-file.js';
 import { BackupService } from './backup/service.js';
 import { BackupUploads } from './backup/uploads.js';
@@ -17,6 +20,7 @@ import {
   s3KeysConfig,
   versionFromConfig,
 } from './config.js';
+import { migrate } from './db/migrate.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
@@ -102,6 +106,7 @@ if (config.LINKED_DATA_CUSTOMER) {
 }
 
 const store = new S3ObjectStore(s3);
+const ontologies = new PgOntologyRepo(makePool(2));
 const githubSync = new PgGitHubSyncRepo(makePool(2));
 const buckets = {
   inbox: config.S3_BUCKET_INBOX,
@@ -125,6 +130,7 @@ const backup =
     triples: new FusekiTripleStore(fusekiConfig(config)),
     lake: new NoLakeIdentities(),
     master: llmSecrets.current,
+    previousMaster: llmSecrets.previous,
     version: { appVersion: version.version, commit: version.commit },
     instanceName: async () => (await githubSync.settings()).instanceName,
     baseIri: async () => effectiveBaseIri(await linkedData.get()) ?? '',
@@ -155,7 +161,7 @@ const app = await buildApp({
   githubRedirectUrl: githubOAuth?.redirectUrl ?? null,
   s3Keys,
   llm: new PgLlmConfigRepo(makePool(2)),
-  ontologies: new PgOntologyRepo(makePool(2)),
+  ontologies,
   linkedData,
   maintenance,
   ontologyFetch: {
@@ -177,6 +183,34 @@ const app = await buildApp({
 logWatchError = (err) => app.log.warn({ err }, 'job change notifications lost; reconnecting');
 logPoolError = (err) => app.log.warn({ err }, 'database connection lost; the pool reconnects');
 logBackupError = (obj, msg) => app.log.error(obj, msg);
+
+// Written straight to stdout (not the logger): printed whatever LOG_LEVEL is, and in a fixed
+// shape deploy/scripts/admin-token.sh matches exactly (request URLs can't forge it - no spaces).
+const printAdminToken = (token: string) => {
+  process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${token}\n`);
+  process.stdout.write('Sign in as "admin" with that token as the password.\n');
+};
+
+// A restore (backup/restore.ts) migrates the restored database with this server's migrations,
+// then rotates the admin token as a restart would: the restored database has its own sessions.
+const migrationsDir =
+  process.env.MIGRATIONS_DIR ?? fileURLToPath(new URL('../../../db/migrations', import.meta.url));
+backup?.enableRestore({
+  gate: app.maintenance,
+  localMigrations: async () =>
+    readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort(),
+  migrate: async (url) => {
+    await migrate(url, migrationsDir);
+  },
+  rotateAdminToken: async () => printAdminToken(await access.rotateAdminPassword()),
+  createEmbedJobs: (model) => ontologies.createEmbedJobs(model),
+  liveDatabaseName: databaseName(config.DATABASE_URL),
+  live: new PgLiveDatabase(makePool(2)),
+  openSide: (url) => PgSideDatabase.open(url),
+  lakeIssuer: new SeaweedIamIssuer(s3),
+});
 
 let stopReconciler = () => {};
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -204,10 +238,7 @@ const adminToken = await access.rotateAdminPassword();
 await backup
   ?.recover()
   .catch((err: unknown) => app.log.error({ err }, 'interrupted restores could not be checked'));
-// Written straight to stdout (not the logger): printed whatever LOG_LEVEL is, and in a fixed
-// shape deploy/scripts/admin-token.sh matches exactly (request URLs can't forge it - no spaces).
-process.stdout.write(`ADMIN TOKEN (valid until the next restart): ${adminToken}\n`);
-process.stdout.write('Sign in as "admin" with that token as the password.\n');
+printAdminToken(adminToken);
 await app.listen({ host: config.HOST, port: config.PORT });
 // Sign-in events are kept SIGN_IN_RETENTION_DAYS (D11): pruned now and every hour.
 const pruneSignIns = () =>

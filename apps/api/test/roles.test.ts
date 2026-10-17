@@ -9,6 +9,10 @@ const routesOf = (app: FastifyInstance) =>
     .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method));
 
 const PUBLIC = new Set([
+  // A restore's token or an admin session, checked by the routes themselves (backup.ts).
+  'DELETE /api/backup/restores/:id',
+  'GET /api/backup/restores/:id',
+  'POST /api/backup/restores/:id/confirm',
   'GET /api/docs',
   'GET /api/docs/',
   'GET /api/docs/js/scalar.js',

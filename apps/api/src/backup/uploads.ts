@@ -83,6 +83,12 @@ export class BackupUploads {
     return state && this.view(state);
   }
 
+  /** The assembled file of a completed upload; null when there is none or it is not complete. */
+  async completedKey(id: string): Promise<string | null> {
+    const state = await this.load(id);
+    return state?.completed ? uploadFileKey(id) : null;
+  }
+
   /** Stores part `n` (0-based), replacing one sent before. */
   async part(id: string, n: number, body: Readable, size: number): Promise<UploadView> {
     const state = await this.require(id);
