@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import functools
 import logging
 import os
@@ -8,6 +9,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from typing import Protocol
 
 import httpx
 import psycopg
@@ -23,7 +25,7 @@ from .graph_store import graph_store_from_env
 from .heartbeat import HEARTBEAT_S, JobHeartbeat, PgJobHeartbeat, beating
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
-from .llm.registry import load_llm_config
+from .llm.registry import LLMConfig, load_llm_config
 from .ocr import OcrSettings
 from .ontology import PgOntologyStore, run_ontology_import
 from .ontology_fetch import FetchPolicy, fetch_rdf
@@ -43,8 +45,8 @@ from .pipeline import (
 )
 from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
-from .rdf_rebuild import PgRebuildSource
-from .specs import LoadedTemplate, load_specs
+from .rdf_rebuild import PgRebuildSource, run_rebuild_job
+from .specs import LoadedTemplate, SpecRegistry, load_specs
 from .storage import S3ObjectStore
 from .template_pipeline import (
     PUBLISH_REFUSED,
@@ -61,6 +63,10 @@ log = logging.getLogger("ingest_worker")
 #: How often the worker checks whether the stored LLM config changed (ADR 0010).
 CONFIG_CHECK_S = 5.0
 
+#: After a lost database connection (a restore's swap, a Postgres restart), the wait before
+#: every connection is opened again.
+RECONNECT_S = 5.0
+
 #: Review reason for a reference run (`params.forceReview`) that needed no review of its own.
 FORCE_REVIEW_REASON = "reference run: verify the values, then approve and save as a reference"
 
@@ -72,8 +78,9 @@ def run_once(
     heartbeat: JobHeartbeat | None = None,
     heartbeat_s: float = HEARTBEAT_S,
 ) -> bool:
-    """Claim and run one job (process, publish, rerun, prepare, segment, draft, export or
-    ontology), beating its heartbeat while it runs (heartbeat.py).
+    """Claim and run one job (any task: process, publish, rerun, prepare, segment, draft,
+    export, ontology, graph, suggest, embed, withdraw, republish or rebuild), beating its
+    heartbeat while it runs (heartbeat.py). Nothing is claimed while the queue is paused.
     Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
@@ -173,6 +180,11 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
             queue.complete(job, [], deps.buckets.outputs)
             log.info("job %s re-delivered %d jobs", job.id, count)
             return
+        if job.task == "rebuild":
+            lines = run_rebuild_job(job, deps, queue)
+            queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s: %s", job.id, lines[-1])
+            return
         if job.task == "ontology":
             parsed = run_ontology_import(job, deps, queue)
             queue.complete(job, [], deps.buckets.outputs)
@@ -264,119 +276,197 @@ def idle(queue: JobQueue, stop: threading.Event, timeout_s: float) -> None:
         queue.wait_for_work(timeout_s)
 
 
+class Runtime(Protocol):
+    """What `serve` runs: one pass of the main loop, and closing every connection it holds."""
+
+    def tick(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+def serve(
+    connect: Callable[[], Runtime],
+    stop: threading.Event,
+    wait: Callable[[float], object] | None = None,
+) -> None:
+    """Run the main loop until `stop`. A lost database connection (`psycopg.OperationalError`:
+    a restore swapped the database and ended every connection to the old one, or Postgres
+    restarted) closes every connection and opens them all again after `RECONNECT_S`, as a
+    restart of the worker would, instead of ending the worker. Anything else still ends it."""
+    pause = wait or stop.wait
+    runtime: Runtime | None = None
+    try:
+        while not stop.is_set():
+            try:
+                if runtime is None:
+                    runtime = connect()
+                runtime.tick()
+            except psycopg.OperationalError as exc:
+                log.warning(
+                    "the database connection was lost (%s): reconnecting in %.0f s",
+                    exc,
+                    RECONNECT_S,
+                )
+                if runtime is not None:
+                    with contextlib.suppress(Exception):  # already broken: close what closes
+                        runtime.close()
+                runtime = None
+                pause(RECONNECT_S)
+    finally:
+        if runtime is not None:
+            runtime.close()
+
+
+class _Worker:
+    """Every long-lived connection of a running worker and the loop's timers. Built anew after
+    a lost connection, so the seeds and registries see the database as it is now."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        specs: SpecRegistry,
+        llm_config: LLMConfig,
+        stop: threading.Event,
+    ) -> None:
+        self.settings = settings
+        self.stop = stop
+        ocr_config = llm_config.ocr if llm_config.ocr and llm_config.ocr.enabled else None
+        self.queue = PgJobQueue(settings.database_url)
+        # .env and config/llm-providers.yaml are the defaults; the database (and an admin's
+        # edits there) decides what the registry holds.
+        self.llm_conn = psycopg.connect(settings.database_url, autocommit=True)
+        llm_store = PgLlmConfigStore(self.llm_conn)
+        llm_store.seed(seed_from_config(llm_config))
+        self.live = LiveModels(llm_store, ocr_config)
+        models = self.live.registry
+        ocr = (
+            OcrSettings(
+                model=self.live.ocr_model or llm_config.ocr.model,
+                min_chars=llm_config.ocr.min_chars,
+                longest_dim=llm_config.ocr.longest_dim,
+                max_tokens=llm_config.ocr.max_tokens,
+                temperature=llm_config.ocr.temperature,
+                concurrency=llm_config.ocr.concurrency,
+                cache=llm_config.ocr.cache,
+            )
+            if llm_config.ocr and ocr_config is not None
+            else None
+        )
+        # Publishing targets: .env seeds the default once, then the database decides (own
+        # connection, re-opened when lost; refreshed with the LLM config).
+        self.target_store = PgPublishTargetStore.connect(settings.database_url)
+        seed_default_target(self.target_store, os.environ)
+        self.targets = LiveTargets(
+            self.target_store,
+            S3Settings(
+                settings.s3_endpoint,
+                settings.s3_region,
+                settings.s3_access_key,
+                settings.s3_secret_key,
+            ),
+        )
+        # The ontology library and the Linked data settings share one autocommit connection.
+        self.library = psycopg.connect(settings.database_url, autocommit=True)
+        # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
+        self.graph_conn = psycopg.connect(settings.database_url, autocommit=True)
+        self.deps = PipelineDeps(
+            store=S3ObjectStore(
+                settings.s3_endpoint,
+                settings.s3_region,
+                settings.s3_access_key,
+                settings.s3_secret_key,
+            ),
+            specs=specs,
+            models=models,
+            extract_text=extract_pages,
+            buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
+            ocr=ocr,
+            targets=self.targets,
+            converter=(
+                GotenbergConverter(settings.converter_url) if settings.converter_url else None
+            ),
+            example_template=(
+                settings.example_template.read_text(encoding="utf-8")
+                if settings.example_template.is_file()
+                else None
+            ),
+            ontologies=PgOntologyStore(self.library),
+            linked_data=PgLinkedDataSettings(self.library),
+            embedding_model=self.live.embedding_model,
+            graph_registry=PgGraphRegistry(self.graph_conn),
+            graph_store=graph_store_from_env(os.environ),
+            delivered_jobs=PgRebuildSource(self.library),
+            ontology_max_triples=settings.ontology_max_triples,
+            ontology_fetch=(
+                functools.partial(
+                    fetch_rdf,
+                    policy=FetchPolicy(settings.ontology_fetch_allow, settings.ontology_max_bytes),
+                    client=httpx.Client(),
+                )
+                if settings.ontology_fetch_allow
+                else None
+            ),
+        )
+        self.heartbeat = PgJobHeartbeat(settings.database_url)
+        self.next_discovery = 0.0
+        self.next_reap = 0.0
+        self.next_config_check = 0.0
+        log.info(
+            "worker %s connected: %d specs, providers=%s, ocr=%s, converter=%s",
+            settings.worker_id,
+            len(specs),
+            models.provider_names,
+            ocr.model if ocr else "disabled",
+            settings.converter_url or "disabled",
+        )
+
+    def tick(self) -> None:
+        settings, deps, queue = self.settings, self.deps, self.queue
+        now = time.monotonic()
+        if now >= self.next_config_check:
+            if refresh_models(self.live, deps):
+                log.info("LLM config changed: providers=%s", deps.models.provider_names)
+                self.next_discovery = now  # list the models of new or moved endpoints now
+            if refresh_targets(self.targets):
+                log.info("publishing targets changed")
+            self.next_config_check = now + CONFIG_CHECK_S
+        if now >= self.next_discovery:
+            discovered = deps.models.discover()
+            queue.upsert_models(discovered)
+            log.info("model discovery: %d models", len(discovered))
+            self.next_discovery = now + settings.discovery_interval_s
+        if now >= self.next_reap:
+            if reaped := queue.reap_stale(settings.stale_lock_s):
+                log.warning("re-queued %d stale jobs", reaped)
+            self.next_reap = now + 60
+        if not run_once(queue, deps, settings.worker_id, self.heartbeat, settings.heartbeat_s):
+            idle(queue, self.stop, settings.poll_interval_s)
+
+    def close(self) -> None:
+        for close in (
+            self.queue.close,
+            self.heartbeat.close,
+            self.llm_conn.close,
+            self.target_store.close,
+            self.library.close,
+            self.graph_conn.close,
+        ):
+            with contextlib.suppress(Exception):
+                close()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     log.info("ingest-worker %s", app_version())
     settings = Settings.from_env()
     specs = load_specs(settings.specs_dir)
     llm_config = load_llm_config(settings.llm_config)
-    ocr_config = llm_config.ocr if llm_config.ocr and llm_config.ocr.enabled else None
-    queue = PgJobQueue(settings.database_url)
-    # .env and config/llm-providers.yaml are the defaults; the database (and an admin's edits
-    # there) decides what the registry holds.
-    llm_store = PgLlmConfigStore(psycopg.connect(settings.database_url, autocommit=True))
-    llm_store.seed(seed_from_config(llm_config))
-    live = LiveModels(llm_store, ocr_config)
-    models = live.registry
-    ocr = (
-        OcrSettings(
-            model=live.ocr_model or llm_config.ocr.model,
-            min_chars=llm_config.ocr.min_chars,
-            longest_dim=llm_config.ocr.longest_dim,
-            max_tokens=llm_config.ocr.max_tokens,
-            temperature=llm_config.ocr.temperature,
-            concurrency=llm_config.ocr.concurrency,
-            cache=llm_config.ocr.cache,
-        )
-        if llm_config.ocr and ocr_config is not None
-        else None
-    )
-    # Publishing targets: .env seeds the default once, then the database decides (own
-    # connection, re-opened when lost; refreshed with the LLM config).
-    target_store = PgPublishTargetStore.connect(settings.database_url)
-    seed_default_target(target_store, os.environ)
-    targets = LiveTargets(
-        target_store,
-        S3Settings(
-            settings.s3_endpoint, settings.s3_region, settings.s3_access_key, settings.s3_secret_key
-        ),
-    )
-    # The ontology library and the Linked data settings share one autocommit connection.
-    library = psycopg.connect(settings.database_url, autocommit=True)
-    deps = PipelineDeps(
-        store=S3ObjectStore(
-            settings.s3_endpoint, settings.s3_region, settings.s3_access_key, settings.s3_secret_key
-        ),
-        specs=specs,
-        models=models,
-        extract_text=extract_pages,
-        buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
-        ocr=ocr,
-        targets=targets,
-        converter=(GotenbergConverter(settings.converter_url) if settings.converter_url else None),
-        example_template=(
-            settings.example_template.read_text(encoding="utf-8")
-            if settings.example_template.is_file()
-            else None
-        ),
-        ontologies=PgOntologyStore(library),
-        linked_data=PgLinkedDataSettings(library),
-        embedding_model=live.embedding_model,
-        # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
-        graph_registry=PgGraphRegistry(psycopg.connect(settings.database_url, autocommit=True)),
-        graph_store=graph_store_from_env(os.environ),
-        delivered_jobs=PgRebuildSource(library),
-        ontology_max_triples=settings.ontology_max_triples,
-        ontology_fetch=(
-            functools.partial(
-                fetch_rdf,
-                policy=FetchPolicy(settings.ontology_fetch_allow, settings.ontology_max_bytes),
-                client=httpx.Client(),
-            )
-            if settings.ontology_fetch_allow
-            else None
-        ),
-    )
-    log.info(
-        "worker %s started: %d specs, providers=%s, ocr=%s, converter=%s",
-        settings.worker_id,
-        len(specs),
-        models.provider_names,
-        ocr.model if ocr else "disabled",
-        settings.converter_url or "disabled",
-    )
 
-    heartbeat = PgJobHeartbeat(settings.database_url)
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
 
-    next_discovery = 0.0
-    next_reap = 0.0
-    next_config_check = 0.0
-    while not stop.is_set():
-        now = time.monotonic()
-        if now >= next_config_check:
-            if refresh_models(live, deps):
-                log.info("LLM config changed: providers=%s", deps.models.provider_names)
-                next_discovery = now  # list the models of new or moved endpoints now
-            if refresh_targets(targets):
-                log.info("publishing targets changed")
-            next_config_check = now + CONFIG_CHECK_S
-        if now >= next_discovery:
-            discovered = deps.models.discover()
-            queue.upsert_models(discovered)
-            log.info("model discovery: %d models", len(discovered))
-            next_discovery = now + settings.discovery_interval_s
-        if now >= next_reap:
-            if reaped := queue.reap_stale(settings.stale_lock_s):
-                log.warning("re-queued %d stale jobs", reaped)
-            next_reap = now + 60
-        if not run_once(queue, deps, settings.worker_id, heartbeat, settings.heartbeat_s):
-            idle(queue, stop, settings.poll_interval_s)
-
-    queue.close()
-    heartbeat.close()
+    serve(lambda: _Worker(settings, specs, llm_config, stop), stop)
     log.info("worker stopped")
 
 

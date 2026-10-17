@@ -50,6 +50,9 @@ const routesOf = (app: FastifyInstance) =>
     .filter((r) => !['HEAD', 'OPTIONS'].includes(r.method));
 
 const PUBLIC = [
+  // A restore ends every session: its token reads, confirms and cancels it (an admin too).
+  'DELETE /api/backup/restores/:id',
+  'GET /api/backup/restores/:id',
   'GET /api/docs',
   'GET /api/docs/',
   'GET /api/docs/js/scalar.js',
@@ -63,6 +66,7 @@ const PUBLIC = [
   'GET /api/version',
   'POST /api/auth/login',
   'POST /api/auth/logout',
+  'POST /api/backup/restores/:id/confirm',
 ];
 
 describe('email and password access', () => {
@@ -73,7 +77,7 @@ describe('email and password access', () => {
     expect(res.json()).toEqual({ error: 'sign in required' });
   });
 
-  it('guards every /api route except login, logout, the API docs, the maintenance notice, the version and the GitHub callback', async () => {
+  it('guards every /api route except login, logout, the API docs, the maintenance notice, the version, the GitHub callback and the routes a restore token opens', async () => {
     const { app } = await setup();
     const routes = routesOf(app);
     expect(routes.length).toBeGreaterThan(20);

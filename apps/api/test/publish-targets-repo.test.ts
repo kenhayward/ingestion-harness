@@ -27,6 +27,7 @@ publishTargetsContract('memory', async () => {
       delivered: async (id) => void bump(delivered, id),
       grant: async (id) => void bump(consumers, id),
       withdrawal: async (target, status) => void withdrawals.push({ target, status }),
+      inert: async (id) => repo.makeInert(id),
     },
   };
 });

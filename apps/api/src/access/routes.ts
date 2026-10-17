@@ -38,6 +38,23 @@ export const SESSION_COOKIE = 'ih_session';
 export const creatorOf = (req: FastifyRequest): Creator | null =>
   req.auth ? { name: req.auth.label, userId: req.auth.userId } : null;
 
+/**
+ * The signed-in admin behind a request to a `config.public` route (which the hook lets through
+ * without setting `req.auth`), for routes that also answer another credential (a restore's
+ * token); null otherwise. A session still on its one-time password does not count. Without access
+ * control (unit tests) everyone is `admin`.
+ */
+export async function adminOf(
+  app: FastifyInstance,
+  req: FastifyRequest,
+): Promise<{ label: string } | null> {
+  const access = app.deps.access;
+  if (!access) return { label: 'admin' };
+  const sessionId = req.cookies[SESSION_COOKIE];
+  const session = sessionId ? await access.session(sessionId) : null;
+  return session?.role === 'admin' && !session.mustChangePassword ? session : null;
+}
+
 /** What a session opened with a one-time password may call (ADR 0013). */
 const WHILE_CHANGING = new Set(['GET /api/auth/me', 'PUT /api/auth/password']);
 export const CHANGE_FIRST = 'change your one-time password first';

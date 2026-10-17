@@ -136,6 +136,8 @@ class FakeQueue:
     cancel_when: Callable[[], bool] | None = None
     #: Timeouts passed to wait_for_work (it returns immediately).
     waits: list[float] = field(default_factory=list)
+    #: Like `queue_control.paused`: claim() hands out nothing while set.
+    paused: bool = False
 
     def is_cancelled(self, job: ClaimedJob) -> bool:
         return bool(self.cancel_when and self.cancel_when())
@@ -144,7 +146,7 @@ class FakeQueue:
         self.waits.append(timeout_s)
 
     def claim(self, worker_id: str) -> ClaimedJob | None:
-        return self.jobs.pop(0) if self.jobs else None
+        return self.jobs.pop(0) if self.jobs and not self.paused else None
 
     def complete(self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str) -> None:
         self.completed.append((job.id, outputs))

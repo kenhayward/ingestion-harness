@@ -37,8 +37,8 @@ import {
   WORKBENCH_PRIORITY,
   type WorkbenchJobOptions,
   type WithdrawalStatus,
-  REPUBLISH_JOB,
-  WITHDRAW_JOB,
+  BACKGROUND_JOBS,
+  type BackgroundTask,
   graphWithdrawals,
   type WithdrawnGraph,
 } from './types.js';
@@ -192,11 +192,11 @@ const toReference = (r: ReferenceRow): Reference => ({
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
 async function queueBackground(
   client: pg.PoolClient,
-  task: 'withdraw' | 'republish',
+  task: BackgroundTask,
   params: unknown,
   by: string | null,
 ): Promise<string> {
-  const { priority, maxAttempts } = task === 'withdraw' ? WITHDRAW_JOB : REPUBLISH_JOB;
+  const { priority, maxAttempts } = BACKGROUND_JOBS[task];
   const { rows } = await client.query<{ id: string }>(
     `INSERT INTO jobs (task, priority, max_attempts, params, created_by)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,

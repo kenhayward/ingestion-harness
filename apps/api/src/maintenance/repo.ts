@@ -81,13 +81,27 @@ export class PgMaintenanceRepo implements MaintenanceRepo {
  */
 export class MaintenanceGate {
   private cached: { view: MaintenanceView; at: number } | null = null;
+  /** Set by a restore: wins over the row (which the restore is replacing) until released. */
+  private forced: MaintenanceView | null = null;
 
   constructor(
     private readonly repo: MaintenanceRepo,
     private readonly ttlMs = 5000,
   ) {}
 
+  /** Holds maintenance on in this process whatever the row says, until `release`. */
+  force(view: MaintenanceView): void {
+    this.forced = view;
+  }
+
+  /** Back to the row, read afresh (a restore has just swapped the database under it). */
+  release(): void {
+    this.forced = null;
+    this.cached = null;
+  }
+
   async current(): Promise<MaintenanceView> {
+    if (this.forced) return this.forced;
     if (this.cached && Date.now() - this.cached.at < this.ttlMs) return this.cached.view;
     const view = await this.repo.get();
     this.cached = { view, at: Date.now() };

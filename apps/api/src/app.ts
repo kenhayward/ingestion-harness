@@ -4,6 +4,8 @@ import multipart from '@fastify/multipart';
 import type { VersionInfo } from '@ih/shared';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
+import type { BackupService } from './backup/service.js';
+import type { BackupUploads } from './backup/uploads.js';
 import type { JobWatch } from './jobs/watch.js';
 import type { GitHubSyncRepo } from './github-sync/repo.js';
 import type { GitHubOAuth, GitHubRepoApi } from './profile/github.js';
@@ -45,6 +47,7 @@ import { ontologyRoutes } from './routes/ontologies.js';
 import { linkedDataRoutes } from './routes/linked-data.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
 import { publishTargetRoutes } from './routes/publish-targets.js';
+import { backupRoutes } from './routes/backup.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
@@ -57,7 +60,8 @@ export interface AppDeps {
   templates: TemplateRepo;
   /** Workbench projects, samples and briefs (ADR 0007). */
   workbench: WorkbenchRepo;
-  buckets: { inbox: string; outputs: string; runs: string };
+  /** CT Studio's own buckets; `backups` holds backups and restore uploads. */
+  buckets: { inbox: string; outputs: string; runs: string; backups: string };
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */
   access: AccessRepo | null;
@@ -87,6 +91,10 @@ export interface AppDeps {
   maintenance: MaintenanceRepo;
   /** `LLM_SECRETS_KEY` (and `_PREVIOUS`); null: keys can't be entered in the UI. */
   llmSecrets: SecretsKeys | null;
+  /** Backup and restore under Administration > Backup; null without `LLM_SECRETS_KEY`. */
+  backup: BackupService | null;
+  /** Chunked upload of a backup to restore; null without `LLM_SECRETS_KEY`. */
+  backupUploads: BackupUploads | null;
   /** Job change notifications for live streams (Postgres NOTIFY); null: heartbeats only. */
   jobWatch?: JobWatch | null;
   /** How often a live job stream re-reads its job and pings (default 15 s; tests shorten it). */
@@ -155,6 +163,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(linkedDataRoutes, { prefix: '/api' });
   await app.register(maintenanceRoutes, { prefix: '/api' });
   await app.register(publishTargetRoutes, { prefix: '/api' });
+  await app.register(backupRoutes, { prefix: '/api' });
   await app.register(versionRoutes, { prefix: '/api' });
 
   return app;

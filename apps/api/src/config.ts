@@ -38,6 +38,8 @@ const EnvSchema = z
     S3_BUCKET_INBOX: z.string().default('ingest-inbox'),
     S3_BUCKET_OUTPUTS: z.string().default('ingest-outputs'),
     S3_BUCKET_RUNS: z.string().default('ingest-runs'),
+    /** Where backups and restore uploads live (never itself backed up). */
+    S3_BUCKET_BACKUPS: z.preprocess(blank, z.string().default('ingest-backups')),
     // Final target for published outputs (read back by the Results page). Mirrors the worker:
     // any unset value falls back to the S3_* connection above.
     TARGET_S3_ENDPOINT: optional(z.string().url()),
@@ -50,6 +52,14 @@ const EnvSchema = z
     S3_PUBLIC_URL: optional(z.string().url()),
     /** The URL consumers reach Fuseki's dataset through (the proxy, ADR 0011); display only. */
     RDF_PUBLIC_URL: optional(z.string().url()),
+    /**
+     * The triple store a backup dumps and a restore replaces, as the worker writes to it
+     * (ADR 0011 step 6, the `ct-writer` user); blank: no triple store.
+     */
+    RDF_ENDPOINT: z.preprocess(blank, z.string().url().optional()),
+    RDF_DATASET: z.preprocess(blank, z.string().default('ct')),
+    RDF_USER: z.preprocess(blank, z.string().default('ct-writer')),
+    RDF_PASSWORD: z.preprocess(blank, z.string().default('')),
     SPECS_DIR: z.string().default(defaultSpecsDir),
     MAX_UPLOAD_MB: z.coerce.number().positive().default(50),
     /** Hosts ontologies may be imported from by URL (ADR 0011), comma-separated; empty: off. */
@@ -126,6 +136,21 @@ export function versionFromConfig(c: Config): VersionInfo {
  */
 export function s3KeysConfig(c: Config): { endpoint: string | null } {
   return { endpoint: c.S3_PUBLIC_URL ?? null };
+}
+
+/** The triple store for backup and restore (`FusekiTripleStore`); a blank endpoint = none. */
+export function fusekiConfig(c: Config): {
+  endpoint: string;
+  dataset: string;
+  user: string;
+  password: string;
+} {
+  return {
+    endpoint: c.RDF_ENDPOINT ?? '',
+    dataset: c.RDF_DATASET,
+    user: c.RDF_USER,
+    password: c.RDF_PASSWORD,
+  };
 }
 
 /** The GitHub OAuth app, or null when users cannot link GitHub accounts. */

@@ -330,6 +330,20 @@ def test_pg_store_seeds_the_default_once_and_moves_the_version(pg: PgPublishTarg
     assert pg.version() == after
 
 
+@pytest.mark.integration
+def test_inert_target_is_missing(pg: PgPublishTargetStore) -> None:
+    """A copy restore's external targets of the backup stay as inert rows (foreign keys):
+    nothing can use them, so to the worker they do not exist."""
+    pg._conn.execute(
+        """INSERT INTO publish_targets (id, label, kind, bucket, endpoint, region, source, inert_at)
+           VALUES ('prod-lake', 'Production lake', 'external', 'lake', 'https://s3.example',
+                   'eu-west-1', 'ui', now())"""
+    )
+    assert "prod-lake" not in [r.id for r in pg.load()]
+    with pytest.raises(TargetMissing):
+        LiveTargets(pg, INTERNAL).get("prod-lake")
+
+
 def test_seeding_reports_the_fields_env_now_disagrees_on() -> None:
     from ingest_worker.publish_targets import seed_default_target
 

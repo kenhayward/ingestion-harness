@@ -71,6 +71,9 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
             [status, JSON.stringify(params)],
           );
         },
+        inert: async (targetId: string) => {
+          await p.query('UPDATE publish_targets SET inert_at = now() WHERE id = $1', [targetId]);
+        },
         grant: async (targetId: string) => {
           const c = await p.query<{ id: string }>(
             `INSERT INTO s3_consumers (id, label, user_name)

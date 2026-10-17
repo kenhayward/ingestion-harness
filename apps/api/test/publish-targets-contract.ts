@@ -11,6 +11,8 @@ export interface TargetFacts {
   delivered(targetId: string): Promise<void>;
   grant(targetId: string): Promise<void>;
   withdrawal(targetId: string, status: 'queued' | 'running' | 'succeeded'): Promise<void>;
+  /** A copy restore keeps a dropped external target as an inert row (`inert_at`). */
+  inert(targetId: string): Promise<void>;
 }
 
 const lake = (id: string, over: Partial<NewTarget> = {}): NewTarget => ({
@@ -218,6 +220,19 @@ export function publishTargetsContract(
         { id: 'a', label: 'Alpha', kind: 'external', bucket: 'lake' },
         { id: 'z', label: 'Zeta', kind: 'external', bucket: 'lake' },
       ]);
+    });
+
+    it('an inert target is not listed and is a 404', async () => {
+      const { repo, facts } = await make();
+      await repo.create(lake('prod-lake'), null);
+      await facts.inert('prod-lake');
+      expect((await repo.list()).map((t) => t.id)).toEqual(['default']);
+      expect((await repo.choices()).map((t) => t.id)).toEqual(['default']);
+      expect(await repo.get('prod-lake')).toBeNull();
+      expect(await repo.update('prod-lake', { label: 'P' }, null)).toBeNull();
+      expect(await repo.remove('prod-lake')).toBe('missing');
+      // The id stays taken: the row is still there for the delivery records naming it.
+      expect(await repo.create(lake('prod-lake'), null)).toBe('exists');
     });
 
     it('moves the version on every write', async () => {

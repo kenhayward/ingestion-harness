@@ -73,6 +73,12 @@ const COLUMNS = `id, label, kind, bucket, prefix, endpoint, region, access_key_i
   access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, source,
   seeded_at, edited_at, updated_by, created_at`;
 
+/**
+ * Rows a copy restore made inert (`inert_at`: a dropped external target its delivery records
+ * still name) are kept for the foreign keys only: never listed, offered, read or changed.
+ */
+const LIVE = 'inert_at IS NULL';
+
 /** The columns an update or a seed rewrites, in `values()` order. */
 const WRITE = [
   'label',
@@ -119,7 +125,8 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
 
   async list(): Promise<PublishTargetView[]> {
     const { rows } = await this.pool.query<Row>(
-      `SELECT ${COLUMNS} FROM publish_targets ORDER BY (id = $1) DESC, created_at, id`,
+      `SELECT ${COLUMNS} FROM publish_targets WHERE ${LIVE}
+        ORDER BY (id = $1) DESC, created_at, id`,
       [DEFAULT_TARGET_ID],
     );
     const usage = await this.usageOf(null);
@@ -128,7 +135,7 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
 
   async get(id: string): Promise<TargetRecord | null> {
     const { rows } = await this.pool.query<Row>(
-      `SELECT ${COLUMNS} FROM publish_targets WHERE id = $1`,
+      `SELECT ${COLUMNS} FROM publish_targets WHERE id = $1 AND ${LIVE}`,
       [id],
     );
     return rows[0] ? toRecord(rows[0]) : null;
@@ -155,7 +162,7 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     try {
       await client.query('BEGIN');
       const { rows } = await client.query<Row>(
-        `SELECT ${COLUMNS} FROM publish_targets WHERE id = $1 FOR UPDATE`,
+        `SELECT ${COLUMNS} FROM publish_targets WHERE id = $1 AND ${LIVE} FOR UPDATE`,
         [id],
       );
       if (!rows[0]) {
@@ -183,9 +190,10 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const found = await client.query('SELECT 1 FROM publish_targets WHERE id = $1 FOR UPDATE', [
-        id,
-      ]);
+      const found = await client.query(
+        `SELECT 1 FROM publish_targets WHERE id = $1 AND ${LIVE} FOR UPDATE`,
+        [id],
+      );
       if (found.rowCount === 0) {
         await client.query('ROLLBACK');
         return 'missing';
@@ -220,7 +228,7 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
 
   async choices(): Promise<TargetChoice[]> {
     const { rows } = await this.pool.query<TargetChoice>(
-      'SELECT id, label, kind, bucket FROM publish_targets',
+      `SELECT id, label, kind, bucket FROM publish_targets WHERE ${LIVE}`,
     );
     return rows.sort(byDefaultThenLabel);
   }

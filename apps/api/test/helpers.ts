@@ -156,7 +156,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
       { kind: 'spec', id: 'demo', version: 2, spec: { ...demoSpec, version: 2, title: 'Demo v2' } },
       { kind: 'template', id: 'tdemo', version: 1, template: demoTemplate },
     ]),
-    buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs' },
+    buckets: { inbox: 'inbox', outputs: 'outputs', runs: 'runs', backups: 'backups' },
     maxUploadBytes: 1024 * 1024,
     access: null, // access enforcement is covered by access.test.ts
     profiles: new MemoryProfileRepo(),
@@ -167,6 +167,8 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     linkedData: new MemoryLinkedDataRepo(),
     maintenance: new MemoryMaintenanceRepo(),
     llmSecrets: null,
+    backup: null,
+    backupUploads: null,
     s3Keys: new S3KeyService({
       repo: s3KeyRepo,
       issuer: new MemoryS3KeyIssuer(),

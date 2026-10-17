@@ -433,6 +433,7 @@ function SignedInApp({
           me={me}
           onClose={() => setAdmin(false)}
           onMaintenanceChanged={onMaintenanceChanged}
+          onSignOut={onSignOut}
         />
       )}
     </AppShell>

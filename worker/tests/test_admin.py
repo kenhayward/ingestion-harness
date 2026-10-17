@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from ingest_worker.admin import ensure_buckets, target_buckets
+from ingest_worker.admin import backups_bucket, ensure_buckets, target_buckets
 from ingest_worker.publish_targets import TargetRow
 
 
@@ -50,6 +50,12 @@ def test_target_buckets_fall_back_when_the_store_is_unavailable() -> None:
         raise ConnectionError("no database")
 
     assert target_buckets(down, ["fallback"]) == ["fallback"]
+
+
+def test_backups_bucket_defaults_like_the_api() -> None:
+    assert backups_bucket({}) == "ingest-backups"
+    assert backups_bucket({"S3_BUCKET_BACKUPS": ""}) == "ingest-backups"
+    assert backups_bucket({"S3_BUCKET_BACKUPS": "acme-backups"}) == "acme-backups"
 
 
 def row(id: str, kind: str, bucket: str) -> TargetRow:

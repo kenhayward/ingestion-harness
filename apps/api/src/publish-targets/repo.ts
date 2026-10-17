@@ -171,6 +171,8 @@ export interface TargetFactSource {
 
 export class MemoryPublishTargetRepo implements PublishTargetRepo {
   private readonly targets = new Map<string, TargetRecord>();
+  /** Ids a copy restore made inert: the row stays (the id is taken), nothing else sees it. */
+  private readonly inert = new Set<string>();
   private counter = 0;
 
   constructor(
@@ -186,12 +188,23 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
 
   async list(): Promise<PublishTargetView[]> {
     const out: PublishTargetView[] = [];
-    for (const r of this.targets.values()) out.push(toView(r, await this.usage(r.id)));
+    for (const r of this.live()) out.push(toView(r, await this.usage(r.id)));
     return out;
   }
 
   async get(id: string): Promise<TargetRecord | null> {
-    return this.targets.get(id) ?? null;
+    return this.inert.has(id) ? null : (this.targets.get(id) ?? null);
+  }
+
+  /** What a copy restore does to a dropped external target (`inert_at` in Postgres). */
+  makeInert(id: string): void {
+    if (!this.targets.has(id)) return;
+    this.inert.add(id);
+    this.counter += 1;
+  }
+
+  private live(): TargetRecord[] {
+    return [...this.targets.values()].filter((r) => !this.inert.has(r.id));
   }
 
   async create(input: NewTarget, by: string | null): Promise<PublishTargetView | 'exists'> {
@@ -207,7 +220,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     patch: TargetPatch,
     by: string | null,
   ): Promise<PublishTargetView | null> {
-    const r = this.targets.get(id);
+    const r = await this.get(id);
     if (!r) return null;
     const next = patched(r, patch, by, new Date());
     this.targets.set(id, next);
@@ -217,7 +230,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
 
   async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'in_use'> {
     if (id === DEFAULT_TARGET_ID) return 'default';
-    if (!this.targets.has(id)) return 'missing';
+    if (!(await this.get(id))) return 'missing';
     if (targetInUse(await this.usage(id))) return 'in_use';
     this.targets.delete(id);
     this.counter += 1;
@@ -238,7 +251,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
   }
 
   async choices(): Promise<TargetChoice[]> {
-    return [...this.targets.values()]
+    return this.live()
       .map(({ id, label, kind, bucket }) => ({ id, label, kind, bucket }))
       .sort(byDefaultThenLabel);
   }

@@ -120,6 +120,11 @@ export const TAGS = {
     as a YAML file with the signed-in user's own linked GitHub account. Admins set the
     settings and links; anyone with a linked account can push.
   `,
+  Backup: md`
+    Encrypted backups of the whole stack (database, objects, triple store) that an admin makes,
+    downloads and restores from Administration > Backup, and the job queue's pause switch. A
+    backup opens only with the \`LLM_SECRETS_KEY\` it was made under.
+  `,
   Health: md`
     Liveness and readiness checks for load balancers and orchestrators. They need no session.
   `,
@@ -156,6 +161,7 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
       'Published outputs',
       'Linked data',
       'GitHub',
+      'Backup',
       'Health',
     ],
   },

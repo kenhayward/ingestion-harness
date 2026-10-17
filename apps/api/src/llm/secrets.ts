@@ -17,13 +17,17 @@ const PREFIX = 'v1:';
 const NONCE = 12;
 const TAG = 16;
 
-function masterKey(name: string, value: string | undefined): Buffer | null {
-  if (!value) return null;
+/** A 32-byte master key written as base64 (`openssl rand -base64 32`); throws otherwise. */
+export function parseMasterKey(value: string, name = 'the key'): Buffer {
   const key = Buffer.from(value, 'base64');
   if (key.length !== 32 || key.toString('base64') !== value.trim()) {
     throw new Error(`${name} must be 32 bytes, base64 (openssl rand -base64 32)`);
   }
   return key;
+}
+
+function masterKey(name: string, value: string | undefined): Buffer | null {
+  return value ? parseMasterKey(value, name) : null;
 }
 
 /** The master keys from the environment; null when `LLM_SECRETS_KEY` is unset (no UI keys). */
