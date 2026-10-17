@@ -140,7 +140,7 @@ grep -q '"pageCount":2' <<<"$samples" || fail "the converted .docx must have 2 p
 [[ "$(status -b "$ADMIN_JAR" -X DELETE "$words_url")" == 204 ]] || fail "delete the Word project"
 echo "ok   Word document: converted and prepared (2 pages)"
 
-# --- S3 keys (ADR 0008): a lake key can read the publish bucket and nothing more ------------
+# --- S3 keys (ADR 0008): a lake key can read its target's bucket and nothing more ----------
 s3_status() { # access-key secret service curl-args...
   local key="$1" secret="$2" service="$3"
   shift 3
@@ -162,15 +162,16 @@ overview="$(curl -sS -b "$ADMIN_JAR" -w '
 %{http_code}' "$BASE_URL/api/access/s3-keys")"
 if [[ "${overview##*$'
 '}" == 404 ]]; then
-  echo "skip S3 keys: not available (publish target is not the local SeaweedFS)"
+  echo "skip S3 keys: not available on this deployment"
   exit 0
 fi
 [[ "${overview##*$'
 '}" == 200 ]] || fail "list S3 keys: $overview"
-bucket="$(json_field bucket <<<"${overview%$'
-'*}")"
+# The key is granted the `default` publishing target, internal here (seeded from .env.ci).
+bucket="$(grep -o '"id":"default","label":"[^"]*","kind":"internal","bucket":"[^"]*"' <<<"$overview" | json_field bucket)"
+[[ -n "$bucket" ]] || fail "the default publishing target must be internal: $overview"
 
-issued="$(curl -fsS -b "$ADMIN_JAR" -H 'content-type: application/json'   -d '{"label":"smoke test","expiresInDays":1}' "$BASE_URL/api/access/s3-keys")"   || fail "issue S3 key"
+issued="$(curl -fsS -b "$ADMIN_JAR" -H 'content-type: application/json'   -d '{"label":"smoke test","expiresInDays":1,"targets":["default"]}' "$BASE_URL/api/access/s3-keys")"   || fail "issue S3 key"
 access_key="$(json_field accessKeyId <<<"$issued")"
 secret_key="$(json_field secretAccessKey <<<"$issued")"
 consumer_id="$(grep -o '"consumer":{"id":"[^"]*"' <<<"$issued" | cut -d'"' -f6)"
