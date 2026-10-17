@@ -37,7 +37,7 @@ const CreateBody = z
   .strict();
 const SaveBody = z
   .object({
-    definition: z.record(z.unknown()).describe('The whole definition, as authored.'),
+    definition: z.record(z.string(), z.unknown()).describe('The whole definition, as authored.'),
     baseUpdatedAt: z
       .string()
       .datetime()
@@ -549,7 +549,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           400: res(
             'Zod issues for an invalid label or note, or the definition is not valid: ' +
               '`recipe is not valid`, with `issues`.',
-            z.object({ error: z.unknown(), issues: z.array(TemplateIssueSchema).optional() }),
+            z.object({
+              error: z.unknown().optional(),
+              issues: z.array(TemplateIssueSchema).optional(),
+            }),
           ),
           404: NOT_FOUND,
           409: error(
@@ -781,7 +784,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
             'Zod issues for an invalid body, `not valid YAML: …`, `definition needs a valid id ' +
               'and version`, `recipe is not valid` (with `issues`) when publishing, an unusable ' +
               'recipe file, or `a CT Studio recipe file is always imported as a draft`.',
-            z.object({ error: z.unknown(), issues: z.array(TemplateIssueSchema).optional() }),
+            z.object({
+              error: z.unknown().optional(),
+              issues: z.array(TemplateIssueSchema).optional(),
+            }),
           ),
           409: error(
             'The version already exists, `a draft already exists; edit or delete it first` (a ' +

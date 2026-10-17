@@ -1611,7 +1611,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             'Zod issues (an ignored override reason under 10 characters), or `the draft is not ' +
               'valid` ' +
               '(with `issues`).',
-            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+            z.object({ error: z.unknown().optional(), issues: z.array(z.unknown()).optional() }),
           ),
           404: PROJECT_NOT_FOUND,
           409: res(
@@ -2056,7 +2056,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           400: res(
             'Zod issues, a model that cannot run here, `the draft is not valid` (with `issues`), ' +
               'a sample id that is not a sample of this project, or a holdout sample.',
-            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+            z.object({ error: z.unknown().optional(), issues: z.array(z.unknown()).optional() }),
           ),
           404: PROJECT_NOT_FOUND,
           409: error(
@@ -3400,7 +3400,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           ...EVALUATION_REFUSED,
           400: res(
             'Zod issues for an invalid body, or `the draft is not valid` (with `issues`).',
-            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+            z.object({ error: z.unknown().optional(), issues: z.array(z.unknown()).optional() }),
           ),
         },
       },
@@ -3453,7 +3453,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           ...EVALUATION_REFUSED,
           400: res(
             'Zod issues for an invalid body, or `the draft is not valid` (with `issues`).',
-            z.object({ error: z.unknown(), issues: z.array(z.unknown()).optional() }),
+            z.object({ error: z.unknown().optional(), issues: z.array(z.unknown()).optional() }),
           ),
         },
       },

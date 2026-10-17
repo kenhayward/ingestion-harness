@@ -347,7 +347,7 @@ export type SurveyBody = z.infer<typeof SurveyBodySchema>;
 export const DraftResultSchema = z.object({
   stage: z.enum(DRAFT_STAGES),
   model: z.string(),
-  body: z.unknown(),
+  body: z.unknown().optional(),
   usage: z.object({
     inputTokens: z.number().int().nullable(),
     outputTokens: z.number().int().nullable(),

@@ -102,21 +102,29 @@ const EXTERNAL_ONLY = [
   'storageClass',
 ] as const;
 
+/** A target's fields without defaults: patches and tests keep what they leave out. */
+const TARGET_FIELDS = {
+  id: TargetIdSchema.optional(),
+  label: z.string().trim().min(1).max(80),
+  kind: z.enum(TARGET_KINDS),
+  bucket: BucketSchema,
+  prefix: PrefixSchema,
+  endpoint: z.string().url().optional(),
+  region: z.string().min(1).optional(),
+  accessKeyId: z.string().min(1).optional(),
+  secretAccessKey: z.string().min(1).optional(),
+  forcePathStyle: z.boolean(),
+  sse: z.enum(SSE_MODES),
+  kmsKeyId: z.string().min(1).optional(),
+  storageClass: z.enum(STORAGE_CLASSES).optional(),
+};
+
 const TargetFieldsSchema = z
   .object({
-    id: TargetIdSchema.optional(),
-    label: z.string().trim().min(1).max(80),
-    kind: z.enum(TARGET_KINDS),
-    bucket: BucketSchema,
-    prefix: PrefixSchema.default(''),
-    endpoint: z.string().url().optional(),
-    region: z.string().min(1).optional(),
-    accessKeyId: z.string().min(1).optional(),
-    secretAccessKey: z.string().min(1).optional(),
-    forcePathStyle: z.boolean().default(false),
-    sse: z.enum(SSE_MODES).default('none'),
-    kmsKeyId: z.string().min(1).optional(),
-    storageClass: z.enum(STORAGE_CLASSES).optional(),
+    ...TARGET_FIELDS,
+    prefix: TARGET_FIELDS.prefix.default(''),
+    forcePathStyle: TARGET_FIELDS.forcePathStyle.default(false),
+    sse: TARGET_FIELDS.sse.default('none'),
   })
   .strict();
 
@@ -146,7 +154,9 @@ const CLEARABLE = {
 };
 
 /** Fields left out are kept; `null` clears the endpoint, KMS key or storage class. */
-export const TargetPatchBodySchema = TargetFieldsSchema.omit({ id: true, kind: true })
+export const TargetPatchBodySchema = z
+  .object(TARGET_FIELDS)
+  .omit({ id: true, kind: true })
   .extend(CLEARABLE)
   .partial()
   .strict()
@@ -157,7 +167,9 @@ export type TargetPatchBody = z.infer<typeof TargetPatchBodySchema>;
  * Test connection: an existing id tests its stored settings overlaid with the body; no id means
  * the body must be a full create body.
  */
-export const TargetTestBodySchema = TargetFieldsSchema.extend(CLEARABLE)
+export const TargetTestBodySchema = z
+  .object(TARGET_FIELDS)
+  .extend(CLEARABLE)
   .partial()
   .strict()
   .superRefine((b, ctx) => {

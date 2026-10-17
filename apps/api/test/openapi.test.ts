@@ -66,6 +66,36 @@ describe('schema helpers', () => {
     expect(schema.properties.plain).not.toMatchObject({ additionalProperties: false });
   });
 
+  it('require the fields a request must send, and no field it may leave out', () => {
+    const schema = toJsonSchema(
+      z.object({
+        plain: z.string(),
+        reshaped: z.preprocess((v) => v, z.string()).transform((s) => s.length),
+        defaulted: z.string().default('x'),
+        optional: z.string().optional(),
+        anything: z.unknown().optional(),
+      }),
+    );
+    expect(schema).toMatchObject({ required: ['plain', 'reshaped'] });
+  });
+
+  it("leave out Zod's own bounds and patterns", () => {
+    const schema = toJsonSchema(
+      z.object({
+        count: z.number().int(),
+        id: z.string().uuid(),
+        at: z.string().datetime(),
+        named: z.record(z.string(), z.string()),
+      }),
+    ) as { properties: Record<string, object> };
+    expect(schema.properties).toEqual({
+      count: { type: 'integer' },
+      id: { type: 'string', format: 'uuid' },
+      at: { type: 'string', format: 'date-time' },
+      named: { type: 'object', additionalProperties: { type: 'string' } },
+    });
+  });
+
   it('write nullable values the OpenAPI 3.1 way', () => {
     const schema = toJsonSchema(z.enum(['a', 'b']).nullable());
     expect(schema).toEqual({ anyOf: [{ type: 'string', enum: ['a', 'b'] }, { type: 'null' }] });

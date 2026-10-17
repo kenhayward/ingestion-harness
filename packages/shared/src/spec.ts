@@ -104,7 +104,7 @@ export const ExtractionSchema = z
     /** Model alias (e.g. "default") or "provider/model-id". */
     model: z.string().default('default'),
     /** JSON Schema the LLM output must satisfy. */
-    schema: z.record(z.unknown()),
+    schema: z.record(z.string(), z.unknown()),
     maxAttempts: z.number().int().min(1).max(5).default(2),
     /** 1-based PDF pages sent as images with the prompt (needs a vision-capable model). */
     pageImages: z.array(z.number().int().positive()).default([]),
@@ -115,7 +115,7 @@ export const ExtractionSchema = z
     /** Top-level array property of the schema merged across chunks. */
     mergePath: z.string().min(1).optional(),
     /** Extra prompt variables (set when compiled from a document template). */
-    promptContext: z.record(z.unknown()).optional(),
+    promptContext: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 

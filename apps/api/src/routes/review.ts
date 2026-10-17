@@ -24,13 +24,14 @@ const JobParams = z.object({ id: z.string().uuid().describe('The job id.') });
 const DraftDocumentSchema = z
   .object({
     fields: z.record(
+      z.string(),
       z.object({
-        value: z.unknown(),
+        value: z.unknown().optional(),
         evidence: z.string().nullable().describe('The text the value was read from.'),
         page: z.number().int().nullable(),
       }),
     ),
-    tables: z.record(z.array(z.record(z.unknown()))),
+    tables: z.record(z.string(), z.array(z.record(z.string(), z.unknown()))),
   })
   .passthrough();
 

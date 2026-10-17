@@ -11,8 +11,8 @@ const Row = z.record(z.string(), z.unknown());
 
 export const FieldComparisonSchema = z.object({
   id: z.string(),
-  expected: z.unknown(),
-  actual: z.unknown(),
+  expected: z.unknown().optional(),
+  actual: z.unknown().optional(),
   match: z.boolean(),
 });
 export type FieldComparison = z.infer<typeof FieldComparisonSchema>;
@@ -242,11 +242,11 @@ export const ReferenceValueSchema = z.object({
   id: z.string(),
   kind: z.enum(['field', 'table']),
   /** A field's expected value, or a table's expected rows. */
-  value: z.unknown(),
+  value: z.unknown().optional(),
   /** null: the corrections are unknown, or the reference is outdated for this output (re-verify). */
   provenance: z.enum(PROVENANCES).nullable(),
   /** A corrected field: the model's value (shown struck through); otherwise null. */
-  proposed: z.unknown(),
+  proposed: z.unknown().optional(),
   /** This output's corrections (cells for a table). */
   corrections: z.array(CorrectionSchema),
 });
@@ -375,7 +375,9 @@ export function revisionFailures(
 export const FailureDiffSchema = z.object({
   sample: z.string(),
   score: z.number(),
-  fields: z.array(z.object({ id: z.string(), expected: z.unknown(), actual: z.unknown() })),
+  fields: z.array(
+    z.object({ id: z.string(), expected: z.unknown().optional(), actual: z.unknown().optional() }),
+  ),
   tables: z.array(
     z.object({
       id: z.string(),
@@ -383,8 +385,8 @@ export const FailureDiffSchema = z.object({
       extra: z.number().int(),
       changed: z.array(
         z.object({
-          expected: z.record(z.unknown()),
-          actual: z.record(z.unknown()),
+          expected: z.record(z.string(), z.unknown()),
+          actual: z.record(z.string(), z.unknown()),
           columns: z.array(z.string()),
         }),
       ),
@@ -425,7 +427,9 @@ export const RevisePreviewSchema = z.object({
   /** The drafting model setting (`endpoint/model-id`); null when unset. */
   model: z.string().nullable(),
   /** The open draft sent as `<current_draft>`; null without one (a revision needs one). */
-  draft: z.object({ version: z.number().int(), definition: z.record(z.unknown()) }).nullable(),
+  draft: z
+    .object({ version: z.number().int(), definition: z.record(z.string(), z.unknown()) })
+    .nullable(),
   /** Dev sample files whose text is sent (at most MAX_CONTEXT_SAMPLES). */
   samples: z.array(z.string()),
   limits: z.object({

@@ -1,21 +1,51 @@
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { OPERATOR_REFUSED, operatorMayCall } from '@ih/shared';
 
 /** Where the docs browser and the OpenAPI document are served. */
 export const DOCS_PREFIX = '/api/docs';
 
+/** Whether an object field may be left out (it parses `undefined`). */
+function acceptsMissing(field: z.core.$ZodType): boolean {
+  try {
+    return z.safeParse(field, undefined).success;
+  } catch {
+    return true;
+  }
+}
+
 /** JSON Schema for a Zod schema (route `schema` blocks may hold either). */
 export function toJsonSchema(schema: unknown): unknown {
   if (!(schema instanceof z.ZodType)) return schema;
-  // Extra properties are refused only by .strict() schemas: handlers strip them otherwise, and
-  // responses are never trimmed to their schema.
-  // OpenAPI 3.1 schemas are JSON Schema: nullable is `null` in a union, not `nullable: true`.
-  const json: Record<string, unknown> = zodToJsonSchema(schema, {
-    target: 'jsonSchema7',
-    $refStrategy: 'none',
-    removeAdditionalStrategy: 'strict',
-  });
+  // The input side: fields with defaults are optional, and extra properties are refused only by
+  // .strict() schemas (handlers strip them otherwise, and responses are never trimmed to their
+  // schema). OpenAPI 3.1 schemas are JSON Schema: nullable is `null` in a union.
+  const json = z.toJSONSchema(schema, {
+    target: 'draft-7',
+    io: 'input',
+    unrepresentable: 'any',
+    override: ({ zodSchema, jsonSchema }) => {
+      // A string format (date-time, uuid, email) is documented by its name, not Zod's regex.
+      if (jsonSchema.format && jsonSchema.pattern) delete jsonSchema.pattern;
+      // `.int()` is a safe integer: say nothing rather than ±9007199254740991.
+      if (jsonSchema.type === 'integer') {
+        if (jsonSchema.maximum === Number.MAX_SAFE_INTEGER) delete jsonSchema.maximum;
+        if (jsonSchema.minimum === Number.MIN_SAFE_INTEGER) delete jsonSchema.minimum;
+      }
+      const names = jsonSchema.propertyNames;
+      if (names && typeof names === 'object' && Object.keys(names).join() === 'type') {
+        if (names.type === 'string') delete jsonSchema.propertyNames;
+      }
+      // Zod reads a field that transforms its input as optional; the request still needs it.
+      const def = zodSchema._zod.def;
+      if (def.type === 'object' && jsonSchema.properties) {
+        const required = new Set(jsonSchema.required ?? []);
+        const needed = Object.entries((def as z.core.$ZodObjectDef).shape)
+          .filter(([key, field]) => required.has(key) || !acceptsMissing(field))
+          .map(([key]) => key);
+        if (needed.length) jsonSchema.required = needed;
+      }
+    },
+  }) as Record<string, unknown>;
   delete json.$schema;
   return json;
 }

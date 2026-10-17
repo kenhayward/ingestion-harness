@@ -41,7 +41,7 @@ export const PublishedEditSchema = z
     table: z.string().nullable().optional(),
     row: z.number().int().nullable().optional(),
     column: z.string().nullable().optional(),
-    value: z.unknown(),
+    value: z.unknown().optional(),
   })
   .passthrough();
 
@@ -49,7 +49,9 @@ export const PublishedEditSchema = z
 export const PublishedDocumentSchema = z
   .object({
     document_id: z.string(),
-    fields: z.record(z.string(), z.object({ value: z.unknown() }).passthrough()).default({}),
+    fields: z
+      .record(z.string(), z.object({ value: z.unknown().optional() }).passthrough())
+      .default({}),
     tables: z.record(z.string(), z.array(Row)).default({}),
     checks: z.record(z.string(), z.object({ rows: z.array(Row) }).passthrough()).default({}),
     issues: z.array(Row).default([]),

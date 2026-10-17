@@ -277,7 +277,7 @@ export const TemplateSchema = z
     review: z
       .object({ required: z.enum(['always', 'on_warnings', 'never']).default('on_warnings') })
       .strict()
-      .default({}),
+      .prefault({}),
     /** How the recipe's outputs map to ontology terms (absent: no RDF). */
     semantics: SemanticsSchema.optional(),
     /** What publishing delivers (absent: CSV and JSON). */

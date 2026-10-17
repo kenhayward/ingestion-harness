@@ -4,6 +4,7 @@ import {
   JobSummarySchema,
   isMine,
   RepublishParamsSchema,
+  ReviewEditSchema,
   StepProgressSchema,
   TestRunSchema,
   WithdrawParamsSchema,
@@ -138,5 +139,21 @@ describe('isMine', () => {
     const local = { name: 'ken', userId: null };
     expect(isMine({ createdBy: 'ken', createdByUser: 'u-ken' }, local)).toBe(false);
     expect(isMine({ createdBy: 'ken', createdByUser: null }, local)).toBe(true);
+  });
+});
+
+describe('ReviewEdit', () => {
+  it('may leave out its values (an edit of a value the draft did not have)', () => {
+    const edit = {
+      id: 1,
+      at: '2026-10-17T10:00:00.000Z',
+      field: 'total',
+      table: null,
+      row: null,
+      column: null,
+      editor: 'Ann',
+      reason: null,
+    };
+    expect(ReviewEditSchema.parse(edit)).toEqual(edit);
   });
 });

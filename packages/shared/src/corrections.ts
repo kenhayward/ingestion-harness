@@ -16,7 +16,7 @@ export const CorrectionSchema = z.object({
   /** corrected: the model proposed a value the reviewer changed; entered: it proposed nothing. */
   kind: z.enum(CORRECTION_KINDS),
   /** The model's value (the first edit's old value). */
-  proposed: z.unknown(),
+  proposed: z.unknown().optional(),
 });
 export type Correction = z.infer<typeof CorrectionSchema>;
 
