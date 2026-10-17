@@ -21206,7 +21206,7 @@
         "tags": [
           "Recipes"
         ],
-        "description": "Publishes a valid draft. It becomes immutable and the version new uploads use by\ndefault. Workbench document types publish only through their holdout gate\n(`POST /api/workbench/projects/{id}/publish`), never here. `label` and `note`,\nwhen given, are set on the version first (it keeps the draft's otherwise).",
+        "description": "Publishes a valid draft. It becomes immutable and the version new uploads use by\ndefault. A Workbench document type publishes as its project does\n(`POST /api/workbench/projects/{id}/publish`): the publication is recorded with the\ngate's iteration and score, which never block. `label` and `note`, when given,\nare set on the version first (it keeps the draft's otherwise).",
         "requestBody": {
           "required": true,
           "content": {
@@ -21658,7 +21658,7 @@
             }
           },
           "409": {
-            "description": "`{id} v{version} is already published`, `publish {id} from the Workbench (holdout gate)` for a Workbench document type, or `{name} is retired: unretire it to use it again` for a retired document type.",
+            "description": "`{id} v{version} is already published`, `the draft changed while publishing; reload it and try again` (a Workbench document type), or `{name} is retired: unretire it to use it again` for a retired document type.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21683,7 +21683,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "`{id} v{version} is already published`, `publish {id} from the Workbench (holdout gate)` for a Workbench document type, or `{name} is retired: unretire it to use it again` for a retired document type."
+                  "description": "`{id} v{version} is already published`, `the draft changed while publishing; reload it and try again` (a Workbench document type), or `{name} is retired: unretire it to use it again` for a retired document type."
                 }
               }
             }
@@ -29400,7 +29400,7 @@
         "tags": [
           "Holdout & publish gate"
         ],
-        "description": "Publishes the open draft when it is valid. References and evaluation are optional: the\npublish gate is informational only, and its iteration and score (if any) are recorded\nwith the publication. `overrideReason` is still accepted but ignored (no override is\nneeded or recorded). `label` and `note`, when given, are set on the version\n(#144; it keeps the draft's otherwise). If the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). This is the only way to\npublish a Workbench document type. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
+        "description": "Publishes the open draft when it is valid. References and evaluation are optional: the\npublish gate is informational only, and its iteration and score (if any) are recorded\nwith the publication. `overrideReason` is still accepted but ignored (no override is\nneeded or recorded). `label` and `note`, when given, are set on the version\n(#144; it keeps the draft's otherwise). If the draft changes after the gate was decided, nothing is published: check the gate\nagain. Every publication is logged (`GET …/publications`). The Templates route\n(`POST /api/templates/{id}/versions/{version}/publish`) publishes a Workbench\ndocument type the same way. See\n[ADR 0007](https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0007-workbench.md).",
         "requestBody": {
           "required": true,
           "content": {

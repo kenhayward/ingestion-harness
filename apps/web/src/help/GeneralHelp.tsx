@@ -88,8 +88,9 @@ export function GeneralHelp() {
 
       <h3>Delivered formats</h3>
       <p>
-        What publishing writes for each document: CSV and JSON by default, and RDF (Turtle) once the
-        outputs are mapped to an ontology on the Mapping tab. At least one format stays on.
+        What publishing writes for each document: CSV and JSON by default, and RDF (Turtle). RDF can
+        be ticked at any time, but the recipe publishes with it only once its outputs are mapped to
+        an ontology on the Mapping tab. At least one format stays on.
       </p>
     </>
   );

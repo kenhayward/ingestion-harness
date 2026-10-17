@@ -11,6 +11,7 @@ import {
   versionName,
 } from '@ih/shared';
 import { pushAfterPublish } from '../github-sync/auto.js';
+import { publishProjectDraft } from './workbench.js';
 import { parseRecipeFile } from '../github-sync/file.js';
 import { ImportConflict, ImportInvalid, importRecipeFile } from '../github-sync/import.js';
 import { regressionFinished, regressionReport, versionReferences } from '../regression/report.js';
@@ -538,9 +539,10 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Publish a draft',
         description: md`
           Publishes a valid draft. It becomes immutable and the version new uploads use by
-          default. Workbench document types publish only through their holdout gate
-          (\`POST /api/workbench/projects/{id}/publish\`), never here. \`label\` and \`note\`,
-          when given, are set on the version first (it keeps the draft's otherwise).
+          default. A Workbench document type publishes as its project does
+          (\`POST /api/workbench/projects/{id}/publish\`): the publication is recorded with the
+          gate's iteration and score, which never block. \`label\` and \`note\`, when given,
+          are set on the version first (it keeps the draft's otherwise).
         `,
         params: VersionParams,
         body: PublishLabelSchema,
@@ -556,8 +558,8 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
           ),
           404: NOT_FOUND,
           409: error(
-            '`{id} v{version} is already published`, `publish {id} from the Workbench ' +
-              '(holdout gate)` for a Workbench document type, or ' +
+            '`{id} v{version} is already published`, `the draft changed while publishing; ' +
+              'reload it and try again` (a Workbench document type), or ' +
               RETIRED_DOC +
               '.',
           ),
@@ -571,12 +573,27 @@ export const templateRoutes: FastifyPluginAsync = async (app) => {
       const version = versionOf(req.params);
       const existing = await repo().get(id, version);
       if (!existing) return notFound(reply);
-      if (await app.deps.workbench.getProject(id)) {
-        // A Workbench type publishes only through its holdout gate (ADR 0007).
-        return reply.code(409).send({ error: `publish ${id} from the Workbench (holdout gate)` });
-      }
       if (existing.status !== 'draft') {
         return reply.code(409).send({ error: `${id} v${version} is already published` });
+      }
+      const project = await app.deps.workbench.getProject(id);
+      if (project) {
+        // A Workbench type publishes as its project page does: the publication is recorded.
+        const outcome = await publishProjectDraft(app, req, project, body.data);
+        if (outcome.result === 'invalid') {
+          return reply.code(400).send({ error: 'recipe is not valid', issues: outcome.issues });
+        }
+        if (outcome.result !== 'published') {
+          return reply.code(409).send({
+            error:
+              outcome.result === 'changed'
+                ? 'the draft changed while publishing; reload it and try again'
+                : `${id} v${version} is already published`,
+          });
+        }
+        const published = (await repo().get(id, outcome.version))!;
+        const github = await pushAfterPublish(app.deps, req, id, outcome.version);
+        return { ...(await withIssues(published)), github };
       }
       const issues = blockingIssues(
         await templateIssues(app.deps, existing.definition, { draft: true }),

@@ -242,14 +242,51 @@ describe('publish gate', () => {
     });
   });
 
-  it('refuses publishing a workbench type from the Templates page', async () => {
+  it('publishes a workbench type from the Templates page as the Workbench does', async () => {
     const ctx = await project();
+    const publishDraft = vi.spyOn(ctx.workbench, 'publishDraft');
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/templates/letter/versions/1/publish',
+      payload: { label: 'Model change' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      record: { id: 'letter', version: 1, status: 'published', label: 'Model change' },
+      github: null,
+    });
+    expect(publishDraft).toHaveBeenCalledOnce();
+    const publications = (
+      await ctx.app.inject('/api/workbench/projects/letter/publications')
+    ).json();
+    expect(publications).toMatchObject([{ version: 1, iterationId: null, overrideReason: null }]);
+  });
+
+  it('refuses an invalid workbench draft from the Templates page and publishes nothing', async () => {
+    const ctx = await project();
+    await ctx.templates.updateDraft('letter', 1, { ...letter(1), pipeline: [] });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/templates/letter/versions/1/publish',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('recipe is not valid');
+    expect(res.json().issues.length).toBeGreaterThan(0);
+    expect((await ctx.templates.get('letter', 1))!.status).toBe('draft');
+    expect((await ctx.app.inject('/api/workbench/projects/letter/publications')).json()).toEqual(
+      [],
+    );
+  });
+
+  it('refuses publishing a published workbench version again from the Templates page', async () => {
+    const ctx = await project();
+    await ctx.templates.publish('letter', 1);
     const res = await ctx.app.inject({
       method: 'POST',
       url: '/api/templates/letter/versions/1/publish',
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('publish letter from the Workbench (holdout gate)');
+    expect(res.json().error).toBe('letter v1 is already published');
   });
 
   it('refuses importing a workbench type straight to published, but imports a draft', async () => {
