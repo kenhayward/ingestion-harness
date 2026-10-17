@@ -45,6 +45,11 @@ export IMAGE_TAG="${IMAGE_TAG:-$(git -C "$REPO_ROOT" rev-parse --short HEAD)}"
 VERSION="${VERSION:-$IMAGE_TAG}"
 
 compose() { docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.yml" "$@"; }
+# One setting from the env file, without the carriage return a file edited on Windows ends its
+# lines with (docker compose ignores it; curl rejects a URL holding it).
+env_value() {
+  grep -E "^$1=" "$2" | tail -n 1 | cut -d= -f2- | tr -d '\r' || true
+}
 
 echo "==> deploying $VERSION (IMAGE_TAG=$IMAGE_TAG) using $ENV_FILE"
 if [[ $BUILD -eq 1 ]]; then
@@ -60,7 +65,7 @@ ADMIN_TOKEN="$("$DEPLOY_DIR/scripts/admin-token.sh" --env-file "$ENV_FILE" -f "$
 export ADMIN_TOKEN
 # Under GitHub Actions (deploy.yml) the token must never reach the job log.
 [[ "${GITHUB_ACTIONS:-}" == true ]] && echo "::add-mask::$ADMIN_TOKEN"
-APP_PORT="$(grep -E '^APP_PORT=' "$ENV_FILE" | cut -d= -f2 || true)" \
+APP_PORT="$(env_value APP_PORT "$ENV_FILE")" S3_PUBLIC_PORT="$(env_value S3_PUBLIC_PORT "$ENV_FILE")" \
   "$DEPLOY_DIR/scripts/smoke-test.sh"
 
 echo "==> deployed $VERSION (IMAGE_TAG=$IMAGE_TAG)"

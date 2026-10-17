@@ -101,9 +101,30 @@ sudo install -m 600 -o "$USER" /dev/null /etc/ingestion-harness/staging.env
 
 Fill it in starting from [`deploy/.env.example`](../deploy/.env.example), with
 `nano /etc/ingestion-harness/staging.env` or from Windows at
-`\\wsl$\Ubuntu\etc\ingestion-harness\` (that path may need admin rights). At least: new
+`\\wsl$\Ubuntu\etc\ingestion-harness\` (that path may need admin rights; save with LF line
+endings, see below). At least: new
 passwords (`POSTGRES_PASSWORD`, the S3 keys, `RDF_*_PASSWORD` with the `rdf` profile),
 `LLM_SECRETS_KEY` and the LLM endpoints.
+
+**Keep Linux line endings.** An editor on the Windows side (Notepad, VS Code with CRLF, a copy
+of `.env.example` saved on Windows) may end every line with a carriage return. Docker Compose
+ignores it, so the stack starts, but anything else reading the file sees `8081\r` instead of
+`8081`: before `deploy.sh` stripped it, the smoke test failed with
+`curl: (3) URL rejected: Malformed input to a URL function` and `FAIL /healthz`. Check, in
+Ubuntu (prints a count, no secrets):
+
+```bash
+grep -c $'\r$' /etc/ingestion-harness/staging.env
+```
+
+Anything above 0: strip them with
+
+```bash
+sudo sed -i 's/\r$//' /etc/ingestion-harness/staging.env
+```
+
+Also check the values themselves: a typo such as `APP_BIND=00.0.0.0` stops the deploy at once
+with `invalid IP address`.
 
 **If this machine also runs the dev stack** or another copy of the stack, they share one Docker
 Desktop engine, so staging needs its own:
