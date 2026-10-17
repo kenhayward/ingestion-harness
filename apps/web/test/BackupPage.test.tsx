@@ -312,7 +312,8 @@ describe('RestoreDialog', () => {
       }),
     );
     expect(await screen.findByText(/Checking the backup/)).toBeInTheDocument();
-    expect(api.getRestore).toHaveBeenCalledWith('r-1', 'tok-1');
+    // The start's answer shows the check; following it is the first poll, a tick later.
+    await waitFor(() => expect(api.getRestore).toHaveBeenCalledWith('r-1', 'tok-1'));
   });
 
   it('says a key that does not open the backup', async () => {
