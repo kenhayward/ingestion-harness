@@ -34,7 +34,13 @@ describe('pg tools', () => {
     const cmd = pgRestoreCommand('postgres://ingest:pw@postgres:5432/ih_restore_1');
     expect(cmd).toEqual({
       command: 'pg_restore',
-      args: ['--no-owner', '--no-acl', '-d', 'postgres://ingest@postgres:5432/ih_restore_1'],
+      args: [
+        '--no-owner',
+        '--no-acl',
+        '--exit-on-error',
+        '-d',
+        'postgres://ingest@postgres:5432/ih_restore_1',
+      ],
       env: { PGPASSWORD: 'pw' },
     });
     expect(pgRestoreCommand('postgres://ingest@postgres/x').env).toEqual({});

@@ -47,7 +47,7 @@ export function pgRestoreCommand(url: string): ToolCommand {
   const { url: bare, password } = splitPassword(url);
   return {
     command: 'pg_restore',
-    args: ['--no-owner', '--no-acl', '-d', bare],
+    args: ['--no-owner', '--no-acl', '--exit-on-error', '-d', bare],
     env: passwordEnv(password),
   };
 }
