@@ -210,6 +210,8 @@ backup?.enableRestore({
   live: new PgLiveDatabase(makePool(2)),
   openSide: (url) => PgSideDatabase.open(url),
   lakeIssuer: new SeaweedIamIssuer(s3),
+  // The restored database's version counters may equal the old one's: forget the stores now.
+  onSwapped: () => targetStores.invalidate(),
 });
 
 let stopReconciler = () => {};

@@ -95,6 +95,11 @@ export interface RestoreDeps extends BackupDeps {
   openSide(url: string): Promise<SideDatabase>;
   /** This server's data-lake IAM, to tell which restored keys it lacks; null without one. */
   lakeIssuer: Pick<S3KeyIssuer, 'listUsers'> | null;
+  /**
+   * Called once the restored database is the live one: the API's caches keyed on the old
+   * database's version counters (publishing targets' stores) forget what they hold.
+   */
+  onSwapped?: () => void;
   /** How long running jobs get to finish (tests: 0). */
   jobWaitMs?: number;
 }
@@ -439,6 +444,7 @@ export async function runRestore(
     await step('swap');
     await deps.db.swap(sideName, keepAs);
     swapped = true;
+    deps.onSwapped?.();
   } catch (err) {
     await side?.close().catch(() => {});
     if (sideCreated && !swapped) await deps.db.dropDatabase(sideName).catch(() => {});

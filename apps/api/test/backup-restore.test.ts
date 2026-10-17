@@ -181,6 +181,39 @@ describe('runRestore', () => {
     expect(await s.deps.gate.current()).toMatchObject({ enabled: false });
   });
 
+  it('tells the API right after the swap, so its caches forget the old database', async () => {
+    const { file, checked } = await backupOf();
+    const swapped: string[] = [];
+    const s = await server(file, {
+      onSwapped: () => {
+        swapped.push(s.db.calls.at(-1)!);
+        s.log.push('swapped');
+      },
+    });
+
+    await runRestore(s.deps, request(checked), statuses().status);
+
+    expect(swapped).toHaveLength(1);
+    expect(swapped[0]).toMatch(/^swap /);
+    expect(s.log.slice(-2)).toEqual(['swapped', 'rotate']);
+  });
+
+  it('does not call the post-swap hook when the restore fails before the swap', async () => {
+    const { file, checked } = await backupOf();
+    let called = false;
+    const s = await server(file, {
+      migrate: async () => {
+        throw new Error('boom');
+      },
+      onSwapped: () => {
+        called = true;
+      },
+    });
+
+    await expect(runRestore(s.deps, request(checked), statuses().status)).rejects.toThrow('boom');
+    expect(called).toBe(false);
+  });
+
   it('copy mode applies the copy rules and leaves identities alone', async () => {
     const { file, checked } = await backupOf();
     const s = await server(file);
