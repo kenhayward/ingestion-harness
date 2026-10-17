@@ -3,7 +3,17 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      # The runtime is Node 24 (.nvmrc, node:24-alpine): its types move with it, by hand.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
+      # Packages that only install or pass together; a dependency joins the first group
+      # it matches, so these come before dev-tooling.
+      vitest:
+        patterns: ['vitest', '@vitest/*']
+      eslint:
+        patterns: ['eslint', '@eslint/*', 'typescript-eslint']
       # Minor and patch dev updates together; each major comes as its own PR so one
       # incompatible major (e.g. TypeScript ahead of typescript-eslint) blocks nothing else.
       dev-tooling:
