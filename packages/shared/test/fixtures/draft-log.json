@@ -1,0 +1,137 @@
+{
+  "toolRun": {
+    "stage": "sections",
+    "model": "drafter/big",
+    "tools": true,
+    "rounds": [
+      {
+        "label": "draft-sections",
+        "entries": [
+          {
+            "kind": "prompt",
+            "text": "<prompt>",
+            "images": 0
+          },
+          {
+            "kind": "reply",
+            "text": "",
+            "inputTokens": 10,
+            "outputTokens": 5
+          },
+          {
+            "kind": "toolCall",
+            "id": "call-1-0",
+            "name": "test_anchors",
+            "input": {
+              "changes": [
+                {
+                  "op": "putSection",
+                  "id": "approval",
+                  "anchor": "^SIGNATURES"
+                }
+              ]
+            },
+            "summary": "Testing 1 anchor on 1 dev sample"
+          },
+          {
+            "kind": "toolResult",
+            "id": "call-1-0",
+            "name": "test_anchors",
+            "text": "Tested on 1 dev sample(s) with these changes applied to the draft.\nWhere each section starts (page and the line it matched); - = not found.\nsample\tall\tapproval\na.pdf\tp1 \"[page 1]\"\t-\n\nProblems:\nsection \"approval\": anchor '^SIGNATURES' matched none of the dev samples",
+            "isError": false
+          },
+          {
+            "kind": "reply",
+            "text": "",
+            "inputTokens": 10,
+            "outputTokens": 5
+          },
+          {
+            "kind": "toolCall",
+            "id": "call-2-0",
+            "name": "submit",
+            "input": {
+              "notes": ""
+            },
+            "summary": "Submitting the answer"
+          },
+          {
+            "kind": "rejected",
+            "errors": ["<root>: 'changes' is a required property"]
+          },
+          {
+            "kind": "reply",
+            "text": "",
+            "inputTokens": 10,
+            "outputTokens": 5
+          },
+          {
+            "kind": "toolCall",
+            "id": "call-3-0",
+            "name": "submit",
+            "input": {
+              "notes": "",
+              "changes": [
+                {
+                  "op": "putSection",
+                  "id": "approval",
+                  "anchor": "^PROTOCOL APPROVAL",
+                  "required": null,
+                  "description": null,
+                  "repeat": null,
+                  "key": null,
+                  "keyFrom": null,
+                  "copiesSelect": null,
+                  "reason": "r"
+                }
+              ]
+            },
+            "summary": "Submitting the answer"
+          }
+        ]
+      }
+    ]
+  },
+  "singleReplies": {
+    "stage": "survey",
+    "model": "drafter/big",
+    "tools": false,
+    "rounds": [
+      {
+        "label": "draft-survey",
+        "entries": [
+          {
+            "kind": "prompt",
+            "text": "<prompt>",
+            "images": 0
+          },
+          {
+            "kind": "reply",
+            "text": "{\"summary\": \"x\"}",
+            "inputTokens": 10,
+            "outputTokens": 5
+          },
+          {
+            "kind": "rejected",
+            "errors": [
+              "<root>: 'structure' is a required property",
+              "<root>: 'variants' is a required property",
+              "<root>: 'candidates' is a required property",
+              "<root>: 'questions' is a required property"
+            ]
+          },
+          {
+            "kind": "note",
+            "text": "Asked again with these errors."
+          },
+          {
+            "kind": "reply",
+            "text": "{\"summary\": \"Process validation protocols.\", \"structure\": [{\"name\": \"Approvals\", \"description\": \"Signatures\", \"howToFind\": \"PROTOCOL APPROVAL\"}], \"variants\": [\"Executed copy follows the blank one\"], \"candidates\": [{\"name\": \"protocol_number\", \"description\": \"Id\", \"where\": \"header\", \"kind\": \"field\", \"seenIn\": {\"n\": 1, \"of\": 1}}], \"questions\": [{\"question\": \"Which copy?\", \"why\": \"Two copies\"}]}",
+            "inputTokens": 10,
+            "outputTokens": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -18,6 +18,11 @@ def output_key(
     return f"{spec_id}/v{version}/{output_id}/{document_id}.{fmt}"
 
 
+def draft_log_key(job_id: str) -> str:
+    """A drafting job's model log (TS draftLogKey): every prompt, reply, tool call and result."""
+    return f"{job_id}/draft-log.json"
+
+
 def run_key(job_id: str, extraction_id: str, attempt: int) -> str:
     return f"{job_id}/{extraction_id}/attempt-{attempt}.json"
 

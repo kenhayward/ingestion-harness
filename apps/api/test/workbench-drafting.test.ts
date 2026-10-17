@@ -216,6 +216,10 @@ describe('a running stage (issue #151)', () => {
     const streaming = await listed();
     expect(streaming).toMatchObject({ tokens: 1000, phaseAt: tryBegan });
     expect(streaming.at > tryBegan).toBe(true);
+    // A tool starting in the same try is said, and leaves the try's clock alone too.
+    const tool = { name: 'test_anchors', summary: 'Testing 2 anchors on 1 dev sample' };
+    repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, tokens: 1000, tool, toolCalls: 1 });
+    expect(await listed()).toMatchObject({ tool, toolCalls: 1, phaseAt: tryBegan });
     // A second try starts its own clock.
     repo.addEvent(id, 'info', DRAFT_PROGRESS_EVENT, { ...event, attempt: 2, tokens: null });
     const second = await listed();
@@ -355,6 +359,107 @@ describe('survey stage', () => {
         payload: { decision: 'accepted' },
       });
       expect(res.statusCode).toBe(404);
+    }
+  });
+});
+
+describe("a proposal's model log", () => {
+  const prompt = { kind: 'prompt', text: '<context>', images: 0 };
+  const reply = (text: string) => ({ kind: 'reply', text, inputTokens: 10, outputTokens: 5 });
+  const log = {
+    stage: 'survey',
+    model: 'local/qwen',
+    tools: true,
+    rounds: [
+      {
+        label: 'draft-survey',
+        entries: [
+          prompt,
+          reply(''),
+          {
+            kind: 'toolCall',
+            id: 'c1',
+            name: 'read_sample_pages',
+            input: { file: 's1.pdf', fromPage: 1, toPage: 1 },
+            summary: 'Reading page 1 of s1.pdf',
+          },
+          { kind: 'toolResult', id: 'c1', name: 'read_sample_pages', text: 'p1', isError: false },
+          reply('{}'),
+          { kind: 'error', message: 'drafting model refused: no' },
+        ],
+      },
+    ],
+  };
+  const url = (pid: string, project = 'letter') =>
+    `/api/workbench/projects/${project}/proposals/${pid}/log`;
+
+  it('returns what the drafting model was sent and answered, tool calls included', async () => {
+    const { app, store, add, start } = await project();
+    await add(1);
+    const { id } = (await start()).json() as ProposalView;
+    expect((await app.inject(url(id))).statusCode).toBe(404);
+    await store.put(
+      'runs',
+      `${id}/draft-log.json`,
+      Buffer.from(JSON.stringify(log)),
+      'application/json',
+    );
+    const res = await app.inject(url(id));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ...log, legacy: false });
+  });
+
+  it("rebuilds an older run's log from its attempt audit", async () => {
+    const { app, store, add, start } = await project();
+    await add(1);
+    const { id } = (await start('survey')).json() as ProposalView;
+    const put = (key: string, body: object) =>
+      store.put('runs', key, Buffer.from(JSON.stringify(body)), 'application/json');
+    await put(`${id}/draft-survey/attempt-1.json`, {
+      prompt: 'first prompt',
+      response: '{"summary": "x"}',
+      errors: ['<root>: questions is required'],
+    });
+    await put(`${id}/draft-survey/attempt-2.json`, {
+      prompt: 'first prompt + errors',
+      response: '{"ok": true}',
+      errors: [],
+    });
+    const res = await app.inject(url(id));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      stage: 'survey',
+      model: null,
+      tools: false,
+      legacy: true,
+      rounds: [
+        {
+          label: 'draft-survey',
+          entries: [
+            { kind: 'prompt', text: 'first prompt', images: 0 },
+            { kind: 'reply', text: '{"summary": "x"}', inputTokens: null, outputTokens: null },
+            { kind: 'rejected', errors: ['<root>: questions is required'] },
+            { kind: 'prompt', text: 'first prompt + errors', images: 0 },
+            { kind: 'reply', text: '{"ok": true}', inputTokens: null, outputTokens: null },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('is a 404 for an unknown proposal or project, or a run with no log', async () => {
+    const { app, add, start } = await project();
+    await add(1);
+    const { id } = (await start()).json() as ProposalView;
+    const missing = await app.inject(url(id));
+    expect(missing.json()).toEqual({ error: 'no model log for this run' });
+    for (const res of [
+      await app.inject(url('00000000-0000-4000-8000-000000000000')),
+      await app.inject(url('not-a-uuid')),
+      await app.inject(url(id, 'nope')),
+    ]) {
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: 'proposal not found' });
     }
   });
 });

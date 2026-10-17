@@ -658,6 +658,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('startStage not stubbed');
     }),
     listProposals: vi.fn(async () => []),
+    getProposalLog: vi.fn(async () => {
+      throw new Error('getProposalLog not stubbed');
+    }),
     decideProposal: vi.fn(async () => {
       throw new Error('decideProposal not stubbed');
     }),

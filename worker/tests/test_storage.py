@@ -37,6 +37,13 @@ def test_drafting_key_mirrors_the_typescript_helper() -> None:
     assert drafting_key("letter", "j1") == "drafting/letter/j1.json"
 
 
+def test_draft_log_and_run_keys_mirror_the_typescript_helpers() -> None:
+    from ingest_worker.storage import draft_log_key, run_key
+
+    assert draft_log_key("j1") == "j1/draft-log.json"
+    assert run_key("j1", "draft-survey", 2) == "j1/draft-survey/attempt-2.json"
+
+
 def test_export_key_mirrors_the_typescript_helper() -> None:
     from ingest_worker.storage import export_key
 

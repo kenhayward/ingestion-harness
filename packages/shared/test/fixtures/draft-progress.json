@@ -150,5 +150,72 @@
       "round": 1,
       "tokens": 1300
     }
+  ],
+  "sectionsWithTools": [
+    {
+      "stage": "sections",
+      "phase": "reading",
+      "samples": 1,
+      "attempt": null,
+      "of": null,
+      "round": 1,
+      "tokens": null
+    },
+    {
+      "stage": "sections",
+      "phase": "model",
+      "samples": 1,
+      "attempt": 1,
+      "of": 2,
+      "round": 1,
+      "tokens": null,
+      "tool": null,
+      "toolCalls": 0
+    },
+    {
+      "stage": "sections",
+      "phase": "model",
+      "samples": 1,
+      "attempt": 1,
+      "of": 2,
+      "round": 1,
+      "tokens": 40,
+      "tool": null,
+      "toolCalls": 0
+    },
+    {
+      "stage": "sections",
+      "phase": "model",
+      "samples": 1,
+      "attempt": 1,
+      "of": 2,
+      "round": 1,
+      "tokens": 40,
+      "tool": {
+        "name": "test_anchors",
+        "summary": "Testing 1 anchor on 1 dev sample"
+      },
+      "toolCalls": 1
+    },
+    {
+      "stage": "sections",
+      "phase": "model",
+      "samples": 1,
+      "attempt": 1,
+      "of": 2,
+      "round": 1,
+      "tokens": 40,
+      "tool": null,
+      "toolCalls": 1
+    },
+    {
+      "stage": "sections",
+      "phase": "anchors",
+      "samples": 1,
+      "attempt": null,
+      "of": null,
+      "round": 1,
+      "tokens": null
+    }
   ]
 }

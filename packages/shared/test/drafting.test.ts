@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DRAFT_PROGRESS_EVENT,
   DraftChangeSchema,
+  DraftLogSchema,
   DraftProgressSchema,
   answeredFeedback,
   applyChanges,
@@ -653,6 +654,32 @@ describe('a worker-shaped mapping proposal (ADR 0011)', () => {
   });
 });
 
+const logFixture = JSON.parse(
+  readFileSync(new URL('./fixtures/draft-log.json', import.meta.url), 'utf8'),
+) as Record<string, unknown>;
+
+describe('the model log of a drafting run', () => {
+  it.each(Object.keys(logFixture))("parses the worker's %s log", (name) => {
+    const log = DraftLogSchema.parse(logFixture[name]);
+    expect(log.legacy).toBe(false);
+    expect(log.rounds[0]!.entries[0]!.kind).toBe('prompt');
+  });
+
+  it('holds a conversation with tools', () => {
+    const log = DraftLogSchema.parse(logFixture.toolRun);
+    expect(log.tools).toBe(true);
+    const kinds = log.rounds[0]!.entries.map((e) => e.kind);
+    expect(kinds).toContain('toolResult');
+    expect(kinds).toContain('rejected');
+  });
+
+  it('refuses an entry of an unknown kind', () => {
+    const log = structuredClone(logFixture.singleReplies) as { rounds: { entries: unknown[] }[] };
+    log.rounds[0]!.entries.push({ kind: 'thought', text: 'x' });
+    expect(DraftLogSchema.safeParse(log).success).toBe(false);
+  });
+});
+
 const progressFixture = JSON.parse(
   readFileSync(new URL('./fixtures/draft-progress.json', import.meta.url), 'utf8'),
 ) as Record<string, unknown[]>;
@@ -671,6 +698,8 @@ describe('drafting progress (issue #151)', () => {
     ['a zero attempt', { attempt: 0 }],
     ['a missing round', { round: undefined }],
     ['negative tokens', { tokens: -1 }],
+    ['negative tool calls', { toolCalls: -1 }],
+    ['a tool without a summary', { tool: { name: 'test_anchors' } }],
   ])('refuses %s', (_name, over) => {
     const base = progressFixture.surveyRetried![1] as Record<string, unknown>;
     expect(DraftProgressSchema.safeParse({ ...base, ...over }).success).toBe(false);
@@ -678,5 +707,13 @@ describe('drafting progress (issue #151)', () => {
 
   it('is the event the worker writes', () => {
     expect(DRAFT_PROGRESS_EVENT).toBe('drafting progress');
+  });
+
+  it('carries the running tool and the tool calls of a conversation with tools', () => {
+    const running = progressFixture.sectionsWithTools![3];
+    expect(DraftProgressSchema.parse(running)).toMatchObject({
+      tool: { name: 'test_anchors', summary: 'Testing 1 anchor on 1 dev sample' },
+      toolCalls: 1,
+    });
   });
 });

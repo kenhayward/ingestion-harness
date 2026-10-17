@@ -160,8 +160,63 @@ export const DraftProgressSchema = z.object({
   of: z.number().int().positive().nullable(),
   round: z.number().int().positive(),
   tokens: z.number().int().nonnegative().nullable().optional(),
+  /**
+   * A conversation with tools (an endpoint allowing tool calls; sections, revise, mapping): the
+   * tool running now, with the line saying what it does, or null between tools. Absent for a
+   * run without tools and from older workers.
+   */
+  tool: z.object({ name: z.string(), summary: z.string() }).strict().nullable().optional(),
+  /** The tool calls the model has made so far in this conversation. */
+  toolCalls: z.number().int().nonnegative().optional(),
 });
 export type DraftProgress = z.infer<typeof DraftProgressSchema>;
+
+/**
+ * A drafting run's model log (`draftLogKey`, worker `DraftLog`; shared fixture
+ * draft-log.json): each proposal round (the sections stage's anchor round is a second one) as the
+ * model saw it: the prompt, each reply, the tools it called and what they returned, the answers
+ * rejected and why, and the error that ended the run. `legacy`: rebuilt from the per-attempt
+ * audit of a run from before the log (no tool calls, no errors).
+ */
+export const DraftLogEntrySchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('prompt'), text: z.string(), images: z.number().int().nonnegative() }),
+  z.object({
+    kind: z.literal('reply'),
+    text: z.string(),
+    inputTokens: z.number().int().nullable(),
+    outputTokens: z.number().int().nullable(),
+  }),
+  z.object({
+    kind: z.literal('toolCall'),
+    id: z.string(),
+    name: z.string(),
+    /** The arguments, or the raw text when they were not JSON. */
+    input: z.unknown(),
+    summary: z.string(),
+  }),
+  z.object({
+    kind: z.literal('toolResult'),
+    id: z.string(),
+    name: z.string(),
+    text: z.string(),
+    isError: z.boolean(),
+  }),
+  z.object({ kind: z.literal('rejected'), errors: z.array(z.string()) }),
+  z.object({ kind: z.literal('note'), text: z.string() }),
+  z.object({ kind: z.literal('error'), message: z.string() }),
+]);
+export type DraftLogEntry = z.infer<typeof DraftLogEntrySchema>;
+
+export const DraftLogSchema = z.object({
+  stage: z.enum(DRAFT_STAGES),
+  /** The drafting model's `endpoint/model` ref; null in a legacy log. */
+  model: z.string().nullable(),
+  /** The run held a conversation with tools. */
+  tools: z.boolean(),
+  rounds: z.array(z.object({ label: z.string(), entries: z.array(DraftLogEntrySchema) })),
+  legacy: z.boolean().default(false),
+});
+export type DraftLog = z.infer<typeof DraftLogSchema>;
 
 /** A proposal whose job has not finished: where it is (issue #151). */
 export const DraftRunSchema = z.object({

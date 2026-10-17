@@ -340,6 +340,22 @@ function EndpointRow({
                     : 'Only projects allowed external models may use it.'}
                 </small>
               </dd>
+              <dt>Tools</dt>
+              <dd>
+                <label className="inline">
+                  <input
+                    type="checkbox"
+                    checked={e.toolCalls}
+                    onChange={(ev) => void update({ toolCalls: ev.target.checked })}
+                  />
+                  Tool calls
+                </label>
+                <small className="muted">
+                  {e.toolCalls
+                    ? 'Workbench drafting may test anchors, search ontologies and read sample pages while it works. Turn off if the server mishandles tools.'
+                    : 'Off: drafting asks for one reply at a time, without tools.'}
+                </small>
+              </dd>
               <dt>Key</dt>
               <dd>
                 {key === null ? (

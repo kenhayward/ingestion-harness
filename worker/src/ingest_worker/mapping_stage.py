@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -21,13 +22,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from .draft_stages import Stage
-from .extract import ExtractionFailedError, OutputTruncatedError, run_extraction
-from .llm.base import ContextExceededError, RefusalError
+from .llm.base import ToolSpec
 from .llm.registry import ModelResolutionError
 from .pipeline import DocumentError, PipelineDeps, check_cancelled
 from .queue import ClaimedJob, JobQueue
 from .retrieval import Candidate, shortlist
 from .storage import drafting_key
+from .tool_loop import Tool, ToolError
 
 if TYPE_CHECKING:
     from .drafting import DraftParams
@@ -197,6 +198,12 @@ MAPPING_SCHEMA = _object(
     }
 )
 
+MAPPING_TOOLS_NOTE = """
+
+When no candidate fits an output, search_terms may find one retrieval missed, and term_detail shows
+a term's parents, domain and range before you choose it. A term either returns may be chosen like
+a candidate."""
+
 MAPPING_INSTRUCTIONS = """\
 Task: map the recipe's outputs to ontology terms, so each document can be published as an RDF
 graph. Choose only from the <candidates> of each output (their full IRIs), or declare a local
@@ -267,13 +274,15 @@ def convert_mapping(
     shortlists: dict[str, list[Candidate]],
     *,
     local_namespace: str | None = None,
+    searched: Sequence[Candidate] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """The model's flat changes as typed mapping changes, and every rule they break.
 
     Each change stands on its own, so any subset can be applied: field and table changes keep
     full IRIs unless the draft already declares their prefix; the document change declares
     prefixes for the namespaces the proposal uses. Local terms live under `local_namespace`
-    (`{base}def/{type}/`); without a base none can be declared."""
+    (`{base}def/{type}/`); without a base none can be declared. `searched`: the terms the
+    model's tools returned (None: it had no tools), which it may choose like the shortlist's."""
     outputs = {o.path: o for o in outputs_of(draft)}
     changes = list(data.get("changes") or [])
     local = {
@@ -282,6 +291,7 @@ def convert_mapping(
         if c.get("op") == "putLocalTerm" and str(c.get("localIri", "")).strip()
     }
     shortlisted = {c.iri: c for cands in shortlists.values() for c in cands}
+    shortlisted.update({c.iri: c for c in searched or []})
     semantics = draft.get("semantics") or {}
     existing_prefixes: dict[str, str] = dict(semantics.get("prefixes") or {})
     errors: list[str] = []
@@ -297,6 +307,9 @@ def convert_mapping(
             errors.append(
                 f"{where}: {value} is not in the shortlist; choose a candidate or declare a "
                 "local term"
+                if searched is None
+                else f"{where}: {value} is not in the shortlist or your searches; choose a "
+                "candidate, search for a term or declare a local term"
             )
             return value
         if value in shortlisted:
@@ -589,6 +602,156 @@ class _Embedder:
     model_ref: str
 
 
+#: What `search_terms` may look for, by the kinds it searches.
+SEARCH_KINDS: dict[str, list[str]] = {
+    "property": PROPERTY_KINDS,
+    "class": ["class"],
+    "concept": ["concept", "scheme"],
+    "any": [*PROPERTY_KINDS, *CLASS_KINDS],
+}
+#: Terms one search returns at most.
+MAX_SEARCH_RESULTS = 15
+
+
+def mapping_tools(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    versions: list[tuple[str, int]],
+    embedder: _Embedder | None,
+    searched: dict[str, Candidate],
+) -> list[Tool]:
+    """`search_terms` and `term_detail` over the pinned ontology versions. Every term they
+    return joins `searched`, which the model may then choose like a shortlisted one."""
+    store = deps.ontologies
+    assert store is not None
+
+    def vector_for(query: str) -> list[float] | None:
+        if embedder is None or not store.has_embeddings(versions, embedder.model_ref):
+            return None
+        try:
+            vector: list[float] = embedder.provider.embed(embedder.model_id, [query])[0]
+        except Exception:  # an outage costs the semantic half, never the search
+            return None
+        if deps.models.location(embedder.provider.name) == "external":
+            queue.event(
+                job.id,
+                "info",
+                "external model call",
+                {
+                    "stage": "mapping",
+                    "purpose": "embedding",
+                    "model": embedder.model_ref,
+                    "samples": [],
+                    "ontologies": [f"{i} v{v}" for i, v in versions],
+                    "query": query,
+                },
+            )
+        return vector
+
+    def search(args: dict[str, Any]) -> str:
+        query = str(args.get("query") or "").strip()
+        if not query:
+            raise ToolError("query is empty: say what the term means")
+        kinds = SEARCH_KINDS.get(str(args.get("kind") or "any"))
+        if kinds is None:
+            raise ToolError(f"kind must be one of {', '.join(SEARCH_KINDS)}")
+        limit = max(1, min(int(args.get("limit") or 10), MAX_SEARCH_RESULTS))
+        found, _ = shortlist(
+            store,
+            versions,
+            query,
+            kinds,
+            vector=vector_for(query),
+            model_ref=embedder.model_ref if embedder else None,
+            k=limit,
+        )
+        for c in found:
+            searched.setdefault(c.iri, c)
+        if not found:
+            return f'No terms matched "{query}" in the pinned ontologies.'
+        return "\n".join(_candidate_line(c) for c in found)
+
+    def detail(args: dict[str, Any]) -> str:
+        iri = str(args.get("iri") or "").strip()
+        term = store.term(versions, iri) if iri else None
+        if term is None:
+            raise ToolError(f"no term {iri or '(empty)'} in the pinned ontologies")
+        searched.setdefault(
+            term.iri,
+            Candidate(
+                term.iri, term.kind, term.label, term.definition, list(term.parents),
+                list(term.domain), list(term.range), 0.0, frozenset({"tool"}),
+            ),
+        )  # fmt: skip
+
+        def named(iris: list[str]) -> str:
+            out = []
+            for other in iris[:10]:
+                found = store.term(versions, other)
+                out.append(f"{other} ({found.label})" if found else other)
+            return ", ".join(out)
+
+        lines = [f"{term.iri} [{term.kind}] {term.label}"]
+        if term.alt_labels:
+            lines.append("Also called: " + ", ".join(term.alt_labels))
+        if term.definition.strip():
+            lines.append("Definition: " + term.definition.strip())
+        if term.parents:
+            lines.append("Broader / parents: " + named(term.parents))
+        if term.domain:
+            lines.append("Domain: " + named(term.domain))
+        if term.range:
+            lines.append("Range: " + named(term.range))
+        if term.scheme:
+            lines.append(f"Concept scheme: {term.scheme}")
+        if term.child_count:
+            lines.append(f"Narrower terms: {term.child_count}")
+        if term.defined_in:
+            lines.append(f"Defined in the imported ontology {term.defined_in}")
+        if term.deprecated:
+            lines.append("Deprecated: do not use it.")
+        return "\n".join(lines)
+
+    return [
+        Tool(
+            ToolSpec(
+                "search_terms",
+                "Search the pinned ontologies for terms the candidates may have missed: by "
+                "label, synonym and definition (and meaning, when embeddings exist). Any term "
+                "it returns may be chosen like a candidate.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "What the term means."},
+                        "kind": {"type": "string", "enum": list(SEARCH_KINDS)},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": MAX_SEARCH_RESULTS},
+                    },
+                    "required": ["query", "kind", "limit"],
+                    "additionalProperties": False,
+                },
+            ),
+            search,
+            lambda args: f'Searching the ontologies for "{args.get("query", "")}"',
+        ),
+        Tool(
+            ToolSpec(
+                "term_detail",
+                "Look up one term by its full IRI: its kind, labels, definition, parents, "
+                "domain and range. A term looked up may be chosen like a candidate.",
+                {
+                    "type": "object",
+                    "properties": {"iri": {"type": "string"}},
+                    "required": ["iri"],
+                    "additionalProperties": False,
+                },
+            ),
+            detail,
+            lambda args: f"Looking up {args.get('iri', 'a term')}",
+        ),
+    ]
+
+
 def _embedder(
     job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, local_only: bool, notes: list[str]
 ) -> _Embedder | None:
@@ -651,6 +814,8 @@ def run_mapping(
         for path, values in inputs.observed.items()
     }
     observed = {p: v for p, v in observed.items() if v}
+    report = drafting.progress_reporter(job, queue, "mapping", len(dev_files))
+    report("reading")
 
     notes: list[str] = []
     embedder = _embedder(job, deps, queue, local_only, notes)
@@ -736,36 +901,44 @@ def run_mapping(
     if local_namespace:
         context += f"\n\n<local_terms>\nDeclare local terms under {local_namespace}\n</local_terms>"
 
-    def check(data: dict[str, Any]) -> list[str]:
-        return convert_mapping(data, draft, inputs, shortlists, local_namespace=local_namespace)[1]
+    # Terms the model's tools returned: it may choose them like the shortlist's.
+    searched: dict[str, Candidate] = {}
+    tools = (
+        mapping_tools(job, deps, queue, versions, embedder, searched)
+        if deps.models.supports_tools(provider.name)
+        else []
+    )
 
-    label = "draft-mapping"
+    def chosen() -> list[Candidate] | None:
+        return list(searched.values()) if tools else None
+
+    def check(data: dict[str, Any]) -> list[str]:
+        return convert_mapping(
+            data, draft, inputs, shortlists, local_namespace=local_namespace, searched=chosen()
+        )[1]
+
     limit = drafting.output_limit(deps, model_ref)
-    try:
-        result = run_extraction(
-            extraction_id=label,
-            provider=provider,
-            model_id=model_id,
-            prompt=f"{context}\n\n{MAPPING_INSTRUCTIONS}",
-            schema=MAPPING_SCHEMA,
-            max_attempts=2,
-            max_tokens=limit,
-            system=drafting.DRAFT_SYSTEM,
-            check=check,
-        )
-    except OutputTruncatedError as exc:
-        drafting._audit(deps, job, label, exc.attempts)
-        raise DocumentError(drafting.truncated_reason(limit)) from exc
-    except ExtractionFailedError as exc:
-        drafting._audit(deps, job, label, exc.attempts)
-        raise DocumentError(str(exc)) from exc
-    except RefusalError as exc:
-        raise DocumentError(f"drafting model refused: {exc}") from exc
-    except ContextExceededError as exc:  # a retry would repeat it
-        raise DocumentError(drafting.context_reason(limit)) from exc
-    drafting._audit(deps, job, label, result.attempts)
+    result = drafting.ask(
+        job,
+        deps,
+        log_to=drafting.DraftLog(deps, job, "mapping", model_ref),
+        label="draft-mapping",
+        provider=provider,
+        model_id=model_id,
+        prompt=f"{context}\n\n{MAPPING_INSTRUCTIONS}" + (MAPPING_TOOLS_NOTE if tools else ""),
+        schema=MAPPING_SCHEMA,
+        limit=limit,
+        check=check,
+        tools=tools,
+        progress=drafting.CallProgress(report, tools=bool(tools)),
+    )
     body, _ = convert_mapping(
-        result.data, draft, inputs, shortlists, local_namespace=local_namespace
+        result.data,
+        draft,
+        inputs,
+        shortlists,
+        local_namespace=local_namespace,
+        searched=chosen(),
     )
     body["notes"] = "\n".join(n for n in [body["notes"].strip(), *notes] if n)
     last = result.attempts[-1]

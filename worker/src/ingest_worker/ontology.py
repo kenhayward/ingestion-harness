@@ -522,6 +522,11 @@ class OntologyStore(Protocol):
         (trimmed, any case); None if there is none."""
         ...
 
+    def term(self, versions: list[tuple[str, int]], iri: str) -> Term | None:
+        """The term `iri` in one of `versions` (the mapping stage's term lookup); None if none
+        of them holds it."""
+        ...
+
     def local_only(self, ontology_id: str) -> bool:
         """The ontology may only be sent to local models."""
         ...
@@ -835,6 +840,21 @@ class PgOntologyStore:
             self.save(oid, 1, parsed)
             before_commit(oid, 1)
         return oid, 1
+
+    def term(self, versions: list[tuple[str, int]], iri: str) -> Term | None:
+        if not versions:
+            return None
+        row = self._conn.execute(
+            f"""SELECT {_READ_COLUMNS}
+                  FROM ontology_terms t
+                  JOIN unnest(%(ids)s::text[], %(vs)s::int[]) AS p(id, v)
+                    ON t.ontology_id = p.id AND t.version = p.v
+                 WHERE t.iri = %(iri)s
+                 ORDER BY t.ontology_id, t.version, t.kind
+                 LIMIT 1""",
+            {"ids": [v[0] for v in versions], "vs": [v[1] for v in versions], "iri": iri},
+        ).fetchone()
+        return _read_term(row) if row else None
 
     def concept_by_label(
         self, versions: list[tuple[str, int]], scheme: str, label: str

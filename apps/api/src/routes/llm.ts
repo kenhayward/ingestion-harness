@@ -140,8 +140,9 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
           'Change an LLM endpoint',
           md`
             **Admins only.** Changes the kind, base URL, \`location\` (what the data
-            policy allows), enabled flag or key (\`apiKey\`: a new one, stored encrypted, or
-            \`null\` to remove it). The edit is recorded (\`editedAt\`, \`updatedBy\`) and
+            policy allows), enabled flag, \`toolCalls\` (whether Workbench drafting may use
+            tools on it; off: single replies, as before tools) or key (\`apiKey\`: a new one,
+            stored encrypted, or \`null\` to remove it). The edit is recorded (\`editedAt\`, \`updatedBy\`) and
             \`.env\` no longer changes the endpoint. Disabling an endpoint an alias uses is
             refused.
           `,

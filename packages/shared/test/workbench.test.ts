@@ -5,6 +5,8 @@ import {
   EMPTY_BRIEF,
   SurveyBodySchema,
   draftingKey,
+  draftLogKey,
+  runAttemptKey,
   exportKey,
   JobSummarySchema,
   PreparedTextSchema,
@@ -156,6 +158,11 @@ describe('segmentation contracts', () => {
 describe('drafting contracts', () => {
   it('keys a drafting result by project and job (mirrors worker storage.py)', () => {
     expect(draftingKey('letter', 'j1')).toBe('drafting/letter/j1.json');
+  });
+
+  it("keys a drafting job's model log, and an older run's attempt audit (mirrors storage.py)", () => {
+    expect(draftLogKey('j1')).toBe('j1/draft-log.json');
+    expect(runAttemptKey('j1', 'draft-survey', 2)).toBe('j1/draft-survey/attempt-2.json');
   });
 
   it('names an export bundle in the runs bucket (mirrors worker storage.py)', () => {

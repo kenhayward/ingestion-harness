@@ -298,7 +298,7 @@ class LiveModels:
 
 _ENDPOINT_COLUMNS = (
     "kind, base_url, location, api_key_env, api_key_required, discover, model_filter, options,"
-    " enabled"
+    " enabled, tool_calls"
 )
 
 
@@ -315,12 +315,13 @@ class PgLlmConfigStore:
                 # The IS DISTINCT FROM guard keeps an unchanged .env from moving the version.
                 self._conn.execute(
                     f"""INSERT INTO llm_endpoints (name, {_ENDPOINT_COLUMNS}, source)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'env')
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'env')
                         ON CONFLICT (name) DO UPDATE
                           SET ({_ENDPOINT_COLUMNS}, updated_at) = (
                                 EXCLUDED.kind, EXCLUDED.base_url, EXCLUDED.location,
                                 EXCLUDED.api_key_env, EXCLUDED.api_key_required, EXCLUDED.discover,
-                                EXCLUDED.model_filter, EXCLUDED.options, EXCLUDED.enabled, now())
+                                EXCLUDED.model_filter, EXCLUDED.options, EXCLUDED.enabled,
+                                EXCLUDED.tool_calls, now())
                         WHERE llm_endpoints.source = 'env' AND llm_endpoints.edited_at IS NULL
                           AND ({_qualified("llm_endpoints")}) IS DISTINCT FROM
                               ({_qualified("EXCLUDED")})""",
@@ -335,6 +336,7 @@ class PgLlmConfigStore:
                         e.model_filter,
                         Jsonb(e.options),
                         e.enabled,
+                        e.tool_calls,
                     ),
                 )
             removed = [
@@ -428,9 +430,10 @@ class PgLlmConfigStore:
                     "modelFilter": r[7],
                     "options": r[8] or {},
                     "enabled": r[9],
-                    "apiKeyEnc": r[10],
-                    "models": list(r[11]),
-                    "maxOutputTokens": r[12] or {},
+                    "toolCalls": r[10],
+                    "apiKeyEnc": r[11],
+                    "models": list(r[12]),
+                    "maxOutputTokens": r[13] or {},
                     "optional": True,
                 }
             )

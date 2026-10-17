@@ -194,6 +194,13 @@ Model selection precedence: job override (UI picker) → spec `extractions[].mod
 resolution (`default`, `fast`, …) → `provider/model-id`. Discovery runs at worker start and every
 `DISCOVERY_INTERVAL_S`; static `models:` entries are always offered even if discovery fails.
 
+Workbench drafting may also hold a conversation with tools (`converse`, `tool_loop.py`): the
+sections stage tests anchors on the dev samples, revise also reads more pages of a dev sample,
+and mapping searches the pinned ontologies, before each answers through a `submit` tool. An
+admin turns it off per endpoint (*Tool calls*); production extraction never uses tools. Every
+drafting run writes a model log (`{job}/draft-log.json`), shown as the proposal's *Model log*.
+See [ADR 0016](adr/0016-tools-in-drafting.md).
+
 ## Failure handling
 
 | Failure | Classification | Outcome |

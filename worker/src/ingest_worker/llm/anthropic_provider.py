@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from typing import Any, Literal
 
 import anthropic
@@ -10,12 +11,18 @@ from .base import (
     CompletionRequest,
     CompletionResult,
     ContextExceededError,
+    ConversationRequest,
     LLMError,
+    Message,
     ModelDescriptor,
     RefusalError,
     TokenCallback,
     TokenCounter,
+    ToolCall,
+    ToolSpec,
+    TurnResult,
     VisionRequest,
+    dump_echo,
     is_context_exceeded,
 )
 
@@ -99,12 +106,58 @@ class AnthropicProvider:
             params["output_config"] = {"effort": self._effort}
         return self._send(params)
 
+    def converse(
+        self, model: str, request: ConversationRequest, on_tokens: TokenCallback | None = None
+    ) -> TurnResult:
+        """One turn of a conversation with tools (Workbench drafting). No JSON format: the
+        answer arrives as the `submit` tool's arguments, held to its schema by `strict`."""
+        params: dict[str, Any] = {
+            "model": model,
+            "max_tokens": request.max_tokens,
+            "system": request.system,
+            "messages": [_message(m) for m in request.messages],
+            "tools": [_tool(t) for t in request.tools],
+            "tool_choice": {"type": "auto"},
+        }
+        if self._effort:
+            params["output_config"] = {"effort": self._effort}
+        message = self._final(params, on_tokens)
+        calls = tuple(
+            ToolCall(b.id, b.name, dict(b.input), json.dumps(b.input))
+            for b in message.content
+            if b.type == "tool_use"
+        )
+        return TurnResult(
+            text="".join(b.text for b in message.content if b.type == "text"),
+            tool_calls=calls,
+            model=message.model,
+            stop_reason=message.stop_reason,
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+            truncated=message.stop_reason == "max_tokens",
+            echo=dump_echo(list(message.content)),
+        )
+
     def _send(
         self, params: dict[str, Any], on_tokens: TokenCallback | None = None
     ) -> CompletionResult:
-        # Streamed and collected with get_final_message(): large output budgets (64K) can run
-        # long, and the SDK refuses non-streaming requests it estimates exceed ~10 minutes.
-        # With `on_tokens`, the text and thinking deltas are counted on the way.
+        message = self._final(params, on_tokens)
+        text = next((b.text for b in message.content if b.type == "text"), "")
+        return CompletionResult(
+            text=text,
+            model=message.model,
+            stop_reason=message.stop_reason,
+            truncated=message.stop_reason == "max_tokens",
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+            raw={"id": message.id},
+        )
+
+    def _final(self, params: dict[str, Any], on_tokens: TokenCallback | None) -> Any:
+        """The streamed reply, collected with get_final_message(): large output budgets (64K)
+        can run long, and the SDK refuses non-streaming requests it estimates exceed ~10
+        minutes. With `on_tokens`, the text, thinking and tool-argument deltas are counted on
+        the way. A refusal raises."""
         try:
             if self._server_fallbacks:
                 stream: Any = self._client.beta.messages.stream(
@@ -120,6 +173,7 @@ class AnthropicProvider:
                             delta = event.delta
                             counter.add(getattr(delta, "text", None))
                             counter.add(getattr(delta, "thinking", None))
+                            counter.add(getattr(delta, "partial_json", None))
                 message: Any = s.get_final_message()
         except anthropic.APIStatusError as exc:
             if is_context_exceeded(exc.message, exc.body):
@@ -134,14 +188,45 @@ class AnthropicProvider:
             details = getattr(message, "stop_details", None)
             category = getattr(details, "category", None)
             raise RefusalError(f"model refused the request (category={category})")
+        return message
 
-        text = next((b.text for b in message.content if b.type == "text"), "")
-        return CompletionResult(
-            text=text,
-            model=message.model,
-            stop_reason=message.stop_reason,
-            truncated=message.stop_reason == "max_tokens",
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
-            raw={"id": message.id},
+
+def _tool(spec: ToolSpec) -> dict[str, Any]:
+    tool: dict[str, Any] = {
+        "name": spec.name,
+        "description": spec.description,
+        "input_schema": spec.input_schema,
+    }
+    if spec.strict:
+        tool["strict"] = True
+    return tool
+
+
+def _message(message: Message) -> dict[str, Any]:
+    """A conversation message as the Messages API takes it: tool results first in a user turn;
+    an assistant turn sent back exactly as it came (thinking blocks must be)."""
+    if message.role == "assistant":
+        if message.echo is not None:
+            return {"role": "assistant", "content": message.echo}
+        blocks: list[dict[str, Any]] = (
+            [{"type": "text", "text": message.text}] if message.text else []
         )
+        blocks += [
+            {"type": "tool_use", "id": c.id, "name": c.name, "input": c.input or {}}
+            for c in message.tool_calls
+        ]
+        return {"role": "assistant", "content": blocks}
+    if not message.tool_results:
+        return {"role": "user", "content": _content(message.text, message.images)}
+    content: list[dict[str, Any]] = [
+        {
+            "type": "tool_result",
+            "tool_use_id": r.call_id,
+            "content": r.content,
+            "is_error": r.is_error,
+        }
+        for r in message.tool_results
+    ]
+    if message.text:
+        content.append({"type": "text", "text": message.text})
+    return {"role": "user", "content": content}

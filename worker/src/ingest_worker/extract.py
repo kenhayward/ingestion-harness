@@ -33,6 +33,8 @@ class ExtractionResult:
     attempts: list[Attempt] = field(default_factory=list)
     #: Reused from the step cache: no model call was made and `attempts` is empty.
     cached: bool = False
+    #: Tool calls the model made before answering (drafting with tools; 0 otherwise).
+    tool_calls: int = 0
 
 
 class ExtractionFailedError(Exception):
@@ -88,14 +90,18 @@ def run_extraction(
     on_attempt: Callable[[int], None] | None = None,
     on_tokens: Callable[[int], None] | None = None,
     retry_note: str = "Return corrected JSON only.",
+    transcript: list[dict[str, Any]] | None = None,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out. `check` adds rules JSON Schema
     cannot express; its errors are fed back the same way. `on_attempt(n)` is called before each
     model call (progress reporting). With `on_tokens` the reply streams and its estimated
     tokens so far are reported as they arrive (providers that cannot stream answer whole).
-    `retry_note` ends a retry prompt, after the errors."""
+    `retry_note` ends a retry prompt, after the errors. `transcript` (drafting's model log), when
+    given, is appended to as the calls go: the prompt, each reply, each rejection."""
     validator = Draft202012Validator(schema)
+    entries: list[dict[str, Any]] = transcript if transcript is not None else []
+    entries.append({"kind": "prompt", "text": prompt, "images": len(images)})
     # Only a counting caller asks to stream: every other call is made exactly as before.
     counting = {"on_tokens": on_tokens} if on_tokens is not None else {}
     attempts: list[Attempt] = []
@@ -114,6 +120,14 @@ def run_extraction(
                 max_tokens=max_tokens,
             ),
             **counting,
+        )
+        entries.append(
+            {
+                "kind": "reply",
+                "text": result.text,
+                "inputTokens": result.input_tokens,
+                "outputTokens": result.output_tokens,
+            }
         )
         if result.truncated:
             attempts.append(
@@ -139,6 +153,9 @@ def run_extraction(
         )
         if data is not None:
             return ExtractionResult(data, f"{provider.name}/{model_id}", attempts)
+        entries.append({"kind": "rejected", "errors": errors})
+        if n < max_attempts:
+            entries.append({"kind": "note", "text": "Asked again with these errors."})
         current_prompt = (
             f"{prompt}\n\nYour previous response was rejected:\n<previous_response>\n"
             f"{result.text}\n</previous_response>\n<validation_errors>\n"

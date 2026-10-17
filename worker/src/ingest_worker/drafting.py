@@ -11,7 +11,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -24,7 +24,7 @@ from .extract import (
     OutputTruncatedError,
     run_extraction,
 )
-from .llm.base import ContextExceededError, RefusalError
+from .llm.base import ContextExceededError, LLMProvider, RefusalError, ToolCapable
 from .llm.registry import ModelResolutionError
 from .mapping_stage import MAPPING as MAPPING_STAGE
 from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queue_suggestions
@@ -36,8 +36,15 @@ from .pipeline import (
     enforce_data_policy,
 )
 from .queue import ClaimedJob, JobQueue
-from .storage import drafting_key, prepared_text_key, run_key
+from .storage import draft_log_key, drafting_key, prepared_text_key
+from .tool_loop import Tool, run_tool_extraction
 from .workbench import SegmentDocument, segment_with_timeout
+
+#: What tells a tool-using model how to answer (added after the stage's instructions).
+TOOLS_NOTE = (
+    "\n\nYou may call the tools offered to check your work before answering. Answer by calling "
+    "submit with the JSON described above: it is the only way to answer."
+)
 
 MAX_SAMPLE_CHARS = 40_000
 MAX_CONTEXT_SAMPLES = 8
@@ -97,24 +104,181 @@ def progress_reporter(
         attempt: int | None = None,
         round: int = 1,
         tokens: int | None = None,
+        tool: dict[str, str] | None = None,
+        tool_calls: int | None = None,
     ) -> None:
-        advisory_event(
-            job,
-            queue,
-            DRAFT_PROGRESS,
-            {
-                "stage": stage,
-                "phase": phase,
-                "samples": samples,
-                "attempt": attempt,
-                "of": DRAFT_ATTEMPTS if attempt is not None else None,
-                "round": round,
-                # A streamed reply's estimated tokens so far (model phase only).
-                "tokens": tokens,
-            },
-        )
+        data: dict[str, Any] = {
+            "stage": stage,
+            "phase": phase,
+            "samples": samples,
+            "attempt": attempt,
+            "of": DRAFT_ATTEMPTS if attempt is not None else None,
+            "round": round,
+            # A streamed reply's estimated tokens so far (model phase only).
+            "tokens": tokens,
+        }
+        if tool_calls is not None:  # a conversation with tools: the running tool and the count
+            data["tool"] = tool
+            data["toolCalls"] = tool_calls
+        advisory_event(job, queue, DRAFT_PROGRESS, data)
 
     return report
+
+
+class CallProgress:
+    """Reports a drafting model call as it goes: each attempt, its streamed reply's tokens now
+    and then (TokenThrottle) and, in a conversation with tools, each tool as it starts (at once,
+    with the tokens so far) and the number of tool calls."""
+
+    def __init__(self, report: Callable[..., None], *, round: int = 1, tools: bool = False) -> None:
+        self._report = report
+        self._round = round
+        self._tools = tools
+        self._attempt = 1
+        self._tokens: int | None = None
+        self._tool: dict[str, str] | None = None
+        self._calls = 0
+        self._throttle = TokenThrottle(lambda _t: None)
+
+    def _emit(self, tokens: int | None) -> None:
+        extra = {"tool": self._tool, "tool_calls": self._calls} if self._tools else {}
+        self._report("model", attempt=self._attempt, round=self._round, tokens=tokens, **extra)
+
+    def on_attempt(self, n: int) -> None:
+        self._attempt = n
+        if not self._tools:  # a new call counts from 0; a conversation's count goes on
+            self._tokens = None
+        self._emit(self._tokens)
+        self._throttle = TokenThrottle(self._emit)
+
+    def on_tokens(self, tokens: int) -> None:
+        self._tokens = tokens
+        self._throttle(tokens)
+
+    def on_tool(self, name: str | None, summary: str, calls: int) -> None:
+        self._tool = {"name": name, "summary": summary} if name else None
+        self._calls = calls
+        self._emit(self._tokens)
+
+
+class DraftLog:
+    """A drafting job's model log (TS DraftLogSchema, `draftLogKey`): each proposal round's
+    prompt, replies, tool calls and results, rejections and the error that ended it, written to
+    the runs bucket after every round, whatever its outcome. The Workbench shows it as the
+    proposal's Model log."""
+
+    def __init__(self, deps: PipelineDeps, job: ClaimedJob, stage: str, model: str) -> None:
+        self._deps = deps
+        self._job = job
+        self._stage = stage
+        self._model = model
+        self.tools = False
+        self.rounds: list[dict[str, Any]] = []
+
+    def round(self, label: str) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        self.rounds.append({"label": label, "entries": entries})
+        return entries
+
+    def body(self) -> dict[str, Any]:
+        return {
+            "stage": self._stage,
+            "model": self._model,
+            "tools": self.tools,
+            "rounds": self.rounds,
+        }
+
+    def write(self) -> None:
+        """Advisory: a log that cannot be written never fails the stage."""
+        try:
+            self._deps.store.put(
+                self._deps.buckets.runs,
+                draft_log_key(self._job.id),
+                json.dumps(self.body()).encode(),
+                "application/json",
+            )
+        except Exception as exc:
+            log.warning("job %s: the model log could not be written: %s", self._job.id, exc)
+
+
+def _failure(exc: Exception, limit: int) -> DocumentError | None:
+    """What a designer reads when a proposal call fails; None: raise it as it is (a retry)."""
+    if isinstance(exc, OutputTruncatedError):
+        return DocumentError(truncated_reason(limit))
+    if isinstance(exc, ExtractionFailedError):
+        return DocumentError(str(exc))
+    if isinstance(exc, RefusalError):
+        return DocumentError(f"drafting model refused: {exc}")
+    if isinstance(exc, ContextExceededError):  # a retry would repeat it
+        return DocumentError(context_reason(limit))
+    return None
+
+
+def ask(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    *,
+    log_to: DraftLog,
+    label: str,
+    provider: LLMProvider,
+    model_id: str,
+    prompt: str,
+    schema: dict[str, Any],
+    limit: int,
+    check: Callable[[dict[str, Any]], list[str]] | None,
+    tools: list[Tool],
+    progress: CallProgress,
+    retry_note: str = "Return corrected JSON only.",
+) -> ExtractionResult:
+    """One drafting or mapping proposal: a conversation with `tools` when there are any (the
+    endpoint allows them), else single replies as before. Errors become the DocumentErrors a
+    designer reads; the round goes into the model log either way."""
+    entries = log_to.round(label)
+    log_to.tools = log_to.tools or bool(tools)
+    try:
+        if tools:
+            result = run_tool_extraction(
+                extraction_id=label,
+                provider=cast(ToolCapable, provider),
+                model_id=model_id,
+                prompt=prompt + TOOLS_NOTE,
+                schema=schema,
+                max_attempts=DRAFT_ATTEMPTS,
+                tools=tools,
+                max_tokens=limit,
+                system=DRAFT_SYSTEM,
+                check=check,
+                on_attempt=progress.on_attempt,
+                on_tokens=progress.on_tokens,
+                on_tool=progress.on_tool,
+                retry_note=retry_note,
+                transcript=entries,
+            )
+        else:
+            result = run_extraction(
+                extraction_id=label,
+                provider=provider,
+                model_id=model_id,
+                prompt=prompt,
+                schema=schema,
+                max_attempts=DRAFT_ATTEMPTS,
+                max_tokens=limit,
+                system=DRAFT_SYSTEM,
+                check=check,
+                on_attempt=progress.on_attempt,
+                on_tokens=progress.on_tokens,
+                retry_note=retry_note,
+                transcript=entries,
+            )
+    except Exception as exc:
+        failure = _failure(exc, limit)
+        entries.append({"kind": "error", "message": str(failure or exc)})
+        log_to.write()
+        if failure is not None:
+            raise failure from exc
+        raise
+    log_to.write()
+    return result
 
 
 def output_limit(deps: PipelineDeps, model_ref: str) -> int:
@@ -490,6 +654,24 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             },
         )
     draft = params.draft or {}
+    tools: list[Tool] = []
+    if deps.models.supports_tools(provider.name):
+        from .draft_tools import drafting_tools, sample_pages_tool
+
+        tools = drafting_tools(
+            stage.id,
+            samples=samples,
+            draft=draft,
+            pages_tool=lambda: sample_pages_tool(
+                job,
+                deps,
+                queue,
+                stage=stage.id,
+                model_ref=model_ref,
+                external=deps.models.location(provider.name) == "external",
+                samples=params.samples,
+            ),
+        )
 
     def check(data: dict[str, Any]) -> list[str]:
         body, errors = stage.convert(data) if stage.convert else (data, [])
@@ -499,40 +681,24 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             errors = stage.check(body, draft)
         return errors
 
+    model_log = DraftLog(deps, job, stage.id, model_ref)
+
     def propose(prompt: str, label: str, round: int = 1) -> tuple[ExtractionResult, dict[str, Any]]:
-        # Each model call reports when it starts, then its streamed reply's tokens now and then.
-        tokens = [TokenThrottle(lambda _t: None)]
-
-        def on_attempt(n: int) -> None:
-            report("model", attempt=n, round=round)
-            tokens[0] = TokenThrottle(lambda t: report("model", attempt=n, round=round, tokens=t))
-
-        try:
-            result = run_extraction(
-                extraction_id=label,
-                provider=provider,
-                model_id=model_id,
-                prompt=prompt,
-                schema=stage.schema,
-                max_attempts=DRAFT_ATTEMPTS,
-                max_tokens=limit,
-                system=DRAFT_SYSTEM,
-                check=check if (stage.convert or stage.check) else None,
-                on_attempt=on_attempt,
-                on_tokens=lambda t: tokens[0](t),
-                retry_note=DRAFT_RETRY_NOTE,
-            )
-        except OutputTruncatedError as exc:
-            _audit(deps, job, label, exc.attempts)
-            raise DocumentError(truncated_reason(limit)) from exc
-        except ExtractionFailedError as exc:
-            _audit(deps, job, label, exc.attempts)
-            raise DocumentError(str(exc)) from exc
-        except RefusalError as exc:
-            raise DocumentError(f"drafting model refused: {exc}") from exc
-        except ContextExceededError as exc:  # a retry would repeat it
-            raise DocumentError(context_reason(limit)) from exc
-        _audit(deps, job, label, result.attempts)
+        result = ask(
+            job,
+            deps,
+            log_to=model_log,
+            label=label,
+            provider=provider,
+            model_id=model_id,
+            prompt=prompt,
+            schema=stage.schema,
+            limit=limit,
+            check=check if (stage.convert or stage.check) else None,
+            tools=tools,
+            progress=CallProgress(report, round=round, tools=bool(tools)),
+            retry_note=DRAFT_RETRY_NOTE,
+        )
         body = stage.convert(result.data)[0] if stage.convert else result.data
         if stage.fit is not None:
             body = stage.fit(body, draft)
@@ -688,14 +854,3 @@ def _segment_document(draft: dict[str, Any], body: dict[str, Any]) -> SegmentDoc
     return SegmentDocument.model_validate(
         {k: block[k] for k in ("sections", "copies", "pageMarkers") if k in block}
     )
-
-
-def _audit(deps: PipelineDeps, job: ClaimedJob, label: str, attempts: list[Any]) -> None:
-    for a in attempts:
-        record = {"prompt": a.prompt, "response": a.response, "errors": a.errors}
-        deps.store.put(
-            deps.buckets.runs,
-            run_key(job.id, label, a.n),
-            json.dumps(record).encode(),
-            "application/json",
-        )

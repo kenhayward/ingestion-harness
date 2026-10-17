@@ -17,6 +17,8 @@ export interface NewEndpoint {
   kind: ProviderKind;
   baseUrl: string | null;
   location: 'local' | 'external';
+  /** Drafting may use tools on it; absent = on. */
+  toolCalls?: boolean;
   /** Already encrypted (`v1:…`), or null. */
   apiKeyEnc: string | null;
   models: string[];
@@ -27,6 +29,7 @@ export interface EndpointPatch {
   baseUrl?: string | null;
   location?: 'local' | 'external';
   enabled?: boolean;
+  toolCalls?: boolean;
   /** Encrypted key to store, null to remove it, undefined to keep it. */
   apiKeyEnc?: string | null;
 }
@@ -104,6 +107,7 @@ interface StoredEndpoint {
   baseUrl: string | null;
   location: 'local' | 'external';
   enabled: boolean;
+  toolCalls: boolean;
   source: 'env' | 'ui';
   editedAt: string | null;
   updatedBy: string | null;
@@ -129,6 +133,7 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
     this.endpoints.set(e.name, {
       ...e,
       enabled: true,
+      toolCalls: true,
       source: 'env',
       editedAt: null,
       updatedBy: null,
@@ -203,6 +208,7 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
     const { models, ...rest } = input;
     this.endpoints.set(input.name, {
       ...rest,
+      toolCalls: input.toolCalls ?? true,
       enabled: true,
       source: 'ui',
       editedAt: new Date().toISOString(),
@@ -316,6 +322,7 @@ interface EndpointRow {
   base_url: string | null;
   location: 'local' | 'external';
   enabled: boolean;
+  tool_calls: boolean;
   source: 'env' | 'ui';
   edited_at: Date | null;
   updated_by: string | null;
@@ -325,7 +332,7 @@ interface EndpointRow {
 }
 
 const ENDPOINT_SELECT = `
-  SELECT e.name, e.kind, e.base_url, e.location, e.enabled, e.source, e.edited_at, e.updated_by,
+  SELECT e.name, e.kind, e.base_url, e.location, e.enabled, e.tool_calls, e.source, e.edited_at, e.updated_by,
          e.api_key_env, e.api_key_enc IS NOT NULL AS key_set,
          COALESCE((SELECT json_agg(json_build_object(
                       'modelId', m.model_id, 'displayName', m.display_name,
@@ -340,6 +347,7 @@ const toView = (r: EndpointRow): LlmEndpointView => ({
   baseUrl: r.base_url,
   location: r.location,
   enabled: r.enabled,
+  toolCalls: r.tool_calls,
   source: r.source,
   editedAt: r.edited_at ? r.edited_at.toISOString() : null,
   updatedBy: r.updated_by,
@@ -369,10 +377,18 @@ export class PgLlmConfigRepo implements LlmConfigRepo {
       await client.query('BEGIN');
       const { rowCount } = await client.query(
         `INSERT INTO llm_endpoints (name, kind, base_url, location, api_key_enc, api_key_required,
-                                    source, edited_at, updated_by)
-         VALUES ($1, $2, $3, $4, $5, false, 'ui', now(), $6)
+                                    source, edited_at, updated_by, tool_calls)
+         VALUES ($1, $2, $3, $4, $5, false, 'ui', now(), $6, $7)
          ON CONFLICT (name) DO NOTHING`,
-        [input.name, input.kind, input.baseUrl, input.location, input.apiKeyEnc, by],
+        [
+          input.name,
+          input.kind,
+          input.baseUrl,
+          input.location,
+          input.apiKeyEnc,
+          by,
+          input.toolCalls ?? true,
+        ],
       );
       if (!rowCount) {
         await client.query('ROLLBACK');
@@ -397,6 +413,7 @@ export class PgLlmConfigRepo implements LlmConfigRepo {
       baseUrl: 'base_url',
       location: 'location',
       enabled: 'enabled',
+      toolCalls: 'tool_calls',
       apiKeyEnc: 'api_key_enc',
     } as const;
     for (const [key, col] of Object.entries(column)) {

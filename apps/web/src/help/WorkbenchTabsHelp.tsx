@@ -309,6 +309,49 @@ export function WbReviseHelp() {
   );
 }
 
+export function DraftModelLogHelp() {
+  return (
+    <>
+      <p>
+        A proposal's <strong>Model log</strong> shows what the drafting model was sent and what it
+        did while it made the proposal: useful when a proposal looks wrong, or a stage failed.
+      </p>
+      <h3>Rounds</h3>
+      <p>
+        Each round is one go at the proposal. The Sections stage has a second, the{' '}
+        <strong>anchor round</strong>, when anchors it proposed missed on the dev samples.
+      </p>
+      <h3>What a round holds</h3>
+      <ul>
+        <li>
+          <strong>Prompt sent</strong>: everything the model read, the brief, the draft and the dev
+          samples' text. Holdout samples are never in it.
+        </li>
+        <li>
+          <strong>Reply</strong>: what it answered, with the tokens it used.
+        </li>
+        <li>
+          <strong>Tool calls</strong>: when the model's endpoint allows tools, it can check its work
+          before answering: try section anchors on the dev samples, read more pages of a dev sample,
+          or search the pinned ontologies and look a term up. Each call shows what it asked for and
+          what came back.
+        </li>
+        <li>
+          <strong>Answer rejected</strong>: an answer that broke the recipe's rules, with the
+          reasons the model was given to fix it.
+        </li>
+        <li>
+          <strong>Stopped</strong>: why a failed run ended.
+        </li>
+      </ul>
+      <p>
+        Runs from before the full log show prompts, replies and rejections only. An admin turns tool
+        calls off for an endpoint under Administration &gt; Models.
+      </p>
+    </>
+  );
+}
+
 export function WbRecipeHelp() {
   return (
     <>

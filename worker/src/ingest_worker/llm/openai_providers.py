@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import openai
 
@@ -12,15 +13,23 @@ from .base import (
     CompletionRequest,
     CompletionResult,
     ContextExceededError,
+    ConversationRequest,
     LLMError,
     ModelDescriptor,
     ProviderKind,
     RefusalError,
     TokenCallback,
     TokenCounter,
+    ToolCall,
+    ToolSpec,
+    TurnResult,
     VisionRequest,
+    dump_echo,
     is_context_exceeded,
+    parse_tool_arguments,
 )
+
+_R = TypeVar("_R")
 
 #: How to ask an OpenAI-compatible server for JSON. Many local servers lack json_schema.
 ResponseFormat = Literal["json_schema", "json_object", "none"]
@@ -70,6 +79,82 @@ def _server_message(exc: openai.APIStatusError) -> str:
     return exc.message
 
 
+def _error_text(content: str, is_error: bool) -> str:
+    """A tool result as text: OpenAI-compatible APIs have no error flag, so it is said."""
+    return f"Error: {content}" if is_error else content
+
+
+def _call(id: str, name: str, raw: str | None) -> ToolCall:
+    raw = raw or ""
+    return ToolCall(id, name, parse_tool_arguments(raw), raw)
+
+
+def _arguments(call: ToolCall) -> str:
+    return call.raw or json.dumps(call.input or {})
+
+
+def _chat_messages(request: ConversationRequest) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = [{"role": "system", "content": request.system}]
+    for m in request.messages:
+        if m.role == "assistant":
+            entry: dict[str, Any] = {"role": "assistant", "content": m.text or None}
+            if m.tool_calls:
+                entry["tool_calls"] = [
+                    {
+                        "id": c.id,
+                        "type": "function",
+                        "function": {"name": c.name, "arguments": _arguments(c)},
+                    }
+                    for c in m.tool_calls
+                ]
+            out.append(entry)
+            continue
+        out += [
+            {
+                "role": "tool",
+                "tool_call_id": r.call_id,
+                "content": _error_text(r.content, r.is_error),
+            }
+            for r in m.tool_results
+        ]
+        if m.text or not m.tool_results:
+            out.append({"role": "user", "content": _chat_content(m.text, m.images)})
+    return out
+
+
+def _responses_messages(request: ConversationRequest) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for m in request.messages:
+        if m.role == "assistant":
+            if m.echo is not None:
+                out += m.echo
+                continue
+            if m.text:
+                out.append({"role": "assistant", "content": m.text})
+            out += [
+                {
+                    "type": "function_call",
+                    "call_id": c.id,
+                    "name": c.name,
+                    "arguments": _arguments(c),
+                }
+                for c in m.tool_calls
+            ]
+            continue
+        out += [
+            {
+                "type": "function_call_output",
+                "call_id": r.call_id,
+                "output": _error_text(r.content, r.is_error),
+            }
+            for r in m.tool_results
+        ]
+        if m.text or not m.tool_results:
+            content = _responses_input(m.text, m.images)
+            out += content if isinstance(content, list) else [{"role": "user", "content": content}]
+    return out
+
+
 class _OpenAIBase:
     kind: ProviderKind
 
@@ -100,9 +185,9 @@ class _OpenAIBase:
         self,
         params: dict[str, Any],
         on_tokens: TokenCallback | None,
-        stream: Callable[[dict[str, Any], TokenCounter], CompletionResult],
-        whole: Callable[[dict[str, Any]], CompletionResult],
-    ) -> CompletionResult:
+        stream: Callable[[dict[str, Any], TokenCounter], _R],
+        whole: Callable[[dict[str, Any]], _R],
+    ) -> _R:
         """A call that streams when counting, else (or once the server refused to stream)
         one whole reply."""
         if on_tokens is None or not self._streams:
@@ -121,6 +206,20 @@ class _OpenAIBase:
             result = whole(params)  # the same request whole: a real 400 raises again here
             self._streams = False
             return result
+
+    def _function(self, spec: ToolSpec) -> dict[str, Any]:
+        function: dict[str, Any] = {
+            "name": spec.name,
+            "description": spec.description,
+            "parameters": spec.input_schema,
+        }
+        if spec.strict and self._strict:
+            function["strict"] = True
+        return function
+
+    def _sampling(self, params: dict[str, Any]) -> None:
+        if self._temperature is not None:
+            params["temperature"] = self._temperature
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         """Embeddings in input order (`/v1/embeddings`; LM Studio, vLLM and OpenAI serve it)."""
@@ -171,10 +270,100 @@ class OpenAIChatProvider(_OpenAIBase):
             params["response_format"] = {"type": "json_object"}
         if self._max_tokens_param:
             params[self._max_tokens_param] = request.max_tokens
-        if self._temperature is not None:
-            params["temperature"] = self._temperature
-
+        self._sampling(params)
         return self._counted(params, on_tokens, self._stream, self._create)
+
+    def converse(
+        self, model: str, request: ConversationRequest, on_tokens: TokenCallback | None = None
+    ) -> TurnResult:
+        """One turn of a conversation with tools (Workbench drafting): functions offered, no
+        response_format (the answer arrives as the `submit` function's arguments)."""
+        params: dict[str, Any] = {
+            "model": model,
+            "messages": _chat_messages(request),
+            "tools": [{"type": "function", "function": self._function(t)} for t in request.tools],
+            "tool_choice": "auto",
+        }
+        if self._max_tokens_param:
+            params[self._max_tokens_param] = request.max_tokens
+        self._sampling(params)
+        return self._counted(params, on_tokens, self._stream_turn, self._create_turn)
+
+    def _create_turn(self, params: dict[str, Any]) -> TurnResult:
+        try:
+            resp = self._client.chat.completions.create(**params)
+        except Exception as exc:
+            raise _wrap_errors(exc) from exc
+        choice = resp.choices[0]
+        message = choice.message
+        if getattr(message, "refusal", None):
+            raise RefusalError(f"model refused the request: {message.refusal}")
+        calls = tuple(
+            _call(c.id, c.function.name, c.function.arguments)
+            for c in getattr(message, "tool_calls", None) or []
+        )
+        return TurnResult(
+            text=message.content or "",
+            tool_calls=calls,
+            model=resp.model,
+            stop_reason=choice.finish_reason,
+            truncated=choice.finish_reason == "length",
+            input_tokens=resp.usage.prompt_tokens if resp.usage else None,
+            output_tokens=resp.usage.completion_tokens if resp.usage else None,
+        )
+
+    def _stream_turn(self, params: dict[str, Any], counter: TokenCounter) -> TurnResult:
+        """The turn streamed: content, reasoning and each tool call's arguments (assembled by
+        their index) counted."""
+        chunks = self._client.chat.completions.create(
+            **params, stream=True, stream_options={"include_usage": True}
+        )
+        content: list[str] = []
+        refusal: list[str] = []
+        calls: dict[int, dict[str, Any]] = {}
+        finish: str | None = None
+        model = ""
+        usage: Any = None
+        try:
+            for chunk in chunks:
+                model = model or chunk.model
+                usage = chunk.usage or usage
+                for choice in chunk.choices or []:
+                    delta = choice.delta
+                    if delta.content:
+                        content.append(delta.content)
+                    counter.add(delta.content)
+                    counter.add(getattr(delta, "reasoning_content", None))
+                    counter.add(getattr(delta, "reasoning", None))
+                    if getattr(delta, "refusal", None):
+                        refusal.append(delta.refusal)
+                    for part in getattr(delta, "tool_calls", None) or []:
+                        call = calls.setdefault(part.index, {"id": "", "name": "", "args": []})
+                        call["id"] = call["id"] or (part.id or "")
+                        function = getattr(part, "function", None)
+                        if function is not None:
+                            call["name"] = call["name"] or (function.name or "")
+                            if function.arguments:
+                                call["args"].append(function.arguments)
+                                counter.add(function.arguments)
+                    finish = choice.finish_reason or finish
+        except openai.BadRequestError:
+            raise
+        except Exception as exc:
+            raise _wrap_errors(exc) from exc
+        if refusal:
+            raise RefusalError("model refused the request: " + "".join(refusal))
+        return TurnResult(
+            text="".join(content),
+            tool_calls=tuple(
+                _call(c["id"], c["name"], "".join(c["args"])) for _, c in sorted(calls.items())
+            ),
+            model=model,
+            stop_reason=finish,
+            truncated=finish == "length",
+            input_tokens=usage.prompt_tokens if usage else None,
+            output_tokens=usage.completion_tokens if usage else None,
+        )
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
         params: dict[str, Any] = {
@@ -260,6 +449,7 @@ _COUNTED_DELTAS = frozenset(
         "response.reasoning_text.delta",
         "response.reasoning_summary_text.delta",
         "response.refusal.delta",
+        "response.function_call_arguments.delta",
     }
 )
 
@@ -289,9 +479,7 @@ class OpenAIResponsesProvider(_OpenAIBase):
             }
         elif self._response_format == "json_object":
             params["text"] = {"format": {"type": "json_object"}}
-        if self._temperature is not None:
-            params["temperature"] = self._temperature
-
+        self._sampling(params)
         return self._counted(params, on_tokens, self._stream, self._create)
 
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult:
@@ -304,14 +492,57 @@ class OpenAIResponsesProvider(_OpenAIBase):
             params["temperature"] = request.temperature
         return self._create(params)
 
-    def _create(self, params: dict[str, Any]) -> CompletionResult:
+    def converse(
+        self, model: str, request: ConversationRequest, on_tokens: TokenCallback | None = None
+    ) -> TurnResult:
+        """One turn of a conversation with tools (Workbench drafting). The reply's output items
+        (reasoning, messages, function calls) go back next turn as they came."""
+        params: dict[str, Any] = {
+            "model": model,
+            "instructions": request.system,
+            "input": _responses_messages(request),
+            "tools": [{"type": "function", **self._function(t)} for t in request.tools],
+            "max_output_tokens": request.max_tokens,
+        }
+        self._sampling(params)
+        return self._counted(
+            params,
+            on_tokens,
+            lambda p, counter: self._turn(self._stream_raw(p, counter)),
+            lambda p: self._turn(self._create_raw(p)),
+        )
+
+    def _turn(self, resp: Any) -> TurnResult:
+        result = self._result(resp)
+        calls = tuple(
+            _call(item.call_id, item.name, item.arguments)
+            for item in resp.output or []
+            if getattr(item, "type", None) == "function_call"
+        )
+        return TurnResult(
+            text=result.text or "",
+            tool_calls=calls,
+            model=result.model,
+            stop_reason=result.stop_reason,
+            truncated=result.truncated,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            echo=dump_echo(list(resp.output or [])),
+        )
+
+    def _create_raw(self, params: dict[str, Any]) -> Any:
         try:
-            resp = self._client.responses.create(**params)
+            return self._client.responses.create(**params)
         except Exception as exc:
             raise _wrap_errors(exc) from exc
-        return self._result(resp)
+
+    def _create(self, params: dict[str, Any]) -> CompletionResult:
+        return self._result(self._create_raw(params))
 
     def _stream(self, params: dict[str, Any], counter: TokenCounter) -> CompletionResult:
+        return self._result(self._stream_raw(params, counter))
+
+    def _stream_raw(self, params: dict[str, Any], counter: TokenCounter) -> Any:
         """The same call streamed: text and reasoning deltas counted, the result read from the
         final `response.completed` or `response.incomplete` event's response."""
         events = self._client.responses.create(**params, stream=True)
@@ -331,7 +562,7 @@ class OpenAIResponsesProvider(_OpenAIBase):
             raise _wrap_errors(exc) from exc
         if final is None:
             raise LLMError("openai stream ended without a final response")
-        return self._result(final)
+        return final
 
     def _result(self, resp: Any) -> CompletionResult:
         for item in resp.output or []:

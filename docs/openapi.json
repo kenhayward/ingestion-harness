@@ -38886,6 +38886,33 @@
                                         }
                                       ]
                                     },
+                                    "tool": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "summary": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "summary"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "toolCalls": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
                                     "at": {
                                       "type": "string"
                                     },
@@ -43403,6 +43430,33 @@
                                           }
                                         ]
                                       },
+                                      "tool": {
+                                        "anyOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "name": {
+                                                "type": "string"
+                                              },
+                                              "summary": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "name",
+                                              "summary"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "toolCalls": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
                                       "at": {
                                         "type": "string"
                                       },
@@ -43549,6 +43603,416 @@
                     "error"
                   ],
                   "description": "`project not found`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workbench/projects/{id}/proposals/{pid}/log": {
+      "get": {
+        "operationId": "getProposalLog",
+        "summary": "Read a proposal's model log",
+        "tags": [
+          "Drafting stages & proposals"
+        ],
+        "description": "What the drafting model was sent and answered while it made the proposal, round by\nround (the sections stage's anchor round is a second one): the prompt, each reply,\nthe tools it called (`test_anchors`, `read_sample_pages`, `search_terms`,\n`term_detail`) with what they returned, answers rejected and why, and the error\nthat ended a failed run. Written by the worker after every round, so a running\nproposal shows the rounds finished so far. A run from before the log is rebuilt from\nits per-attempt audit (`legacy`: prompts, replies and rejections only). Prompts hold\nthe dev samples' text, never a holdout sample's.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The project id."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "description": "The proposal id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The model log.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stage": {
+                      "type": "string",
+                      "enum": [
+                        "survey",
+                        "outputs",
+                        "sections",
+                        "steps",
+                        "references",
+                        "revise",
+                        "mapping"
+                      ]
+                    },
+                    "model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tools": {
+                      "type": "boolean"
+                    },
+                    "rounds": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "entries": {
+                            "type": "array",
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "prompt"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "images": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "text",
+                                    "images"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "reply"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "inputTokens": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "outputTokens": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "text",
+                                    "inputTokens",
+                                    "outputTokens"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "toolCall"
+                                      ]
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "input": {},
+                                    "summary": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "id",
+                                    "name",
+                                    "input",
+                                    "summary"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "toolResult"
+                                      ]
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "isError": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "id",
+                                    "name",
+                                    "text",
+                                    "isError"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "rejected"
+                                      ]
+                                    },
+                                    "errors": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "errors"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "note"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "text"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "error"
+                                      ]
+                                    },
+                                    "message": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "message"
+                                  ]
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "entries"
+                        ]
+                      }
+                    },
+                    "legacy": {
+                      "default": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "stage",
+                    "model",
+                    "tools",
+                    "rounds"
+                  ],
+                  "description": "The model log."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`proposal not found`, or `no model log for this run`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`proposal not found`, or `no model log for this run`."
                 }
               }
             }
@@ -45273,6 +45737,33 @@
                                           "type": "null"
                                         }
                                       ]
+                                    },
+                                    "tool": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "summary": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "summary"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "toolCalls": {
+                                      "type": "integer",
+                                      "minimum": 0
                                     },
                                     "at": {
                                       "type": "string"
@@ -54888,6 +55379,9 @@
                       "enabled": {
                         "type": "boolean"
                       },
+                      "toolCalls": {
+                        "type": "boolean"
+                      },
                       "source": {
                         "type": "string",
                         "enum": [
@@ -54959,6 +55453,7 @@
                       "baseUrl",
                       "location",
                       "enabled",
+                      "toolCalls",
                       "source",
                       "editedAt",
                       "updatedBy",
@@ -55154,6 +55649,10 @@
                       "external"
                     ]
                   },
+                  "toolCalls": {
+                    "default": true,
+                    "type": "boolean"
+                  },
                   "apiKey": {
                     "type": "string",
                     "minLength": 1,
@@ -55216,6 +55715,9 @@
                       ]
                     },
                     "enabled": {
+                      "type": "boolean"
+                    },
+                    "toolCalls": {
                       "type": "boolean"
                     },
                     "source": {
@@ -55289,6 +55791,7 @@
                     "baseUrl",
                     "location",
                     "enabled",
+                    "toolCalls",
                     "source",
                     "editedAt",
                     "updatedBy",
@@ -55522,7 +56025,7 @@
         "tags": [
           "Models"
         ],
-        "description": "**Admins only.** Changes the kind, base URL, `location` (what the data\npolicy allows), enabled flag or key (`apiKey`: a new one, stored encrypted, or\n`null` to remove it). The edit is recorded (`editedAt`, `updatedBy`) and\n`.env` no longer changes the endpoint. Disabling an endpoint an alias uses is\nrefused.",
+        "description": "**Admins only.** Changes the kind, base URL, `location` (what the data\npolicy allows), enabled flag, `toolCalls` (whether Workbench drafting may use\ntools on it; off: single replies, as before tools) or key (`apiKey`: a new one,\nstored encrypted, or `null` to remove it). The edit is recorded (`editedAt`, `updatedBy`) and\n`.env` no longer changes the endpoint. Disabling an endpoint an alias uses is\nrefused.",
         "requestBody": {
           "required": true,
           "content": {
@@ -55557,6 +56060,9 @@
                     ]
                   },
                   "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolCalls": {
                     "type": "boolean"
                   },
                   "apiKey": {
@@ -55622,6 +56128,9 @@
                       ]
                     },
                     "enabled": {
+                      "type": "boolean"
+                    },
+                    "toolCalls": {
                       "type": "boolean"
                     },
                     "source": {
@@ -55695,6 +56204,7 @@
                     "baseUrl",
                     "location",
                     "enabled",
+                    "toolCalls",
                     "source",
                     "editedAt",
                     "updatedBy",
@@ -56270,6 +56780,9 @@
                     "enabled": {
                       "type": "boolean"
                     },
+                    "toolCalls": {
+                      "type": "boolean"
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -56341,6 +56854,7 @@
                     "baseUrl",
                     "location",
                     "enabled",
+                    "toolCalls",
                     "source",
                     "editedAt",
                     "updatedBy",
@@ -56690,6 +57204,9 @@
                     "enabled": {
                       "type": "boolean"
                     },
+                    "toolCalls": {
+                      "type": "boolean"
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -56761,6 +57278,7 @@
                     "baseUrl",
                     "location",
                     "enabled",
+                    "toolCalls",
                     "source",
                     "editedAt",
                     "updatedBy",

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
 ProviderKind = Literal["anthropic", "openai-chat", "openai-responses"]
 
@@ -58,6 +59,71 @@ class CompletionResult:
     raw: dict[str, Any] = field(default_factory=dict)
     #: Generation stopped at the output token limit, so the text is incomplete.
     truncated: bool = False
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """A tool offered to the model in a conversation (Workbench drafting only)."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    #: Ask the provider to hold the arguments to the schema (structured tool use).
+    strict: bool = False
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    #: The parsed arguments; None when the model's arguments were not a JSON object.
+    input: dict[str, Any] | None
+    #: The arguments as the model wrote them.
+    raw: str = ""
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    call_id: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass(frozen=True)
+class Message:
+    """One provider-neutral conversation message. A user message carries text (and, first,
+    images) and any tool results; an assistant message its text and tool calls, plus `echo`:
+    the provider's own reply content (thinking, reasoning items), sent back as it was."""
+
+    role: Literal["user", "assistant"]
+    text: str = ""
+    images: tuple[bytes, ...] = ()
+    tool_calls: tuple[ToolCall, ...] = ()
+    tool_results: tuple[ToolResult, ...] = ()
+    echo: Any = None
+
+
+@dataclass(frozen=True)
+class ConversationRequest:
+    system: str
+    messages: tuple[Message, ...]
+    tools: tuple[ToolSpec, ...]
+    max_tokens: int = 64000
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    """One assistant turn: its text and the tools it called."""
+
+    text: str
+    tool_calls: tuple[ToolCall, ...]
+    model: str
+    stop_reason: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    truncated: bool = False
+    #: The reply as the provider gave it, to send back in the next request (`Message.echo`).
+    echo: Any = None
 
 
 #: Called with the estimated output tokens received so far while a reply streams (progress).
@@ -138,6 +204,27 @@ class LLMProvider(Protocol):
     def complete_vision(self, model: str, request: VisionRequest) -> CompletionResult: ...
 
 
+@runtime_checkable
+class ToolCapable(Protocol):
+    """A provider that can hold a conversation with tools (Workbench drafting only; production
+    extraction never calls it)."""
+
+    name: str
+
+    def converse(
+        self, model: str, request: ConversationRequest, on_tokens: TokenCallback | None = None
+    ) -> TurnResult: ...
+
+
+def parse_tool_arguments(raw: str) -> dict[str, Any] | None:
+    """A tool call's arguments as a JSON object, or None when they are not one."""
+    try:
+        value = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
 #: Provider kinds whose endpoints serve embeddings (`embed`); Anthropic has none.
 EMBEDDING_KINDS: frozenset[str] = frozenset({"openai-chat", "openai-responses"})
 
@@ -148,3 +235,16 @@ class EmbeddingProvider(Protocol):
     name: str
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]: ...
+
+
+def dump_echo(value: Any) -> Any:
+    """An SDK reply object as plain JSON data (None fields left out), to send back as it was."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(exclude_none=True, mode="json")
+    if isinstance(value, list | tuple):
+        return [dump_echo(v) for v in value]
+    if isinstance(value, dict):
+        return {k: dump_echo(v) for k, v in value.items() if v is not None}
+    if hasattr(value, "__dict__"):
+        return {k: dump_echo(v) for k, v in vars(value).items() if v is not None}
+    return value

@@ -75,6 +75,7 @@ import type {
   ProjectListPage,
   ProjectListQuery,
   ProposalView,
+  DraftLog,
   Publication,
   ProjectView,
   Reference,
@@ -664,6 +665,8 @@ export interface Api {
   importBundle(file: File, fields: { id?: string; name?: string }): Promise<ProjectView>;
   startStage(projectId: string, stage: DraftStage): Promise<ProposalView>;
   listProposals(projectId: string): Promise<ProposalView[]>;
+  /** A proposal's model log: what the drafting model was sent and answered, tools included. */
+  getProposalLog(projectId: string, proposalId: string): Promise<DraftLog>;
   decideProposal(
     projectId: string,
     proposalId: string,
@@ -1361,6 +1364,8 @@ export function createHttpApi(base = '/api'): Api {
       post<ProposalView>(`${base}/workbench/projects/${id}/stages/${stage}`, {}),
     listProposals: (id) =>
       apiFetch(`${base}/workbench/projects/${id}/proposals`).then(json<ProposalView[]>),
+    getProposalLog: (id, proposalId) =>
+      apiFetch(`${base}/workbench/projects/${id}/proposals/${proposalId}/log`).then(json<DraftLog>),
     decideProposal: (id, proposalId, decision, changes) =>
       post<ProposalView>(
         `${base}/workbench/projects/${id}/proposals/${proposalId}/decision`,
