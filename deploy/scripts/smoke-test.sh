@@ -101,6 +101,17 @@ echo "ok   widget page"
 [[ "$(status "$BASE_URL/api/specs")" == 401 ]] || fail "/api/specs must need a session"
 echo "ok   /api/specs without a session -> 401"
 
+# Backup uploads (ADR 0015) have their own nginx location for the 64 MiB parts. It must reach the
+# API for the upload start too: a location ending in '/' answers the bare path with a 301, which
+# a browser's fetch cannot follow ("Failed to fetch"). Signed out, so no upload is started.
+for path in /api/backup/uploads /api/backup/uploads/smoke/parts/0; do
+  method=POST
+  [[ "$path" == */parts/* ]] && method=PUT
+  got="$(status -X "$method" -H 'content-type: application/json' -d '{}' "$BASE_URL$path")"
+  [[ "$got" == 401 ]] || fail "$method $path without a session must reach the API (401), got $got"
+done
+echo "ok   backup upload routes reach the API"
+
 login admin "$ADMIN_TOKEN" "$ADMIN_JAR" || fail "admin sign-in"
 echo "ok   admin sign-in"
 check /api/specs
