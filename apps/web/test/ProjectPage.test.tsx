@@ -2,7 +2,8 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client.js';
-import { ProjectPage } from '../src/workbench/ProjectPage.js';
+import { ProjectPage, WB_TAB_HELP } from '../src/workbench/ProjectPage.js';
+import { PROJECT_TABS } from '../src/router.js';
 import { recentProjects } from '../src/workbench/listDerive.js';
 import { OVERVIEW_TABS, type DraftChange, type OverviewItem } from '@ih/shared';
 import {
@@ -751,5 +752,65 @@ describe('ProjectPage of a retired type (D7, D14, D18)', () => {
     page(api, 'brief');
     await screen.findByRole('heading', { level: 1 });
     expect(screen.queryByText(/Retired by/)).toBeNull();
+  });
+});
+
+const TAB_HELP: Record<(typeof TAB_TITLES)[number][0], string> = {
+  samples: 'Samples',
+  brief: 'The brief',
+  survey: 'The survey',
+  outputs: 'Proposing outputs',
+  sections: 'Finding section anchors',
+  steps: 'Proposing extraction steps',
+  references: 'References: the right answers',
+  evaluate: 'Evaluating the recipe',
+  revise: 'Revising from feedback',
+  template: 'The Recipe tab',
+  runs: 'Test runs',
+};
+
+describe('ProjectPage tab help', () => {
+  it.each(TAB_TITLES)('the %s tab header ends with its help (%s)', async (tab, title) => {
+    const api = fakeApi({ getProject: vi.fn(async () => projectView({ draft: 1 })) });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab={tab}
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    const heading = await screen.findByRole('heading', { level: 2, name: title });
+    const header = heading.closest('header')!;
+    const help = within(header).getByRole('button', { name: `Help: ${TAB_HELP[tab]}` });
+    const buttons = within(header).getAllByRole('button');
+    expect(buttons.at(-1)).toBe(help);
+    await userEvent.click(help);
+    expect(screen.getByRole('dialog', { name: TAB_HELP[tab] })).toBeInTheDocument();
+  });
+
+  it('every project tab has a help topic', () => {
+    for (const tab of PROJECT_TABS) expect(WB_TAB_HELP[tab]).toBeTruthy();
+  });
+
+  it('the overview has its help at the top right of the panel', async () => {
+    const api = fakeApi({
+      getProject: vi.fn(async () => projectView()),
+      getProjectOverview: vi.fn(async () => projectOverview()),
+    });
+    render(
+      <ProjectPage
+        api={api}
+        projectId="letter"
+        tab="overview"
+        onNavigate={vi.fn()}
+        pollMs={60_000}
+        role="admin"
+      />,
+    );
+    const help = await screen.findByRole('button', { name: 'Help: The project overview' });
+    expect(help.closest('.tab-help-corner')).not.toBeNull();
   });
 });

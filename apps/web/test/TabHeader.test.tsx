@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { TabHeader } from '../src/workbench/TabHeader.js';
+import { TabHeader, TabHelpTopic } from '../src/workbench/TabHeader.js';
 
 describe('TabHeader', () => {
   it('shows the title, the status in words and the note', () => {
@@ -50,5 +50,29 @@ describe('TabHeader', () => {
       'The fields and tables every document of this type produces.',
     );
     expect(note).toHaveTextContent('Runs on local models; holdout samples are never sent.');
+  });
+});
+
+describe('TabHeader help', () => {
+  it("puts the tab's help after its actions, at the right", () => {
+    render(
+      <TabHelpTopic.Provider value="wbSteps">
+        <TabHeader
+          title="Extraction steps"
+          item={null}
+          actions={<button type="button">Propose again</button>}
+        />
+      </TabHelpTopic.Provider>,
+    );
+    const buttons = screen.getAllByRole('button');
+    expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual([
+      'Propose again',
+      'Help: Proposing extraction steps',
+    ]);
+  });
+
+  it('has no help outside a project tab', () => {
+    render(<TabHeader title="Samples" item={null} />);
+    expect(screen.queryByRole('button', { name: /^Help:/ })).toBeNull();
   });
 });

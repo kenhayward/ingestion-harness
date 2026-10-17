@@ -28,6 +28,10 @@ import { TemplatesPage } from './templates/TemplatesPage.js';
 import { ProjectPage } from './workbench/ProjectPage.js';
 import { WorkbenchPage } from './workbench/WorkbenchPage.js';
 import { Icon } from './ui/Icon.js';
+import { HelpCenter } from './help/HelpCenter.js';
+import { helpTopicOf } from './help/index.js';
+import type { HelpTopicId } from './help/topics.js';
+import { HelpCenterContext } from './ui/Help.js';
 
 /**
  * Sign-in gate (ADR 0013): the app renders only for a valid session, and a session opened with a
@@ -249,6 +253,16 @@ function SignedInApp({
   } | null>(null);
   /** Administration (admins): Models, Linked data and Access, over whatever page is open. */
   const [admin, setAdmin] = useState(false);
+  /** Help (everyone): every help topic in one dialog, at this topic, over whatever page is open. */
+  const [help, setHelp] = useState<HelpTopicId | null>(null);
+  // A link to #/help[/<topic>]: open Help over Home (an unknown topic opens the introduction),
+  // and leave the address as Profile does.
+  useEffect(() => {
+    if (route.name !== 'help') return;
+    setHelp(helpTopicOf(route.topic) ?? 'introduction');
+    window.history.replaceState(null, '', '#/');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }, [route]);
   // Back from GitHub (or a link to #/account/profile): open the dialog over Home, and leave the
   // address so a reload or Back does not open it again.
   useEffect(() => {
@@ -396,10 +410,12 @@ function SignedInApp({
       notify={notify}
       onAdmin={() => setAdmin(true)}
       onProfile={() => setProfile({ tab: 'details' })}
+      onHelp={() => setHelp('introduction')}
       onSignOut={onSignOut}
     >
       {notice}
-      {page}
+      <HelpCenterContext.Provider value={setHelp}>{page}</HelpCenterContext.Provider>
+      {help && <HelpCenter key={help} topic={help} onClose={() => setHelp(null)} />}
       {profile && (
         <ProfileDialog
           api={api}

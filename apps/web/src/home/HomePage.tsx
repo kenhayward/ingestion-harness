@@ -11,6 +11,7 @@ import { JobDetailPanel } from '../jobs/JobDetailPanel.js';
 import { UploadStrip } from '../jobs/UploadStrip.js';
 import type { LaunchedFiles } from '../pwa/launch.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
+import { HelpButton } from '../ui/Help.js';
 
 /** The newest job queued by `me` (`isMine`), else the newest job of all (null without jobs). */
 export function latestJob(jobs: readonly JobSummary[], me: Creator): JobSummary | null {
@@ -169,6 +170,9 @@ export function HomePage({
           <p className="muted">
             Upload a PDF or Word document, watch it run, review what was extracted.
           </p>
+        </div>
+        <div className="page-header-actions">
+          <HelpButton topic="home" />
         </div>
       </div>
       <section aria-labelledby="home-upload-heading">

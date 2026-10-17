@@ -506,3 +506,13 @@ describe('ReviewPage graph (ADR 0011 step 5)', () => {
     expect(screen.getByRole('tab', { name: /Fields/ })).toHaveAttribute('aria-selected', 'true');
   });
 });
+
+describe('ReviewPage help', () => {
+  it('explains reviewing from the top right of the header', async () => {
+    setup();
+    const help = await screen.findByRole('button', { name: 'Help: Reviewing a document' });
+    expect(help.closest('.review-header')).not.toBeNull();
+    await userEvent.click(help);
+    expect(screen.getByRole('dialog', { name: 'Reviewing a document' })).toBeInTheDocument();
+  });
+});

@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ResultDetailView } from '../src/results/ResultDetail.js';
@@ -257,5 +258,20 @@ describe('ResultDetailView', () => {
     render(<ResultDetailView api={api} jobId="j1" />);
     // The page-level "Loading…" status comes first; wait for the preview's own.
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Loading lines.csv'));
+  });
+});
+
+describe('ResultDetailView help', () => {
+  it('explains a published result from the top of the page', async () => {
+    render(
+      <ResultDetailView
+        api={fakeApi({ getResult: vi.fn(async () => resultDetail()) })}
+        jobId="j1"
+      />,
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Help: Reading a published result' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'Reading a published result' })).toBeInTheDocument();
   });
 });

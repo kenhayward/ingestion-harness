@@ -4623,9 +4623,29 @@ img.avatar {
   background: var(--ih-ok-fg);
   color: var(--ih-ok-bg);
 }
-/* 30% wider than the standard rich dialog (480px). */
+/* Wide, so a topic reads with little scrolling. */
 .dialog.dialog-rich.help-dialog {
-  width: min(624px, 100%);
+  width: min(1248px, calc(100vw - 32px));
+}
+.help-dialog .help-body {
+  max-width: none;
+  columns: 2 28rem;
+  column-gap: 2.5rem;
+}
+.help-dialog .help-body > h3 {
+  break-after: avoid;
+}
+.help-dialog .help-body > ul,
+.help-dialog .help-body > p {
+  break-inside: avoid;
+}
+/* The top-right of a page header: live indicators, then the page's help. */
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  align-self: flex-start;
+  margin-left: auto;
 }
 .help-dialog .dialog-icon {
   color: var(--ih-ok-fg);
@@ -4733,4 +4753,104 @@ img.avatar {
 .not-for-operators h1 {
   margin-top: 0;
   font-size: var(--ih-text-xl, 1.25rem);
+}
+.result-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* A help button among a header's buttons sits centred beside them; on the ontology term bar it
+   goes to the right end. */
+.header-actions > .help-button,
+.page-actions > .help-button {
+  align-self: center;
+}
+.term-browser-bar > .help-button {
+  margin-left: auto;
+}
+
+/* Help (account menu): Profile's layout, the topic menu nested by screen. */
+.dialog.profile-dialog.help-center {
+  width: min(1180px, calc(100vw - 32px));
+  height: min(820px, calc(100vh - 32px));
+}
+.help-center .profile-who {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.help-center .profile-who small {
+  font-size: var(--ih-text-sm);
+  font-weight: 400;
+}
+.help-center-menu {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+.help-center-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.help-center-menu ul ul {
+  padding-left: 14px;
+  margin-bottom: 4px;
+}
+.help-center-menu button {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  color: var(--ih-text);
+  font-size: var(--ih-text-base);
+}
+.help-center-menu ul ul button {
+  min-height: 30px;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+}
+.help-center-menu button:hover {
+  background: var(--ih-surface);
+}
+.help-center-menu button[aria-current='page'] {
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+  font-weight: 600;
+}
+/* One readable column here (the menu takes the left), unlike the wide ? dialog. */
+.help-center-body {
+  max-width: none;
+}
+.help-center-body > * {
+  max-width: 46rem;
+}
+
+/* Workbench tab help: the last of a tab header's actions (TabHeader), centred on them; on the
+   Overview (no header) a row of its own at the panel's top right. The text takes what is left, so
+   the actions and the ? stay at the top right beside it until the panel is narrow. */
+.tab-header-text {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+.tab-actions > .help-button {
+  align-self: center;
+}
+.tab-help-corner {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+/* Review: the help at the header's top right, the queue just left of it. */
+.review-header > .help-button {
+  align-self: flex-start;
+}
+.review-header > .review-queue {
+  margin-left: auto;
 }

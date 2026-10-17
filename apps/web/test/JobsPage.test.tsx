@@ -242,3 +242,14 @@ describe('JobsPage: a linked job (#/jobs/<id>)', () => {
     );
   });
 });
+
+describe('JobsPage help', () => {
+  it('explains the Jobs page from the page header', async () => {
+    page([]);
+    const header = screen.getByRole('heading', { level: 1, name: 'Jobs' }).closest('.page-header')!;
+    await userEvent.click(
+      within(header as HTMLElement).getByRole('button', { name: 'Help: Using the Jobs page' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'Using the Jobs page' })).toBeInTheDocument();
+  });
+});

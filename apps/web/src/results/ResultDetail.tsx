@@ -9,6 +9,7 @@ import type {
 import type { Api } from '../api/client.js';
 import { display } from '../review/effective.js';
 import { parseCsv } from './csv.js';
+import { HelpButton } from '../ui/Help.js';
 
 export const PREVIEW_ROWS = 500;
 
@@ -64,7 +65,10 @@ export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
 
   return (
     <section className="result-detail">
-      {back}
+      <div className="result-detail-head">
+        {back}
+        <HelpButton topic="result" />
+      </div>
       <h2>
         {job.filename}{' '}
         <small>
