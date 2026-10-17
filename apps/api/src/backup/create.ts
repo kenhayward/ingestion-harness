@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream, type WriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,6 +52,37 @@ async function spool(
 }
 
 /**
+ * A file written line by line whose error (a full disk) fails the next write or the end, never
+ * the process: the listener is there from the start, and a wait for `drain` ends on an error.
+ */
+function lineFile(path: string) {
+  const out = createWriteStream(path);
+  let error: Error | null = null;
+  const failed = new Promise<never>((_resolve, reject) => {
+    out.on('error', (err) => {
+      error ??= err;
+      reject(err);
+    });
+  });
+  failed.catch(() => {});
+  return {
+    async write(line: string): Promise<void> {
+      if (error) throw error;
+      if (!out.write(line)) {
+        await Promise.race([new Promise<void>((resolve) => out.once('drain', resolve)), failed]);
+      }
+    },
+    async end(): Promise<void> {
+      if (error) throw error;
+      await Promise.race([new Promise<void>((resolve) => out.end(resolve)), failed]);
+    },
+    destroy(): void {
+      out.destroy();
+    },
+  };
+}
+
+/**
  * Streams the whole stack into `backups/<id>.ctbak`: the database dump, every object of CT
  * Studio's buckets and of internal targets' buckets with an index, the `lake-*` identities, the
  * triple store when there is one, and the manifest last. Nothing is held whole in memory except
@@ -93,7 +124,7 @@ export async function createBackup(
     parts.push({ name, bytes: size, sha256 });
   };
 
-  let index: WriteStream | null = null;
+  let index: ReturnType<typeof lineFile> | null = null;
   try {
     const migrations = await deps.db.migrations();
     const lastMigration = migrations.at(-1);
@@ -131,7 +162,7 @@ export async function createBackup(
     }
     const total = listed.reduce((n, keys) => n + keys.length, 0);
     const indexPath = join(dir, 'index.jsonl');
-    index = createWriteStream(indexPath);
+    index = lineFile(indexPath);
     const manifestBuckets: BackupManifest['buckets'] = [];
     let done = 0;
     report('objects', 0, total);
@@ -154,9 +185,7 @@ export async function createBackup(
             sha256,
             contentType: found.contentType,
           };
-          if (!index.write(`${JSON.stringify(line)}\n`)) {
-            await new Promise<void>((resolve) => index!.once('drain', () => resolve()));
-          }
+          await index.write(`${JSON.stringify(line)}\n`);
           objects += 1;
           bucketBytes += found.size;
         }
@@ -165,11 +194,7 @@ export async function createBackup(
       }
       manifestBuckets.push({ role: source.role, name: source.name, objects, bytes: bucketBytes });
     }
-    const written = index;
-    await new Promise<void>((resolve, reject) => {
-      written.once('error', reject);
-      written.end(resolve);
-    });
+    await index.end();
     const indexSize = (await stat(indexPath)).size;
     await part('objects/index.jsonl', createReadStream(indexPath), indexSize);
 
