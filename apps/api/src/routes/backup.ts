@@ -17,6 +17,7 @@ import { parseMasterKey } from '../backup/crypto.js';
 import {
   BackupBusyError,
   BUSY,
+  CHECK_EXPIRED,
   NOT_WAITING,
   RESTORE_CANCELLED,
   RestoreRefusal,
@@ -427,7 +428,8 @@ export async function backupRoutes(app: FastifyInstance): Promise<void> {
           The answer carries \`token\`, shown once: keep it to follow the restore
           (\`GET /api/backup/restores/{id}\`) and confirm it once \`phase\` is \`checked\`, since a
           restore signs everyone out. From here until the restore ends or is cancelled, no
-          backup, upload or other restore can start.
+          backup, upload or other restore can start. A checked restore not confirmed within 30
+          minutes is cancelled (\`${CHECK_EXPIRED}\`): its key is not kept longer.
         `,
         'x-admin': true,
         body: RestoreStartBodySchema,

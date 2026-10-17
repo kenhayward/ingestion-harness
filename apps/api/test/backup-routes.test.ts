@@ -305,12 +305,16 @@ async function backupFile(): Promise<Buffer> {
 }
 
 /** This server, with restores set up on fakes. */
-async function restoreSetup(db: FakeDatabaseTools = new FakeDatabaseTools()) {
+async function restoreSetup(
+  db: FakeDatabaseTools = new FakeDatabaseTools(),
+  over: { checkExpiryMs?: number } = {},
+) {
   const store = new MemoryObjectStore();
   const deps = fakeBackupDeps({ db, store });
   const backup = new BackupService({
     ...deps,
     previousMaster: null,
+    ...over,
     queue: new MemoryQueueControlRepo(),
     maintenance: new MemoryMaintenanceRepo(),
   });
@@ -466,7 +470,8 @@ describe('restore routes', () => {
     await s.backup.settled();
     const wrongToken = { 'x-restore-token': 'A'.repeat(43) };
     const designer = { cookie: s.userCookie };
-    for (const headers of [{}, wrongToken, designer]) {
+    const operator = { cookie: (await signInNewUser(s.app, s.access, 'Olu', 'operator')).cookie };
+    for (const headers of [{}, wrongToken, designer, operator]) {
       const res = await s.read(status.id, headers);
       expect(res.statusCode).toBe(404);
       expect(res.json()).toEqual({ error: 'restore not found' });
@@ -524,6 +529,73 @@ describe('restore routes', () => {
     // The upload is still there: the same file can be checked again.
     expect((await s.start({ uploadId, mode: 'deployment' })).statusCode).toBe(202);
     await s.backup.settled();
+  });
+
+  it('a confirm whose status cannot be saved fails the restore and lets go of the lock', async () => {
+    const s = await restoreSetup();
+    const uploadId = await s.upload(await backupFile());
+    const { status } = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    // The write of `restoring` fails once; the failure is then saved.
+    const put = s.store.put.bind(s.store);
+    let fail = true;
+    s.store.put = async (bucket, key, body, type) => {
+      if (fail && key.startsWith('restores/')) {
+        fail = false;
+        throw new Error('S3 is down');
+      }
+      return put(bucket, key, body, type);
+    };
+    await expect(s.backup.confirmRestore(status.id, 'production', 'Admin')).rejects.toThrow(
+      'S3 is down',
+    );
+    expect(s.backup.isBusy()).toBe(false);
+    expect((await s.read(status.id, s.admin)).json()).toMatchObject({
+      phase: 'failed',
+      error: 'S3 is down',
+    });
+    const backup = await s.app.inject({
+      method: 'POST',
+      url: '/api/backup/backups',
+      headers: s.admin,
+    });
+    expect(backup.statusCode).toBe(202);
+    await s.backup.settled();
+  });
+
+  it('a checked restore left unconfirmed expires and drops its key', async () => {
+    const s = await restoreSetup(new FakeDatabaseTools(), { checkExpiryMs: 20 });
+    const uploadId = await s.upload(await backupFile());
+    const { status, token } = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    expect((await s.read(status.id, s.admin)).json().phase).toBe('checked');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await s.backup.settled();
+    expect(s.backup.isBusy()).toBe(false);
+    expect((await s.read(status.id, s.admin)).json()).toMatchObject({
+      phase: 'failed',
+      error: 'the check expired: start the restore again',
+    });
+    const confirm = await s.confirm(status.id, 'production', { 'x-restore-token': token });
+    expect(confirm.statusCode).toBe(409);
+  });
+
+  it('a confirmed or cancelled restore does not expire', async () => {
+    const s = await restoreSetup(new FakeDatabaseTools(), { checkExpiryMs: 20 });
+    const uploadId = await s.upload(await backupFile());
+    const first = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    expect((await s.cancel(first.status.id, s.admin)).statusCode).toBe(204);
+    const second = (await s.start({ uploadId, mode: 'deployment' })).json<Started>();
+    await s.backup.settled();
+    expect((await s.confirm(second.status.id, 'production', s.admin)).statusCode).toBe(202);
+    await s.backup.settled();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await s.backup.settled();
+    expect((await s.read(first.status.id, s.admin)).json().error).toBe(
+      'cancelled: nothing was changed',
+    );
+    expect((await s.read(second.status.id, s.admin)).json().phase).toBe('succeeded');
   });
 
   it('an upload that is not complete is a 409', async () => {

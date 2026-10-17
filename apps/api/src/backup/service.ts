@@ -45,6 +45,9 @@ export class BackupBusyError extends Error {
 export const NOT_WAITING = 'the restore is not waiting to be confirmed';
 /** A cancelled restore's reason (it is saved as failed: nothing was changed). */
 export const RESTORE_CANCELLED = 'cancelled: nothing was changed';
+/** A checked restore left unconfirmed this long is cancelled: its key is not kept longer. */
+export const CHECK_EXPIRY_MS = 30 * 60_000;
+export const CHECK_EXPIRED = 'the check expired: start the restore again';
 
 /** A refused restore action, with the HTTP status the route answers. */
 export class RestoreRefusal extends Error {
@@ -76,6 +79,8 @@ interface RestoreRun {
   uploadKey: string;
   /** Set once the check passed; the opening key stays in memory only. */
   checked: CheckedBackup | null;
+  /** Cancels the checked restore once `CHECK_EXPIRY_MS` passes unconfirmed. */
+  expiry: ReturnType<typeof setTimeout> | null;
 }
 
 export interface BackupServiceDeps extends BackupDeps {
@@ -84,6 +89,8 @@ export interface BackupServiceDeps extends BackupDeps {
   maintenance: Pick<MaintenanceRepo, 'set'>;
   /** `LLM_SECRETS_KEY_PREVIOUS`: a restore as this deployment tries it after `master`. */
   previousMaster?: Buffer | null;
+  /** How long a checked restore waits for its confirmation (tests: a few ms). */
+  checkExpiryMs?: number;
   /** Where a failed backup's error is logged too (it is always in its record). */
   log?: { error(obj: object, msg: string): void };
 }
@@ -209,6 +216,7 @@ export class BackupService {
       },
       uploadKey: opts.uploadKey,
       checked: null,
+      expiry: null,
     };
     this.busy = { kind: 'restore', run };
     this.track(this.runCheck(run, masters, setup));
@@ -243,7 +251,7 @@ export class BackupService {
     if (instanceName !== checked.manifest.instanceName) {
       throw new RestoreRefusal(400, `type ${checked.manifest.instanceName} to confirm`);
     }
-    run.checked = null;
+    this.forget(run);
     const deps: RestoreDeps = { ...this.deps, ...this.restore! };
     const request = {
       id,
@@ -254,7 +262,17 @@ export class BackupService {
       manifest: checked.manifest,
       contentTypes: checked.contentTypes,
     };
-    await this.updateRestore(run, { phase: 'restoring', step: null, done: 0, of: 0 });
+    try {
+      await this.updateRestore(run, { phase: 'restoring', step: null, done: 0, of: 0 });
+    } catch (err) {
+      // Nothing was changed yet: the restore ends here rather than holding the lock.
+      await this.updateRestore(run, {
+        phase: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      }).catch(() => {});
+      this.release(run);
+      throw err;
+    }
     this.track(
       runRestore(deps, request, (s) => this.updateRestore(run, s))
         .then(
@@ -269,7 +287,7 @@ export class BackupService {
   /** Cancels a checked restore: nothing was changed, and the lock is let go. */
   async cancelRestore(id: string): Promise<RestoreStatus> {
     const run = this.waiting(id);
-    run.checked = null;
+    this.forget(run);
     try {
       await this.updateRestore(run, { phase: 'failed', step: null, error: RESTORE_CANCELLED });
     } finally {
@@ -316,6 +334,27 @@ export class BackupService {
     void p.finally(() => this.work.delete(p));
   }
 
+  /** Drops the check's result (the opening key with it) and its expiry timer. */
+  private forget(run: RestoreRun): void {
+    run.checked = null;
+    if (run.expiry) clearTimeout(run.expiry);
+    run.expiry = null;
+  }
+
+  /** A checked restore nobody confirmed in time: cancelled, its key dropped. */
+  private async expire(run: RestoreRun): Promise<void> {
+    if (this.busy?.kind !== 'restore' || this.busy.run !== run) return;
+    if (run.record.phase !== 'checked') return;
+    this.forget(run);
+    try {
+      await this.updateRestore(run, { phase: 'failed', step: null, error: CHECK_EXPIRED });
+    } catch (err) {
+      this.deps.log?.error({ err }, 'the expired restore check could not be saved');
+    } finally {
+      this.release(run);
+    }
+  }
+
   private release(run: RestoreRun): void {
     if (this.busy?.kind === 'restore' && this.busy.run === run) this.busy = null;
   }
@@ -360,8 +399,13 @@ export class BackupService {
         manifest: checked.manifest,
         plan: run.record.mode === 'copy' ? copyPlan() : null,
       });
+      run.expiry = setTimeout(
+        () => this.track(this.expire(run)),
+        this.deps.checkExpiryMs ?? CHECK_EXPIRY_MS,
+      );
+      run.expiry.unref();
     } catch (err) {
-      run.checked = null;
+      this.forget(run);
       this.deps.log?.error({ err }, 'restore check failed');
       await this.updateRestore(run, {
         phase: 'failed',
