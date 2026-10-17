@@ -6,8 +6,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Pull requests cancel their superseded runs. Every push to main is its own group: GitHub replaces
+# a pending run in a shared group even without cancel-in-progress, and a merge whose run never
+# finished would never get its calendar tag (job `tag`, ADR 0014).
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -111,3 +114,26 @@ jobs:
         run: |
           docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml down -v --remove-orphans
           docker image ls --filter "reference=${IMAGE_PREFIX}/*:${IMAGE_TAG}" -q | xargs -r docker image rm -f
+
+  tag:
+    # The build's calendar version (ADR 0014): every merge to main whose checks pass gets the next
+    # YYYY.MM.DD.N tag. No concurrency group (it would replace pending jobs): version.mjs retries
+    # with the next number when another run took this one.
+    name: Tag the build
+    needs: [node, worker, stack]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kenhayward/ingestion-harness'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Tag
+        run: |
+          tag="$(node deploy/scripts/version.mjs tag)"
+          echo "### Tagged ${tag}" >> "$GITHUB_STEP_SUMMARY"

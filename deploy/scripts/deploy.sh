@@ -2,7 +2,11 @@
 # Build images and (re)deploy the stack on this host.
 #
 #   deploy/scripts/deploy.sh                    # build current commit, deploy, smoke test
-#   IMAGE_TAG=abc1234 deploy/scripts/deploy.sh --no-build   # roll back to an earlier build
+#   deploy/scripts/deploy.sh --untagged         # don't wait for CI to tag a commit on main
+#   IMAGE_TAG=2026.10.17.3 deploy/scripts/deploy.sh --no-build   # roll back to an earlier build
+#
+# The build's version (ADR 0014) comes from deploy/scripts/version.mjs (needs Node 24): the calendar
+# tag CI put on the commit, waiting up to 15 minutes for it when the commit is on main.
 #   ENV_FILE=/etc/ingestion-harness/staging.env deploy/scripts/deploy.sh
 set -euo pipefail
 
@@ -10,19 +14,39 @@ DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "$DEPLOY_DIR/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$DEPLOY_DIR/.env}"
 BUILD=1
+UNTAGGED=()
 for arg in "$@"; do
   case "$arg" in
     --no-build) BUILD=0 ;;
+    --untagged) UNTAGGED=(--untagged) ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
 
 [[ -f "$ENV_FILE" ]] || { echo "env file not found: $ENV_FILE (copy deploy/.env.example)" >&2; exit 1; }
+VERSION=""
+if [[ $BUILD -eq 1 ]]; then
+  command -v node >/dev/null || { echo "Node 24 is needed to work out the version" >&2; exit 1; }
+  resolved="$(cd "$REPO_ROOT" && node deploy/scripts/version.mjs resolve "${UNTAGGED[@]}")"
+  while IFS='=' read -r key value; do
+    case "$key" in
+      APP_VERSION | APP_VERSION_PREVIOUS | APP_COMMIT) export "$key=$value" ;;
+      IMAGE_TAG) RESOLVED_IMAGE_TAG="$value" ;;
+    esac
+  done <<<"$resolved"
+  VERSION="$APP_VERSION"
+  export IMAGE_TAG="${IMAGE_TAG:-$RESOLVED_IMAGE_TAG}"
+fi
+# --no-build reuses the images a clean build of HEAD made: tagged with its calendar tag, else the hash.
+if [[ -z "${IMAGE_TAG:-}" ]] && command -v node >/dev/null; then
+  IMAGE_TAG="$(cd "$REPO_ROOT" && node deploy/scripts/version.mjs image-tag)"
+fi
 export IMAGE_TAG="${IMAGE_TAG:-$(git -C "$REPO_ROOT" rev-parse --short HEAD)}"
+VERSION="${VERSION:-$IMAGE_TAG}"
 
 compose() { docker compose --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.yml" "$@"; }
 
-echo "==> deploying IMAGE_TAG=$IMAGE_TAG using $ENV_FILE"
+echo "==> deploying $VERSION (IMAGE_TAG=$IMAGE_TAG) using $ENV_FILE"
 if [[ $BUILD -eq 1 ]]; then
   compose build --pull
 fi
@@ -39,7 +63,7 @@ export ADMIN_TOKEN
 APP_PORT="$(grep -E '^APP_PORT=' "$ENV_FILE" | cut -d= -f2 || true)" \
   "$DEPLOY_DIR/scripts/smoke-test.sh"
 
-echo "==> deployed $IMAGE_TAG"
+echo "==> deployed $VERSION (IMAGE_TAG=$IMAGE_TAG)"
 compose ps
 if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
   echo "==> admin token rotated; on the host run: deploy/scripts/admin-token.sh --env-file $ENV_FILE -f deploy/docker-compose.yml"

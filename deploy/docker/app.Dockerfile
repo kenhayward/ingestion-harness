@@ -9,6 +9,11 @@ RUN npm ci --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+# The build's calendar version (ADR 0014), shown at the bottom of the nav.
+ARG APP_VERSION=dev
+ARG APP_VERSION_PREVIOUS=
+ARG APP_COMMIT=unknown
+ENV VITE_APP_VERSION=$APP_VERSION     VITE_APP_VERSION_PREVIOUS=$APP_VERSION_PREVIOUS     VITE_APP_COMMIT=$APP_COMMIT
 RUN npm run build -w @ih/web
 
 FROM nginx:1.31-alpine

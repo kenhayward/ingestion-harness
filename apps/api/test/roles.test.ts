@@ -16,6 +16,7 @@ const PUBLIC = new Set([
   'GET /api/docs/openapi.yaml',
   'GET /api/maintenance',
   'GET /api/profile/github/callback',
+  'GET /api/version',
   'POST /api/auth/login',
   'POST /api/auth/logout',
 ]);

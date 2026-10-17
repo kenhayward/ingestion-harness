@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
+import type { VersionInfo } from '@ih/shared';
 import type { AccessRepo } from './access/repo.js';
 import { registerAccess } from './access/routes.js';
 import type { JobWatch } from './jobs/watch.js';
@@ -23,6 +24,7 @@ import type { WorkbenchRepo } from './workbench/repo.js';
 import { templateRoutes } from './routes/templates.js';
 import { referenceRoutes } from './routes/references.js';
 import { healthRoutes } from './routes/health.js';
+import { versionRoutes } from './routes/version.js';
 import { specRoutes } from './routes/specs.js';
 import { documentRoutes } from './routes/documents.js';
 import { jobRoutes } from './routes/jobs.js';
@@ -90,6 +92,8 @@ export interface AppDeps {
    * is then SameSite=None; Secure; Partitioned. null/absent: SameSite=Strict, no framing.
    */
   frameAncestors?: string | null;
+  /** The build's version (`GET /api/version`, ADR 0014); default a dev build. */
+  version?: VersionInfo;
   /** `RDF_PUBLIC_URL`: where consumers query the triple store (shown under Administration > Linked data). */
   rdfPublicUrl?: string | null;
   /** Fastify trustProxy: whose X-Forwarded-* to believe (client IP, https). */
@@ -146,6 +150,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(ontologyRoutes, { prefix: '/api' });
   await app.register(linkedDataRoutes, { prefix: '/api' });
   await app.register(maintenanceRoutes, { prefix: '/api' });
+  await app.register(versionRoutes, { prefix: '/api' });
 
   return app;
 }

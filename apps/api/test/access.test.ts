@@ -59,6 +59,8 @@ const PUBLIC = [
   'GET /api/maintenance',
   // GitHub's redirect brings no session cookie: the link's state finds the user.
   'GET /api/profile/github/callback',
+  // Which build is running (ADR 0014): answered before signing in too.
+  'GET /api/version',
   'POST /api/auth/login',
   'POST /api/auth/logout',
 ];
@@ -71,7 +73,7 @@ describe('email and password access', () => {
     expect(res.json()).toEqual({ error: 'sign in required' });
   });
 
-  it('guards every /api route except login, logout, the API docs, the maintenance notice and the GitHub callback', async () => {
+  it('guards every /api route except login, logout, the API docs, the maintenance notice, the version and the GitHub callback', async () => {
     const { app } = await setup();
     const routes = routesOf(app);
     expect(routes.length).toBeGreaterThan(20);

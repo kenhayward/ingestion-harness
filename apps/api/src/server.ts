@@ -2,7 +2,13 @@ import pg from 'pg';
 import { PgAccessRepo } from './access/pg.js';
 import { SIGN_IN_RETENTION_DAYS } from './access/repo.js';
 import { buildApp } from './app.js';
-import { githubConfig, loadConfig, s3KeysConfig, targetConfig } from './config.js';
+import {
+  githubConfig,
+  loadConfig,
+  s3KeysConfig,
+  targetConfig,
+  versionFromConfig,
+} from './config.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
@@ -114,6 +120,7 @@ const app = await buildApp({
   llmSecrets: secretsKeys(process.env),
   ...(config.TRUST_PROXY ? { trustProxy: config.TRUST_PROXY } : {}),
   frameAncestors: config.FRAME_ANCESTORS,
+  version: versionFromConfig(config),
   rdfPublicUrl: config.RDF_PUBLIC_URL ?? null,
   logger: { level: config.LOG_LEVEL },
 });
