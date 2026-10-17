@@ -70,7 +70,7 @@ export const HELP_TOPICS = {
   wbSurvey: { title: 'The survey', body: <WbSurveyHelp /> },
   wbOutputs: { title: 'Proposing outputs', body: <WbOutputsHelp /> },
   wbSections: { title: 'Finding section anchors', body: <WbSectionsHelp /> },
-  wbSteps: { title: 'Proposing extraction steps', body: <WbStepsHelp /> },
+  wbSteps: { title: 'Proposing the pipeline', body: <WbStepsHelp /> },
   wbMapping: { title: 'Proposing a mapping', body: <WbMappingHelp /> },
   wbReferences: { title: 'References: the right answers', body: <WbReferencesHelp /> },
   wbEvaluate: { title: 'Evaluating the recipe', body: <WbEvaluateHelp /> },

@@ -43,7 +43,7 @@ export const OVERVIEW_LABEL: Record<OverviewStage, string> = {
   survey: 'Survey',
   outputs: 'Outputs',
   sections: 'Sections',
-  steps: 'Steps',
+  steps: 'Pipeline',
   mapping: 'Mapping',
   references: 'References',
   evaluate: 'Evaluate',

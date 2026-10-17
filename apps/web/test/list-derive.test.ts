@@ -65,7 +65,7 @@ describe('phaseLine', () => {
 describe('nextHref', () => {
   it.each([
     [
-      { kind: 'decide' as const, stage: 'steps' as const, label: 'Decide on Steps' },
+      { kind: 'decide' as const, stage: 'steps' as const, label: 'Decide on Pipeline' },
       '#/workbench/letter/steps',
     ],
     [

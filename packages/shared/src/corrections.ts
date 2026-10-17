@@ -146,7 +146,7 @@ export interface OutputNeed {
   corrected: number;
   /** References where the model proposed nothing and every change was typed in. */
   entered: number;
-  /** Some extract step fills it (else the strip links to Steps). */
+  /** Some extract step fills it (else the strip links to the Pipeline tab). */
   hasStep: boolean;
 }
 

@@ -47,7 +47,7 @@ const TAB_TITLES = [
   ['survey', 'Survey'],
   ['outputs', 'Outputs'],
   ['sections', 'Section anchors'],
-  ['steps', 'Extraction steps'],
+  ['steps', 'Extraction pipeline'],
   ['references', 'References'],
   ['evaluate', 'Evaluate'],
   ['revise', 'Revise'],
@@ -168,7 +168,7 @@ describe('ProjectPage', () => {
     expect(getTemplate).toHaveBeenCalledWith('letter', 1);
   });
 
-  it('keeps JUST ADDED on the Steps tab after applying a proposal refreshes the page', async () => {
+  it('keeps JUST ADDED on the Pipeline tab after applying a proposal refreshes the page', async () => {
     const before = {
       id: 'letter',
       version: 2,
@@ -702,7 +702,7 @@ describe('ProjectPage', () => {
     page(api, 'template');
     const checks = await screen.findByRole('region', { name: 'Checks' });
     expect(
-      await within(checks).findByRole('link', { name: 'Review in Steps' }),
+      await within(checks).findByRole('link', { name: 'Review in Pipeline' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Changes since v1' })).toBeInTheDocument();
     const calls = getProjectOverview.mock.calls.length;
@@ -761,7 +761,7 @@ const TAB_HELP: Record<(typeof TAB_TITLES)[number][0], string> = {
   survey: 'The survey',
   outputs: 'Proposing outputs',
   sections: 'Finding section anchors',
-  steps: 'Proposing extraction steps',
+  steps: 'Proposing the pipeline',
   references: 'References: the right answers',
   evaluate: 'Evaluating the recipe',
   revise: 'Revising from feedback',

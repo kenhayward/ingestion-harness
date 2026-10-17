@@ -32,7 +32,7 @@ const TAB_TITLE: Record<Exclude<ProjectTab, 'overview'>, string> = {
   survey: 'Survey',
   outputs: 'Outputs',
   sections: 'Section anchors',
-  steps: 'Extraction steps',
+  steps: 'Extraction pipeline',
   mapping: 'Ontology mapping',
   references: 'References',
   evaluate: 'Evaluate',

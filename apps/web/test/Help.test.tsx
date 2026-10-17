@@ -146,7 +146,7 @@ describe('help topics for the Workbench tabs and Review', () => {
     ['wbSurvey', 'The survey', ['Candidates', 'Ontologies', 'Pin']],
     ['wbOutputs', 'Proposing outputs', ['Accept', 'Delivered outputs']],
     ['wbSections', 'Finding section anchors', ['anchor', 'Repeats']],
-    ['wbSteps', 'Proposing extraction steps', ['coverage']],
+    ['wbSteps', 'Proposing the pipeline', ['coverage']],
     ['wbMapping', 'Proposing a mapping', ['RDF', 'vocabulary']],
     ['wbReferences', 'References: the right answers', ['Save as reference', 'Re-verify']],
     ['wbEvaluate', 'Evaluating the recipe', ['holdout', 'threshold', 'Compare']],
