@@ -6,10 +6,10 @@ import { NavVersion } from '../src/shell/NavVersion.js';
 const tagged = { version: '2026.10.17.3', previous: '2026.10.17.2', commit: 'abc1234' };
 
 describe('NavVersion', () => {
-  it('links a tagged build to what it added on GitHub', () => {
+  it('links a tagged build to its tag on GitHub', () => {
     render(<NavVersion info={tagged} compact={false} />);
     const link = screen.getByRole('link', { name: 'v2026.10.17.3 (opens in a new tab)' });
-    expect(link).toHaveAttribute('href', `${REPO_URL}/compare/2026.10.17.2...2026.10.17.3`);
+    expect(link).toHaveAttribute('href', `${REPO_URL}/releases/tag/2026.10.17.3`);
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
     expect(link).toHaveTextContent('v2026.10.17.3');

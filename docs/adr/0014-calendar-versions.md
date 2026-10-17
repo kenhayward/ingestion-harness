@@ -10,7 +10,7 @@ it. Migration numbers had the same problem here: two open PRs both took the next
 had to renumber.
 
 ## Decision
-- **No file holds a version.** CI's `tag` job tags every merge to `main` whose checks pass with
+- **No file holds a version.** CI's `tag` job tags every merge to `main` with
   `YYYY.MM.DD.N`: the UTC date and a build number from 1 each day, so numbers stay small. Runs on
   `main` never share a concurrency group (GitHub would replace a pending run and leave a merge
   untagged), and a push refused because another run took the number retries with the next one.
@@ -19,8 +19,8 @@ had to renumber.
   production deploy the same tag and show the same number. A commit CI has not tagged yet is
   waited for (up to 15 minutes) rather than built under another name; an untagged or locally
   changed build says so (`2026.10.17.2+abc1234`, `+dirty`).
-- **Where it shows:** the bottom of the app's nav, linking to GitHub's comparison with the previous
-  tag (what the build added); `GET /api/version`; the worker's start-up log.
+- **Where it shows:** the bottom of the app's nav, linking to the tag's page on GitHub (the merged
+  PR's title and commit; an untagged build links to the changes since the previous tag); `GET /api/version`; the worker's start-up log.
 - **No GitHub Releases yet.** While every merge is deployed, a release per tag would be noise;
   adding releases later needs only a step that creates one for a tag.
 - **Timestamped migrations.** New migrations are `YYYYMMDDHHMM_description.sql`; `0001`–`0049`
@@ -28,7 +28,13 @@ had to renumber.
   applies every file it has not applied, in name order, and a timestamp sorts after every number.
 
 ## Consequences
-- Deploy hosts need Node 24, and a deploy straight after a merge waits for CI (6–9 minutes).
+- Deploy hosts need Node 24, and a deploy straight after a merge waits for the tag (under a
+  minute).
+- A push to `main` re-runs no tests, only `tag`: `main` requires every PR to be up to date and to
+  pass the Node, Worker and Images + compose smoke test checks (admins included), so what lands was
+  tested as it is. Dropping either rule (or the smoke test as a required check) needs the tests
+  back on `main`. A merge queue would also remove the *Update branch* re-runs, but needs the repo
+  under an organization.
 - The version is only as good as the tags: a deploy with `--untagged` or from an edited checkout is
   visibly not a tagged build.
 - Two PRs merged out of timestamp order apply their migrations in one order on existing databases

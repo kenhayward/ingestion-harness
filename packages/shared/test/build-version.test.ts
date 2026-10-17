@@ -15,9 +15,9 @@ const info = (version: string, previous: string | null): VersionInfo => ({
 
 describe('versionLink', () => {
   it.each<[VersionInfo, string | null]>([
-    [info('2026.10.17.3', '2026.10.17.2'), `${REPO_URL}/compare/2026.10.17.2...2026.10.17.3`],
-    [info('2026.10.17.3+dirty', '2026.10.17.2'), `${REPO_URL}/compare/2026.10.17.2...2026.10.17.3`],
-    [info('2026.10.17.1', null), `${REPO_URL}/tree/2026.10.17.1`],
+    [info('2026.10.17.3', '2026.10.17.2'), `${REPO_URL}/releases/tag/2026.10.17.3`],
+    [info('2026.10.17.3+dirty', '2026.10.17.2'), `${REPO_URL}/releases/tag/2026.10.17.3`],
+    [info('2026.10.17.1', null), `${REPO_URL}/releases/tag/2026.10.17.1`],
     [info('2026.10.17.2+abc1234', '2026.10.17.2'), `${REPO_URL}/compare/2026.10.17.2...abc1234`],
     [
       info('2026.10.17.2+abc1234.dirty', '2026.10.17.2'),
@@ -31,7 +31,7 @@ describe('versionLink', () => {
 
   it('takes another repository', () => {
     expect(versionLink(info('2026.10.17.1', null), 'https://example.com/r')).toBe(
-      'https://example.com/r/tree/2026.10.17.1',
+      'https://example.com/r/releases/tag/2026.10.17.1',
     );
   });
 });
