@@ -20,8 +20,10 @@ from .extract import SYSTEM_PROMPT, ExtractionFailedError, ExtractionResult, run
 from .llm.base import (
     ContextExceededError,
     LLMProvider,
+    ModelUnavailableError,
     RefusalError,
     context_exceeded_reason,
+    model_unavailable_reason,
 )
 from .llm.registry import ModelRegistry, ModelResolutionError
 from .ocr import (
@@ -503,6 +505,10 @@ def ocr_pages(
             page = ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
         except RefusalError as exc:
             raise DocumentError(f"OCR page {index + 1}: {exc}") from exc
+        except ModelUnavailableError as exc:  # a retry would repeat it
+            raise DocumentError(
+                model_unavailable_reason(f"OCR page {index + 1}", model_ref, exc)
+            ) from exc
         except ContextExceededError as exc:  # a retry would repeat it
             raise DocumentError(
                 context_exceeded_reason(
@@ -718,6 +724,12 @@ def run_step_extraction(
             raise DocumentError(f"{exc}{where}") from exc
         except RefusalError as exc:
             raise DocumentError(f"extraction {ex.id!r}{where}: {exc}") from exc
+        except ModelUnavailableError as exc:  # a retry would repeat it
+            raise DocumentError(
+                model_unavailable_reason(
+                    f"extraction {ex.id!r}{where}", f"{provider.name}/{model_id}", exc
+                )
+            ) from exc
         except ContextExceededError as exc:  # a retry would repeat it
             raise DocumentError(
                 context_exceeded_reason(

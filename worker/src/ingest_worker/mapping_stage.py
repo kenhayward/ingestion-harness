@@ -931,6 +931,7 @@ def run_mapping(
         check=check,
         tools=tools,
         progress=drafting.CallProgress(report, tools=bool(tools)),
+        checkpoint=lambda: check_cancelled(job, queue),
     )
     body, _ = convert_mapping(
         result.data,

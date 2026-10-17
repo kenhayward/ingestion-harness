@@ -398,6 +398,13 @@ export function StagePanel({
       {!hasDraft && <p className="muted">Start the next version on the Recipe tab first.</p>}
       {running && (
         <DraftRunProgress
+          onCancel={() =>
+            void act(async () => {
+              await api.cancelProposal(projectId, proposal!.id);
+              await refresh();
+            })
+          }
+          cancelling={busy}
           stage={stage}
           run={proposal.run}
           label="Drafting progress"

@@ -241,3 +241,19 @@ def test_the_transcript_records_every_turn() -> None:
     }
     assert transcript[3]["text"] == "you said hi" and transcript[3]["isError"] is False
     assert "<root>: 'answer' is a required property" in transcript[6]["errors"]
+
+
+def test_the_checkpoint_runs_before_every_turn_and_can_stop_the_conversation() -> None:
+    class Stop(Exception):
+        pass
+
+    turns = {"n": 0}
+
+    def checkpoint() -> None:
+        turns["n"] += 1
+        if turns["n"] == 2:
+            raise Stop
+
+    with pytest.raises(Stop):
+        run([[("echo", {"text": "1"})], [(SUBMIT, {"answer": "a"})]], checkpoint=checkpoint)
+    assert turns["n"] == 2  # the second turn was never asked for

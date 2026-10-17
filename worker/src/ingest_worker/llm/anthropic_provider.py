@@ -15,6 +15,7 @@ from .base import (
     LLMError,
     Message,
     ModelDescriptor,
+    ModelUnavailableError,
     RefusalError,
     TokenCallback,
     TokenCounter,
@@ -24,6 +25,7 @@ from .base import (
     VisionRequest,
     dump_echo,
     is_context_exceeded,
+    is_model_unavailable,
 )
 
 #: Beta enabling server-side refusal fallbacks (`fallbacks="default"`).
@@ -178,6 +180,10 @@ class AnthropicProvider:
         except anthropic.APIStatusError as exc:
             if is_context_exceeded(exc.message, exc.body):
                 raise ContextExceededError(f"anthropic {exc.status_code}: {exc.message}") from exc
+            if exc.status_code in (400, 404) and (
+                exc.status_code == 404 or is_model_unavailable(exc.message, exc.body)
+            ):
+                raise ModelUnavailableError(f"anthropic {exc.status_code}: {exc.message}") from exc
             if exc.status_code in (408, 409, 429) or exc.status_code >= 500:
                 raise LLMError(f"anthropic {exc.status_code}: {exc.message}") from exc
             raise

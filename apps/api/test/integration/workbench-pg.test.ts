@@ -297,6 +297,39 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await first({ ...model, attempt: 2 })).toBeNull();
   });
 
+  it('lists a draft job with its attempts, says when the queue is paused, and cancels', async () => {
+    const projectId = await newProject();
+    const job = await repo.createDraftJob(projectId, { stage: 'survey' });
+    await pool.query(`UPDATE jobs SET attempts = 1, error = 'LLMError: busy' WHERE id = $1`, [
+      job.id,
+    ]);
+    const [listed] = await repo.listDraftJobs(projectId);
+    expect(listed).toMatchObject({ id: job.id, status: 'queued', attempts: 1, maxAttempts: 3 });
+    expect(listed!.error).toBe('LLMError: busy');
+
+    expect(await repo.queuePaused()).toBe(false);
+    await pool.query('UPDATE queue_control SET paused = true');
+    try {
+      expect(await repo.queuePaused()).toBe(true);
+    } finally {
+      await pool.query('UPDATE queue_control SET paused = false');
+    }
+
+    expect(await repo.cancelDraftJob('other-project', job.id, 'Cancelled.')).toBeNull();
+    const cancelled = await repo.cancelDraftJob(projectId, job.id, 'Cancelled by Dana.');
+    expect(cancelled).toMatchObject({
+      id: job.id,
+      status: 'cancelled',
+      error: 'Cancelled by Dana.',
+    });
+    expect(await repo.cancelDraftJob(projectId, job.id, 'Cancelled.')).toBeNull(); // finished
+    const { rows } = await pool.query(
+      `SELECT message FROM job_events WHERE job_id = $1 ORDER BY at`,
+      [job.id],
+    );
+    expect(rows.map((r) => r.message)).toContain('cancelled');
+  });
+
   it('creates, lists and decides proposals once', async () => {
     const projectId = await newProject();
     const a = await repo.createDraftJob(projectId, { stage: 'survey' });

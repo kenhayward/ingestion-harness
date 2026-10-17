@@ -99,11 +99,13 @@ def run_tool_extraction(
     max_turns: int = MAX_TURNS,
     max_tool_calls: int = MAX_TOOL_CALLS,
     transcript: list[dict[str, Any]] | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> ExtractionResult:
     """Hold the conversation until the model submits a valid answer. `max_attempts` counts
     rejected answers, as in `run_extraction`; `on_tokens` gets the whole conversation's estimated
     output tokens; `transcript` (when given) is appended to as the conversation goes, so it holds
-    what happened even when this raises."""
+    what happened even when this raises. `checkpoint` runs before every turn (a cancel check:
+    whatever it raises ends the conversation)."""
     validator = Draft202012Validator(schema)
     by_name = {t.spec.name: t for t in tools}
     submit = ToolSpec(
@@ -158,6 +160,8 @@ def run_tool_extraction(
     if on_attempt is not None:
         on_attempt(1)
     for turn_n in range(1, max_turns + 1):
+        if checkpoint is not None:
+            checkpoint()
         last = turn_n == max_turns or calls >= max_tool_calls
         current[0] = 0
         turn = provider.converse(

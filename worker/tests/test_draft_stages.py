@@ -726,3 +726,105 @@ def test_revise_sentinels_mean_no_repeat_keys() -> None:
 def test_drafting_prompts_explain_repeating_sections() -> None:
     assert "repeat true" in SECTIONS.instructions and "keyFrom" in SECTIONS.instructions
     assert "keyColumn" in STEPS.instructions
+
+
+# --- step order: a step runs after the steps whose outputs its context reads -----------------
+
+ORDER_DRAFT: dict[str, Any] = {
+    **DRAFT,
+    "outputs": {
+        "fields": [{"id": "owning_location"}, {"id": "document_type"}],
+        "tables": [{"id": "stability", "columns": [{"id": "test"}, {"id": "result"}]}],
+    },
+    # The stability step exists already; nothing fills the header fields yet.
+    "pipeline": [{"type": "extract", "id": "stability", "table": "stability", "sections": ["all"]}],
+}
+CONTEXT = [
+    {"name": "owning_location", "path": "owning_location"},
+    {"name": "document_type", "path": "document_type"},
+]
+
+
+def pipeline_after(body: dict[str, Any], draft: dict[str, Any]) -> list[str]:
+    from ingest_worker.draft_changes import apply_changes
+
+    return [s["id"] for s in apply_changes(draft, body["changes"])["pipeline"]]
+
+
+@pytest.mark.parametrize("stage", [STEPS, REVISE], ids=["steps", "revise"])
+def test_a_new_step_that_fills_context_is_moved_before_the_steps_reading_it(stage: Stage) -> None:
+    """A new step goes last and a changed one keeps its place, so a header step added to fill
+    what an existing step's context reads would run after it: the reported failure (both tries
+    rejected with 'not filled by an earlier step'). The fit reorders instead."""
+    data = {
+        "notes": "",
+        "changes": [
+            step_item(id="stability", fields=None, table="stability", context=CONTEXT),
+            step_item(id="header", fields=["owning_location", "document_type"]),
+        ],
+    }
+    if stage is REVISE:
+        data["changes"] = [nested("putStep", "step", c) for c in data["changes"]]
+    body, errors = run(stage, data, ORDER_DRAFT)
+    assert errors == []
+    assert pipeline_after(body, ORDER_DRAFT) == ["header", "stability"]
+    ops = [(c["op"], c.get("id") or c["step"]["id"]) for c in body["changes"]]
+    assert ops == [("putStep", "header"), ("removeStep", "stability"), ("putStep", "stability")]
+    assert "Moved 'stability' after 'header', which fills what its context reads." in body["notes"]
+
+
+def test_an_untouched_step_reading_a_new_step_is_moved_too() -> None:
+    draft = {
+        **ORDER_DRAFT,
+        "pipeline": [
+            {
+                "type": "extract",
+                "id": "stability",
+                "table": "stability",
+                "sections": ["all"],
+                "context": {"owning_location": "owning_location"},
+            }
+        ],
+    }
+    data = {
+        "notes": "",
+        "changes": [step_item(id="header", fields=["owning_location", "document_type"])],
+    }
+    body, errors = run(STEPS, data, draft)
+    assert errors == []
+    assert pipeline_after(body, draft) == ["header", "stability"]
+    moved = body["changes"][-1]
+    assert moved["step"] == draft["pipeline"][0]  # its definition as it was
+    assert moved["reason"] == "Moved after 'header', which fills what its context reads."
+
+
+def test_steps_already_in_order_are_left_alone() -> None:
+    data = {
+        "notes": "",
+        "changes": [
+            step_item(id="header", fields=["owning_location", "document_type"]),
+            step_item(id="stability", fields=None, table="stability", context=CONTEXT),
+        ],
+    }
+    draft = {**ORDER_DRAFT, "pipeline": []}
+    body, errors = run(STEPS, data, draft)
+    assert errors == [] and body["notes"] == ""
+    assert [c["op"] for c in body["changes"]] == ["putStep", "putStep"]
+
+
+def test_a_context_cycle_is_left_for_the_check_to_report() -> None:
+    draft = {
+        **ORDER_DRAFT,
+        "outputs": {"fields": [{"id": "a"}, {"id": "b"}], "tables": []},
+        "pipeline": [],
+    }
+    data = {
+        "notes": "",
+        "changes": [
+            step_item(id="one", fields=["a"], context=[{"name": "b", "path": "b"}]),
+            step_item(id="two", fields=["b"], context=[{"name": "a", "path": "a"}]),
+        ],
+    }
+    body, errors = run(STEPS, data, draft)
+    assert [c["op"] for c in body["changes"]] == ["putStep", "putStep"]
+    assert any("not filled by an earlier step" in e for e in errors)

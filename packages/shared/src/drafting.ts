@@ -228,6 +228,17 @@ export const DraftRunSchema = z.object({
    * when its phase (and model try) began, which a streamed reply's token counts leave alone.
    */
   progress: DraftProgressSchema.extend({ at: z.string(), phaseAt: z.string() }).nullable(),
+  /** Queued while the job queue is paused (a restore): it starts once an admin resumes it. */
+  paused: z.boolean().optional(),
+  /** Queued again after a failed try: the try it waits for, of how many, and the error. */
+  retry: z
+    .object({
+      attempt: z.number().int().positive(),
+      of: z.number().int().positive(),
+      error: z.string(),
+    })
+    .nullable()
+    .optional(),
 });
 export type DraftRun = z.infer<typeof DraftRunSchema>;
 

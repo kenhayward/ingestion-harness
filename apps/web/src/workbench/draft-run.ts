@@ -65,6 +65,22 @@ function detailOf(key: string, progress: DraftProgress | null): string | null {
   return null;
 }
 
+/** Why a queued run waits: the queue is paused, or it is to be tried again after an error. */
+function waitingDetail(run: DraftRun): string | null {
+  const parts: string[] = [];
+  if (run.paused) {
+    parts.push(
+      'The job queue is paused: this starts when an admin resumes it (Administration > Backup).',
+    );
+  }
+  if (run.retry) {
+    const { attempt, of, error } = run.retry;
+    const said = error.length > 200 ? `${error.slice(0, 200)}…` : error;
+    parts.push(`The last try failed, so it will be tried again (try ${attempt} of ${of}): ${said}`);
+  }
+  return parts.length ? parts.join(' ') : null;
+}
+
 /**
  * A queued or running drafting stage as the person follows it (issue #151): every phase it goes
  * through, done, current or still to come, with the current one's detail and time, and the
@@ -93,9 +109,11 @@ export function draftRunView(stage: DraftStage, run: DraftRun, now: number): Run
         state,
         // The samples read stay said; a model call's try only while it runs.
         detail:
-          state === 'current' || (state === 'done' && s.key === READING.key)
-            ? detailOf(s.key, progress)
-            : null,
+          s.key === QUEUED.key && state === 'current'
+            ? waitingDetail(run)
+            : state === 'current' || (state === 'done' && s.key === READING.key)
+              ? detailOf(s.key, progress)
+              : null,
         elapsed: state === 'current' ? seconds(started) : null,
       };
     }),

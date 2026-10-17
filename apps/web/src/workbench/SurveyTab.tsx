@@ -272,6 +272,13 @@ export function SurveyTab({
       {header}
       {running && (
         <DraftRunProgress
+          onCancel={() =>
+            void act(async () => {
+              await api.cancelProposal(projectId, proposal.id);
+              await refresh();
+            })
+          }
+          cancelling={busy}
           stage="survey"
           run={proposal.run}
           label="Survey progress"

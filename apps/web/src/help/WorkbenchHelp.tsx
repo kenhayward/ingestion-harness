@@ -50,6 +50,15 @@ export function WorkbenchHelp() {
         A project is <strong>local</strong> by default: its documents only go to models running on
         your own servers. Only an administrator can let a project use external models.
       </p>
+
+      <h3>While a drafting stage runs</h3>
+      <p>
+        A stage's progress shows each step and how long it has taken. While it waits for a worker it
+        says why: the job queue is paused (an administrator resumes it under Administration &gt;
+        Backup), or the last try failed and it will be tried again, with the error. A model that is
+        not on its server stops the stage at once with what to change. <strong>Cancel run</strong>{' '}
+        stops a waiting or running stage; run the stage again to start afresh.
+      </p>
     </>
   );
 }

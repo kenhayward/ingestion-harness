@@ -91,6 +91,7 @@ def run_extraction(
     on_tokens: Callable[[int], None] | None = None,
     retry_note: str = "Return corrected JSON only.",
     transcript: list[dict[str, Any]] | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> ExtractionResult:
     """Call the model, validate against the JSON Schema, and retry with the validation errors
     fed back until the output is valid or attempts run out. `check` adds rules JSON Schema
@@ -98,7 +99,8 @@ def run_extraction(
     model call (progress reporting). With `on_tokens` the reply streams and its estimated
     tokens so far are reported as they arrive (providers that cannot stream answer whole).
     `retry_note` ends a retry prompt, after the errors. `transcript` (drafting's model log), when
-    given, is appended to as the calls go: the prompt, each reply, each rejection."""
+    given, is appended to as the calls go: the prompt, each reply, each rejection. `checkpoint`
+    runs before every call (a cancel check)."""
     validator = Draft202012Validator(schema)
     entries: list[dict[str, Any]] = transcript if transcript is not None else []
     entries.append({"kind": "prompt", "text": prompt, "images": len(images)})
@@ -107,6 +109,8 @@ def run_extraction(
     attempts: list[Attempt] = []
     current_prompt = prompt
     for n in range(1, max_attempts + 1):
+        if checkpoint is not None:
+            checkpoint()
         if on_attempt is not None:
             on_attempt(n)
         result = provider.complete_json(

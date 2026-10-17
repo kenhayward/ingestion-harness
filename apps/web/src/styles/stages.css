@@ -3700,6 +3700,13 @@ label.inline.list-select {
   font-size: var(--ih-text-sm);
 }
 
+/* Cancel run, at the right of a drafting run's headline. */
+.draft-run-cancel {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 0.85em;
+}
+
 /* A drafting proposal's model log (DraftLogDialog): rounds of prompt, replies, tool calls. */
 .model-log-button {
   display: inline-flex;

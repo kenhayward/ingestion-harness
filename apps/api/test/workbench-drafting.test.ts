@@ -172,6 +172,8 @@ describe('a running stage (issue #151)', () => {
       status: 'queued',
       since: repo.draftJobs.get(id)!.updatedAt,
       progress: null,
+      paused: false,
+      retry: null,
     });
     const listed = async () =>
       (
@@ -457,6 +459,107 @@ describe("a proposal's model log", () => {
       await app.inject(url('00000000-0000-4000-8000-000000000000')),
       await app.inject(url('not-a-uuid')),
       await app.inject(url(id, 'nope')),
+    ]) {
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: 'proposal not found' });
+    }
+  });
+});
+
+describe('why a drafting run waits', () => {
+  it('says when the job queue is paused', async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    const { id } = (await start()).json() as ProposalView;
+    const run = async () =>
+      (
+        (await app.inject('/api/workbench/projects/letter/proposals')).json() as ProposalView[]
+      ).find((p) => p.id === id)!.run!;
+    expect(await run()).toMatchObject({ status: 'queued', paused: false, retry: null });
+    repo.queuePausedNow = true;
+    expect(await run()).toMatchObject({ status: 'queued', paused: true });
+  });
+
+  it('says when it waits to be tried again after an error, with the error', async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    const { id } = (await start()).json() as ProposalView;
+    repo.draftJobs.set(id, {
+      ...repo.draftJobs.get(id)!,
+      status: 'queued',
+      attempts: 1,
+      maxAttempts: 3,
+      error: 'LLMError: openai 503: busy',
+    });
+    const [p] = (
+      await app.inject('/api/workbench/projects/letter/proposals')
+    ).json() as ProposalView[];
+    expect(p!.run).toMatchObject({
+      status: 'queued',
+      retry: { attempt: 2, of: 3, error: 'LLMError: openai 503: busy' },
+    });
+  });
+});
+
+describe('cancelling a drafting run', () => {
+  const cancel = (app: Awaited<ReturnType<typeof project>>['app'], pid: string, id = 'letter') =>
+    app.inject({ method: 'POST', url: `/api/workbench/projects/${id}/proposals/${pid}/cancel` });
+
+  it('cancels a queued or running run; the proposal then reads as failed: cancelled', async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    const queued = (await start()).json() as ProposalView;
+    const res = await cancel(app, queued.id);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      id: queued.id,
+      status: 'failed',
+      error: 'Cancelled.',
+      run: null,
+    });
+    expect(repo.draftJobs.get(queued.id)!.status).toBe('cancelled');
+
+    const running = (await start('survey')).json() as ProposalView;
+    repo.draftJobs.set(running.id, { ...repo.draftJobs.get(running.id)!, status: 'running' });
+    expect((await cancel(app, running.id)).json()).toMatchObject({ status: 'failed' });
+    expect(repo.draftJobs.get(running.id)!.status).toBe('cancelled');
+  });
+
+  it('names who cancelled it', async () => {
+    const access = new MemoryAccessRepo();
+    const { app, repo, workbench } = await testApp({ access });
+    await workbench.createProject('letter', 'Letter');
+    const job = await repo.createDraftJob('letter', {});
+    await workbench.createProposal({
+      id: job.id,
+      projectId: 'letter',
+      stage: 'survey',
+      briefVersion: null,
+    });
+    const { cookie } = await signInNewUser(app, access, 'Dana');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/workbench/projects/letter/proposals/${job.id}/cancel`,
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().error).toBe('Cancelled by Dana.');
+  });
+
+  it('refuses a finished run, and an unknown proposal or project', async () => {
+    const { app, repo, add, start } = await project();
+    await add(1);
+    const { id } = (await start()).json() as ProposalView;
+    repo.draftJobs.set(id, { ...repo.draftJobs.get(id)!, status: 'needs_review', error: 'x' });
+    const done = await cancel(app, id);
+    expect(done.statusCode).toBe(409);
+    expect(done.json()).toEqual({
+      error: 'proposal is failed: only a waiting or running run can be cancelled',
+    });
+    for (const res of [
+      await cancel(app, '00000000-0000-4000-8000-000000000000'),
+      await cancel(app, 'nope'),
+      await cancel(app, id, 'other'),
     ]) {
       expect(res.statusCode).toBe(404);
       expect(res.json()).toEqual({ error: 'proposal not found' });
