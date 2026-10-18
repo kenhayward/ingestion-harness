@@ -37,6 +37,10 @@ ex:ArithmeticMean a owl:Class ; rdfs:label "arithmetic mean" ; rdfs:subClassOf e
 ex:ArithmeticMeanRole a owl:Class ; rdfs:label "arithmetic mean role" ;
     rdfs:subClassOf ex:Datum .
 ex:ResultRow a owl:Class ; rdfs:label "result row" ; rdfs:subClassOf ex:Datum .
+ex:Identifier a owl:Class ; rdfs:label "identifier" ; rdfs:subClassOf ex:Datum .
+ex:BatchIdentifier a owl:Class ; rdfs:label "batch identifier" ; rdfs:subClassOf ex:Identifier .
+obo:IAO_0000028 a owl:Class ; rdfs:label "symbol" ; rdfs:subClassOf obo:IAO_0000030 .
+ex:LotNumber a owl:Class ; rdfs:label "lot number" ; rdfs:subClassOf obo:IAO_0000028 .
 ex:hasDataOutput a owl:ObjectProperty ; rdfs:label "has data output" ;
     rdfs:range obo:IAO_0000030 .
 ex:hasOutputMaterial a owl:ObjectProperty ; rdfs:label "has output material" .
@@ -66,7 +70,26 @@ DRAFT: dict[str, Any] = {
                 "id": "results",
                 "name": "Results",
                 "description": "Each result row of the study, with its value",
-                "columns": [{"id": "assay", "name": "Assay (%)", "type": "decimal"}],
+                "columns": [
+                    {
+                        "id": "batch_number",
+                        "name": "Batch Number",
+                        "type": "text",
+                        "description": "Batch identifier this row belongs to.",
+                    },
+                    {
+                        "id": "assay",
+                        "name": "Assay (%)",
+                        "type": "decimal",
+                        "description": "Numeric value; null if below reporting threshold.",
+                    },
+                    {
+                        "id": "assay_below_threshold",
+                        "name": "Assay Below Threshold",
+                        "type": "boolean",
+                        "description": "True if the cell shows a '<' value (e.g. '<0.05').",
+                    },
+                ],
             }
         ],
     },
@@ -186,3 +209,43 @@ def test_the_default_link_and_value_prefer_their_own_phrases_and_a_data_range() 
         f"{EX}hasValue",
         f"{EX}hasNumericValue",
     }
+
+
+def test_an_identifier_class_is_an_entity_shared_across_documents() -> None:
+    """An identifier names a thing other documents name too: one entity per value, not a value
+    node per row. A class under "identifier" (or IAO's symbol, as a lot number) is an entity."""
+    requests, picks = run({**DEFAULTS, "results.batch_number": f"{EX}BatchIdentifier"})
+    assert f"{EX}BatchIdentifier" in options_for(requests, "results.batch_number")
+    pick = picks["results.batch_number"]
+    assert (pick.value_as, pick.entity_class) == ("entity", f"{EX}BatchIdentifier")
+    assert pick.term == f"{EX}hasDataOutput"
+
+
+def test_identifier_classes_are_found_by_their_ancestors() -> None:
+    from ingest_worker.mapping_match import _Terms, is_identifier
+
+    terms = _Terms(store(), VERSIONS)
+    assert is_identifier(terms, f"{EX}BatchIdentifier")  # under a class labelled "identifier"
+    assert is_identifier(terms, f"{EX}LotNumber")  # under IAO symbol
+    assert not is_identifier(terms, f"{EX}AssayResult")
+
+
+def test_a_qualifier_column_is_left_unmapped_without_asking() -> None:
+    """A boolean flag on a sibling value ("<0.05" below the reporting threshold) qualifies that
+    value; until value nodes carry qualifiers it is left unmapped, by rule, at high confidence."""
+    requests, picks = run(DEFAULTS)
+    assert all("results.assay_below_threshold" not in dict(r.items) for r in requests)
+    pick = picks["results.assay_below_threshold"]
+    assert (pick.term, pick.confidence) == (None, "high")
+
+
+def test_qualifier_columns_need_a_sibling_they_qualify() -> None:
+    from ingest_worker.mapping_match import qualifier_of
+
+    columns = [o for o in outputs_of(DRAFT) if o.path.startswith("results.")]
+    flag = next(o for o in columns if o.path == "results.assay_below_threshold")
+    assert qualifier_of(flag, columns) == "results.assay"
+    alone = [o for o in columns if o.path != "results.assay"]
+    assert qualifier_of(flag, alone) is None
+    assay = next(o for o in columns if o.path == "results.assay")
+    assert qualifier_of(assay, columns) is None

@@ -203,6 +203,54 @@ NOT_DATA_ROOTS: dict[str, str] = {
 }
 #: How far up a class's parents the data and BFO roots are looked for.
 ROOT_DEPTH = 12
+#: Identifier roots (IAO identifier, centrally registered identifier, symbol): an identifier
+#: names a thing other documents name too, so it is published as an entity, not a value node.
+#: A class under one labelled "identifier" (AFO's) counts as well.
+IDENTIFIER_ROOTS = frozenset(
+    {
+        "http://purl.obolibrary.org/obo/IAO_0020000",
+        "http://purl.obolibrary.org/obo/IAO_0000578",
+        "http://purl.obolibrary.org/obo/IAO_0000028",
+    }
+)
+#: A boolean output whose id is a sibling's stem plus one of these qualifies that sibling's
+#: value (a "<0.05" below the reporting threshold): left unmapped until value nodes carry
+#: qualifiers (docs/design/value-node-mapping.md, open question 2).
+QUALIFIER_SUFFIXES = (
+    "_below_threshold",
+    "_below_reporting_threshold",
+    "_below_lod",
+    "_below_loq",
+    "_less_than",
+    "_qualifier",
+    "_censored",
+    "_flag",
+)
+
+
+def is_identifier(terms: _Terms, iri: str) -> bool:
+    """Whether a class is an identifier: under an IAO identifier root or a class labelled
+    "identifier"."""
+    roots = terms.ancestors([iri], depth=ROOT_DEPTH)
+    if roots & IDENTIFIER_ROOTS:
+        return True
+    return any((t := terms.get(a)) is not None and _words(t.label) == "identifier" for a in roots)
+
+
+def qualifier_of(o: OutputSpec, siblings: Sequence[OutputSpec]) -> str | None:
+    """The sibling output a boolean flag qualifies, or None: `<stem><suffix>` where a non-boolean
+    sibling's id starts with `<stem>` (`t_amc_below_threshold` qualifies `t_amc_count`)."""
+    if o.type != "boolean":
+        return None
+    leaf = o.path.rsplit(".", 1)[-1]
+    stem = next((leaf[: -len(s)] for s in QUALIFIER_SUFFIXES if leaf.endswith(s)), None)
+    if not stem:
+        return None
+    for s in siblings:
+        other = s.path.rsplit(".", 1)[-1]
+        if s.path != o.path and s.type != "boolean" and other.startswith(stem):
+            return s.path
+    return None
 
 
 def rerank(
@@ -530,7 +578,11 @@ def propose(
         return [*mixed[0], *mixed[1]] if o.type in NODE_TYPES else [*mixed[1], *mixed[0]]
 
     def map_outputs(group: list[OutputSpec], owner: list[str]) -> None:
-        ranked = [(o.path, o, options_of(o, owner)) for o in group]
+        # A flag qualifying a sibling value is left unmapped by rule, without asking.
+        qualifiers = {o.path for o in group if qualifier_of(o, group) is not None}
+        for path in qualifiers:
+            picks[path] = Pick(None, "literal", "high")
+        ranked = [(o.path, o, options_of(o, owner)) for o in group if o.path not in qualifiers]
         for start in range(0, len(ranked), BATCH):
             batch = ranked[start : start + BATCH]
             limit = NODE_CLASSES + NODE_PROPERTIES if node_ready else options
@@ -543,9 +595,11 @@ def propose(
                 if picked is not None and picked.kind == "class":
                     classes = [r for r in shown if r.kind == "class"]
                     node_class, replaced = _specific(term, classes, terms)
+                    # An identifier is shared across documents: an entity, not a value node.
+                    shared = node_class is not None and is_identifier(terms, node_class)
                     picks[path] = Pick(
                         node_link,
-                        "node",
+                        "entity" if shared else "node",
                         "medium" if replaced else _confidence(term, shown),
                         tuple(r.iri for r in rs),
                         entity_class=node_class,
