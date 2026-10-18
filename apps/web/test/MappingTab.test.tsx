@@ -293,6 +293,54 @@ describe('MappingTab', () => {
     ).toHaveAttribute('href', '#/workbench/batch/template');
   });
 
+  it('puts a decided proposal behind header buttons, left of Propose again, not in a card', async () => {
+    const accepted = { ...review, status: 'partially_accepted' as const, acceptedChanges: [0, 1] };
+    show(true, { listProposals: vi.fn(async () => [accepted]) });
+    const again = await screen.findByRole('button', { name: 'Propose again' });
+    const preview = screen.getByRole('button', { name: 'Preview the graph' });
+    const latest = screen.getByRole('button', { name: 'Latest proposal' });
+    const order = (a: Element, b: Element) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(order(preview, latest)).toBeTruthy();
+    expect(order(latest, again)).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Proposal' })).toBeNull();
+    expect(screen.queryByText(/changes applied to draft/)).toBeNull();
+    // The current mapping still shows below.
+    expect(screen.getByRole('navigation', { name: 'Mapping outline' })).toBeInTheDocument();
+
+    await userEvent.click(latest);
+    const dialog = screen.getByRole('dialog', { name: 'Latest proposal' });
+    expect(dialog).toHaveTextContent('2 of 3 changes applied to draft v2');
+    expect(dialog).toHaveTextContent('Retrieval was lexical only for pharma v1.');
+    expect(within(dialog).getAllByText('Applied')).toHaveLength(2);
+    expect(within(dialog).getByText('Not applied')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('offers only Latest proposal after a rejection', async () => {
+    const rejected = { ...review, status: 'rejected' as const };
+    show(true, { listProposals: vi.fn(async () => [rejected]) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Latest proposal' }));
+    expect(screen.getByRole('dialog', { name: 'Latest proposal' })).toHaveTextContent(
+      'Proposal rejected',
+    );
+    expect(screen.queryByRole('button', { name: 'Preview the graph' })).toBeNull();
+  });
+
+  it('starts the graph preview from the applied proposal next step', async () => {
+    const accepted = { ...review, status: 'accepted' as const, acceptedChanges: [0, 1, 2] };
+    const startGraphPreview = vi.fn(async () => ({
+      jobId: 'g1',
+      status: 'queued' as const,
+      error: null,
+      result: null,
+    }));
+    show(true, { listProposals: vi.fn(async () => [accepted]), startGraphPreview });
+    await userEvent.click(await screen.findByRole('button', { name: 'Preview the graph' }));
+    expect(startGraphPreview).toHaveBeenCalledWith('batch');
+  });
+
   it('previews a dev sample graph', async () => {
     const startGraphPreview = vi.fn(async () => ({
       jobId: 'g1',

@@ -49,7 +49,7 @@ graph per document; an unmapped output falls back to the recipe's default vocabu
 | Deprecated terms are not filtered from retrieval | `ontology.py` `lexical`/`semantic` |
 | No per-value concept matching: enum values and observed values are not matched to a scheme's concepts before the model guesses | `mapping_stage.py` |
 | Confidence is the model's own word; nothing is calibrated, nothing auto-accepted | `MAPPING_SCHEMA` |
-| Accepted mappings are never reused (other published recipes map "batch number" too) | — |
+| Accepted mappings are never reused (other published recipes map "batch number" too); proposal: [mapping-memory.md](mapping-memory.md) | — |
 | Reviewers see alternatives' labels only: no definitions, scores or one-click swap | `apps/web/src/workbench/mapping.ts` |
 | Columns merged into a new table change lose their own confidence and alternatives | `convert_mapping` |
 
@@ -480,3 +480,52 @@ The same gold after [value nodes](value-node-mapping.md) (PR #243): per-row resu
   are still mapped (3 of 6, as boolean datum nodes). The high tier holds only 4 picks (100%), so the
   spike's gate (half the classes, with a 95% high tier on a third of the outputs) is met on
   classes, not on confidence.
+
+### Identifiers, qualifiers and confidence (2026-10-18)
+
+The three open points above, on the same gold, build and model. The harness now also scores
+**Exact**: right in every way the gold names (the term, the form and the class). With `term: any`
+a hit says only that an output was mapped, so the confidence tiers are judged on Exact too.
+
+| Per-output matcher | Hit@1 | Value as | Class | Exact | High tier (exact precision) | Calls | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PR #244 | 83% | 20/35 | 22/35 | 14/53 | 4 picks (not measured) | 16 | 257 s |
+| **with the changes below** | 87% | 33/35 | **24/35** | **30/53** | 8 picks (100%) | 14 | 230 s |
+| the same, `--confirm` | 87% | 33/35 | 24/35 | 30/53 | 10 picks (80%) | 20 | 355 s |
+
+- **Identifiers are entities.** A class under an IAO identifier root (identifier, centrally
+  registered identifier, symbol) or under one labelled "identifier" is published as an entity,
+  shared across documents; anything else stays a value node. Batch number, study id and lot number
+  now take the gold's form: value-as 20 → 33 of 35.
+- **Qualifier flags stay unmapped, by rule.** A boolean whose id is a sibling's stem plus a
+  qualifier suffix (`_below_threshold`, `_flag`, `_qualifier`, …; `t_amc_below_threshold` beside
+  `t_amc_count`) qualifies that value. It is left unmapped without a model call, at high confidence,
+  until value nodes carry qualifiers ([open question 2](value-node-mapping.md#12-open-questions)).
+  All six now match the gold.
+- **Too general, narrowed.** When the model picks a class and a retrieved subclass adds to its
+  label only words of the output's name, the subclass is taken (at medium): water content goes
+  from *mass fraction* to *water mass fraction*. Narrowing reads every class any query retrieved,
+  not only the fused best 20 (water mass fraction ranked 8th for one query, nowhere in the others).
+  A first version accepted any subclass sharing a word of the name and turned *batch identifier*
+  into *supplier lot number* ("number"): a subclass may add only the name's own words.
+- **Confidence.** Two signals were tried; neither reaches the spike's bar (95% exact precision on a
+  third of the outputs, 18 picks):
+  - *A name match.* A class pick whose label shares no content word with the output's name is
+    never high (*assay result* for total degradation products). As a ranking boost it measured
+    worse (storage time took *time datum* over *duration*, 24 → 13 classes with the bad
+    narrowing), so it caps confidence only. The plain high tier is 8 picks, all exact (the six
+    flags, assay, mean): precise, but 15% of the outputs.
+  - *Agreement under a perturbation* (`--confirm`: each field and column asked again with its
+    options reversed; agreeing picks go up a tier, changed ones are low; never past the name cap).
+    The 27B model, near deterministic, changed only 3 of 46 answers, so the second asking shifts
+    almost every pick up a tier rather than telling right from wrong: 23 high picks at 78% without
+    the cap, 10 at 80% with it (the two misses: the time point as *time*, the counts as *viable
+    cell count*). It doubles the calls. It may separate better with sampling (temperature above 0)
+    or a frontier model; it stays opt-in.
+- **Gold questions this run raises** (the gold is Claude-drafted, `# CHECK` items unresolved):
+  *viable cell count* for the microbial counts (a subclass of *count*, arguably the better answer);
+  *time datum* for storage time (accepted for the dissolution time point, not for storage time);
+  *condition* for storage condition (the gold leaves it unmapped).
+- **Still wrong**: the degradation products as AFO's *degradation product role* classes, total
+  degradation products and E. coli pass/fail as *assay result*, appearance as *experiment result*,
+  internal code as *code*, packaging as GS1 *PackagingDetails*, and no table gets a gold row class.

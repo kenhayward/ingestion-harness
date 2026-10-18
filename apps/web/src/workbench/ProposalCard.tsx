@@ -63,6 +63,7 @@ export function ProposalCard({
   footerNote,
   models,
   api,
+  inDialog = false,
 }: {
   /** The model choices: the drafting model shows by its name. */
   models: readonly ModelChoice[];
@@ -90,6 +91,11 @@ export function ProposalCard({
   badge?: (c: DraftChange, index: number) => ReactNode;
   /** A muted line in the footer, next to Apply and Reject. */
   footerNote?: string;
+  /**
+   * A decided proposal shown in its Latest proposal dialog (the mapping stage): the outcome and
+   * every change, open, without the card's border or next step.
+   */
+  inDialog?: boolean;
 }) {
   const idBase = useId();
   // Running the stage again may find nothing to change: accepting that keeps the stage.
@@ -112,6 +118,50 @@ export function ProposalCard({
   if (proposal.status !== 'ready') {
     const applied = proposal.acceptedChanges ?? [];
     const accepted = proposal.status === 'accepted' || proposal.status === 'partially_accepted';
+    const outcome = accepted ? (
+      <div role="status">
+        <h3>
+          {empty
+            ? 'Accepted: no changes needed'
+            : `${applied.length} of ${body.changes.length} changes applied${draftVersion === null ? '' : ` to draft v${draftVersion}`}`}
+        </h3>
+      </div>
+    ) : proposal.status === 'rejected' ? (
+      <h3>Proposal rejected</h3>
+    ) : null;
+    const changes = (
+      <ul className="proposal-changes proposal-decided-list">
+        {body.changes.map((c, i) => {
+          const done = applied.includes(i);
+          return (
+            <li key={`${i}-${c.op}`}>
+              <StageStatusIcon state={done ? 'accepted' : 'pending'} size={18} decorative />
+              <span className="proposal-change">
+                <span className="proposal-line">
+                  <ChangeText c={c} />{' '}
+                  <strong className={done ? 'applied-yes' : 'muted'}>
+                    {done ? 'Applied' : 'Not applied'}
+                  </strong>
+                </span>
+                <span className="proposal-line muted">{c.reason}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+    if (inDialog) {
+      return (
+        <div className="proposal-decided proposal-in-dialog">
+          <div className="proposal-meta">
+            {outcome}
+            {meta}
+            {body.notes && <p>{body.notes}</p>}
+          </div>
+          {changes}
+        </div>
+      );
+    }
     return (
       <section
         aria-label="Proposal"
@@ -119,16 +169,7 @@ export function ProposalCard({
         style={{ borderColor: border }}
       >
         <div className={accepted ? 'proposal-meta proposal-applied' : 'proposal-meta'}>
-          {accepted && (
-            <div role="status">
-              <h3>
-                {empty
-                  ? 'Accepted: no changes needed'
-                  : `${applied.length} of ${body.changes.length} changes applied${draftVersion === null ? '' : ` to draft v${draftVersion}`}`}
-              </h3>
-            </div>
-          )}
-          {proposal.status === 'rejected' && <h3>Proposal rejected</h3>}
+          {outcome}
           {accepted && next && (
             <>
               <p>{next.text}</p>
@@ -146,25 +187,7 @@ export function ProposalCard({
             {meta}
             {body.notes && <p>{body.notes}</p>}
           </div>
-          <ul className="proposal-changes proposal-decided-list">
-            {body.changes.map((c, i) => {
-              const done = applied.includes(i);
-              return (
-                <li key={`${i}-${c.op}`}>
-                  <StageStatusIcon state={done ? 'accepted' : 'pending'} size={18} decorative />
-                  <span className="proposal-change">
-                    <span className="proposal-line">
-                      <ChangeText c={c} />{' '}
-                      <strong className={done ? 'applied-yes' : 'muted'}>
-                        {done ? 'Applied' : 'Not applied'}
-                      </strong>
-                    </span>
-                    <span className="proposal-line muted">{c.reason}</span>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+          {changes}
         </details>
       </section>
     );

@@ -154,6 +154,10 @@ class KindScore:
     tiers: dict[str, list[int]] = field(
         default_factory=lambda: {"high": [0, 0], "medium": [0, 0], "low": [0, 0]}
     )
+    #: Picks right in every way the gold names: the term, the form, the class (`_exact`).
+    exact: int = 0
+    #: confidence -> exact picks (a tier's real precision when the gold accepts `term: any`).
+    tiers_exact: dict[str, int] = field(default_factory=lambda: {"high": 0, "medium": 0, "low": 0})
 
     @property
     def precision(self) -> float:
@@ -176,6 +180,9 @@ class KindScore:
         tier = self.tiers.setdefault(pick.confidence, [0, 0])
         tier[0] += 1
         tier[1] += right
+        exact = _exact(pick, expected)
+        self.exact += exact
+        self.tiers_exact[pick.confidence] = self.tiers_exact.get(pick.confidence, 0) + exact
         if pick.term is not None:
             self.mapped += 1
             self.mapped_right += mapped and right
@@ -209,6 +216,19 @@ def _right(pick: Pick, expected: Expected) -> bool:
     if expected.any_term:
         return pick.term is not None
     return (pick.term in expected.terms) if expected.terms else pick.term is None
+
+
+def _exact(pick: Pick, expected: Expected) -> bool:
+    """Right in every way the gold names: the term (or unmapped), how the value is published,
+    and the class. With `term: any` a hit says only that the output was mapped; this says it
+    was mapped as the gold says."""
+    if not _right(pick, expected):
+        return False
+    if pick.term is None:
+        return True
+    if expected.value_as and pick.value_as not in expected.value_as:
+        return False
+    return not expected.row_class or _chosen_class(pick) in expected.row_class
 
 
 def _chosen_class(pick: Pick) -> str | None:
@@ -451,11 +471,20 @@ def current_picks(
 
 
 def per_output_picks(
-    params: DraftParams, store: OntologyStore, choose: Chooser, embed: Embedding | None
+    params: DraftParams,
+    store: OntologyStore,
+    choose: Chooser,
+    embed: Embedding | None,
+    *,
+    confirm: bool = False,
 ) -> dict[str, Pick]:
+    """The per-output matcher's picks; `confirm` asks each field and column again with the
+    options reversed (`propose`)."""
     inputs = _observed(params)
     versions = [(v.id, v.version) for v in inputs.versions]
-    return propose(params.draft or {}, inputs, store, versions, choose=choose, embed=embed)
+    return propose(
+        params.draft or {}, inputs, store, versions, choose=choose, embed=embed, confirm=confirm
+    )
 
 
 def check_policy(deps: PipelineDeps, params: DraftParams, model_ref: str) -> None:
@@ -561,7 +590,7 @@ def _pct(n: int, d: int) -> str:
 
 def format_report(name: str, results: dict[str, Scores]) -> str:
     lines = [f"Gold: {name}", ""]
-    head = f"{'matcher':<12} {'kind':<9} {'n':>3} {'Hit@1':>6} {'P':>5} {'R':>5} {'F1':>5} {'R@1':>5} {'R@5':>5} {'R@10':>5} {'MRR':>5} {'as':>5} {'class':>5}"
+    head = f"{'matcher':<12} {'kind':<9} {'n':>3} {'Hit@1':>6} {'P':>5} {'R':>5} {'F1':>5} {'R@1':>5} {'R@5':>5} {'R@10':>5} {'MRR':>5} {'as':>5} {'class':>5} {'Exact':>5}"
     lines.append(head)
     for matcher, s in results.items():
         for kind, k in [("all", s.overall), *s.by_kind.items()]:
@@ -574,12 +603,14 @@ def format_report(name: str, results: dict[str, Scores]) -> str:
                 f"{100 * k.f1:>4.0f}% {_pct(k.recall_at[1], k.recall_total):>5} "
                 f"{_pct(k.recall_at[5], k.recall_total):>5} {_pct(k.recall_at[10], k.recall_total):>5} "
                 f"{summary['mrr']:>5.2f} {_pct(k.value_right, k.value_total):>5} "
-                f"{_pct(k.class_right, k.class_total):>5}"
+                f"{_pct(k.class_right, k.class_total):>5} {_pct(k.exact, k.outputs):>5}"
             )
-    lines += ["", "Confidence tiers (picks, precision):"]
+    lines += ["", "Confidence tiers (picks, precision, exact precision):"]
     for matcher, s in results.items():
         tiers = ", ".join(
-            f"{t} {n} ({_pct(right, n)})" for t, (n, right) in s.overall.tiers.items() if n
+            f"{t} {n} ({_pct(right, n)}, exact {_pct(s.overall.tiers_exact.get(t, 0), n)})"
+            for t, (n, right) in s.overall.tiers.items()
+            if n
         )
         lines.append(f"  {matcher}: {tiers}, {s.calls} model calls, {s.seconds:.0f} s")
     failures = [f"  {m}: failed: {s.failed}" for m, s in results.items() if s.failed]
@@ -614,6 +645,8 @@ def format_details(gold: Gold, results: dict[str, Scores], kinds: dict[str, str]
             mark = "ok" if _right(pick, expected) else "no"
             if expected.row_class:
                 mark += " class:ok" if chosen in expected.row_class else " class:no"
+            if pick.term is not None:
+                mark += f" · {pick.confidence}"
             parts.append(f"| {matcher}: {got} {mark}")
         lines.append(" ".join(parts))
     return "\n".join(lines)
@@ -744,6 +777,11 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     parser.add_argument("--gold", action="append", default=[])
     parser.add_argument("--template")
     parser.add_argument("--matcher", default="current,per-output")
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="per-output: ask each field and column twice (options reversed) for confidence",
+    )
     parser.add_argument("--model", default="draft")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--details", action="store_true", help="each output's gold and picks")
@@ -784,7 +822,9 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
                 calls[0] = 1
                 return current_picks(deps, params, args.model, live)
             choose = model_chooser(deps, params, args.model, calls, say=live.say)
-            return per_output_picks(params, store, choose, _embedding(deps, params))
+            return per_output_picks(
+                params, store, choose, _embedding(deps, params), confirm=args.confirm
+            )
 
         results = run_matchers(matchers, gold, kinds, run)
         print(report_json(gold.name, results) if args.json else format_report(gold.name, results))

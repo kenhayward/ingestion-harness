@@ -5297,6 +5297,17 @@ img.avatar {
   background: var(--ih-ok-fg);
   color: var(--ih-ok-bg);
 }
+/* The mapping stage's Latest proposal: wide enough for a change and its reason on one line. */
+.dialog.proposal-dialog {
+  width: min(840px, calc(100vw - 32px));
+}
+.proposal-in-dialog .proposal-meta {
+  border-bottom: 0;
+  border-radius: 10px;
+}
+.proposal-in-dialog .proposal-meta h3 {
+  margin: 0 0 4px;
+}
 /* Wide, so a topic reads with little scrolling. */
 .dialog.dialog-rich.help-dialog {
   width: min(1248px, calc(100vw - 32px));
