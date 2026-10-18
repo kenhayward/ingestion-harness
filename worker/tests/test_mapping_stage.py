@@ -560,3 +560,56 @@ def test_an_embedding_outage_falls_back_to_lexical(fixture_specs_dir: Path) -> N
     assert queue.completed
     notes = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]["notes"]
     assert "lexical only" in notes and "down" in notes
+
+
+def test_without_a_base_iri_the_prompt_says_local_terms_are_not_available(
+    fixture_specs_dir: Path,
+) -> None:
+    """Reported: with no customer set, the model declared local terms (refused: no base IRI),
+    then left a table's row class empty, and ran out of tries. It must know up front."""
+    drafting, _, _, deps = make(fixture_specs_dir)
+    drafting.responses = [GOOD]
+    run(deps, mapping_job())
+    prompt = drafting.calls[0][1].prompt
+    assert "Local terms are not available" in prompt
+    assert "leave the table and its columns unmapped" in prompt
+    assert "Declare local terms under" not in prompt
+
+
+def test_with_a_base_iri_the_prompt_names_the_local_namespace(fixture_specs_dir: Path) -> None:
+    from .fakes import MemoryLinkedDataSettings
+
+    drafting, _, _, deps = make(fixture_specs_dir)
+    deps.linked_data = MemoryLinkedDataSettings("https://id.example/acme/")
+    drafting.responses = [GOOD]
+    run(deps, mapping_job())
+    prompt = drafting.calls[0][1].prompt
+    assert "Declare local terms under https://id.example/acme/def/batch/" in prompt
+    assert "Local terms are not available" not in prompt
+
+
+@pytest.mark.parametrize(
+    ("namespace", "way_out"),
+    [
+        ("https://ex.example/local#", "declare a local term for it"),
+        (None, "local terms are not available here"),
+    ],
+)
+def test_a_table_without_a_row_class_says_how_to_resolve_it(
+    namespace: str | None, way_out: str
+) -> None:
+    inputs = MappingInputs.model_validate(PARAMS_MAPPING)
+    data = {
+        "notes": "",
+        "changes": [
+            blank(
+                "setDocumentMapping", documentClass=f"{PH}BatchRecord", documentIri="doc/{source}"
+            ),
+            blank("putTableMapping", "tests", tableLink=f"{PH}hasResult", rowClass=""),
+        ],
+    }
+    _, errors = convert_mapping(data, DRAFT, inputs, SHORTLISTS, local_namespace=namespace)
+    [error] = [e for e in errors if "rowClass" in e]
+    assert error.startswith("changes[1].rowClass: a table needs a row class")
+    assert way_out in error
+    assert error.endswith("or leave the table and its columns unmapped")

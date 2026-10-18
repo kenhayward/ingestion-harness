@@ -221,7 +221,8 @@ term (putLocalTerm) when no candidate fits and use its IRI.
     with matchByLabel true matches values to the scheme's concepts by label.
 - putTableMapping (target a table id): tableLink, the property from the document to each row;
   rowClass; rowIri, optional, from the table's columns ("line/{sku|upper}"). Map a table before
-  its columns.
+  its columns. A table needs both: when no class fits its rows, declare a local term for it (if
+  local terms are available) or leave the table and its columns unmapped.
 - removeMapping (target an output or "table.column"): drop a wrong existing mapping.
 - Fill keys a change does not use with "" ([] for lists, false for matchByLabel).
 - confidence: high when the term clearly means the output, low when it is a guess; reason: why
@@ -421,9 +422,21 @@ def convert_mapping(
             if spec is None or spec.kind != "table":
                 errors.append(f"{where}: no table {target or '(empty)'}")
                 continue
+            row_class = str(c.get("rowClass") or "").strip()
+            if not row_class:
+                local_hint = (
+                    "declare a local term for it"
+                    if local_namespace
+                    else "(local terms are not available here: no base IRI)"
+                )
+                errors.append(
+                    f"{where}.rowClass: a table needs a row class: choose one of the table's "
+                    f"candidates (or a class search_terms found), {local_hint}, or leave the "
+                    "table and its columns unmapped"
+                )
             mapping: dict[str, Any] = {
                 "link": term(f"{where}.tableLink", c.get("tableLink")),
-                "class": term(f"{where}.rowClass", c.get("rowClass")),
+                "class": term(f"{where}.rowClass", row_class) if row_class else "",
             }
             row_iri = str(c.get("rowIri") or "").strip()
             if row_iri:
@@ -915,8 +928,13 @@ def run_mapping(
 
     base = deps.linked_data.effective_base() if deps.linked_data else None
     local_namespace = f"{base}def/{draft.get('id')}/" if base else None
-    if local_namespace:
-        context += f"\n\n<local_terms>\nDeclare local terms under {local_namespace}\n</local_terms>"
+    context += (
+        f"\n\n<local_terms>\nDeclare local terms under {local_namespace}\n</local_terms>"
+        if local_namespace
+        else "\n\n<local_terms>\nLocal terms are not available: this deployment has no base IRI "
+        "(Administration > Linked data). When no term fits an output, leave it unmapped; when no "
+        "class fits a table's rows, leave the table and its columns unmapped.\n</local_terms>"
+    )
 
     # Terms the model's tools returned: it may choose them like the shortlist's.
     searched: dict[str, Candidate] = {}

@@ -250,3 +250,32 @@ def test_the_model_chooser_keeps_the_data_policy_before_any_call(
     with pytest.raises(DocumentError, match=refused):
         model_chooser(deps, params, "draft", [0])
     assert provider.calls == []
+
+
+def test_a_column_s_class_is_scored_and_any_link_property_may_be_accepted() -> None:
+    """Class-centric ontologies (AFO, OBI) put the meaning in the class of the node a value sits
+    on; the link to it is structural. A gold may then accept any link (`term: any`) and score the
+    class: a field or column's `class` is its entity class (a table's, its row class)."""
+    text = """
+project: p
+prefixes: {afr: "http://purl.allotrope.org/ontologies/result#"}
+expected:
+  t.water: {term: any, class: afr:AFR_0002445, as: entity}
+  t.assay: {term: any, class: [afr:AFR_0000207, afr:AFR_0001602], as: entity}
+"""
+    g = load_gold(text)
+    assert g.expected["t.water"].any_term
+    picks = {
+        "t.water": Pick(
+            "https://x/hasPart",
+            "entity",
+            entity_class="http://purl.allotrope.org/ontologies/result#AFR_0002445",
+        ),
+        "t.assay": Pick("https://x/hasPart", "entity", entity_class="https://x/Other"),
+    }
+    s = score(picks, g, {"t.water": "column", "t.assay": "column"})
+    assert s.overall.hit == 2  # any mapped link is a right term
+    assert (s.overall.class_total, s.overall.class_right) == (2, 1)
+    assert s.overall.value_total == 2 and s.overall.value_right == 2
+    unmapped = score({}, g, {"t.water": "column", "t.assay": "column"})
+    assert unmapped.overall.hit == 0 and unmapped.overall.class_right == 0

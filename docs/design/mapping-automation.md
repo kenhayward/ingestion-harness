@@ -211,6 +211,47 @@ not see these values. Domain-correct graphs would need the mapping to group fiel
 (the document *describes* a batch, the batch *has* the lot number): a `semantics` extension worth
 designing separately once the spike shows how often it matters.
 
+### The measurement pattern: class-centric ontologies
+
+Found while drafting a gold mapping for the covalidation project (a stability report) against the
+deployment's library (AFO, OBI, GS1, QUDT, OWL-Time, DCMI, PROV-O): **AFO and OBI put the meaning
+in classes, not properties.** Their properties are generic relations (`has data output`, `has
+identifier`, `has value`, `has condition`, `has part`, `is about`); the specific vocabulary is the
+classes: *batch identifier*, *water mass fraction*, *assay result*, *dissolved percentage*,
+*elapsed time*, *count*, *conformance assessment*. The faithful graph for one result is a node of
+the right class carrying the value:
+
+```
+row  --afx:has-data-output-->  [ a afr:AssayResult ;  afx:has-value 99.1 ;  qudt:unit unit:PERCENT ]
+```
+
+CT Studio's `semantics` cannot say this. A column maps to a property with a literal (`row →
+property → 99.1`), or to an entity (`object`: a class and an IRI template, the value as its
+`rdfs:label`), which mints one node per *distinct value*: every row whose assay reads 99.1 would
+share one "99.1" entity. So:
+
+- **Automated mapping quality is capped by the format before any matcher is involved.** For a
+  class-centric library the best expressible answer is a generic property plus an entity class,
+  and even that renders values as shared labelled entities.
+- **Coverage is the library's limit**: about half of covalidation's 46 columns have a fitting AFO
+  class (identifiers, water content, assay, dissolved percentage, elapsed time, counts, pass/fail
+  as conformance assessment); storage conditions as a whole, appearance as such, degradation
+  product amounts, solid-state form and microbial counts by organism have none and need local terms.
+- **The fix is a measurement pattern in `semantics`**: a column (or field) mapped as `link` (the
+  property from the row or document), `class` (the node's class), `value` (the property holding the
+  literal on the node, e.g. `afx:has-value`, `qudt:numericValue`) and an optional `unit` (a QUDT
+  unit, fixed or from another column), rendered as a fresh node per row. With it, a matcher's job
+  becomes mostly choosing a class, which retrieval does well; the link and value properties are
+  few and can default per ontology. This needs its own design (both sides of the contract,
+  rendering, SHACL, the Mapping editor) and is the change the evaluation most supports so far.
+
+The covalidation gold (`docs/design/mapping-gold/covalidation.yaml`) is written class-centric:
+`term: any` (any link property) with the class that matters, `as: entity`, and `unmapped` where the
+library has nothing. It was drafted by Claude from the library's own labels and definitions, not by
+a domain expert, so it measures agreement with a careful reference rather than ground truth; its
+16 judgment calls are marked `# CHECK` for a person to settle. The harness scores a field or
+column's class (`class`, compared with the pick's entity class) as well as a table's row class.
+
 ## 4. The spike
 
 **Question:** does a decomposed, structure-aware matcher choose better terms than today's single
@@ -246,7 +287,9 @@ docker exec ingestion-worker-1 python -m ingest_worker.mapping_eval --template <
 ```
 
 Each output is listed with its type and description; an answer is a term, a list of acceptable
-terms, `unmapped`, or `{term, as: literal|entity|concept, class}` (a table's row class). Then:
+terms, `unmapped`, or `{term, as: literal|entity|concept, class}`: `class` is a table's row class
+or a field or column's entity class, and `term: any` accepts any link property (for class-centric
+ontologies, where the class carries the meaning). Then:
 
 ```bash
 docker cp gold.yaml ingestion-worker-1:/tmp/gold.yaml
@@ -294,6 +337,20 @@ drafting model `qwen3.8-27b-mtp` on LM Studio.
 - **Confidence**: the per-output tiers were high 3 (all right), medium 4 (all right), low 1 (the
   correctly unmapped `notes`). Too few outputs to calibrate anything.
 
+### The stage on covalidation (2026-10-18, a deployment without a base IRI)
+
+Before the gold could run, the Workbench mapping stage itself failed on covalidation (AFO and OBI
+pinned, local `qwen3.8-27b-mtp`, tools on). Its model log showed the model working sensibly: it
+searched the ontologies eight times for a class for the `batches` rows (the library has none, as
+the gold also found) and looked candidate terms up. With nothing fitting it declared local terms,
+which were refused because that deployment had no base IRI (a restore *as a copy* keeps the
+target's own Linked data settings); its second answer left the table's row class empty, and the
+two tries were spent. Two prompt faults, now fixed: the stage invited local terms where none can be
+declared (the prompt now says when they are unavailable), and nothing said that a table whose rows
+fit no class should stay unmapped (the instructions and the row-class error now say so). It is the
+library gap again: a batch is a central thing in these documents and the library has no class for
+it.
+
 ### Real gold
 
-To be added: a real project's gold, with the local model and a frontier model.
+To be added: the covalidation gold, with the local model and a frontier model.
