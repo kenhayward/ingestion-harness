@@ -116,6 +116,7 @@ function AccountMenu({
   onAdmin,
   onProfile,
   onHelp,
+  onAbout,
   onSignOut,
 }: {
   me: Me;
@@ -125,6 +126,8 @@ function AccountMenu({
   onProfile: () => void;
   /** The account menu's Help (everyone). */
   onHelp: () => void;
+  /** The account menu's About (everyone): the version and the release notes. */
+  onAbout: () => void;
   onSignOut: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -233,6 +236,17 @@ function AccountMenu({
             role="menuitem"
             onClick={() => {
               setOpen(false);
+              onAbout();
+            }}
+          >
+            <Icon name="info" />
+            About
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
               onSignOut();
             }}
           >
@@ -257,6 +271,7 @@ export function AppShell({
   onAdmin,
   onProfile,
   onHelp,
+  onAbout,
   onSignOut,
   children,
 }: {
@@ -275,6 +290,8 @@ export function AppShell({
   onProfile: () => void;
   /** The account menu's Help (everyone). */
   onHelp: () => void;
+  /** About (everyone): from the account menu and the version at the bottom of the nav. */
+  onAbout: () => void;
   onSignOut: () => void;
   children: ReactNode;
 }) {
@@ -357,6 +374,7 @@ export function AppShell({
             onAdmin={onAdmin}
             onProfile={onProfile}
             onHelp={onHelp}
+            onAbout={onAbout}
             onSignOut={onSignOut}
           />
         </div>
@@ -441,7 +459,7 @@ export function AppShell({
               </a>
             </>
           )}
-          <NavVersion info={BUILD_VERSION} compact={compact} />
+          <NavVersion info={BUILD_VERSION} compact={compact} onOpen={onAbout} />
         </nav>
         <main className="page">{children}</main>
       </div>

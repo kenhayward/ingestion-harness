@@ -77,6 +77,12 @@ export function IntroductionHelp() {
         explanations in one place: pick a screen on the left, or one of its parts below it. From a{' '}
         <strong>?</strong>, <strong>Open in Help</strong> brings you here at that topic.
       </p>
+      <h3>What&apos;s new</h3>
+      <p>
+        <strong>About</strong> in the account menu, or the version at the bottom of the menu on the
+        left, shows which version of CT Studio you are using and the release notes, latest first:
+        what changed, written up from time to time.
+      </p>
     </>
   );
 }

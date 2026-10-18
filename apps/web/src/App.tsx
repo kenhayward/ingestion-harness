@@ -28,10 +28,12 @@ import { TemplatesPage } from './templates/TemplatesPage.js';
 import { ProjectPage } from './workbench/ProjectPage.js';
 import { WorkbenchPage } from './workbench/WorkbenchPage.js';
 import { Icon } from './ui/Icon.js';
+import { AboutDialog } from './about/AboutDialog.js';
 import { HelpCenter } from './help/HelpCenter.js';
 import { helpTopicOf } from './help/index.js';
 import type { HelpTopicId } from './help/topics.js';
 import { HelpCenterContext } from './ui/Help.js';
+import { BUILD_VERSION } from './version.js';
 
 /**
  * Sign-in gate (ADR 0013): the app renders only for a valid session, and a session opened with a
@@ -263,6 +265,15 @@ function SignedInApp({
     window.history.replaceState(null, '', '#/');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   }, [route]);
+  /** About (everyone): the version and the release notes, at this note (else the latest). */
+  const [about, setAbout] = useState<{ note?: string } | null>(null);
+  // A link to #/about[/<date>]: open About over Home, and leave the address as Help does.
+  useEffect(() => {
+    if (route.name !== 'about') return;
+    setAbout(route.note ? { note: route.note } : {});
+    window.history.replaceState(null, '', '#/');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }, [route]);
   // Back from GitHub (or a link to #/account/profile): open the dialog over Home, and leave the
   // address so a reload or Back does not open it again.
   useEffect(() => {
@@ -411,11 +422,19 @@ function SignedInApp({
       onAdmin={() => setAdmin(true)}
       onProfile={() => setProfile({ tab: 'details' })}
       onHelp={() => setHelp('introduction')}
+      onAbout={() => setAbout({})}
       onSignOut={onSignOut}
     >
       {notice}
       <HelpCenterContext.Provider value={setHelp}>{page}</HelpCenterContext.Provider>
       {help && <HelpCenter key={help} topic={help} onClose={() => setHelp(null)} />}
+      {about && (
+        <AboutDialog
+          {...(about.note ? { note: about.note } : {})}
+          version={BUILD_VERSION}
+          onClose={() => setAbout(null)}
+        />
+      )}
       {profile && (
         <ProfileDialog
           api={api}

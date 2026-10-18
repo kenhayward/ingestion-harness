@@ -5623,3 +5623,153 @@ img.avatar {
 .admin-header > .help-button {
   align-self: center;
 }
+
+/* The version at the bottom of the nav opens About: a plain row, like the links above it. */
+.side-nav button.nav-version {
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: var(--ih-radius-md);
+  background: none;
+  justify-content: flex-start;
+  font-weight: 400;
+}
+.side-nav.compact button.nav-version {
+  justify-content: center;
+}
+.side-nav button.nav-version:hover:not(:disabled) {
+  background: var(--ih-surface);
+  color: var(--ih-text);
+}
+
+/* About (account menu, nav version): Help's layout; the release notes by date on the left. */
+.about-dialog .profile-who small {
+  font-family: var(--ih-font-mono);
+}
+.about-build {
+  margin-top: 4px;
+  font-size: var(--ih-text-xs);
+  font-weight: 400;
+}
+.about-menu-head {
+  margin: 0 0 6px;
+  padding: 0 10px;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.about-menu > p {
+  padding: 0 10px;
+}
+/* Stacked on a phone: the dates scroll on their own, so the note stays in view. */
+@media (max-width: 760px) {
+  .about-menu {
+    flex: none;
+    max-height: 28vh;
+  }
+}
+
+/* A release note (docs/release-notes), restyled by the app's theme: its own styles are dropped. */
+.release-note {
+  line-height: 1.6;
+}
+.release-note h1 {
+  margin: 0 0 4px;
+  font-size: 1.6rem;
+  line-height: 1.25;
+}
+.release-note .subtitle {
+  margin: 0 0 20px;
+  color: var(--ih-muted);
+}
+.release-note h2 {
+  margin: 32px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--ih-accent);
+  font-size: 1.25rem;
+}
+.release-note h3 {
+  margin: 22px 0 4px;
+  font-size: 1.05rem;
+}
+.release-note h2,
+.release-note h3 {
+  scroll-margin-top: 12px;
+}
+.release-note p {
+  margin: 0 0 10px;
+}
+.release-note ul {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.release-note li {
+  margin: 2px 0;
+}
+.release-note .prs,
+.release-note .top {
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+}
+.release-note code {
+  padding: 0 4px;
+  border: 1px solid var(--ih-border);
+  border-radius: 4px;
+  background: var(--ih-code-bg);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.release-note .toc {
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface);
+}
+.release-note .toc h2 {
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  font-size: 1.05rem;
+}
+.release-note .toc h4 {
+  margin: 12px 0 4px;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.release-note .toc ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.release-note .toc li {
+  padding: 2px 0;
+}
+.release-note .toc li a {
+  font-weight: 600;
+  text-decoration: none;
+}
+.release-note .toc li a:hover {
+  text-decoration: underline;
+}
+.release-note .toc li span {
+  color: var(--ih-muted);
+}
+.release-note .warn {
+  margin: 0 0 8px;
+  padding: 12px 18px;
+  border: 1px solid var(--ih-warn-fg);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-warn-bg);
+}
+.release-note .warn strong:first-child {
+  display: block;
+  margin-bottom: 4px;
+}
+.release-note .warn ul {
+  margin: 0;
+}
