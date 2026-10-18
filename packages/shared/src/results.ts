@@ -12,6 +12,10 @@ export const ResultOutputSchema = z.object({
 });
 export type ResultOutput = z.infer<typeof ResultOutputSchema>;
 
+/** GET /api/results `show`: approved by a person, published without review, or with issues. */
+export const RESULT_SHOWS = ['reviewed', 'auto', 'issues'] as const;
+export type ResultShow = (typeof RESULT_SHOWS)[number];
+
 /** One published (non-test) job in GET /api/results, newest publish first. */
 export const ResultSummarySchema = z.object({
   jobId: z.string(),

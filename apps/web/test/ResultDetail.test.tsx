@@ -2,11 +2,21 @@ import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ResultDetailView } from '../src/results/ResultDetail.js';
+import { fullWhen } from '../src/results/format.js';
 import { fakeApi } from './fake-api.js';
 import { resultDetail } from './result-fixture.js';
 
 const valueOf = (label: string) =>
   screen.getByText(label, { selector: 'dt' }).nextElementSibling as HTMLElement;
+const outline = () => screen.getByRole('navigation', { name: 'Result contents' });
+const open = async (name: string) =>
+  userEvent.click(
+    within(await screen.findByRole('navigation', { name: 'Result contents' })).getByRole('button', {
+      name,
+    }),
+  );
+const show = (detail = resultDetail()) =>
+  render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
 
 describe('ResultDetailView', () => {
   it('shows the header, review, target and published downloads', async () => {
@@ -16,17 +26,28 @@ describe('ResultDetailView', () => {
         jobId="j1"
       />,
     );
-    expect(await screen.findByRole('heading', { name: /protocol\.pdf/ })).toHaveTextContent(
-      'pvp v3',
-    );
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'protocol.pdf' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('pvp v3')).toBeInTheDocument();
     expect(valueOf('Review')).toHaveTextContent('Approved by Ken — Checked');
     expect(valueOf('Publishing target')).toHaveTextContent('Default');
     expect(valueOf('Publishing target')).toHaveTextContent('ingest-published/pvp/');
-    const downloads = screen.getByRole('navigation', { name: 'Downloads' });
-    expect(within(downloads).getByRole('link', { name: 'results.csv' })).toHaveAttribute(
+    const actions = screen.getByRole('group', { name: 'Actions' });
+    expect(within(actions).getByRole('link', { name: 'View PDF of protocol.pdf' })).toHaveAttribute(
+      'href',
+      '/api/jobs/j1/document',
+    );
+    expect(
+      within(actions).getByRole('link', { name: 'Download protocol.pdf results as ZIP' }),
+    ).toHaveAttribute('href', '/api/results/j1/archive');
+    await open('Published files');
+    const files = screen.getByRole('list', { name: 'Published files' });
+    expect(within(files).getByRole('link', { name: 'results.csv' })).toHaveAttribute(
       'href',
       '/api/jobs/j1/outputs/results?stage=published',
     );
+    expect(within(files).getByText('2 rows')).toBeInTheDocument();
   });
 
   it('renders labelled fields with formatted values and edit markers', async () => {
@@ -45,13 +66,106 @@ describe('ResultDetailView', () => {
     expect(valueOf('Missing value')).toHaveTextContent('—');
   });
 
-  it('renders tables with template headings and marks edited cells', async () => {
-    render(
-      <ResultDetailView
-        api={fakeApi({ getResult: vi.fn(async () => resultDetail()) })}
-        jobId="j1"
-      />,
+  it('sums up fields, tables, checks and issues in tiles', async () => {
+    show();
+    const tiles = await screen.findByRole('list', { name: 'Summary' });
+    expect(
+      within(tiles)
+        .getAllByRole('listitem')
+        .map((t) => t.textContent),
+    ).toEqual([
+      'Fields61 edited in review',
+      'Tables12 rows · 1 cell edited',
+      'Checks1all matched',
+      'Issues11 to look at',
+    ]);
+  });
+
+  it('counts a cell edited twice in review once', async () => {
+    const detail = resultDetail();
+    // The review's edits are a log: a second edit of the same cell is not another edited cell.
+    detail.document!.review!.edits.push({ table: 'results', row: 2, column: 'value', value: 3 });
+    show(detail);
+    const tiles = await screen.findByRole('list', { name: 'Summary' });
+    expect(within(tiles).getAllByRole('listitem')[1]).toHaveTextContent(
+      'Tables12 rows · 1 cell edited',
     );
+    expect(within(outline()).getByRole('button', { name: 'Test results' })).toHaveTextContent(
+      '2 · 1 edited',
+    );
+    await open('Test results');
+    expect(screen.getByRole('region', { name: 'Test results' })).toHaveTextContent(
+      '1 cell edited in review',
+    );
+  });
+
+  it('lists the contents in an outline and opens one item at a time, fields first', async () => {
+    show();
+    await screen.findByRole('navigation', { name: 'Result contents' });
+    expect(
+      within(outline())
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Fields', 'Test results', 'batch_check', 'Issues', 'Published files']);
+    expect(within(outline()).getByRole('button', { name: 'Fields' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    expect(screen.getByRole('region', { name: 'Fields' })).toBeInTheDocument();
+    await open('Test results');
+    expect(screen.queryByRole('region', { name: 'Fields' })).toBeNull();
+    const region = screen.getByRole('region', { name: 'Test results' });
+    expect(region).toHaveTextContent('2 rows · 2 columns');
+    expect(
+      within(region).getByRole('link', { name: 'Download Test results as CSV' }),
+    ).toHaveAttribute('href', '/api/jobs/j1/outputs/results?stage=published');
+    await userEvent.click(within(region).getByRole('button', { name: 'Next: batch_check' }));
+    expect(screen.getByRole('region', { name: 'batch_check' })).toBeInTheDocument();
+  });
+
+  it("filters a table's rows", async () => {
+    show();
+    await open('Test results');
+    const region = screen.getByRole('region', { name: 'Test results' });
+    await userEvent.type(within(region).getByRole('searchbox', { name: 'Filter rows' }), 'b2');
+    const table = within(region).getByRole('table', { name: 'Test results' });
+    expect(within(table).getAllByRole('row')).toHaveLength(2); // header + B2
+    expect(within(table).getByText('B2')).toBeInTheDocument();
+    expect(region).toHaveTextContent('1 of 2 rows');
+  });
+
+  it('shows a matching check as values, results and what each matched', async () => {
+    const detail = resultDetail();
+    detail.document!.checks = {
+      batch_numbers: {
+        rows: [
+          { value: '4586783', status: 'match', matched: '4586783', distance: 0, count: 4 },
+          { value: '4586 79O', status: 'near', matched: '4586790', distance: 2, count: 1 },
+          { value: '4586 783', status: 'alias', matched: '4586783', distance: 0, count: 1 },
+          { value: 'LDLS000', status: 'unused', matched: null, distance: null, count: 0 },
+        ],
+      },
+    };
+    show(detail);
+    expect(await screen.findByRole('navigation', { name: 'Result contents' })).toHaveTextContent(
+      '2 to look at',
+    );
+    await open('batch_numbers');
+    const table = screen.getByRole('table', { name: 'batch_numbers' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Value found', 'Result', 'Matched to', 'Edit distance', 'Times seen']);
+    expect(within(table).getAllByRole('row')[2]).toHaveTextContent('4586 79ONear match45867902');
+    expect(screen.getByRole('region', { name: 'batch_numbers' })).toHaveTextContent(
+      '1 exact · 1 alias · 1 near · 0 not found · 1 not used',
+    );
+  });
+
+  it('renders tables with template headings and marks edited cells', async () => {
+    show();
+    await open('Test results');
     const table = await screen.findByRole('table', { name: 'Test results' });
     expect(
       within(table)
@@ -67,17 +181,10 @@ describe('ResultDetailView', () => {
     expect(within(unedited).queryByText('edited')).not.toBeInTheDocument();
   });
 
-  it('keeps checks and issues collapsed with counts', async () => {
-    render(
-      <ResultDetailView
-        api={fakeApi({ getResult: vi.fn(async () => resultDetail()) })}
-        jobId="j1"
-      />,
-    );
-    const issues = (await screen.findByText('Issues (1)')).closest('details')!;
-    expect(issues).not.toHaveAttribute('open');
-    expect(screen.getByText('Checks (1)').closest('details')).not.toHaveAttribute('open');
-    const table = within(issues).getByRole('table', { name: 'Issues' });
+  it('shows the issues with their counts in the outline', async () => {
+    show();
+    await open('Issues');
+    const table = screen.getByRole('table', { name: 'Issues' });
     expect(
       within(table)
         .getAllByRole('columnheader')
@@ -90,6 +197,7 @@ describe('ResultDetailView', () => {
     const detail = resultDetail({ definition: { kind: 'unknown' } });
     render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
     expect(await screen.findByText('product', { selector: 'dt' })).toBeInTheDocument();
+    await open('results');
     expect(screen.getByRole('table', { name: 'results' })).toBeInTheDocument();
   });
 
@@ -99,7 +207,7 @@ describe('ResultDetailView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The published document is missing from the target (bucket ingest-published).',
     );
-    expect(screen.getByRole('navigation', { name: 'Downloads' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Published files' })).toBeInTheDocument();
   });
 
   it.each([
@@ -180,7 +288,7 @@ describe('ResultDetailView', () => {
     });
     render(<ResultDetailView api={fakeApi({ getResult })} jobId="j1" />);
     expect(await screen.findByRole('alert')).toHaveTextContent('result not found');
-    expect(screen.getByRole('link', { name: '← Results' })).toHaveAttribute('href', '#/results');
+    expect(screen.getByRole('link', { name: 'Results' })).toHaveAttribute('href', '#/results');
   });
 
   it('shows the recorded publish time, not the document or job timestamps', async () => {
@@ -188,9 +296,8 @@ describe('ResultDetailView', () => {
     detail.document!.published_at = '2026-01-01T00:00:00Z';
     render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
     await screen.findByText('Published', { selector: 'dt' });
-    expect(valueOf('Published')).toHaveTextContent(
-      new Date('2026-10-02T08:00:01.000Z').toLocaleString(),
-    );
+    expect(valueOf('Published')).toHaveTextContent(fullWhen('2026-10-02T08:00:01.000Z'));
+    expect(fullWhen('2026-10-02T08:00:01.000Z')).not.toBe(fullWhen('2026-01-01T00:00:00Z'));
   });
 
   it('renders lists of objects as JSON items', async () => {
@@ -211,12 +318,14 @@ describe('ResultDetailView', () => {
       batch_check: { rows: [{ value: 'B1' }, { value: 'B2', status: 'ok' }] },
     };
     render(<ResultDetailView api={fakeApi({ getResult: vi.fn(async () => detail) })} jobId="j1" />);
+    await open('results');
     const table = await screen.findByRole('table', { name: 'results' });
     expect(
       within(table)
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
     ).toEqual(['#', 'batch', 'value']);
+    await open('batch_check');
     const checks = screen.getByRole('table', { name: 'batch_check' });
     expect(
       within(checks)

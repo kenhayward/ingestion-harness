@@ -91,6 +91,7 @@ import type {
   RerunRequest,
   ResultDetail,
   ResultSummary,
+  ResultShow,
   RevisePreview,
   ReviewEdit,
   Retirement,
@@ -563,6 +564,8 @@ export interface Api {
     templateId?: string;
     /** File name substring (case-insensitive). */
     q?: string;
+    /** Reviewed, published without review, or with issues only. */
+    show?: ResultShow;
     before?: string;
     beforeId?: string;
   }): Promise<ResultSummary[]>;
@@ -1546,6 +1549,7 @@ export function createHttpApi(base = '/api'): Api {
       if (query.templateId) params.set('templateId', query.templateId);
       // The API accepts up to 100 characters: a longer filter is clamped, not refused.
       if (query.q?.trim()) params.set('q', query.q.trim().slice(0, 100));
+      if (query.show) params.set('show', query.show);
       if (query.before) params.set('before', query.before);
       if (query.beforeId) params.set('beforeId', query.beforeId);
       const qs = params.toString();

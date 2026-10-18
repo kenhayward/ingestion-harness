@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ResultsPage } from '../src/results/ResultsPage.js';
+import { timeOf } from '../src/results/format.js';
 import { fakeApi } from './fake-api.js';
 
 const result = (o: Partial<ResultSummary> = {}): ResultSummary => ({
@@ -23,6 +24,7 @@ const result = (o: Partial<ResultSummary> = {}): ResultSummary => ({
 
 const row = (file: string) =>
   screen.getByRole('button', { name: `Show preview of ${file}` }).closest('tr')!;
+const preview = () => screen.getByRole('complementary', { name: 'Result preview' });
 const types = [
   { id: 'pvp', version: 2, title: 'Process Validation Protocol' },
   { id: 'pvp', version: 3, title: 'Process Validation Protocol' },
@@ -53,16 +55,16 @@ describe('ResultsPage list', () => {
       screen.getByText(/Test runs and rejected documents never appear here\./),
     ).toBeInTheDocument();
     await screen.findByRole('button', { name: 'Show preview of protocol.pdf' });
-    expect(within(row('protocol.pdf')).getByText('pvp v3')).toBeInTheDocument();
+    expect(row('protocol.pdf')).toHaveTextContent('pvp v3');
     expect(within(row('protocol.pdf')).getByText('Ken')).toBeInTheDocument();
     expect(within(row('protocol.pdf')).getByText('2')).toBeInTheDocument();
-    expect(within(row('auto.pdf')).getByText('auto-approved')).toBeInTheDocument();
+    expect(within(row('auto.pdf')).getByText('Auto-approved')).toBeInTheDocument();
     expect(within(row('auto.pdf')).getByText('—')).toBeInTheDocument();
     expect(within(row('clean.pdf')).getByText('—')).toBeInTheDocument();
-    expect(within(row('unnamed.pdf')).getByText('unnamed reviewer')).toBeInTheDocument();
+    expect(within(row('unnamed.pdf')).getByText('Unnamed reviewer')).toBeInTheDocument();
   });
 
-  it('offers one ZIP download, the full result and the PDF on each row', async () => {
+  it('offers the full result, the PDF and one ZIP download in the preview', async () => {
     const r = result({
       jobId: 'j1',
       filename: 'a.pdf',
@@ -73,13 +75,15 @@ describe('ResultsPage list', () => {
     });
     render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => [r]) })} />);
     await screen.findByRole('button', { name: 'Show preview of a.pdf' });
-    const links = within(row('a.pdf')).getAllByRole('link');
+    expect(within(row('a.pdf')).queryAllByRole('link')).toEqual([]);
+    const actions = within(preview()).getByRole('group', { name: 'Actions' });
+    const links = within(actions).getAllByRole('link');
     expect(links.map((l) => [l.getAttribute('aria-label'), l.getAttribute('href')])).toEqual([
       ['Open full result for a.pdf', '#/results/j1'],
       ['View PDF of a.pdf', '/api/jobs/j1/document'],
       ['Download a.pdf results as ZIP', '/api/results/j1/archive'],
     ]);
-    expect(within(row('a.pdf')).getByRole('link', { name: 'View PDF of a.pdf' })).toHaveAttribute(
+    expect(within(preview()).getByRole('link', { name: 'View PDF of a.pdf' })).toHaveAttribute(
       'target',
       '_blank',
     );
@@ -93,7 +97,7 @@ describe('ResultsPage list', () => {
     });
     render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => [r]) })} />);
     await screen.findByRole('button', { name: 'Show preview of report.docx' });
-    const link = within(row('report.docx')).getByRole('link', {
+    const link = within(preview()).getByRole('link', {
       name: 'Download original of report.docx',
     });
     expect(link).toHaveAttribute('href', '/api/jobs/j2/document');
@@ -101,24 +105,72 @@ describe('ResultsPage list', () => {
     expect(link).not.toHaveAttribute('target');
   });
 
-  it('filters by document type with chips', async () => {
+  it('filters by document type with a select', async () => {
     const listResults = vi.fn(async () => [result()]);
     render(<ResultsPage api={fakeApi({ listResults, listSpecs: vi.fn(async () => types) })} />);
-    const chips = screen.getByRole('group', { name: 'Filter by document type' });
-    await within(chips).findByRole('button', { name: 'Invoice' });
+    const select = screen.getByRole('combobox', { name: 'Document type' });
+    await within(select).findByRole('option', { name: 'Invoice' });
     expect(
-      within(chips)
+      within(select)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['All types', 'Invoice', 'Process Validation Protocol']);
+    expect(select).toHaveValue('');
+    await userEvent.selectOptions(select, 'Process Validation Protocol');
+    expect(listResults).toHaveBeenLastCalledWith({ templateId: 'pvp', q: undefined });
+  });
+
+  it('shows reviewed, auto-approved or with-issues results on the server', async () => {
+    const listResults = vi.fn(async (query?: { show?: string }) =>
+      query?.show === 'issues' ? [] : [result()],
+    );
+    render(<ResultsPage api={fakeApi({ listResults })} />);
+    const show = screen.getByRole('group', { name: 'Show' });
+    expect(
+      within(show)
         .getAllByRole('button')
         .map((b) => b.textContent),
-    ).toEqual(['All types', 'Invoice', 'Process Validation Protocol']);
-    expect(within(chips).getByRole('button', { name: 'All types' })).toHaveAttribute(
+    ).toEqual(['All', 'Reviewed', 'Auto-approved', 'With issues']);
+    expect(within(show).getByRole('button', { name: 'All' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
-    await userEvent.click(
-      within(chips).getByRole('button', { name: 'Process Validation Protocol' }),
+    await userEvent.click(within(show).getByRole('button', { name: 'Reviewed' }));
+    expect(listResults).toHaveBeenLastCalledWith({
+      templateId: undefined,
+      q: undefined,
+      show: 'reviewed',
+    });
+    await userEvent.click(within(show).getByRole('button', { name: 'Auto-approved' }));
+    expect(listResults).toHaveBeenLastCalledWith({
+      templateId: undefined,
+      q: undefined,
+      show: 'auto',
+    });
+    await userEvent.click(within(show).getByRole('button', { name: 'With issues' }));
+    expect(within(show).getByRole('button', { name: 'With issues' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
-    expect(listResults).toHaveBeenLastCalledWith({ templateId: 'pvp', q: undefined });
+    expect(await screen.findByText('No published results with issues.')).toBeInTheDocument();
+  });
+
+  it('groups the rows by the day they were published, newest first, with the time', async () => {
+    const now = Date.parse('2026-10-16T15:00:00');
+    const rows = [
+      result({ filename: 'today.pdf', publishedAt: new Date('2026-10-16T14:18:00').toISOString() }),
+      result({
+        filename: 'yesterday.pdf',
+        publishedAt: new Date('2026-10-15T09:05:00').toISOString(),
+      }),
+      result({ filename: 'older.pdf', publishedAt: new Date('2026-10-12T08:57:00').toISOString() }),
+    ];
+    render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => rows) })} now={now} />);
+    await screen.findByRole('button', { name: 'Show preview of today.pdf' });
+    const days = screen.getAllByRole('rowheader').map((h) => h.textContent);
+    expect(days).toEqual(['Today', 'Yesterday', expect.stringMatching(/12 Oct|Oct 12/)]);
+    expect(row('today.pdf')).toHaveTextContent(timeOf(rows[0]!.publishedAt));
+    expect(screen.getByText('3 results')).toBeInTheDocument();
   });
 
   it('filters by file name on the server, once typing pauses', async () => {
@@ -195,8 +247,9 @@ describe('ResultsPage list', () => {
         }),
     );
     render(<ResultsPage api={fakeApi({ listResults, listSpecs: vi.fn(async () => types) })} />);
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Process Validation Protocol' }),
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Document type' }),
+      await screen.findByRole('option', { name: 'Process Validation Protocol' }),
     );
     await act(async () => resolvePvp([result({ filename: 'pvp.pdf' })]));
     await act(async () => resolveAll([result({ filename: 'stale-all.pdf' })]));
@@ -228,7 +281,10 @@ describe('ResultsPage list', () => {
       query?.templateId ? [] : [result()],
     );
     render(<ResultsPage api={fakeApi({ listResults, listSpecs: vi.fn(async () => types) })} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Invoice' }));
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Document type' }),
+      await screen.findByRole('option', { name: 'Invoice' }),
+    );
     expect(
       await screen.findByText('No published results for this document type.'),
     ).toBeInTheDocument();

@@ -9,14 +9,22 @@ export function ResultsHelp() {
 
       <h3>Finding a result</h3>
       <ul>
-        <li>The chips filter by document type.</li>
+        <li>
+          <strong>Document type</strong> shows one type's results.
+        </li>
+        <li>
+          <strong>Show</strong> narrows to results a person <strong>Reviewed</strong>, those{' '}
+          <strong>Auto-approved</strong> (published without review), or those{' '}
+          <strong>With issues</strong>.
+        </li>
         <li>The search box filters by file name.</li>
       </ul>
 
       <h3>The list</h3>
+      <p>Newest first, grouped by the day they were published.</p>
       <ul>
         <li>
-          <strong>Published</strong>: when the outputs were delivered.
+          <strong>Published</strong>: the time the outputs were delivered.
         </li>
         <li>
           <strong>Reviewed by</strong>: who approved the values, or that they were published without
@@ -30,14 +38,17 @@ export function ResultsHelp() {
 
       <h3>Looking at a result</h3>
       <ul>
-        <li>Click a file name for a quick preview of its fields and tables.</li>
         <li>
-          The open icon at the end of the row shows the full result: every field and table, when and
-          where it was published, and each output to download (CSV, JSON, and the graph when RDF is
-          delivered).
+          Click a row for its preview on the right: the first fields, the first rows of the first
+          table, and the files that were published.
         </li>
         <li>
-          The row also links to the original document, and downloads every output at once as a{' '}
+          <strong>Open full result</strong> shows everything: every field, table and check, when and
+          where it was published, and each output to download.
+        </li>
+        <li>
+          The preview also opens the original document (<strong>PDF</strong>, or{' '}
+          <strong>Original</strong> for a Word document) and downloads every output at once as a{' '}
           <strong>ZIP</strong>.
         </li>
       </ul>

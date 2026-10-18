@@ -125,6 +125,38 @@ describe('GET /api/results', () => {
     expect(rows).toEqual([]);
   });
 
+  it('shows reviewed, auto-approved or with-issues results only, with the other filters', async () => {
+    const ctx = await testApp();
+    const reviewed = await upload(ctx, 'tdemo', 'reviewed.pdf');
+    const auto = await upload(ctx, 'tdemo', 'auto.pdf');
+    const issues = await upload(ctx, 'tdemo', 'issues.pdf');
+    const clean = await upload(ctx, 'tdemo', 'clean-issues.pdf');
+    for (const id of [reviewed.id, issues.id]) {
+      const job = ctx.repo.jobs.get(id)!;
+      ctx.repo.jobs.set(id, { ...job, reviewer: 'Ken', reviewedAt: '2026-10-01T00:00:00.000Z' });
+    }
+    publish(ctx, reviewed.id, '2026-10-01T00:00:00.000Z', [out('document', 'published', null)]);
+    publish(ctx, auto.id, '2026-10-02T00:00:00.000Z', [out('document', 'published', null)]);
+    publish(ctx, issues.id, '2026-10-03T00:00:00.000Z', [
+      out('document', 'published', null),
+      out('issues', 'published', 3),
+    ]);
+    // An issues output with no rows is not "with issues".
+    publish(ctx, clean.id, '2026-10-04T00:00:00.000Z', [
+      out('document', 'published', null),
+      out('issues', 'published', 0),
+    ]);
+    const names = async (qs: string) =>
+      (await ctx.app.inject(`/api/results?${qs}`))
+        .json()
+        .map((r: { filename: string }) => r.filename);
+    expect(await names('show=reviewed')).toEqual(['issues.pdf', 'reviewed.pdf']);
+    expect(await names('show=auto')).toEqual(['clean-issues.pdf', 'auto.pdf']);
+    expect(await names('show=issues')).toEqual(['issues.pdf']);
+    expect(await names('show=reviewed&q=rev')).toEqual(['reviewed.pdf']);
+    expect((await ctx.app.inject('/api/results?show=everything')).statusCode).toBe(400);
+  });
+
   it('validates the query', async () => {
     const { app } = await testApp();
     expect((await app.inject('/api/results?limit=0')).statusCode).toBe(400);

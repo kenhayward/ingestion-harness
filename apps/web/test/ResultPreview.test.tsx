@@ -30,17 +30,17 @@ describe('ResultPreview', () => {
     const api = fakeApi({ getResult: vi.fn(async () => resultDetail()) });
     render(<ResultPreview api={api} summary={summary()} />);
     expect(within(preview()).getByRole('heading', { name: 'protocol.pdf' })).toBeInTheDocument();
-    expect(
-      within(preview()).getByText(/pvp v3 · published .* · reviewed by Ken/),
-    ).toBeInTheDocument();
+    expect(preview()).toHaveTextContent('pvp v3');
+    expect(preview()).toHaveTextContent('Reviewed by Ken');
+    expect(preview()).toHaveTextContent('1 issue');
     const fields = await within(preview()).findByRole('list', { name: 'Fields' });
     expect(within(fields).getByText('Product')).toBeInTheDocument();
     expect(within(fields).getByText('Aspirin')).toBeInTheDocument();
     expect(within(fields).getByText('B1, B2')).toBeInTheDocument();
     const table = within(preview()).getByRole('table', { name: 'Test results' });
     expect(within(table).getAllByRole('row')).toHaveLength(3); // header + 2
-    // The row carries Open full result and View PDF; the panel has no links of its own.
-    expect(within(preview()).queryAllByRole('link')).toEqual([]);
+    // The table scrolls inside the panel: it never widens it.
+    expect(table.closest('.preview-scroll')).not.toBeNull();
   });
 
   it('shows at most 3 table rows', async () => {
@@ -58,7 +58,44 @@ describe('ResultPreview', () => {
     render(
       <ResultPreview api={fakeApi()} summary={summary({ reviewer: null, reviewedAt: null })} />,
     );
-    expect(within(preview()).getByText(/auto-approved/)).toBeInTheDocument();
+    expect(within(preview()).getByText(/Auto-approved/)).toBeInTheDocument();
+  });
+
+  it('shows the first fields only, saying how many there are', async () => {
+    const detail = resultDetail();
+    if (detail.definition.kind !== 'template') throw new Error('template expected');
+    detail.definition.fields.push(
+      { id: 'site', name: 'Site', type: 'text' },
+      { id: 'author', name: 'Author', type: 'text' },
+    );
+    render(
+      <ResultPreview api={fakeApi({ getResult: vi.fn(async () => detail) })} summary={summary()} />,
+    );
+    const fields = await within(preview()).findByRole('list', { name: 'Fields' });
+    expect(within(fields).getAllByRole('listitem')).toHaveLength(6);
+    expect(within(preview()).getByText('6 of 8')).toBeInTheDocument();
+    expect(within(fields).queryByText('Author')).toBeNull();
+  });
+
+  it('lists the published files with their rows', () => {
+    render(
+      <ResultPreview
+        api={fakeApi()}
+        summary={summary({
+          outputs: [
+            { outputId: 'document', format: 'json', name: 'document.json', rowCount: null },
+            { outputId: 'results', format: 'csv', name: 'results.csv', rowCount: 1 },
+            { outputId: 'issues', format: 'csv', name: 'issues.csv', rowCount: 3 },
+          ],
+        })}
+      />,
+    );
+    const files = within(preview()).getByRole('list', { name: 'Published files' });
+    expect(
+      within(files)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['JSONdocument.json', 'CSVresults.csv1 row', 'CSVissues.csv3 rows']);
   });
 
   it('has no field preview for legacy spec results', async () => {

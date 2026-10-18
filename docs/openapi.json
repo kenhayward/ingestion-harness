@@ -25472,7 +25472,7 @@
         "tags": [
           "Results"
         ],
-        "description": "Jobs that delivered outputs to the final target, newest publish first. Test runs are\nnever listed. `q` filters by file name (case-insensitive substring). Page with\n`before` and `beforeId` set to the last row's `publishedAt` and `jobId`.",
+        "description": "Jobs that delivered outputs to the final target, newest publish first. Test runs are\nnever listed. `q` filters by file name (case-insensitive substring), `show` by review\n(`reviewed`, `auto`) or to results with issues (`issues`). Page with\n`before` and `beforeId` set to the last row's `publishedAt` and `jobId`.",
         "parameters": [
           {
             "schema": {
@@ -25524,6 +25524,20 @@
             "in": "query",
             "name": "q",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reviewed",
+                "auto",
+                "issues"
+              ]
+            },
+            "in": "query",
+            "name": "show",
+            "required": false,
+            "description": "`reviewed`: approved by a person; `auto`: published without review; `issues`: with at least one issue."
           }
         ],
         "responses": {
