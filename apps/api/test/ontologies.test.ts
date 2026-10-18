@@ -230,6 +230,75 @@ describe('browsing terms', () => {
   });
 });
 
+describe('term labels (the Mapping tab)', () => {
+  const C = 'https://example.org/pv#';
+  const labels = (app: Awaited<ReturnType<typeof setup>>['app'], payload: object) =>
+    app.inject({ method: 'POST', url: '/api/ontologies/term-labels', payload });
+
+  it('names each term from the first pinned version holding it, local terms first', async () => {
+    const ctx = await setup();
+    await ctx.upload({ id: 'pv', label: 'Process validation' });
+    ctx.ontologies.markReady('pv', 1);
+    ctx.ontologies.seedTerms('pv', 1, [
+      { iri: `${C}sentBy`, kind: 'object_property', label: 'sent by' },
+      { iri: `${C}Old`, kind: 'class', label: 'Old thing', deprecated: true },
+      { iri: `${C}Mine`, kind: 'class', label: 'Shadowed by the local term' },
+    ]);
+    await ctx.upload({ id: 'qq', label: 'Other' });
+    ctx.ontologies.markReady('qq', 1);
+    ctx.ontologies.seedTerms('qq', 1, [
+      { iri: `${C}sentBy`, kind: 'object_property', label: 'not this one' },
+    ]);
+    const res = await labels(ctx.app, {
+      ontologies: [
+        { id: 'pv', version: 1 },
+        { id: 'qq', version: 1 },
+      ],
+      prefixes: { pv: C },
+      local: [{ iri: 'pv:Mine', label: 'My term' }],
+      terms: ['pv:sentBy', `${C}Old`, 'pv:Mine', 'rdfs:label', 'pv:Nope', 'zz:thing'],
+    });
+    expect(res.statusCode).toBe(200);
+    const none = { label: null, kind: null, ontology: null, deprecated: false };
+    expect(res.json()).toEqual({
+      terms: {
+        'pv:sentBy': {
+          from: 'ontology',
+          iri: `${C}sentBy`,
+          label: 'sent by',
+          kind: 'object_property',
+          ontology: 'pv@1',
+          deprecated: false,
+        },
+        [`${C}Old`]: {
+          from: 'ontology',
+          iri: `${C}Old`,
+          label: 'Old thing',
+          kind: 'class',
+          ontology: 'pv@1',
+          deprecated: true,
+        },
+        'pv:Mine': { ...none, from: 'local', iri: `${C}Mine`, label: 'My term' },
+        'rdfs:label': {
+          ...none,
+          from: 'built-in',
+          iri: 'http://www.w3.org/2000/01/rdf-schema#label',
+        },
+        'pv:Nope': { ...none, from: 'unknown', iri: `${C}Nope` },
+        'zz:thing': { ...none, from: 'invalid', iri: null },
+      },
+    });
+  });
+
+  it('refuses a body without terms or with too many', async () => {
+    const { app } = await setup();
+    expect((await labels(app, { ontologies: [], terms: [] })).statusCode).toBe(400);
+    const many = Array.from({ length: 501 }, (_, i) => `ex:t${i}`);
+    expect((await labels(app, { ontologies: [], terms: many })).statusCode).toBe(400);
+    expect((await labels(app, { terms: ['ex:a'] })).statusCode).toBe(400);
+  });
+});
+
 describe('importing by URL', () => {
   const post = (app: Awaited<ReturnType<typeof setup>>['app'], payload: object) =>
     app.inject({ method: 'POST', url: '/api/ontologies/from-url', payload });

@@ -1596,6 +1596,26 @@ describe('delivered formats (ADR 0011)', () => {
     await userEvent.click(await tab(/Mapping/));
     expect(screen.getByRole('button', { name: 'Map to ontologies' })).toBeTruthy();
   });
+
+  it("lets a published version's mapping be browsed from its outline, read-only", async () => {
+    const semantics = {
+      ontologies: [{ id: 'ex', version: 1 }],
+      shapes: [],
+      prefixes: { ex: 'https://ex.example/' },
+      document: { class: 'ex:Letter', iri: 'doc/{source}' },
+      fields: {},
+      tables: {},
+      local: [],
+    };
+    setup(view({ ...validDefinition(), version: 1, semantics }, 'published'));
+    await userEvent.click(await tab(/Mapping/));
+    const outline = screen.getByRole('navigation', { name: 'Mapping outline' });
+    const prefixes = within(outline).getByRole('button', { name: 'Prefixes' });
+    expect(prefixes).toBeEnabled();
+    await userEvent.click(prefixes);
+    expect(screen.getByRole('region', { name: 'Prefixes' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Prefix')).toBeDisabled();
+  });
 });
 
 describe('Publish to (publishing targets)', () => {

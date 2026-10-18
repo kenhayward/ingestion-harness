@@ -853,21 +853,6 @@ export function TemplateEditor({
               </>
             )}
 
-            {tab === 'mapping' && (
-              <TabHelp topic="mapping">
-                What each output means in an ontology, for RDF delivery
-              </TabHelp>
-            )}
-            {tab === 'mapping' && (
-              <MappingEditor
-                api={api}
-                definition={def}
-                semantics={def.semantics}
-                onChange={(next) => update(['semantics'], next)}
-                preview={embedded ? { projectId: templateId, dirty } : undefined}
-              />
-            )}
-
             {tab === 'outputs' && (
               <>
                 <TabHelp topic="outputs">What the recipe extracts and delivers</TabHelp>
@@ -956,6 +941,22 @@ export function TemplateEditor({
               </div>
             )}
           </fieldset>
+          {tab === 'mapping' && (
+            <TabHelp topic="mapping">
+              What each output means in an ontology, for RDF delivery
+            </TabHelp>
+          )}
+          {/* Outside the disabled fieldset: a published version's outline still opens every item. */}
+          {tab === 'mapping' && (
+            <MappingEditor
+              api={api}
+              definition={def}
+              semantics={def.semantics}
+              onChange={(next) => update(['semantics'], next)}
+              preview={embedded ? { projectId: templateId, dirty } : undefined}
+              readOnly={!editable}
+            />
+          )}
           {tab === 'pipeline' && (
             <TabHelp topic="pipeline">The steps that fill the outputs, in order</TabHelp>
           )}

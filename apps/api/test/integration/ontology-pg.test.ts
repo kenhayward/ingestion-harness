@@ -111,6 +111,29 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
         [`${C}hasProtocol`, `${C}Protocol`, `${C}Nope`],
       ),
     ).toEqual({ [`${C}hasProtocol`]: [`${C}Protocol`] });
+    expect(
+      await repo.termLabels(
+        [
+          { id: 'pv-pg', version: 2 },
+          { id: 'pv-pg', version: 1 },
+        ],
+        [`${C}Protocol`, `${C}hasProtocol`, `${C}Nope`],
+      ),
+    ).toEqual({
+      [`${C}Protocol`]: {
+        label: 'Protocol',
+        kind: 'class',
+        ontology: 'pv-pg@1',
+        deprecated: false,
+      },
+      [`${C}hasProtocol`]: {
+        label: 'has protocol',
+        kind: 'object_property',
+        ontology: 'pv-pg@1',
+        deprecated: false,
+      },
+    });
+    expect(await repo.termLabels([], [`${C}Protocol`])).toEqual({});
     const protocol = await repo.term('pv-pg', 1, `${C}Protocol`);
     expect(protocol).toMatchObject({
       parentTerms: [{ label: 'Document' }],

@@ -461,6 +461,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('deleteOntologyVersion not stubbed');
     }),
     listOntologyTerms: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 100 })),
+    termLabels: vi.fn(async () => ({ terms: {} })),
     importOntologyFromUrl: vi.fn(async () => {
       throw new Error('importOntologyFromUrl not stubbed');
     }),
