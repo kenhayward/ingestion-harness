@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 18 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">
+        Changes since Friday 5pm: PRs #190 to #247, merged between Friday 16 October 2026, 17:20 and
+        Sunday 18 October 2026.
+      </p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Major changes</h4>
+        <ul>
+          <li>
+            <a href="#ontology-mapping">Ontology mapping and value nodes</a>
+            <span
+              >— map values to nodes of a class, a new Mapping tab and better automatic
+              matching</span
+            >
+          </li>
+          <li>
+            <a href="#workbench-drafting">Workbench drafting</a>
+            <span
+              >— models call tools, a model log, cancel a run, clearer waiting and failures</span
+            >
+          </li>
+          <li>
+            <a href="#backup-restore">Backup and restore</a>
+            <span>— encrypted whole-stack backups, restored as this deployment or as a copy</span>
+          </li>
+          <li>
+            <a href="#publishing-targets">Publishing targets</a>
+            <span>— S3 destinations managed in the app, chosen per recipe</span>
+          </li>
+          <li>
+            <a href="#github-sync">GitHub recipe sync</a>
+            <span>— push, pull and import recipe versions through GitHub</span>
+          </li>
+          <li>
+            <a href="#user-classes">User classes and maintenance mode</a>
+            <span
+              >— Administrators, Designers and Operators; take CT Studio down with a message</span
+            >
+          </li>
+        </ul>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#help">In-app help</a>
+            <span>— a ? on every page and tab, and one Help dialog in the account menu</span>
+          </li>
+          <li>
+            <a href="#workbench-refinements">Workbench and recipe editor refinements</a>
+            <span
+              >— Steps renamed Pipeline, publish from Document types, a clearer Sections table</span
+            >
+          </li>
+          <li>
+            <a href="#admin-layout">Administration layout</a>
+            <span>— tidier Maintenance and Users tabs, and a one-screen Add target dialog</span>
+          </li>
+        </ul>
+        <h4><a href="#other">Other updates</a></h4>
+      </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            The <code>user</code> role is now <code>designer</code>. API clients that send or read
+            <code>role: "user"</code> need updating.
+          </li>
+          <li>New migrations are named <code>YYYYMMDDHHMM_description.sql</code>, not numbered.</li>
+          <li>Zod 4's default error wording has changed.</li>
+        </ul>
+      </div>
+
+      <h2 id="major">Major changes</h2>
+
+      <h3 id="ontology-mapping">Ontology mapping and value nodes</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/237">#237</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/238">#238</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/239">#239</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/241">#241</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/242">#242</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/243">#243</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/244">#244</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/245">#245</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/247">#247</a>
+      </p>
+      <p>
+        Recipes can now map a field or column to a <em>value node</em>: a node of a chosen class
+        that holds the value and its unit. Class-centric ontologies such as AFO and OBI describe
+        data this way, and the earlier mapping forms couldn't express it. The new form is in both
+        the TypeScript and Python recipe formats, rendering, SHACL and validation, and the mapping
+        stage proposes it.
+      </p>
+      <p>
+        The recipe Mapping tab is now an outline beside a single-item editor and shows terms by
+        their readable names. The Workbench Mapping stage reviews proposals in that same outline,
+        with NEW/CHANGED/REMOVED tags and confidence for each change.
+      </p>
+      <p>
+        A research write-up and an evaluation harness come with it, including a per-output matcher
+        and a covalidation gold file. On the local 27B model, value-as accuracy went from 0/35 to
+        33/35 over these PRs, and class accuracy from 0/35 to 24/35. The mapping stage also no
+        longer fails when the model uses local terms it hasn't declared.
+      </p>
+
+      <h3 id="workbench-drafting">Workbench drafting</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/231">#231</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/233">#233</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/234">#234</a>
+      </p>
+      <p>
+        Drafting models can now call tools while they work (<a
+          href="https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0016-tools-in-drafting.md"
+          >ADR 0016</a
+        >):
+      </p>
+      <ul>
+        <li>Sections tests its anchors on the dev samples.</li>
+        <li>Revise can read more pages of a sample.</li>
+        <li>Mapping can search the pinned ontologies beyond its shortlist.</li>
+      </ul>
+      <p>
+        The progress line shows which tool is running. Every run now writes a model log of prompts,
+        replies and tool calls, opened with a <strong>Model log</strong> button. Admins can turn
+        tool calls off per endpoint.
+      </p>
+      <p>
+        A run can be cancelled, and a queued run now says why it is waiting (queue paused, or a
+        retry). A model the server doesn't have now goes to review at once instead of being retried.
+        Pipeline proposals put their steps in order instead of failing, and a retry replaces the
+        previous reply instead of adding to it.
+      </p>
+
+      <h3 id="backup-restore">Backup and restore</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/225">#225</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/227">#227</a>
+      </p>
+      <p>
+        Administration &gt; Backup makes one encrypted <code>.ctbak</code> file. It holds the
+        Postgres dump, the bucket objects and the triple store.
+      </p>
+      <p>
+        A restore uploads the file in resumable parts and checks all of it before changing anything.
+        It then restores into a side database under forced maintenance, and swaps that database in
+        only at the end. There are two modes: <em>as this deployment</em> (everything comes back)
+        and <em>as a copy</em>, for refreshing staging from production, which keeps the target
+        server's own models, publishing targets and settings.
+      </p>
+      <p>
+        Data-lake key secrets are not included; the restore report lists the consumers whose keys
+        need re-issuing.
+      </p>
+
+      <h3 id="publishing-targets">Publishing targets</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/203">#203</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/214">#214</a>
+      </p>
+      <p>
+        Admins now manage S3 destinations for published outputs under Administration &gt; Published
+        outputs; they are no longer set in <code>.env</code>. A target is either internal (a
+        SeaweedFS bucket) or an external S3 bucket, and each recipe picks one with
+        <em>Publish to</em>. The existing <code>.env</code> target is seeded once as
+        <code>default</code>.
+      </p>
+      <p>
+        Every delivery records which target it went to, so results, downloads, withdrawals and RDF
+        rebuilds use the right bucket. A target that is in use cannot be removed.
+      </p>
+
+      <h3 id="github-sync">GitHub recipe sync</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/196">#196</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/228">#228</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/229">#229</a>
+      </p>
+      <p>
+        Recipe versions can be pushed to a GitHub repository, pulled back and imported, so recipes
+        can move between deployments. Each file is a <code>ct-recipe</code> YAML under
+        <code>&lt;root&gt;/&lt;instance&gt;/&lt;type&gt;/v&lt;N&gt;.yaml</code>, and each deployment
+        writes only to its own folder.
+      </p>
+      <p>
+        Everyone pushes with their own linked GitHub account. When a branch is protected, the push
+        falls back to a pull request. Publishing can push automatically and is never blocked by
+        GitHub. Pulls and imports always create a draft. <code>covalidation</code> v4 was the first
+        recipe pushed this way.
+      </p>
+
+      <h3 id="user-classes">User classes and maintenance mode</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/193">#193</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/194">#194</a>
+      </p>
+      <p>There are now three kinds of user:</p>
+      <ul>
+        <li><strong>Administrators</strong>: everything.</li>
+        <li>
+          <strong>Designers</strong>: everything except Administration (the old
+          <code>user</code> role).
+        </li>
+        <li><strong>Operators</strong>: Home, Jobs (with review) and Results only.</li>
+      </ul>
+      <p>
+        The server enforces operator access with an allow-list, so new routes are closed to
+        operators until they are added to it.
+      </p>
+      <p>
+        Admins can also switch on maintenance mode with a message. Non-admins then see a banner on
+        the sign-in page and a maintenance page in the app, while queued jobs keep running.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="help">In-app help</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/190">#190</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/191">#191</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/198">#198</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/199">#199</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/200">#200</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/201">#201</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/217">#217</a>
+      </p>
+      <p>
+        Every page, recipe tab, Workbench tab and Administration tab now has a green
+        <strong>?</strong> that opens a help topic in a standard wide dialog. All topics are also
+        collected in a <strong>Help</strong> dialog in the account menu, with an Introduction and a
+        menu of main topics that expands to their parts. Any <strong>?</strong> dialog can open its
+        topic there.
+      </p>
+      <p>
+        A new topic isn't finished until it is listed in the Help menu, and a test enforces this.
+      </p>
+
+      <h3 id="workbench-refinements">Workbench and recipe editor refinements</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/190">#190</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/230">#230</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/232">#232</a>
+      </p>
+      <p>
+        The Workbench <em>Steps</em> stage is now called <strong>Pipeline</strong> in the UI,
+        matching the recipe editor; ids and routes are unchanged. A Workbench document type can now
+        be published from the Document types page. The RDF box can be ticked before a mapping
+        exists, although publishing still needs one. In the Sections table, Repeats, Key and Key
+        from now sit on a labelled second line.
+      </p>
+
+      <h3 id="admin-layout">Administration layout</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/195">#195</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/214">#214</a>
+      </p>
+      <p>
+        The Maintenance form and the Users row buttons were fixed. The Add publishing target dialog
+        is now two columns and fits on one screen, and the browser no longer autofills its Id field
+        with a saved email.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="other">Other updates</h2>
+
+      <h3 id="versioning">Versioning, CI and migrations</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/202">#202</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/204">#204</a>
+      </p>
+      <p>
+        Every merge to <code>main</code> is tagged with a calendar version
+        <code>YYYY.MM.DD.N</code> (<a
+          href="https://github.com/kenhayward/ingestion-harness/blob/main/docs/adr/0014-calendar-versions.md"
+          >ADR 0014</a
+        >). The version appears at the bottom of the nav, linking to its tag, and at
+        <code>GET /api/version</code>.
+      </p>
+      <p>
+        A push to <code>main</code> now only tags the build, which saves about 9 minutes per merge.
+        The compose smoke test is a required check. New migrations use UTC timestamps in their
+        names; <code>0001</code>–<code>0049</code> keep their numbers.
+      </p>
+
+      <h3 id="dependencies">Dependencies</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/197">#197</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/205">#205</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/213">#213</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/215">#215</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/219">#219</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/220">#220</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/226">#226</a>
+      </p>
+      <p>
+        Ten Dependabot bumps were tested together, including Vite 8 and Anthropic 1.13. Later bumps
+        covered openai, boto3, <code>@types/node</code> and <code>@vitejs/plugin-react</code> 6.
+      </p>
+      <p>
+        Zod moved to version 4, and OpenAPI generation now uses Zod's own
+        <code>z.toJSONSchema</code>. Dependabot keeps <code>@types/node</code> on Node 24 and now
+        updates vitest and eslint as groups. Postgres 18, Temurin 24 and Node 26 were deliberately
+        not taken.
+      </p>
+
+      <h3 id="deployment">Deployment and operations</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/222">#222</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/224">#224</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/227">#227</a>
+      </p>
+      <p>
+        There is a new guide to continuous deployment on Windows hosts (Docker Desktop and WSL2).
+        The post-deploy smoke test now reads the env file the way compose does (CRLF line endings,
+        S3 port, framing headers). An nginx redirect that broke backup uploads was fixed.
+      </p>
+
+      <h3 id="research">Research and docs</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/192">#192</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/237">#237</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/242">#242</a>
+      </p>
+      <p>
+        An OCR engine benchmark found that olmOCR's slowness and failures came from how LM Studio
+        had loaded it. Loaded fully on the GPU with a 32k context, it reads a page in 4–6 s. The
+        report recommends no CPU OCR engine. There are also new design docs for mapping automation
+        and value nodes.
+      </p>
+
+      <h3 id="test-fixes">Test fixes</h3>
+      <p class="prs"><a href="https://github.com/kenhayward/ingestion-harness/pull/211">#211</a></p>
+      <p>A sign-in lockout test that failed between 23:45 and midnight now pins the clock.</p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>

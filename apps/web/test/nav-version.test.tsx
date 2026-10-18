@@ -1,45 +1,45 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { DEV_VERSION, REPO_URL } from '@ih/shared';
-import { NavVersion } from '../src/shell/NavVersion.js';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { DEV_VERSION } from '@ih/shared';
+import { NavVersion, versionText } from '../src/shell/NavVersion.js';
 
 const tagged = { version: '2026.10.17.3', previous: '2026.10.17.2', commit: 'abc1234' };
 
 describe('NavVersion', () => {
-  it('links a tagged build to its tag on GitHub', () => {
-    render(<NavVersion info={tagged} compact={false} />);
-    const link = screen.getByRole('link', { name: 'v2026.10.17.3 (opens in a new tab)' });
-    expect(link).toHaveAttribute('href', `${REPO_URL}/releases/tag/2026.10.17.3`);
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
-    expect(link).toHaveTextContent('v2026.10.17.3');
+  it('opens About and the release notes', async () => {
+    const onOpen = vi.fn();
+    render(<NavVersion info={tagged} compact={false} onOpen={onOpen} />);
+    const button = screen.getByRole('button', {
+      name: 'v2026.10.17.3: about CT Studio and release notes',
+    });
+    expect(button).toHaveTextContent('v2026.10.17.3');
+    await userEvent.click(button);
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
   it('names the version in the collapsed nav', () => {
-    render(<NavVersion info={tagged} compact />);
-    const link = screen.getByRole('link', { name: 'Version 2026.10.17.3 (opens in a new tab)' });
-    expect(link).toHaveAttribute('title', 'Version 2026.10.17.3');
-    expect(link.querySelector('.nav-label')).toHaveTextContent('v2026.10.17.3');
+    render(<NavVersion info={tagged} compact onOpen={vi.fn()} />);
+    const button = screen.getByRole('button', {
+      name: 'Version 2026.10.17.3: about CT Studio and release notes',
+    });
+    expect(button).toHaveAttribute('title', 'Version 2026.10.17.3');
+    expect(button.querySelector('.nav-label')).toHaveTextContent('v2026.10.17.3');
   });
 
-  it('links an untagged build to its commit', () => {
-    render(
-      <NavVersion
-        info={{ version: '2026.10.17.2+abc1234', previous: '2026.10.17.2', commit: 'abc1234' }}
-        compact={false}
-      />,
-    );
+  it('opens About from a dev build too', () => {
+    render(<NavVersion info={DEV_VERSION} compact={false} onOpen={vi.fn()} />);
     expect(
-      screen.getByRole('link', { name: 'v2026.10.17.2+abc1234 (opens in a new tab)' }),
-    ).toHaveAttribute('href', `${REPO_URL}/compare/2026.10.17.2...abc1234`);
+      screen.getByRole('button', { name: 'dev: about CT Studio and release notes' }),
+    ).toBeInTheDocument();
   });
 
   it.each([
-    [DEV_VERSION, 'dev'],
-    [{ version: 'dev+abc1234', previous: null, commit: 'abc1234' }, 'dev+abc1234'],
-  ])('shows a dev build without a link', (info, text) => {
-    render(<NavVersion info={info} compact={false} />);
-    expect(screen.queryByRole('link')).toBeNull();
-    expect(screen.getByText(text)).toBeInTheDocument();
+    ['2026.10.17.3', 'v2026.10.17.3'],
+    ['2026.10.17.2+abc1234', 'v2026.10.17.2+abc1234'],
+    ['dev', 'dev'],
+    ['dev+abc1234', 'dev+abc1234'],
+  ])('writes %s as %s', (version, text) => {
+    expect(versionText({ version, previous: null, commit: 'abc1234' })).toBe(text);
   });
 });
