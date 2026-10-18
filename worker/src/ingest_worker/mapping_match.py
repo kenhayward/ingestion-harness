@@ -316,9 +316,6 @@ def rerank(
             elif roots & DATA_ROOTS:
                 score += 0.3
                 notes.append("a data class")
-            if name_fits(term.label, output):
-                score += 0.3
-                notes.append("name fits")
         if node and kind == "object_property":
             data_range = any(
                 terms.ancestors([r], depth=ROOT_DEPTH) & DATA_ROOTS for r in term.range
@@ -468,9 +465,10 @@ def _narrower(
     term: str | None, retrieved: list[Ranked], o: OutputSpec, terms: _Terms
 ) -> str | None:
     """The "too general" error for a value node's class: the model picked a class while one of
-    its subclasses, retrieved but not among the options shown, shares a word of the output's name
-    the picked class's label lacks (*mass fraction* for "Water Content", where *water mass
-    fraction* was retrieved). That subclass (the best ranked), else None."""
+    its subclasses, retrieved but not among the options shown, adds to the picked label only
+    words of the output's name (*water mass fraction* for "Water Content" over *mass
+    fraction*; never *supplier lot number* for "Batch Number" over *batch identifier*, which adds
+    "supplier" and "lot"). That subclass (the best ranked), else None."""
     if term is None:
         return None
     picked_words = set(_words(_label(terms, term)).split())
@@ -478,8 +476,10 @@ def _narrower(
     for r in retrieved:
         if r.iri == term or r.kind != "class":
             continue
-        shared = (set(_words(r.label).split()) & name_words) - picked_words
-        if shared and term in terms.ancestors([r.iri], depth=ROOT_DEPTH) - {r.iri}:
+        added = set(_words(r.label).split()) - picked_words
+        if not added or not added <= name_words:
+            continue
+        if term in terms.ancestors([r.iri], depth=ROOT_DEPTH) - {r.iri}:
             return r.iri
     return None
 

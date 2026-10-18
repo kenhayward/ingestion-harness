@@ -41,6 +41,8 @@ ex:ArithmeticMeanRole a owl:Class ; rdfs:label "arithmetic mean role" ;
 ex:ResultRow a owl:Class ; rdfs:label "result row" ; rdfs:subClassOf ex:Datum .
 ex:Identifier a owl:Class ; rdfs:label "identifier" ; rdfs:subClassOf ex:Datum .
 ex:BatchIdentifier a owl:Class ; rdfs:label "batch identifier" ; rdfs:subClassOf ex:Identifier .
+ex:SupplierLotNumber a owl:Class ; rdfs:label "supplier lot number" ;
+    rdfs:subClassOf ex:BatchIdentifier .
 obo:IAO_0000028 a owl:Class ; rdfs:label "symbol" ; rdfs:subClassOf obo:IAO_0000030 .
 ex:LotNumber a owl:Class ; rdfs:label "lot number" ; rdfs:subClassOf obo:IAO_0000028 .
 ex:hasDataOutput a owl:ObjectProperty ; rdfs:label "has data output" ;
@@ -312,17 +314,17 @@ def test_a_specific_pick_is_kept() -> None:
     assert picks["assay"].entity_class == f"{EX}AssayResult"
 
 
-def test_node_classes_prefer_a_label_sharing_a_word_of_the_name() -> None:
-    water = rerank(
-        store(),
-        VERSIONS,
-        output("water_content_kf"),
-        [f"{EX}MassFraction", f"{EX}AbsoluteWaterContent"],
-        owner=[],
-        node=True,
+def test_narrowing_never_takes_a_subclass_adding_words_the_name_lacks() -> None:
+    """*supplier lot number* shares "number" with "Batch Number" but adds "supplier" and "lot":
+    another concept, not a narrower reading of *batch identifier*."""
+    from ingest_worker.mapping_match import _narrower, _Terms
+
+    s = store()
+    batch = output("results.batch_number")
+    retrieved = rerank(
+        s, VERSIONS, batch, [f"{EX}BatchIdentifier", f"{EX}SupplierLotNumber"], owner=[], node=True
     )
-    assert water[0].iri == f"{EX}AbsoluteWaterContent"
-    assert any("name fits" in n for n in water[0].notes)
+    assert _narrower(f"{EX}BatchIdentifier", retrieved, batch, _Terms(s, VERSIONS)) is None
 
 
 def test_narrowing_finds_a_subclass_anywhere_in_the_retrieved_classes() -> None:
