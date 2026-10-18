@@ -125,7 +125,8 @@ Python: `Semantics.resolve_node(m) -> ResolvedNode | None`. The output's own ter
 
 ### 3.2 Rules (both sides: `TemplateSchema.superRefine`, `Template._semantics_errors`)
 
-Same messages on both sides, each prefixed `semantics: <field "x" | column "t.c">: `:
+The same wording on both sides, each prefixed `semantics: <field | column>: ` in that side's
+existing quoting (TS `field "x"`, Python `field 'x'`); the shared fixture checks validity:
 
 | Case | Message |
 | --- | --- |
