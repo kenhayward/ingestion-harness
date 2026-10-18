@@ -294,3 +294,17 @@ def test_a_confirmed_pick_goes_up_a_tier_and_a_changed_one_is_low() -> None:
 def test_without_confirmation_each_question_is_asked_once() -> None:
     requests, _ = run(DEFAULTS)
     assert sum("assay" in dict(r.items) for r in requests) == 1
+
+
+def test_a_class_too_general_for_the_name_becomes_its_retrieved_subclass() -> None:
+    """The "too general" error: water content picked as *mass fraction* while *water mass
+    fraction*, its subclass sharing the output's word "water", was retrieved but not among the
+    few options shown. The subclass is taken, at medium confidence."""
+    _, picks = run({**DEFAULTS, "water_content_kf": f"{EX}MassFraction"})
+    pick = picks["water_content_kf"]
+    assert (pick.entity_class, pick.confidence) == (f"{EX}WaterMassFraction", "medium")
+
+
+def test_a_specific_pick_is_kept() -> None:
+    _, picks = run({**DEFAULTS, "assay": f"{EX}AssayResult"})
+    assert picks["assay"].entity_class == f"{EX}AssayResult"

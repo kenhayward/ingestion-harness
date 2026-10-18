@@ -439,6 +439,32 @@ def _specific(term: str | None, options: list[Ranked], terms: _Terms) -> tuple[s
     return term, False
 
 
+#: Words of an output's name too common to tell one class from another.
+_NAME_STOP = frozenset({"the", "and", "for", "with", "each", "any", "all", "value", "values"})
+
+
+def _narrower(
+    term: str | None, retrieved: list[Ranked], o: OutputSpec, terms: _Terms
+) -> str | None:
+    """The "too general" error for a value node's class: the model picked a class while one of
+    its subclasses, retrieved but not among the options shown, shares a word of the output's name
+    the picked class's label lacks (*mass fraction* for "Water Content", where *water mass
+    fraction* was retrieved). That subclass (the best ranked), else None."""
+    if term is None:
+        return None
+    picked = terms.get(term)
+    picked_words = set(_words(picked.label).split()) if picked else set()
+    bare = _PARENS.sub("", o.name)
+    name_words = {w for w in _words(bare).split() if len(w) > 2 and w not in _NAME_STOP}
+    for r in retrieved:
+        if r.iri == term or r.kind != "class":
+            continue
+        shared = (set(_words(r.label).split()) & name_words) - picked_words
+        if shared and term in terms.ancestors([r.iri], depth=ROOT_DEPTH) - {r.iri}:
+            return r.iri
+    return None
+
+
 def _answer(chosen: dict[str, str], path: str, options: list[Ranked]) -> str | None:
     value = chosen.get(path, "none")
     return value if value in {o.iri for o in options} else None
@@ -570,6 +596,10 @@ def propose(
     # 3. Fields (they hang off the document), then each table's columns (off its rows). With
     # value-node defaults, an output's options are classes (a node of that class holds the value)
     # and properties together; numeric and date outputs list the classes first.
+    # Every class retrieved for an output, re-ranked: only the first few are options, the rest
+    # may hold a subclass more specific than the pick (`_narrower`).
+    retrieved_classes: dict[str, list[Ranked]] = {}
+
     def options_of(o: OutputSpec, owner: list[str]) -> list[Ranked]:
         props = rerank(terms, versions, o, candidates(o, PROPERTY_KINDS), owner=owner)
         if not node_ready or o.enum or o.type == "list":
@@ -578,6 +608,7 @@ def propose(
         # The class queries' phrases ("Assay result") are names an exact label may match too.
         names = _names(o) | {_words(q) for q in class_queries(o, [])[1:]}
         classes = rerank(terms, versions, o, node_classes(o), owner=[], node=True, names=names)
+        retrieved_classes[o.path] = classes
         mixed = (classes[:NODE_CLASSES], props[:NODE_PROPERTIES])
         return [*mixed[0], *mixed[1]] if o.type in NODE_TYPES else [*mixed[1], *mixed[0]]
 
@@ -596,7 +627,7 @@ def propose(
             if confirm:
                 reverse = [(p, o, list(reversed(rs[:limit]))) for p, o, rs in batch]
                 again = ask("property", reverse, note, limit)
-            for path, _output, rs in batch:
+            for path, output, rs in batch:
                 shown = rs[:limit]
                 term = _answer(chosen, path, shown)
                 if again is not None:
@@ -606,6 +637,9 @@ def propose(
                 if picked is not None and picked.kind == "class":
                     classes = [r for r in shown if r.kind == "class"]
                     node_class, replaced = _specific(term, classes, terms)
+                    narrower = _narrower(node_class, retrieved_classes.get(path, []), output, terms)
+                    if narrower is not None:
+                        node_class, replaced = narrower, True
                     # An identifier is shared across documents: an entity, not a value node.
                     shared = node_class is not None and is_identifier(terms, node_class)
                     picks[path] = Pick(
