@@ -337,6 +337,20 @@ drafting model `qwen3.8-27b-mtp` on LM Studio.
 - **Confidence**: the per-output tiers were high 3 (all right), medium 4 (all right), low 1 (the
   correctly unmapped `notes`). Too few outputs to calibrate anything.
 
+### The stage on covalidation (2026-10-18, a deployment without a base IRI)
+
+Before the gold could run, the Workbench mapping stage itself failed on covalidation (AFO and OBI
+pinned, local `qwen3.8-27b-mtp`, tools on). Its model log showed the model working sensibly: it
+searched the ontologies eight times for a class for the `batches` rows (the library has none, as
+the gold also found) and looked candidate terms up. With nothing fitting it declared local terms,
+which were refused because that deployment had no base IRI (a restore *as a copy* keeps the
+target's own Linked data settings); its second answer left the table's row class empty, and the
+two tries were spent. Two prompt faults, now fixed: the stage invited local terms where none can be
+declared (the prompt now says when they are unavailable), and nothing said that a table whose rows
+fit no class should stay unmapped (the instructions and the row-class error now say so). It is the
+library gap again: a batch is a central thing in these documents and the library has no class for
+it.
+
 ### Real gold
 
-To be added: a real project's gold, with the local model and a frontier model.
+To be added: the covalidation gold, with the local model and a frontier model.
