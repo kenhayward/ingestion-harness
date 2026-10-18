@@ -33,6 +33,8 @@ ex:MassFraction a owl:Class ; rdfs:label "mass fraction" ; rdfs:subClassOf ex:Da
 ex:WaterMassFraction a owl:Class ; rdfs:label "water mass fraction" ;
     rdfs:subClassOf ex:MassFraction .
 ex:Composition a owl:Class ; rdfs:label "composition" ; rdfs:subClassOf obo:BFO_0000019 .
+ex:AbsoluteWaterContent a owl:Class ; rdfs:label "absolute water content" ;
+    rdfs:subClassOf ex:Datum .
 ex:ArithmeticMean a owl:Class ; rdfs:label "arithmetic mean" ; rdfs:subClassOf ex:Datum .
 ex:ArithmeticMeanRole a owl:Class ; rdfs:label "arithmetic mean role" ;
     rdfs:subClassOf ex:Datum .
@@ -308,3 +310,46 @@ def test_a_class_too_general_for_the_name_becomes_its_retrieved_subclass() -> No
 def test_a_specific_pick_is_kept() -> None:
     _, picks = run({**DEFAULTS, "assay": f"{EX}AssayResult"})
     assert picks["assay"].entity_class == f"{EX}AssayResult"
+
+
+def test_node_classes_prefer_a_label_sharing_a_word_of_the_name() -> None:
+    water = rerank(
+        store(),
+        VERSIONS,
+        output("water_content_kf"),
+        [f"{EX}MassFraction", f"{EX}AbsoluteWaterContent"],
+        owner=[],
+        node=True,
+    )
+    assert water[0].iri == f"{EX}AbsoluteWaterContent"
+    assert any("name fits" in n for n in water[0].notes)
+
+
+def test_narrowing_finds_a_subclass_anywhere_in_the_retrieved_classes() -> None:
+    """`_narrower` reads every retrieved class, the options shown or not: propose passes it the
+    union of all class queries' results, not only the fused best few."""
+    from ingest_worker.mapping_match import _narrower, _Terms
+
+    s = store()
+    retrieved = rerank(
+        s,
+        VERSIONS,
+        output("water_content_kf"),
+        [f"{EX}MassFraction", f"{EX}Composition", f"{EX}ArithmeticMean", f"{EX}WaterMassFraction"],
+        owner=[],
+        node=True,
+    )
+    terms = _Terms(s, VERSIONS)
+    water = output("water_content_kf")
+    assert _narrower(f"{EX}MassFraction", retrieved, water, terms) == f"{EX}WaterMassFraction"
+    assert _narrower(f"{EX}WaterMassFraction", retrieved, water, terms) is None
+    # A subclass that shares no word of the name is no narrower answer.
+    assay = output("assay")
+    assert _narrower(f"{EX}MassFraction", retrieved, assay, terms) is None
+
+
+def test_a_class_sharing_no_word_with_the_name_is_never_high() -> None:
+    requests, picks = run({**DEFAULTS, "mean_percent": f"{EX}AssayResult"})
+    assert f"{EX}AssayResult" in options_for(requests, "mean_percent")
+    assert picks["mean_percent"].value_as == "node"
+    assert picks["mean_percent"].confidence != "high"

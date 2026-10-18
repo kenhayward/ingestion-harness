@@ -316,6 +316,9 @@ def rerank(
             elif roots & DATA_ROOTS:
                 score += 0.3
                 notes.append("a data class")
+            if name_fits(term.label, output):
+                score += 0.3
+                notes.append("name fits")
         if node and kind == "object_property":
             data_range = any(
                 terms.ancestors([r], depth=ROOT_DEPTH) & DATA_ROOTS for r in term.range
@@ -443,6 +446,24 @@ def _specific(term: str | None, options: list[Ranked], terms: _Terms) -> tuple[s
 _NAME_STOP = frozenset({"the", "and", "for", "with", "each", "any", "all", "value", "values"})
 
 
+def _name_words(o: OutputSpec) -> set[str]:
+    """The content words of an output's name, without unit text in parentheses."""
+    return {
+        w for w in _words(_PARENS.sub("", o.name)).split() if len(w) > 2 and w not in _NAME_STOP
+    }
+
+
+def name_fits(label: str, o: OutputSpec) -> bool:
+    """Whether a class label shares a content word with the output's name (lexical agreement:
+    *absolute water content* for "Water Content by KF", not *mass fraction*)."""
+    return bool(set(_words(label).split()) & _name_words(o))
+
+
+def _label(terms: _Terms, iri: str | None) -> str:
+    term = terms.get(iri) if iri else None
+    return term.label if term else ""
+
+
 def _narrower(
     term: str | None, retrieved: list[Ranked], o: OutputSpec, terms: _Terms
 ) -> str | None:
@@ -452,10 +473,8 @@ def _narrower(
     fraction* was retrieved). That subclass (the best ranked), else None."""
     if term is None:
         return None
-    picked = terms.get(term)
-    picked_words = set(_words(picked.label).split()) if picked else set()
-    bare = _PARENS.sub("", o.name)
-    name_words = {w for w in _words(bare).split() if len(w) > 2 and w not in _NAME_STOP}
+    picked_words = set(_words(_label(terms, term)).split())
+    name_words = _name_words(o)
     for r in retrieved:
         if r.iri == term or r.kind != "class":
             continue
@@ -512,7 +531,7 @@ def propose(
                 store, versions, query, ["class"], vector=None, model_ref=None, k=retrieve
             )  # fmt: skip
             rankings.append([c.iri for c in found])
-        return [iri for iri, _score in fuse(rankings)][:retrieve]
+        return [iri for iri, _score in fuse(rankings)]
 
     picks: dict[str, Pick] = {}
 
@@ -607,8 +626,10 @@ def propose(
         props = [p for p in props if p.iri not in default_terms]
         # The class queries' phrases ("Assay result") are names an exact label may match too.
         names = _names(o) | {_words(q) for q in class_queries(o, [])[1:]}
-        classes = rerank(terms, versions, o, node_classes(o), owner=[], node=True, names=names)
-        retrieved_classes[o.path] = classes
+        found = node_classes(o)
+        classes = rerank(terms, versions, o, found[:retrieve], owner=[], node=True, names=names)
+        # Every class any query found, for `_narrower`: a subclass may rank low in all but one.
+        retrieved_classes[o.path] = rerank(terms, versions, o, found, owner=[], node=True)
         mixed = (classes[:NODE_CLASSES], props[:NODE_PROPERTIES])
         return [*mixed[0], *mixed[1]] if o.type in NODE_TYPES else [*mixed[1], *mixed[0]]
 
@@ -645,7 +666,10 @@ def propose(
                     picks[path] = Pick(
                         node_link,
                         "entity" if shared else "node",
-                        "medium" if replaced else _confidence(term, shown),
+                        # A class whose label shares no word of the name is never high.
+                        "medium"
+                        if replaced or not name_fits(_label(terms, node_class), output)
+                        else _confidence(term, shown),
                         tuple(r.iri for r in rs),
                         entity_class=node_class,
                     )
