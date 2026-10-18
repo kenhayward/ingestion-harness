@@ -55,7 +55,7 @@ VALUE_NODE_QUERIES: list[tuple[str, str, list[str]]] = [
     (f"{VALUE_NODES}.link", "has output. has specified output. has data output. has result",
      ["object_property"]),
     (f"{VALUE_NODES}.value", "has value. numeric value. value", ["datatype_property"]),
-    (f"{VALUE_NODES}.unit", "has unit. unit", ["object_property"]),
+    (f"{VALUE_NODES}.unitProperty", "has unit. unit", ["object_property"]),
 ]  # fmt: skip
 #: Units are not in the ontology library (QUDT units are individuals): only QUDT's are taken.
 QUDT_UNITS = "http://qudt.org/vocab/unit/"
