@@ -650,6 +650,7 @@ def propose(
                 again = ask("property", reverse, note, limit)
             for path, output, rs in batch:
                 shown = rs[:limit]
+                capped = False
                 term = _answer(chosen, path, shown)
                 if again is not None:
                     # The tier the pick earns from the second asking (applied below).
@@ -658,18 +659,19 @@ def propose(
                 if picked is not None and picked.kind == "class":
                     classes = [r for r in shown if r.kind == "class"]
                     node_class, replaced = _specific(term, classes, terms)
+                    # Never high, confirmed or not: a class the matcher put in the model's place
+                    # (set below when narrowed), or whose label shares no word of the name.
+                    capped = replaced
                     narrower = _narrower(node_class, retrieved_classes.get(path, []), output, terms)
                     if narrower is not None:
-                        node_class, replaced = narrower, True
+                        node_class, capped = narrower, True
+                    capped = capped or not name_fits(_label(terms, node_class), output)
                     # An identifier is shared across documents: an entity, not a value node.
                     shared = node_class is not None and is_identifier(terms, node_class)
                     picks[path] = Pick(
                         node_link,
                         "entity" if shared else "node",
-                        # A class whose label shares no word of the name is never high.
-                        "medium"
-                        if replaced or not name_fits(_label(terms, node_class), output)
-                        else _confidence(term, shown),
+                        "medium" if capped else _confidence(term, shown),
                         tuple(r.iri for r in rs),
                         entity_class=node_class,
                     )
@@ -678,6 +680,8 @@ def propose(
                 if again is not None and term is not None:
                     tier = _CONFIRMED[picks[path].confidence] if agreed else "low"
                     picks[path] = replace(picks[path], confidence=tier)
+                if capped and picks[path].confidence == "high":
+                    picks[path] = replace(picks[path], confidence="medium")
 
     map_outputs([o for o in outputs if o.kind == "field"], doc_owner)
     for table_path, rows in row_class.items():

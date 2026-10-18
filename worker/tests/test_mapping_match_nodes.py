@@ -355,3 +355,12 @@ def test_a_class_sharing_no_word_with_the_name_is_never_high() -> None:
     assert f"{EX}AssayResult" in options_for(requests, "mean_percent")
     assert picks["mean_percent"].value_as == "node"
     assert picks["mean_percent"].confidence != "high"
+
+
+def test_confirmation_never_lifts_a_class_sharing_no_word_with_the_name_to_high() -> None:
+    """The name cap is a ceiling: a confirmed *assay result* for "Mean (%)" stays medium."""
+    answers = {**DEFAULTS, "mean_percent": f"{EX}AssayResult"}
+    requests, choose = confirming(answers, answers)
+    picks = propose(DRAFT, INPUTS, store(), VERSIONS, choose=choose, embed=None, confirm=True)
+    assert f"{EX}AssayResult" in options_for(requests, "mean_percent")
+    assert picks["mean_percent"].confidence == "medium"
