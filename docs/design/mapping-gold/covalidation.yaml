@@ -1,0 +1,131 @@
+# Gold mapping for the covalidation Workbench project (draft v4: a stability report, six tables,
+# 46 columns), against the deployment's library as of 2026-10-18: AFO (Allotrope, merged without
+# QUDT), OBI, GS1 Web Vocabulary, QUDT, OWL-Time, DCMI, PROV-O.
+#
+# Class-centric (docs/design/mapping-automation.md, "The measurement pattern"): AFO and OBI put
+# the meaning in the class of the node a value sits on, and offer only generic links (has data
+# output, has identifier, has part). So most answers are `term: any` with the class that matters;
+# `as: entity` is the closest the current mapping format comes to "a node of that class".
+# `unmapped` means the library has no fitting term: the output needs a local term.
+#
+# Drafted by Claude from the library's own terms (labels and definitions read in CT Studio), not by
+# a domain expert: a careful reference, not ground truth. Every judgment call is marked `# CHECK`.
+# Correct it, then: python -m ingest_worker.mapping_eval --gold covalidation.yaml
+name: covalidation (Claude-drafted gold, to check)
+project: covalidation
+prefixes:
+  afr: http://purl.allotrope.org/ontologies/result#
+  afp: http://purl.allotrope.org/ontologies/process#
+  afre: http://purl.allotrope.org/ontologies/realizable#
+  obo: http://purl.obolibrary.org/obo/
+
+# Shared answers (YAML anchors): the same column appears in every results table.
+shared:
+  # batch identifier, lot number
+  batch_number: &batch_number { term: any, class: [afr:AFR_0001120, obo:IAO_0000132], as: entity }
+  # study identifier
+  study_id: &study_id { term: any, class: afr:AFR_0003369, as: entity }
+  # CHECK: "25 °C/60% RH" combines a temperature and a relative humidity; AFO has both
+  # (afr:AFR_0001584, afr:AFR_0002614) but no storage condition. One column cannot be both.
+  storage_condition: &storage_condition unmapped
+  # CHECK: months on stability. Elapsed time (from a reference point) fits better than duration.
+  storage_time_months:
+    &storage_time { term: any, class: [afr:AFR_0002050, afr:AFR_0000951], as: entity }
+  # A results row: one storage condition and time point of the study. CHECK: study point fits the
+  # (condition, time) design; an assay (the test run) is the other reading.
+  results_row: &results_row [afre:AFRE_0000021, afp:AFP_0002680, obo:OBI_0000070]
+  # A qualifier of the value ("<0.05"), not an output of its own.
+  below_threshold: &below unmapped
+
+expected:
+  # CHECK: the whole document is a stability report; the library has no stability report class.
+  # A study document (AFO) or a report (IAO) are the nearest.
+  '': [afr:AFR_0003368, obo:IAO_0000088]
+
+  # CHECK: a batch row as a portion of material (AFO imports CHMO) or a material sample (OBI);
+  # the library has no batch class.
+  batches: { term: any, class: [obo:CHMO_0000993, obo:OBI_0000747] }
+  # CHECK: "index" (an ordering key); arguably unmapped.
+  batches.sequence: { term: any, class: afr:AFR_0000928, as: entity }
+  batches.study_id: *study_id
+  batches.batch_number: *batch_number
+  # CHECK: material identifier for the internal code (LDLS000).
+  batches.internal_code: { term: any, class: afr:AFR_0001745, as: entity }
+  # CHECK: container type; GS1 PackagingDetails is the other candidate.
+  batches.packaging: { term: any, class: afr:AFR_0001987, as: entity }
+
+  appearance_water_content_table: { term: any, class: *results_row }
+  appearance_water_content_table.batch_number: *batch_number
+  appearance_water_content_table.study_id: *study_id
+  appearance_water_content_table.storage_condition: *storage_condition
+  appearance_water_content_table.storage_time_months: *storage_time
+  # CHECK: "Complies" reads as a conformance assessment; a free text appearance as a description.
+  appearance_water_content_table.appearance:
+    { term: any, class: [afr:AFR_0000922, afr:AFR_0001991], as: entity }
+  # Water mass fraction (% w/w); absolute water content is a mass.
+  appearance_water_content_table.water_content_kf:
+    { term: any, class: [afr:AFR_0002448, afr:AFR_0002445], as: entity }
+  appearance_water_content_table.water_content_nir:
+    { term: any, class: [afr:AFR_0002448, afr:AFR_0002445], as: entity }
+
+  assay_chromatographic_purity_table: { term: any, class: *results_row }
+  assay_chromatographic_purity_table.batch_number: *batch_number
+  assay_chromatographic_purity_table.study_id: *study_id
+  assay_chromatographic_purity_table.storage_condition: *storage_condition
+  assay_chromatographic_purity_table.storage_time_months: *storage_time
+  # Assay result.
+  assay_chromatographic_purity_table.assay:
+    { term: any, class: [afr:AFR_0000207, afr:AFR_0001602], as: entity }
+  # CHECK: AFO has degradation product *roles* and a total impurities *quality*, but no datum for
+  # an impurity's amount; mass fraction is the nearest result class.
+  assay_chromatographic_purity_table.degradation_product_specified:
+    { term: any, class: afr:AFR_0002099, as: entity }
+  assay_chromatographic_purity_table.degradation_product_specified_below_threshold: *below
+  assay_chromatographic_purity_table.degradation_product_unspecified:
+    { term: any, class: afr:AFR_0002099, as: entity }
+  assay_chromatographic_purity_table.degradation_product_unspecified_below_threshold: *below
+  assay_chromatographic_purity_table.total_degradation_products:
+    { term: any, class: afr:AFR_0002099, as: entity }
+  assay_chromatographic_purity_table.total_degradation_products_below_threshold: *below
+
+  dissolution_results_table: { term: any, class: *results_row }
+  dissolution_results_table.batch_number: *batch_number
+  dissolution_results_table.study_id: *study_id
+  dissolution_results_table.storage_condition: *storage_condition
+  dissolution_results_table.storage_time_months: *storage_time
+  # Minutes into the dissolution run: elapsed time.
+  dissolution_results_table.time_point_min:
+    { term: any, class: [afr:AFR_0002050, afr:AFR_0000966], as: entity }
+  # Dissolved percentage (its statistic, arithmetic mean, is the other reading).
+  dissolution_results_table.mean_percent:
+    { term: any, class: [afr:AFR_0003173, afr:AFR_0002208], as: entity }
+  # CHECK: dissolved percentage, or minimum value.
+  dissolution_results_table.min_percent:
+    { term: any, class: [afr:AFR_0003173, afr:AFR_0002440], as: entity }
+  # CHECK: dissolved percentage, or maximum value.
+  dissolution_results_table.max_percent:
+    { term: any, class: [afr:AFR_0003173, afr:AFR_0002441], as: entity }
+
+  solid_state_nir_table: { term: any, class: *results_row }
+  solid_state_nir_table.batch_number: *batch_number
+  solid_state_nir_table.study_id: *study_id
+  solid_state_nir_table.storage_condition: *storage_condition
+  solid_state_nir_table.storage_time_months: *storage_time
+  # CHECK: a spectroscopy result, or the mass fraction of a solid form; AFO has no polymorph datum.
+  solid_state_nir_table.solid_state_nir_percent:
+    { term: any, class: [afr:AFR_0000754, afr:AFR_0002099], as: entity }
+  solid_state_nir_table.solid_state_nir_below_threshold: *below
+
+  microbial_purity_table: { term: any, class: *results_row }
+  microbial_purity_table.batch_number: *batch_number
+  microbial_purity_table.study_id: *study_id
+  microbial_purity_table.storage_condition: *storage_condition
+  microbial_purity_table.storage_time_months: *storage_time
+  # CHECK: total aerobic microbial count as a count; AFO has no colony forming unit datum.
+  microbial_purity_table.t_amc_count: { term: any, class: afr:AFR_0000984, as: entity }
+  microbial_purity_table.t_amc_below_threshold: *below
+  # CHECK: total yeast and mould count, as above.
+  microbial_purity_table.tymc_count: { term: any, class: afr:AFR_0000984, as: entity }
+  microbial_purity_table.tymc_below_threshold: *below
+  # CHECK: a pass/fail as a conformance assessment.
+  microbial_purity_table.ecoli_pass_fail: { term: any, class: afr:AFR_0001991, as: entity }

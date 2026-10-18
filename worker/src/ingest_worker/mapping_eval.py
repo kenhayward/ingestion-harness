@@ -58,12 +58,14 @@ KINDS = ("document", "field", "table", "column")
 
 @dataclass(frozen=True)
 class Expected:
-    """One output's right answer: any of `terms` (empty: leave it unmapped), how the value is
-    published when the gold says, and a table's row class(es)."""
+    """One output's right answer: any of `terms` (empty: leave it unmapped, unless `any_term`:
+    any link property will do, the class carrying the meaning), how the value is published when
+    the gold says, and its class(es): a table's row class, a field or column's entity class."""
 
     terms: frozenset[str]
     value_as: str | None = None
     row_class: frozenset[str] = frozenset()
+    any_term: bool = False
 
 
 @dataclass(frozen=True)
@@ -106,10 +108,12 @@ def load_gold(text: str) -> Gold:
             how = value.get("as")
             if how is not None and how not in VALUE_AS:
                 raise ValueError(f"{path}: as must be one of {', '.join(VALUE_AS)}")
+            any_term = value.get("term") == "any"
             expected[path] = Expected(
-                _terms(value.get("term"), prefixes),
+                frozenset() if any_term else _terms(value.get("term"), prefixes),
                 how,
                 _terms(value.get("class"), prefixes),
+                any_term,
             )
         else:
             expected[path] = Expected(_terms(value, prefixes))
@@ -140,6 +144,8 @@ class KindScore:
     #: Gold-mapped outputs whose right term is among the first k candidates.
     recall_at: dict[int, int] = field(default_factory=lambda: dict.fromkeys(KS, 0))
     reciprocal_rank: float = 0.0
+    #: Gold-mapped outputs that name a term (recall@k and MRR are over these; `any` names none).
+    recall_total: int = 0
     #: confidence -> [picks, right picks]
     tiers: dict[str, list[int]] = field(
         default_factory=lambda: {"high": [0, 0], "medium": [0, 0], "low": [0, 0]}
@@ -160,26 +166,33 @@ class KindScore:
 
     def add(self, pick: Pick, expected: Expected) -> None:
         self.outputs += 1
-        right = (pick.term in expected.terms) if expected.terms else pick.term is None
+        mapped = expected.any_term or bool(expected.terms)
+        if expected.any_term:
+            right = pick.term is not None
+        else:
+            right = (pick.term in expected.terms) if expected.terms else pick.term is None
         self.hit += right
         tier = self.tiers.setdefault(pick.confidence, [0, 0])
         tier[0] += 1
         tier[1] += right
         if pick.term is not None:
             self.mapped += 1
-            self.mapped_right += bool(expected.terms) and right
-        if expected.terms:
+            self.mapped_right += mapped and right
+        if mapped:
             self.gold_mapped += 1
-            ranks = [i for i, c in enumerate(pick.candidates, 1) if c in expected.terms]
-            for k in self.recall_at:
-                self.recall_at[k] += bool(ranks) and ranks[0] <= k
-            self.reciprocal_rank += 1 / ranks[0] if ranks else 0.0
+            if expected.terms:  # recall needs a named term (not `any`)
+                self.recall_total += 1
+                ranks = [i for i, c in enumerate(pick.candidates, 1) if c in expected.terms]
+                for k in self.recall_at:
+                    self.recall_at[k] += bool(ranks) and ranks[0] <= k
+                self.reciprocal_rank += 1 / ranks[0] if ranks else 0.0
             if expected.value_as and right:
                 self.value_total += 1
                 self.value_right += pick.value_as == expected.value_as
         if expected.row_class:
             self.class_total += 1
-            self.class_right += pick.row_class in expected.row_class
+            chosen = pick.row_class if pick.row_class is not None else pick.entity_class
+            self.class_right += chosen in expected.row_class
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -187,7 +200,7 @@ class KindScore:
             "precision": round(self.precision, 4),
             "recall": round(self.recall, 4),
             "f1": round(self.f1, 4),
-            "mrr": round(self.reciprocal_rank / self.gold_mapped, 4) if self.gold_mapped else 0.0,
+            "mrr": round(self.reciprocal_rank / self.recall_total, 4) if self.recall_total else 0.0,
         }
 
 
@@ -441,8 +454,8 @@ def format_report(name: str, results: dict[str, Scores]) -> str:
             lines.append(
                 f"{matcher:<12} {kind:<9} {k.outputs:>3} {_pct(k.hit, k.outputs):>6} "
                 f"{_pct(k.mapped_right, k.mapped):>5} {_pct(k.mapped_right, k.gold_mapped):>5} "
-                f"{100 * k.f1:>4.0f}% {_pct(k.recall_at[1], k.gold_mapped):>5} "
-                f"{_pct(k.recall_at[5], k.gold_mapped):>5} {_pct(k.recall_at[10], k.gold_mapped):>5} "
+                f"{100 * k.f1:>4.0f}% {_pct(k.recall_at[1], k.recall_total):>5} "
+                f"{_pct(k.recall_at[5], k.recall_total):>5} {_pct(k.recall_at[10], k.recall_total):>5} "
                 f"{summary['mrr']:>5.2f} {_pct(k.value_right, k.value_total):>5} "
                 f"{_pct(k.class_right, k.class_total):>5}"
             )
