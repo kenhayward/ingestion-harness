@@ -1,15 +1,17 @@
 import { deliveryTargets, type DataPolicy, type OverviewItem } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { GraphPreview } from '../templates/MappingEditor.js';
-import { mappingBadge, mappingNote, mappingRows } from './mapping.js';
+import { mappingBadge, mappingNote } from './mapping.js';
+import { MappingReview } from './MappingReview.js';
 import { StagePanel } from './StagePanel.js';
 import { useDefinitions } from './useDefinitions.js';
 
 /**
  * The Mapping tab (ADR 0011): the model proposes the recipe's ontology mapping from the brief's
  * ontologies and the values the dev samples produced; each change shows the model's confidence,
- * the values behind it and the terms it was chosen over. Below: the mapping as it is now, and
- * the graph a dev sample would publish.
+ * the values behind it and the terms it was chosen over. The proposal is reviewed in the Recipe
+ * tab's outline (MappingReview); without one the outline shows the mapping as it is. Below: the
+ * graph a dev sample would publish.
  */
 export function MappingTab({
   api,
@@ -82,7 +84,6 @@ export function MappingTab({
       </div>
     );
   }
-  const rows = mappingRows(shown);
   return (
     <div className="mapping-tab">
       <StagePanel
@@ -97,36 +98,19 @@ export function MappingTab({
         published={published}
         briefVersion={briefVersion}
         pollMs={pollMs}
-        onApplied={onApplied}
+        onApplied={() => {
+          // Applying changes the open draft in place: reload it so the outline shows it.
+          if (definition === undefined) void loaded.reload();
+          onApplied();
+        }}
         onSkipped={onSkipped}
         retired={retired}
         changeNote={mappingNote}
         changeBadge={(c) => mappingBadge(c)}
+        review={(state) => (
+          <MappingReview api={api} projectId={projectId} definition={shown} review={state} />
+        )}
       />
-      <section className="card mapping-current">
-        <h3>Current mapping</h3>
-        <table aria-label="Current mapping">
-          <thead>
-            <tr>
-              <th>Output</th>
-              <th>Term</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.path} aria-label={r.path}>
-                <td>
-                  <code>{r.path}</code>
-                </td>
-                <td>{r.term ?? <span className="muted">Default vocabulary</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p>
-          <a href={`#/workbench/${projectId}/template`}>Edit the mapping on the Recipe tab</a>
-        </p>
-      </section>
       <GraphPreview api={api} projectId={projectId} dirty={false} />
     </div>
   );

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   applyChanges,
   changeBodyOf,
+  type ChangeBody,
   type ChangeStage,
   type DataPolicy,
   type DraftChange,
+  type ModelChoice,
   type OverviewItem,
   type ProposalView,
   type SampleView,
@@ -98,6 +100,21 @@ const NEXT: Record<ChangeStage, { tab: string; label: string; text: string }> = 
   },
 };
 
+/** A ready proposal handed to a stage's own review view (the mapping stage's outline). */
+export interface ReviewState {
+  proposal: ProposalView;
+  body: ChangeBody;
+  models: readonly ModelChoice[];
+  selected: ReadonlySet<number>;
+  /** Selects or clears these changes together (an outline item may hold several). */
+  onSelect: (indices: number[], on: boolean) => void;
+  onApply: () => void;
+  onReject: () => void;
+  busy: boolean;
+  /** Apply is disabled and this says why. */
+  blockedReason: string | null;
+}
+
 /** Drafting stages 2-4 (ADR 0007): propose changes to the draft, apply the chosen ones. */
 export function StagePanel({
   api,
@@ -120,6 +137,7 @@ export function StagePanel({
   now = Date.now(),
   changeNote,
   changeBadge,
+  review,
 }: {
   api: Api;
   projectId: string;
@@ -153,6 +171,11 @@ export function StagePanel({
   changeNote?: (c: DraftChange) => string | null;
   /** A tag beside each change (the mapping stage: the model's confidence). */
   changeBadge?: (c: DraftChange, index: number) => ReactNode;
+  /**
+   * The stage's own view of a ready proposal (with at least one change) in place of the card; it
+   * is called with null otherwise, under the card, to show the stage as it is.
+   */
+  review?: (state: ReviewState | null) => ReactNode;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -283,6 +306,14 @@ export function StagePanel({
       onSkipped();
     });
 
+  const select = (indices: number[], on: boolean) => {
+    const next = new Set(selected);
+    for (const i of indices) {
+      if (on) next.add(i);
+      else next.delete(i);
+    }
+    setSelected(next);
+  };
   const toggle = (i: number) => {
     const next = new Set(selected);
     if (next.has(i)) next.delete(i);
@@ -482,6 +513,25 @@ export function StagePanel({
           justAdded={justAdded}
           card={card}
         />
+      ) : review ? (
+        proposal?.status === 'ready' && body && body.changes.length > 0 ? (
+          review({
+            proposal,
+            body,
+            models,
+            selected,
+            onSelect: select,
+            onApply: () => void accept(),
+            onReject: () => void reject(),
+            busy,
+            blockedReason,
+          })
+        ) : (
+          <>
+            {card}
+            {review(null)}
+          </>
+        )
       ) : (
         card
       )}
