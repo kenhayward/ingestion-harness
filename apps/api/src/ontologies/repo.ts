@@ -117,6 +117,11 @@ export interface OntologyRepo {
     versions: { id: string; version: number }[],
     iris: string[],
   ): Promise<Record<string, OntologyTermKind[]>>;
+  /** The ranges each IRI declares in any of `versions` (a value node's range warning). */
+  termRanges(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, string[]>>;
   /**
    * Rows whose IRI is in `iris`, or whose parents, domains, ranges or scheme name one of
    * them, by label, at most `limit` (the graph view's hops); null for an unknown version.
@@ -529,6 +534,22 @@ export class MemoryOntologyRepo implements OntologyRepo {
     for (const v of versions) {
       for (const t of this.termsByVersion.get(`${v.id}:${v.version}`) ?? []) {
         if (wanted.has(t.iri) && !(out[t.iri] ??= []).includes(t.kind)) out[t.iri]!.push(t.kind);
+      }
+    }
+    return out;
+  }
+
+  async termRanges(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, string[]>> {
+    const wanted = new Set(iris);
+    const out: Record<string, string[]> = {};
+    for (const v of versions) {
+      for (const t of this.termsByVersion.get(`${v.id}:${v.version}`) ?? []) {
+        if (!wanted.has(t.iri)) continue;
+        const ranges = (out[t.iri] ??= []);
+        for (const r of t.range) if (!ranges.includes(r)) ranges.push(r);
       }
     }
     return out;
@@ -1105,6 +1126,23 @@ export class PgOntologyRepo implements OntologyRepo {
       [versions.map((v) => v.id), versions.map((v) => v.version), iris],
     );
     return Object.fromEntries(rows.map((r) => [r.iri, r.kinds]));
+  }
+
+  async termRanges(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, string[]>> {
+    if (!versions.length || !iris.length) return {};
+    const { rows } = await this.pool.query<{ iri: string; ranges: string[] }>(
+      `SELECT t.iri, array_agg(DISTINCT r ORDER BY r) AS ranges
+         FROM ontology_terms t
+         JOIN unnest($1::text[], $2::int[]) AS p(id, v) ON t.ontology_id = p.id AND t.version = p.v
+         CROSS JOIN LATERAL unnest(t.ranges) AS r
+        WHERE t.iri = ANY($3::text[])
+        GROUP BY t.iri`,
+      [versions.map((v) => v.id), versions.map((v) => v.version), iris],
+    );
+    return Object.fromEntries(rows.map((r) => [r.iri, r.ranges]));
   }
 
   async neighbours(
