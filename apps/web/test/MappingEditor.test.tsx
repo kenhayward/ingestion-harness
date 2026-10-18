@@ -239,6 +239,7 @@ describe('MappingEditor outline (option B)', () => {
       'Shapes',
       'Prefixes',
       'Document',
+      'Value nodes',
       'sender',
       'kind',
       'Table lines',
@@ -501,5 +502,82 @@ describe('MappingEditor shapes (ADR 0011 step 5)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
     expect(await screen.findByText(/1 violation/)).toBeInTheDocument();
     expect(screen.getByText(/sender: a letter names its sender/)).toBeInTheDocument();
+  });
+});
+
+describe('MappingEditor value nodes', () => {
+  const withDefaults: Semantics = {
+    ...mapped,
+    valueNodes: { link: 'acme:hasResult', value: 'acme:numericValue' },
+    fields: { sender: { property: 'acme:sentBy' } },
+  };
+  const valueAs = () =>
+    within(screen.getByRole('group', { name: 'sender' })).getByRole('group', { name: 'Value as' });
+
+  it('Value as Node keeps the property, drops the entity and asks for the class', async () => {
+    const { last } = setup({
+      ...withDefaults,
+      fields: { sender: { property: 'acme:sentBy', object: { class: 'acme:Party', iri: 'p/x' } } },
+    });
+    await open('sender');
+    await userEvent.click(within(valueAs()).getByRole('button', { name: 'Node' }));
+    expect(last()?.fields.sender).toEqual({ property: 'acme:sentBy', node: { class: '' } });
+    const sender = screen.getByRole('group', { name: 'sender' });
+    expect(within(sender).getByLabelText('Link property')).toBeInTheDocument();
+    expect(within(sender).getByLabelText('Node class')).toBeInTheDocument();
+    expect(within(sender).getByLabelText('Value property')).toBeInTheDocument();
+    expect(within(sender).getByLabelText('Unit')).toBeInTheDocument();
+    expect(within(sender).queryByLabelText('Entity class')).toBeNull();
+    await userEvent.type(within(sender).getByLabelText('Node class'), 'acme:SenderName');
+    expect(last()?.fields.sender).toEqual({
+      property: 'acme:sentBy',
+      node: { class: 'acme:SenderName' },
+    });
+  });
+
+  it('an empty link or value property falls back to the recipe defaults, and says so', async () => {
+    const { last } = setup(withDefaults);
+    await open('sender');
+    await userEvent.click(within(valueAs()).getByRole('button', { name: 'Node' }));
+    const sender = screen.getByRole('group', { name: 'sender' });
+    await userEvent.clear(within(sender).getByLabelText('Link property'));
+    expect(last()?.fields.sender).toEqual({ node: { class: '' } });
+    expect(within(sender).getByText('Empty: the recipe default, acme:hasResult.')).toBeVisible();
+    expect(within(sender).getByLabelText('Value property')).toHaveAttribute(
+      'placeholder',
+      'acme:numericValue (recipe default)',
+    );
+  });
+
+  it('asks for a unit property only once a unit is set, and keeps the unit', async () => {
+    const { last } = setup({ ...withDefaults, fields: { sender: { node: { class: 'acme:N' } } } });
+    await open('sender');
+    const sender = screen.getByRole('group', { name: 'sender' });
+    expect(within(sender).queryByLabelText('Unit property')).toBeNull();
+    await userEvent.type(within(sender).getByLabelText('Unit'), 'unit:PERCENT');
+    expect(last()?.fields.sender).toEqual({ node: { class: 'acme:N', unit: 'unit:PERCENT' } });
+    expect(within(sender).getByLabelText('Unit property')).toBeInTheDocument();
+  });
+
+  it('sets the value-node defaults under Value nodes', async () => {
+    const { last } = setup(mapped);
+    await open('Value nodes');
+    const form = screen.getByRole('region', { name: 'Value nodes' });
+    await userEvent.type(within(form).getByLabelText('Link to a value node'), 'acme:hasResult');
+    await userEvent.type(within(form).getByLabelText('Value property'), 'acme:numericValue');
+    await userEvent.type(within(form).getByLabelText('Unit property'), 'acme:unit');
+    expect(last()?.valueNodes).toEqual({
+      link: 'acme:hasResult',
+      value: 'acme:numericValue',
+      unitProperty: 'acme:unit',
+    });
+  });
+
+  it('the outline shows a value node by its class', async () => {
+    setup({ ...withDefaults, fields: { sender: { node: { class: 'acme:SenderName' } } } });
+    const outline = screen.getByRole('navigation', { name: 'Mapping outline' });
+    expect(within(outline).getByRole('button', { name: 'sender' })).toHaveAccessibleDescription(
+      'node · acme:SenderName (mapped)',
+    );
   });
 });

@@ -68,9 +68,9 @@ export function compactIri(iri: string, prefixes: Record<string, string>): strin
   return best ? `${best[0]}:${iri.slice(best[1].length)}` : iri;
 }
 
-type ValueAs = 'literal' | 'entity' | 'concept';
+type ValueAs = 'literal' | 'entity' | 'concept' | 'node';
 const valueAs = (m: OutputMapping | undefined): ValueAs =>
-  m?.object ? 'entity' : m?.concepts ? 'concept' : 'literal';
+  m?.node ? 'node' : m?.object ? 'entity' : m?.concepts ? 'concept' : 'literal';
 
 /** How far an outline item is: done, started, not started, or nothing to check (optional). */
 export type MappingStatus = 'ok' | 'partial' | 'none' | 'info';
@@ -98,11 +98,17 @@ function mappedTerms(s: Semantics): string[] {
   };
   const output = (m: OutputMapping) => {
     add(m.property);
+    add(m.node?.class);
+    add(m.node?.value);
+    add(m.node?.unitProperty);
     add(m.object?.class);
     add(m.concepts?.scheme);
     Object.values(m.concepts?.values ?? {}).forEach(add);
   };
   add(s.document.class);
+  add(s.valueNodes?.link);
+  add(s.valueNodes?.value);
+  add(s.valueNodes?.unitProperty);
   Object.values(s.fields).forEach(output);
   for (const t of Object.values(s.tables)) {
     add(t.link);
@@ -178,6 +184,12 @@ export function outputStatus(
   name: (term: string) => string = (term) => term,
 ): { status: MappingStatus; summary: string; term?: string } {
   if (!m) return { status: 'none', summary: 'unmapped' };
+  if (m.node) {
+    // A value node may leave its link to the recipe's value-node defaults.
+    return m.node.class
+      ? { status: 'ok', summary: `node · ${name(m.node.class)}`, term: m.node.class }
+      : { status: 'partial', summary: 'node · no class' };
+  }
   if (!m.property) return { status: 'partial', summary: 'no property' };
   if (m.object) {
     return m.object.class
@@ -209,6 +221,7 @@ function TermField({
   want,
   ctx,
   bare,
+  placeholder,
   onChange,
 }: {
   label: string;
@@ -217,6 +230,8 @@ function TermField({
   ctx: TermContext;
   /** No visible label (a row that shows what it is beside it); `label` stays its name. */
   bare?: boolean;
+  /** Shown while empty (a value node's term: the recipe default it falls back to). */
+  placeholder?: string;
   onChange: (term: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -226,10 +241,23 @@ function TermField({
       <div className="term-input">
         {bare ? (
           <span className="term-bare">
-            <Text label={label} bare className="mono" value={value} onChange={onChange} />
+            <Text
+              label={label}
+              bare
+              className="mono"
+              value={value}
+              placeholder={placeholder}
+              onChange={onChange}
+            />
           </span>
         ) : (
-          <Text label={label} className="mono" value={value} onChange={onChange} />
+          <Text
+            label={label}
+            className="mono"
+            value={value}
+            placeholder={placeholder}
+            onChange={onChange}
+          />
         )}
         <button
           type="button"
@@ -353,19 +381,29 @@ const VALUE_AS: [ValueAs, string][] = [
   ['literal', 'Literal'],
   ['entity', 'Entity'],
   ['concept', 'Concept'],
+  ['node', 'Node'],
 ];
 const VALUE_AS_HINT: Record<ValueAs, string> = {
   literal: 'The value itself, typed as the output is.',
   entity: 'The value names a thing of its own, with a class and a readable IRI.',
   concept: 'The value links to a SKOS concept.',
+  node: 'The value sits on a node of a class, with its unit: for ontologies whose classes carry the meaning.',
 };
 
-/** One field's or column's mapping: property, and the value as a literal, an entity or a concept. */
+/** A value node's term box placeholder: the recipe default it falls back to. */
+const defaultHint = (term: string | undefined) =>
+  term ? `${term} (recipe default)` : 'set a recipe default under Value nodes, or give one here';
+
+/**
+ * One field's or column's mapping: property, and the value as a literal, an entity, a concept or
+ * a value node.
+ */
 function OutputEditor({
   label,
   id,
   enumValues,
   mapping,
+  defaults,
   ctx,
   onChange,
 }: {
@@ -374,18 +412,36 @@ function OutputEditor({
   id: string;
   enumValues: string[] | null;
   mapping: OutputMapping | undefined;
+  /** The recipe's value-node defaults, which a node's empty terms fall back to. */
+  defaults: Semantics['valueNodes'];
   ctx: TermContext;
   onChange: (next: OutputMapping | undefined) => void;
 }) {
   const m: OutputMapping = mapping ?? { property: '' };
-  const set = (next: OutputMapping) =>
-    onChange(next.property === '' && !next.object && !next.concepts ? undefined : next);
+  const set = (next: OutputMapping) => {
+    if (next.node) {
+      // A value node's empty link is no link of its own: the recipe default applies.
+      const { property, ...rest } = next;
+      onChange(property ? next : rest);
+      return;
+    }
+    onChange(!next.property && !next.object && !next.concepts ? undefined : next);
+  };
   const as = valueAs(mapping);
   const setAs = (next: ValueAs) => {
-    const { object: _o, concepts: _c, ...rest } = m; // eslint-disable-line @typescript-eslint/no-unused-vars -- dropped on purpose
+    const { object: _o, concepts: _c, node: _n, ...rest } = m; // eslint-disable-line @typescript-eslint/no-unused-vars -- dropped on purpose
     if (next === 'entity') set({ ...rest, object: { class: '', iri: `${id}/{value|slug}` } });
     else if (next === 'concept') set({ ...rest, concepts: enumValues ? {} : { match: 'label' } });
+    else if (next === 'node') set({ ...rest, node: { class: '' } });
     else set(rest);
+  };
+  const node = m.node;
+  const setNode = (patch: Partial<NonNullable<OutputMapping['node']>>) => {
+    const merged = { ...node!, ...patch };
+    const clean = Object.fromEntries(
+      Object.entries(merged).filter(([k, v]) => k === 'class' || (v !== undefined && v !== '')),
+    ) as NonNullable<OutputMapping['node']>;
+    set({ ...m, node: clean });
   };
   const concepts = m.concepts;
   const setValue = (value: string, term: string) => {
@@ -412,12 +468,59 @@ function OutputEditor({
         </div>
       </div>
       <TermField
-        label="Property"
+        label={node ? 'Link property' : 'Property'}
         value={m.property ?? ''}
         want="property"
         ctx={ctx}
+        placeholder={node ? defaultHint(defaults?.link) : undefined}
         onChange={(v) => set({ ...m, property: v })}
       />
+      {node && !m.property && (
+        <small className="muted">
+          {defaults?.link
+            ? `Empty: the recipe default, ${defaults.link}.`
+            : 'No link: set the recipe default under Value nodes, or give one here.'}
+        </small>
+      )}
+      {node && (
+        <>
+          <TermField
+            label="Node class"
+            value={node.class}
+            want="class"
+            ctx={ctx}
+            onChange={(v) => setNode({ class: v })}
+          />
+          <TermField
+            label="Value property"
+            value={node.value ?? ''}
+            want="property"
+            ctx={ctx}
+            placeholder={defaultHint(defaults?.value)}
+            onChange={(v) => setNode({ value: v })}
+          />
+          <div className="term-field">
+            <Text
+              label="Unit"
+              className="mono"
+              value={node.unit ?? ''}
+              placeholder="e.g. unit:PERCENT"
+              onChange={(v) => setNode({ unit: v })}
+            />
+            <small className="muted">A QUDT unit; not checked against the library.</small>
+          </div>
+          {node.unit && (
+            <TermField
+              label="Unit property"
+              value={node.unitProperty ?? ''}
+              want="property"
+              ctx={ctx}
+              placeholder={defaultHint(defaults?.unitProperty)}
+              onChange={(v) => setNode({ unitProperty: v })}
+            />
+          )}
+        </>
+      )}
       {m.object && (
         <>
           <TermField
@@ -802,6 +905,18 @@ function outlineItems(
       summary: s.document.class ? name(s.document.class) : 'no class',
       term: s.document.class || undefined,
     },
+    {
+      key: 'valueNodes',
+      group: 'Setup',
+      label: 'Value nodes',
+      text: 'Value nodes',
+      status: s.valueNodes?.link && s.valueNodes.value ? 'ok' : 'info',
+      summary:
+        [s.valueNodes?.link, s.valueNodes?.value]
+          .filter((t): t is string => !!t)
+          .map(name)
+          .join(' · ') || 'optional',
+    },
   ];
   for (const f of fields) {
     const st = outputStatus(s.fields[f.id], f.type === 'enum' ? (f.enum ?? []) : null, name);
@@ -1060,6 +1175,46 @@ function MappingOutline({
         </>
       );
     }
+    if (key === 'valueNodes') {
+      const d = s.valueNodes ?? {};
+      const setDefault = (patch: Partial<NonNullable<Semantics['valueNodes']>>) => {
+        const merged = Object.fromEntries(
+          Object.entries({ ...d, ...patch }).filter(([, v]) => v),
+        ) as NonNullable<Semantics['valueNodes']>;
+        const { valueNodes: _v, ...rest } = s; // eslint-disable-line @typescript-eslint/no-unused-vars -- replaced below
+        onChange(Object.keys(merged).length ? { ...rest, valueNodes: merged } : rest);
+      };
+      return (
+        <>
+          <p className="muted">
+            Used by every output mapped as a node unless it gives its own: a node of the
+            output&apos;s class holds the value, for ontologies whose classes carry the meaning
+            (AFO, OBI).
+          </p>
+          <TermField
+            label="Link to a value node"
+            value={d.link ?? ''}
+            want="property"
+            ctx={ctx}
+            onChange={(v) => setDefault({ link: v })}
+          />
+          <TermField
+            label="Value property"
+            value={d.value ?? ''}
+            want="property"
+            ctx={ctx}
+            onChange={(v) => setDefault({ value: v })}
+          />
+          <TermField
+            label="Unit property"
+            value={d.unitProperty ?? ''}
+            want="property"
+            ctx={ctx}
+            onChange={(v) => setDefault({ unitProperty: v })}
+          />
+        </>
+      );
+    }
     if (key === 'local') {
       return (
         <>
@@ -1124,6 +1279,7 @@ function MappingOutline({
           id={f.id}
           enumValues={f.type === 'enum' ? (f.enum ?? []) : null}
           mapping={s.fields[f.id]}
+          defaults={s.valueNodes}
           ctx={ctx}
           onChange={(m) => setField(f.id, m)}
         />
@@ -1179,6 +1335,7 @@ function MappingOutline({
         id={c.id}
         enumValues={c.type === 'enum' ? (c.enum ?? []) : null}
         mapping={tm.columns[c.id]}
+        defaults={s.valueNodes}
         ctx={ctx}
         onChange={(m) => {
           const columns = { ...tm.columns };

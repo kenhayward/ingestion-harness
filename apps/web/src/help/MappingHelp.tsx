@@ -62,7 +62,26 @@ export function MappingHelp() {
           <strong>a concept</strong>: one entry of a controlled list, such as a dosage form, chosen
           from a concept scheme; an enum's values each map to a concept.
         </li>
+        <li>
+          <strong>a node</strong>: the value sits on a node of a class (a water content, an assay
+          result), linked from the document or row, with an optional unit. See Value nodes.
+        </li>
       </ul>
+
+      <h3>Value nodes</h3>
+      <p>
+        Some ontologies (Allotrope, OBI) put the meaning in classes, not properties: their
+        properties are generic relations such as <em>has specified output</em> and{' '}
+        <em>has value</em>. There, map a measurement as a node: pick its class, and the published
+        graph gets one node of that class per row holding the value, and its unit when you give one
+        (a QUDT unit such as <code>unit:PERCENT</code>, not checked against the library).
+      </p>
+      <p>
+        <strong>Value nodes</strong> under Setup holds the link, value and unit properties every
+        node uses, so a measurement usually needs only its class. A node may give its own instead.
+        Use an entity for things shared across documents, such as a batch identifier; use a node for
+        a value measured in this document.
+      </p>
 
       <h3>Tables</h3>
       <p>
