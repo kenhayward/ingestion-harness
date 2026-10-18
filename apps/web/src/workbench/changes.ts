@@ -1,4 +1,10 @@
-import { stableJson, type DraftChange, type ModelChoice, type OutputMapping } from '@ih/shared';
+import {
+  stableJson,
+  type DraftChange,
+  type ModelChoice,
+  type OutputMapping,
+  type ValueNodeDefaults,
+} from '@ih/shared';
 import { modelDisplayName } from '../jobs/derive.js';
 
 export type ChangeKind =
@@ -31,6 +37,16 @@ function mappingText(m: OutputMapping): string {
       : `${m.property} → concepts of ${m.concepts.scheme ?? '(no scheme)'}`;
   }
   return m.property ?? '';
+}
+
+/** The value-node defaults a document change sets, in a few words; '' when it sets none. */
+function valueNodesText(d: ValueNodeDefaults | undefined): string {
+  const parts = [
+    ...(d?.link ? [`link ${d.link}`] : []),
+    ...(d?.value ? [`value ${d.value}`] : []),
+    ...(d?.unitProperty ? [`unit ${d.unitProperty}`] : []),
+  ];
+  return parts.length ? ` · value nodes: ${parts.join(', ')}` : '';
 }
 
 /** A change as the proposal card shows it: kind tag, tone, id (mono) and the rest in words. */
@@ -103,7 +119,7 @@ export function changeParts(c: DraftChange): {
         kind: 'MAPPING',
         tone: 'info',
         id: 'document',
-        text: `${c.document.class} · ${c.ontologies.map((o) => `${o.id} v${o.version}`).join(', ') || 'no ontology'}`,
+        text: `${c.document.class} · ${c.ontologies.map((o) => `${o.id} v${o.version}`).join(', ') || 'no ontology'}${valueNodesText(c.valueNodes)}`,
       };
     case 'putFieldMapping':
       return { kind: 'MAPPING', tone: 'ok', id: c.field, text: mappingText(c.mapping) };

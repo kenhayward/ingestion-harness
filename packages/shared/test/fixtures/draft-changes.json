@@ -2563,5 +2563,525 @@
         }
       ]
     }
+  },
+  {
+    "name": "setDocumentMapping sets the value-node defaults",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [
+              {
+                "id": "sku",
+                "type": "text"
+              },
+              {
+                "id": "qty",
+                "type": "integer"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["all"]
+        }
+      ]
+    },
+    "changes": [
+      {
+        "op": "setDocumentMapping",
+        "document": {
+          "class": "acme:Letter",
+          "iri": "doc/{source}"
+        },
+        "ontologies": [
+          {
+            "id": "acme",
+            "version": 1
+          }
+        ],
+        "prefixes": {
+          "acme": "https://acme.example/def/"
+        },
+        "reason": "r",
+        "confidence": "high",
+        "evidence": ["Acme Ltd"],
+        "valueNodes": {
+          "link": "acme:hasResult",
+          "value": "acme:numericValue",
+          "unitProperty": "acme:unit"
+        }
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [
+              {
+                "id": "sku",
+                "type": "text"
+              },
+              {
+                "id": "qty",
+                "type": "integer"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["all"]
+        }
+      ],
+      "semantics": {
+        "ontologies": [
+          {
+            "id": "acme",
+            "version": 1
+          }
+        ],
+        "shapes": [],
+        "prefixes": {
+          "acme": "https://acme.example/def/"
+        },
+        "document": {
+          "class": "acme:Letter",
+          "iri": "doc/{source}"
+        },
+        "fields": {},
+        "tables": {},
+        "local": [],
+        "valueNodes": {
+          "link": "acme:hasResult",
+          "value": "acme:numericValue",
+          "unitProperty": "acme:unit"
+        }
+      }
+    }
+  },
+  {
+    "name": "setDocumentMapping without valueNodes keeps the draft's",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [
+              {
+                "id": "sku",
+                "type": "text"
+              },
+              {
+                "id": "qty",
+                "type": "integer"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["all"]
+        }
+      ],
+      "semantics": {
+        "ontologies": [
+          {
+            "id": "acme",
+            "version": 1
+          }
+        ],
+        "shapes": [],
+        "prefixes": {
+          "acme": "https://acme.example/def/"
+        },
+        "document": {
+          "class": "acme:Memo",
+          "iri": "doc/{source}"
+        },
+        "fields": {},
+        "tables": {},
+        "local": [],
+        "valueNodes": {
+          "link": "acme:hasResult",
+          "value": "acme:numericValue",
+          "unitProperty": "acme:unit"
+        }
+      }
+    },
+    "changes": [
+      {
+        "op": "setDocumentMapping",
+        "document": {
+          "class": "acme:Letter",
+          "iri": "doc/{source}"
+        },
+        "ontologies": [
+          {
+            "id": "acme",
+            "version": 1
+          }
+        ],
+        "prefixes": {
+          "acme": "https://acme.example/def/"
+        },
+        "reason": "r",
+        "confidence": "high",
+        "evidence": ["Acme Ltd"]
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [
+              {
+                "id": "sku",
+                "type": "text"
+              },
+              {
+                "id": "qty",
+                "type": "integer"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["all"]
+        }
+      ],
+      "semantics": {
+        "ontologies": [
+          {
+            "id": "acme",
+            "version": 1
+          }
+        ],
+        "shapes": [],
+        "prefixes": {
+          "acme": "https://acme.example/def/"
+        },
+        "document": {
+          "class": "acme:Letter",
+          "iri": "doc/{source}"
+        },
+        "fields": {},
+        "tables": {},
+        "local": [],
+        "valueNodes": {
+          "link": "acme:hasResult",
+          "value": "acme:numericValue",
+          "unitProperty": "acme:unit"
+        }
+      }
+    }
+  },
+  {
+    "name": "putTableMapping with a value-node column",
+    "definition": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [
+              {
+                "id": "sku",
+                "type": "text"
+              },
+              {
+                "id": "qty",
+                "type": "integer"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["all"]
+        }
+      ],
+      "semantics": {
+        "ontologies": [
+          {
+            "id": "acme",
+            "version": 1
+          }
+        ],
+        "shapes": [],
+        "prefixes": {
+          "acme": "https://acme.example/def/"
+        },
+        "document": {
+          "class": "acme:Letter",
+          "iri": "doc/{source}"
+        },
+        "fields": {},
+        "tables": {},
+        "local": [],
+        "valueNodes": {
+          "link": "acme:hasResult",
+          "value": "acme:numericValue",
+          "unitProperty": "acme:unit"
+        }
+      }
+    },
+    "changes": [
+      {
+        "op": "putTableMapping",
+        "table": "lines",
+        "mapping": {
+          "link": "acme:hasLine",
+          "class": "acme:Line",
+          "columns": {
+            "sku": {
+              "property": "acme:sku"
+            },
+            "qty": {
+              "node": {
+                "class": "acme:Quantity",
+                "unit": "acme:Each"
+              }
+            }
+          }
+        },
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "letter",
+      "version": 2,
+      "name": "Letter",
+      "document": {
+        "ocr": "auto",
+        "sections": [
+          {
+            "id": "all",
+            "anchor": "\\A"
+          }
+        ]
+      },
+      "outputs": {
+        "fields": [
+          {
+            "id": "sender",
+            "type": "text"
+          }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [
+              {
+                "id": "sku",
+                "type": "text"
+              },
+              {
+                "id": "qty",
+                "type": "integer"
+              }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["all"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["all"]
+        }
+      ],
+      "semantics": {
+        "ontologies": [
+          {
+            "id": "acme",
+            "version": 1
+          }
+        ],
+        "shapes": [],
+        "prefixes": {
+          "acme": "https://acme.example/def/"
+        },
+        "document": {
+          "class": "acme:Letter",
+          "iri": "doc/{source}"
+        },
+        "fields": {},
+        "tables": {
+          "lines": {
+            "link": "acme:hasLine",
+            "class": "acme:Line",
+            "columns": {
+              "sku": {
+                "property": "acme:sku"
+              },
+              "qty": {
+                "node": {
+                  "class": "acme:Quantity",
+                  "unit": "acme:Each"
+                }
+              }
+            }
+          }
+        },
+        "local": [],
+        "valueNodes": {
+          "link": "acme:hasResult",
+          "value": "acme:numericValue",
+          "unitProperty": "acme:unit"
+        }
+      }
+    }
   }
 ]

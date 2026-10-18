@@ -50,6 +50,8 @@ def _apply_mapping(semantics: dict[str, Any], change: dict[str, Any]) -> None:
         semantics["document"] = change["document"]
         semantics["ontologies"] = change["ontologies"]
         semantics["prefixes"] = {**_obj(semantics.get("prefixes")), **change["prefixes"]}
+        if change.get("valueNodes"):  # absent: the draft's defaults are kept
+            semantics["valueNodes"] = change["valueNodes"]
     elif op == "putFieldMapping":
         semantics["fields"] = {**_obj(semantics.get("fields")), change["field"]: change["mapping"]}
     elif op == "putTableMapping":

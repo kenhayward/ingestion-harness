@@ -307,3 +307,17 @@ describe('value node changes', () => {
     expect(changeParts(change)).toEqual({ kind: 'MAPPING', tone: 'ok', id: 'water', text });
   });
 });
+
+it('a document change names the value-node defaults it sets', () => {
+  const change = {
+    op: 'setDocumentMapping',
+    document: { class: 'afr:StudyDocument', iri: 'doc/{source}' },
+    ontologies: [{ id: 'afo', version: 1 }],
+    prefixes: {},
+    valueNodes: { link: 'obo:OBI_0000299', value: 'qudt:numericValue', unitProperty: 'qudt:unit' },
+    reason: '',
+  } as DraftChange;
+  expect(changeParts(change).text).toBe(
+    'afr:StudyDocument · afo v1 · value nodes: link obo:OBI_0000299, value qudt:numericValue, unit qudt:unit',
+  );
+});
