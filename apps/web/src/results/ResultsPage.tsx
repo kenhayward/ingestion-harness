@@ -6,6 +6,7 @@ import { dayLabel, plural, timeOf } from './format.js';
 import { FileBadge, initials } from './FileBadge.js';
 import { ResultPreview } from './ResultPreview.js';
 import { HelpButton } from '../ui/Help.js';
+import { Segmented } from '../ui/Segmented.js';
 
 /** Must match the API's default `limit` for GET /api/results. */
 export const RESULTS_PAGE_SIZE = 50;
@@ -147,18 +148,7 @@ export function ResultsPage({
             ))}
           </select>
         </span>
-        <div role="group" aria-label="Show" className="segmented">
-          {SHOWS.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              aria-pressed={show === o.value}
-              onClick={() => setShow(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Show" options={SHOWS} value={show} onChange={setShow} />
         <span className="filter-search">
           <Icon name="search" />
           <input

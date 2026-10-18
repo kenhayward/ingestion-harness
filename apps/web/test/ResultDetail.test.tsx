@@ -81,6 +81,24 @@ describe('ResultDetailView', () => {
     ]);
   });
 
+  it('counts a cell edited twice in review once', async () => {
+    const detail = resultDetail();
+    // The review's edits are a log: a second edit of the same cell is not another edited cell.
+    detail.document!.review!.edits.push({ table: 'results', row: 2, column: 'value', value: 3 });
+    show(detail);
+    const tiles = await screen.findByRole('list', { name: 'Summary' });
+    expect(within(tiles).getAllByRole('listitem')[1]).toHaveTextContent(
+      'Tables12 rows · 1 cell edited',
+    );
+    expect(within(outline()).getByRole('button', { name: 'Test results' })).toHaveTextContent(
+      '2 · 1 edited',
+    );
+    await open('Test results');
+    expect(screen.getByRole('region', { name: 'Test results' })).toHaveTextContent(
+      '1 cell edited in review',
+    );
+  });
+
   it('lists the contents in an outline and opens one item at a time, fields first', async () => {
     show();
     await screen.findByRole('navigation', { name: 'Result contents' });
@@ -123,6 +141,7 @@ describe('ResultDetailView', () => {
         rows: [
           { value: '4586783', status: 'match', matched: '4586783', distance: 0, count: 4 },
           { value: '4586 79O', status: 'near', matched: '4586790', distance: 2, count: 1 },
+          { value: '4586 783', status: 'alias', matched: '4586783', distance: 0, count: 1 },
           { value: 'LDLS000', status: 'unused', matched: null, distance: null, count: 0 },
         ],
       },
@@ -140,7 +159,7 @@ describe('ResultDetailView', () => {
     ).toEqual(['Value found', 'Result', 'Matched to', 'Edit distance', 'Times seen']);
     expect(within(table).getAllByRole('row')[2]).toHaveTextContent('4586 79ONear match45867902');
     expect(screen.getByRole('region', { name: 'batch_numbers' })).toHaveTextContent(
-      '1 exact · 1 near · 0 not found · 1 not used',
+      '1 exact · 1 alias · 1 near · 0 not found · 1 not used',
     );
   });
 

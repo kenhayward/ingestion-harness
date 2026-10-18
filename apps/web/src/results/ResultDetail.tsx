@@ -67,6 +67,11 @@ const isNumber = (c: Col, v: unknown) =>
 
 const ISSUE_COLUMNS = ['step', 'target', 'row', 'column', 'raw', 'message'];
 
+/** A table's edited cells as `row:column` (1-based rows). The edits are a log: a cell edited
+ * twice is one edited cell. */
+const editedCells = (edits: Edit[], table: string) =>
+  new Set(edits.filter((e) => e.table === table && e.column).map((e) => `${e.row}:${e.column}`));
+
 interface Item {
   key: string;
   group: 'Document' | 'Tables' | 'Checks' | 'More';
@@ -132,9 +137,14 @@ export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
         <div className="result-head-text">
           <h1>{job.filename}</h1>
           <dl className="result-meta">
-            <span className="kind-tag tone-info">
-              {title ?? job.specId} v{job.specVersion}
-            </span>
+            <div>
+              <dt className="visually-hidden">Document type</dt>
+              <dd>
+                <span className="kind-tag tone-info">
+                  {title ?? job.specId} v{job.specVersion}
+                </span>
+              </dd>
+            </div>
             <div>
               <dt>Published</dt>
               <dd>{fullWhen(result.publishedAt)}</dd>
@@ -250,12 +260,12 @@ function DocumentView({
         }));
   const checks = Object.entries(document.checks);
   const fieldEdited = (id: string) => edits.some((e) => e.field === id);
-  const cellEdits = (t: string) => edits.filter((e) => e.table === t && e.column).length;
+  const cellEdits = (t: string) => editedCells(edits, t).size;
   const rowsOf = (t: string) => document.tables[t] ?? [];
 
   const editedFields = fields.filter((f) => fieldEdited(f.id)).length;
   const totalRows = tables.reduce((n, t) => n + rowsOf(t.id).length, 0);
-  const editedCells = tables.reduce((n, t) => n + cellEdits(t.id), 0);
+  const cellsEdited = tables.reduce((n, t) => n + cellEdits(t.id), 0);
   const checksToLook = checks.filter(([, c]) => toLook(c.rows) > 0).length;
   const issues = document.issues;
 
@@ -326,10 +336,10 @@ function DocumentView({
       note: (
         <>
           {plural(totalRows, 'row')}
-          {editedCells > 0 && (
+          {cellsEdited > 0 && (
             <>
               {' · '}
-              <span className="warn">{plural(editedCells, 'cell')} edited</span>
+              <span className="warn">{plural(cellsEdited, 'cell')} edited</span>
             </>
           )}
         </>
@@ -513,7 +523,8 @@ function TableView({
         table.columns.some((c) => format(row[c.id]).toLowerCase().includes(needle)),
       )
     : numbered;
-  const edited = edits.filter((e) => e.table === table.id && e.column).length;
+  const cells = editedCells(edits, table.id);
+  const edited = cells.size;
   const name = label(table);
   const nextKey = next && (next.check ? `check:${next.id}` : `table:${next.id}`);
   return (
@@ -561,9 +572,7 @@ function TableView({
               <tr key={n}>
                 <td className="row-n">{n}</td>
                 {table.columns.map((c) => {
-                  const isEdited = edits.some(
-                    (e) => e.table === table.id && e.row === n && e.column === c.id,
-                  );
+                  const isEdited = cells.has(`${n}:${c.id}`);
                   const v = row[c.id];
                   return (
                     <td
@@ -676,8 +685,8 @@ function CheckView({ id, rows }: { id: string; rows: Row[] }) {
       </div>
       <div className="result-view-foot muted">
         <span>
-          {count('match') + count('alias')} exact · {count('near')} near · {count('unmatched')} not
-          found · {count('unused')} not used
+          {count('match')} exact · {count('alias') > 0 && `${count('alias')} alias · `}
+          {count('near')} near · {count('unmatched')} not found · {count('unused')} not used
         </span>
       </div>
     </>
