@@ -49,7 +49,7 @@ graph per document; an unmapped output falls back to the recipe's default vocabu
 | Deprecated terms are not filtered from retrieval | `ontology.py` `lexical`/`semantic` |
 | No per-value concept matching: enum values and observed values are not matched to a scheme's concepts before the model guesses | `mapping_stage.py` |
 | Confidence is the model's own word; nothing is calibrated, nothing auto-accepted | `MAPPING_SCHEMA` |
-| Accepted mappings are never reused (other published recipes map "batch number" too) | — |
+| Accepted mappings are never reused (other published recipes map "batch number" too); proposal: [mapping-memory.md](mapping-memory.md) | — |
 | Reviewers see alternatives' labels only: no definitions, scores or one-click swap | `apps/web/src/workbench/mapping.ts` |
 | Columns merged into a new table change lose their own confidence and alternatives | `convert_mapping` |
 
