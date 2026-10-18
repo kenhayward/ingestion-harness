@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from .mapping_stage import (
@@ -203,6 +203,54 @@ NOT_DATA_ROOTS: dict[str, str] = {
 }
 #: How far up a class's parents the data and BFO roots are looked for.
 ROOT_DEPTH = 12
+#: Identifier roots (IAO identifier, centrally registered identifier, symbol): an identifier
+#: names a thing other documents name too, so it is published as an entity, not a value node.
+#: A class under one labelled "identifier" (AFO's) counts as well.
+IDENTIFIER_ROOTS = frozenset(
+    {
+        "http://purl.obolibrary.org/obo/IAO_0020000",
+        "http://purl.obolibrary.org/obo/IAO_0000578",
+        "http://purl.obolibrary.org/obo/IAO_0000028",
+    }
+)
+#: A boolean output whose id is a sibling's stem plus one of these qualifies that sibling's
+#: value (a "<0.05" below the reporting threshold): left unmapped until value nodes carry
+#: qualifiers (docs/design/value-node-mapping.md, open question 2).
+QUALIFIER_SUFFIXES = (
+    "_below_threshold",
+    "_below_reporting_threshold",
+    "_below_lod",
+    "_below_loq",
+    "_less_than",
+    "_qualifier",
+    "_censored",
+    "_flag",
+)
+
+
+def is_identifier(terms: _Terms, iri: str) -> bool:
+    """Whether a class is an identifier: under an IAO identifier root or a class labelled
+    "identifier"."""
+    roots = terms.ancestors([iri], depth=ROOT_DEPTH)
+    if roots & IDENTIFIER_ROOTS:
+        return True
+    return any((t := terms.get(a)) is not None and _words(t.label) == "identifier" for a in roots)
+
+
+def qualifier_of(o: OutputSpec, siblings: Sequence[OutputSpec]) -> str | None:
+    """The sibling output a boolean flag qualifies, or None: `<stem><suffix>` where a non-boolean
+    sibling's id starts with `<stem>` (`t_amc_below_threshold` qualifies `t_amc_count`)."""
+    if o.type != "boolean":
+        return None
+    leaf = o.path.rsplit(".", 1)[-1]
+    stem = next((leaf[: -len(s)] for s in QUALIFIER_SUFFIXES if leaf.endswith(s)), None)
+    if not stem:
+        return None
+    for s in siblings:
+        other = s.path.rsplit(".", 1)[-1]
+        if s.path != o.path and s.type != "boolean" and other.startswith(stem):
+            return s.path
+    return None
 
 
 def rerank(
@@ -391,6 +439,51 @@ def _specific(term: str | None, options: list[Ranked], terms: _Terms) -> tuple[s
     return term, False
 
 
+#: Words of an output's name too common to tell one class from another.
+_NAME_STOP = frozenset({"the", "and", "for", "with", "each", "any", "all", "value", "values"})
+
+
+def _name_words(o: OutputSpec) -> set[str]:
+    """The content words of an output's name, without unit text in parentheses."""
+    return {
+        w for w in _words(_PARENS.sub("", o.name)).split() if len(w) > 2 and w not in _NAME_STOP
+    }
+
+
+def name_fits(label: str, o: OutputSpec) -> bool:
+    """Whether a class label shares a content word with the output's name (lexical agreement:
+    *absolute water content* for "Water Content by KF", not *mass fraction*)."""
+    return bool(set(_words(label).split()) & _name_words(o))
+
+
+def _label(terms: _Terms, iri: str | None) -> str:
+    term = terms.get(iri) if iri else None
+    return term.label if term else ""
+
+
+def _narrower(
+    term: str | None, retrieved: list[Ranked], o: OutputSpec, terms: _Terms
+) -> str | None:
+    """The "too general" error for a value node's class: the model picked a class while one of
+    its subclasses, retrieved but not among the options shown, adds to the picked label only
+    words of the output's name (*water mass fraction* for "Water Content" over *mass
+    fraction*; never *supplier lot number* for "Batch Number" over *batch identifier*, which adds
+    "supplier" and "lot"). That subclass (the best ranked), else None."""
+    if term is None:
+        return None
+    picked_words = set(_words(_label(terms, term)).split())
+    name_words = _name_words(o)
+    for r in retrieved:
+        if r.iri == term or r.kind != "class":
+            continue
+        added = set(_words(r.label).split()) - picked_words
+        if not added or not added <= name_words:
+            continue
+        if term in terms.ancestors([r.iri], depth=ROOT_DEPTH) - {r.iri}:
+            return r.iri
+    return None
+
+
 def _answer(chosen: dict[str, str], path: str, options: list[Ranked]) -> str | None:
     value = chosen.get(path, "none")
     return value if value in {o.iri for o in options} else None
@@ -406,8 +499,12 @@ def propose(
     embed: Embedding | None,
     retrieve: int = RETRIEVE,
     options: int = OPTIONS,
+    confirm: bool = False,
 ) -> dict[str, Pick]:
-    """Map every output of `draft` (path -> Pick; a table's pick holds its link and row class)."""
+    """Map every output of `draft` (path -> Pick; a table's pick holds its link and row class).
+    `confirm`: ask every field and column question a second time with its options reversed; a
+    pick the second answer repeats goes up a confidence tier, one it changes is low (agreement
+    under a perturbation, a better signal than the model's own word; twice the model calls)."""
     terms = _Terms(store, versions)
     outputs = outputs_of(draft)
     seen = {p: [v.value for v in vs] for p, vs in inputs.observed.items()}
@@ -434,7 +531,7 @@ def propose(
                 store, versions, query, ["class"], vector=None, model_ref=None, k=retrieve
             )  # fmt: skip
             rankings.append([c.iri for c in found])
-        return [iri for iri, _score in fuse(rankings)][:retrieve]
+        return [iri for iri, _score in fuse(rankings)]
 
     picks: dict[str, Pick] = {}
 
@@ -518,6 +615,10 @@ def propose(
     # 3. Fields (they hang off the document), then each table's columns (off its rows). With
     # value-node defaults, an output's options are classes (a node of that class holds the value)
     # and properties together; numeric and date outputs list the classes first.
+    # Every class retrieved for an output, re-ranked: only the first few are options, the rest
+    # may hold a subclass more specific than the pick (`_narrower`).
+    retrieved_classes: dict[str, list[Ranked]] = {}
+
     def options_of(o: OutputSpec, owner: list[str]) -> list[Ranked]:
         props = rerank(terms, versions, o, candidates(o, PROPERTY_KINDS), owner=owner)
         if not node_ready or o.enum or o.type == "list":
@@ -525,39 +626,72 @@ def propose(
         props = [p for p in props if p.iri not in default_terms]
         # The class queries' phrases ("Assay result") are names an exact label may match too.
         names = _names(o) | {_words(q) for q in class_queries(o, [])[1:]}
-        classes = rerank(terms, versions, o, node_classes(o), owner=[], node=True, names=names)
+        found = node_classes(o)
+        classes = rerank(terms, versions, o, found[:retrieve], owner=[], node=True, names=names)
+        # Every class any query found, for `_narrower`: a subclass may rank low in all but one.
+        retrieved_classes[o.path] = rerank(terms, versions, o, found, owner=[], node=True)
         mixed = (classes[:NODE_CLASSES], props[:NODE_PROPERTIES])
         return [*mixed[0], *mixed[1]] if o.type in NODE_TYPES else [*mixed[1], *mixed[0]]
 
     def map_outputs(group: list[OutputSpec], owner: list[str]) -> None:
-        ranked = [(o.path, o, options_of(o, owner)) for o in group]
+        # A flag qualifying a sibling value is left unmapped by rule, without asking.
+        qualifiers = {o.path for o in group if qualifier_of(o, group) is not None}
+        for path in qualifiers:
+            picks[path] = Pick(None, "literal", "high")
+        ranked = [(o.path, o, options_of(o, owner)) for o in group if o.path not in qualifiers]
         for start in range(0, len(ranked), BATCH):
             batch = ranked[start : start + BATCH]
             limit = NODE_CLASSES + NODE_PROPERTIES if node_ready else options
             note = NODE_OPTIONS_NOTE if node_ready else ""
             chosen = ask("property", batch, note, limit)
-            for path, _output, rs in batch:
+            again: dict[str, str] | None = None
+            if confirm:
+                reverse = [(p, o, list(reversed(rs[:limit]))) for p, o, rs in batch]
+                again = ask("property", reverse, note, limit)
+            for path, output, rs in batch:
                 shown = rs[:limit]
+                capped = False
                 term = _answer(chosen, path, shown)
+                if again is not None:
+                    # The tier the pick earns from the second asking (applied below).
+                    agreed = term is not None and _answer(again, path, shown) == term
                 picked = next((r for r in shown if r.iri == term), None)
                 if picked is not None and picked.kind == "class":
                     classes = [r for r in shown if r.kind == "class"]
                     node_class, replaced = _specific(term, classes, terms)
+                    # Never high, confirmed or not: a class the matcher put in the model's place
+                    # (set below when narrowed), or whose label shares no word of the name.
+                    capped = replaced
+                    narrower = _narrower(node_class, retrieved_classes.get(path, []), output, terms)
+                    if narrower is not None:
+                        node_class, capped = narrower, True
+                    capped = capped or not name_fits(_label(terms, node_class), output)
+                    # An identifier is shared across documents: an entity, not a value node.
+                    shared = node_class is not None and is_identifier(terms, node_class)
                     picks[path] = Pick(
                         node_link,
-                        "node",
-                        "medium" if replaced else _confidence(term, shown),
+                        "entity" if shared else "node",
+                        "medium" if capped else _confidence(term, shown),
                         tuple(r.iri for r in rs),
                         entity_class=node_class,
                     )
-                    continue
-                picks[path] = _published(term, rs, terms, _confidence(term, shown))
+                else:
+                    picks[path] = _published(term, rs, terms, _confidence(term, shown))
+                if again is not None and term is not None:
+                    tier = _CONFIRMED[picks[path].confidence] if agreed else "low"
+                    picks[path] = replace(picks[path], confidence=tier)
+                if capped and picks[path].confidence == "high":
+                    picks[path] = replace(picks[path], confidence="medium")
 
     map_outputs([o for o in outputs if o.kind == "field"], doc_owner)
     for table_path, rows in row_class.items():
         columns = [o for o in outputs if o.kind == "column" and o.path.startswith(f"{table_path}.")]
         map_outputs(columns, [rows] if rows else [])
     return picks
+
+
+#: A pick confirmed by a second asking goes up a tier.
+_CONFIRMED: dict[Confidence, Confidence] = {"low": "medium", "medium": "high", "high": "high"}
 
 
 def _published(

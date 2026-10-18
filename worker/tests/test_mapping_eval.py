@@ -411,6 +411,49 @@ def test_details_list_each_output_s_gold_and_every_matcher_s_pick() -> None:
     assert "unmapped" in lines["notes"]
 
 
+EXACT_GOLD = """
+project: p
+prefixes: {afr: "http://purl.allotrope.org/ontologies/result#"}
+expected:
+  t.batch: {term: any, class: afr:AFR_0001120, as: entity}
+  t.water: {term: any, class: afr:AFR_0002445, as: node}
+  t.assay: {term: any, class: afr:AFR_0000207, as: node}
+  t.flag: unmapped
+"""
+
+
+def test_a_pick_is_exact_only_with_the_form_and_class_the_gold_names() -> None:
+    """With `term: any` every mapped pick is a hit, whatever its class: `exact` also needs the
+    form and the class the gold names, and the confidence tiers are judged on it."""
+    link = "https://x/hasOutput"
+    picks = {
+        "t.batch": Pick(link, "node", "high", entity_class=f"{AFR}AFR_0001120"),  # form wrong
+        "t.water": Pick(link, "node", "high", entity_class=f"{AFR}AFR_0002445"),  # exact
+        "t.assay": Pick(link, "node", "medium", entity_class=f"{AFR}AFR_0002099"),  # class wrong
+        "t.flag": Pick(None, "literal", "high"),  # exact: left unmapped as the gold says
+    }
+    kinds_ = {p: "column" for p in picks}
+    s = score(picks, load_gold(EXACT_GOLD), kinds_).overall
+    assert s.hit == 4
+    assert s.exact == 2
+    assert s.tiers["high"] == [3, 3] and s.tiers_exact["high"] == 2
+    assert s.tiers["medium"] == [1, 1] and s.tiers_exact["medium"] == 0
+    text = format_report("g", {"per-output": score(picks, load_gold(EXACT_GOLD), kinds_)})
+    assert "high 3 (100%, exact 67%)" in text
+    assert "Exact" in text.splitlines()[2]
+
+
+def test_details_show_each_picks_confidence() -> None:
+    from ingest_worker.mapping_eval import format_details, run_matchers
+
+    g = load_gold(EXACT_GOLD)
+    kinds_ = {p: "column" for p in g.expected}
+    picks = {"t.water": Pick("https://x/l", "node", "medium", entity_class=f"{AFR}AFR_0002445")}
+    results = run_matchers(["per-output"], g, kinds_, lambda _m, _c: picks)
+    lines = {line.split()[0]: line for line in format_details(g, results, kinds_).splitlines()}
+    assert "· medium" in lines["t.water"]
+
+
 @pytest.mark.parametrize(
     ("data", "line"),
     [
@@ -490,3 +533,19 @@ def test_the_model_chooser_reports_each_call_and_its_tokens() -> None:
     choose(ChoiceRequest("pick", [("lot", [f"{PH}batchNumber"])], prompt="Pick."))
     assert said[0] == "choice 1 (1 output)"
     assert said[-1] == "choice 1: ~1,200 tokens"
+
+
+def test_the_per_output_matcher_can_confirm_each_answer() -> None:
+    g = gold()
+    params = draft_params(g, None)
+    counts: list[int] = []
+
+    def choose(request: ChoiceRequest) -> dict[str, str]:
+        counts.append(len(request.items))
+        return {path: "none" for path, _ in request.items}
+
+    per_output_picks(params, store(), choose, embed=None)
+    once = len(counts)
+    counts.clear()
+    per_output_picks(params, store(), choose, embed=None, confirm=True)
+    assert len(counts) > once  # every field and column question asked a second time
