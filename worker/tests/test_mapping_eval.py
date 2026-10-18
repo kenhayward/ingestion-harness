@@ -321,3 +321,84 @@ def test_details_list_each_output_s_gold_and_every_matcher_s_pick() -> None:
     assert "ok" in lines["lot"] and "ex:batchNumber" in lines["lot"]
     assert "class ex:Other" in lines["tests"] and "class:no" in lines["tests"]
     assert "unmapped" in lines["notes"]
+
+
+@pytest.mark.parametrize(
+    ("data", "line"),
+    [
+        ({"stage": "mapping", "phase": "reading"}, "reading the inputs"),
+        (
+            {"stage": "mapping", "phase": "model", "attempt": 1, "of": 2, "tokens": None},
+            "model, try 1 of 2",
+        ),
+        (
+            {
+                "phase": "model",
+                "attempt": 1,
+                "of": 2,
+                "tokens": 12345,
+                "toolCalls": 3,
+                "tool": None,
+            },
+            "model, try 1 of 2 · ~12,345 tokens · 3 tool calls",
+        ),
+        (
+            {
+                "phase": "model",
+                "attempt": 2,
+                "of": 2,
+                "tokens": 800,
+                "toolCalls": 4,
+                "tool": {"name": "search_terms", "summary": 'Searching the ontologies for "assay"'},
+            },
+            'model, try 2 of 2 · ~800 tokens · Searching the ontologies for "assay"',
+        ),
+    ],
+)
+def test_a_progress_event_reads_as_one_line(data: dict[str, Any], line: str) -> None:
+    from ingest_worker.mapping_eval import progress_line
+
+    assert progress_line(data) == line
+
+
+def test_live_progress_prints_each_new_line_with_the_time_since_the_start() -> None:
+    from ingest_worker.drafting import DRAFT_PROGRESS
+    from ingest_worker.mapping_eval import LiveProgress
+
+    printed: list[str] = []
+    now = [100.0]
+    live = LiveProgress("current", printed.append, clock=lambda: now[0])
+    live.event("j", "info", DRAFT_PROGRESS, {"phase": "reading"})
+    now[0] = 165.0
+    live.event("j", "info", DRAFT_PROGRESS, {"phase": "reading"})  # unchanged: not repeated
+    live.event("j", "info", "external model call", {})  # other events: not shown
+    live.event("j", "info", DRAFT_PROGRESS, {"phase": "model", "attempt": 1, "of": 2})
+    assert printed == ["[00:00] current: reading the inputs", "[01:05] current: model, try 1 of 2"]
+    live.say("choice 1 of 3")
+    assert printed[-1] == "[01:05] current: choice 1 of 3"
+
+
+def test_the_model_chooser_reports_each_call_and_its_tokens() -> None:
+    from ingest_worker.llm.base import CompletionResult
+    from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
+    from ingest_worker.mapping_eval import model_chooser
+    from ingest_worker.pipeline import Buckets, PipelineDeps
+    from ingest_worker.storage import MemoryObjectStore
+
+    provider = FakeProvider("local")
+    provider.token_stream = [10, 600, 1200]
+    provider.responses = [CompletionResult(text='{"lot": "none"}', model="m")]
+    config = ProviderConfig(name="local", kind="openai-chat", location="local")  # type: ignore[arg-type]
+    deps = PipelineDeps(
+        store=MemoryObjectStore(),
+        specs={},
+        models=ModelRegistry({"local": provider}, {"local": config}, {"draft": "local/m"}),
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        ontologies=store(),
+    )
+    said: list[str] = []
+    choose = model_chooser(deps, draft_params(gold(), None), "draft", [0], say=said.append)
+    choose(ChoiceRequest("pick", [("lot", [f"{PH}batchNumber"])], prompt="Pick."))
+    assert said[0] == "choice 1 (1 output)"
+    assert said[-1] == "choice 1: ~1,200 tokens"

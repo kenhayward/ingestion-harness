@@ -323,6 +323,54 @@ class _Quiet:
         return False
 
 
+def progress_line(data: dict[str, Any]) -> str:
+    """A drafting progress event as one line: the phase, the try, the reply's tokens so far and,
+    with tools, the tool running or the number of tool calls."""
+    if data.get("phase") != "model":
+        return "reading the inputs" if data.get("phase") == "reading" else str(data.get("phase"))
+    parts = ["model"]
+    if data.get("attempt") is not None:
+        parts[0] += f", try {data['attempt']} of {data.get('of')}"
+    if data.get("tokens") is not None:
+        parts.append(f"~{data['tokens']:,} tokens")
+    tool = data.get("tool")
+    if tool:
+        parts.append(str(tool.get("summary") or tool.get("name")))
+    elif data.get("toolCalls") is not None:
+        parts.append(f"{data['toolCalls']} tool calls")
+    return " · ".join(parts)
+
+
+class LiveProgress(_Quiet):
+    """The queue a matcher run reports to, printing each new progress line with the time since
+    the matcher started (the harness has no job to record events on)."""
+
+    def __init__(
+        self,
+        matcher: str,
+        write: Callable[[str], None],
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._matcher, self._write, self._clock = matcher, write, clock
+        self._started = clock()
+        self._last: str | None = None
+
+    def say(self, line: str) -> None:
+        elapsed = int(self._clock() - self._started)
+        self._write(f"[{elapsed // 60:02d}:{elapsed % 60:02d}] {self._matcher}: {line}")
+
+    def event(self, *args: Any, **_kwargs: Any) -> None:
+        from .drafting import DRAFT_PROGRESS
+
+        _job_id, _level, message, data = args
+        if message != DRAFT_PROGRESS:
+            return
+        line = progress_line(data)
+        if line != self._last:
+            self._last = line
+            self.say(line)
+
+
 def _job(params: DraftParams) -> ClaimedJob:
     draft = params.draft or {}
     return ClaimedJob(
@@ -339,12 +387,14 @@ def _observed(params: DraftParams) -> MappingInputs:
     return inputs.model_copy(update={"observed": {p: v for p, v in observed.items() if v}})
 
 
-def current_picks(deps: PipelineDeps, params: DraftParams, model_ref: str) -> dict[str, Pick]:
+def current_picks(
+    deps: PipelineDeps, params: DraftParams, model_ref: str, queue: Any = None
+) -> dict[str, Pick]:
     """Run the Workbench mapping stage as it is (one answer over the shortlists) and read its
     answer back; each pick's candidates are the stage's own shortlist (before the term budget)."""
     provider, model_id = deps.models.resolve(model_ref)
     job = _job(params)
-    queue: Any = _Quiet()
+    queue = queue if queue is not None else _Quiet()
     enforce_data_policy(job, deps, provider, model_ref)
     output = run_mapping(
         job, deps, queue, params, provider, model_id, f"{provider.name}/{model_id}"
@@ -412,10 +462,14 @@ def check_policy(deps: PipelineDeps, params: DraftParams, model_ref: str) -> Non
 
 
 def model_chooser(
-    deps: PipelineDeps, params: DraftParams, model_ref: str, counter: list[int]
+    deps: PipelineDeps,
+    params: DraftParams,
+    model_ref: str,
+    counter: list[int],
+    say: Callable[[str], None] | None = None,
 ) -> Chooser:
     """Answer each ChoiceRequest with one structured model call (enum per output), after the
-    data-policy checks (`check_policy`)."""
+    data-policy checks (`check_policy`). `say` hears each call and its reply's tokens so far."""
     from . import drafting
     from .extract import run_extraction
 
@@ -425,6 +479,14 @@ def model_chooser(
 
     def choose(request: ChoiceRequest) -> dict[str, str]:
         counter[0] += 1
+        n = counter[0]
+        streaming: dict[str, Any] = {}
+        if say is not None:
+            outputs = len(request.items)
+            say(f"choice {n} ({outputs} output{'' if outputs == 1 else 's'})")
+            streaming["on_tokens"] = drafting.TokenThrottle(
+                lambda tokens: say(f"choice {n}: ~{tokens:,} tokens")
+            )
         result = run_extraction(
             extraction_id="mapping-choice",
             provider=provider,
@@ -434,6 +496,7 @@ def model_chooser(
             max_attempts=2,
             max_tokens=limit,
             system=drafting.DRAFT_SYSTEM,
+            **streaming,
         )
         return {k: str(v) for k, v in result.data.items()}
 
@@ -696,10 +759,11 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
             params: DraftParams = params,
             store: OntologyStore = store,
         ) -> dict[str, Pick]:
+            live = LiveProgress(matcher, lambda line: print(line, file=sys.stderr, flush=True))
             if matcher == "current":
                 calls[0] = 1
-                return current_picks(deps, params, args.model)
-            choose = model_chooser(deps, params, args.model, calls)
+                return current_picks(deps, params, args.model, live)
+            choose = model_chooser(deps, params, args.model, calls, say=live.say)
             return per_output_picks(params, store, choose, _embedding(deps, params))
 
         results = run_matchers(matchers, gold, kinds, run)
