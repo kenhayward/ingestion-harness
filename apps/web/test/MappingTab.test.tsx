@@ -21,6 +21,35 @@ const proposal = changeProposalView({
   body: { notes: 'Retrieval was lexical only for pharma v1.', changes: [lot] },
 });
 
+const expires: DraftChange = {
+  op: 'putFieldMapping',
+  field: 'expires',
+  mapping: { property: 'dcterms:date' },
+  reason: 'Expiry is a date of the batch',
+  confidence: 'medium',
+  evidence: ['31/12/2027'],
+  alternatives: [{ iri: `${PH}validUntil`, label: 'valid until', score: 0.2 }],
+};
+const tests: DraftChange = {
+  op: 'putTableMapping',
+  table: 'tests',
+  mapping: {
+    link: 'pharma:hasResult',
+    class: 'pharma:AssayResult',
+    columns: { assay: { property: 'pharma:assayName' } },
+  },
+  reason: 'Each row is one assay result',
+  confidence: 'low',
+};
+const review = changeProposalView({
+  stage: 'mapping',
+  body: { notes: 'Retrieval was lexical only for pharma v1.', changes: [lot, expires, tests] },
+});
+
+/** An outline item's row (its button names the item). */
+const itemRow = (outline: HTMLElement, name: string) =>
+  within(outline).getByRole('button', { name }).closest('li')!;
+
 const definition = {
   id: 'batch',
   version: 2,
@@ -136,31 +165,103 @@ describe('MappingTab', () => {
     expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
   });
 
-  it('shows a proposal with confidence, values and alternatives, and applies it', async () => {
-    const decideProposal = vi.fn(async () => ({
-      ...proposal,
-      status: 'accepted' as const,
-      acceptedChanges: [0],
-    }));
-    const { api } = show(true, { decideProposal });
-    const change = await screen.findByRole('checkbox', { name: /Apply: MAPPING lot/ });
-    const row = change.closest('li')!;
-    expect(row).toHaveTextContent('Suggested · high');
-    expect(row).toHaveTextContent('Seen: G17230211, G17230212 · Alternatives: product name');
+  it('reviews the proposal in the outline: markers, a checkbox per change, the counts', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    // One checkbox per change, on the item it changes; a column changed by its table has none.
+    for (const name of [/Apply: MAPPING lot/, /Apply: MAPPING expires/, /Apply: MAPPING tests/]) {
+      expect(within(outline).getByRole('checkbox', { name })).toBeChecked();
+    }
+    expect(within(outline).getAllByRole('checkbox')).toHaveLength(3);
+    expect(itemRow(outline, 'expires')).toHaveTextContent('NEW');
+    expect(itemRow(outline, 'tests.assay')).toHaveTextContent('NEW');
+    expect(itemRow(outline, 'Table tests')).toHaveTextContent('CHANGED');
+    expect(itemRow(outline, 'lot')).not.toHaveTextContent(/NEW|CHANGED/);
+    const bar = screen.getByRole('region', { name: 'Proposal' });
+    expect(bar).toHaveTextContent('3 changes');
+    expect(bar).toHaveTextContent('1 high');
+    expect(bar).toHaveTextContent('1 medium');
+    expect(bar).toHaveTextContent('1 low');
+    expect(bar).toHaveTextContent('3 of 3 selected');
     expect(screen.getByText('Retrieval was lexical only for pharma v1.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Apply 1 selected change' }));
-    expect(api.decideProposal).toHaveBeenCalledWith('batch', proposal.id, 'accepted', [0]);
+    expect(screen.getByText(/1 of 3 mapped now/)).toHaveTextContent(
+      '1 of 3 mapped now · 3 after applying the selected changes',
+    );
   });
 
-  it('summarises the current mapping and links to the recipe to edit it', async () => {
-    show(true);
-    const current = await screen.findByRole('table', { name: 'Current mapping' });
-    expect(within(current).getByRole('row', { name: /expires/ })).toHaveTextContent(
-      'Default vocabulary',
+  it('opens on the first proposed change and shows now against proposed, with the evidence', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    const inspector = await screen.findByRole('region', { name: 'lot' });
+    expect(inspector).toHaveTextContent('Seen in samples');
+    await userEvent.click(screen.getByRole('button', { name: 'expires' }));
+    const expires = screen.getByRole('region', { name: 'expires' });
+    const property = within(expires).getByRole('row', { name: /Property/ });
+    expect(property).toHaveTextContent('Default vocabulary');
+    expect(property).toHaveTextContent('dcterms:date');
+    expect(expires).toHaveTextContent('medium');
+    expect(expires).toHaveTextContent('Expiry is a date of the batch');
+    expect(within(expires).getByText('31/12/2027')).toBeInTheDocument();
+    expect(within(expires).getByText('valid until')).toBeInTheDocument();
+    expect(within(expires).getByRole('checkbox', { name: /Apply this change/ })).toBeChecked();
+  });
+
+  it('sends a column changed with its table to the table, where its checkbox is', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    await userEvent.click(await screen.findByRole('button', { name: 'tests.assay' }));
+    const column = screen.getByRole('region', { name: 'tests.assay' });
+    expect(column).toHaveTextContent('Changed with Table tests: apply it there.');
+    expect(within(column).getByRole('row', { name: /Property/ })).toHaveTextContent(
+      'pharma:assayName',
     );
-    expect(within(current).getByRole('row', { name: /lot/ })).toHaveTextContent(
-      'pharma:batchNumber',
+    await userEvent.click(within(column).getByRole('button', { name: 'Open Table tests' }));
+    expect(screen.getByRole('region', { name: 'Table tests' })).toHaveTextContent(
+      'Low'.toLowerCase(),
     );
+  });
+
+  it('applies only the selected changes', async () => {
+    const decideProposal = vi.fn(async () => ({
+      ...review,
+      status: 'partially_accepted' as const,
+      acceptedChanges: [0, 2],
+    }));
+    const { api } = show(true, { listProposals: vi.fn(async () => [review]), decideProposal });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    await userEvent.click(
+      within(outline).getByRole('checkbox', { name: /Apply: MAPPING expires/ }),
+    );
+    expect(screen.getByRole('region', { name: 'Proposal' })).toHaveTextContent('2 of 3 selected');
+    expect(screen.getByText(/1 of 3 mapped now/)).toHaveTextContent('2 after applying');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply 2 selected changes' }));
+    expect(api.decideProposal).toHaveBeenCalledWith('batch', review.id, 'accepted', [0, 2]);
+  });
+
+  it('rejects the whole proposal', async () => {
+    const decideProposal = vi.fn(async () => ({ ...review, status: 'rejected' as const }));
+    const { api } = show(true, { listProposals: vi.fn(async () => [review]), decideProposal });
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject all' }));
+    expect(api.decideProposal).toHaveBeenCalledWith('batch', review.id, 'rejected');
+  });
+
+  it('filters the outline to the proposed changes or the unmapped outputs', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    await userEvent.click(screen.getByRole('button', { name: /^Proposed/ }));
+    expect(within(outline).getByRole('button', { name: 'expires' })).toBeInTheDocument();
+    expect(within(outline).queryByRole('button', { name: 'Ontologies' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /^Unmapped/ }));
+    expect(within(outline).getByRole('button', { name: 'expires' })).toBeInTheDocument();
+    expect(within(outline).queryByRole('button', { name: 'lot' })).toBeNull();
+  });
+
+  it('shows the current mapping read-only in the outline when no proposal waits', async () => {
+    show(true, { listProposals: vi.fn(async () => []) });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    expect(within(outline).getByRole('button', { name: 'expires' })).toHaveAccessibleDescription(
+      'unmapped (not mapped)',
+    );
+    expect(within(outline).queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove the mapping' })).toBeNull();
     expect(
       screen.getByRole('link', { name: 'Edit the mapping on the Recipe tab' }),
     ).toHaveAttribute('href', '#/workbench/batch/template');

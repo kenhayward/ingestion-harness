@@ -85,7 +85,7 @@ interface TermContext {
 }
 
 /** A term's readable name when one is known, else the term as written. */
-const nameOf = (labels: Record<string, TermLabel>, term: string): string => {
+export const nameOf = (labels: Record<string, TermLabel>, term: string): string => {
   const hit = labels[term];
   return hit && (hit.from === 'ontology' || hit.from === 'local') && hit.label ? hit.label : term;
 };
@@ -122,7 +122,7 @@ function mappedTerms(s: Semantics): string[] {
 const LABEL_DELAY_MS = 300;
 
 /** The names of the mapping's terms, asked for once per change of terms, pins or prefixes. */
-function useTermLabels(api: Api, s: Semantics): Record<string, TermLabel> {
+export function useTermLabels(api: Api, s: Semantics): Record<string, TermLabel> {
   const terms = mappedTerms(s);
   const request = terms.length
     ? JSON.stringify({
@@ -831,8 +831,8 @@ export function GraphPreview({
   );
 }
 
-type ItemKey = string;
-interface OutlineItem {
+export type ItemKey = string;
+export interface OutlineItem {
   key: ItemKey;
   group: 'Setup' | 'Fields' | 'Tables' | 'More';
   /** The item's name: its outline button's and its inspector's accessible name. */
@@ -851,7 +851,7 @@ interface OutlineItem {
   term?: string;
 }
 
-const STATUS_WORD: Record<MappingStatus, string> = {
+export const STATUS_WORD: Record<MappingStatus, string> = {
   ok: 'mapped',
   partial: 'needs attention',
   none: 'not mapped',
@@ -862,7 +862,7 @@ const pinText = (pins: Semantics['ontologies']) =>
   pins.map((p) => `${p.id} v${p.version}`).join(' · ');
 
 /** Fields, then each table with its columns: what the outline and the coverage count. */
-function outlineItems(
+export function outlineItems(
   name: (term: string) => string,
   s: Semantics,
   fields: { id: string; type?: string; enum?: string[] }[],

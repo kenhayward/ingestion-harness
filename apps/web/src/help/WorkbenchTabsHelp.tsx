@@ -218,6 +218,16 @@ export function WbMappingHelp() {
         out of date when the outputs or the pinned ontologies change.
       </p>
       <Proposals />
+      <h3>Reviewing the proposal</h3>
+      <p>
+        The tab shows the same outline as the Recipe tab&apos;s Mapping. Each output the proposal
+        changes is marked <strong>NEW</strong> or <strong>CHANGED</strong> and has a checkbox; pick
+        one to see the mapping now beside the proposed one, the model&apos;s confidence and reason,
+        the values seen in the samples and the terms it was chosen over. A column changed with its
+        table is applied with the table. <strong>Proposed</strong> and <strong>Unmapped</strong>{' '}
+        narrow the outline, and the line below counts the outputs mapped now and after applying the
+        selected changes.
+      </p>
       <p>Edit the mapping by hand on the Recipe tab's Mapping, which also previews the graph.</p>
     </>
   );
