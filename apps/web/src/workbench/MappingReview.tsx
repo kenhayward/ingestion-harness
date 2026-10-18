@@ -1,5 +1,11 @@
 import { useId, useState } from 'react';
-import { applyChanges, type DraftChange, type OutputMapping, type Semantics } from '@ih/shared';
+import {
+  applyChanges,
+  stableJson,
+  type DraftChange,
+  type OutputMapping,
+  type Semantics,
+} from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import {
@@ -260,7 +266,8 @@ export function MappingReview({
     if (!changes.length) return null;
     const before = part(i.key, nowS);
     const after = part(i.key, proposedS);
-    if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) return null;
+    // Key order is not a change: a model's mapping may list the same parts in another order.
+    if (stableJson(before ?? null) === stableJson(after ?? null)) return null;
     if (before === undefined || i.status === 'none') return 'NEW';
     const p = proposedItems.find((x) => x.key === i.key);
     return after === undefined || p?.status === 'none' ? 'REMOVED' : 'CHANGED';
@@ -423,6 +430,7 @@ export function MappingReview({
                     const idx = byKey.get(i.key) ?? [];
                     const v = verbOf(i);
                     const on = idx.length > 0 && idx.every((n) => selected.has(n));
+                    const some = !on && idx.some((n) => selected.has(n));
                     return (
                       <li key={i.key} className={review ? 'with-check' : undefined}>
                         {review && (
@@ -432,6 +440,9 @@ export function MappingReview({
                                 type="checkbox"
                                 aria-label={`Apply: ${idx.map((n) => changeLabel(changes[n]!)).join('; ')}`}
                                 checked={on}
+                                ref={(el) => {
+                                  if (el) el.indeterminate = some;
+                                }}
                                 disabled={review.busy}
                                 onChange={() => review.onSelect(idx, !on)}
                               />
