@@ -10045,11 +10045,33 @@
                                           }
                                         },
                                         "additionalProperties": false
+                                      },
+                                      "node": {
+                                        "type": "object",
+                                        "properties": {
+                                          "class": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "value": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "unit": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "unitProperty": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "class"
+                                        ],
+                                        "additionalProperties": false
                                       }
                                     },
-                                    "required": [
-                                      "property"
-                                    ],
                                     "additionalProperties": false
                                   }
                                 },
@@ -10124,11 +10146,33 @@
                                                 }
                                               },
                                               "additionalProperties": false
+                                            },
+                                            "node": {
+                                              "type": "object",
+                                              "properties": {
+                                                "class": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "value": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "unit": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "unitProperty": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "required": [
+                                                "class"
+                                              ],
+                                              "additionalProperties": false
                                             }
                                           },
-                                          "required": [
-                                            "property"
-                                          ],
                                           "additionalProperties": false
                                         }
                                       }
@@ -10175,6 +10219,24 @@
                                     ],
                                     "additionalProperties": false
                                   }
+                                },
+                                "valueNodes": {
+                                  "type": "object",
+                                  "properties": {
+                                    "link": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "value": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "unitProperty": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "additionalProperties": false
                                 }
                               },
                               "required": [
@@ -16104,11 +16166,33 @@
                                       }
                                     },
                                     "additionalProperties": false
+                                  },
+                                  "node": {
+                                    "type": "object",
+                                    "properties": {
+                                      "class": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "value": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "unit": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "unitProperty": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "class"
+                                    ],
+                                    "additionalProperties": false
                                   }
                                 },
-                                "required": [
-                                  "property"
-                                ],
                                 "additionalProperties": false
                               }
                             },
@@ -16183,11 +16267,33 @@
                                             }
                                           },
                                           "additionalProperties": false
+                                        },
+                                        "node": {
+                                          "type": "object",
+                                          "properties": {
+                                            "class": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "unitProperty": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "required": [
+                                            "class"
+                                          ],
+                                          "additionalProperties": false
                                         }
                                       },
-                                      "required": [
-                                        "property"
-                                      ],
                                       "additionalProperties": false
                                     }
                                   }
@@ -16234,6 +16340,24 @@
                                 ],
                                 "additionalProperties": false
                               }
+                            },
+                            "valueNodes": {
+                              "type": "object",
+                              "properties": {
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unitProperty": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "additionalProperties": false
                             }
                           },
                           "required": [
@@ -38070,6 +38194,24 @@
                                               "format": "uri"
                                             }
                                           },
+                                          "valueNodes": {
+                                            "type": "object",
+                                            "properties": {
+                                              "link": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "value": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "unitProperty": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "additionalProperties": false
+                                          },
                                           "reason": {
                                             "type": "string"
                                           },
@@ -38190,11 +38332,33 @@
                                                   }
                                                 },
                                                 "additionalProperties": false
+                                              },
+                                              "node": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "class": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "value": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "unit": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "unitProperty": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  }
+                                                },
+                                                "required": [
+                                                  "class"
+                                                ],
+                                                "additionalProperties": false
                                               }
                                             },
-                                            "required": [
-                                              "property"
-                                            ],
                                             "additionalProperties": false
                                           },
                                           "reason": {
@@ -38334,11 +38498,33 @@
                                                         }
                                                       },
                                                       "additionalProperties": false
+                                                    },
+                                                    "node": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "class": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "value": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "unit": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "unitProperty": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "class"
+                                                      ],
+                                                      "additionalProperties": false
                                                     }
                                                   },
-                                                  "required": [
-                                                    "property"
-                                                  ],
                                                   "additionalProperties": false
                                                 }
                                               }
@@ -42645,6 +42831,24 @@
                                                 "format": "uri"
                                               }
                                             },
+                                            "valueNodes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "link": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "value": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "unitProperty": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                }
+                                              },
+                                              "additionalProperties": false
+                                            },
                                             "reason": {
                                               "type": "string"
                                             },
@@ -42765,11 +42969,33 @@
                                                     }
                                                   },
                                                   "additionalProperties": false
+                                                },
+                                                "node": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "class": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "value": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unit": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "unitProperty": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "class"
+                                                  ],
+                                                  "additionalProperties": false
                                                 }
                                               },
-                                              "required": [
-                                                "property"
-                                              ],
                                               "additionalProperties": false
                                             },
                                             "reason": {
@@ -42909,11 +43135,33 @@
                                                           }
                                                         },
                                                         "additionalProperties": false
+                                                      },
+                                                      "node": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "class": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "value": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "unit": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          },
+                                                          "unitProperty": {
+                                                            "type": "string",
+                                                            "minLength": 1
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "class"
+                                                        ],
+                                                        "additionalProperties": false
                                                       }
                                                     },
-                                                    "required": [
-                                                      "property"
-                                                    ],
                                                     "additionalProperties": false
                                                   }
                                                 }
@@ -44954,6 +45202,24 @@
                                               "format": "uri"
                                             }
                                           },
+                                          "valueNodes": {
+                                            "type": "object",
+                                            "properties": {
+                                              "link": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "value": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "unitProperty": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "additionalProperties": false
+                                          },
                                           "reason": {
                                             "type": "string"
                                           },
@@ -45074,11 +45340,33 @@
                                                   }
                                                 },
                                                 "additionalProperties": false
+                                              },
+                                              "node": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "class": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "value": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "unit": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "unitProperty": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  }
+                                                },
+                                                "required": [
+                                                  "class"
+                                                ],
+                                                "additionalProperties": false
                                               }
                                             },
-                                            "required": [
-                                              "property"
-                                            ],
                                             "additionalProperties": false
                                           },
                                           "reason": {
@@ -45218,11 +45506,33 @@
                                                         }
                                                       },
                                                       "additionalProperties": false
+                                                    },
+                                                    "node": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "class": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "value": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "unit": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "unitProperty": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "class"
+                                                      ],
+                                                      "additionalProperties": false
                                                     }
                                                   },
-                                                  "required": [
-                                                    "property"
-                                                  ],
                                                   "additionalProperties": false
                                                 }
                                               }
@@ -46928,6 +47238,24 @@
                                               "format": "uri"
                                             }
                                           },
+                                          "valueNodes": {
+                                            "type": "object",
+                                            "properties": {
+                                              "link": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "value": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "unitProperty": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "additionalProperties": false
+                                          },
                                           "reason": {
                                             "type": "string"
                                           },
@@ -47048,11 +47376,33 @@
                                                   }
                                                 },
                                                 "additionalProperties": false
+                                              },
+                                              "node": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "class": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "value": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "unit": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "unitProperty": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  }
+                                                },
+                                                "required": [
+                                                  "class"
+                                                ],
+                                                "additionalProperties": false
                                               }
                                             },
-                                            "required": [
-                                              "property"
-                                            ],
                                             "additionalProperties": false
                                           },
                                           "reason": {
@@ -47192,11 +47542,33 @@
                                                         }
                                                       },
                                                       "additionalProperties": false
+                                                    },
+                                                    "node": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "class": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "value": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "unit": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        },
+                                                        "unitProperty": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "class"
+                                                      ],
+                                                      "additionalProperties": false
                                                     }
                                                   },
-                                                  "required": [
-                                                    "property"
-                                                  ],
                                                   "additionalProperties": false
                                                 }
                                               }
