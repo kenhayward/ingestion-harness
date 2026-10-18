@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { DraftChange } from '@ih/shared';
-import { mappingBadge, mappingNote, mappingRows } from '../src/workbench/mapping.js';
+import { mappingBadge, mappingNote } from '../src/workbench/mapping.js';
 import { MappingTab } from '../src/workbench/MappingTab.js';
 import { changeProposalView, fakeApi } from './fake-api.js';
 
@@ -20,6 +20,35 @@ const proposal = changeProposalView({
   stage: 'mapping',
   body: { notes: 'Retrieval was lexical only for pharma v1.', changes: [lot] },
 });
+
+const expires: DraftChange = {
+  op: 'putFieldMapping',
+  field: 'expires',
+  mapping: { property: 'dcterms:date' },
+  reason: 'Expiry is a date of the batch',
+  confidence: 'medium',
+  evidence: ['31/12/2027'],
+  alternatives: [{ iri: `${PH}validUntil`, label: 'valid until', score: 0.2 }],
+};
+const tests: DraftChange = {
+  op: 'putTableMapping',
+  table: 'tests',
+  mapping: {
+    link: 'pharma:hasResult',
+    class: 'pharma:AssayResult',
+    columns: { assay: { property: 'pharma:assayName' } },
+  },
+  reason: 'Each row is one assay result',
+  confidence: 'low',
+};
+const review = changeProposalView({
+  stage: 'mapping',
+  body: { notes: 'Retrieval was lexical only for pharma v1.', changes: [lot, expires, tests] },
+});
+
+/** An outline item's row (its button names the item). */
+const itemRow = (outline: HTMLElement, name: string) =>
+  within(outline).getByRole('button', { name }).closest('li')!;
 
 const definition = {
   id: 'batch',
@@ -39,7 +68,7 @@ const definition = {
   },
 };
 
-function show(used: boolean, overrides = {}) {
+function show(used: boolean, overrides = {}, def: Record<string, unknown> = definition) {
   const api = fakeApi({ listProposals: vi.fn(async () => [proposal]), ...overrides });
   const onNavigate = vi.fn();
   render(
@@ -47,7 +76,7 @@ function show(used: boolean, overrides = {}) {
       api={api}
       projectId="batch"
       used={used}
-      definition={definition}
+      definition={def}
       dataPolicy="local"
       hasDraft
       draft={2}
@@ -70,31 +99,6 @@ describe('mapping helpers', () => {
     expect(
       mappingBadge({ op: 'putField', field: { id: 'x', type: 'text' }, reason: '' } as DraftChange),
     ).toBeNull();
-  });
-
-  it('lists every output with what it maps to, or that it uses the default vocabulary', () => {
-    expect(mappingRows(definition)).toEqual([
-      { path: 'document', term: 'pharma:BatchRecord' },
-      { path: 'lot', term: 'pharma:batchNumber' },
-      { path: 'expires', term: null },
-      { path: 'tests', term: 'pharma:hasResult → pharma:TestResult' },
-      { path: 'tests.assay', term: null },
-    ]);
-  });
-
-  it('shows a value node by its class', () => {
-    const semantics = definition.semantics as Record<string, unknown>;
-    const withNode = {
-      ...definition,
-      semantics: {
-        ...semantics,
-        fields: { lot: { node: { class: 'pharma:LotIdentifier' } } },
-      },
-    };
-    expect(mappingRows(withNode).find((r) => r.path === 'lot')).toEqual({
-      path: 'lot',
-      term: 'node of pharma:LotIdentifier',
-    });
   });
 });
 
@@ -136,31 +140,154 @@ describe('MappingTab', () => {
     expect(screen.queryByRole('button', { name: 'Propose a mapping' })).toBeNull();
   });
 
-  it('shows a proposal with confidence, values and alternatives, and applies it', async () => {
-    const decideProposal = vi.fn(async () => ({
-      ...proposal,
-      status: 'accepted' as const,
-      acceptedChanges: [0],
-    }));
-    const { api } = show(true, { decideProposal });
-    const change = await screen.findByRole('checkbox', { name: /Apply: MAPPING lot/ });
-    const row = change.closest('li')!;
-    expect(row).toHaveTextContent('Suggested · high');
-    expect(row).toHaveTextContent('Seen: G17230211, G17230212 · Alternatives: product name');
+  it('reviews the proposal in the outline: markers, a checkbox per change, the counts', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    // One checkbox per change, on the item it changes; a column changed by its table has none.
+    for (const name of [/Apply: MAPPING lot/, /Apply: MAPPING expires/, /Apply: MAPPING tests/]) {
+      expect(within(outline).getByRole('checkbox', { name })).toBeChecked();
+    }
+    expect(within(outline).getAllByRole('checkbox')).toHaveLength(3);
+    expect(itemRow(outline, 'expires')).toHaveTextContent('NEW');
+    expect(itemRow(outline, 'tests.assay')).toHaveTextContent('NEW');
+    expect(itemRow(outline, 'Table tests')).toHaveTextContent('CHANGED');
+    expect(itemRow(outline, 'lot')).not.toHaveTextContent(/NEW|CHANGED/);
+    const bar = screen.getByRole('region', { name: 'Proposal' });
+    expect(bar).toHaveTextContent('3 changes');
+    expect(bar).toHaveTextContent('1 high');
+    expect(bar).toHaveTextContent('1 medium');
+    expect(bar).toHaveTextContent('1 low');
+    expect(bar).toHaveTextContent('3 of 3 selected');
     expect(screen.getByText('Retrieval was lexical only for pharma v1.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Apply 1 selected change' }));
-    expect(api.decideProposal).toHaveBeenCalledWith('batch', proposal.id, 'accepted', [0]);
+    expect(screen.getByText(/1 of 3 mapped now/)).toHaveTextContent(
+      '1 of 3 mapped now · 3 after applying the selected changes',
+    );
   });
 
-  it('summarises the current mapping and links to the recipe to edit it', async () => {
-    show(true);
-    const current = await screen.findByRole('table', { name: 'Current mapping' });
-    expect(within(current).getByRole('row', { name: /expires/ })).toHaveTextContent(
-      'Default vocabulary',
+  it('opens on the first proposed change and shows now against proposed, with the evidence', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    const inspector = await screen.findByRole('region', { name: 'lot' });
+    expect(inspector).toHaveTextContent('Seen in samples');
+    await userEvent.click(screen.getByRole('button', { name: 'expires' }));
+    const expires = screen.getByRole('region', { name: 'expires' });
+    const property = within(expires).getByRole('row', { name: /Property/ });
+    expect(property).toHaveTextContent('Default vocabulary');
+    expect(property).toHaveTextContent('dcterms:date');
+    expect(expires).toHaveTextContent('medium');
+    expect(expires).toHaveTextContent('Expiry is a date of the batch');
+    expect(within(expires).getByText('31/12/2027')).toBeInTheDocument();
+    expect(within(expires).getByText('valid until')).toBeInTheDocument();
+    expect(within(expires).getByRole('checkbox', { name: /Apply this change/ })).toBeChecked();
+  });
+
+  it('sends a column changed with its table to the table, where its checkbox is', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    await userEvent.click(await screen.findByRole('button', { name: 'tests.assay' }));
+    const column = screen.getByRole('region', { name: 'tests.assay' });
+    expect(column).toHaveTextContent('Changed with Table tests: apply it there.');
+    expect(within(column).getByRole('row', { name: /Property/ })).toHaveTextContent(
+      'pharma:assayName',
     );
-    expect(within(current).getByRole('row', { name: /lot/ })).toHaveTextContent(
-      'pharma:batchNumber',
+    await userEvent.click(within(column).getByRole('button', { name: 'Open Table tests' }));
+    expect(screen.getByRole('region', { name: 'Table tests' })).toHaveTextContent(
+      'Low'.toLowerCase(),
     );
+  });
+
+  it('applies only the selected changes', async () => {
+    const decideProposal = vi.fn(async () => ({
+      ...review,
+      status: 'partially_accepted' as const,
+      acceptedChanges: [0, 2],
+    }));
+    const { api } = show(true, { listProposals: vi.fn(async () => [review]), decideProposal });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    await userEvent.click(
+      within(outline).getByRole('checkbox', { name: /Apply: MAPPING expires/ }),
+    );
+    expect(screen.getByRole('region', { name: 'Proposal' })).toHaveTextContent('2 of 3 selected');
+    expect(screen.getByText(/1 of 3 mapped now/)).toHaveTextContent('2 after applying');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply 2 selected changes' }));
+    expect(api.decideProposal).toHaveBeenCalledWith('batch', review.id, 'accepted', [0, 2]);
+  });
+
+  it('rejects the whole proposal', async () => {
+    const decideProposal = vi.fn(async () => ({ ...review, status: 'rejected' as const }));
+    const { api } = show(true, { listProposals: vi.fn(async () => [review]), decideProposal });
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject all' }));
+    expect(api.decideProposal).toHaveBeenCalledWith('batch', review.id, 'rejected');
+  });
+
+  it('does not mark a change that only writes the mapping now in another key order', async () => {
+    const semantics = definition.semantics as Record<string, unknown>;
+    const withEntity = {
+      ...definition,
+      semantics: {
+        ...semantics,
+        fields: {
+          lot: { property: 'pharma:batch', object: { class: 'pharma:Lot', iri: 'lot/{lot}' } },
+        },
+      },
+    };
+    const same: DraftChange = {
+      op: 'putFieldMapping',
+      field: 'lot',
+      mapping: { object: { iri: 'lot/{lot}', class: 'pharma:Lot' }, property: 'pharma:batch' },
+      reason: 'Unchanged',
+    };
+    const reordered = changeProposalView({
+      stage: 'mapping',
+      body: { notes: '', changes: [same, expires] },
+    });
+    show(true, { listProposals: vi.fn(async () => [reordered]) }, withEntity);
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    expect(itemRow(outline, 'lot')).not.toHaveTextContent(/NEW|CHANGED|REMOVED/);
+    expect(itemRow(outline, 'expires')).toHaveTextContent('NEW');
+  });
+
+  it('shows an item whose changes are partly selected as partly checked', async () => {
+    const term = (iri: string, label: string): DraftChange => ({
+      op: 'putLocalTerm',
+      term: { iri, kind: 'class', label },
+      reason: `A ${label}`,
+    });
+    const terms = changeProposalView({
+      stage: 'mapping',
+      body: { notes: '', changes: [term('pharma:Lot', 'lot'), term('pharma:Assay', 'assay')] },
+    });
+    show(true, { listProposals: vi.fn(async () => [terms]) });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    const box = within(outline).getByRole('checkbox', { name: /^Apply:/ });
+    expect(box).toBeChecked();
+    const inspector = screen.getByRole('region', { name: 'Local terms' });
+    await userEvent.click(
+      within(inspector).getAllByRole('checkbox', { name: /Apply this change/ })[0]!,
+    );
+    expect(box).toBePartiallyChecked();
+    await userEvent.click(box);
+    expect(box).toBeChecked();
+    expect(screen.getByRole('region', { name: 'Proposal' })).toHaveTextContent('2 of 2 selected');
+  });
+
+  it('filters the outline to the proposed changes or the unmapped outputs', async () => {
+    show(true, { listProposals: vi.fn(async () => [review]) });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    await userEvent.click(screen.getByRole('button', { name: /^Proposed/ }));
+    expect(within(outline).getByRole('button', { name: 'expires' })).toBeInTheDocument();
+    expect(within(outline).queryByRole('button', { name: 'Ontologies' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /^Unmapped/ }));
+    expect(within(outline).getByRole('button', { name: 'expires' })).toBeInTheDocument();
+    expect(within(outline).queryByRole('button', { name: 'lot' })).toBeNull();
+  });
+
+  it('shows the current mapping read-only in the outline when no proposal waits', async () => {
+    show(true, { listProposals: vi.fn(async () => []) });
+    const outline = await screen.findByRole('navigation', { name: 'Mapping outline' });
+    expect(within(outline).getByRole('button', { name: 'expires' })).toHaveAccessibleDescription(
+      'unmapped (not mapped)',
+    );
+    expect(within(outline).queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove the mapping' })).toBeNull();
     expect(
       screen.getByRole('link', { name: 'Edit the mapping on the Recipe tab' }),
     ).toHaveAttribute('href', '#/workbench/batch/template');

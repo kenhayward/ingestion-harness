@@ -4720,6 +4720,254 @@ button.endpoint-toggle {
     border-bottom: 1px solid var(--ih-border);
   }
 }
+/* Workbench Mapping stage: a proposal reviewed in the Recipe tab's outline. The bar counts the
+   changes by confidence and applies the selected ones; each changed item carries a checkbox and
+   NEW / CHANGED; the inspector puts the mapping now beside the proposed one. */
+.mapping-proposal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+}
+.mapping-proposal-what {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+}
+.mapping-proposal-bar .model-log-button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: var(--ih-text-sm);
+}
+.mapping-proposal-actions button {
+  min-height: 34px;
+}
+.mapping-proposal-what strong {
+  color: var(--ih-text);
+}
+.mapping-confidence-counts {
+  display: inline-flex;
+  gap: 12px;
+  font-size: var(--ih-text-sm);
+}
+.mapping-proposal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.mapping-proposal-notes {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+}
+.confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: capitalize;
+}
+.confidence-high {
+  color: var(--ih-ok-fg);
+}
+.confidence-medium {
+  color: var(--ih-warn-fg);
+}
+.confidence-low {
+  color: var(--ih-danger-fg);
+}
+.confidence-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+.confidence-bars span {
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.25;
+}
+.confidence-bars span.on {
+  opacity: 1;
+}
+.mapping-filter {
+  margin: 6px 12px 2px;
+}
+.mapping-review .mapping-filter button {
+  width: auto;
+  min-height: 26px;
+  display: inline-flex;
+  padding: 0 10px;
+  font-size: var(--ih-text-sm);
+}
+.mapping-outline li.with-check {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+}
+.mapping-outline li.with-check > button {
+  padding-left: 2px;
+}
+.mapping-outline li.with-check:hover {
+  background: var(--ih-surface2);
+}
+.mapping-outline li.with-check > button:hover,
+.mapping-outline li.with-check > button[aria-current='true'] {
+  background: transparent;
+  box-shadow: none;
+}
+.mapping-outline li.with-check:has(> button[aria-current='true']) {
+  background: var(--ih-accent-soft);
+  box-shadow: inset 3px 0 0 var(--ih-accent);
+}
+.mapping-outline li.with-check > button.indent {
+  padding-left: 18px;
+}
+.mapping-review .mapping-summary {
+  position: relative;
+  overflow: hidden;
+}
+.mapping-check {
+  display: flex;
+  justify-content: flex-end;
+}
+.mapping-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+.mapping-outline-empty {
+  margin: 12px 16px;
+}
+.mapping-compare {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--ih-border-soft);
+  border-radius: var(--ih-radius-md);
+}
+.mapping-compare thead th {
+  padding: 4px 8px 0;
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ih-muted);
+  text-align: left;
+}
+.mapping-compare tbody th {
+  width: 150px;
+  padding: 0 8px;
+  font-weight: 400;
+  color: var(--ih-muted);
+  text-align: left;
+  vertical-align: middle;
+}
+.mapping-compare td {
+  padding: 6px 10px;
+  vertical-align: middle;
+}
+.mapping-compare td code,
+.mapping-compare td .mapping-term-name {
+  display: block;
+}
+.mapping-compare td .mapping-term-name + code {
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+}
+.mapping-compare .mapping-arrow {
+  width: 24px;
+  padding: 0;
+  color: var(--ih-muted);
+  text-align: center;
+}
+.mapping-compare .mapping-now,
+.mapping-compare .mapping-proposed {
+  width: 42%;
+}
+.mapping-compare.single .mapping-now {
+  width: auto;
+}
+.mapping-compare .mapping-proposed.differs {
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-accent-soft);
+}
+.mapping-compare .mapping-proposed.differs .mapping-term-name {
+  font-weight: 600;
+}
+.mapping-why dl {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 4px 0 12px;
+  padding: 0 8px;
+}
+.mapping-why dt {
+  color: var(--ih-muted);
+}
+.mapping-why dd {
+  margin: 0;
+}
+.evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-surface2);
+  font-size: var(--ih-text-sm);
+}
+.evidence-chip code {
+  color: var(--ih-muted);
+  font-size: var(--ih-text-xs);
+}
+.mapping-apply {
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ih-border-soft);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface2);
+}
+.mapping-review .mapping-inspector .mapping-apply input {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  margin: 0;
+}
+.mapping-meter {
+  display: flex;
+}
+.mapping-meter > span.mapping-meter-after {
+  background: repeating-linear-gradient(-45deg, var(--ih-ok-fg) 0 3px, transparent 3px 6px);
+}
+.mapping-review .mapping-foot a {
+  margin-left: auto;
+}
+@container (max-width: 720px) {
+  .mapping-compare tbody th,
+  .mapping-why dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mapping-compare tbody th {
+    width: 90px;
+  }
+}
 .turtle {
   max-height: 420px;
   overflow: auto;
