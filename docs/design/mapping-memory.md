@@ -1,6 +1,6 @@
 # Mapping memory: reuse what reviewers accepted
 
-Status: proposal, for review (2026-10-18). Follows the mapping spike
+Status: proposal, decisions recorded (2026-10-18, section 10). Follows the mapping spike
 ([mapping-automation.md](mapping-automation.md)), whose gap list notes that *accepted mappings are
 never reused*.
 
@@ -52,12 +52,20 @@ One entry per distinct pair of *what the output is* and *the accepted answer*:
 
 | Part | Holds | Example |
 | --- | --- | --- |
-| Signature | normalised output name, description, type, unit (from the name or description), kind (field, column, table, document), the table's name for a column, enum values | `water content kf` · "Water content by Karl Fischer (%)" · number · `%` · column of *Appearance and water content* |
+| Signature | normalised output name, description, type, unit (from the name or description), kind (field, column, table, document), enum values; the table's name only for an ambiguous name (below) | `water content kf` · "Water content by Karl Fischer (%)" · number · `%` · column |
 | Answer | the form (literal, entity, concept, node, unmapped) and its terms: property, class, unit, concept scheme; for a table its link and row class | node · class *water mass fraction* (AFO) · unit `unit:PERCENT` |
 | Ontologies | the ontology ids the terms come from (the version is a source detail, not part of the entry) | AFO |
 | Sources | every published recipe version that used this answer for an output with this signature | `covalidation` v6, `stability-report` v2 |
-| Status | `learned` (derived from published recipes), `confirmed` (a designer vouched for it), `rejected` (never suggest this answer for this signature), `stale` (a term is gone or deprecated in the newest ready ontology version) | |
+| Status | `learned` (a designer accepted it in a recipe), `confirmed` (a designer vouched for it on the Ontologies page), `rejected` (never suggest this answer for this signature), `stale` (a term is gone or deprecated in the newest ready ontology version) | |
+| Refusals | the recipes where this answer was offered or pre-selected and a designer chose something else or removed it | |
 | Review | who confirmed, rejected or edited it, when, and an optional note | |
+
+**Ambiguous names.** A signature leaves the table out, so *Batch number* in a batches table, a
+results table or an assay table is one signature and shares its answer. Only a name that means
+nothing on its own takes its table's name into the signature: a short list of generic names (*mean,
+min, max, average, total, count, result, value, values, sd, rsd, notes, comments, remarks, other*,
+held in the shared normaliser) and, beyond that list, a name whose remembered answers disagree
+across tables (the conflict itself shows the name needs its context).
 
 Recipe-wide defaults are remembered too, keyed by the set of pinned ontologies rather than an
 output: the document class and the value-node defaults (link, value and unit properties). The spike
@@ -69,20 +77,32 @@ recipe structure only: output names, descriptions, types and the terms chosen.
 
 ## 4. How entries are captured
 
-- **On publish.** When a recipe version with `semantics` is published (both publish routes), each of
-  its outputs' mappings becomes a source of the matching entry, created as `learned` when new.
-  Unmapped outputs count too: "the reviewer published this column unmapped" is an answer.
-- **Backfill.** A one-off job reads every published version already in the database.
-- **Reconcile, not append.** The sources of `learned` entries are recomputed from published recipes
-  (idempotent, like the Workbench list cache): a newer published version that changed an answer
-  moves its source, retiring a document type removes its sources, and an entry with no sources left
-  and no review disappears. Confirmed, rejected and edited entries keep their review whatever the
-  sources do.
-- **Not from drafts or proposals.** Only published versions count at first: an accepted proposal in
-  a draft can still be changed before publishing. (Accepted proposals could become a weaker
-  `proposed` status later.)
-- **By hand.** Designers can add an entry on the Ontologies page (for an output wording they expect),
-  and every entry can be confirmed, edited or rejected there (section 6).
+Wherever a designer accepts a mapping, it counts the same:
+
+- **Accepting a mapping proposal** (all of it or some of its changes) on the Workbench Mapping tab.
+- **Saving a mapping by hand** in the recipe editor's Mapping sub-tab (or its YAML).
+- **Publishing** a recipe version with `semantics` (both publish routes).
+- **Not imports.** A YAML, bundle or GitHub import carries another deployment's or person's
+  choices that no designer here has reviewed; it counts once a designer saves or publishes it.
+
+**One recipe, one vote.** Sources are kept per recipe and output: the answer in the recipe's newest
+version (its open draft, else its latest published version). Editing the draft moves its vote;
+re-publishing does not add a second one. Accepting a pre-selected answer unchanged counts as that
+recipe's vote, so a remembered answer grows by recipes that agree with it, never by repetition.
+
+**Reconcile, not append.** Every write to a recipe (the change log's writes) recomputes that
+recipe's sources, idempotent like the Workbench list cache; a one-off backfill reads every recipe
+already in the database. Retiring a document type or deleting a recipe removes its votes, and an
+entry with no votes left and no review disappears. Confirmed, rejected and edited entries keep their
+review whatever the votes do.
+
+**Refusing is part of the loop.** When an output had a remembered answer offered or pre-selected and
+the designer links it to something else or removes the mapping, that recipe's vote goes to the new
+answer (or to none) and the remembered answer records a refusal. An answer refused in more recipes
+than it was accepted in stops being pre-selected and is only hinted.
+
+**By hand.** Designers can add an entry on the Ontologies page (for an output wording they expect),
+and every entry can be confirmed, edited or rejected there (section 6).
 
 ## 5. How the memory is used
 
@@ -92,21 +112,25 @@ memory, restricted to entries whose terms exist in the project's pinned ontology
 1. **Lookup.** Exact match on the normalised signature first (name, type and unit), then fuzzy
    matches: trigram similarity on the name and description, and embedding similarity on the
    signature text (embedded with the deployment's embedding model, stored per model as
-   `ontology_term_embeddings` is). The table's name is part of the text, so *Mean (%)* in a
-   dissolution table matches other dissolution means, not any mean.
+   `ontology_term_embeddings` is). Ambiguous names carry their table's name (section 3), so
+   *Mean (%)* in a dissolution table matches other dissolution means, not any mean.
 2. **Retrieval.** Remembered terms join the short list as a third ranking next to lexical and
    semantic search (`retrieval.fuse`, source `remembered`), so a class whose label search misses it
    is still offered.
 3. **Hint.** The output's prompt line says what was accepted before:
    "Accepted for *Water content (KF)* in 2 recipes (confirmed): value node of *water mass
    fraction*, %". The model is still free to choose otherwise.
-4. **Pre-select.** A `confirmed` entry whose signature matches exactly, whose terms are in the
-   pinned versions and none deprecated, is picked without a model call, at high confidence, with
-   the entry named as its evidence. A `learned` entry that two or more recipes agree on is
-   pre-selected at medium confidence. Everything else goes to the model as today.
+4. **Pre-select, greedily.** Any remembered answer whose signature matches exactly, whose terms are
+   in the pinned versions and none deprecated, and that is not refused more than accepted, is
+   picked without a model call, with the entry named as its evidence: high confidence when it is
+   confirmed or two or more recipes agree, medium when one recipe accepted it. Designers refuse a
+   wrong pre-selection in the mapping itself, by linking the output to something else or removing
+   the mapping (section 4). Outputs with no exact match go to the model as today, with the fuzzy
+   matches as hints and short-list entries.
 5. **Rejected answers** are removed from that signature's options.
-6. **Conflicts.** When one signature has different answers, all are hinted with their counts and
-   none is pre-selected unless exactly one is confirmed.
+6. **Conflicts.** When one signature has different answers, the confirmed one wins; otherwise the one
+   with the most votes (net of refusals) is pre-selected at medium confidence and the others are
+   offered as alternatives with their counts.
 
 The reviewer sees the provenance on the proposal card and in the Mapping editor: *Remembered ·
 2 recipes · confirmed by Ken Hayward*, with a link to the entry.
@@ -119,10 +143,11 @@ A **Remembered mappings** view on the Ontologies page (a tab beside the library 
   people who are not admins), the ontology, *used by N recipes* (each a link to its recipe), status
   and last review. Filters: ontology, status (needs review: learned and stale; confirmed;
   rejected), search.
-- **Actions** (designers and admins): *Confirm*, *Edit* (change the form, class, unit or property,
-  through the same term pickers as the Mapping editor; an edited entry is confirmed), *Reject*
-  (keeps the entry as a "never suggest" rule), *Delete* (admins; a learned entry comes back on the
-  next reconcile while recipes still use it, so rejecting is the normal way to stop one).
+- **Actions** (any designer, and admins): *Confirm*, *Edit* (change the form, class, unit or
+  property, through the same term pickers as the Mapping editor; an edited entry is confirmed),
+  *Reject* (keeps the entry as a "never suggest" rule), *Delete* (a learned entry comes back on the
+  next reconcile while recipes still use it, so rejecting is the normal way to stop one). Every
+  action records who and when.
 - **Stale entries** say which term is missing or deprecated in which ontology version, with a
   suggested replacement when the newer version declares one.
 - **Term detail panel:** an ontology term's panel lists the entries that use it ("Remembered for
@@ -139,6 +164,9 @@ A **Remembered mappings** view on the Ontologies page (a tab beside the library 
   confirmed or added by hand follow the policy of the project they were made from.
 - **Access.** Deployment-wide sharing matches the access model: designers can already read every
   recipe, so the memory shows them nothing new.
+- **Export-ready.** Entries are identified by their normalised signature and term IRIs, never by
+  database ids alone, so a later export and import between deployments (staging and production)
+  can match them up.
 - **Retired ontologies** hide their entries; **retired document types** stop counting as sources.
 - **Ontology upgrades** turn entries stale rather than wrong: a stale entry is still hinted, never
   pre-selected.
@@ -175,14 +203,14 @@ Report exactly-right, the high tier's precision and coverage, and the model call
 (useful at once, invisible to users apart from the hints), then the Ontologies view. The second is
 what makes it trustworthy over time, so it should not lag far behind.
 
-## 10. Open questions
+## 10. Decisions (2026-10-18)
 
-1. **Signature granularity:** should a column's signature include its table's name always, or only
-   when the name alone is ambiguous (*Mean*, *Result*)?
-2. **Who confirms:** any designer, or admins only? Confirmation drives pre-selection, so it is the
-   step that matters.
-3. **Pre-selecting learned entries:** is agreement between two published recipes enough for medium
-   confidence, or should only confirmed entries ever pre-select?
-4. **Accepted proposals in drafts:** count them as weak evidence, or wait for publish?
-5. **Several deployments:** a customer with staging and production may want to share a memory; out
-   of scope here, but the entry format should not prevent an export and import later.
+1. **Signature granularity:** no table name by default (many tables carry *Batch number*); only a
+   very ambiguous name takes its table's name (section 3).
+2. **Who confirms:** any designer.
+3. **Pre-selection:** greedy. Remembered answers are pre-selected, and designers refuse them in the
+   mapping by linking to something else or deleting the mapping; refusals feed back (sections 4
+   and 5).
+4. **Where acceptance counts:** wherever a designer accepts a mapping (proposal, hand save,
+   publish), with the same weight; one vote per recipe.
+5. **Several deployments:** later; the entry format keeps export and import possible (section 7).
