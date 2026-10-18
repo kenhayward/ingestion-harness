@@ -9,6 +9,8 @@ RUN npm ci --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+# The release notes About shows (bundled by the web build: apps/web/src/about/releaseNotes.ts).
+COPY docs/release-notes docs/release-notes
 # The build's calendar version (ADR 0014), shown at the bottom of the nav.
 ARG APP_VERSION=dev
 ARG APP_VERSION_PREVIOUS=

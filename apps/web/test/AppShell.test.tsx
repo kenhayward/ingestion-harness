@@ -362,7 +362,42 @@ describe('the admin name menu', () => {
     expect(window.location.hash).toBe('#/');
   });
 
-  it('gives users a menu with Profile, Help and Sign out; Profile opens the dialog', async () => {
+  it('opens About from the account menu, for everyone', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => ({
+        role: 'operator' as const,
+        label: 'Olu',
+        email: 'olu@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
+    });
+    render(<App api={api} pollMs={0} />);
+    const banner = await screen.findByRole('banner');
+    await userEvent.click(
+      within(banner).getByRole('button', { name: 'Olu (Operator): account menu' }),
+    );
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'About' }));
+    const dialog = screen.getByRole('dialog', { name: 'About' });
+    expect(within(dialog).getByRole('navigation', { name: 'Release notes' })).toBeInTheDocument();
+  });
+
+  it('opens About from the version at the bottom of the nav', async () => {
+    render(<App api={fakeApi()} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    await userEvent.click(within(nav).getByRole('button', { name: /about CT Studio/ }));
+    expect(screen.getByRole('dialog', { name: 'About' })).toBeInTheDocument();
+  });
+
+  it('opens About on a release note from #/about/<date>, over Home', async () => {
+    window.location.hash = '#/about/2026-10-18';
+    render(<App api={fakeApi()} pollMs={0} />);
+    const dialog = await screen.findByRole('dialog', { name: 'About' });
+    expect(within(dialog).getByText('/ Release notes · 18 October 2026')).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/');
+  });
+
+  it('gives users a menu with Profile, Help, About and Sign out; Profile opens the dialog', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'designer' as const,
@@ -381,7 +416,7 @@ describe('the admin name menu', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((i) => i.textContent),
-    ).toEqual(['Profile', 'Help', 'Sign out']);
+    ).toEqual(['Profile', 'Help', 'About', 'Sign out']);
     await userEvent.keyboard('{Escape}');
     expect(trigger).toHaveFocus();
     await userEvent.click(trigger);

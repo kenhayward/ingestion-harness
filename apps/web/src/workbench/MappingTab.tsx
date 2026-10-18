@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { deliveryTargets, type DataPolicy, type OverviewItem } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { GraphPreview } from '../templates/MappingEditor.js';
@@ -48,6 +49,8 @@ export function MappingTab({
   onSkipped: () => void;
   onNavigate: (hash: string) => void;
 }) {
+  /** Goes up when the applied proposal's "Preview the graph" is pressed: GraphPreview starts. */
+  const [previewRequest, setPreviewRequest] = useState(0);
   const loaded = useDefinitions(api, projectId, draft, published, definition === undefined);
   const shown = definition ?? loaded.draftDef ?? loaded.liveDef;
   if (definition === undefined && hasDraft && loaded.draftDef === null && loaded.error === null) {
@@ -107,11 +110,16 @@ export function MappingTab({
         retired={retired}
         changeNote={mappingNote}
         changeBadge={(c) => mappingBadge(c)}
+        nextAction={
+          <button type="button" className="primary" onClick={() => setPreviewRequest((n) => n + 1)}>
+            Preview the graph
+          </button>
+        }
         review={(state) => (
           <MappingReview api={api} projectId={projectId} definition={shown} review={state} />
         )}
       />
-      <GraphPreview api={api} projectId={projectId} dirty={false} />
+      <GraphPreview api={api} projectId={projectId} dirty={false} request={previewRequest} />
     </div>
   );
 }
