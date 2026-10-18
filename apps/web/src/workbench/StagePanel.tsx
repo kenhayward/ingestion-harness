@@ -138,6 +138,7 @@ export function StagePanel({
   changeNote,
   changeBadge,
   review,
+  nextAction,
 }: {
   api: Api;
   projectId: string;
@@ -176,6 +177,8 @@ export function StagePanel({
    * is called with null otherwise, under the card, to show the stage as it is.
    */
   review?: (state: ReviewState | null) => ReactNode;
+  /** Does the next step here instead of linking to it (the mapping stage: preview the graph). */
+  nextAction?: ReactNode;
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -358,6 +361,7 @@ export function StagePanel({
     href: `#/workbench/${projectId}/${NEXT[stage].tab}`,
     label: NEXT[stage].label,
     text: NEXT[stage].text,
+    action: nextAction,
   };
 
   const after =

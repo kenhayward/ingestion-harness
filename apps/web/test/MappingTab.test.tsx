@@ -293,6 +293,19 @@ describe('MappingTab', () => {
     ).toHaveAttribute('href', '#/workbench/batch/template');
   });
 
+  it('starts the graph preview from the applied proposal next step', async () => {
+    const accepted = { ...review, status: 'accepted' as const, acceptedChanges: [0, 1, 2] };
+    const startGraphPreview = vi.fn(async () => ({
+      jobId: 'g1',
+      status: 'queued' as const,
+      error: null,
+      result: null,
+    }));
+    show(true, { listProposals: vi.fn(async () => [accepted]), startGraphPreview });
+    await userEvent.click(await screen.findByRole('button', { name: 'Preview the graph' }));
+    expect(startGraphPreview).toHaveBeenCalledWith('batch');
+  });
+
   it('previews a dev sample graph', async () => {
     const startGraphPreview = vi.fn(async () => ({
       jobId: 'g1',
