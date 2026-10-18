@@ -32,7 +32,7 @@ from .mapping_stage import (
     query_text,
 )
 from .ontology import OntologyStore, Term
-from .retrieval import shortlist
+from .retrieval import fuse, shortlist
 
 Confidence = Literal["high", "medium", "low"]
 
@@ -182,6 +182,29 @@ class _Terms:
         return seen
 
 
+#: Classes whose instances are data (OBO's information content entity, data item): what a value
+#: node is. A value node's class options under them go up.
+DATA_ROOTS = frozenset(
+    {
+        "http://purl.obolibrary.org/obo/IAO_0000030",
+        "http://purl.obolibrary.org/obo/IAO_0000027",
+    }
+)
+#: BFO branches that are never data: processes, qualities, roles and other realizables, material.
+#: A value node's class options under them go down (an assay is the process, not its result).
+NOT_DATA_ROOTS: dict[str, str] = {
+    "http://purl.obolibrary.org/obo/BFO_0000003": "a process",
+    "http://purl.obolibrary.org/obo/BFO_0000015": "a process",
+    "http://purl.obolibrary.org/obo/BFO_0000019": "a quality",
+    "http://purl.obolibrary.org/obo/BFO_0000020": "a quality",
+    "http://purl.obolibrary.org/obo/BFO_0000017": "a role",
+    "http://purl.obolibrary.org/obo/BFO_0000023": "a role",
+    "http://purl.obolibrary.org/obo/BFO_0000040": "a material",
+}
+#: How far up a class's parents the data and BFO roots are looked for.
+ROOT_DEPTH = 12
+
+
 def rerank(
     store: OntologyStore | _Terms,
     versions: list[tuple[str, int]],
@@ -189,12 +212,18 @@ def rerank(
     iris: Sequence[str],
     *,
     owner: Sequence[str],
+    node: bool = False,
+    names: set[str] | None = None,
 ) -> list[Ranked]:
     """Re-rank retrieved candidates (best first) for `output`, which hangs off `owner` (the
-    document's or row's class, empty when not chosen yet). Deprecated and unknown terms go."""
+    document's or row's class, empty when not chosen yet). Deprecated and unknown terms go.
+    `node`: the classes are options for a value node's class, so data classes go up and
+    processes, qualities and roles (also classes labelled "… role") go down; an object property
+    whose range is a data class goes up too (a value-node link). `names`: the phrases an exact
+    label must match (default: the output's name and id)."""
     terms = store if isinstance(store, _Terms) else _Terms(store, versions)
     owners = terms.ancestors(owner) if owner else set()
-    names = _names(output)
+    names = names if names is not None else _names(output)
     out: list[Ranked] = []
     n = max(1, len(iris))
     for i, iri in enumerate(dict.fromkeys(iris)):
@@ -229,6 +258,23 @@ def rerank(
         ):
             score -= 0.4
             notes.append("generic property")
+        if node and kind == "class":
+            roots = terms.ancestors([iri], depth=ROOT_DEPTH)
+            not_data = next((NOT_DATA_ROOTS[r] for r in NOT_DATA_ROOTS if r in roots), None)
+            if not_data or term.label.strip().lower().endswith(" role"):
+                # More than an exact label is worth: "Assay" names the process, not its result.
+                score -= 0.8
+                notes.append(f"{not_data or 'a role'}, not data")
+            elif roots & DATA_ROOTS:
+                score += 0.3
+                notes.append("a data class")
+        if node and kind == "object_property":
+            data_range = any(
+                terms.ancestors([r], depth=ROOT_DEPTH) & DATA_ROOTS for r in term.range
+            )
+            if data_range:
+                score += 0.3
+                notes.append("range is data")
         out.append(
             Ranked(
                 iri=iri,
@@ -245,6 +291,35 @@ def rerank(
             )
         )
     return sorted(out, key=lambda r: -r.score)
+
+
+#: Unit text in an output's name or description -> the quantity its value is, for class
+#: retrieval ("% w/w" is a mass fraction). Matched lower case, first match wins per entry.
+UNIT_QUANTITIES: list[tuple[str, str]] = [
+    ("% w/w", "mass fraction"),
+    ("%w/w", "mass fraction"),
+    ("% v/v", "volume fraction"),
+    ("%v/v", "volume fraction"),
+    ("cfu", "count"),
+    ("%", "fraction percentage"),
+]
+_PARENS = re.compile(r"\s*\([^)]*\)")
+
+
+def class_queries(o: OutputSpec, observed: Sequence[Any]) -> list[str]:
+    """The retrieval queries for an output's value-node class, best first: the full output query,
+    its name without unit text in parentheses, that name with "result", and the quantity its unit
+    names (`UNIT_QUANTITIES`). A class label rarely repeats a column's unit ("Assay (%)" is an
+    assay result), so the full query alone misses it."""
+    full = query_text(o, list(observed))
+    bare = _PARENS.sub("", o.name).strip() or o.name
+    text = f"{o.name} {o.description}".lower()
+    queries = [full, bare, f"{bare} result"]
+    for unit, quantity in UNIT_QUANTITIES:
+        if unit in text:
+            queries.append(quantity)
+            break
+    return list(dict.fromkeys(q for q in queries if q.strip()))
 
 
 def choice_schema(request: ChoiceRequest) -> dict[str, Any]:
@@ -350,6 +425,17 @@ def propose(
         )  # fmt: skip
         return [c.iri for c in found]
 
+    def node_classes(o: OutputSpec) -> list[str]:
+        """A value node's class candidates: every `class_queries` query (the full one with its
+        embedding, the others lexical), fused by reciprocal rank."""
+        rankings = [candidates(o, ["class"])]
+        for query in class_queries(o, inputs.observed.get(o.path, []))[1:]:
+            found, _ = shortlist(
+                store, versions, query, ["class"], vector=None, model_ref=None, k=retrieve
+            )  # fmt: skip
+            rankings.append([c.iri for c in found])
+        return [iri for iri, _score in fuse(rankings)][:retrieve]
+
     picks: dict[str, Pick] = {}
 
     def ask(
@@ -390,15 +476,22 @@ def propose(
         found, _ = shortlist(
             store, versions, query, kinds, vector=None, model_ref=None, k=retrieve
         )  # fmt: skip
-        ranked = rerank(terms, versions, spec, [c.iri for c in found], owner=[])
+        # A label equal to one of the query's own phrases ("has data output") is an exact match.
+        phrases = {_words(p) for p in query.split(". ") if _words(p)}
+        ranked = rerank(
+            terms, versions, spec, [c.iri for c in found], owner=[], node=True, names=phrases
+        )
         if ranked:
             asked.append((path, spec, ranked))
     if asked:
         chosen = ask("value-node property", asked, VALUE_NODES_NOTE)
         for path, _spec, ranked in asked:
             defaults[path] = _answer(chosen, path, ranked[:options])
-    link = defaults.get(f"{VALUE_NODES}.link")
-    node_ready = link is not None and defaults.get(f"{VALUE_NODES}.value") is not None
+    # Its own name: a table's link below must never become the value nodes' link.
+    node_link = defaults.get(f"{VALUE_NODES}.link")
+    node_ready = node_link is not None and defaults.get(f"{VALUE_NODES}.value") is not None
+    # The defaults are what a node uses: offered beside its classes they would only compete.
+    default_terms = {iri for iri in defaults.values() if iri is not None}
 
     # 2. Each table's link from the document and its row class.
     row_class: dict[str, str | None] = {}
@@ -429,7 +522,10 @@ def propose(
         props = rerank(terms, versions, o, candidates(o, PROPERTY_KINDS), owner=owner)
         if not node_ready or o.enum or o.type == "list":
             return props
-        classes = rerank(terms, versions, o, candidates(o, ["class"]), owner=[])
+        props = [p for p in props if p.iri not in default_terms]
+        # The class queries' phrases ("Assay result") are names an exact label may match too.
+        names = _names(o) | {_words(q) for q in class_queries(o, [])[1:]}
+        classes = rerank(terms, versions, o, node_classes(o), owner=[], node=True, names=names)
         mixed = (classes[:NODE_CLASSES], props[:NODE_PROPERTIES])
         return [*mixed[0], *mixed[1]] if o.type in NODE_TYPES else [*mixed[1], *mixed[0]]
 
@@ -448,7 +544,7 @@ def propose(
                     classes = [r for r in shown if r.kind == "class"]
                     node_class, replaced = _specific(term, classes, terms)
                     picks[path] = Pick(
-                        link,
+                        node_link,
                         "node",
                         "medium" if replaced else _confidence(term, shown),
                         tuple(r.iri for r in rs),
