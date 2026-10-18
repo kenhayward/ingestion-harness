@@ -164,10 +164,45 @@ export const OntologyPinSchema = z
   .object({ id: z.string().min(1), version: z.number().int().positive() })
   .strict();
 
-/** How one field or column becomes RDF: a literal, an entity, or a link to a SKOS concept. */
+/**
+ * A value node's own terms: the value sits on a node of `class`, minted per row (per document for
+ * a field). Terms left out come from `semantics.valueNodes`.
+ */
+export const NodeMappingSchema = z
+  .object({
+    /** The node's class: what the value is (e.g. a water mass fraction). */
+    class: TermRef,
+    /** The property from the node to the value (absent: `valueNodes.value`). */
+    value: TermRef.optional(),
+    /** A fixed unit IRI (e.g. `unit:PERCENT`); absent: no unit. */
+    unit: TermRef.optional(),
+    /** The property from the node to its unit (absent: `valueNodes.unitProperty`). */
+    unitProperty: TermRef.optional(),
+  })
+  .strict();
+export type NodeMapping = z.infer<typeof NodeMappingSchema>;
+
+/** What every value node uses unless its output gives its own. */
+export const ValueNodeDefaultsSchema = z
+  .object({
+    /** The property from the document or row to a value node. */
+    link: TermRef.optional(),
+    /** The property from a value node to its value. */
+    value: TermRef.optional(),
+    /** The property from a value node to its unit. */
+    unitProperty: TermRef.optional(),
+  })
+  .strict();
+export type ValueNodeDefaults = z.infer<typeof ValueNodeDefaultsSchema>;
+
+/**
+ * How one field or column becomes RDF: a literal, an entity, a link to a SKOS concept, or a value
+ * node of a class.
+ */
 export const OutputMappingSchema = z
   .object({
-    property: TermRef,
+    /** The property from the document or row; for a value node its link (absent: `valueNodes.link`). */
+    property: TermRef.optional(),
     /** The value names an entity: its class and readable IRI template (e.g. `party/{value|slug}`). */
     object: z
       .object({ class: TermRef, iri: z.string().min(1), label: z.boolean().optional() })
@@ -182,6 +217,8 @@ export const OutputMappingSchema = z
       })
       .strict()
       .optional(),
+    /** The value sits on a node of a class (class-centric ontologies such as AFO and OBI). */
+    node: NodeMappingSchema.optional(),
   })
   .strict();
 export type OutputMapping = z.infer<typeof OutputMappingSchema>;
@@ -228,9 +265,49 @@ export const SemanticsSchema = z
     tables: z.record(z.string(), TableMappingSchema).default({}),
     /** Recipe-local terms, for outputs no pinned ontology has a term for. */
     local: z.array(LocalTermSchema).default([]),
+    /** The link, value and unit properties every value node uses unless it gives its own. */
+    valueNodes: ValueNodeDefaultsSchema.optional(),
   })
   .strict();
 export type Semantics = z.infer<typeof SemanticsSchema>;
+
+/** A value node's effective terms: its own, else the recipe's `valueNodes` defaults. */
+export interface ResolvedNode {
+  link?: string;
+  class: string;
+  value?: string;
+  unit?: string;
+  unitProperty?: string;
+}
+
+/**
+ * A value node's effective terms; null when the output is not a value node. Held in step with
+ * `Semantics.resolve_node` in the worker by the shared fixture `value-nodes.json`.
+ */
+export function resolveNode(
+  semantics: Pick<Semantics, 'valueNodes'>,
+  m: OutputMapping,
+): ResolvedNode | null {
+  if (!m.node) return null;
+  const d = semantics.valueNodes ?? {};
+  const out: ResolvedNode = { class: m.node.class };
+  const link = m.property ?? d.link;
+  const value = m.node.value ?? d.value;
+  const unitProperty = m.node.unitProperty ?? d.unitProperty;
+  if (link !== undefined) out.link = link;
+  if (value !== undefined) out.value = value;
+  if (m.node.unit !== undefined) out.unit = m.node.unit;
+  if (unitProperty !== undefined) out.unitProperty = unitProperty;
+  return out;
+}
+
+/** The property an output hangs off its document or row by: a value node's resolved link. */
+export function linkOf(
+  semantics: Pick<Semantics, 'valueNodes'>,
+  m: OutputMapping,
+): string | undefined {
+  return m.node ? (m.property ?? semantics.valueNodes?.link) : m.property;
+}
 
 export const DELIVERY_FORMATS = ['csv', 'json', 'rdf'] as const;
 export type DeliveryFormat = (typeof DELIVERY_FORMATS)[number];
@@ -388,9 +465,39 @@ export const TemplateSchema = z
       issue('delivery: rdf needs an ontology mapping (semantics)');
     }
     if (t.semantics) {
+      const semantics = t.semantics;
       const mapping = (label: string, def: z.infer<typeof ValueDefSchema>, m: OutputMapping) => {
         if (m.object && m.concepts) {
           issue(`semantics: ${label}: map it to an entity or to concepts, not both`);
+        }
+        if (!m.node && m.property === undefined) {
+          issue(`semantics: ${label}: a property is required`);
+        }
+        const node = resolveNode(semantics, m);
+        if (node) {
+          if (m.object || m.concepts) {
+            issue(`semantics: ${label}: a value node cannot also be an entity or concepts`);
+          }
+          if (node.link === undefined) {
+            issue(
+              `semantics: ${label}: a value node needs a link: give its property or set semantics.valueNodes.link`,
+            );
+          }
+          if (node.value === undefined) {
+            issue(
+              `semantics: ${label}: a value node needs a value property: give node.value or set semantics.valueNodes.value`,
+            );
+          }
+          if (node.unit !== undefined && node.unitProperty === undefined) {
+            issue(
+              `semantics: ${label}: a unit needs a unit property: give node.unitProperty or set semantics.valueNodes.unitProperty`,
+            );
+          }
+          if (def.type === 'list') {
+            issue(
+              `semantics: ${label}: a list cannot be a value node: map its items as literals, entities or concepts`,
+            );
+          }
         }
         if (def.type === 'enum' && m.concepts?.values) {
           Object.keys(m.concepts.values)

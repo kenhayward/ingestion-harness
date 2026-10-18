@@ -13,6 +13,7 @@ field/column definitions, so the schema and the CSV layout can never disagree.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
 from pydantic import Field, model_validator
@@ -125,12 +126,53 @@ class ConceptMapping(_Model):
     match: Literal["label"] | None = None
 
 
-class OutputMapping(_Model):
-    """How one field or column becomes RDF (OutputMappingSchema in TS)."""
+class NodeMapping(_Model):
+    """The value sits on a node of `class`, minted per row (per document for a field); terms
+    left out come from `Semantics.value_nodes` (NodeMappingSchema in TS)."""
 
-    property: str = Field(min_length=1)
+    class_: str = Field(alias="class", min_length=1)
+    value: str | None = Field(default=None, min_length=1)
+    unit: str | None = Field(default=None, min_length=1)
+    unit_property: str | None = Field(default=None, alias="unitProperty", min_length=1)
+
+
+class ValueNodeDefaults(_Model):
+    """The link, value and unit properties every value node uses unless it gives its own."""
+
+    link: str | None = Field(default=None, min_length=1)
+    value: str | None = Field(default=None, min_length=1)
+    unit_property: str | None = Field(default=None, alias="unitProperty", min_length=1)
+
+
+class OutputMapping(_Model):
+    """How one field or column becomes RDF (OutputMappingSchema in TS). `property` may be absent
+    only on a value node, whose link then comes from `Semantics.value_nodes`."""
+
+    property: str | None = Field(default=None, min_length=1)
     object: EntityMapping | None = None
     concepts: ConceptMapping | None = None
+    node: NodeMapping | None = None
+
+
+@dataclass(frozen=True)
+class ResolvedNode:
+    """A value node's effective terms (ResolvedNode in TS)."""
+
+    class_: str
+    link: str | None = None
+    value: str | None = None
+    unit: str | None = None
+    unit_property: str | None = None
+
+    def to_json(self) -> dict[str, str]:
+        out = {
+            "link": self.link,
+            "class": self.class_,
+            "value": self.value,
+            "unit": self.unit,
+            "unitProperty": self.unit_property,
+        }
+        return {k: v for k, v in out.items() if v is not None}
 
 
 class DocumentMapping(_Model):
@@ -162,6 +204,29 @@ class Semantics(_Model):
     fields: dict[str, OutputMapping] = Field(default_factory=dict)
     tables: dict[str, TableMapping] = Field(default_factory=dict)
     local: list[LocalTerm] = Field(default_factory=list)
+    value_nodes: ValueNodeDefaults | None = Field(default=None, alias="valueNodes")
+
+    def resolve_node(self, m: OutputMapping) -> ResolvedNode | None:
+        """A value node's effective terms, its own else the defaults; None for another form.
+        Held in step with `resolveNode` in TS by the shared fixture `value-nodes.json`."""
+        if m.node is None:
+            return None
+        d = self.value_nodes or ValueNodeDefaults()
+        return ResolvedNode(
+            class_=m.node.class_,
+            link=m.property if m.property is not None else d.link,
+            value=m.node.value if m.node.value is not None else d.value,
+            unit=m.node.unit,
+            unit_property=(
+                m.node.unit_property if m.node.unit_property is not None else d.unit_property
+            ),
+        )
+
+    def link_of(self, m: OutputMapping) -> str | None:
+        """The property an output hangs off its document or row by (`linkOf` in TS)."""
+        if m.node is not None and m.property is None:
+            return self.value_nodes.link if self.value_nodes else None
+        return m.property
 
 
 DeliveryFormat = Literal["csv", "json", "rdf"]
@@ -301,12 +366,18 @@ class Template(_Model):
         ]
         if "rdf" in formats and self.semantics is None:
             errors.append("delivery: rdf needs an ontology mapping (semantics)")
-        if self.semantics is None:
+        semantics = self.semantics
+        if semantics is None:
             return errors
 
         def mapping(label: str, value: ValueDef, m: OutputMapping) -> None:
             if m.object is not None and m.concepts is not None:
                 errors.append(f"semantics: {label}: map it to an entity or to concepts, not both")
+            if m.node is None and m.property is None:
+                errors.append(f"semantics: {label}: a property is required")
+            node = semantics.resolve_node(m)
+            if node is not None:
+                errors.extend(_node_errors(label, value, m, node))
             if value.type == "enum" and m.concepts is not None and m.concepts.values:
                 errors.extend(
                     f"semantics: {label}: {v!r} is not one of its values"
@@ -315,13 +386,13 @@ class Template(_Model):
                 )
 
         fields = {f.id: f for f in self.outputs.fields}
-        for fid, m in self.semantics.fields.items():
+        for fid, m in semantics.fields.items():
             if fid in fields:
                 mapping(f"field {fid!r}", fields[fid], m)
             else:
                 errors.append(f"semantics: unknown field {fid!r}")
         tables = {t.id: t for t in self.outputs.tables}
-        for tid, tm in self.semantics.tables.items():
+        for tid, tm in semantics.tables.items():
             if tid not in tables:
                 errors.append(f"semantics: unknown table {tid!r}")
                 continue
@@ -434,6 +505,35 @@ class Template(_Model):
 
 
 # --- compiling extract steps -----------------------------------------------------------------
+
+
+def _node_errors(label: str, value: ValueDef, m: OutputMapping, node: ResolvedNode) -> list[str]:
+    """A value node's rules beyond the schema (TemplateSchema.superRefine in TS)."""
+    errors: list[str] = []
+    where = f"semantics: {label}"
+    if m.object is not None or m.concepts is not None:
+        errors.append(f"{where}: a value node cannot also be an entity or concepts")
+    if node.link is None:
+        errors.append(
+            f"{where}: a value node needs a link: give its property or set "
+            "semantics.valueNodes.link"
+        )
+    if node.value is None:
+        errors.append(
+            f"{where}: a value node needs a value property: give node.value or set "
+            "semantics.valueNodes.value"
+        )
+    if node.unit is not None and node.unit_property is None:
+        errors.append(
+            f"{where}: a unit needs a unit property: give node.unitProperty or set "
+            "semantics.valueNodes.unitProperty"
+        )
+    if value.type == "list":
+        errors.append(
+            f"{where}: a list cannot be a value node: map its items as literals, entities or "
+            "concepts"
+        )
+    return errors
 
 
 def value_schema(v: ValueDef) -> dict[str, Any]:

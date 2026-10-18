@@ -3,25 +3,55 @@
     "id": "letter",
     "version": 1,
     "name": "Letter",
-    "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+    "document": {
+      "sections": [
+        {
+          "id": "all",
+          "anchor": "\\A"
+        }
+      ]
+    },
     "outputs": {
       "fields": [
-        { "id": "sender", "type": "text" },
-        { "id": "kind", "type": "enum", "enum": ["memo", "letter"] }
+        {
+          "id": "sender",
+          "type": "text"
+        },
+        {
+          "id": "kind",
+          "type": "enum",
+          "enum": ["memo", "letter"]
+        }
       ],
       "tables": [
         {
           "id": "lines",
           "columns": [
-            { "id": "sku", "type": "text" },
-            { "id": "qty", "type": "integer" }
+            {
+              "id": "sku",
+              "type": "text"
+            },
+            {
+              "id": "qty",
+              "type": "integer"
+            }
           ]
         }
       ]
     },
     "pipeline": [
-      { "type": "extract", "id": "head", "fields": ["sender", "kind"], "sections": ["all"] },
-      { "type": "extract", "id": "rows", "table": "lines", "sections": ["all"] }
+      {
+        "type": "extract",
+        "id": "head",
+        "fields": ["sender", "kind"],
+        "sections": ["all"]
+      },
+      {
+        "type": "extract",
+        "id": "rows",
+        "table": "lines",
+        "sections": ["all"]
+      }
     ]
   },
   "cases": [
@@ -30,9 +60,18 @@
       "valid": true,
       "patch": {
         "semantics": {
-          "ontologies": [{ "id": "pv", "version": 1 }],
-          "prefixes": { "acme": "https://acme.example/def/" },
-          "document": { "class": "acme:Letter" }
+          "ontologies": [
+            {
+              "id": "pv",
+              "version": 1
+            }
+          ],
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          }
         }
       }
     },
@@ -41,18 +80,42 @@
       "valid": true,
       "patch": {
         "semantics": {
-          "ontologies": [{ "id": "pv", "version": 1 }],
-          "shapes": [{ "id": "pv-shapes", "version": 2 }],
-          "prefixes": { "acme": "https://acme.example/def/" },
-          "document": { "class": "acme:Letter", "iri": "doc/{source}" },
+          "ontologies": [
+            {
+              "id": "pv",
+              "version": 1
+            }
+          ],
+          "shapes": [
+            {
+              "id": "pv-shapes",
+              "version": 2
+            }
+          ],
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter",
+            "iri": "doc/{source}"
+          },
           "fields": {
             "sender": {
               "property": "acme:sentBy",
-              "object": { "class": "acme:Party", "iri": "party/{value|slug}", "label": true }
+              "object": {
+                "class": "acme:Party",
+                "iri": "party/{value|slug}",
+                "label": true
+              }
             },
             "kind": {
               "property": "acme:kind",
-              "concepts": { "scheme": "acme:Kinds", "values": { "memo": "acme:Memo" } }
+              "concepts": {
+                "scheme": "acme:Kinds",
+                "values": {
+                  "memo": "acme:Memo"
+                }
+              }
             }
           },
           "tables": {
@@ -61,28 +124,50 @@
               "class": "acme:Line",
               "iri": "line/{sku|upper}",
               "columns": {
-                "sku": { "property": "acme:sku" },
-                "qty": { "property": "acme:quantity" }
+                "sku": {
+                  "property": "acme:sku"
+                },
+                "qty": {
+                  "property": "acme:quantity"
+                }
               }
             }
           },
-          "local": [{ "iri": "def/letter/sentBy", "kind": "object_property", "label": "Sent by" }]
+          "local": [
+            {
+              "iri": "def/letter/sentBy",
+              "kind": "object_property",
+              "label": "Sent by"
+            }
+          ]
         },
-        "delivery": { "formats": ["json", "rdf"] }
+        "delivery": {
+          "formats": ["json", "rdf"]
+        }
       }
     },
     {
       "name": "delivery without rdf needs no mapping",
       "valid": true,
-      "patch": { "delivery": { "formats": ["csv"] } }
+      "patch": {
+        "delivery": {
+          "formats": ["csv"]
+        }
+      }
     },
     {
       "name": "unknown field",
       "valid": false,
       "patch": {
         "semantics": {
-          "document": { "class": "acme:Letter" },
-          "fields": { "nope": { "property": "acme:x" } }
+          "document": {
+            "class": "acme:Letter"
+          },
+          "fields": {
+            "nope": {
+              "property": "acme:x"
+            }
+          }
         }
       }
     },
@@ -91,8 +176,15 @@
       "valid": false,
       "patch": {
         "semantics": {
-          "document": { "class": "acme:Letter" },
-          "tables": { "nope": { "link": "acme:x", "class": "acme:Y" } }
+          "document": {
+            "class": "acme:Letter"
+          },
+          "tables": {
+            "nope": {
+              "link": "acme:x",
+              "class": "acme:Y"
+            }
+          }
         }
       }
     },
@@ -101,12 +193,18 @@
       "valid": false,
       "patch": {
         "semantics": {
-          "document": { "class": "acme:Letter" },
+          "document": {
+            "class": "acme:Letter"
+          },
           "tables": {
             "lines": {
               "link": "acme:x",
               "class": "acme:Y",
-              "columns": { "nope": { "property": "acme:z" } }
+              "columns": {
+                "nope": {
+                  "property": "acme:z"
+                }
+              }
             }
           }
         }
@@ -115,16 +213,29 @@
     {
       "name": "rdf without a mapping",
       "valid": false,
-      "patch": { "delivery": { "formats": ["rdf"] } }
+      "patch": {
+        "delivery": {
+          "formats": ["rdf"]
+        }
+      }
     },
     {
       "name": "a concept for a value the enum does not have",
       "valid": false,
       "patch": {
         "semantics": {
-          "document": { "class": "acme:Letter" },
+          "document": {
+            "class": "acme:Letter"
+          },
           "fields": {
-            "kind": { "property": "acme:kind", "concepts": { "values": { "fax": "acme:Fax" } } }
+            "kind": {
+              "property": "acme:kind",
+              "concepts": {
+                "values": {
+                  "fax": "acme:Fax"
+                }
+              }
+            }
           }
         }
       }
@@ -134,27 +245,450 @@
       "valid": false,
       "patch": {
         "semantics": {
-          "document": { "class": "acme:Letter" },
+          "document": {
+            "class": "acme:Letter"
+          },
           "fields": {
             "sender": {
               "property": "acme:sentBy",
-              "object": { "class": "acme:Party", "iri": "party/{value}" },
-              "concepts": { "match": "label" }
+              "object": {
+                "class": "acme:Party",
+                "iri": "party/{value}"
+              },
+              "concepts": {
+                "match": "label"
+              }
             }
           }
         }
       }
     },
-    { "name": "no formats", "valid": false, "patch": { "delivery": { "formats": [] } } },
+    {
+      "name": "no formats",
+      "valid": false,
+      "patch": {
+        "delivery": {
+          "formats": []
+        }
+      }
+    },
     {
       "name": "a format twice",
       "valid": false,
-      "patch": { "delivery": { "formats": ["csv", "csv"] } }
+      "patch": {
+        "delivery": {
+          "formats": ["csv", "csv"]
+        }
+      }
     },
     {
       "name": "an unknown key in the mapping",
       "valid": false,
-      "patch": { "semantics": { "document": { "class": "acme:Letter" }, "graphs": [] } }
+      "patch": {
+        "semantics": {
+          "document": {
+            "class": "acme:Letter"
+          },
+          "graphs": []
+        }
+      }
+    },
+    {
+      "name": "a value node with the recipe's defaults",
+      "valid": true,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue"
+          },
+          "tables": {
+            "lines": {
+              "link": "acme:hasLine",
+              "class": "acme:Line",
+              "columns": {
+                "qty": {
+                  "node": {
+                    "class": "acme:Quantity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a value node with its own terms and no defaults",
+      "valid": true,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "tables": {
+            "lines": {
+              "link": "acme:hasLine",
+              "class": "acme:Line",
+              "columns": {
+                "qty": {
+                  "property": "acme:hasResult",
+                  "node": {
+                    "class": "acme:Quantity",
+                    "value": "acme:numericValue",
+                    "unit": "acme:Each",
+                    "unitProperty": "acme:unit"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "value-node defaults alone",
+      "valid": true,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue",
+            "unitProperty": "acme:unit"
+          }
+        }
+      }
+    },
+    {
+      "name": "a value node with a unit and the default unit property",
+      "valid": true,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue",
+            "unitProperty": "acme:unit"
+          },
+          "fields": {
+            "sender": {
+              "node": {
+                "class": "acme:Name",
+                "unit": "acme:Each"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a value node and an entity",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue"
+          },
+          "fields": {
+            "sender": {
+              "node": {
+                "class": "acme:Name"
+              },
+              "object": {
+                "class": "acme:Party",
+                "iri": "party/{value}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a value node and concepts",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue"
+          },
+          "fields": {
+            "kind": {
+              "node": {
+                "class": "acme:Kind"
+              },
+              "concepts": {
+                "match": "label",
+                "scheme": "acme:Kinds"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a value node without a link",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "value": "acme:numericValue"
+          },
+          "tables": {
+            "lines": {
+              "link": "acme:hasLine",
+              "class": "acme:Line",
+              "columns": {
+                "qty": {
+                  "node": {
+                    "class": "acme:Quantity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a value node without a value property",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult"
+          },
+          "tables": {
+            "lines": {
+              "link": "acme:hasLine",
+              "class": "acme:Line",
+              "columns": {
+                "qty": {
+                  "node": {
+                    "class": "acme:Quantity"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a unit without a unit property",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue"
+          },
+          "tables": {
+            "lines": {
+              "link": "acme:hasLine",
+              "class": "acme:Line",
+              "columns": {
+                "qty": {
+                  "node": {
+                    "class": "acme:Quantity",
+                    "unit": "acme:Each"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a list as a value node",
+      "valid": false,
+      "patch": {
+        "outputs": {
+          "fields": [
+            {
+              "id": "sender",
+              "type": "text"
+            },
+            {
+              "id": "kind",
+              "type": "enum",
+              "enum": ["memo", "letter"]
+            },
+            {
+              "id": "tags",
+              "type": "list"
+            }
+          ],
+          "tables": [
+            {
+              "id": "lines",
+              "columns": [
+                {
+                  "id": "sku",
+                  "type": "text"
+                },
+                {
+                  "id": "qty",
+                  "type": "integer"
+                }
+              ]
+            }
+          ]
+        },
+        "pipeline": [
+          {
+            "type": "extract",
+            "id": "head",
+            "fields": ["sender", "kind", "tags"],
+            "sections": ["all"]
+          },
+          {
+            "type": "extract",
+            "id": "rows",
+            "table": "lines",
+            "sections": ["all"]
+          }
+        ],
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue"
+          },
+          "fields": {
+            "tags": {
+              "node": {
+                "class": "acme:Tag"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a literal without a property",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "fields": {
+            "sender": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "an unknown key in a value node",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue"
+          },
+          "tables": {
+            "lines": {
+              "link": "acme:hasLine",
+              "class": "acme:Line",
+              "columns": {
+                "qty": {
+                  "node": {
+                    "class": "acme:Quantity",
+                    "label": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an unknown key in the value-node defaults",
+      "valid": false,
+      "patch": {
+        "semantics": {
+          "prefixes": {
+            "acme": "https://acme.example/def/"
+          },
+          "document": {
+            "class": "acme:Letter"
+          },
+          "valueNodes": {
+            "link": "acme:hasResult",
+            "value": "acme:numericValue",
+            "unit": "acme:Each"
+          }
+        }
+      }
     }
   ]
 }

@@ -5,10 +5,14 @@ import { definitionCanonical } from '../src/github-sync.js';
 import {
   deliveryFormats,
   deliveryTargets,
+  linkOf,
+  resolveNode,
+  SemanticsSchema,
   setDeliveryTarget,
   stepModel,
   TemplateSchema,
   type DeliveryTarget,
+  type OutputMapping,
 } from '../src/template.js';
 import { deliveryPublishTo } from '../src/publish-targets.js';
 
@@ -344,5 +348,30 @@ describe('delivery.publishTo (publishing targets, shared with the worker)', () =
     const rdf = setDeliveryTarget(def, 'rdf', true) as { delivery: unknown };
     expect(rdf.delivery).toEqual({ formats: ['csv', 'json', 'rdf'], publishTo: 'finance-lake' });
     expect(setDeliveryTarget(rdf, 'rdf', false)).toEqual(def);
+  });
+});
+
+describe('value nodes (shared with the worker)', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('./fixtures/value-nodes.json', import.meta.url), 'utf8'),
+  ) as {
+    semantics: unknown;
+    expected: Record<string, unknown>;
+    links: Record<string, string>;
+  };
+  const semantics = SemanticsSchema.parse(fixture.semantics);
+  const mappingAt = (path: string): OutputMapping => {
+    const [head, column] = path.split('.', 2) as [string, string | undefined];
+    return column === undefined
+      ? semantics.fields[head]!
+      : semantics.tables[head]!.columns[column]!;
+  };
+
+  it.each(Object.entries(fixture.expected))('resolves %s', (path, expected) => {
+    expect(resolveNode(semantics, mappingAt(path))).toStrictEqual(expected);
+  });
+
+  it.each(Object.entries(fixture.links))('links %s through %s', (path, link) => {
+    expect(linkOf(semantics, mappingAt(path))).toBe(link);
   });
 });
