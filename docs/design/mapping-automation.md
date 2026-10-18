@@ -391,21 +391,26 @@ expert), the local drafting model `qwen3.8-27b-mtp`, tools on, a base IRI set.
   unmapped, says why and runs the next one, and `--details` lists each output's gold answer beside
   every matcher's pick.
 
-### A larger local model: Nemotron 3.5 Super (2026-10-18)
+### Larger local models: Nemotron 3.5 Super, Qwen 3.8 Flash Next (2026-10-18)
 
-The same gold with `nvidia/nemotron-3.5-super-vl` (IQ4_XS, LM Studio, about 250 tokens/s prompt
-processing and 21 tokens/s decode, its reasoning at the server's default):
+The same gold with two larger local models: `nvidia/nemotron-3.5-super-vl` (IQ4_XS, LM Studio,
+about 250 tokens/s prompt processing and 21 tokens/s decode, its reasoning at the server's
+default) and `Qwen3.8-Flash-Next-UD-IQ4_XS` (177B parameters, IQ4_XS, llama.cpp, 262k context,
+about 36 tokens/s decode):
 
 | Matcher | Model | Hit@1 | Precision | Recall | Value as | Class | Time |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | per-output | qwen3.8-27b-mtp | 77% | 77% | 98% | 29% | 0/35 | 209 s |
 | per-output | Nemotron 3.5 Super | 81% | 82% | 95% | 41% | 0/35 | 4,066 s |
+| per-output | Qwen 3.8 Flash Next | 75% | 79% | 90% | 38% | 0/35 | 590 s |
 | current (one answer) | Nemotron 3.5 Super | stopped: 20,000 reasoning tokens in 16 minutes, no answer and no tool call | | | | | |
 
 - **A little better, not different.** Nemotron left two more `<` qualifier columns correctly
-  unmapped and chose `entity` more often, but chose no class either: the class score is the
-  format's limit, not the model's.
-- **About 19 times slower.** Each enum choice took 1,600 to 8,300 tokens of reasoning (3 to 7
+  unmapped and chose `entity` more often; Qwen Flash was a little more precise than the 27B model
+  but left more of the gold's mapped outputs unmapped (recall 90%). Neither chose a class: three
+  models now agree that the class score is the format's limit, not the model's.
+- **Qwen Flash costs about 3 times the 27B model's time** (10 minutes; 15 to 75 seconds a call)
+  for no gain. **Nemotron was about 19 times slower.** Each of its enum choices took 1,600 to 8,300 tokens of reasoning (3 to 7
   minutes) where the 27B model took about 14 seconds. On the stage's one long answer its reasoning
   never ended. Reasoning effort cannot be set from CT Studio for OpenAI-compatible endpoints; it is
   the server's setting.
