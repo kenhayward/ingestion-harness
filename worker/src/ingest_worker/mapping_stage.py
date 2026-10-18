@@ -284,7 +284,10 @@ def convert_mapping(
     full IRIs unless the draft already declares their prefix; the document change declares
     prefixes for the namespaces the proposal uses. Local terms live under `local_namespace`
     (`{base}def/{type}/`); without a base none can be declared. `searched`: the terms the
-    model's tools returned (None: it had no tools), which it may choose like the shortlist's."""
+    model's tools returned (None: it had no tools), which it may choose like the shortlist's.
+    A term under `local_namespace` used without a `putLocalTerm` is declared for the model
+    (`_implied_term`: its kind from where it is used), and the draft's own local terms may be
+    used again."""
     outputs = {o.path: o for o in outputs_of(draft)}
     changes = list(data.get("changes") or [])
     local = {
@@ -292,6 +295,8 @@ def convert_mapping(
         for c in changes
         if c.get("op") == "putLocalTerm" and str(c.get("localIri", "")).strip()
     }
+    local.update(str(t.get("iri") or "") for t in (draft.get("semantics") or {}).get("local") or [])
+    implied: dict[str, str] = {}  # iri -> kind, local terms used but not declared
     shortlisted = {c.iri: c for cands in shortlists.values() for c in cands}
     shortlisted.update({c.iri: c for c in searched or []})
     semantics = draft.get("semantics") or {}
@@ -299,12 +304,22 @@ def convert_mapping(
     errors: list[str] = []
     used_namespaces: list[str] = []
 
-    def term(where: str, iri: Any) -> str:
+    def term(where: str, iri: Any, kind: str) -> str:
         """A term the change may use, as a CURIE when a prefix covers it."""
         value = str(iri or "").strip()
         if not value:
             errors.append(f"{where}: a term is required")
             return ""
+        if (
+            value not in shortlisted
+            and value not in local
+            and local_namespace is not None
+            and value.startswith(local_namespace)
+            and value != local_namespace
+            and not _IRI_UNSAFE.search(value)
+        ):
+            implied.setdefault(value, kind)
+            return value
         if value not in shortlisted and value not in local:
             errors.append(
                 f"{where}: {value} is not in the shortlist; choose a candidate or declare a "
@@ -321,24 +336,29 @@ def convert_mapping(
         return value
 
     def output_mapping(where: str, c: dict[str, Any], scope: list[str]) -> dict[str, Any]:
-        mapping: dict[str, Any] = {"property": term(f"{where}.property", c.get("property"))}
         how = c.get("valueAs") or "literal"
+        link_kind = "datatype_property" if how == "literal" else "object_property"
+        mapping: dict[str, Any] = {
+            "property": term(f"{where}.property", c.get("property"), link_kind)
+        }
         if how == "entity":
             template = str(c.get("entityIri") or "").strip()
             if not template:
                 errors.append(f"{where}.entityIri: an entity needs an IRI template")
             errors.extend(_template_errors(f"{where}.entityIri", template, scope))
             mapping["object"] = {
-                "class": term(f"{where}.entityClass", c.get("entityClass")),
+                "class": term(f"{where}.entityClass", c.get("entityClass"), "class"),
                 "iri": template,
             }
         elif how == "concept":
             concepts: dict[str, Any] = {}
             scheme = str(c.get("conceptScheme") or "").strip()
             if scheme:
-                concepts["scheme"] = term(f"{where}.conceptScheme", scheme)
+                concepts["scheme"] = term(f"{where}.conceptScheme", scheme, "concept")
             values = {
-                str(v.get("value")): term(f"{where}.conceptValues.{v.get('value')}", v["concept"])
+                str(v.get("value")): term(
+                    f"{where}.conceptValues.{v.get('value')}", v["concept"], "concept"
+                )
                 for v in c.get("conceptValues") or []
                 if str(v.get("concept") or "").strip()
             }
@@ -385,7 +405,7 @@ def convert_mapping(
                 {
                     "op": op,
                     "document": {
-                        "class": term(f"{where}.documentClass", c.get("documentClass")),
+                        "class": term(f"{where}.documentClass", c.get("documentClass"), "class"),
                         "iri": template,
                     },
                     "ontologies": [{"id": v.id, "version": v.version} for v in inputs.versions],
@@ -435,8 +455,8 @@ def convert_mapping(
                     "table and its columns unmapped"
                 )
             mapping: dict[str, Any] = {
-                "link": term(f"{where}.tableLink", c.get("tableLink")),
-                "class": term(f"{where}.rowClass", row_class) if row_class else "",
+                "link": term(f"{where}.tableLink", c.get("tableLink"), "object_property"),
+                "class": term(f"{where}.rowClass", row_class, "class") if row_class else "",
             }
             row_iri = str(c.get("rowIri") or "").strip()
             if row_iri:
@@ -491,6 +511,16 @@ def convert_mapping(
                 f"changes[{i}]: map table {table} first (putTableMapping), then its columns"
             )
 
+    typed.extend(
+        {
+            "op": "putLocalTerm",
+            "term": _implied_term(iri, kind, local_namespace or ""),
+            "reason": "Used by this mapping but not declared: check its label and kind.",
+            "confidence": "low",
+        }
+        for iri, kind in implied.items()
+    )
+
     # Prefixes for the ontologies' namespaces the changes use (the draft's own kept as they are).
     prefixes = dict(existing_prefixes)
     for ns in used_namespaces:
@@ -515,6 +545,14 @@ def convert_mapping(
         _compact_terms([document_change], prefixes)
     _compact_terms([c for c in typed if c is not document_change], existing_prefixes)
     return {"notes": str(data.get("notes") or ""), "changes": typed}, errors
+
+
+def _implied_term(iri: str, kind: str, namespace: str) -> dict[str, Any]:
+    """The declaration of a local term the model used without one: its label from the IRI's
+    local name (`has_batch_entry` and `hasBatchEntry` read `has batch entry`)."""
+    name = iri[len(namespace) :].strip("/#")
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", re.sub(r"[_\-/#.]+", " ", name))
+    return {"iri": iri, "kind": kind, "label": words.strip().lower() or name}
 
 
 def _compact_terms(changes: list[dict[str, Any]], prefixes: dict[str, str]) -> None:

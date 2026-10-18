@@ -65601,6 +65601,331 @@
         }
       }
     },
+    "/api/ontologies/term-labels": {
+      "post": {
+        "operationId": "getTermLabels",
+        "summary": "Name the terms of a mapping",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "The readable name of each term a recipe's mapping uses, for the Mapping tab: send\nthe pinned versions, the recipe's prefixes and local terms, and the terms as\nwritten (CURIEs or IRIs, at most 500). Each term is expanded as the\nrecipe check expands it, then named from its local term, else the first pinned\nversion (in the order sent, imports included) holding it. `from` says which:\n`ontology`, `local`, `built-in` (rdf, rdfs, owl, xsd, skos, dcterms, prov;\nno label), `unknown` (in none of them) or `invalid` (an undeclared prefix).\nNothing is checked against readiness: a version that is not indexed names nothing.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ontologies": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "version": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version"
+                      ]
+                    }
+                  },
+                  "prefixes": {
+                    "default": {},
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "local": {
+                    "default": [],
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "iri": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "iri",
+                        "label"
+                      ]
+                    }
+                  },
+                  "terms": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    }
+                  }
+                },
+                "required": [
+                  "ontologies",
+                  "terms"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every term sent, keyed as written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "terms": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "enum": [
+                              "ontology",
+                              "local",
+                              "built-in",
+                              "unknown",
+                              "invalid"
+                            ]
+                          },
+                          "iri": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "label": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "class",
+                                  "object_property",
+                                  "datatype_property",
+                                  "annotation_property",
+                                  "concept",
+                                  "scheme",
+                                  "shape"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ontology": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "deprecated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "from",
+                          "iri",
+                          "label",
+                          "kind",
+                          "ontology",
+                          "deprecated"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "terms"
+                  ],
+                  "description": "Every term sent, keyed as written."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid body: no terms, too many, or an unknown key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "An invalid body: no terms, too many, or an unknown key."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ontologies/from-url": {
       "post": {
         "operationId": "importOntologyFromUrl",

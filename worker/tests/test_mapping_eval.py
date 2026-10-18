@@ -279,3 +279,126 @@ expected:
     assert s.overall.value_total == 2 and s.overall.value_right == 2
     unmapped = score({}, g, {"t.water": "column", "t.assay": "column"})
     assert unmapped.overall.hit == 0 and unmapped.overall.class_right == 0
+
+
+def test_a_failing_matcher_is_reported_and_the_others_still_run() -> None:
+    """A matcher that fails (the stage's model never gave a valid answer) is scored as leaving
+    every output unmapped and reported with its reason; the next matcher still runs."""
+    from ingest_worker.errors import DocumentError
+    from ingest_worker.mapping_eval import run_matchers
+
+    g = gold()
+
+    def run(matcher: str, calls: list[int]) -> dict[str, Pick]:
+        calls[0] += 1
+        if matcher == "current":
+            raise DocumentError("extraction 'draft-mapping' failed after 2 attempts: nope")
+        return {"lot": Pick(f"{PH}batchNumber", "literal")}
+
+    results = run_matchers(["current", "per-output"], g, kinds(), run)
+    assert results["current"].failed == "extraction 'draft-mapping' failed after 2 attempts: nope"
+    assert results["current"].overall.mapped == 0
+    assert results["per-output"].failed is None
+    assert results["per-output"].overall.mapped == 1
+    text = format_report(g.name, results)
+    assert "current: failed: extraction 'draft-mapping' failed" in text
+    assert json.loads(report_json(g.name, results))["matchers"]["current"]["failed"].startswith(
+        "extraction"
+    )
+
+
+def test_details_list_each_output_s_gold_and_every_matcher_s_pick() -> None:
+    from ingest_worker.mapping_eval import format_details, run_matchers
+
+    g = gold()
+    picks = {
+        "lot": Pick(f"{PH}batchNumber", "literal"),
+        "tests": Pick(f"{PH}hasResult", "entity", row_class=f"{PH}Other"),
+    }
+    results = run_matchers(["per-output"], g, kinds(), lambda _m, _c: picks)
+    text = format_details(g, results, kinds())
+    lines = {line.split()[0]: line for line in text.splitlines() if line.strip()}
+    assert "ok" in lines["lot"] and "ex:batchNumber" in lines["lot"]
+    assert "class ex:Other" in lines["tests"] and "class:no" in lines["tests"]
+    assert "unmapped" in lines["notes"]
+
+
+@pytest.mark.parametrize(
+    ("data", "line"),
+    [
+        ({"stage": "mapping", "phase": "reading"}, "reading the inputs"),
+        (
+            {"stage": "mapping", "phase": "model", "attempt": 1, "of": 2, "tokens": None},
+            "model, try 1 of 2",
+        ),
+        (
+            {
+                "phase": "model",
+                "attempt": 1,
+                "of": 2,
+                "tokens": 12345,
+                "toolCalls": 3,
+                "tool": None,
+            },
+            "model, try 1 of 2 · ~12,345 tokens · 3 tool calls",
+        ),
+        (
+            {
+                "phase": "model",
+                "attempt": 2,
+                "of": 2,
+                "tokens": 800,
+                "toolCalls": 4,
+                "tool": {"name": "search_terms", "summary": 'Searching the ontologies for "assay"'},
+            },
+            'model, try 2 of 2 · ~800 tokens · Searching the ontologies for "assay"',
+        ),
+    ],
+)
+def test_a_progress_event_reads_as_one_line(data: dict[str, Any], line: str) -> None:
+    from ingest_worker.mapping_eval import progress_line
+
+    assert progress_line(data) == line
+
+
+def test_live_progress_prints_each_new_line_with_the_time_since_the_start() -> None:
+    from ingest_worker.drafting import DRAFT_PROGRESS
+    from ingest_worker.mapping_eval import LiveProgress
+
+    printed: list[str] = []
+    now = [100.0]
+    live = LiveProgress("current", printed.append, clock=lambda: now[0])
+    live.event("j", "info", DRAFT_PROGRESS, {"phase": "reading"})
+    now[0] = 165.0
+    live.event("j", "info", DRAFT_PROGRESS, {"phase": "reading"})  # unchanged: not repeated
+    live.event("j", "info", "external model call", {})  # other events: not shown
+    live.event("j", "info", DRAFT_PROGRESS, {"phase": "model", "attempt": 1, "of": 2})
+    assert printed == ["[00:00] current: reading the inputs", "[01:05] current: model, try 1 of 2"]
+    live.say("choice 1 of 3")
+    assert printed[-1] == "[01:05] current: choice 1 of 3"
+
+
+def test_the_model_chooser_reports_each_call_and_its_tokens() -> None:
+    from ingest_worker.llm.base import CompletionResult
+    from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
+    from ingest_worker.mapping_eval import model_chooser
+    from ingest_worker.pipeline import Buckets, PipelineDeps
+    from ingest_worker.storage import MemoryObjectStore
+
+    provider = FakeProvider("local")
+    provider.token_stream = [10, 600, 1200]
+    provider.responses = [CompletionResult(text='{"lot": "none"}', model="m")]
+    config = ProviderConfig(name="local", kind="openai-chat", location="local")  # type: ignore[arg-type]
+    deps = PipelineDeps(
+        store=MemoryObjectStore(),
+        specs={},
+        models=ModelRegistry({"local": provider}, {"local": config}, {"draft": "local/m"}),
+        extract_text=lambda _pdf: [],
+        buckets=Buckets("inbox", "outputs", "runs"),
+        ontologies=store(),
+    )
+    said: list[str] = []
+    choose = model_chooser(deps, draft_params(gold(), None), "draft", [0], say=said.append)
+    choose(ChoiceRequest("pick", [("lot", [f"{PH}batchNumber"])], prompt="Pick."))
+    assert said[0] == "choice 1 (1 output)"
+    assert said[-1] == "choice 1: ~1,200 tokens"

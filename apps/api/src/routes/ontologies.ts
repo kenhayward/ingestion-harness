@@ -19,7 +19,11 @@ import {
   type OntologyListItem,
   OntologyVersionViewSchema,
   TAG_RE,
+  CURIE_PREFIXES,
+  MAX_LABEL_TERMS,
   TermDetailSchema,
+  TermLabelsBodySchema,
+  TermLabelsSchema,
   TermPageSchema,
   TermQuerySchema,
   ontologyFileNameFromUrl,
@@ -44,6 +48,8 @@ import {
   ZipRefused,
 } from '../ontologies/batch.js';
 import type { NewBatchMember, StoredSourceFile } from '../ontologies/repo.js';
+import { expandTerm } from '../templates/semantics.js';
+import type { TermLabel } from '@ih/shared';
 
 /** The ontology library (ADR 0011): anyone signed in reads, admins import and manage. */
 
@@ -726,6 +732,66 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       const { id, version } = params.data;
       const term = await app.deps.ontologies.term(id, version, query.data.iri);
       return term ?? reply.code(404).send({ error: 'term not found' });
+    },
+  );
+
+  app.post(
+    '/ontologies/term-labels',
+    {
+      schema: {
+        ...base(
+          'getTermLabels',
+          'Name the terms of a mapping',
+          md`
+            The readable name of each term a recipe's mapping uses, for the Mapping tab: send
+            the pinned versions, the recipe's prefixes and local terms, and the terms as
+            written (CURIEs or IRIs, at most ${MAX_LABEL_TERMS}). Each term is expanded as the
+            recipe check expands it, then named from its local term, else the first pinned
+            version (in the order sent, imports included) holding it. \`from\` says which:
+            \`ontology\`, \`local\`, \`built-in\` (rdf, rdfs, owl, xsd, skos, dcterms, prov;
+            no label), \`unknown\` (in none of them) or \`invalid\` (an undeclared prefix).
+            Nothing is checked against readiness: a version that is not indexed names nothing.
+          `,
+        ),
+        body: TermLabelsBodySchema,
+        response: {
+          200: res('Every term sent, keyed as written.', TermLabelsSchema),
+          400: error('An invalid body: no terms, too many, or an unknown key.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = TermLabelsBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { ontologies, local, terms } = body.data;
+      const prefixes = { ...CURIE_PREFIXES, ...body.data.prefixes };
+      const builtIn = Object.values(CURIE_PREFIXES);
+      const expanded = terms.map((term) => [term, expandTerm(term, prefixes)] as const);
+      const locals = new Map<string, string>();
+      for (const l of local) {
+        const iri = expandTerm(l.iri, prefixes);
+        if (iri !== null && !locals.has(iri)) locals.set(iri, l.label);
+      }
+      const lookup = [
+        ...new Set(expanded.flatMap(([, iri]) => (iri && !locals.has(iri) ? [iri] : []))),
+      ];
+      const found = await app.deps.ontologies.termLabels(ontologies, lookup);
+      const none = { label: null, kind: null, ontology: null, deprecated: false };
+      const out: Record<string, TermLabel> = {};
+      for (const [term, iri] of expanded) {
+        const hit = iri === null ? undefined : found[iri];
+        out[term] =
+          iri === null
+            ? { ...none, from: 'invalid', iri }
+            : locals.has(iri)
+              ? { ...none, from: 'local', iri, label: locals.get(iri)! }
+              : hit
+                ? { from: 'ontology', iri, ...hit }
+                : builtIn.some((ns) => iri.startsWith(ns))
+                  ? { ...none, from: 'built-in', iri }
+                  : { ...none, from: 'unknown', iri };
+      }
+      return { terms: out };
     },
   );
 
