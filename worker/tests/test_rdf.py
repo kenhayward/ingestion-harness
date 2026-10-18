@@ -326,3 +326,19 @@ def test_with_version_states_the_graph_version_on_a_copy() -> None:
     )
     assert len(versioned) == len(g) + 2
     assert (name, CT.graphVersion, None) not in g
+
+
+GOLDEN = REPO_ROOT / "worker" / "tests" / "fixtures" / "rdf" / "letter-graph.ttl"
+
+
+def test_an_existing_recipe_renders_byte_identical_turtle() -> None:
+    """Today's mappings (entities, concepts, a readable row IRI, an unmapped column, evidence)
+    render exactly as before value nodes existed. Never regenerate the fixture to make this pass;
+    `IH_REGEN_GOLDEN=1` writes it, for a deliberate change of every graph."""
+    import os
+
+    turtle = to_turtle(render())
+    if os.environ.get("IH_REGEN_GOLDEN") == "1":
+        GOLDEN.parent.mkdir(parents=True, exist_ok=True)
+        GOLDEN.write_bytes(turtle)
+    assert turtle == GOLDEN.read_bytes()

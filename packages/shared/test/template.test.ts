@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { definitionCanonical } from '../src/github-sync.js';
 import {
   deliveryFormats,
   deliveryTargets,
@@ -9,6 +11,9 @@ import {
   type DeliveryTarget,
 } from '../src/template.js';
 import { deliveryPublishTo } from '../src/publish-targets.js';
+
+/** definitionCanonical sha256 of the fixture's full mapping, pinned before value nodes. */
+const PINNED_SHA = '57cc1aac4720265403d78c4d61becfd388ee617a698d653ccc99582b13f44929';
 
 const valid = {
   id: 'demo',
@@ -176,6 +181,15 @@ describe('recipe semantics and delivery (shared with the worker)', () => {
   it.each(semanticsFixture.cases.map((c) => [c.name, c] as const))('%s', (_, c) => {
     const result = TemplateSchema.safeParse({ ...semanticsFixture.base, ...c.patch });
     expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
+  });
+
+  it('parses a recipe without value nodes to the same canonical recipe as before', () => {
+    // Pinned before value nodes existed: new keys must stay absent, so publish-gate snapshots,
+    // GitHub sync hashes and the change log see no change. Never update the hash to pass.
+    const full = semanticsFixture.cases.find((c) => c.name === 'full mapping with rdf delivery')!;
+    const parsed = TemplateSchema.parse({ ...semanticsFixture.base, ...full.patch });
+    const sha = createHash('sha256').update(definitionCanonical(parsed)).digest('hex');
+    expect(sha).toBe(PINNED_SHA);
   });
 
   it('delivers CSV and JSON unless the recipe says otherwise', () => {
