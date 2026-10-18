@@ -529,3 +529,29 @@ a hit says only that an output was mapped, so the confidence tiers are judged on
 - **Still wrong**: the degradation products as AFO's *degradation product role* classes, total
   degradation products and E. coli pass/fail as *assay result*, appearance as *experiment result*,
   internal code as *code*, packaging as GS1 *PackagingDetails*, and no table gets a gold row class.
+
+### Mapping memory: leave one out on covalidation (2026-10-18)
+
+The per-output matcher on the 27B model, run twice on the same build (PR #250, a copy on
+staging, nothing written): without memory, and with `--memory self-loo`, where each output may
+take the gold's answer for *another* output with the same signature (never its own). It measures
+what [the mapping memory](mapping-memory.md) gives a recipe that repeats outputs, assuming the
+remembered answers are right.
+
+| Per-output, 27B | Hit@1 | Class | Exactly right | High tier | Calls | Time |
+| --- | --- | --- | --- | --- | --- | --- |
+| no memory | 87% | 59% | 30/53 (57%) | 8 picks, all exactly right | 14 | 242 s |
+| self-loo memory | 89% | 59% | 30/53 (57%) | **24 picks (45% of outputs), all exactly right** | 14 | 235 s |
+
+- **The memory answered 17 outputs**: batch number and study id in every table, storage time in
+  four. The matcher already had them right, but at low or medium confidence; the memory makes them
+  high. So exactly-right is unchanged and the high tier triples, still with no error.
+- **The confidence bar is met for the first time**: 95% precision on at least a third of the
+  outputs (here 100% on 45%). Agreement with an earlier accepted answer is the signal the model's
+  own confidence and the re-asking could not give.
+- **No calls saved here**: the remembered outputs sit in the same batches as outputs the model
+  still answers, so the batch count stays at 14.
+- **What this does not show**: it is optimistic (the remembered answers are the gold's, where a
+  real memory holds what designers accepted, right or not), it is within one recipe (its six tables
+  repeat columns), and a first recipe of its kind gets nothing. The real test is a second document
+  type seeded from covalidation's accepted mapping (`--memory deployment` once recipes vote).
