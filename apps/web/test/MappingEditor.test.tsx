@@ -34,6 +34,7 @@ function setup(
   initial: Semantics | undefined,
   api: Api = fakeApi(),
   preview?: { projectId: string },
+  readOnly?: boolean,
 ) {
   const changes: (Semantics | undefined)[] = [];
   function Host() {
@@ -44,6 +45,7 @@ function setup(
         definition={definition}
         semantics={value}
         preview={preview}
+        readOnly={readOnly}
         onChange={(next) => {
           changes.push(next);
           setValue(next);
@@ -267,6 +269,54 @@ describe('MappingEditor outline (option B)', () => {
     expect(screen.getByRole('region', { name: 'Table lines' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Previous: kind' }));
     expect(screen.getByRole('region', { name: 'kind' })).toBeInTheDocument();
+  });
+
+  it('stays on the item being edited when it becomes mapped', async () => {
+    const { last } = setup(mapped);
+    expect(screen.getByRole('region', { name: 'sender' })).toBeInTheDocument();
+    await userEvent.type(
+      within(screen.getByRole('group', { name: 'sender' })).getByLabelText('Property'),
+      'acme:sentBy',
+    );
+    expect(last()?.fields.sender).toEqual({ property: 'acme:sentBy' });
+    expect(screen.getByRole('region', { name: 'sender' })).toBeInTheDocument();
+  });
+
+  it('stays on the ontologies after pinning the first one', async () => {
+    const api = fakeApi({
+      listOntologies: vi.fn(async () => [
+        { id: 'acme', label: 'Acme' } as Awaited<ReturnType<Api['listOntologies']>>[number],
+      ]),
+      getOntology: vi.fn(async () => ({
+        id: 'acme',
+        label: 'Acme',
+        versions: [{ version: 1, status: 'ready' }],
+      })) as unknown as Api['getOntology'],
+    });
+    const { last } = setup({ ...mapped, ontologies: [] }, api);
+    const region = screen.getByRole('region', { name: 'Ontologies' });
+    await userEvent.selectOptions(await within(region).findByLabelText('Ontology'), 'acme');
+    await userEvent.selectOptions(await within(region).findByLabelText('Version'), '1');
+    await userEvent.click(within(region).getByRole('button', { name: 'Pin' }));
+    expect(last()?.ontologies).toEqual([{ id: 'acme', version: 1 }]);
+    expect(screen.getByRole('region', { name: 'Ontologies' })).toBeInTheDocument();
+  });
+
+  it('can be browsed read-only: the outline and stepping work, editing does not', async () => {
+    setup(mapped, fakeApi(), undefined, true);
+    const outline = screen.getByRole('navigation', { name: 'Mapping outline' });
+    for (const b of within(outline).getAllByRole('button')) expect(b).toBeEnabled();
+    await open('kind');
+    expect(
+      within(screen.getByRole('group', { name: 'kind' })).getByLabelText('Property'),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next: Table lines' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Remove the mapping' })).toBeDisabled();
+  });
+
+  it('cannot start a mapping read-only', () => {
+    setup(undefined, fakeApi(), undefined, true);
+    expect(screen.getByRole('button', { name: 'Map to ontologies' })).toBeDisabled();
   });
 
   it('lists the preview only in the Workbench', async () => {

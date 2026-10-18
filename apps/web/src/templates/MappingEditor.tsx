@@ -786,6 +786,7 @@ export function MappingEditor({
   semantics,
   onChange,
   preview,
+  readOnly,
 }: {
   api: Api;
   definition: Definition;
@@ -793,9 +794,9 @@ export function MappingEditor({
   onChange: (next: Semantics | undefined) => void;
   /** Workbench only: the project whose dev samples the preview uses. */
   preview?: { projectId: string; dirty?: boolean };
+  /** A published version or a retired type: the outline still opens every item, nothing edits. */
+  readOnly?: boolean;
 }) {
-  const [selected, setSelected] = useState<ItemKey | null>(null);
-  const uid = useId();
   if (!semantics) {
     return (
       <div className="mapping-editor">
@@ -803,12 +804,40 @@ export function MappingEditor({
           Map the outputs to ontology terms to publish the document as RDF. Pin the ontologies the
           brief names, then give each output a property.
         </p>
-        <button type="button" onClick={() => onChange(EMPTY_SEMANTICS)}>
+        <button type="button" disabled={readOnly} onClick={() => onChange(EMPTY_SEMANTICS)}>
           Map to ontologies
         </button>
       </div>
     );
   }
+  return (
+    <MappingOutline
+      api={api}
+      definition={definition}
+      semantics={semantics}
+      onChange={onChange}
+      preview={preview}
+      readOnly={readOnly ?? false}
+    />
+  );
+}
+
+function MappingOutline({
+  api,
+  definition,
+  semantics,
+  onChange,
+  preview,
+  readOnly,
+}: {
+  api: Api;
+  definition: Definition;
+  semantics: Semantics;
+  onChange: (next: Semantics | undefined) => void;
+  preview?: { projectId: string; dirty?: boolean };
+  readOnly: boolean;
+}) {
+  const uid = useId();
   const s: Semantics = {
     ...EMPTY_SEMANTICS,
     ...semantics,
@@ -820,7 +849,13 @@ export function MappingEditor({
   const tables: { id: string; columns?: { id: string; type?: string; enum?: string[] }[] }[] =
     definition.outputs?.tables ?? [];
   const items = outlineItems(s, fields, tables, preview !== undefined);
-  const key = selected && items.some((i) => i.key === selected) ? selected : firstKey(items, s);
+  // The opening item is picked once and kept: finishing it (or pinning the first ontology) must
+  // not move the editor away mid-typing. Only an item that disappears falls back to it again.
+  const [selected, setSelected] = useState<ItemKey>(() => firstKey(items, s));
+  const key = items.some((i) => i.key === selected) ? selected : firstKey(items, s);
+  useEffect(() => {
+    if (key !== selected) setSelected(key);
+  }, [key, selected]);
   const index = items.findIndex((i) => i.key === key);
   const item = items[index]!;
   const prev = items[index - 1];
@@ -1134,7 +1169,10 @@ export function MappingEditor({
               </button>
             </span>
           </header>
-          {body()}
+          {/* The outline and ‹ › stay outside: a read-only mapping can still be browsed. */}
+          <fieldset className="mapping-body" disabled={readOnly}>
+            {body()}
+          </fieldset>
         </section>
       </div>
       <div className="mapping-foot">
@@ -1149,7 +1187,12 @@ export function MappingEditor({
           <strong>{mapped}</strong> of {outputs.length} outputs mapped
           {started > 0 && <span className="muted"> · {started} started</span>}
         </span>
-        <button type="button" className="danger" onClick={() => onChange(undefined)}>
+        <button
+          type="button"
+          className="danger"
+          disabled={readOnly}
+          onClick={() => onChange(undefined)}
+        >
           Remove the mapping
         </button>
       </div>
