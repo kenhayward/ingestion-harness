@@ -24,6 +24,22 @@ from pydantic import BaseModel, ConfigDict, Field
 from .draft_stages import Stage
 from .llm.base import ToolSpec
 from .llm.registry import ModelResolutionError
+from .mapping_memory import (
+    VALUE_NODE_DEFAULTS_PATH,
+    Hit,
+    MemoryEntry,
+    OutputLook,
+    Recall,
+    RememberedAnswer,
+    answer_dict,
+    answer_terms,
+    defaults_key,
+    hint_line,
+    parse_answer,
+    preselect,
+    recall,
+    signature_text,
+)
 from .pipeline import DocumentError, PipelineDeps, check_cancelled
 from .queue import ClaimedJob, JobQueue
 from .retrieval import Candidate, shortlist
@@ -33,7 +49,7 @@ from .tool_loop import Tool, ToolError
 if TYPE_CHECKING:
     from .drafting import DraftParams
     from .llm.base import LLMProvider
-    from .ontology import OntologyStore
+    from .ontology import OntologyStore, Term
 
 #: Terms in one mapping prompt; the worst-ranked candidates are dropped first.
 MAX_MAPPING_TERMS = 300
@@ -220,6 +236,64 @@ MAPPING_SCHEMA = _object(
         },
     }
 )
+
+
+def blank_change(op: str, target: str = "") -> dict[str, Any]:
+    """A flat change with every key of `MAPPING_SCHEMA` present, empty where unused."""
+    props = MAPPING_SCHEMA["properties"]["changes"]["items"]["properties"]
+    out: dict[str, Any] = {}
+    for key, spec in props.items():
+        kind = spec.get("type")
+        out[key] = [] if kind == "array" else False if kind == "boolean" else ""
+    out.update(op=op, target=target, valueAs="literal", confidence="medium")
+    return out
+
+
+def remembered_change(answer: RememberedAnswer, path: str) -> dict[str, Any] | None:
+    """A remembered answer as the flat change the model would have given for `path` (None for
+    an output left unmapped). Value-node defaults (path `#valueNodes`) give only the document
+    change's default keys, to merge into it."""
+    a = answer_dict(answer)
+    form = a["form"]
+    if form == "unmapped":
+        return None
+    if form == "valueNodes":
+        return {
+            "valueLink": a.get("link", ""),
+            "valueProperty": a.get("value", ""),
+            "unitProperty": a.get("unitProperty", ""),
+        }
+    if form == "document":
+        c = blank_change("setDocumentMapping")
+        c.update(documentClass=a["class"], documentIri=a["iri"])
+        return c
+    if form == "table":
+        c = blank_change("putTableMapping", path)
+        c.update(tableLink=a["link"], rowClass=a["class"], rowIri=a.get("iri", ""))
+        return c
+    c = blank_change("putFieldMapping", path)
+    c["valueAs"] = form
+    if form == "node":
+        c.update(
+            property=a.get("link", ""),
+            nodeClass=a["class"],
+            nodeValue=a.get("value", ""),
+            nodeUnit=a.get("unit", ""),
+            nodeUnitProperty=a.get("unitProperty", ""),
+        )
+    elif form == "entity":
+        c.update(property=a["property"], entityClass=a["class"], entityIri=a["iri"])
+    elif form == "concept":
+        c.update(
+            property=a["property"],
+            conceptScheme=a.get("scheme", ""),
+            conceptValues=[{"value": k, "concept": v} for k, v in (a.get("values") or {}).items()],
+            matchByLabel=a.get("match") == "label",
+        )
+    else:
+        c["property"] = a["property"]
+    return c
+
 
 MAPPING_TOOLS_NOTE = """
 
@@ -477,6 +551,8 @@ def convert_mapping(
         evidence = [str(e) for e in c.get("evidence") or [] if str(e).strip()]
         if evidence:
             out["evidence"] = evidence
+        if isinstance(c.get("remembered"), dict):
+            out["remembered"] = c["remembered"]
         if path is not None:
             alternatives = [
                 {"iri": cand.iri, "label": cand.label, "score": cand.score}
@@ -1091,11 +1167,32 @@ def run_mapping(
                         "ontologies": [f"{i} v{v}" for i, v in versions],
                     },
                 )
-    shortlists = _cap(
-        stage_shortlists(
-            store, versions, outputs, queries, vectors, embedder.model_ref if embedder else None
+    remembered_ = remember(
+        deps, versions, outputs, draft,
+        external=deps.models.location(provider.name) == "external", embedder=embedder,
+        notes=notes,
+    )  # fmt: skip
+    if remembered_.embedded_externally and embedder is not None:
+        queue.event(
+            job.id,
+            "info",
+            "external model call",
+            {
+                "stage": "mapping",
+                "purpose": "embedding remembered mappings",
+                "model": embedder.model_ref,
+                "entries": remembered_.embedded_externally,
+            },
         )
-    )
+    shortlists = _cap(
+        _with_candidates(
+            stage_shortlists(
+                store, versions, outputs, queries, vectors,
+                embedder.model_ref if embedder else None,
+            ),
+            remembered_,
+        )
+    )  # fmt: skip
 
     context = mapping_context(
         brief_text=drafting._brief_text(params.brief),
@@ -1103,7 +1200,7 @@ def run_mapping(
         draft=draft,
         observed=observed,
         shortlists=shortlists,
-    )
+    ) + remembered_context(remembered_, outputs)
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":
         queue.event(
@@ -1141,8 +1238,9 @@ def run_mapping(
 
     def check(data: dict[str, Any]) -> list[str]:
         return convert_mapping(
-            data, draft, inputs, shortlists, local_namespace=local_namespace, searched=chosen()
-        )[1]
+            with_remembered(data, remembered_), draft, inputs, shortlists,
+            local_namespace=local_namespace, searched=chosen(),
+        )[1]  # fmt: skip
 
     limit = drafting.output_limit(deps, model_ref)
     result = drafting.ask(
@@ -1161,13 +1259,16 @@ def run_mapping(
         checkpoint=lambda: check_cancelled(job, queue),
     )
     body, _ = convert_mapping(
-        result.data,
+        with_remembered(result.data, remembered_),
         draft,
         inputs,
         shortlists,
         local_namespace=local_namespace,
         searched=chosen(),
     )
+    if remembered_.changes:
+        n = len(remembered_.changes)
+        notes.append(f"{n} output{'' if n == 1 else 's'} mapped from remembered mappings.")
     body["notes"] = "\n".join(n for n in [body["notes"].strip(), *notes] if n)
     last = result.attempts[-1]
     output = {
@@ -1185,3 +1286,243 @@ def run_mapping(
         "application/json",
     )
     return output
+
+
+# --- mapping memory (docs/design/mapping-memory.md) ----------------------------------------------
+
+
+@dataclass
+class Remembered:
+    """What the mapping memory gives a run: the answers pre-selected per output (as flat changes
+    carrying their provenance), hints for the outputs it only recalls, the candidates it adds to
+    each output's short list and the terms rejected for it."""
+
+    changes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    defaults: dict[str, Any] = field(default_factory=dict)
+    hints: dict[str, str] = field(default_factory=dict)
+    candidates: dict[str, list[Candidate]] = field(default_factory=dict)
+    rejected: dict[str, set[str]] = field(default_factory=dict)
+    #: Signatures embedded with an external embedding model (logged as an external call).
+    embedded_externally: int = 0
+
+    @property
+    def empty(self) -> bool:
+        return not (self.changes or self.defaults or self.hints or self.candidates or self.rejected)
+
+
+def _looks(outputs: list[OutputSpec], draft: dict[str, Any]) -> list[OutputLook]:
+    tables = {
+        t["id"]: t.get("name") or t["id"] for t in (draft.get("outputs") or {}).get("tables") or []
+    }
+    looks = []
+    for o in outputs:
+        table = tables.get(o.path.split(".", 1)[0]) if o.kind == "column" else None
+        looks.append(OutputLook(o.path, o.kind, o.name, o.description, o.type, table))
+    return looks
+
+
+def _main_terms(answer: dict[str, Any]) -> set[str]:
+    """The term that makes an answer what it is (removed from the options when rejected)."""
+    form = answer.get("form")
+    if form in ("node", "document", "table"):
+        return {answer["class"]}
+    return {answer["property"]} if answer.get("property") else set()
+
+
+def remember(
+    deps: PipelineDeps,
+    versions: list[tuple[str, int]],
+    outputs: list[OutputSpec],
+    draft: dict[str, Any],
+    *,
+    external: bool,
+    embedder: _Embedder | None,
+    notes: list[str],
+) -> Remembered:
+    """Recall the mapping memory for a run's outputs and choose what to pre-select."""
+    memory, store = deps.mapping_memory, deps.ontologies
+    if memory is None or store is None:
+        return Remembered()
+    ontology_ids = sorted({i for i, _ in versions})
+    entries = memory.entries(ontology_ids)
+    if not entries:
+        return Remembered()
+    terms: dict[str, Term | None] = {}
+
+    def term_of(iri: str) -> Term | None:
+        if iri not in terms:
+            terms[iri] = store.term(versions, iri)
+        return terms[iri]
+
+    def usable(e: MemoryEntry) -> bool:
+        found = [term_of(t) for t in answer_terms(e.answer)]
+        return all(t is not None and not t.deprecated for t in found)
+
+    looks = _looks(outputs, draft)
+    output_vectors: dict[str, list[float]] = {}
+    entry_vectors: dict[str, list[float]] = {}
+    embedded = 0
+    if embedder is not None:
+        embedder_external = deps.models.location(embedder.provider.name) == "external"
+        try:
+            texts = [signature_text(o.name, o.description, o.table) for o in looks]
+            output_vectors = dict(
+                zip(
+                    [o.path for o in looks],
+                    embedder.provider.embed(embedder.model_id, texts),
+                    strict=True,
+                )
+            )
+            entry_vectors = memory.vectors(embedder.model_ref, [e.id for e in entries])
+            missing = [
+                e for e in entries
+                if e.id not in entry_vectors and (e.shareable or not embedder_external)
+            ]  # fmt: skip
+            if missing:
+                made = embedder.provider.embed(
+                    embedder.model_id,
+                    [signature_text(e.name, e.description) for e in missing],
+                )
+                fresh = {e.id: list(v) for e, v in zip(missing, made, strict=True)}
+                memory.store_vectors(embedder.model_ref, fresh)
+                entry_vectors.update(fresh)
+                embedded = len(fresh) if embedder_external else 0
+        except Exception as exc:  # an outage costs the semantic half of the recall, never the run
+            notes.append(f"Remembered mappings were recalled by name only: {exc}.")
+            output_vectors, entry_vectors = {}, {}
+    recalled = recall(
+        entries, looks, usable=usable, external=external,
+        output_vectors=output_vectors, entry_vectors=entry_vectors,
+    )  # fmt: skip
+    out = Remembered(embedded_externally=embedded)
+    for path, found in recalled.items():
+        if found.rejected:
+            out.rejected[path] = set().union(*(_main_terms(e.answer) for e in found.rejected))
+        cands: list[Candidate] = []
+        for h in [*found.exact, *found.fuzzy]:
+            for iri in answer_terms(h.entry.answer):
+                t = term_of(iri)
+                if t is not None and all(c.iri != iri for c in cands):
+                    cands.append(
+                        Candidate(
+                            t.iri, t.kind, t.label, t.definition, t.parents, t.domain, t.range,
+                            1.0, frozenset({"remembered"}),
+                        )
+                    )  # fmt: skip
+        if cands:
+            out.candidates[path] = cands
+        choice = preselect(found)
+        change = (
+            remembered_change(parse_answer(choice.entry.answer), path)
+            if choice is not None
+            else None
+        )
+        if choice is not None and change is not None:
+            recipes = len({v.template_id for v in choice.entry.votes})
+            change.update(
+                confidence=choice.confidence,
+                reason=(
+                    f"Remembered: accepted in {recipes} recipe{'' if recipes == 1 else 's'}"
+                    + (" and confirmed" if choice.entry.status == "confirmed" else "")
+                ),
+                remembered={
+                    "entryId": choice.entry.id,
+                    "votes": recipes,
+                    "status": "confirmed" if choice.entry.status == "confirmed" else "learned",
+                },
+            )
+            out.changes[path] = change
+        else:
+            hint = hint_line(found, external=external)
+            if hint:
+                out.hints[path] = hint
+    # The value-node defaults remembered for the same pinned ontologies.
+    defaults = [
+        e for e in entries
+        if e.signature_key == defaults_key(ontology_ids) and e.status != "rejected" and usable(e)
+        and (not external or e.shareable)
+    ]  # fmt: skip
+    best = preselect(Recall(exact=[Hit(e, 1.0, True) for e in defaults]))
+    if best is not None:
+        keys = remembered_change(parse_answer(best.entry.answer), VALUE_NODE_DEFAULTS_PATH)
+        out.defaults = {k: v for k, v in (keys or {}).items() if v}
+    return out
+
+
+def remembered_context(remembered_: Remembered, outputs: list[OutputSpec]) -> str:
+    """The prompt blocks for the memory: outputs already mapped, and what was accepted before."""
+    if remembered_.empty:
+        return ""
+    blocks = []
+    order = [o.path for o in outputs]
+    decided = [p for p in order if p in remembered_.changes]
+    if decided:
+        lines = [
+            f"- {p or 'document'}: {remembered_.changes[p]['reason'].lower()}" for p in decided
+        ]
+        blocks.append(
+            "<already_mapped>\nThese outputs are mapped from remembered mappings designers "
+            "accepted; leave them out of your answer (a table here is mapped: map its columns "
+            "as usual).\n" + "\n".join(lines) + "\n</already_mapped>"
+        )
+    hinted = [p for p in order if p in remembered_.hints]
+    if hinted:
+        lines = [f"- {p or 'document'}: {remembered_.hints[p]}" for p in hinted]
+        blocks.append(
+            "<accepted_before>\nWhat designers accepted for outputs like these in other recipes "
+            "(a hint, not a rule):\n" + "\n".join(lines) + "\n</accepted_before>"
+        )
+    return "\n\n" + "\n\n".join(blocks) if blocks else ""
+
+
+def with_remembered(data: dict[str, Any], remembered_: Remembered) -> dict[str, Any]:
+    """The model's answer with the pre-selected changes: the model's own changes for those
+    outputs dropped, the remembered ones appended (so the model's change indexes stay theirs),
+    the document's remembered class and the remembered value-node defaults filled in."""
+    if remembered_.empty:
+        return data
+    changes = []
+    document = remembered_.changes.get("")
+    for c in data.get("changes") or []:
+        target = str(c.get("target") or "")
+        if c.get("op") == "setDocumentMapping":
+            merged = dict(c)
+            if document is not None:
+                merged.update(
+                    documentClass=document["documentClass"],
+                    documentIri=document["documentIri"],
+                    remembered=document["remembered"],
+                )
+            for k, v in remembered_.defaults.items():
+                if not str(merged.get(k) or "").strip():
+                    merged[k] = v
+            changes.append(merged)
+            continue
+        if c.get("op") in ("putFieldMapping", "putTableMapping") and target in remembered_.changes:
+            continue
+        changes.append(c)
+    has_document = any(c.get("op") == "setDocumentMapping" for c in changes)
+    for path, c in remembered_.changes.items():
+        if path == "":
+            if not has_document:
+                changes.append({**c, **remembered_.defaults})
+            continue
+        changes.append(c)
+    return {**data, "changes": changes}
+
+
+def _with_candidates(
+    shortlists: dict[str, list[Candidate]], remembered_: Remembered
+) -> dict[str, list[Candidate]]:
+    """The short lists with the remembered candidates first and the rejected terms removed."""
+    if remembered_.empty:
+        return shortlists
+    out = {}
+    for path in [*shortlists, *(p for p in remembered_.candidates if p not in shortlists)]:
+        rejected = remembered_.rejected.get(path, set())
+        mine = remembered_.candidates.get(path, [])
+        rest = [c for c in shortlists.get(path, []) if all(c.iri != m.iri for m in mine)]
+        kept = [c for c in [*mine, *rest] if c.iri not in rejected]
+        if kept:
+            out[path] = kept
+    return out

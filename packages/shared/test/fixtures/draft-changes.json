@@ -1020,7 +1020,8 @@
         },
         "reason": "r",
         "confidence": "high",
-        "evidence": ["Acme Ltd"]
+        "evidence": ["Acme Ltd"],
+        "remembered": { "entryId": "m-1", "votes": 3, "status": "confirmed" }
       }
     ],
     "expected": {

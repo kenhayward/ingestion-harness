@@ -36,14 +36,24 @@ const reason = z.string();
  */
 const answers = z.array(z.string().min(1)).optional();
 /**
- * Mapping stage (ADR 0011): how sure the model is, the observed values behind a change, and
- * the shortlisted terms it chose from. Shown on the proposal, never written to the draft.
+ * Mapping stage (ADR 0011): how sure the model is, the observed values behind a change, the
+ * shortlisted terms it chose from, and the remembered mapping it came from. Shown on the
+ * proposal, never written to the draft.
  */
 const mappingMeta = {
   confidence: z.enum(['high', 'medium', 'low']).optional(),
   evidence: z.array(z.string()).optional(),
   alternatives: z
     .array(z.object({ iri: z.string(), label: z.string(), score: z.number() }).strict())
+    .optional(),
+  /** The change came from the mapping memory (docs/design/mapping-memory.md): its entry. */
+  remembered: z
+    .object({
+      entryId: z.string(),
+      votes: z.number().int(),
+      status: z.enum(['learned', 'confirmed']),
+    })
+    .strict()
     .optional(),
 };
 export const DraftChangeSchema = z.discriminatedUnion('op', [
