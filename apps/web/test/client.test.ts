@@ -1097,3 +1097,38 @@ describe('http api: ontology suggestions', () => {
     expect(calls[1]![1]?.method).toBe('POST');
   });
 });
+
+describe('http api: mapping memory', () => {
+  it('lists with filters, reviews, adds and deletes remembered mappings', async () => {
+    const calls: [string, string, unknown][] = [];
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push([init?.method ?? 'GET', url, init?.body ? JSON.parse(String(init.body)) : null]);
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+      return respond(200, { entries: [], total: 0, labels: {} });
+    });
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    await api.listMappingMemory({ status: 'review', q: 'batch no', page: 2 });
+    await api.listMappingMemory({ term: 'https://x/a#b' });
+    await api.getMappingMemoryEntry('m-1');
+    await api.reviewMappingMemoryEntry('m-1', { status: 'confirmed' });
+    await api.addMappingMemoryEntry({
+      kind: 'column',
+      name: 'Lot',
+      answer: { form: 'literal', property: 'https://x/p' },
+    });
+    await api.deleteMappingMemoryEntry('m-1');
+    expect(calls).toEqual([
+      ['GET', '/api/ontologies/memory?status=review&q=batch+no&page=2', null],
+      ['GET', '/api/ontologies/memory?term=https%3A%2F%2Fx%2Fa%23b', null],
+      ['GET', '/api/ontologies/memory/m-1', null],
+      ['PATCH', '/api/ontologies/memory/m-1', { status: 'confirmed' }],
+      [
+        'POST',
+        '/api/ontologies/memory',
+        { kind: 'column', name: 'Lot', answer: { form: 'literal', property: 'https://x/p' } },
+      ],
+      ['DELETE', '/api/ontologies/memory/m-1', null],
+    ]);
+  });
+});

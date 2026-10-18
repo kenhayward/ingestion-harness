@@ -1,3 +1,4 @@
+import { OntologyMemoryHelp } from './OntologyMemoryHelp.js';
 import type { ReactNode } from 'react';
 import {
   AdministrationHelp,
@@ -86,6 +87,7 @@ export const HELP_TOPICS = {
   ontologyProperties: { title: 'Properties', body: <OntologyPropertiesHelp /> },
   ontologyConcepts: { title: 'Concepts and schemes', body: <OntologyConceptsHelp /> },
   ontologyShapes: { title: 'Shapes', body: <OntologyShapesHelp /> },
+  ontologyMemory: { title: 'Remembered mappings', body: <OntologyMemoryHelp /> },
   administration: { title: 'Administration', body: <AdministrationHelp /> },
   adminModels: { title: 'Models and model choices', body: <AdminModelsHelp /> },
   adminLinkedData: { title: 'Linked data settings', body: <AdminLinkedDataHelp /> },

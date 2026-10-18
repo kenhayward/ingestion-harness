@@ -691,3 +691,17 @@ describe('OntologiesPage help', () => {
     expect(screen.getByRole('dialog', { name: 'The ontology library' })).toBeInTheDocument();
   });
 });
+
+describe('OntologiesPage: remembered mappings', () => {
+  it('opens the remembered mappings tab and its help', async () => {
+    const api = page();
+    await userEvent.click(await screen.findByRole('tab', { name: 'Remembered mappings' }));
+    expect(api.listMappingMemory).toHaveBeenCalledWith({ status: 'review', q: undefined });
+    expect(screen.queryByRole('region', { name: 'Ontology Process validation' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Help: Remembered mappings' }));
+    expect(screen.getByRole('dialog', { name: 'Remembered mappings' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Library' }));
+    expect(await screen.findByRole('region', { name: /Ontology/ })).toBeTruthy();
+  });
+});

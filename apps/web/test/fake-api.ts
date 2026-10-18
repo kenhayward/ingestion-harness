@@ -411,6 +411,17 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       throw new Error('testPublishTarget not stubbed');
     }),
     listOntologies: vi.fn(async () => []),
+    listMappingMemory: vi.fn(async () => ({ entries: [], total: 0, labels: {} })),
+    getMappingMemoryEntry: vi.fn(async () => {
+      throw new Error('entry not found');
+    }),
+    reviewMappingMemoryEntry: vi.fn(async () => {
+      throw new Error('entry not found');
+    }),
+    addMappingMemoryEntry: vi.fn(async () => {
+      throw new Error('not in the ontology library');
+    }),
+    deleteMappingMemoryEntry: vi.fn(async () => {}),
     getLinkedData: vi.fn(async () => ({
       settings: {
         customerName: '',

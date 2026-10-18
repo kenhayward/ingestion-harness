@@ -5612,3 +5612,86 @@ img.avatar {
 .admin-header > .help-button {
   align-self: center;
 }
+
+/* Ontologies: Remembered mappings (docs/design/mapping-memory.md). */
+.ontologies-tabs {
+  margin: 12px 0 16px;
+}
+.memory-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 12px;
+}
+.memory-head > p {
+  flex: 1 1 320px;
+  margin: 0;
+}
+.memory-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.memory-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.memory-table th,
+.memory-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 8px;
+  border-top: 1px solid var(--ih-border);
+}
+.memory-table summary {
+  cursor: pointer;
+}
+.memory-table details ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.memory-stale {
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+}
+.memory-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+}
+.memory-status.status-confirmed {
+  background: var(--ih-ok-bg);
+  color: var(--ih-ok-fg);
+}
+.memory-status.status-rejected {
+  background: var(--ih-danger-bg);
+  color: var(--ih-danger-fg);
+}
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+@media (max-width: 760px) {
+  .memory-table thead {
+    display: none;
+  }
+  .memory-table tr,
+  .memory-table td {
+    display: block;
+  }
+  .memory-actions {
+    justify-content: flex-start;
+  }
+}

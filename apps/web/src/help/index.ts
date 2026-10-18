@@ -69,6 +69,7 @@ export const HELP_INDEX: HelpEntry[] = [
       { topic: 'ontologyProperties', label: 'Properties' },
       { topic: 'ontologyConcepts', label: 'Concepts and schemes' },
       { topic: 'ontologyShapes', label: 'Shapes' },
+      { topic: 'ontologyMemory', label: 'Remembered mappings' },
     ],
   },
   {

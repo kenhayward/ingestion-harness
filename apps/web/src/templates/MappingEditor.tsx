@@ -76,7 +76,7 @@ const valueAs = (m: OutputMapping | undefined): ValueAs =>
 export type MappingStatus = 'ok' | 'partial' | 'none' | 'info';
 
 /** What a term search needs: where to look and how to write what it finds. */
-interface TermContext {
+export interface TermContext {
   api: Api;
   pins: Semantics['ontologies'];
   prefixes: Record<string, string>;
@@ -215,7 +215,7 @@ export function outputStatus(
  * A term box: the CURIE or IRI typed in, and *Find a …* that opens a search of the pinned
  * ontologies right under it (no dialog), so the field and its results stay in view together.
  */
-function TermField({
+export function TermField({
   label,
   value,
   want,

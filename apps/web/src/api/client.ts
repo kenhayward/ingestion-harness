@@ -39,6 +39,11 @@ import type {
   TermGroup,
   TermLabels,
   TermLabelsBody,
+  MappingMemoryDetail,
+  MappingMemoryPage,
+  MemoryCreateBody,
+  MemoryListQuery,
+  MemoryPatchBody,
   TermPage,
   Brief,
   BriefBody,
@@ -482,6 +487,14 @@ export interface Api {
   getOntologyTerm(id: string, version: number, iri: string): Promise<TermDetail>;
   /** The readable names of a mapping's terms (the Mapping tab). */
   termLabels(body: TermLabelsBody): Promise<TermLabels>;
+  /** The mapping memory: what designers accepted (docs/design/mapping-memory.md). */
+  listMappingMemory(query?: MemoryListQuery): Promise<MappingMemoryPage>;
+  getMappingMemoryEntry(id: string): Promise<MappingMemoryDetail>;
+  /** Confirm, reject or correct a remembered mapping (any designer). */
+  reviewMappingMemoryEntry(id: string, patch: MemoryPatchBody): Promise<MappingMemoryDetail>;
+  /** Add a remembered mapping by hand (it starts confirmed). */
+  addMappingMemoryEntry(body: MemoryCreateBody): Promise<MappingMemoryDetail>;
+  deleteMappingMemoryEntry(id: string): Promise<void>;
   /** Admin: import an ontology the worker fetches from an allowlisted URL. */
   importOntologyFromUrl(body: OntologyFromUrlBody): Promise<OntologyVersionView>;
   /** Allowed hosts for URL imports and the size limit. */
@@ -1122,6 +1135,31 @@ export function createHttpApi(base = '/api'): Api {
         },
       );
     },
+    listMappingMemory: (query = {}) => {
+      const params = new URLSearchParams();
+      for (const [k, v] of Object.entries(query)) {
+        if (v !== undefined && v !== '') params.set(k, String(v));
+      }
+      const qs = params.toString();
+      return apiFetch(`${base}/ontologies/memory${qs ? `?${qs}` : ''}`).then(
+        json<MappingMemoryPage>,
+      );
+    },
+    getMappingMemoryEntry: (id) =>
+      apiFetch(`${base}/ontologies/memory/${encodeURIComponent(id)}`).then(
+        json<MappingMemoryDetail>,
+      ),
+    reviewMappingMemoryEntry: (id, patch) =>
+      post<MappingMemoryDetail>(
+        `${base}/ontologies/memory/${encodeURIComponent(id)}`,
+        patch,
+        'PATCH',
+      ),
+    addMappingMemoryEntry: (body) => post<MappingMemoryDetail>(`${base}/ontologies/memory`, body),
+    deleteMappingMemoryEntry: (id) =>
+      noContent(
+        apiFetch(`${base}/ontologies/memory/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      ),
     updateOntology: (id, patch) =>
       post<OntologySummary>(`${base}/ontologies/${encodeURIComponent(id)}`, patch, 'PATCH'),
     deleteOntologyVersion: (id, version) =>
