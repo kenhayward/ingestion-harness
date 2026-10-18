@@ -67000,7 +67000,7 @@
         "tags": [
           "Ontologies"
         ],
-        "description": "The readable name of each term a recipe's mapping uses, for the Mapping tab: send\nthe pinned versions, the recipe's prefixes and local terms, and the terms as\nwritten (CURIEs or IRIs, at most 500). Each term is expanded as the\nrecipe check expands it, then named from its local term, else the first pinned\nversion (in the order sent, imports included) holding it. `from` says which:\n`ontology`, `local`, `built-in` (rdf, rdfs, owl, xsd, skos, dcterms, prov;\nno label), `unknown` (in none of them) or `invalid` (an undeclared prefix).\nNothing is checked against readiness: a version that is not indexed names nothing.",
+        "description": "The readable name of each term a recipe's mapping uses, for the Mapping tab: send\nthe pinned versions, the recipe's prefixes and local terms, and the terms as\nwritten (CURIEs or IRIs, at most 500). Each term is expanded as the\nrecipe check expands it, then named from its local term, else the first pinned\nversion (in the order sent, imports included) holding it. `from` says which:\n`ontology`, `local`, `built-in` (rdf, rdfs, owl, xsd, skos, dcterms, prov;\nno label), `unknown` (in none of them) or `invalid` (an undeclared prefix).\nEach name comes with the term's synonyms (`altLabels`) and definition (a local\nterm's own, when it has one), so a reviewer can judge a mapping by what the term means.\nNothing is checked against readiness: a version that is not indexed names nothing.",
         "requestBody": {
           "required": true,
           "content": {
@@ -67047,6 +67047,9 @@
                           "type": "string"
                         },
                         "label": {
+                          "type": "string"
+                        },
+                        "definition": {
                           "type": "string"
                         }
                       },
@@ -67138,6 +67141,18 @@
                           },
                           "deprecated": {
                             "type": "boolean"
+                          },
+                          "altLabels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "definition": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -67146,7 +67161,9 @@
                           "label",
                           "kind",
                           "ontology",
-                          "deprecated"
+                          "deprecated",
+                          "altLabels",
+                          "definition"
                         ]
                       }
                     }
@@ -68719,12 +68736,30 @@
                           },
                           "deprecated": {
                             "type": "boolean"
+                          },
+                          "ontology": {
+                            "type": "string"
+                          },
+                          "altLabels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "definition": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "label",
                           "kind",
-                          "deprecated"
+                          "deprecated",
+                          "ontology",
+                          "altLabels",
+                          "definition"
                         ]
                       }
                     }
@@ -69533,12 +69568,30 @@
                           },
                           "deprecated": {
                             "type": "boolean"
+                          },
+                          "ontology": {
+                            "type": "string"
+                          },
+                          "altLabels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "definition": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "label",
                           "kind",
-                          "deprecated"
+                          "deprecated",
+                          "ontology",
+                          "altLabels",
+                          "definition"
                         ]
                       }
                     }
@@ -70101,12 +70154,30 @@
                           },
                           "deprecated": {
                             "type": "boolean"
+                          },
+                          "ontology": {
+                            "type": "string"
+                          },
+                          "altLabels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "definition": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "label",
                           "kind",
-                          "deprecated"
+                          "deprecated",
+                          "ontology",
+                          "altLabels",
+                          "definition"
                         ]
                       }
                     }
@@ -70909,12 +70980,30 @@
                           },
                           "deprecated": {
                             "type": "boolean"
+                          },
+                          "ontology": {
+                            "type": "string"
+                          },
+                          "altLabels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "definition": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "label",
                           "kind",
-                          "deprecated"
+                          "deprecated",
+                          "ontology",
+                          "altLabels",
+                          "definition"
                         ]
                       }
                     }

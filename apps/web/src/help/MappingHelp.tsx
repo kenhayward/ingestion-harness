@@ -22,6 +22,13 @@ export function MappingHelp() {
         ontology or local term names it, and whether it is deprecated. When no pinned ontology or
         local term has the term, or its prefix is not declared, the box says so.
       </p>
+      <p>
+        Under each term you also see what it means: its synonyms (<em>Also called</em>) and its
+        definition, folded behind <strong>More</strong> when long, and{' '}
+        <strong>Open in Ontologies</strong> to see the term with its parents, domain and range. In a
+        Workbench proposal, each term the model chose it over opens the same way, so you can compare
+        what they mean before you apply the change.
+      </p>
 
       <h3>Ontologies</h3>
       <p>

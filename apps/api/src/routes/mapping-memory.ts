@@ -51,7 +51,14 @@ export async function mappingMemoryRoutes(app: FastifyInstance): Promise<void> {
     const labels: MemoryTermLabels = Object.fromEntries(
       Object.entries(found).map(([iri, f]) => [
         iri,
-        { label: f.label, kind: f.kind, deprecated: f.deprecated },
+        {
+          label: f.label,
+          kind: f.kind,
+          deprecated: f.deprecated,
+          ontology: f.ontology,
+          altLabels: f.altLabels,
+          definition: f.definition,
+        },
       ]),
     );
     const out = entries

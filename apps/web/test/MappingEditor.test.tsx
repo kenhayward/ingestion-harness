@@ -338,6 +338,8 @@ describe('MappingEditor term labels', () => {
     kind: 'object_property',
     ontology: 'acme@1',
     deprecated: false,
+    altLabels: [],
+    definition: null,
   });
   const partly: Semantics = {
     ...mapped,
@@ -345,7 +347,7 @@ describe('MappingEditor term labels', () => {
       sender: { property: 'acme:sentBy' },
       kind: { property: 'acme:kind', concepts: { values: { memo: 'acme:Memo' } } },
     },
-    local: [{ iri: 'acme:Memo', kind: 'concept', label: 'Memo' }],
+    local: [{ iri: 'acme:Memo', kind: 'concept', label: 'Memo', definition: 'A short note.' }],
   };
 
   it('asks once for the name of every term the mapping uses', async () => {
@@ -355,7 +357,7 @@ describe('MappingEditor term labels', () => {
     expect(termLabels).toHaveBeenCalledWith({
       ontologies: [{ id: 'acme', version: 1 }],
       prefixes: { acme: A },
-      local: [{ iri: 'acme:Memo', label: 'Memo' }],
+      local: [{ iri: 'acme:Memo', label: 'Memo', definition: 'A short note.' }],
       terms: ['acme:Letter', 'acme:Memo', 'acme:kind', 'acme:sentBy'],
     });
   });
@@ -363,7 +365,11 @@ describe('MappingEditor term labels', () => {
   it('shows each term by its name in the outline and under its field', async () => {
     const termLabels = vi.fn(async () => ({
       terms: {
-        'acme:sentBy': found('sent by', `${A}sentBy`),
+        'acme:sentBy': {
+          ...found('sent by', `${A}sentBy`),
+          altLabels: ['sender', 'from'],
+          definition: 'Who sent the letter.',
+        },
         'acme:kind': { ...found('kind of letter', `${A}kind`), deprecated: true },
         'acme:Memo': {
           ...found('Memo', `${A}Memo`),
@@ -396,6 +402,15 @@ describe('MappingEditor term labels', () => {
     expect(within(kind).getByText('deprecated')).toBeInTheDocument();
     expect(within(kind).getByText('Memo')).toBeInTheDocument();
     expect(within(kind).getByText('local term')).toBeInTheDocument();
+
+    await open('sender');
+    const sender = screen.getByRole('group', { name: 'sender' });
+    expect(within(sender).getByText('Also called: sender, from')).toBeInTheDocument();
+    expect(within(sender).getByText('Who sent the letter.')).toBeInTheDocument();
+    expect(within(sender).getByRole('link', { name: 'Open in Ontologies' })).toHaveAttribute(
+      'href',
+      `#/ontologies/acme/1/${encodeURIComponent(`${A}sentBy`)}`,
+    );
 
     await open('Document');
     expect(screen.getByText(/Not in the pinned ontologies or the local terms/)).toBeInTheDocument();

@@ -296,7 +296,7 @@ export const TermLabelsBodySchema = z
       .max(50),
     prefixes: z.record(z.string(), z.string()).default({}),
     local: z
-      .array(z.object({ iri: z.string(), label: z.string() }))
+      .array(z.object({ iri: z.string(), label: z.string(), definition: z.string().optional() }))
       .max(MAX_LABEL_TERMS)
       .default([]),
     terms: z.array(z.string().min(1).max(2000)).min(1).max(MAX_LABEL_TERMS),
@@ -318,6 +318,10 @@ export const TermLabelSchema = z.object({
   /** `"<id>@<version>"` of the first pinned version holding it. */
   ontology: z.string().nullable(),
   deprecated: z.boolean(),
+  /** Its synonyms (skos:altLabel and the like); empty when none. */
+  altLabels: z.array(z.string()),
+  /** What it means, as the ontology (or the local term) defines it; null without one. */
+  definition: z.string().nullable(),
 });
 export type TermLabel = z.infer<typeof TermLabelSchema>;
 export const TermLabelsSchema = z.object({ terms: z.record(z.string(), TermLabelSchema) });

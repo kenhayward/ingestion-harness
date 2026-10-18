@@ -240,7 +240,13 @@ describe('term labels (the Mapping tab)', () => {
     await ctx.upload({ id: 'pv', label: 'Process validation' });
     ctx.ontologies.markReady('pv', 1);
     ctx.ontologies.seedTerms('pv', 1, [
-      { iri: `${C}sentBy`, kind: 'object_property', label: 'sent by' },
+      {
+        iri: `${C}sentBy`,
+        kind: 'object_property',
+        label: 'sent by',
+        altLabels: ['sender', 'from'],
+        definition: 'Who sent the letter.',
+      },
       { iri: `${C}Old`, kind: 'class', label: 'Old thing', deprecated: true },
       { iri: `${C}Mine`, kind: 'class', label: 'Shadowed by the local term' },
     ]);
@@ -255,11 +261,18 @@ describe('term labels (the Mapping tab)', () => {
         { id: 'qq', version: 1 },
       ],
       prefixes: { pv: C },
-      local: [{ iri: 'pv:Mine', label: 'My term' }],
+      local: [{ iri: 'pv:Mine', label: 'My term', definition: 'What we call it.' }],
       terms: ['pv:sentBy', `${C}Old`, 'pv:Mine', 'rdfs:label', 'pv:Nope', 'zz:thing'],
     });
     expect(res.statusCode).toBe(200);
-    const none = { label: null, kind: null, ontology: null, deprecated: false };
+    const none = {
+      label: null,
+      kind: null,
+      ontology: null,
+      deprecated: false,
+      altLabels: [],
+      definition: null,
+    };
     expect(res.json()).toEqual({
       terms: {
         'pv:sentBy': {
@@ -269,6 +282,8 @@ describe('term labels (the Mapping tab)', () => {
           kind: 'object_property',
           ontology: 'pv@1',
           deprecated: false,
+          altLabels: ['sender', 'from'],
+          definition: 'Who sent the letter.',
         },
         [`${C}Old`]: {
           from: 'ontology',
@@ -277,8 +292,16 @@ describe('term labels (the Mapping tab)', () => {
           kind: 'class',
           ontology: 'pv@1',
           deprecated: true,
+          altLabels: [],
+          definition: null,
         },
-        'pv:Mine': { ...none, from: 'local', iri: `${C}Mine`, label: 'My term' },
+        'pv:Mine': {
+          ...none,
+          from: 'local',
+          iri: `${C}Mine`,
+          label: 'My term',
+          definition: 'What we call it.',
+        },
         'rdfs:label': {
           ...none,
           from: 'built-in',

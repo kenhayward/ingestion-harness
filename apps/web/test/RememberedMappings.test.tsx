@@ -37,8 +37,22 @@ const page = (entries: MappingMemoryEntry[]): MappingMemoryPage => ({
   entries,
   total: entries.length,
   labels: {
-    [`${E}WaterFraction`]: { label: 'water mass fraction', kind: 'class', deprecated: false },
-    [`${E}batchNumber`]: { label: 'batch number', kind: 'datatype_property', deprecated: false },
+    [`${E}WaterFraction`]: {
+      label: 'water mass fraction',
+      kind: 'class',
+      deprecated: false,
+      ontology: 'afo@1',
+      altLabels: ['water content'],
+      definition: 'The mass of water in a portion of material divided by its total mass.',
+    },
+    [`${E}batchNumber`]: {
+      label: 'batch number',
+      kind: 'datatype_property',
+      deprecated: false,
+      ontology: 'afo@1',
+      altLabels: [],
+      definition: null,
+    },
   },
 });
 
@@ -68,6 +82,19 @@ describe('RememberedMappings', () => {
     expect(within(row).getByText('Used by 2 recipes')).toBeTruthy();
     expect(within(row).getByText('Learned')).toBeTruthy();
     expect(api.listMappingMemory).toHaveBeenCalledWith({ status: 'review', q: undefined });
+  });
+
+  it('says what the answer terms mean', async () => {
+    const api = fakeApi({ listMappingMemory: vi.fn(async () => page([entry()])) });
+    render(<RememberedMappings api={api} />);
+    const row = await screen.findByRole('row', { name: /Water content/ });
+    await userEvent.click(within(row).getByText('What the terms mean'));
+    expect(
+      within(row).getByText(
+        'The mass of water in a portion of material divided by its total mass.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(row).getByText('Also called: water content')).toBeInTheDocument();
   });
 
   it('filters by status', async () => {

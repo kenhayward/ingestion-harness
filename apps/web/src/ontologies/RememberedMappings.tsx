@@ -5,12 +5,15 @@ import type {
   MemoryListQuery,
   MemoryTermLabels,
   RememberedAnswer,
+  TermLabel,
 } from '@ih/shared';
+import { answerTerms } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
+import { TermInfo } from '../ui/TermInfo.js';
 import { TermField, type TermContext } from '../templates/MappingEditor.js';
 import { ANSWER_FIELDS, KIND_WORD, STATUS_LABEL, answerFrom, answerInWords } from './memory.js';
 
@@ -142,6 +145,29 @@ export function RememberedMappings({ api }: { api: Api }) {
                   {answerInWords(e.answer, labels)}
                   <div className="muted">{e.ontologies.join(', ')}</div>
                   {e.stale && <p className="memory-stale">{e.stale}</p>}
+                  {answerTerms(e.answer).some((iri) => labels[iri]) && (
+                    <details className="memory-terms">
+                      <summary>What the terms mean</summary>
+                      {answerTerms(e.answer).map((iri) => {
+                        const l = labels[iri];
+                        return l ? (
+                          <TermInfo
+                            key={iri}
+                            info={{
+                              from: 'ontology',
+                              iri,
+                              label: l.label,
+                              kind: l.kind as TermLabel['kind'],
+                              ontology: l.ontology,
+                              deprecated: l.deprecated,
+                              altLabels: l.altLabels,
+                              definition: l.definition,
+                            }}
+                          />
+                        ) : null;
+                      })}
+                    </details>
+                  )}
                 </td>
                 <td>
                   <details>
