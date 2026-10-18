@@ -38,6 +38,11 @@ curl -u ct-reader:$PASSWORD \
   with the data.
 - **The default graph is the union of all graphs.** A query without `GRAPH` sees everything.
   Use `GRAPH ?g { … }` to learn which document (and type) a statement came from.
+- **Value nodes:** where a recipe maps a measurement to a class (ontologies such as Allotrope and
+  OBI put the meaning in classes), the value sits on a node of that class, linked from its
+  document or table row, holding the value and, when it has one, its unit. Several of a row's
+  values may share a class (minimum and maximum of one quantity): `ct:output` on each node names
+  the recipe output it publishes.
 - `{base}` is your organisation's base IRI, also shown on the Linked data page.
 
 ## Rules for consumers
@@ -91,6 +96,20 @@ PREFIX acme: <https://acme.example/def/>
 SELECT ?batch ?doc WHERE {
   ?batch acme:batchNumber "PV-2301" .
   ?doc ?p ?batch .
+}
+```
+
+Measurements by class, with their unit and the row they belong to (a recipe mapping them as value
+nodes; the link and value properties are the ones the recipe chose):
+
+```sparql
+PREFIX afr: <http://purl.allotrope.org/ontologies/result#>
+PREFIX obo: <http://purl.obolibrary.org/obo/>
+PREFIX qudt: <http://qudt.org/schema/qudt/>
+SELECT ?row ?value ?unit WHERE {
+  ?row obo:OBI_0000299 ?node .
+  ?node a afr:AFR_0002445 ; qudt:numericValue ?value .
+  OPTIONAL { ?node qudt:unit ?unit }
 }
 ```
 

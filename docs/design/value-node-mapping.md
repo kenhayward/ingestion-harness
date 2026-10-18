@@ -1,6 +1,6 @@
 # Value nodes: mapping a value to a node of a class
 
-**Status:** design for review · 2026-10-18 · follows [Proposing ontology mappings automatically](mapping-automation.md)
+**Status:** implemented · 2026-10-18 (plan: [value nodes](../superpowers/plans/2026-10-18-value-nodes.md)) · follows [Proposing ontology mappings automatically](mapping-automation.md)
 ("The measurement pattern: class-centric ontologies") · extends [ADR 0011](../adr/0011-rdf-publishing-and-ontologies.md)
 
 A recipe's `semantics` can publish a field or column as a literal, an entity (`object`) or a SKOS
@@ -131,9 +131,9 @@ existing quoting (TS `field "x"`, Python `field 'x'`); the shared fixture checks
 | Case | Message |
 | --- | --- |
 | no `property` and no `node` | `a property is required` |
-| `node` with `object` or `concepts` | `a node cannot also be an entity or concepts` (the existing `map it to an entity or to concepts, not both` stays as is) |
-| `node`, no `property`, no `valueNodes.link` | `a node needs a link: give its property or set semantics.valueNodes.link` |
-| `node`, no `node.value`, no `valueNodes.value` | `a node needs a value property: give node.value or set semantics.valueNodes.value` |
+| `node` with `object` or `concepts` | `a value node cannot also be an entity or concepts` (the existing `map it to an entity or to concepts, not both` stays as is) |
+| `node`, no `property`, no `valueNodes.link` | `a value node needs a link: give its property or set semantics.valueNodes.link` |
+| `node`, no `node.value`, no `valueNodes.value` | `a value node needs a value property: give node.value or set semantics.valueNodes.value` |
 | `node.unit`, no `node.unitProperty`, no `valueNodes.unitProperty` | `a unit needs a unit property: give node.unitProperty or set semantics.valueNodes.unitProperty` |
 | `node` on a `list` output | `a list cannot be a value node: map its items as literals, entities or concepts` |
 
@@ -232,8 +232,8 @@ for every output that inherits them. Every issue is blocking, like today's kind 
 
 **Range warning** (severity `warning`): a value property whose `rdfs:range` is an XSD type that does
 not fit the output type (`TYPE_RANGES` of `mapping_match.py`: a `date` output on an `xsd:double`
-property). `OntologyRepo.termKinds` returns kinds only, so it grows into `termFacts` (kind and
-range); one query, as now.
+property). `OntologyRepo.termKinds` returns kinds only, so a second lookup, `termRanges`, reads the
+ranges (one query; Memory and Pg). The warning also reads the default value property, at the output's `node.value` path.
 
 **A rdf:Property gotcha:** `ontology._kinds_of` files an `rdf:Property` without a literal range as
 an object property. A vocabulary that declares its value property that way would be refused as a
@@ -296,7 +296,7 @@ defaults alone, so older proposals apply as before. `putFieldMapping`/`putTableM
 - `valueAs: node`: `nodeClass` goes through `term()` (shortlist, searches or local terms) and must
   be of kind `class` (the stage's first kind check, from the candidate's `kind`).
 - `property` may be `""` for a node when a link is known (this answer's `valueLink` or the draft's
-  `valueNodes.link`); otherwise `a node needs a link: …`, the schema's own message.
+  `valueNodes.link`); otherwise `a value node needs a link: give its property or set valueLink on setDocumentMapping`.
 - `nodeValue`, `nodeUnitProperty`: `""` inherits, else `term()`; neither anywhere is an error.
 - `nodeUnit` is not in any shortlist (units are not indexed). It must expand to an IRI under the
   QUDT unit namespace (`http://qudt.org/vocab/unit/`) or a declared local term, have no unsafe
@@ -351,7 +351,7 @@ whichever lands first; the changes below are the same either way.
 
 - **Value as** gains **Node** (a fourth segment; the `<select>` gains `a node` if #241 has not
   landed). Switching to it keeps the property, drops `object`/`concepts`, and opens:
-  - **Class**, with *Find a class*;
+  - **Node class**, with *Find a class*;
   - **Value property**, with *Find a property*; empty shows the recipe default as its placeholder
     (`qudt:numericValue · recipe default`);
   - **Unit**, a CURIE or IRI (`unit:PERCENT`), with the hint *A QUDT unit; not checked against the

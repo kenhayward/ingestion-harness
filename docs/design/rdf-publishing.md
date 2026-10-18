@@ -113,6 +113,8 @@ identifier domain, `https://id.stocks-hayward.com/`.
 {base}graph/ontology/{id}/{version}   an ontology version's graph (TBox)
 {base}{entity}/{key}                  entities from recipe IRI templates (batch, substance, …)
 {base}def/{typeId}/{term}             default vocabulary and recipe-local terms
+{base}doc/{sha256}/{typeId}/value/{field}            a field's value node (value-node-mapping.md)
+{base}doc/{sha256}/{typeId}/{table}/{n}/{column}     a column's value node, row n
 ```
 A recipe may still give an absolute IRI template, for example when a customer mandates a
 separate namespace for one kind of entity. Entity keys must be scoped (for example
