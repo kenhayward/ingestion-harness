@@ -763,12 +763,15 @@ export function GraphPreview({
   projectId,
   dirty,
   heading = true,
+  request = 0,
 }: {
   api: Api;
   projectId: string;
   dirty: boolean;
   /** Its own "Preview" heading; off where the caller already titles it (the mapping inspector). */
   heading?: boolean;
+  /** Starts a preview (and scrolls to it) each time it goes up: the Mapping stage's next step. */
+  request?: number;
 }) {
   const [view, setView] = useState<GraphPreviewView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -802,9 +805,19 @@ export function GraphPreview({
       setBusy(false);
     }
   };
+  const section = useRef<HTMLElement | null>(null);
+  const started = useRef(request);
+  useEffect(() => {
+    if (request === started.current) return;
+    started.current = request;
+    section.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    if (!busy && !dirty) void start();
+    // Only a new request starts a preview, not a change of `busy` or `dirty`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request]);
   const failed = view && !ACTIVE.has(view.status) && view.status !== 'succeeded';
   return (
-    <section className="graph-preview">
+    <section className="graph-preview" ref={section}>
       {heading && <h3>Preview</h3>}
       <p className="muted">
         Renders the saved draft&apos;s mapping over each dev sample&apos;s newest finished test run,
