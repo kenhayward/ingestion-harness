@@ -391,5 +391,26 @@ expert), the local drafting model `qwen3.8-27b-mtp`, tools on, a base IRI set.
   unmapped, says why and runs the next one, and `--details` lists each output's gold answer beside
   every matcher's pick.
 
+### A larger local model: Nemotron 3.5 Super (2026-10-18)
+
+The same gold with `nvidia/nemotron-3.5-super-vl` (IQ4_XS, LM Studio, about 250 tokens/s prompt
+processing and 21 tokens/s decode, its reasoning at the server's default):
+
+| Matcher | Model | Hit@1 | Precision | Recall | Value as | Class | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| per-output | qwen3.8-27b-mtp | 77% | 77% | 98% | 29% | 0/35 | 209 s |
+| per-output | Nemotron 3.5 Super | 81% | 82% | 95% | 41% | 0/35 | 4,066 s |
+| current (one answer) | Nemotron 3.5 Super | stopped: 20,000 reasoning tokens in 16 minutes, no answer and no tool call | | | | | |
+
+- **A little better, not different.** Nemotron left two more `<` qualifier columns correctly
+  unmapped and chose `entity` more often, but chose no class either: the class score is the
+  format's limit, not the model's.
+- **About 19 times slower.** Each enum choice took 1,600 to 8,300 tokens of reasoning (3 to 7
+  minutes) where the 27B model took about 14 seconds. On the stage's one long answer its reasoning
+  never ended. Reasoning effort cannot be set from CT Studio for OpenAI-compatible endpoints; it is
+  the server's setting.
+- **For mapping, the 27B model stays the local choice.** The lever is the measurement pattern, then
+  a re-run of both models.
+
 Still to do: a frontier model on the same gold, and an expert's check of the gold's `# CHECK`
 picks.
