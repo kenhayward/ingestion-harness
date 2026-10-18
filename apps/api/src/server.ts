@@ -24,6 +24,8 @@ import { migrate } from './db/migrate.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
+import { captureDeps, reconcileAll } from './mapping-memory/capture.js';
+import { PgMappingMemoryRepo } from './mapping-memory/pg.js';
 import { PgGitHubSyncRepo } from './github-sync/pg.js';
 import { HttpGitHub } from './profile/github.js';
 import { PgProfileRepo } from './profile/pg.js';
@@ -107,6 +109,7 @@ if (config.LINKED_DATA_CUSTOMER) {
 
 const store = new S3ObjectStore(s3);
 const ontologies = new PgOntologyRepo(makePool(2));
+const mappingMemory = new PgMappingMemoryRepo(makePool(2));
 const githubSync = new PgGitHubSyncRepo(makePool(2));
 const buckets = {
   inbox: config.S3_BUCKET_INBOX,
@@ -162,6 +165,7 @@ const app = await buildApp({
   s3Keys,
   llm: new PgLlmConfigRepo(makePool(2)),
   ontologies,
+  mappingMemory,
   linkedData,
   maintenance,
   ontologyFetch: {
@@ -253,3 +257,7 @@ setInterval(() => void pruneSignIns(), 3_600_000).unref();
 if (s3Keys) stopReconciler = startReconciler(s3Keys, app.log);
 // Fill the project list cache in the background (a cold cache takes seconds at scale).
 warmListCache(app).catch((err) => app.log.warn({ err }, 'project list cache warm-up failed'));
+// The mapping memory's backfill and repair: every recipe's votes recorded again.
+reconcileAll(captureDeps(app.deps)).catch((err) =>
+  app.log.warn({ err }, 'mapping memory reconcile failed'),
+);

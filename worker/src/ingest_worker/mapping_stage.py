@@ -566,6 +566,8 @@ def convert_mapping(
     typed: list[dict[str, Any]] = []
     tables: dict[str, dict[str, Any]] = {}
     pending_columns: list[tuple[int, str, str, dict[str, Any]]] = []
+    # Each table's typed change, for its columns' remembered provenance (`rememberedColumns`).
+    table_changes: dict[str, dict[str, Any]] = {}
     for i, c in enumerate(changes):
         where = f"changes[{i}]"
         op = c.get("op")
@@ -648,7 +650,10 @@ def convert_mapping(
             mapping["columns"] = {}
             tables[target] = mapping
             chosen = {str(c.get("tableLink")), str(c.get("rowClass"))}
-            typed.append({"op": op, "table": target, "mapping": mapping, **meta(c, target, chosen)})
+            table_changes[target] = {
+                "op": op, "table": target, "mapping": mapping, **meta(c, target, chosen),
+            }  # fmt: skip
+            typed.append(table_changes[target])
         elif op == "putFieldMapping":
             spec = outputs.get(target)
             if spec is None or spec.kind not in ("field", "column"):
@@ -681,19 +686,23 @@ def convert_mapping(
                 "columns": {**(existing_tables[table].get("columns") or {}), column: mapping},
             }
             tables[table] = merged
-            typed.append(
-                {
-                    "op": "putTableMapping",
-                    "table": table,
-                    "mapping": merged,
-                    "reason": changes[i].get("reason", ""),
-                    "confidence": _confidence(changes[i]),
-                }
-            )
+            table_changes[table] = {
+                "op": "putTableMapping",
+                "table": table,
+                "mapping": merged,
+                "reason": changes[i].get("reason", ""),
+                "confidence": _confidence(changes[i]),
+            }
+            typed.append(table_changes[table])
         else:
             errors.append(
                 f"changes[{i}]: map table {table} first (putTableMapping), then its columns"
             )
+            continue
+        if isinstance(changes[i].get("remembered"), dict) and table in table_changes:
+            table_changes[table].setdefault("rememberedColumns", {})[column] = changes[i][
+                "remembered"
+            ]
 
     typed.extend(
         {

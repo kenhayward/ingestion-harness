@@ -1,3 +1,4 @@
+import { MemoryMappingMemoryRepo } from '../src/mapping-memory/repo.js';
 import { DocumentSpecSchema, TemplateSchema, type Role } from '@ih/shared';
 import type { FastifyInstance } from 'fastify';
 import { MemoryAccessRepo, type AccessRepo } from '../src/access/repo.js';
@@ -93,6 +94,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
   const workbench = new MemoryWorkbenchRepo(repo, templates, githubSync);
   const llm = new MemoryLlmConfigRepo();
   const ontologies = new MemoryOntologyRepo();
+  const mappingMemory = new MemoryMappingMemoryRepo();
   const usedRepo = (deps.repo ?? repo) as MemoryRepo;
   const usedTemplates = (deps.templates ?? templates) as MemoryTemplateRepo;
   const s3KeyRepo = new MemoryS3KeyRepo();
@@ -163,6 +165,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     githubSync,
     llm,
     ontologies,
+    mappingMemory,
     ontologyFetch: { hosts: ['w3id.org'], maxBytes: 104857600 },
     linkedData: new MemoryLinkedDataRepo(),
     maintenance: new MemoryMaintenanceRepo(),
@@ -195,6 +198,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     githubSync: (deps.githubSync ?? githubSync) as MemoryGitHubSyncRepo,
     llm: llmRepo,
     ontologies: ontologyRepo,
+    mappingMemory: (deps.mappingMemory ?? mappingMemory) as MemoryMappingMemoryRepo,
   };
 }
 

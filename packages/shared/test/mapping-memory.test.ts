@@ -4,6 +4,7 @@ import answers from './fixtures/remembered-answers.json' with { type: 'json' };
 import {
   answerKey,
   answersOf,
+  defaultsKey,
   answerTerms,
   GENERIC_NAMES,
   RememberedAnswerSchema,
@@ -61,5 +62,11 @@ describe('answersOf (shared fixture remembered-answers.json)', () => {
       'x:A',
       'x:p',
     ]);
+  });
+});
+
+describe('defaultsKey', () => {
+  it('keys value-node defaults by the pinned ontologies, as the worker does', () => {
+    expect(defaultsKey(['obi', 'afo', 'afo'])).toBe('defaults|afo obi');
   });
 });

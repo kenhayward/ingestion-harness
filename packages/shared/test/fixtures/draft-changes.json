@@ -1755,7 +1755,8 @@
             }
           }
         },
-        "reason": "r"
+        "reason": "r",
+        "rememberedColumns": { "sku": { "entryId": "m-2", "votes": 1, "status": "learned" } }
       }
     ],
     "expected": {

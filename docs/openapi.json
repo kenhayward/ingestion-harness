@@ -38258,6 +38258,57 @@
                                               ],
                                               "additionalProperties": false
                                             }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            }
                                           }
                                         },
                                         "required": [
@@ -38404,6 +38455,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -38581,6 +38683,57 @@
                                               ],
                                               "additionalProperties": false
                                             }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            }
                                           }
                                         },
                                         "required": [
@@ -38647,6 +38800,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -38743,6 +38947,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -42895,6 +43150,57 @@
                                                 ],
                                                 "additionalProperties": false
                                               }
+                                            },
+                                            "remembered": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "rememberedColumns": {
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "entryId": {
+                                                    "type": "string"
+                                                  },
+                                                  "votes": {
+                                                    "type": "integer"
+                                                  },
+                                                  "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "learned",
+                                                      "confirmed"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "entryId",
+                                                  "votes",
+                                                  "status"
+                                                ],
+                                                "additionalProperties": false
+                                              }
                                             }
                                           },
                                           "required": [
@@ -43041,6 +43347,57 @@
                                                   "iri",
                                                   "label",
                                                   "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "remembered": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "rememberedColumns": {
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "entryId": {
+                                                    "type": "string"
+                                                  },
+                                                  "votes": {
+                                                    "type": "integer"
+                                                  },
+                                                  "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "learned",
+                                                      "confirmed"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "entryId",
+                                                  "votes",
+                                                  "status"
                                                 ],
                                                 "additionalProperties": false
                                               }
@@ -43218,6 +43575,57 @@
                                                 ],
                                                 "additionalProperties": false
                                               }
+                                            },
+                                            "remembered": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "rememberedColumns": {
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "entryId": {
+                                                    "type": "string"
+                                                  },
+                                                  "votes": {
+                                                    "type": "integer"
+                                                  },
+                                                  "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "learned",
+                                                      "confirmed"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "entryId",
+                                                  "votes",
+                                                  "status"
+                                                ],
+                                                "additionalProperties": false
+                                              }
                                             }
                                           },
                                           "required": [
@@ -43284,6 +43692,57 @@
                                                   "iri",
                                                   "label",
                                                   "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "remembered": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "rememberedColumns": {
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "entryId": {
+                                                    "type": "string"
+                                                  },
+                                                  "votes": {
+                                                    "type": "integer"
+                                                  },
+                                                  "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "learned",
+                                                      "confirmed"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "entryId",
+                                                  "votes",
+                                                  "status"
                                                 ],
                                                 "additionalProperties": false
                                               }
@@ -43380,6 +43839,57 @@
                                                   "iri",
                                                   "label",
                                                   "score"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "remembered": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            },
+                                            "rememberedColumns": {
+                                              "type": "object",
+                                              "additionalProperties": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "entryId": {
+                                                    "type": "string"
+                                                  },
+                                                  "votes": {
+                                                    "type": "integer"
+                                                  },
+                                                  "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "learned",
+                                                      "confirmed"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "entryId",
+                                                  "votes",
+                                                  "status"
                                                 ],
                                                 "additionalProperties": false
                                               }
@@ -45266,6 +45776,57 @@
                                               ],
                                               "additionalProperties": false
                                             }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            }
                                           }
                                         },
                                         "required": [
@@ -45412,6 +45973,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -45589,6 +46201,57 @@
                                               ],
                                               "additionalProperties": false
                                             }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            }
                                           }
                                         },
                                         "required": [
@@ -45655,6 +46318,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -45751,6 +46465,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -47302,6 +48067,57 @@
                                               ],
                                               "additionalProperties": false
                                             }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            }
                                           }
                                         },
                                         "required": [
@@ -47448,6 +48264,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -47625,6 +48492,57 @@
                                               ],
                                               "additionalProperties": false
                                             }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
+                                              ],
+                                              "additionalProperties": false
+                                            }
                                           }
                                         },
                                         "required": [
@@ -47691,6 +48609,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -47787,6 +48756,57 @@
                                                 "iri",
                                                 "label",
                                                 "score"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "remembered": {
+                                            "type": "object",
+                                            "properties": {
+                                              "entryId": {
+                                                "type": "string"
+                                              },
+                                              "votes": {
+                                                "type": "integer"
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "learned",
+                                                  "confirmed"
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "entryId",
+                                              "votes",
+                                              "status"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "rememberedColumns": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "object",
+                                              "properties": {
+                                                "entryId": {
+                                                  "type": "string"
+                                                },
+                                                "votes": {
+                                                  "type": "integer"
+                                                },
+                                                "status": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "learned",
+                                                    "confirmed"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "entryId",
+                                                "votes",
+                                                "status"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -67201,6 +68221,3061 @@
                     "error"
                   ],
                   "description": "No such ontology or version."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ontologies/memory": {
+      "get": {
+        "operationId": "listMappingMemory",
+        "summary": "Remembered mappings",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "The mappings designers accepted in recipes, one entry per kind of output and\nanswer, most used first: its wording, the answer (full IRIs, labelled in\n`labels`), the recipes voting for it, refusals and its review. `status`:\n`review` (learned, not yet confirmed), `confirmed`, `rejected` or `all`\n(default); `ontology`, `term` (an IRI the answer uses) and `q` (wording) filter.\nAn entry is `stale` when a term is missing or deprecated in the newest version of\nits ontology; entries of retired ontologies are left out.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "ontology",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "review",
+                "confirmed",
+                "rejected",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "term",
+            "required": false,
+            "description": "Only entries that use this IRI."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "pageSize",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of entries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "document",
+                              "field",
+                              "column",
+                              "table"
+                            ]
+                          },
+                          "signatureKey": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "The wording of the output it was accepted for."
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "unit": {
+                            "type": "string"
+                          },
+                          "answer": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "literal"
+                                    ]
+                                  },
+                                  "property": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "form",
+                                  "property"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "entity"
+                                    ]
+                                  },
+                                  "property": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "class": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "iri": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "label": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "form",
+                                  "property",
+                                  "class",
+                                  "iri"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "concept"
+                                    ]
+                                  },
+                                  "property": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "scheme": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "values": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "match": {
+                                    "type": "string",
+                                    "enum": [
+                                      "label"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "form",
+                                  "property"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "node"
+                                    ]
+                                  },
+                                  "link": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "class": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "value": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "unit": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "unitProperty": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "form",
+                                  "class"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unmapped"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "form"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "table"
+                                    ]
+                                  },
+                                  "link": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "class": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "iri": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "form",
+                                  "link",
+                                  "class"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "document"
+                                    ]
+                                  },
+                                  "class": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "iri": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "form",
+                                  "class",
+                                  "iri"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "valueNodes"
+                                    ]
+                                  },
+                                  "link": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "value": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "unitProperty": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "form"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "ontologies": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "learned",
+                              "confirmed",
+                              "rejected"
+                            ]
+                          },
+                          "stale": {
+                            "description": "Why a term no longer holds (missing or deprecated in its newest version); null when fine.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "votes": {
+                            "type": "integer",
+                            "description": "Recipes whose mapping uses this answer for such an output."
+                          },
+                          "refusals": {
+                            "type": "integer",
+                            "description": "Recipes where a designer chose otherwise when it was offered."
+                          },
+                          "recipes": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "path",
+                                "version"
+                              ]
+                            }
+                          },
+                          "reviewedBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "note": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "signatureKey",
+                          "name",
+                          "description",
+                          "type",
+                          "unit",
+                          "answer",
+                          "ontologies",
+                          "status",
+                          "stale",
+                          "votes",
+                          "refusals",
+                          "recipes",
+                          "reviewedBy",
+                          "reviewedAt",
+                          "note",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "labels": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "deprecated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "kind",
+                          "deprecated"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "entries",
+                    "total",
+                    "labels"
+                  ],
+                  "description": "A page of entries."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "addMappingMemoryEntry",
+        "summary": "Add a remembered mapping",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "Adds what an output worded like this should map to; it starts confirmed, so the\nmapping stage pre-selects it. An entry with the same wording and answer is\nconfirmed instead. Every term must be in the ontology library.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "field",
+                      "column",
+                      "table",
+                      "document"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "type": {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "table": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "answer": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "literal"
+                            ]
+                          },
+                          "property": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "property"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "entity"
+                            ]
+                          },
+                          "property": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "iri": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "property",
+                          "class",
+                          "iri"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "concept"
+                            ]
+                          },
+                          "property": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "scheme": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "values": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "match": {
+                            "type": "string",
+                            "enum": [
+                              "label"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "property"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "node"
+                            ]
+                          },
+                          "link": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "unit": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "unitProperty": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "class"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "unmapped"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "form"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "table"
+                            ]
+                          },
+                          "link": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "iri": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "link",
+                          "class"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "document"
+                            ]
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "iri": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "class",
+                          "iri"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "valueNodes"
+                            ]
+                          },
+                          "link": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "unitProperty": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name",
+                  "answer"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "document",
+                            "field",
+                            "column",
+                            "table"
+                          ]
+                        },
+                        "signatureKey": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "The wording of the output it was accepted for."
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "literal"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "entity"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "label": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property",
+                                "class",
+                                "iri"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "concept"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "scheme": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "values": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "match": {
+                                  "type": "string",
+                                  "enum": [
+                                    "label"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "node"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unit": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unitProperty": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "class"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unmapped"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "form"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "link",
+                                "class"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "document"
+                                  ]
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "class",
+                                "iri"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "valueNodes"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unitProperty": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "learned",
+                            "confirmed",
+                            "rejected"
+                          ]
+                        },
+                        "stale": {
+                          "description": "Why a term no longer holds (missing or deprecated in its newest version); null when fine.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "votes": {
+                          "type": "integer",
+                          "description": "Recipes whose mapping uses this answer for such an output."
+                        },
+                        "refusals": {
+                          "type": "integer",
+                          "description": "Recipes where a designer chose otherwise when it was offered."
+                        },
+                        "recipes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "path",
+                              "version"
+                            ]
+                          }
+                        },
+                        "reviewedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "signatureKey",
+                        "name",
+                        "description",
+                        "type",
+                        "unit",
+                        "answer",
+                        "ontologies",
+                        "status",
+                        "stale",
+                        "votes",
+                        "refusals",
+                        "recipes",
+                        "reviewedBy",
+                        "reviewedAt",
+                        "note",
+                        "updatedAt"
+                      ]
+                    },
+                    "labels": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "deprecated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "kind",
+                          "deprecated"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "entry",
+                    "labels"
+                  ],
+                  "description": "The entry."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, or `not in the ontology library: <IRIs>`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues, or `not in the ontology library: <IRIs>`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ontologies/memory/{id}": {
+      "get": {
+        "operationId": "getMappingMemoryEntry",
+        "summary": "A remembered mapping",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "One entry with every recipe output voting for it (recipe id, output path and\nversion), its refusals and review, its stale reason and its terms' labels.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The entry id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "document",
+                            "field",
+                            "column",
+                            "table"
+                          ]
+                        },
+                        "signatureKey": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "The wording of the output it was accepted for."
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "literal"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "entity"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "label": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property",
+                                "class",
+                                "iri"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "concept"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "scheme": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "values": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "match": {
+                                  "type": "string",
+                                  "enum": [
+                                    "label"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "node"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unit": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unitProperty": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "class"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unmapped"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "form"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "link",
+                                "class"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "document"
+                                  ]
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "class",
+                                "iri"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "valueNodes"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unitProperty": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "learned",
+                            "confirmed",
+                            "rejected"
+                          ]
+                        },
+                        "stale": {
+                          "description": "Why a term no longer holds (missing or deprecated in its newest version); null when fine.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "votes": {
+                          "type": "integer",
+                          "description": "Recipes whose mapping uses this answer for such an output."
+                        },
+                        "refusals": {
+                          "type": "integer",
+                          "description": "Recipes where a designer chose otherwise when it was offered."
+                        },
+                        "recipes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "path",
+                              "version"
+                            ]
+                          }
+                        },
+                        "reviewedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "signatureKey",
+                        "name",
+                        "description",
+                        "type",
+                        "unit",
+                        "answer",
+                        "ontologies",
+                        "status",
+                        "stale",
+                        "votes",
+                        "refusals",
+                        "recipes",
+                        "reviewedBy",
+                        "reviewedAt",
+                        "note",
+                        "updatedAt"
+                      ]
+                    },
+                    "labels": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "deprecated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "kind",
+                          "deprecated"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "entry",
+                    "labels"
+                  ],
+                  "description": "The entry."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`entry not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`entry not found`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "reviewMappingMemoryEntry",
+        "summary": "Confirm, reject or correct a remembered mapping",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "Any designer may confirm (pre-selected at high confidence), reject (never\noffered again for such outputs) or correct the answer (it is then confirmed). A\nfield left out is kept; `note: null` clears the note. Records who and when.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "learned",
+                      "confirmed",
+                      "rejected"
+                    ]
+                  },
+                  "answer": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "literal"
+                            ]
+                          },
+                          "property": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "property"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "entity"
+                            ]
+                          },
+                          "property": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "iri": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "label": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "property",
+                          "class",
+                          "iri"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "concept"
+                            ]
+                          },
+                          "property": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "scheme": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "values": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "match": {
+                            "type": "string",
+                            "enum": [
+                              "label"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "property"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "node"
+                            ]
+                          },
+                          "link": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "unit": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "unitProperty": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "class"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "unmapped"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "form"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "table"
+                            ]
+                          },
+                          "link": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "iri": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "link",
+                          "class"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "document"
+                            ]
+                          },
+                          "class": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "iri": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form",
+                          "class",
+                          "iri"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "form": {
+                            "type": "string",
+                            "enum": [
+                              "valueNodes"
+                            ]
+                          },
+                          "link": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "unitProperty": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "form"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The entry id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "document",
+                            "field",
+                            "column",
+                            "table"
+                          ]
+                        },
+                        "signatureKey": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "The wording of the output it was accepted for."
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "unit": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "literal"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "entity"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "label": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property",
+                                "class",
+                                "iri"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "concept"
+                                  ]
+                                },
+                                "property": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "scheme": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "values": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "match": {
+                                  "type": "string",
+                                  "enum": [
+                                    "label"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "property"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "node"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unit": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unitProperty": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "class"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unmapped"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "form"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "link",
+                                "class"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "document"
+                                  ]
+                                },
+                                "class": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "iri": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form",
+                                "class",
+                                "iri"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "valueNodes"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "unitProperty": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "form"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "ontologies": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "learned",
+                            "confirmed",
+                            "rejected"
+                          ]
+                        },
+                        "stale": {
+                          "description": "Why a term no longer holds (missing or deprecated in its newest version); null when fine.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "votes": {
+                          "type": "integer",
+                          "description": "Recipes whose mapping uses this answer for such an output."
+                        },
+                        "refusals": {
+                          "type": "integer",
+                          "description": "Recipes where a designer chose otherwise when it was offered."
+                        },
+                        "recipes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "path",
+                              "version"
+                            ]
+                          }
+                        },
+                        "reviewedBy": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "note": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "signatureKey",
+                        "name",
+                        "description",
+                        "type",
+                        "unit",
+                        "answer",
+                        "ontologies",
+                        "status",
+                        "stale",
+                        "votes",
+                        "refusals",
+                        "recipes",
+                        "reviewedBy",
+                        "reviewedAt",
+                        "note",
+                        "updatedAt"
+                      ]
+                    },
+                    "labels": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "deprecated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "kind",
+                          "deprecated"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "entry",
+                    "labels"
+                  ],
+                  "description": "The entry."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues, or `not in the ontology library: <IRIs>`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues, or `not in the ontology library: <IRIs>`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`entry not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`entry not found`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`an entry already holds this answer for such outputs`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`an entry already holds this answer for such outputs`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMappingMemoryEntry",
+        "summary": "Delete a remembered mapping",
+        "tags": [
+          "Ontologies"
+        ],
+        "description": "Deletes the entry with its votes and refusals. Recipes that still give this\nanswer bring it back on their next save; rejecting is the way to stop one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The entry id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`entry not found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`entry not found`."
                 }
               }
             }

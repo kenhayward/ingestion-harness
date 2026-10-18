@@ -134,8 +134,9 @@ function typeGroup(type: string | null | undefined): string {
 
 /** An output's signature: what it looks like, independent of the recipe it is in. */
 export function signatureOf(input: SignatureInput): Signature {
-  let { unit, rest } = unitIn(input.name);
-  let words = wordsOf(rest);
+  const found = unitIn(input.name);
+  let unit = found.unit;
+  let words = wordsOf(found.rest);
   if (!unit) {
     const parts = words.split(' ');
     const last = parts[parts.length - 1] ?? '';
@@ -230,6 +231,10 @@ export interface RecipeAnswer {
 
 /** The path of a recipe's value-node defaults (keyed by its pinned ontologies). */
 export const VALUE_NODE_DEFAULTS_PATH = '#valueNodes';
+
+/** The signature key value-node defaults are remembered under (`defaults_key` in the worker). */
+export const defaultsKey = (ontologyIds: Iterable<string>): string =>
+  `defaults|${[...new Set(ontologyIds)].sort().join(' ')}`;
 
 function expand(term: string | undefined, prefixes: Record<string, string>): string | undefined {
   if (!term) return undefined;
@@ -412,12 +417,27 @@ export const MappingMemoryEntrySchema = z.object({
 });
 export type MappingMemoryEntry = z.infer<typeof MappingMemoryEntrySchema>;
 
-/** A page of entries and the filter counts. */
+/** The label and kind of each term the entries use, for showing answers in words. */
+export const MemoryTermLabelsSchema = z.record(
+  z.string(),
+  z.object({ label: z.string(), kind: z.string(), deprecated: z.boolean() }),
+);
+export type MemoryTermLabels = z.infer<typeof MemoryTermLabelsSchema>;
+
+/** A page of entries (newest library versions name their terms). */
 export const MappingMemoryPageSchema = z.object({
   entries: z.array(MappingMemoryEntrySchema),
   total: z.number().int(),
+  labels: MemoryTermLabelsSchema,
 });
 export type MappingMemoryPage = z.infer<typeof MappingMemoryPageSchema>;
+
+/** One entry and its terms' labels. */
+export const MappingMemoryDetailSchema = z.object({
+  entry: MappingMemoryEntrySchema,
+  labels: MemoryTermLabelsSchema,
+});
+export type MappingMemoryDetail = z.infer<typeof MappingMemoryDetailSchema>;
 
 export const MemoryListQuerySchema = z.object({
   q: z.string().optional(),

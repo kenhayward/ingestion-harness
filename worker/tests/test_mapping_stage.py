@@ -1175,3 +1175,26 @@ def test_an_external_embedder_sees_only_wording_that_may_leave(fixture_specs_dir
     assert "Secret local" not in drafting.calls[0][1].prompt
     events = [e[3] for e in queue.event_details if e[2] == "external model call"]
     assert any(e.get("purpose") == "embedding remembered mappings" for e in events)
+
+
+def test_a_remembered_column_keeps_its_provenance_on_its_table_change(
+    fixture_specs_dir: Path,
+) -> None:
+    drafting, _, store, deps = make(fixture_specs_dir)
+    column = remembered(
+        {"form": "literal", "property": f"{PH}testName"},
+        name="assay", kind="column", status="confirmed", table="tests",
+    )  # fmt: skip
+    deps = with_memory(deps, column)
+    table = blank(
+        "putTableMapping", "tests", tableLink=f"{PH}hasResult", rowClass=f"{PH}TestResult"
+    )
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0], table]}]
+    run(deps, mapping_job())
+    body = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]
+    tests = next(c for c in body["changes"] if c.get("table") == "tests")
+    assert tests["mapping"]["columns"]["assay"] == {"property": f"{PH}testName"}
+    assert tests["rememberedColumns"] == {
+        "assay": {"entryId": "m1", "votes": 1, "status": "confirmed"}
+    }
+    assert "remembered" not in tests  # the table itself came from the model
