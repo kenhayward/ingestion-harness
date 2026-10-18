@@ -17,6 +17,8 @@ export function OntologyPage({
   api,
   role,
   ontologyId,
+  version: linkedVersion,
+  term,
   pollMs = 2000,
   searchDelayMs = 250,
   graphRenderer,
@@ -24,6 +26,9 @@ export function OntologyPage({
   api: Api;
   role: Role;
   ontologyId: string;
+  /** Open this version at this term (a mapping panel's *Open in Ontologies*). */
+  version?: number;
+  term?: string;
   pollMs?: number;
   searchDelayMs?: number;
   /** Draws term graphs (tests pass a fake: jsdom has no canvas). */
@@ -31,7 +36,7 @@ export function OntologyPage({
 }) {
   const [detail, setDetail] = useState<OntologyDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState<number | null>(null);
+  const [version, setVersion] = useState<number | null>(linkedVersion ?? null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -202,6 +207,7 @@ export function OntologyPage({
                   version={current.version}
                   stats={current.stats}
                   searchDelayMs={searchDelayMs}
+                  {...(term && current.version === linkedVersion ? { initialTerm: term } : {})}
                   {...(graphRenderer ? { renderer: graphRenderer } : {})}
                 />
               )}

@@ -43,7 +43,13 @@ async function setup() {
   ontologies.markReady('exo', 1);
   ontologies.seedTerms('exo', 1, [
     { iri: `${E}Letter`, kind: 'class', label: 'Letter' },
-    { iri: `${E}batchNumber`, kind: 'datatype_property', label: 'batch number' },
+    {
+      iri: `${E}batchNumber`,
+      kind: 'datatype_property',
+      label: 'batch number',
+      altLabels: ['lot number'],
+      definition: 'The identifier of a batch.',
+    },
     { iri: `${E}lot`, kind: 'datatype_property', label: 'lot', deprecated: true },
   ]);
   // A draft without a mapping yet: saving one is the designer's acceptance.
@@ -75,6 +81,9 @@ describe('capture through the routes', () => {
       label: 'batch number',
       kind: 'datatype_property',
       deprecated: false,
+      ontology: 'exo@1',
+      altLabels: ['lot number'],
+      definition: 'The identifier of a batch.',
     });
   });
 

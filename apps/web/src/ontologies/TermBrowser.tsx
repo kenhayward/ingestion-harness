@@ -29,12 +29,15 @@ export function TermBrowser({
   stats,
   searchDelayMs,
   renderer,
+  initialTerm,
 }: {
   api: Api;
   ontologyId: string;
   version: number;
   stats: OntologyStats | null;
   searchDelayMs: number;
+  /** The term to open with (a link from a mapping panel). */
+  initialTerm?: string;
   /** Draws the graph view (Cytoscape by default). */
   renderer?: GraphRenderer;
 }) {
@@ -42,7 +45,7 @@ export function TermBrowser({
     () => GROUPS.find((g) => groupCount(stats, g) > 0) ?? 'classes',
   );
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialTerm ?? null);
   const [view, setView] = useState<'details' | 'graph'>('details');
   return (
     <div className="term-browser">

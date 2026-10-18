@@ -261,6 +261,9 @@ export interface FoundLabel {
   kind: OntologyTermKind;
   ontology: string;
   deprecated: boolean;
+  altLabels: string[];
+  /** Null when the term has none. */
+  definition: string | null;
 }
 
 export type SeedTerm = Partial<OntologyTerm> & {
@@ -585,6 +588,8 @@ export class MemoryOntologyRepo implements OntologyRepo {
             kind: t.kind,
             ontology: `${v.id}@${v.version}`,
             deprecated: t.deprecated,
+            altLabels: t.altLabels,
+            definition: t.definition || null,
           };
         }
       }
@@ -1194,8 +1199,11 @@ export class PgOntologyRepo implements OntologyRepo {
       ontology_id: string;
       version: number;
       deprecated: boolean;
+      alt_labels: string[];
+      definition: string;
     }>(
-      `SELECT DISTINCT ON (t.iri) t.iri, t.label, t.kind, t.ontology_id, t.version, t.deprecated
+      `SELECT DISTINCT ON (t.iri) t.iri, t.label, t.kind, t.ontology_id, t.version, t.deprecated,
+              t.alt_labels, t.definition
          FROM ontology_terms t
          JOIN unnest($1::text[], $2::int[]) WITH ORDINALITY AS p(id, v, n)
            ON t.ontology_id = p.id AND t.version = p.v
@@ -1211,6 +1219,8 @@ export class PgOntologyRepo implements OntologyRepo {
           kind: r.kind,
           ontology: `${r.ontology_id}@${r.version}`,
           deprecated: r.deprecated,
+          altLabels: r.alt_labels ?? [],
+          definition: r.definition || null,
         },
       ]),
     );

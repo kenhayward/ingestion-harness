@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { DraftChange } from '@ih/shared';
+import type { DraftChange, TermLabel, TermLabelsBody } from '@ih/shared';
 import { mappingBadge, mappingNote } from '../src/workbench/mapping.js';
 import { MappingTab } from '../src/workbench/MappingTab.js';
 import { changeProposalView, fakeApi } from './fake-api.js';
@@ -205,6 +205,46 @@ describe('MappingTab', () => {
     expect(within(expires).getByText('31/12/2027')).toBeInTheDocument();
     expect(within(expires).getByText('valid until')).toBeInTheDocument();
     expect(within(expires).getByRole('checkbox', { name: /Apply this change/ })).toBeChecked();
+  });
+
+  it('shows what the chosen term and each alternative mean', async () => {
+    const known: Record<string, TermLabel> = {
+      'pharma:batchNumber': {
+        from: 'ontology',
+        iri: `${PH}batchNumber`,
+        label: 'batch number',
+        kind: 'datatype_property',
+        ontology: 'pharma@1',
+        deprecated: false,
+        altLabels: ['lot number'],
+        definition: 'The identifier of a batch.',
+      },
+      [`${PH}productName`]: {
+        from: 'ontology',
+        iri: `${PH}productName`,
+        label: 'product name',
+        kind: 'datatype_property',
+        ontology: 'pharma@1',
+        deprecated: false,
+        altLabels: [],
+        definition: 'The name a medicinal product is sold under.',
+      },
+    };
+    const termLabels = vi.fn(async (body: TermLabelsBody) => ({
+      terms: Object.fromEntries(body.terms.flatMap((t) => (known[t] ? [[t, known[t]]] : []))),
+    }));
+    show(true, { listProposals: vi.fn(async () => [review]), termLabels });
+    const inspector = await screen.findByRole('region', { name: 'lot' });
+    const property = within(inspector).getByRole('row', { name: /Property/ });
+    expect(await within(property).findAllByText('The identifier of a batch.')).not.toHaveLength(0);
+    expect(within(property).getAllByText('Also called: lot number')).not.toHaveLength(0);
+    const alternative = within(inspector).getByRole('button', { name: /product name/ });
+    expect(alternative).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(alternative);
+    expect(alternative).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      within(inspector).getByText('The name a medicinal product is sold under.'),
+    ).toBeInTheDocument();
   });
 
   it('sends a column changed with its table to the table, where its checkbox is', async () => {

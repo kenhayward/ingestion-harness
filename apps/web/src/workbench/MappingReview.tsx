@@ -5,8 +5,10 @@ import {
   type DraftChange,
   type OutputMapping,
   type Semantics,
+  type TermLabel,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { TermInfo } from '../ui/TermInfo.js';
 import { draftingModelName, relativeTime } from '../jobs/derive.js';
 import {
   compactIri,
@@ -239,8 +241,18 @@ export function MappingReview({
       )
     : nowS;
 
+  const alternativeIris = [
+    ...new Set(changes.flatMap((c) => (meta(c).alternatives ?? []).map((a) => a.iri))),
+  ];
   const nowLabels = useTermLabels(api, nowS);
-  const proposedLabels = useTermLabels(api, proposedS);
+  const proposedLabels = useTermLabels(api, proposedS, alternativeIris);
+  /** What a term means, when the library or the local terms say. */
+  const infoOf = (term: string): TermLabel | undefined => {
+    const hit = proposedLabels[term] ?? nowLabels[term];
+    return hit && (hit.from === 'ontology' || hit.from === 'local') ? hit : undefined;
+  };
+  /** The alternative opened under "Chosen over" (its meaning shown beside the pick). */
+  const [openAlternative, setOpenAlternative] = useState<string | null>(null);
   const name = (term: string) => {
     const n = nameOf(proposedLabels, term);
     return n !== term ? n : nameOf(nowLabels, term);
@@ -313,6 +325,15 @@ export function MappingReview({
     if (!f?.value) return <span className="muted">{fallback}</span>;
     if (f.plain) return <span>{f.value}</span>;
     if (!f.term) return <code>{f.value}</code>;
+    const info = infoOf(f.value);
+    if (info) {
+      return (
+        <>
+          <TermInfo info={info} />
+          <code>{f.value}</code>
+        </>
+      );
+    }
     const n = name(f.value);
     return n !== f.value ? (
       <>
@@ -618,12 +639,31 @@ export function MappingReview({
                           <dt>Chosen over</dt>
                           <dd className="evidence-chips">
                             {m.alternatives.map((a) => (
-                              <span key={a.iri} className="evidence-chip" title={a.iri}>
+                              <button
+                                key={a.iri}
+                                type="button"
+                                className="evidence-chip"
+                                aria-expanded={openAlternative === a.iri}
+                                onClick={() =>
+                                  setOpenAlternative(openAlternative === a.iri ? null : a.iri)
+                                }
+                              >
                                 <span>{a.label}</span>{' '}
                                 <code>{compactIri(a.iri, proposedS.prefixes)}</code>
-                              </span>
+                              </button>
                             ))}
                           </dd>
+                          {m.alternatives.some((a) => a.iri === openAlternative) && (
+                            <dd className="mapping-alternative">
+                              {infoOf(openAlternative!) ? (
+                                <TermInfo info={infoOf(openAlternative!)!} />
+                              ) : (
+                                <span className="muted">
+                                  Not in the pinned ontologies: no details to show.
+                                </span>
+                              )}
+                            </dd>
+                          )}
                         </>
                       ) : null}
                     </dl>
