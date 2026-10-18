@@ -22,6 +22,7 @@ import { DeleteVersionDialog } from './DeleteVersionDialog.js';
 import { EditOntologyDialog } from './EditOntologyDialog.js';
 import { ImportOntologyDialog } from './ImportOntologyDialog.js';
 import { HelpButton } from '../ui/Help.js';
+import { RememberedMappings } from './RememberedMappings.js';
 
 /** The ontology library's view, remembered per browser. */
 const VIEW_KEY = 'ih.ontologyView';
@@ -61,6 +62,8 @@ export function OntologiesPage({
   /** What the last folder import did (versions queued, files skipped). */
   const [note, setNote] = useState<string | null>(null);
   const [view, setView] = useState<View>(loadView);
+  /** The library, or the mappings designers accepted (docs/design/mapping-memory.md). */
+  const [tab, setTab] = useState<'library' | 'memory'>('library');
   /** A list row's Edit… and Delete… (the detail page's dialogs). */
   const [editing, setEditing] = useState<OntologySummary | null>(null);
   const [deleting, setDeleting] = useState<OntologySummary | null>(null);
@@ -132,32 +135,56 @@ export function OntologiesPage({
           <HelpButton topic="ontologies" />
         </div>
       </header>
-      {note && <p role="status">{note}</p>}
-      {error && <p role="alert">{error}</p>}
-      {items === null && !error && <p>Loading…</p>}
-      {items?.length === 0 && (
-        <p className="muted">
-          No ontologies yet.{role === 'admin' ? ' Import one to start.' : ' An admin imports them.'}
-        </p>
-      )}
-      {items !== null && items.length > 0 && shown.length === 0 && (
-        <p className="muted">No ontology matches “{query.trim()}”.</p>
-      )}
-      {shown.length > 0 &&
-        (view === 'cards' ? (
-          <div className="ontology-grid">
-            {shown.map((o) => (
-              <OntologyCard key={o.id} ontology={o} />
-            ))}
-          </div>
-        ) : (
-          <OntologyTable
-            ontologies={shown}
-            admin={role === 'admin'}
-            onEdit={setEditing}
-            onDelete={setDeleting}
-          />
+      <div role="tablist" aria-label="Ontologies views" className="ontologies-tabs">
+        {(
+          [
+            ['library', 'Library'],
+            ['memory', 'Remembered mappings'],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+          >
+            {label}
+          </button>
         ))}
+      </div>
+      {tab === 'memory' && <RememberedMappings api={api} />}
+      {tab === 'library' && (
+        <>
+          {note && <p role="status">{note}</p>}
+          {error && <p role="alert">{error}</p>}
+          {items === null && !error && <p>Loading…</p>}
+          {items?.length === 0 && (
+            <p className="muted">
+              No ontologies yet.
+              {role === 'admin' ? ' Import one to start.' : ' An admin imports them.'}
+            </p>
+          )}
+          {items !== null && items.length > 0 && shown.length === 0 && (
+            <p className="muted">No ontology matches “{query.trim()}”.</p>
+          )}
+          {shown.length > 0 &&
+            (view === 'cards' ? (
+              <div className="ontology-grid">
+                {shown.map((o) => (
+                  <OntologyCard key={o.id} ontology={o} />
+                ))}
+              </div>
+            ) : (
+              <OntologyTable
+                ontologies={shown}
+                admin={role === 'admin'}
+                onEdit={setEditing}
+                onDelete={setDeleting}
+              />
+            ))}
+        </>
+      )}
       {importing && (
         <ImportOntologyDialog
           api={api}

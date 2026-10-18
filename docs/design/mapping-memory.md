@@ -1,6 +1,8 @@
 # Mapping memory: reuse what reviewers accepted
 
-Status: proposal, decisions recorded (2026-10-18, section 10). Follows the mapping spike
+Status: implemented (2026-10-18; plan
+[docs/superpowers/plans/2026-10-18-mapping-memory.md](../superpowers/plans/2026-10-18-mapping-memory.md)).
+Decisions in section 10; what the build changed in section 11. Follows the mapping spike
 ([mapping-automation.md](mapping-automation.md)), whose gap list notes that *accepted mappings are
 never reused*.
 
@@ -214,3 +216,23 @@ what makes it trustworthy over time, so it should not lag far behind.
 4. **Where acceptance counts:** wherever a designer accepts a mapping (proposal, hand save,
    publish), with the same weight; one vote per recipe.
 5. **Several deployments:** later; the entry format keeps export and import possible (section 7).
+
+## 11. What the build changed
+
+- **The production stage pre-selects itself.** `run_mapping` makes one model answer and does not
+  use the per-output matcher (the evaluation harness does), so the memory is wired into both:
+  pre-selected outputs are taken out of the model's job (`<already_mapped>`) and merged back as
+  changes carrying `remembered`.
+- **No model calls in the API.** Signatures are embedded by the worker, lazily, per embedding
+  model; an external embedding model only sees wording from a vote whose project allows
+  external models, and every such call is logged as an external model call.
+- **Stale is derived when read**, never stored: a term missing from, or deprecated in, the newest
+  ready version of its ontology.
+- **Conflicting answers use the table name stored on each vote** rather than a second key.
+- **Imports are told apart by the draft's change log** (`import` writes do not vote; on start,
+  a draft only an import wrote is passed over for the latest published version).
+- **Columns keep their provenance on their table's change** (`rememberedColumns`), since the
+  stage merges column changes into the table change.
+- **Answers left unmapped are remembered but never pre-selected**, only hinted.
+- **Recipes outside the Workbench** have no data policy; their votes count as local-only.
+

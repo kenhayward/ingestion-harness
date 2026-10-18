@@ -1,0 +1,186 @@
+{
+  "_doc": "Mapping memory answers (docs/design/mapping-memory.md): a recipe's semantics -> one remembered answer per output (answersOf, TS). The worker parses every answer and turns it into the flat change the mapping stage would make.",
+  "cases": [
+    {
+      "name": "every form",
+      "definition": {
+        "id": "stability",
+        "version": 1,
+        "name": "Stability report",
+        "outputs": {
+          "fields": [
+            { "id": "lot", "name": "Batch number", "type": "text" },
+            { "id": "maker", "name": "Manufacturer", "type": "text" },
+            { "id": "form", "name": "Dosage form", "type": "enum", "enum": ["tablet", "capsule"] },
+            { "id": "water", "name": "Water content (%)", "type": "number" },
+            { "id": "notes", "name": "Notes", "type": "text" }
+          ],
+          "tables": [
+            {
+              "id": "results",
+              "name": "Results",
+              "columns": [
+                { "id": "assay", "name": "Assay (%)", "type": "number" },
+                { "id": "ok", "name": "Conforms", "type": "boolean" }
+              ]
+            },
+            {
+              "id": "extra",
+              "name": "Extra",
+              "columns": [{ "id": "x", "name": "X", "type": "text" }]
+            }
+          ]
+        },
+        "semantics": {
+          "ontologies": [{ "id": "exo", "version": 1 }],
+          "prefixes": { "ex": "https://ex.example/v#", "unit": "http://qudt.org/vocab/unit/" },
+          "document": { "class": "ex:Report", "iri": "doc/{source}" },
+          "fields": {
+            "lot": { "property": "ex:batchNumber" },
+            "maker": {
+              "property": "ex:manufacturer",
+              "object": { "class": "ex:Organisation", "iri": "org/{value|slug}" }
+            },
+            "form": {
+              "property": "ex:dosageForm",
+              "concepts": { "scheme": "ex:Forms", "match": "label" }
+            },
+            "water": { "node": { "class": "ex:WaterFraction", "unit": "unit:PERCENT" } }
+          },
+          "tables": {
+            "results": {
+              "link": "ex:hasResult",
+              "class": "ex:TestResult",
+              "columns": {
+                "assay": {
+                  "property": "ex:hasPart",
+                  "node": { "class": "ex:AssayResult", "value": "ex:amount" }
+                },
+                "ok": { "property": "ex:conforms" }
+              }
+            }
+          },
+          "valueNodes": { "link": "ex:hasDatum", "value": "ex:value", "unitProperty": "ex:unit" }
+        }
+      },
+      "answers": [
+        {
+          "path": "",
+          "signature": { "kind": "document", "name": "Stability report" },
+          "answer": {
+            "form": "document",
+            "class": "https://ex.example/v#Report",
+            "iri": "doc/{source}"
+          }
+        },
+        {
+          "path": "lot",
+          "signature": { "kind": "field", "name": "Batch number", "type": "text" },
+          "answer": { "form": "literal", "property": "https://ex.example/v#batchNumber" }
+        },
+        {
+          "path": "maker",
+          "signature": { "kind": "field", "name": "Manufacturer", "type": "text" },
+          "answer": {
+            "form": "entity",
+            "property": "https://ex.example/v#manufacturer",
+            "class": "https://ex.example/v#Organisation",
+            "iri": "org/{value|slug}"
+          }
+        },
+        {
+          "path": "form",
+          "signature": { "kind": "field", "name": "Dosage form", "type": "enum" },
+          "answer": {
+            "form": "concept",
+            "property": "https://ex.example/v#dosageForm",
+            "scheme": "https://ex.example/v#Forms",
+            "match": "label"
+          }
+        },
+        {
+          "path": "water",
+          "signature": { "kind": "field", "name": "Water content (%)", "type": "number" },
+          "answer": {
+            "form": "node",
+            "link": "https://ex.example/v#hasDatum",
+            "class": "https://ex.example/v#WaterFraction",
+            "value": "https://ex.example/v#value",
+            "unit": "http://qudt.org/vocab/unit/PERCENT",
+            "unitProperty": "https://ex.example/v#unit"
+          }
+        },
+        {
+          "path": "notes",
+          "signature": { "kind": "field", "name": "Notes", "type": "text" },
+          "answer": { "form": "unmapped" }
+        },
+        {
+          "path": "results",
+          "signature": { "kind": "table", "name": "Results" },
+          "answer": {
+            "form": "table",
+            "link": "https://ex.example/v#hasResult",
+            "class": "https://ex.example/v#TestResult"
+          }
+        },
+        {
+          "path": "results.assay",
+          "signature": {
+            "kind": "column",
+            "name": "Assay (%)",
+            "type": "number",
+            "table": "Results"
+          },
+          "answer": {
+            "form": "node",
+            "link": "https://ex.example/v#hasPart",
+            "class": "https://ex.example/v#AssayResult",
+            "value": "https://ex.example/v#amount",
+            "unitProperty": "https://ex.example/v#unit"
+          }
+        },
+        {
+          "path": "results.ok",
+          "signature": {
+            "kind": "column",
+            "name": "Conforms",
+            "type": "boolean",
+            "table": "Results"
+          },
+          "answer": { "form": "literal", "property": "https://ex.example/v#conforms" }
+        },
+        {
+          "path": "extra",
+          "signature": { "kind": "table", "name": "Extra" },
+          "answer": { "form": "unmapped" }
+        },
+        {
+          "path": "extra.x",
+          "signature": { "kind": "column", "name": "X", "type": "text", "table": "Extra" },
+          "answer": { "form": "unmapped" }
+        },
+        {
+          "path": "#valueNodes",
+          "signature": { "kind": "document", "name": "exo" },
+          "answer": {
+            "form": "valueNodes",
+            "link": "https://ex.example/v#hasDatum",
+            "value": "https://ex.example/v#value",
+            "unitProperty": "https://ex.example/v#unit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "no mapping",
+      "definition": {
+        "id": "plain",
+        "version": 1,
+        "name": "Plain",
+        "outputs": { "fields": [{ "id": "a", "type": "text" }] }
+      },
+      "answers": []
+    }
+  ]
+}

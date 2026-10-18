@@ -1,3 +1,4 @@
+import { noteDecision, recordFromRoute } from '../mapping-memory/capture.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
   FastifyBaseLogger,
@@ -1110,6 +1111,7 @@ export async function publishProjectDraft(
     },
     'workbench draft published',
   );
+  await recordFromRoute(app, projectId, req.auth?.label ?? null);
   return { result: 'published', publication: outcome.publication, version: draft };
 }
 
@@ -1597,6 +1599,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       });
       if (!removed) return reply.code(404).send({ error: 'project not found' });
       await removeProjectFiles(app, id, removed, req.log);
+      await recordFromRoute(app, id, req.auth?.label ?? null);
       req.log.info(
         {
           projectId: id,
@@ -1649,6 +1652,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         });
       }
       await removeProjectFiles(app, id, removed, req.log);
+      await recordFromRoute(app, id, req.auth?.label ?? null);
       req.log.info(
         { projectId: id, jobs: removed.jobs.length, documents: removed.documents.length },
         'workbench project deleted',
@@ -3542,6 +3546,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
         chosen,
       );
       if (!decided) return reply.code(409).send({ error: 'proposal was already decided' });
+      if (record.stage === 'mapping') {
+        await noteDecision(app, projectId, proposed, chosen, req.auth?.label ?? null);
+      }
       // Accepted, fully or partly (RV2): the feedback the applied changes answer, or all of it
       // when no change names any (proposals from before RV2).
       if (record.stage === 'revise') {

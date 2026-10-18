@@ -32,6 +32,7 @@ const CONFIDENCE: Confidence[] = ['high', 'medium', 'low'];
 
 interface Meta {
   confidence?: Confidence;
+  remembered?: { entryId: string; votes: number; status: 'learned' | 'confirmed' };
   evidence?: string[];
   alternatives?: { iri: string; label: string; score: number }[];
   reason: string;
@@ -575,6 +576,17 @@ export function MappingReview({
                 return (
                   <div key={n} className="mapping-why">
                     <dl>
+                      {m.remembered && (
+                        <>
+                          <dt>Remembered</dt>
+                          <dd>
+                            Accepted in {m.remembered.votes} recipe
+                            {m.remembered.votes === 1 ? '' : 's'}
+                            {m.remembered.status === 'confirmed' ? ', confirmed' : ''}. Leave it
+                            unselected to refuse it.
+                          </dd>
+                        </>
+                      )}
                       {m.confidence && (
                         <>
                           <dt>Confidence</dt>

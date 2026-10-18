@@ -9,6 +9,7 @@
  *     npx vitest run --config apps/api/vitest.integration.config.ts workbench-list-perf
  *   docker stop ih-test-pg-perf
  */
+import { MemoryMappingMemoryRepo } from '../../src/mapping-memory/repo.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
@@ -87,6 +88,7 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       s3Keys: null,
       llm: new MemoryLlmConfigRepo(),
       ontologies: new MemoryOntologyRepo(),
+      mappingMemory: new MemoryMappingMemoryRepo(),
       ontologyFetch: { hosts: [], maxBytes: 1 },
       linkedData: new MemoryLinkedDataRepo(),
       maintenance: new MemoryMaintenanceRepo(),

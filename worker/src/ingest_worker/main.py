@@ -26,6 +26,7 @@ from .heartbeat import HEARTBEAT_S, JobHeartbeat, PgJobHeartbeat, beating
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
 from .llm.registry import LLMConfig, load_llm_config
+from .mapping_memory import PgMappingMemoryStore
 from .ocr import OcrSettings
 from .ontology import PgOntologyStore, run_ontology_import
 from .ontology_fetch import FetchPolicy, fetch_rdf
@@ -392,6 +393,7 @@ class _Worker:
             ),
             ontologies=PgOntologyStore(self.library),
             linked_data=PgLinkedDataSettings(self.library),
+            mapping_memory=PgMappingMemoryStore(self.library),
             embedding_model=self.live.embedding_model,
             graph_registry=PgGraphRegistry(self.graph_conn),
             graph_store=graph_store_from_env(os.environ),

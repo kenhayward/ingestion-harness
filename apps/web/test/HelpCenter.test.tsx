@@ -69,6 +69,7 @@ describe('help index', () => {
       'ontologyProperties',
       'ontologyConcepts',
       'ontologyShapes',
+      'ontologyMemory',
     ]);
   });
 });

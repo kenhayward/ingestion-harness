@@ -24,6 +24,9 @@ import type { IngestionRepo } from './repositories/types.js';
 import type { ObjectStore } from './storage/object-store.js';
 import type { SpecRegistry } from './specs/spec-registry.js';
 import type { TemplateRepo } from './templates/repo.js';
+import type { MappingMemoryRepo } from './mapping-memory/repo.js';
+import { captureDeps, recordRecipe, rememberingTemplates } from './mapping-memory/capture.js';
+import { mappingMemoryRoutes } from './routes/mapping-memory.js';
 import type { WorkbenchRepo } from './workbench/repo.js';
 import { templateRoutes } from './routes/templates.js';
 import { referenceRoutes } from './routes/references.js';
@@ -83,6 +86,8 @@ export interface AppDeps {
   llm: LlmConfigRepo;
   /** The ontology library (ADR 0011): imported versions and their indexed terms. */
   ontologies: OntologyRepo;
+  /** The mapping memory (docs/design/mapping-memory.md): mappings designers accepted. */
+  mappingMemory: MappingMemoryRepo;
   /** Who may be fetched by URL (ONTOLOGY_FETCH_ALLOW; empty: URL imports are off). */
   ontologyFetch: { hosts: string[]; maxBytes: number };
   /** The customer and the base IRI RDF is minted under (ADR 0011). */
@@ -133,7 +138,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       ? `${PRIVATE_NETWORKS},${deps.trustProxy}`
       : (deps.trustProxy ?? PRIVATE_NETWORKS);
   const app = Fastify({ logger: deps.logger ?? false, trustProxy });
-  app.decorate('deps', deps);
+  // Every recipe write that counts records the recipe's votes in the mapping memory.
+  const remembering: AppDeps = {
+    ...deps,
+    templates: rememberingTemplates(
+      deps.templates,
+      async (id, by) => {
+        await recordRecipe(captureDeps(deps), id, by);
+      },
+      (err, id) => app.log.warn({ err, id }, 'mapping memory not recorded'),
+    ),
+  };
+  app.decorate('deps', remembering);
   app.decorate('maintenance', new MaintenanceGate(deps.maintenance));
 
   await app.register(multipart, { limits: { fileSize: deps.maxUploadBytes, files: 1 } });
@@ -160,6 +176,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(s3KeyRoutes, { prefix: '/api' });
   await app.register(llmRoutes, { prefix: '/api' });
   await app.register(ontologyRoutes, { prefix: '/api' });
+  await app.register(mappingMemoryRoutes, { prefix: '/api' });
   await app.register(linkedDataRoutes, { prefix: '/api' });
   await app.register(maintenanceRoutes, { prefix: '/api' });
   await app.register(publishTargetRoutes, { prefix: '/api' });

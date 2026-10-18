@@ -1,0 +1,212 @@
+{
+  "_doc": "Mapping memory signatures (docs/design/mapping-memory.md): output -> signature key, held in step by signatureOf (TS) and mapping_memory.signature_of (worker).",
+  "generic": [
+    "average",
+    "comment",
+    "comments",
+    "count",
+    "max",
+    "maximum",
+    "mean",
+    "min",
+    "minimum",
+    "notes",
+    "other",
+    "remarks",
+    "result",
+    "results",
+    "rsd",
+    "sd",
+    "total",
+    "value",
+    "values"
+  ],
+  "units": {
+    "%": "%",
+    "percent": "%",
+    "mg": "mg",
+    "g": "g",
+    "kg": "kg",
+    "ug": "µg",
+    "µg": "µg",
+    "ml": "ml",
+    "l": "l",
+    "mg/g": "mg/g",
+    "mg/ml": "mg/ml",
+    "ug/ml": "µg/ml",
+    "µg/ml": "µg/ml",
+    "cfu": "cfu",
+    "cfu/g": "cfu/g",
+    "cfu/ml": "cfu/ml",
+    "ppm": "ppm",
+    "ppb": "ppb",
+    "min": "min",
+    "minutes": "min",
+    "h": "h",
+    "hours": "h",
+    "days": "day",
+    "day": "day",
+    "months": "month",
+    "month": "month",
+    "°c": "°c",
+    "degc": "°c",
+    "nm": "nm",
+    "mm": "mm"
+  },
+  "trailingUnits": ["%", "percent", "minutes", "min", "hours", "days", "months"],
+  "cases": [
+    {
+      "input": {
+        "kind": "column",
+        "name": "Batch number",
+        "type": "text",
+        "table": "Batches"
+      },
+      "key": "value|batch number|text|",
+      "unit": "",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "Batch number",
+        "type": "text",
+        "table": "Dissolution results"
+      },
+      "key": "value|batch number|text|",
+      "unit": "",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "field",
+        "name": "batchNumber",
+        "type": "text"
+      },
+      "key": "value|batch number|text|",
+      "unit": "",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "water_content_kf",
+        "type": "number",
+        "description": "Water content by Karl Fischer (%)"
+      },
+      "key": "value|water content kf|number|%",
+      "unit": "%",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "Water content (KF) (%)",
+        "type": "number"
+      },
+      "key": "value|water content kf|number|%",
+      "unit": "%",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "Assay (mg/g)",
+        "type": "number"
+      },
+      "key": "value|assay|number|mg/g",
+      "unit": "mg/g",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "storage_time_months",
+        "type": "integer"
+      },
+      "key": "value|storage time|number|month",
+      "unit": "month",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "Mean (%)",
+        "type": "number",
+        "table": "Dissolution results"
+      },
+      "key": "value|mean|number|%|dissolution results",
+      "unit": "%",
+      "generic": true
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "Result",
+        "type": "text",
+        "table": "Microbial purity"
+      },
+      "key": "value|result|text||microbial purity",
+      "unit": "",
+      "generic": true
+    },
+    {
+      "input": {
+        "kind": "table",
+        "name": "Batches"
+      },
+      "key": "table|batches||",
+      "unit": "",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "document",
+        "name": "Stability report"
+      },
+      "key": "document|stability report||",
+      "unit": "",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "T-AMC count (CFU/g)",
+        "type": "number"
+      },
+      "key": "value|t amc count|number|cfu/g",
+      "unit": "cfu/g",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "field",
+        "name": "Assay %",
+        "type": "number"
+      },
+      "key": "value|assay|number|%",
+      "unit": "%",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "column",
+        "name": "ecoli_pass_fail",
+        "type": "boolean"
+      },
+      "key": "value|ecoli pass fail|boolean|",
+      "unit": "",
+      "generic": false
+    },
+    {
+      "input": {
+        "kind": "field",
+        "name": "Expiry date",
+        "type": "date"
+      },
+      "key": "value|expiry date|date|",
+      "unit": "",
+      "generic": false
+    }
+  ]
+}

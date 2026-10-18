@@ -292,6 +292,50 @@ describe('OntologyPage', () => {
     expect(await screen.findByText('From w3id-org-base@1')).toBeInTheDocument();
   });
 
+  it('lists the remembered mappings that use a term', async () => {
+    const api = view('designer', {
+      getOntologyTerm: vi.fn(async () => termDetail({ label: 'Batch identifier' })),
+      listMappingMemory: vi.fn(async () => ({
+        total: 1,
+        labels: {},
+        entries: [
+          {
+            id: 'm-1',
+            kind: 'column' as const,
+            signatureKey: 'value|batch number|text|',
+            name: 'Batch number',
+            description: '',
+            type: 'text',
+            unit: '',
+            answer: {
+              form: 'entity' as const,
+              property: 'x:has',
+              class: 'x:Batch',
+              iri: 'b/{value}',
+            },
+            ontologies: ['pv'],
+            status: 'confirmed' as const,
+            stale: null,
+            votes: 4,
+            refusals: 0,
+            recipes: [],
+            reviewedBy: 'Ada',
+            reviewedAt: null,
+            note: null,
+            updatedAt: '2026-10-18T12:00:00.000Z',
+          },
+        ],
+      })),
+    });
+    const tree = await screen.findByRole('tree');
+    await userEvent.click(await within(tree).findByRole('treeitem', { name: /Document/ }));
+    const list = await screen.findByRole('list', { name: 'Remembered for' });
+    expect(list).toHaveTextContent('Batch number in 4 recipes (confirmed)');
+    expect(api.listMappingMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'all', term: expect.any(String) }),
+    );
+  });
+
   it('offers no download for a URL version not fetched yet', async () => {
     view('designer', {
       getOntology: vi.fn(async () =>

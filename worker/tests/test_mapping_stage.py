@@ -924,3 +924,277 @@ def test_the_prompt_explains_value_nodes(fixture_specs_dir: Path) -> None:
     assert "- node:" in prompt and "nodeClass" in prompt and "valueLink" in prompt
     assert "prefer node over a literal with a generic property" in prompt
     assert '<candidates output="value nodes' in prompt
+
+
+# --- mapping memory (docs/design/mapping-memory.md) ----------------------------------------------
+
+
+def remembered(
+    answer: dict[str, Any],
+    *,
+    name: str = "Lot number",
+    kind: str = "field",
+    type_: str = "text",
+    status: str = "learned",
+    votes: int = 1,
+    refusals: int = 0,
+    external: bool = False,
+    id_: str = "m1",
+    table: str | None = None,
+) -> Any:
+    from ingest_worker.mapping_memory import MemoryEntry, Vote, signature_of
+
+    sig = signature_of(kind, name, "", type_, table)
+    return MemoryEntry(
+        id_, kind, sig.key, name, "", type_, sig.unit, answer, ("pharma",), status,
+        tuple(Vote(f"r{i}", "lot", 1, name, "", table, external) for i in range(votes)),
+        refusals,
+    )  # fmt: skip
+
+
+def with_memory(deps: PipelineDeps, *entries: Any) -> PipelineDeps:
+    from dataclasses import replace
+
+    from ingest_worker.mapping_memory import MemoryMappingMemoryStore
+
+    return replace(deps, mapping_memory=MemoryMappingMemoryStore(entries))
+
+
+def lot_change(body: dict[str, Any]) -> dict[str, Any] | None:
+    return next((c for c in body["changes"] if c.get("field") == "lot"), None)
+
+
+def candidates_of(prompt: str, path: str) -> str:
+    start = prompt.index(f'<candidates output="{path}">')
+    return prompt[start : prompt.index("</candidates>", start)]
+
+
+def test_an_empty_memory_changes_nothing(fixture_specs_dir: Path) -> None:
+    prompts, bodies = [], []
+    for memory in (False, True):
+        drafting, _, store, deps = make(fixture_specs_dir)
+        if memory:
+            deps = with_memory(deps)
+        drafting.responses = [GOOD]
+        run(deps, mapping_job())
+        prompts.append(drafting.calls[0][1].prompt)
+        bodies.append(json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"])
+    assert prompts[0] == prompts[1]
+    assert bodies[0] == bodies[1]
+
+
+def test_a_confirmed_answer_is_preselected_over_the_models(fixture_specs_dir: Path) -> None:
+    drafting, _, store, deps = make(fixture_specs_dir)
+    deps = with_memory(
+        deps, remembered({"form": "literal", "property": f"{PH}batchNumber"}, status="confirmed")
+    )
+    other = {
+        "notes": "",
+        "changes": [
+            GOOD["changes"][0],
+            blank("putFieldMapping", "lot", property=f"{PH}productName"),
+        ],
+    }
+    drafting.responses = [other]
+    run(deps, mapping_job())
+    body = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]
+    lot = lot_change(body)
+    assert lot is not None
+    assert lot["mapping"] == {"property": f"{PH}batchNumber"}
+    assert lot["remembered"] == {"entryId": "m1", "votes": 1, "status": "confirmed"}
+    assert lot["confidence"] == "high"
+    prompt = drafting.calls[0][1].prompt
+    assert "<already_mapped>" in prompt and "- lot:" in prompt
+    assert "from remembered mappings" in body["notes"]
+
+
+@pytest.mark.parametrize(("votes", "confidence"), [(1, "medium"), (2, "high")])
+def test_learned_answers_are_preselected_greedily(
+    fixture_specs_dir: Path, votes: int, confidence: str
+) -> None:
+    drafting, _, store, deps = make(fixture_specs_dir)
+    deps = with_memory(
+        deps, remembered({"form": "literal", "property": f"{PH}batchNumber"}, votes=votes)
+    )
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0]]}]
+    run(deps, mapping_job())
+    lot = lot_change(json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"])
+    assert lot is not None and lot["confidence"] == confidence
+
+
+def test_an_answer_refused_more_than_accepted_is_only_hinted(fixture_specs_dir: Path) -> None:
+    drafting, _, store, deps = make(fixture_specs_dir)
+    deps = with_memory(
+        deps, remembered({"form": "literal", "property": f"{PH}batchNumber"}, refusals=2)
+    )
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0]]}]
+    run(deps, mapping_job())
+    body = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]
+    assert lot_change(body) is None
+    prompt = drafting.calls[0][1].prompt
+    assert "<already_mapped>" not in prompt
+    assert 'Accepted before for "Lot number" in 1 recipe' in prompt
+
+
+def test_a_rejected_answer_is_removed_from_the_options(fixture_specs_dir: Path) -> None:
+    drafting, _, _, deps = make(fixture_specs_dir)
+    drafting.responses = [GOOD]
+    run(deps, mapping_job())
+    assert f"{PH}batchNumber" in candidates_of(drafting.calls[0][1].prompt, "lot")
+    drafting, _, _, deps = make(fixture_specs_dir)
+    deps = with_memory(
+        deps, remembered({"form": "literal", "property": f"{PH}batchNumber"}, status="rejected")
+    )
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0]]}]
+    run(deps, mapping_job())
+    assert f"{PH}batchNumber" not in candidates_of(drafting.calls[0][1].prompt, "lot")
+
+
+def test_remembered_terms_join_the_short_list(fixture_specs_dir: Path) -> None:
+    """A similar output's remembered term is offered even when retrieval missed it."""
+    drafting, _, store, deps = make(fixture_specs_dir)
+    deps = with_memory(
+        deps, remembered({"form": "literal", "property": f"{PH}approvalDate"}, name="Lot numbers")
+    )
+    chosen = blank("putFieldMapping", "lot", property=f"{PH}approvalDate")
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0], chosen]}]
+    run(deps, mapping_job())
+    assert f"{PH}approvalDate" in candidates_of(drafting.calls[0][1].prompt, "lot")
+    lot = lot_change(json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"])
+    assert lot is not None and "remembered" not in lot  # the model chose it: no provenance
+
+
+@pytest.mark.parametrize("shareable", [False, True])
+def test_an_external_model_sees_only_wording_that_may_leave(
+    fixture_specs_dir: Path, shareable: bool
+) -> None:
+    """Wording from local-only projects never reaches an external model: not as a hint, not
+    as a pre-selection."""
+    answer = {"form": "literal", "property": f"{PH}batchNumber"}
+    drafting, _, _, deps = make(fixture_specs_dir, drafter="external", embedder=None)
+    deps = with_memory(deps, remembered(answer, name="Lot numbers", external=shareable))
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0]]}]
+    run(deps, mapping_job(dataPolicy="external"))
+    assert ('"Lot numbers"' in drafting.calls[0][1].prompt) is shareable
+
+    drafting, _, store, deps = make(fixture_specs_dir, drafter="external", embedder=None)
+    deps = with_memory(deps, remembered(answer, status="confirmed", external=shareable))
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0]]}]
+    run(deps, mapping_job(dataPolicy="external"))
+    lot = lot_change(json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"])
+    assert (lot is not None) is shareable
+
+
+def test_an_answer_whose_term_is_not_in_the_pinned_ontologies_is_ignored(
+    fixture_specs_dir: Path,
+) -> None:
+    drafting, _, store, deps = make(fixture_specs_dir)
+    deps = with_memory(
+        deps,
+        remembered({"form": "literal", "property": "https://other.example/x"}, status="confirmed"),
+    )
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0]]}]
+    run(deps, mapping_job())
+    assert lot_change(json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]) is None
+    assert "other.example" not in drafting.calls[0][1].prompt
+
+
+def test_a_remembered_table_lets_the_model_map_its_columns(fixture_specs_dir: Path) -> None:
+    drafting, _, store, deps = make(fixture_specs_dir)
+    table = remembered(
+        {"form": "table", "link": f"{PH}hasResult", "class": f"{PH}TestResult"},
+        name="tests", kind="table", type_="", status="confirmed",
+    )  # fmt: skip
+    deps = with_memory(deps, table)
+    column = blank("putFieldMapping", "tests.assay", property=f"{PH}testName")
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0], column]}]
+    queue = run(deps, mapping_job())
+    assert queue.completed, queue.reviewed
+    body = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]
+    tests = next(c for c in body["changes"] if c.get("table") == "tests")
+    assert tests["mapping"]["link"] == f"{PH}hasResult"
+    assert tests["mapping"]["columns"]["assay"] == {"property": f"{PH}testName"}
+    assert len(drafting.calls) == 1  # no "map table tests first" round
+
+
+def test_remembered_value_node_defaults_fill_the_document_change(fixture_specs_dir: Path) -> None:
+    from ingest_worker.mapping_memory import MemoryEntry, Vote, defaults_key
+
+    drafting, _, store, deps = make(fixture_specs_dir)
+    defaults = MemoryEntry(
+        "d1", "document", defaults_key(["pharma"]), "pharma", "", "", "",
+        {"form": "valueNodes", "link": f"{PH}hasResult", "value": f"{PH}resultValue"},
+        ("pharma",), "confirmed", (Vote("r1", "#valueNodes", 1, "pharma", "", None, False),),
+    )  # fmt: skip
+    deps = with_memory(deps, defaults)
+    drafting.responses = [GOOD]
+    run(deps, mapping_job())
+    body = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]
+    document = next(c for c in body["changes"] if c["op"] == "setDocumentMapping")
+    assert document["valueNodes"] == {
+        "link": "pharma:hasResult",
+        "value": "pharma:resultValue",
+    }
+
+
+def test_signatures_are_embedded_once_and_kept(fixture_specs_dir: Path) -> None:
+    drafting, embedding, _, deps = make(fixture_specs_dir)
+    deps = with_memory(deps, remembered({"form": "literal", "property": f"{PH}batchNumber"}))
+    drafting.responses = [GOOD]
+    run(deps, mapping_job())
+    memory = deps.mapping_memory
+    assert memory is not None
+    assert memory.vectors("emb/nomic", ["m1"])  # type: ignore[attr-defined]
+    calls = len(embedding.embed_calls)
+    drafting.responses = [GOOD]
+    run(deps, mapping_job())
+    assert len(embedding.embed_calls) == calls + 2  # the outputs twice; the entry not again
+
+
+def test_an_external_embedder_sees_only_wording_that_may_leave(fixture_specs_dir: Path) -> None:
+    """The entry's own wording came from a local-only recipe; an external embedding model gets
+    the wording of the vote whose project allows external models, and the call is logged."""
+    from ingest_worker.mapping_memory import MemoryEntry, Vote, signature_of
+
+    drafting, embedding, _, deps = make(fixture_specs_dir, drafter="external", embedder="external")
+    sig = signature_of("field", "Lot number", "", "text", None)
+    mixed = MemoryEntry(
+        "m1", "field", sig.key, "Secret local lot label", "", "text", "",
+        {"form": "literal", "property": f"{PH}batchNumber"}, ("pharma",), "learned",
+        (
+            Vote("local", "lot", 1, "Secret local lot label", "", None, False),
+            Vote("shared", "lot", 1, "Lot number", "", None, True),
+        ),
+    )  # fmt: skip
+    deps = with_memory(deps, mixed)
+    drafting.responses = [GOOD]
+    queue = run(deps, mapping_job(dataPolicy="external"))
+    sent = [text for _model, texts in embedding.embed_calls for text in texts]
+    assert not any("Secret local" in t for t in sent)
+    assert any(t.startswith("Lot number") for t in sent)
+    assert "Secret local" not in drafting.calls[0][1].prompt
+    events = [e[3] for e in queue.event_details if e[2] == "external model call"]
+    assert any(e.get("purpose") == "embedding remembered mappings" for e in events)
+
+
+def test_a_remembered_column_keeps_its_provenance_on_its_table_change(
+    fixture_specs_dir: Path,
+) -> None:
+    drafting, _, store, deps = make(fixture_specs_dir)
+    column = remembered(
+        {"form": "literal", "property": f"{PH}testName"},
+        name="assay", kind="column", status="confirmed", table="tests",
+    )  # fmt: skip
+    deps = with_memory(deps, column)
+    table = blank(
+        "putTableMapping", "tests", tableLink=f"{PH}hasResult", rowClass=f"{PH}TestResult"
+    )
+    drafting.responses = [{"notes": "", "changes": [GOOD["changes"][0], table]}]
+    run(deps, mapping_job())
+    body = json.loads(store.get("runs", drafting_key("batch", "job-m")))["body"]
+    tests = next(c for c in body["changes"] if c.get("table") == "tests")
+    assert tests["mapping"]["columns"]["assay"] == {"property": f"{PH}testName"}
+    assert tests["rememberedColumns"] == {
+        "assay": {"entryId": "m1", "votes": 1, "status": "confirmed"}
+    }
+    assert "remembered" not in tests  # the table itself came from the model

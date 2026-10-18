@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { TermDetail, TermRef } from '@ih/shared';
+import type { MappingMemoryEntry, TermDetail, TermRef } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { TERM_KIND_LABEL } from './derive.js';
 
@@ -19,6 +19,21 @@ export function TermDetailPanel({
 }) {
   const [term, setTerm] = useState<TermDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The remembered mappings that use this term (docs/design/mapping-memory.md). */
+  const [remembered, setRemembered] = useState<MappingMemoryEntry[]>([]);
+  useEffect(() => {
+    let live = true;
+    setRemembered([]);
+    api.listMappingMemory({ status: 'all', term: iri, pageSize: 20 }).then(
+      (page) => {
+        if (live) setRemembered(page.entries.filter((e) => e.status !== 'rejected'));
+      },
+      () => {}, // advisory: the term's details stand without it
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, iri]);
   useEffect(() => {
     let live = true;
     setTerm(null);
@@ -67,6 +82,19 @@ export function TermDetailPanel({
           <Refs title="Properties with this range" refs={term.asRange} onSelect={onSelect} />
           <Refs title="Concepts" refs={term.concepts} onSelect={onSelect} />
           <Refs title="Shapes targeting it" refs={term.shapes} onSelect={onSelect} />
+          {remembered.length > 0 && (
+            <div className="term-refs">
+              <h3 id="term-remembered">Remembered for</h3>
+              <ul aria-labelledby="term-remembered">
+                {remembered.map((e) => (
+                  <li key={e.id}>
+                    {e.name} in {e.votes} recipe{e.votes === 1 ? '' : 's'}
+                    {e.status === 'confirmed' ? ' (confirmed)' : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </section>

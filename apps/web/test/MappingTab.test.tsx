@@ -102,6 +102,33 @@ describe('mapping helpers', () => {
   });
 });
 
+describe('remembered mapping helpers (docs/design/mapping-memory.md)', () => {
+  it('shows a change the memory pre-selected as remembered, with its recipes', () => {
+    const remembered = {
+      ...lot,
+      remembered: { entryId: 'm-1', votes: 3, status: 'confirmed' },
+    } as DraftChange;
+    expect(mappingBadge(remembered)).toBe('Remembered · 3 recipes · confirmed');
+    const one = {
+      ...lot,
+      remembered: { entryId: 'm-1', votes: 1, status: 'learned' },
+    } as DraftChange;
+    expect(mappingBadge(one)).toBe('Remembered · 1 recipe');
+  });
+
+  it('names the columns a table change took from the memory', () => {
+    const table = {
+      op: 'putTableMapping',
+      table: 'tests',
+      mapping: { link: 'x:has', class: 'x:Test', columns: {} },
+      reason: '',
+      confidence: 'medium',
+      rememberedColumns: { assay: { entryId: 'm-2', votes: 1, status: 'learned' } },
+    } as unknown as DraftChange;
+    expect(mappingNote(table)).toBe('Remembered: assay');
+  });
+});
+
 describe('MappingTab', () => {
   it('says the stage is not used until a vocabulary is pinned on Survey', async () => {
     const { onNavigate } = show(false);

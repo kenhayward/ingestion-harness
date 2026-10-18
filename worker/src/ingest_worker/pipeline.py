@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from .graph_registry import GraphRegistry
     from .graph_store import GraphStore
     from .linked_data import LinkedDataSettings
+    from .mapping_memory import MappingMemoryStore
     from .ontology import OntologyStore
     from .ontology_fetch import Fetched
     from .rdf_rebuild import RebuildSource
@@ -155,6 +156,8 @@ class PipelineDeps:
     ontology_fetch: Callable[[str], Fetched] | None = None
     #: The base IRI RDF is minted under (None: mapped recipes draft no graph).
     linked_data: LinkedDataSettings | None = None
+    #: The mapping memory (docs/design/mapping-memory.md); None: mapping runs recall nothing.
+    mapping_memory: MappingMemoryStore | None = None
     #: The `embedding_model` setting (an `endpoint/model-id`); None: lexical retrieval only.
     embedding_model: str | None = None
     #: The published graphs' versions and entities (None: delivered graphs are not recorded).
