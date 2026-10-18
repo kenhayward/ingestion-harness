@@ -63,10 +63,13 @@ def outputs_by_property(template: Template) -> dict[str, str]:
 
 
 def _validate_child(
-    conn: Connection, graphs: tuple[bytes, bytes, bytes], by: dict[str, str]
+    conn: Connection,
+    graphs: tuple[bytes, bytes, bytes],
+    by: dict[str, str],
+    nodes: dict[str, str] | None,
 ) -> None:
     data, shapes, ontologies = (Graph().parse(data=g, format="nt") for g in graphs)
-    conn.send(validate(data, shapes, ontologies, by).to_json())
+    conn.send(validate(data, shapes, ontologies, by, nodes).to_json())
     conn.close()
 
 
@@ -76,13 +79,17 @@ def validate_with_timeout(
     ontologies: Graph,
     by_property: dict[str, str],
     timeout_s: float = GRAPH_TIMEOUT_S,
+    *,
+    nodes: dict[str, str] | None = None,
 ) -> ShaclReport:
     """`rdf.validate` in a child process; an overrun is a DocumentError (the preview's review)."""
     graphs = tuple(g.serialize(format="nt", encoding="utf-8") for g in (graph, shapes, ontologies))
     method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
     ctx: Any = multiprocessing.get_context(method)  # typeshed: BaseContext has no Process
     parent, child = ctx.Pipe(duplex=False)
-    proc = ctx.Process(target=_validate_child, args=(child, graphs, by_property), daemon=True)
+    proc = ctx.Process(
+        target=_validate_child, args=(child, graphs, by_property, nodes), daemon=True
+    )
     try:
         proc.start()
         child.close()

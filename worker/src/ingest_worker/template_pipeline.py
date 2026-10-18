@@ -19,7 +19,7 @@ import io
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -109,6 +109,8 @@ class RenderedGraph:
     #: The base IRI it was minted under (read once per job).
     base: str = ""
     entities: tuple[EntityRecord, ...] = ()
+    #: Value node IRI -> the output it publishes (`Rendering.nodes`), for SHACL results.
+    nodes: dict[str, str] = field(default_factory=dict)
 
 
 Progress = StepProgress
@@ -782,7 +784,9 @@ def build_graph(
             raise DocumentError(f"cannot render the graph: {exc}") from exc
         queue.event(job.id, "warn", GRAPH_FAILED, {"error": str(exc)})
         return None
-    return RenderedGraph(turtle, len(graph), graph, base, tuple(rendering.entities))
+    return RenderedGraph(
+        turtle, len(graph), graph, base, tuple(rendering.entities), dict(rendering.nodes)
+    )
 
 
 def shacl_check(
@@ -799,7 +803,7 @@ def shacl_check(
         return None
     shapes = load_graphs(deps, [(p.id, p.version) for p in semantics.shapes])
     ontologies = load_graphs(deps, [(p.id, p.version) for p in semantics.ontologies])
-    report = validate(graph.graph, shapes, ontologies, outputs_by_property(template))
+    report = validate(graph.graph, shapes, ontologies, outputs_by_property(template), graph.nodes)
     deps.store.put(
         deps.buckets.runs,
         shacl_report_key(job.id),

@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .pipeline import DocumentError, JobCancelled, PipelineDeps, check_cancelled
 from .queue import ClaimedJob, JobQueue
-from .rdf import GraphContext, render_graph, to_turtle
+from .rdf import GraphContext, render, to_turtle
 from .shacl import load_graphs, outputs_by_property, validate_with_timeout
 from .storage import graph_preview_key, reviewed_document_key
 from .template import Template
@@ -86,7 +86,8 @@ def run_graph_preview(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> d
         # The sample's own sha256: drafts from before graphs do not carry it.
         document["source_sha256"] = sample.sha256
         try:
-            graph = render_graph(template, document, GraphContext(base, concepts))
+            rendering = render(template, document, GraphContext(base, concepts))
+            graph = rendering.graph
             turtle = to_turtle(graph).decode("utf-8")
         except psycopg.Error:
             raise
@@ -99,7 +100,9 @@ def run_graph_preview(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> d
                 "turtle": turtle,
                 "triples": len(graph),
                 "report": (
-                    validate_with_timeout(graph, shapes, ontology_graph, by_property).to_json()
+                    validate_with_timeout(
+                        graph, shapes, ontology_graph, by_property, nodes=rendering.nodes
+                    ).to_json()
                     if shapes is not None and ontology_graph is not None
                     else None
                 ),

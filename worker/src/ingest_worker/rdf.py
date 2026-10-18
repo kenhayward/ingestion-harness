@@ -482,11 +482,16 @@ class ShaclReport:
 
 
 def validate(
-    graph: Graph, shapes: Graph, ontologies: Graph, outputs_by_property: dict[str, str]
+    graph: Graph,
+    shapes: Graph,
+    ontologies: Graph,
+    outputs_by_property: dict[str, str],
+    nodes: dict[str, str] | None = None,
 ) -> ShaclReport:
     """pySHACL over one document's graph, no inference; the ontologies are merged in so that
     `sh:class` sees the concepts' types and `rdfs:subClassOf`. Only results whose focus node the
-    document's graph describes are kept."""
+    document's graph describes are kept. A result on a value node names that node's output
+    (`nodes`, `Rendering.nodes`): its link and value property may be shared by many outputs."""
     from pyshacl import validate as run_shacl
 
     # pySHACL's `ont_graph` does not carry instance typing (a concept's rdf:type), so the
@@ -523,7 +528,10 @@ def validate(
                 shape=str(shape) if shape is not None else "",
                 focus=str(focus),
                 path=path_text,
-                output=outputs_by_property.get(path_text) or path_text or "document",
+                output=(nodes or {}).get(str(focus))
+                or outputs_by_property.get(path_text)
+                or path_text
+                or "document",
                 message=str(message) if message is not None else "does not conform",
                 value=str(value) if value is not None else "",
             )

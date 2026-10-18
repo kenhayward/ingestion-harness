@@ -168,3 +168,33 @@ def test_a_preview_carries_each_samples_shacl_report(fixture_specs_dir: Path) ->
     assert one["report"]["conforms"] is True  # "Draft Ltd"
     assert two["report"]["conforms"] is False  # "Reviewed Ltd" is longer than 9
     assert run_graph_preview(job(), deps, FakeQueue())["samples"][0]["report"] is None
+
+
+def test_a_previews_shacl_report_names_a_value_nodes_output(fixture_specs_dir: Path) -> None:
+    from ingest_worker.storage import ontology_normalized_key
+
+    deps, store = make(fixture_specs_dir)
+    shapes = Graph().parse(
+        data="""@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <https://ex.example/def/> .
+        ex:S a sh:NodeShape ; sh:targetClass ex:SenderName ;
+          sh:property [ sh:path ex:text ; sh:maxLength 9 ] .""",
+        format="turtle",
+    )
+    store.put(
+        "runs",
+        ontology_normalized_key("s", 1),
+        shapes.serialize(format="nt", encoding="utf-8"),
+        "x",
+    )
+    definition = {
+        **DEFINITION,
+        "semantics": {
+            **DEFINITION["semantics"],
+            "shapes": [{"id": "s", "version": 1}],
+            "valueNodes": {"link": "ex:has", "value": "ex:text"},
+            "fields": {"sender": {"node": {"class": "ex:SenderName"}}},
+        },
+    }
+    result = run_graph_preview(job(definition=definition), deps, FakeQueue())
+    [violation] = result["samples"][1]["report"]["results"]  # "Reviewed Ltd" is longer than 9
+    assert violation["output"] == "sender"
