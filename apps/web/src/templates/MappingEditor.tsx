@@ -15,6 +15,7 @@ import type {
 import { CURIE_PREFIXES } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Text } from './fields.js';
+import { TermInfo } from '../ui/TermInfo.js';
 
 type Definition = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- a recipe being edited
 type TableMapping = Semantics['tables'][string];
@@ -121,14 +122,25 @@ function mappedTerms(s: Semantics): string[] {
 /** Wait this long after the last edit before asking for names again. */
 const LABEL_DELAY_MS = 300;
 
-/** The names of the mapping's terms, asked for once per change of terms, pins or prefixes. */
-export function useTermLabels(api: Api, s: Semantics): Record<string, TermLabel> {
-  const terms = mappedTerms(s);
+/**
+ * The names of the mapping's terms (and of `extra` terms, e.g. a proposal's alternatives), asked
+ * for once per change of terms, pins or prefixes.
+ */
+export function useTermLabels(
+  api: Api,
+  s: Semantics,
+  extra: readonly string[] = [],
+): Record<string, TermLabel> {
+  const terms = [...new Set([...mappedTerms(s), ...extra])].sort();
   const request = terms.length
     ? JSON.stringify({
         ontologies: s.ontologies,
         prefixes: s.prefixes,
-        local: s.local.map(({ iri, label }) => ({ iri, label })),
+        local: s.local.map(({ iri, label, definition }) => ({
+          iri,
+          label,
+          ...(definition?.trim() ? { definition } : {}),
+        })),
         terms,
       } satisfies TermLabelsBody)
     : '';
@@ -167,11 +179,7 @@ function TermName({ info }: { info: TermLabel | undefined }) {
   }
   return (
     <small className="term-name">
-      <span className="term-label">{info.label || 'No label'}</span>
-      <span className="term-from">
-        {info.from === 'local' ? 'local term' : (info.ontology ?? '').replace('@', ' v')}
-      </span>
-      {info.deprecated && <span className="kind-tag tone-warn">deprecated</span>}
+      <TermInfo info={info} />
     </small>
   );
 }

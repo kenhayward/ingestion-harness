@@ -36,7 +36,8 @@ export type Route =
   /** Home with About open (`#/about`, `#/about/<date>`): a link to a release note. */
   | { name: 'about'; note?: string }
   | { name: 'ontologies' }
-  | { name: 'ontology'; ontologyId: string }
+  /** `version` and `term`: open at that term (a mapping panel's *Open in Ontologies*). */
+  | { name: 'ontology'; ontologyId: string; version?: number; term?: string }
   | { name: 'results' }
   | { name: 'result'; jobId: string }
   | { name: 'template'; templateId: string; version: number }
@@ -62,6 +63,15 @@ export function parseHash(hash: string): Route {
   }
   const result = /^#\/results\/([^/]+)$/.exec(hash);
   if (result) return { name: 'result', jobId: decodeURIComponent(result[1]!) };
+  const ontologyTerm = /^#\/ontologies\/([^/]+)\/(\d+)\/(.+)$/.exec(hash);
+  if (ontologyTerm) {
+    return {
+      name: 'ontology',
+      ontologyId: decodeURIComponent(ontologyTerm[1]!),
+      version: Number(ontologyTerm[2]),
+      term: decodeURIComponent(ontologyTerm[3]!),
+    };
+  }
   const ontology = /^#\/ontologies\/([^/]+)$/.exec(hash);
   if (ontology) return { name: 'ontology', ontologyId: decodeURIComponent(ontology[1]!) };
   const project = /^#\/workbench\/([^/]+)(?:\/([a-z]+)(?:\/([a-z]+))?)?$/.exec(hash);

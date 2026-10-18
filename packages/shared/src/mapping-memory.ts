@@ -420,7 +420,15 @@ export type MappingMemoryEntry = z.infer<typeof MappingMemoryEntrySchema>;
 /** The label and kind of each term the entries use, for showing answers in words. */
 export const MemoryTermLabelsSchema = z.record(
   z.string(),
-  z.object({ label: z.string(), kind: z.string(), deprecated: z.boolean() }),
+  z.object({
+    label: z.string(),
+    kind: z.string(),
+    deprecated: z.boolean(),
+    /** `<id>@<version>` of the library version naming it. */
+    ontology: z.string(),
+    altLabels: z.array(z.string()),
+    definition: z.string().nullable(),
+  }),
 );
 export type MemoryTermLabels = z.infer<typeof MemoryTermLabelsSchema>;
 

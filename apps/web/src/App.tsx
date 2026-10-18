@@ -354,7 +354,14 @@ function SignedInApp({
     page = <OntologiesPage api={api} role={me.role} />;
   } else if (route.name === 'ontology') {
     page = (
-      <OntologyPage key={route.ontologyId} api={api} role={me.role} ontologyId={route.ontologyId} />
+      <OntologyPage
+        key={`${route.ontologyId}/${route.version ?? ''}/${route.term ?? ''}`}
+        api={api}
+        role={me.role}
+        ontologyId={route.ontologyId}
+        {...(route.version !== undefined ? { version: route.version } : {})}
+        {...(route.term !== undefined ? { term: route.term } : {})}
+      />
     );
   } else if (route.name === 'templates') {
     page = <TemplatesPage api={api} onNavigate={navigate} query={query} role={me.role} />;

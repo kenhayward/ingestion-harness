@@ -750,6 +750,8 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
             version (in the order sent, imports included) holding it. \`from\` says which:
             \`ontology\`, \`local\`, \`built-in\` (rdf, rdfs, owl, xsd, skos, dcterms, prov;
             no label), \`unknown\` (in none of them) or \`invalid\` (an undeclared prefix).
+            Each name comes with the term's synonyms (\`altLabels\`) and definition (a local
+            term's own, when it has one), so a reviewer can judge a mapping by what the term means.
             Nothing is checked against readiness: a version that is not indexed names nothing.
           `,
         ),
@@ -767,16 +769,25 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
       const prefixes = { ...CURIE_PREFIXES, ...body.data.prefixes };
       const builtIn = Object.values(CURIE_PREFIXES);
       const expanded = terms.map((term) => [term, expandTerm(term, prefixes)] as const);
-      const locals = new Map<string, string>();
+      const locals = new Map<string, { label: string; definition: string | null }>();
       for (const l of local) {
         const iri = expandTerm(l.iri, prefixes);
-        if (iri !== null && !locals.has(iri)) locals.set(iri, l.label);
+        if (iri !== null && !locals.has(iri)) {
+          locals.set(iri, { label: l.label, definition: l.definition?.trim() || null });
+        }
       }
       const lookup = [
         ...new Set(expanded.flatMap(([, iri]) => (iri && !locals.has(iri) ? [iri] : []))),
       ];
       const found = await app.deps.ontologies.termLabels(ontologies, lookup);
-      const none = { label: null, kind: null, ontology: null, deprecated: false };
+      const none = {
+        label: null,
+        kind: null,
+        ontology: null,
+        deprecated: false,
+        altLabels: [],
+        definition: null,
+      };
       const out: Record<string, TermLabel> = {};
       for (const [term, iri] of expanded) {
         const hit = iri === null ? undefined : found[iri];
@@ -784,7 +795,7 @@ export async function ontologyRoutes(app: FastifyInstance): Promise<void> {
           iri === null
             ? { ...none, from: 'invalid', iri }
             : locals.has(iri)
-              ? { ...none, from: 'local', iri, label: locals.get(iri)! }
+              ? { ...none, from: 'local', iri, ...locals.get(iri)! }
               : hit
                 ? { from: 'ontology', iri, ...hit }
                 : builtIn.some((ns) => iri.startsWith(ns))

@@ -6440,3 +6440,63 @@ img.avatar {
 .release-note .warn ul {
   margin: 0;
 }
+
+/* What a mapped term means (TermInfo): name, synonyms, definition, link to the ontology. */
+.term-info {
+  display: grid;
+  gap: 2px;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-text);
+}
+.term-info-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+}
+.term-info .term-from {
+  color: var(--ih-muted);
+}
+.term-info .term-from::before {
+  content: '· ';
+}
+.term-info p {
+  margin: 0;
+}
+.term-info-syn {
+  color: var(--ih-muted);
+}
+.term-info-def.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.term-info-link {
+  font-size: var(--ih-text-xs);
+  color: var(--ih-accent-soft-text);
+}
+.term-name .term-info {
+  flex: 1 1 100%;
+}
+button.evidence-chip {
+  cursor: pointer;
+  color: inherit;
+  min-height: 0;
+}
+button.evidence-chip[aria-expanded='true'] {
+  border-color: var(--ih-accent);
+}
+.mapping-alternative {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface2);
+}
+.memory-terms {
+  margin-top: 6px;
+}
+.memory-terms .term-info {
+  margin-top: 6px;
+}

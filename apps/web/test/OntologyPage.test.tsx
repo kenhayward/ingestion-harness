@@ -336,6 +336,30 @@ describe('OntologyPage', () => {
     );
   });
 
+  it('opens at the term a mapping panel linked to', async () => {
+    const api = fakeApi({
+      getOntology: vi.fn(async () => ontologyDetail()),
+      listOntologyTerms: vi.fn(async () => page([ontologyTerm({ childCount: 1 })])),
+      getOntologyTerm: vi.fn(async (_id: string, _v: number, iri: string) =>
+        termDetail({ iri, label: 'Protocol' }),
+      ),
+    });
+    render(
+      <OntologyPage
+        api={api}
+        role="designer"
+        ontologyId="pv"
+        version={1}
+        term={`${C}Protocol`}
+        pollMs={10}
+        searchDelayMs={0}
+        graphRenderer={() => () => {}}
+      />,
+    );
+    expect(await screen.findByRole('heading', { level: 2, name: 'Protocol' })).toBeInTheDocument();
+    expect(api.getOntologyTerm).toHaveBeenCalledWith('pv', 1, `${C}Protocol`);
+  });
+
   it('offers no download for a URL version not fetched yet', async () => {
     view('designer', {
       getOntology: vi.fn(async () =>

@@ -13,6 +13,15 @@ describe('parseHash', () => {
     ['#/access', { name: 'home' }],
     ['#/ontologies', { name: 'ontologies' }],
     ['#/ontologies/idmp-o', { name: 'ontology', ontologyId: 'idmp-o' }],
+    [
+      '#/ontologies/afo/3/http%3A%2F%2Fpurl.allotrope.org%2Fontologies%2Fproperty%23AFX_0000690',
+      {
+        name: 'ontology',
+        ontologyId: 'afo',
+        version: 3,
+        term: 'http://purl.allotrope.org/ontologies/property#AFX_0000690',
+      },
+    ],
     ['#/review/j1', { name: 'review', jobId: 'j1' }],
     ['#/workbench', { name: 'workbench' }],
     ['#/workbench/letter', { name: 'project', projectId: 'letter', tab: 'overview' }],

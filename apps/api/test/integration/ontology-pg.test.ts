@@ -125,12 +125,16 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
         kind: 'class',
         ontology: 'pv-pg@1',
         deprecated: false,
+        altLabels: ['Validation protocol'],
+        definition: null,
       },
       [`${C}hasProtocol`]: {
         label: 'has protocol',
         kind: 'object_property',
         ontology: 'pv-pg@1',
         deprecated: false,
+        altLabels: [],
+        definition: null,
       },
     });
     expect(await repo.termLabels([], [`${C}Protocol`])).toEqual({});
