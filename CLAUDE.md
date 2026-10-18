@@ -49,6 +49,7 @@ Run from the repo root unless noted. Dev host is Windows; scripts exist in `.sh`
 | Backup / restore round trip against throwaway Postgres + SeaweedFS (+ Fuseki) ([ADR 0015](docs/adr/0015-backup-and-restore.md)) | header of `apps/api/test/integration/backup-roundtrip.test.ts` (ports 55481, 8533, 3039); `IH_TEST_DATABASE_URL=… IH_TEST_S3_ENDPOINT=… npx vitest run --config apps/api/vitest.integration.config.ts backup-roundtrip`; skips without them |
 | What a deploy would call this build | `node deploy/scripts/version.mjs resolve --untagged` |
 | Type detection research (read-only) | `docker exec ingestion-worker-1 python -m ingest_worker.detect` ([findings](docs/design/type-detection.md)) |
+| Ontology mapping evaluation (read-only; calls the model) | `docker exec ingestion-worker-1 python -m ingest_worker.mapping_eval --template <project>` to draft a gold file, then `--gold FILE` ([research and spike](docs/design/mapping-automation.md); `mapping_match.py` is the per-output matcher it compares with the stage) |
 
 ## Test-driven development — how we work here
 

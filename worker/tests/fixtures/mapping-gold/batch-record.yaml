@@ -1,0 +1,42 @@
+# A synthetic gold mapping over the recall fixture's pharma vocabulary (mapping-recall/ontology.ttl):
+# the evaluation harness's own test (docs/design/mapping-automation.md). A real gold names a
+# `project` instead of `inputs`: the harness then reads that project's newest mapping job.
+name: batch-record (synthetic)
+prefixes:
+  ex: https://ex.example/pharma#
+inputs:
+  draft:
+    id: batch
+    version: 1
+    name: Batch record
+    document:
+      sections: [{ id: all, anchor: '\A' }]
+    outputs:
+      fields:
+        - { id: lot, name: Lot number, type: text, description: The batch id }
+        - { id: expires, type: date, description: Use by }
+        - { id: form, type: enum, enum: [tablet, capsule], description: The dosage form }
+        - { id: notes, type: text, description: Free text remarks }
+      tables:
+        - id: tests
+          description: Each test result of the batch
+          columns:
+            - { id: assay, type: text }
+            - { id: ok, type: boolean, description: Whether the result conforms }
+    pipeline:
+      - { type: extract, id: head, fields: [lot, expires, form, notes], sections: [all] }
+      - { type: extract, id: rows, table: tests, sections: [all] }
+  mapping:
+    versions: [{ id: pharma, version: 1, localOnly: false, label: Pharma }]
+    guidance: ''
+    observed:
+      lot: [{ value: G17230211, count: 2, snippet: 'Lot: G17230211', sample: a.pdf }]
+expected:
+  '': ex:BatchRecord
+  lot: { term: ex:batchNumber, as: literal }
+  expires: { term: ex:expiryDate, as: literal }
+  form: { term: ex:dosageForm }
+  notes: unmapped
+  tests: { term: ex:hasResult, class: ex:TestResult }
+  tests.assay: { term: ex:testName }
+  tests.ok: { term: [ex:conforms] }
