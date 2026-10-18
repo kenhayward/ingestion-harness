@@ -12,6 +12,7 @@ import {
   type SampleView,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { Dialog } from '../ui/Dialog.js';
 import { ModelLogButton } from './DraftLogDialog.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { DeliveryTargets } from './DeliveryTargets.js';
@@ -182,6 +183,7 @@ export function StagePanel({
 }) {
   const [proposal, setProposal] = useState<ProposalView | null | undefined>(undefined);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [latestOpen, setLatestOpen] = useState(false);
   const [samples, setSamples] = useState<SampleView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -372,6 +374,39 @@ export function StagePanel({
         )
       : null;
 
+  const cardProps =
+    body && proposal
+      ? {
+          api,
+          models,
+          projectId,
+          proposal,
+          body,
+          definition: draftDef,
+          draftVersion: typeof draft === 'number' ? draft : null,
+          selected,
+          onToggle: toggle,
+          onApply: () => void accept(),
+          onReject: () => void reject(),
+          busy,
+          applyBlockedReason: blockedReason,
+          now,
+          note: changeNote ?? anchorLine,
+          badge: changeBadge,
+          next: nextStep,
+        }
+      : null;
+  /**
+   * A stage with its own review view keeps a decided proposal out of the way: the next step and
+   * a Latest proposal dialog sit in the header instead of the applied card.
+   */
+  const decided =
+    proposal?.status === 'accepted' ||
+    proposal?.status === 'partially_accepted' ||
+    proposal?.status === 'rejected';
+  const inHeader = review !== undefined && decided && cardProps !== null;
+  const applied = proposal?.status === 'accepted' || proposal?.status === 'partially_accepted';
+
   const card =
     body && proposal ? (
       <ProposalCard
@@ -397,6 +432,12 @@ export function StagePanel({
 
   const actions = (
     <>
+      {inHeader && applied && nextAction}
+      {inHeader && (
+        <button type="button" onClick={() => setLatestOpen(true)}>
+          Latest proposal
+        </button>
+      )}
       <button
         type="button"
         className={proposal ? undefined : 'primary'}
@@ -532,8 +573,18 @@ export function StagePanel({
           })
         ) : (
           <>
-            {card}
+            {!inHeader && card}
             {review(null)}
+            {inHeader && latestOpen && cardProps && (
+              <Dialog
+                title="Latest proposal"
+                closeLabel="Close"
+                className="proposal-dialog"
+                onClose={() => setLatestOpen(false)}
+              >
+                <ProposalCard {...cardProps} inDialog />
+              </Dialog>
+            )}
           </>
         )
       ) : (

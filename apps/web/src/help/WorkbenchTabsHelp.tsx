@@ -228,6 +228,12 @@ export function WbMappingHelp() {
         narrow the outline, and the line below counts the outputs mapped now and after applying the
         selected changes.
       </p>
+      <p>
+        Once you apply or reject it, the outline shows the mapping as it is. At the top,{' '}
+        <strong>Preview the graph</strong> renders a dev sample&apos;s graph with the applied
+        mapping, and <strong>Latest proposal</strong> lists what the model proposed and which
+        changes were applied.
+      </p>
       <p>Edit the mapping by hand on the Recipe tab's Mapping, which also previews the graph.</p>
     </>
   );
