@@ -121,6 +121,13 @@ def blank(op: str, target: str = "", **over: Any) -> dict[str, Any]:
         "localKind": "",
         "localLabel": "",
         "localDefinition": "",
+        "nodeClass": "",
+        "nodeValue": "",
+        "nodeUnit": "",
+        "nodeUnitProperty": "",
+        "valueLink": "",
+        "valueProperty": "",
+        "unitProperty": "",
         "confidence": "high",
         "reason": "r",
         "evidence": [],
@@ -696,3 +703,224 @@ def test_a_table_without_a_row_class_says_how_to_resolve_it(
     assert error.startswith("changes[1].rowClass: a table needs a row class")
     assert way_out in error
     assert error.endswith("or leave the table and its columns unmapped")
+
+
+# --- value nodes ------------------------------------------------------------------------------
+
+
+def classes_of(*iris: str) -> list[Candidate]:
+    return [
+        Candidate(
+            i, "class", re.split(r"[#/]", i)[-1], "", [], [], [], 0.01, frozenset({"lexical"})
+        )
+        for i in iris
+    ]
+
+
+def objects_of(*iris: str) -> list[Candidate]:
+    return [
+        Candidate(
+            i, "object_property", re.split(r"[#/]", i)[-1], "", [], [], [], 0.01,
+            frozenset({"lexical"}),
+        )
+        for i in iris
+    ]  # fmt: skip
+
+
+NODE_SHORTLISTS = {
+    **SHORTLISTS,
+    "tests.assay": [*shortlist_of(f"{PH}testName"), *classes_of(f"{PH}TestResult")],
+    "expires": [*shortlist_of(f"{PH}expiryDate"), *classes_of(f"{PH}Specification")],
+    "#valueNodes": [*objects_of(f"{PH}hasResult"), *shortlist_of(f"{PH}resultValue")],
+}
+QUDT_UNIT = "http://qudt.org/vocab/unit/"
+DOC_WITH_DEFAULTS = blank(
+    "setDocumentMapping",
+    documentClass=f"{PH}BatchRecord",
+    valueLink=f"{PH}hasResult",
+    valueProperty=f"{PH}resultValue",
+)
+TABLE = blank("putTableMapping", "tests", tableLink=f"{PH}hasResult", rowClass=f"{PH}TestResult")
+
+
+def convert_nodes(
+    changes: list[dict[str, Any]], draft: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], list[str]]:
+    inputs = MappingInputs.model_validate(PARAMS_MAPPING)
+    return convert_mapping(
+        {"notes": "", "changes": changes},
+        draft or DRAFT,
+        inputs,
+        NODE_SHORTLISTS,
+        local_namespace="https://ex.example/local#",
+    )
+
+
+def node(target: str, **over: Any) -> dict[str, Any]:
+    return blank("putFieldMapping", target, valueAs="node", **over)
+
+
+def test_value_as_includes_node_and_the_new_keys_are_plain_strings() -> None:
+    from ingest_worker.mapping_stage import MAPPING_SCHEMA
+
+    item = MAPPING_SCHEMA["properties"]["changes"]["items"]["properties"]
+    assert "node" in item["valueAs"]["enum"]
+    keys = ("nodeClass", "nodeValue", "nodeUnit", "nodeUnitProperty", "valueLink")
+    for key in (*keys, "valueProperty", "unitProperty"):
+        assert item[key] == {"type": "string"}, key
+
+
+def test_a_value_node_takes_the_answers_defaults() -> None:
+    body, errors = convert_nodes(
+        [DOC_WITH_DEFAULTS, node("expires", nodeClass=f"{PH}Specification")]
+    )
+    assert errors == []
+    document, expires = body["changes"]
+    assert document["valueNodes"] == {"link": "pharma:hasResult", "value": "pharma:resultValue"}
+    assert expires["mapping"] == {"node": {"class": f"{PH}Specification"}}
+
+
+def test_a_value_node_takes_the_drafts_defaults() -> None:
+    draft = {
+        **MAPPED_DRAFT,
+        "semantics": {
+            **MAPPED_DRAFT["semantics"],
+            "valueNodes": {"link": "pharma:hasResult", "value": "pharma:resultValue"},
+        },
+    }
+    body, errors = convert_nodes([node("expires", nodeClass=f"{PH}Specification")], draft)
+    assert errors == []
+    assert body["changes"][0]["mapping"] == {"node": {"class": "pharma:Specification"}}
+
+
+def test_a_value_node_without_any_link_or_value_property_is_refused() -> None:
+    _, errors = convert_nodes(
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            node("expires", nodeClass=f"{PH}Specification"),
+        ]
+    )
+    assert any("a value node needs a link" in e for e in errors), errors
+    assert any("a value node needs a value property" in e for e in errors), errors
+
+
+def test_a_value_nodes_own_terms_are_kept() -> None:
+    own = node(
+        "expires",
+        property=f"{PH}hasResult",
+        nodeClass=f"{PH}Specification",
+        nodeValue=f"{PH}expiryDate",
+    )
+    body, errors = convert_nodes(
+        [blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"), own]
+    )
+    assert errors == []
+    assert body["changes"][1]["mapping"] == {
+        "property": f"{PH}hasResult",
+        "node": {"class": f"{PH}Specification", "value": f"{PH}expiryDate"},
+    }
+
+
+def test_a_value_nodes_class_must_be_a_class() -> None:
+    _, errors = convert_nodes([DOC_WITH_DEFAULTS, node("expires", nodeClass=f"{PH}expiryDate")])
+    assert any(f"{PH}expiryDate is a datatype_property, not a class" in e for e in errors), errors
+
+
+def test_implied_local_node_terms_get_their_kinds() -> None:
+    ns = "https://data.acme.example/def/batch/"
+    document = blank(
+        "setDocumentMapping",
+        documentClass=f"{PH}BatchRecord",
+        valueLink=f"{ns}hasOutcome",
+        valueProperty=f"{ns}value",
+        unitProperty=f"{ns}unit",
+    )
+    inputs = MappingInputs.model_validate(PARAMS_MAPPING)
+    body, errors = convert_mapping(
+        {"notes": "", "changes": [document, node("expires", nodeClass=f"{ns}ExpiryDatum")]},
+        DRAFT,
+        inputs,
+        NODE_SHORTLISTS,
+        local_namespace=ns,
+    )
+    assert errors == []
+    declared = [c["term"] for c in body["changes"] if c["op"] == "putLocalTerm"]
+    assert {t["iri"]: t["kind"] for t in declared} == {
+        f"{ns}hasOutcome": "object_property",
+        f"{ns}value": "datatype_property",
+        f"{ns}unit": "object_property",
+        f"{ns}ExpiryDatum": "class",
+    }
+
+
+def test_a_unit_outside_qudt_units_is_refused() -> None:
+    change = node(
+        "expires",
+        nodeClass=f"{PH}Specification",
+        nodeUnit="https://units.example/day",
+        nodeUnitProperty=f"{PH}hasResult",
+    )
+    _, errors = convert_nodes([DOC_WITH_DEFAULTS, change])
+    assert any("a unit is a QUDT unit" in e for e in errors), errors
+
+
+def test_a_qudt_unit_is_kept_at_most_medium_and_declares_its_prefix() -> None:
+    document = {**DOC_WITH_DEFAULTS, "unitProperty": f"{PH}hasResult"}
+    change = node("expires", nodeClass=f"{PH}Specification", nodeUnit=f"{QUDT_UNIT}DAY")
+    body, errors = convert_nodes([document, change])
+    assert errors == []
+    document_change, expires = body["changes"]
+    assert document_change["prefixes"]["unit"] == QUDT_UNIT
+    assert expires["mapping"]["node"] == {"class": f"{PH}Specification", "unit": f"{QUDT_UNIT}DAY"}
+    assert expires["confidence"] == "medium"
+    assert "unit not checked against the library" in expires["reason"]
+
+
+def test_a_unit_needs_a_unit_property() -> None:
+    change = node("expires", nodeClass=f"{PH}Specification", nodeUnit=f"{QUDT_UNIT}DAY")
+    _, errors = convert_nodes([DOC_WITH_DEFAULTS, change])
+    assert any("a unit needs a unit property" in e for e in errors), errors
+
+
+def test_a_list_cannot_be_a_value_node() -> None:
+    draft = json.loads(json.dumps(DRAFT))
+    draft["outputs"]["fields"].append({"id": "tags", "type": "list"})
+    draft["pipeline"][0]["fields"].append("tags")
+    change = node("tags", nodeClass=f"{PH}Specification")
+    _, errors = convert_nodes([DOC_WITH_DEFAULTS, change], draft)
+    assert any("a list cannot be a value node" in e for e in errors), errors
+
+
+def test_a_value_node_column_is_merged_into_its_table() -> None:
+    body, errors = convert_nodes(
+        [DOC_WITH_DEFAULTS, TABLE, node("tests.assay", nodeClass=f"{PH}TestResult")]
+    )
+    assert errors == []
+    table = body["changes"][1]["mapping"]
+    assert table["columns"]["assay"] == {"node": {"class": f"{PH}TestResult"}}
+
+
+def test_every_field_and_column_gets_class_candidates() -> None:
+    from ingest_worker.mapping_stage import stage_shortlists
+
+    store = MemoryOntologyStore()
+    store.saved[("pharma", 1)] = parse_ontology(FIXTURE.read_bytes(), "text/turtle", "o.ttl")
+    outputs = outputs_of(DRAFT)
+    queries = {o.path: o.name for o in outputs}
+    queries["expires"] = "test result specification expiry date"
+    shortlists = stage_shortlists(store, [("pharma", 1)], outputs, queries, {}, None)
+    expires = shortlists["expires"]
+    assert any(c.kind == "class" for c in expires)  # a date column gets classes now
+    assert not any(c.kind in ("concept", "scheme") for c in expires)
+    assert sum(c.kind != "class" for c in expires) <= 5  # and fewer properties
+    assert {c.iri for c in shortlists["#valueNodes"]} >= {f"{PH}hasResult", f"{PH}resultValue"}
+
+
+def test_the_prompt_explains_value_nodes(fixture_specs_dir: Path) -> None:
+    drafting, _, _, deps = make(fixture_specs_dir)
+    drafting.responses = [GOOD]
+    run(deps, mapping_job())
+    prompt = drafting.calls[0][1].prompt
+    assert "- node:" in prompt and "nodeClass" in prompt and "valueLink" in prompt
+    assert "prefer node over a literal with a generic property" in prompt
+    assert '<candidates output="value nodes' in prompt
