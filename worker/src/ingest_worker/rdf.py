@@ -3,8 +3,9 @@
 One named graph per (source file, document type). IRIs under the deployment's base:
 `doc/{sha256}` the document, `job/{id}` the extraction, `doc/{sha256}/page/{n}` pages,
 `doc/{sha256}/{type}/section/{id}` sections, `doc/{sha256}/fact/{type}/{output}` the evidence
-behind each fact, and `def/{type}/{id}` the default vocabulary for outputs the recipe does not
-map. Entities get readable IRIs from the mapping's template (`party/{value|slug}`).
+behind each fact, `doc/{sha256}/{type}/value/{field}` and `doc/{sha256}/{type}/{table}/{n}/{column}`
+value nodes, and `def/{type}/{id}` the default vocabulary for outputs the recipe does not map.
+Entities get readable IRIs from the mapping's template (`party/{value|slug}`).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import quote
@@ -88,6 +89,16 @@ def mint_entity_iri(base: str, template_str: str, values: dict[str, Any]) -> str
     return filled if _ABSOLUTE.match(filled) else base + filled.lstrip("/")
 
 
+def value_node_iri(base: str, sha256: str, type_id: str, output: str, row: int | None) -> str:
+    """A value node's IRI: always under its document (never under a readable row, which other
+    documents may share), so it lives in that document's graph alone. `output` is a field id or
+    `table.column`; `row` the 1-based row of a column's value."""
+    table, _, column = output.partition(".")
+    if column:
+        return f"{base}doc/{sha256}/{type_id}/{table}/{row}/{column}"
+    return f"{base}doc/{sha256}/{type_id}/value/{output}"
+
+
 def entity_key(template_str: str, values: dict[str, Any]) -> list[str]:
     """The values an IRI template names, in order, before filters: an entity's scoped key."""
     return [
@@ -102,6 +113,8 @@ class Rendering:
 
     graph: Graph
     entities: list[EntityRecord]
+    #: Value node IRI -> the output it publishes (a field id or `table.column`).
+    nodes: dict[str, str] = field(default_factory=dict)
 
 
 class _Renderer:
@@ -119,6 +132,7 @@ class _Renderer:
             self.g.bind(prefix, Namespace(ns), override=True, replace=True)
         self.issues: dict[tuple[str, int | None, str | None], str] = {}
         self.entities: dict[str, EntityRecord] = {}
+        self.nodes: dict[str, str] = {}
         self.raw: dict[tuple[str, int | None, str | None], Any] = {}
         for issue in document.get("issues", []):
             key = (issue.get("target"), issue.get("row"), issue.get("column"))
@@ -177,12 +191,30 @@ class _Renderer:
             return Literal(value)
         return Literal(str(value))
 
+    def value_node(
+        self, mapping: OutputMapping, output: str, row: int | None, value: Node
+    ) -> URIRef:
+        """The node of a value-node mapping holding `value` (its class, unit and output)."""
+        assert self.semantics is not None
+        resolved = self.semantics.resolve_node(mapping)
+        assert resolved is not None and resolved.value is not None  # Template validation
+        node = URIRef(value_node_iri(self.base, self.sha, self.t.id, output, row))
+        self.g.add((node, RDF.type, self.expand(resolved.class_)))
+        self.g.add((node, self.expand(resolved.value), value))
+        if resolved.unit is not None and resolved.unit_property is not None:
+            self.g.add((node, self.expand(resolved.unit_property), self.expand(resolved.unit)))
+        self.g.add((node, CT.output, Literal(output)))
+        self.nodes[str(node)] = output
+        return node
+
     def objects(
         self,
         value: Any,
         definition: ValueDef,
         mapping: OutputMapping | None,
         values: dict[str, Any],
+        output: str,
+        row: int | None,
     ) -> tuple[list[Node], list[str]]:
         """The RDF objects for a value (one per list item), and problems mapping it."""
         items = value if isinstance(value, list) else [value]
@@ -191,7 +223,10 @@ class _Renderer:
         for item in items:
             if item is None or item == "":
                 continue
-            if mapping and mapping.object:
+            if mapping and mapping.node:
+                literal = self.literal(item, definition)
+                nodes.append(self.value_node(mapping, output, row, literal))
+            elif mapping and mapping.object:
                 iri = mint_entity_iri(self.base, mapping.object.iri, {**values, "value": item})
                 if iri is None:
                     nodes.append(Literal(str(item)))
@@ -237,13 +272,18 @@ class _Renderer:
         values: dict[str, Any],
     ) -> tuple[list[Node], list[str]]:
         """Objects for a value, falling back to the raw text when normalisation failed."""
+        target, row, column = key
+        output = f"{target}.{column}" if column else target
         issue = self.issues.get(key)
         if issue is not None and (value is None or value == "" or value == []):
             raw = self.raw.get(key)
             if raw is None or raw == "":
                 return [], []
-            return [Literal(str(raw))], [issue]
-        nodes, problems = self.objects(value, definition, mapping, values)
+            text: Node = Literal(str(raw))
+            if mapping and mapping.node:
+                text = self.value_node(mapping, output, row, text)
+            return [text], [issue]
+        nodes, problems = self.objects(value, definition, mapping, values, output, row)
         return nodes, ([issue] if issue else []) + problems
 
     # --- the graph ---------------------------------------------------------------------------
@@ -360,7 +400,11 @@ def render(template: Template, document: dict[str, Any], ctx: GraphContext) -> R
     """The named graph for one document under one recipe, and the entities it minted."""
     renderer = _Renderer(template, document, ctx)
     graph = renderer.render()
-    return Rendering(graph, [renderer.entities[k] for k in sorted(renderer.entities)])
+    return Rendering(
+        graph,
+        [renderer.entities[k] for k in sorted(renderer.entities)],
+        dict(sorted(renderer.nodes.items())),
+    )
 
 
 def render_graph(template: Template, document: dict[str, Any], ctx: GraphContext) -> Graph:
