@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from .mapping_stage import (
@@ -454,8 +454,12 @@ def propose(
     embed: Embedding | None,
     retrieve: int = RETRIEVE,
     options: int = OPTIONS,
+    confirm: bool = False,
 ) -> dict[str, Pick]:
-    """Map every output of `draft` (path -> Pick; a table's pick holds its link and row class)."""
+    """Map every output of `draft` (path -> Pick; a table's pick holds its link and row class).
+    `confirm`: ask every field and column question a second time with its options reversed; a
+    pick the second answer repeats goes up a confidence tier, one it changes is low (agreement
+    under a perturbation, a better signal than the model's own word; twice the model calls)."""
     terms = _Terms(store, versions)
     outputs = outputs_of(draft)
     seen = {p: [v.value for v in vs] for p, vs in inputs.observed.items()}
@@ -588,9 +592,16 @@ def propose(
             limit = NODE_CLASSES + NODE_PROPERTIES if node_ready else options
             note = NODE_OPTIONS_NOTE if node_ready else ""
             chosen = ask("property", batch, note, limit)
+            again: dict[str, str] | None = None
+            if confirm:
+                reverse = [(p, o, list(reversed(rs[:limit]))) for p, o, rs in batch]
+                again = ask("property", reverse, note, limit)
             for path, _output, rs in batch:
                 shown = rs[:limit]
                 term = _answer(chosen, path, shown)
+                if again is not None:
+                    # The tier the pick earns from the second asking (applied below).
+                    agreed = term is not None and _answer(again, path, shown) == term
                 picked = next((r for r in shown if r.iri == term), None)
                 if picked is not None and picked.kind == "class":
                     classes = [r for r in shown if r.kind == "class"]
@@ -604,14 +615,21 @@ def propose(
                         tuple(r.iri for r in rs),
                         entity_class=node_class,
                     )
-                    continue
-                picks[path] = _published(term, rs, terms, _confidence(term, shown))
+                else:
+                    picks[path] = _published(term, rs, terms, _confidence(term, shown))
+                if again is not None and term is not None:
+                    tier = _CONFIRMED[picks[path].confidence] if agreed else "low"
+                    picks[path] = replace(picks[path], confidence=tier)
 
     map_outputs([o for o in outputs if o.kind == "field"], doc_owner)
     for table_path, rows in row_class.items():
         columns = [o for o in outputs if o.kind == "column" and o.path.startswith(f"{table_path}.")]
         map_outputs(columns, [rows] if rows else [])
     return picks
+
+
+#: A pick confirmed by a second asking goes up a tier.
+_CONFIRMED: dict[Confidence, Confidence] = {"low": "medium", "medium": "high", "high": "high"}
 
 
 def _published(

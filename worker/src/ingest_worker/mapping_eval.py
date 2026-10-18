@@ -471,11 +471,20 @@ def current_picks(
 
 
 def per_output_picks(
-    params: DraftParams, store: OntologyStore, choose: Chooser, embed: Embedding | None
+    params: DraftParams,
+    store: OntologyStore,
+    choose: Chooser,
+    embed: Embedding | None,
+    *,
+    confirm: bool = False,
 ) -> dict[str, Pick]:
+    """The per-output matcher's picks; `confirm` asks each field and column again with the
+    options reversed (`propose`)."""
     inputs = _observed(params)
     versions = [(v.id, v.version) for v in inputs.versions]
-    return propose(params.draft or {}, inputs, store, versions, choose=choose, embed=embed)
+    return propose(
+        params.draft or {}, inputs, store, versions, choose=choose, embed=embed, confirm=confirm
+    )
 
 
 def check_policy(deps: PipelineDeps, params: DraftParams, model_ref: str) -> None:
@@ -768,6 +777,11 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     parser.add_argument("--gold", action="append", default=[])
     parser.add_argument("--template")
     parser.add_argument("--matcher", default="current,per-output")
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="per-output: ask each field and column twice (options reversed) for confidence",
+    )
     parser.add_argument("--model", default="draft")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--details", action="store_true", help="each output's gold and picks")
@@ -808,7 +822,9 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
                 calls[0] = 1
                 return current_picks(deps, params, args.model, live)
             choose = model_chooser(deps, params, args.model, calls, say=live.say)
-            return per_output_picks(params, store, choose, _embedding(deps, params))
+            return per_output_picks(
+                params, store, choose, _embedding(deps, params), confirm=args.confirm
+            )
 
         results = run_matchers(matchers, gold, kinds, run)
         print(report_json(gold.name, results) if args.json else format_report(gold.name, results))

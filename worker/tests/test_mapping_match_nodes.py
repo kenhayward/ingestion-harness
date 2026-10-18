@@ -249,3 +249,48 @@ def test_qualifier_columns_need_a_sibling_they_qualify() -> None:
     assert qualifier_of(flag, alone) is None
     assay = next(o for o in columns if o.path == "results.assay")
     assert qualifier_of(assay, columns) is None
+
+
+def confirming(first: dict[str, str], second: dict[str, str]) -> tuple[list[ChoiceRequest], Any]:
+    """A chooser answering `first` on a question's first asking and `second` when the same
+    outputs are asked again (options reversed); tables take their first option."""
+    requests: list[ChoiceRequest] = []
+    asked: set[tuple[str, ...]] = set()
+
+    def choose(request: ChoiceRequest) -> dict[str, str]:
+        requests.append(request)
+        key = tuple(p for p, _ in request.items)
+        answers = second if key in asked else first
+        asked.add(key)
+        out = {}
+        for path, options in request.items:
+            table = path.startswith("results") and "." not in path
+            out[path] = answers.get(path, options[0] if table and options else "none")
+        return out
+
+    return requests, choose
+
+
+def test_confirmation_asks_again_with_the_options_reversed() -> None:
+    requests, choose = confirming(DEFAULTS, DEFAULTS)
+    propose(DRAFT, INPUTS, store(), VERSIONS, choose=choose, embed=None, confirm=True)
+    for path in ("assay", "results.assay"):
+        asked = [dict(r.items)[path] for r in requests if path in dict(r.items)]
+        assert len(asked) == 2 and asked[1] == list(reversed(asked[0])), path
+
+
+def test_a_confirmed_pick_goes_up_a_tier_and_a_changed_one_is_low() -> None:
+    pick = {"assay": f"{EX}AssayResult", "water_content_kf": f"{EX}WaterMassFraction"}
+    again = {"assay": f"{EX}AssayResult", "water_content_kf": f"{EX}MassFraction"}
+    _, plain = run({**DEFAULTS, **pick})
+    _, choose = confirming({**DEFAULTS, **pick}, {**DEFAULTS, **again})
+    confirmed = propose(DRAFT, INPUTS, store(), VERSIONS, choose=choose, embed=None, confirm=True)
+    up = {"low": "medium", "medium": "high", "high": "high"}
+    assert confirmed["assay"].confidence == up[plain["assay"].confidence]
+    assert confirmed["water_content_kf"].confidence == "low"
+    assert confirmed["water_content_kf"].entity_class == f"{EX}WaterMassFraction"  # first answer
+
+
+def test_without_confirmation_each_question_is_asked_once() -> None:
+    requests, _ = run(DEFAULTS)
+    assert sum("assay" in dict(r.items) for r in requests) == 1

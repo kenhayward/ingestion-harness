@@ -533,3 +533,19 @@ def test_the_model_chooser_reports_each_call_and_its_tokens() -> None:
     choose(ChoiceRequest("pick", [("lot", [f"{PH}batchNumber"])], prompt="Pick."))
     assert said[0] == "choice 1 (1 output)"
     assert said[-1] == "choice 1: ~1,200 tokens"
+
+
+def test_the_per_output_matcher_can_confirm_each_answer() -> None:
+    g = gold()
+    params = draft_params(g, None)
+    counts: list[int] = []
+
+    def choose(request: ChoiceRequest) -> dict[str, str]:
+        counts.append(len(request.items))
+        return {path: "none" for path, _ in request.items}
+
+    per_output_picks(params, store(), choose, embed=None)
+    once = len(counts)
+    counts.clear()
+    per_output_picks(params, store(), choose, embed=None, confirm=True)
+    assert len(counts) > once  # every field and column question asked a second time
