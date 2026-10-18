@@ -16,6 +16,12 @@ export function MappingHelp() {
         and › step to the previous or next one. <strong>Find a …</strong> searches the pinned
         ontologies right under the field.
       </p>
+      <p>
+        Terms show by their readable name: the list says <em>has analyte</em> rather than an id like
+        af-x:AFX_0000117 (point at it to see the term), and each term box says under it which
+        pinned ontology or local term names it, and whether it is deprecated. When no pinned
+        ontology or local term has the term, or its prefix is not declared, the box says so.
+      </p>
 
       <h3>Ontologies</h3>
       <p>

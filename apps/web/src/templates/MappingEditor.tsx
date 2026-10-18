@@ -9,6 +9,8 @@ import type {
   Semantics,
   ShaclReport,
   TermGroup,
+  TermLabel,
+  TermLabelsBody,
 } from '@ih/shared';
 import { CURIE_PREFIXES } from '@ih/shared';
 import type { Api } from '../api/client.js';
@@ -78,18 +80,108 @@ interface TermContext {
   api: Api;
   pins: Semantics['ontologies'];
   prefixes: Record<string, string>;
+  /** Each mapped term's name, keyed as written (absent until looked up). */
+  labels: Record<string, TermLabel>;
+}
+
+/** A term's readable name when one is known, else the term as written. */
+const nameOf = (labels: Record<string, TermLabel>, term: string): string => {
+  const hit = labels[term];
+  return hit && (hit.from === 'ontology' || hit.from === 'local') && hit.label ? hit.label : term;
+};
+
+/** Every term the mapping names (document, fields, tables, columns), sorted, once each. */
+function mappedTerms(s: Semantics): string[] {
+  const out = new Set<string>();
+  const add = (t: string | undefined) => {
+    if (t?.trim()) out.add(t.trim());
+  };
+  const output = (m: OutputMapping) => {
+    add(m.property);
+    add(m.object?.class);
+    add(m.concepts?.scheme);
+    Object.values(m.concepts?.values ?? {}).forEach(add);
+  };
+  add(s.document.class);
+  Object.values(s.fields).forEach(output);
+  for (const t of Object.values(s.tables)) {
+    add(t.link);
+    add(t.class);
+    Object.values(t.columns).forEach(output);
+  }
+  return [...out].sort();
+}
+
+/** Wait this long after the last edit before asking for names again. */
+const LABEL_DELAY_MS = 300;
+
+/** The names of the mapping's terms, asked for once per change of terms, pins or prefixes. */
+function useTermLabels(api: Api, s: Semantics): Record<string, TermLabel> {
+  const terms = mappedTerms(s);
+  const request = terms.length
+    ? JSON.stringify({
+        ontologies: s.ontologies,
+        prefixes: s.prefixes,
+        local: s.local.map(({ iri, label }) => ({ iri, label })),
+        terms,
+      } satisfies TermLabelsBody)
+    : '';
+  const [labels, setLabels] = useState<Record<string, TermLabel>>({});
+  useEffect(() => {
+    if (!request) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      api.termLabels(JSON.parse(request) as TermLabelsBody).then(
+        (r) => {
+          if (live) setLabels(r.terms);
+        },
+        // Names are a help: the mapping is edited and saved the same without them.
+        () => undefined,
+      );
+    }, LABEL_DELAY_MS);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [api, request]);
+  return labels;
+}
+
+/** What a term box says under it: the term's name and where it is from, or why it has none. */
+function TermName({ info }: { info: TermLabel | undefined }) {
+  if (!info || info.from === 'built-in') return null;
+  if (info.from === 'unknown' || info.from === 'invalid') {
+    return (
+      <small className="term-name term-missing">
+        {info.from === 'invalid'
+          ? 'Unknown prefix: declare it under Prefixes.'
+          : 'Not in the pinned ontologies or the local terms: find one, or add a local term.'}
+      </small>
+    );
+  }
+  return (
+    <small className="term-name">
+      <span className="term-label">{info.label || 'No label'}</span>
+      <span className="term-from">
+        {info.from === 'local' ? 'local term' : (info.ontology ?? '').replace('@', ' v')}
+      </span>
+      {info.deprecated && <span className="kind-tag tone-warn">deprecated</span>}
+    </small>
+  );
 }
 
 /** A field's or column's state and one-line summary, for the outline. */
 export function outputStatus(
   m: OutputMapping | undefined,
   enumValues: string[] | null,
-): { status: MappingStatus; summary: string } {
+  /** A term's readable name (the term itself when it has none). */
+  name: (term: string) => string = (term) => term,
+): { status: MappingStatus; summary: string; term?: string } {
   if (!m) return { status: 'none', summary: 'unmapped' };
   if (!m.property) return { status: 'partial', summary: 'no property' };
   if (m.object) {
     return m.object.class
-      ? { status: 'ok', summary: `entity · ${m.object.class}` }
+      ? { status: 'ok', summary: `entity · ${name(m.object.class)}`, term: m.object.class }
       : { status: 'partial', summary: 'entity · no class' };
   }
   if (m.concepts) {
@@ -101,10 +193,10 @@ export function outputStatus(
       };
     }
     return m.concepts.scheme
-      ? { status: 'ok', summary: `concept · ${m.concepts.scheme}` }
+      ? { status: 'ok', summary: `concept · ${name(m.concepts.scheme)}`, term: m.concepts.scheme }
       : { status: 'partial', summary: 'concept · no scheme' };
   }
-  return { status: 'ok', summary: m.property };
+  return { status: 'ok', summary: name(m.property), term: m.property };
 }
 
 /**
@@ -148,6 +240,7 @@ function TermField({
           {findLabel}
         </button>
       </div>
+      <TermName info={ctx.labels[value.trim()]} />
       {open && (
         <TermSearch
           title={findLabel}
@@ -651,6 +744,8 @@ interface OutlineItem {
   kind?: string;
   status: MappingStatus;
   summary: string;
+  /** The term the summary names (it shows the term's name when one is known). */
+  term?: string;
 }
 
 const STATUS_WORD: Record<MappingStatus, string> = {
@@ -665,6 +760,7 @@ const pinText = (pins: Semantics['ontologies']) =>
 
 /** Fields, then each table with its columns: what the outline and the coverage count. */
 function outlineItems(
+  name: (term: string) => string,
   s: Semantics,
   fields: { id: string; type?: string; enum?: string[] }[],
   tables: { id: string; columns?: { id: string; type?: string; enum?: string[] }[] }[],
@@ -703,11 +799,12 @@ function outlineItems(
       label: 'Document',
       text: 'Document',
       status: s.document.class ? 'ok' : 'none',
-      summary: s.document.class || 'no class',
+      summary: s.document.class ? name(s.document.class) : 'no class',
+      term: s.document.class || undefined,
     },
   ];
   for (const f of fields) {
-    const st = outputStatus(s.fields[f.id], f.type === 'enum' ? (f.enum ?? []) : null);
+    const st = outputStatus(s.fields[f.id], f.type === 'enum' ? (f.enum ?? []) : null, name);
     items.push({
       key: `field:${f.id}`,
       group: 'Fields',
@@ -728,10 +825,11 @@ function outlineItems(
       output: true,
       kind: 'table',
       status: !tm ? 'none' : tm.link && tm.class ? 'ok' : 'partial',
-      summary: !tm ? 'unmapped' : tm.class || 'no row class',
+      summary: !tm ? 'unmapped' : tm.class ? name(tm.class) : 'no row class',
+      term: tm?.class || undefined,
     });
     for (const c of t.columns ?? []) {
-      const st = outputStatus(tm?.columns[c.id], c.type === 'enum' ? (c.enum ?? []) : null);
+      const st = outputStatus(tm?.columns[c.id], c.type === 'enum' ? (c.enum ?? []) : null, name);
       items.push({
         key: `column:${t.id}.${c.id}`,
         group: 'Tables',
@@ -844,11 +942,13 @@ function MappingOutline({
     document: { ...EMPTY_SEMANTICS.document, ...semantics.document },
   };
   const set = (patch: Partial<Semantics>) => onChange({ ...s, ...patch });
-  const ctx: TermContext = { api, pins: s.ontologies, prefixes: s.prefixes };
+  const labels = useTermLabels(api, s);
+  const name = (term: string) => nameOf(labels, term);
+  const ctx: TermContext = { api, pins: s.ontologies, prefixes: s.prefixes, labels };
   const fields: { id: string; type?: string; enum?: string[] }[] = definition.outputs?.fields ?? [];
   const tables: { id: string; columns?: { id: string; type?: string; enum?: string[] }[] }[] =
     definition.outputs?.tables ?? [];
-  const items = outlineItems(s, fields, tables, preview !== undefined);
+  const items = outlineItems(name, s, fields, tables, preview !== undefined);
   // The opening item is picked once and kept: finishing it (or pinning the first ontology) must
   // not move the editor away mid-typing. Only an item that disappears falls back to it again.
   const [selected, setSelected] = useState<ItemKey>(() => firstKey(items, s));
@@ -1090,6 +1190,8 @@ function MappingOutline({
     );
   };
 
+  /** The summary shows the term's name: the term itself goes in its tooltip and description. */
+  const named = (i: OutlineItem) => i.term !== undefined && name(i.term) !== i.term;
   const groups = (['Setup', 'Fields', 'Tables', 'More'] as const)
     .map((g) => [g, items.filter((i) => i.group === g)] as const)
     .filter(([, list]) => list.length > 0);
@@ -1127,13 +1229,21 @@ function MappingOutline({
                         <span className={i.output ? 'mapping-item mono' : 'mapping-item'}>
                           {i.text}
                         </span>
-                        <span id={`${uid}-${i.key}`} className="mapping-summary">
+                        <span
+                          id={`${uid}-${i.key}`}
+                          className={named(i) ? 'mapping-summary named' : 'mapping-summary'}
+                          title={named(i) ? i.term : undefined}
+                        >
                           {i.status === 'none' && i.output ? (
                             <span className="kind-tag tone-neutral">unmapped</span>
                           ) : (
                             i.summary
                           )}
-                          <span className="visually-hidden"> ({STATUS_WORD[i.status]})</span>
+                          <span className="visually-hidden">
+                            {named(i)
+                              ? ` (${i.term}, ${STATUS_WORD[i.status]})`
+                              : ` (${STATUS_WORD[i.status]})`}
+                          </span>
                         </span>
                       </button>
                     </li>

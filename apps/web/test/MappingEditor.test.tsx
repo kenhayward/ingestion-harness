@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Semantics } from '@ih/shared';
+import type { Semantics, TermLabel } from '@ih/shared';
 import type { Api } from '../src/api/client.js';
 import { MappingEditor } from '../src/templates/MappingEditor.js';
 import { fakeApi } from './fake-api.js';
@@ -326,6 +326,91 @@ describe('MappingEditor outline (option B)', () => {
         name: 'Preview',
       }),
     ).toBeInTheDocument();
+  });
+});
+
+describe('MappingEditor term labels', () => {
+  const found = (label: string, iri: string): TermLabel => ({
+    from: 'ontology',
+    iri,
+    label,
+    kind: 'object_property',
+    ontology: 'acme@1',
+    deprecated: false,
+  });
+  const partly: Semantics = {
+    ...mapped,
+    fields: {
+      sender: { property: 'acme:sentBy' },
+      kind: { property: 'acme:kind', concepts: { values: { memo: 'acme:Memo' } } },
+    },
+    local: [{ iri: 'acme:Memo', kind: 'concept', label: 'Memo' }],
+  };
+
+  it('asks once for the name of every term the mapping uses', async () => {
+    const termLabels = vi.fn(async () => ({ terms: {} }));
+    setup(partly, fakeApi({ termLabels }));
+    await waitFor(() => expect(termLabels).toHaveBeenCalledTimes(1));
+    expect(termLabels).toHaveBeenCalledWith({
+      ontologies: [{ id: 'acme', version: 1 }],
+      prefixes: { acme: A },
+      local: [{ iri: 'acme:Memo', label: 'Memo' }],
+      terms: ['acme:Letter', 'acme:Memo', 'acme:kind', 'acme:sentBy'],
+    });
+  });
+
+  it('shows each term by its name in the outline and under its field', async () => {
+    const termLabels = vi.fn(async () => ({
+      terms: {
+        'acme:sentBy': found('sent by', `${A}sentBy`),
+        'acme:kind': { ...found('kind of letter', `${A}kind`), deprecated: true },
+        'acme:Memo': {
+          ...found('Memo', `${A}Memo`),
+          from: 'local' as const,
+          kind: null,
+          ontology: null,
+        },
+        'acme:Letter': {
+          ...found('', `${A}Letter`),
+          from: 'unknown' as const,
+          label: null,
+          kind: null,
+          ontology: null,
+        },
+      },
+    }));
+    setup(partly, fakeApi({ termLabels }));
+    const outline = screen.getByRole('navigation', { name: 'Mapping outline' });
+    await waitFor(() =>
+      expect(within(outline).getByRole('button', { name: 'sender' })).toHaveAccessibleDescription(
+        'sent by (acme:sentBy, mapped)',
+      ),
+    );
+    expect(within(outline).getByRole('button', { name: 'Document' })).toHaveAccessibleDescription(
+      'acme:Letter (mapped)',
+    );
+
+    const kind = screen.getByRole('group', { name: 'kind' });
+    expect(within(kind).getByText('kind of letter')).toBeInTheDocument();
+    expect(within(kind).getByText('deprecated')).toBeInTheDocument();
+    expect(within(kind).getByText('Memo')).toBeInTheDocument();
+    expect(within(kind).getByText('local term')).toBeInTheDocument();
+
+    await open('Document');
+    expect(screen.getByText(/Not in the pinned ontologies or the local terms/)).toBeInTheDocument();
+  });
+
+  it('still maps when the names cannot be read', async () => {
+    const termLabels = vi.fn(async () => {
+      throw new Error('offline');
+    });
+    const { last } = setup(mapped, fakeApi({ termLabels }));
+    await userEvent.type(
+      within(screen.getByRole('group', { name: 'sender' })).getByLabelText('Property'),
+      'acme:sentBy',
+    );
+    expect(last()?.fields.sender).toEqual({ property: 'acme:sentBy' });
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

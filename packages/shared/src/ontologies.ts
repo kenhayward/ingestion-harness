@@ -282,6 +282,47 @@ export const TermQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+/** At most this many terms per label lookup (the Mapping tab sends a recipe's mapped terms). */
+export const MAX_LABEL_TERMS = 500;
+
+/**
+ * What the Mapping tab asks to put a readable name beside each term it maps: the pinned
+ * versions, the recipe's prefixes and local terms, and the terms as written (CURIEs or IRIs).
+ */
+export const TermLabelsBodySchema = z
+  .object({
+    ontologies: z
+      .array(z.object({ id: z.string().min(1), version: z.number().int().positive() }))
+      .max(50),
+    prefixes: z.record(z.string(), z.string()).default({}),
+    local: z
+      .array(z.object({ iri: z.string(), label: z.string() }))
+      .max(MAX_LABEL_TERMS)
+      .default([]),
+    terms: z.array(z.string().min(1).max(2000)).min(1).max(MAX_LABEL_TERMS),
+  })
+  .strict();
+export type TermLabelsBody = z.input<typeof TermLabelsBodySchema>;
+
+/**
+ * Where a term's name came from: a pinned version, the recipe's local terms, a built-in
+ * namespace (rdf, rdfs, xsd…, no label), none of those, or a CURIE with an undeclared prefix.
+ */
+export const TERM_LABEL_SOURCES = ['ontology', 'local', 'built-in', 'unknown', 'invalid'] as const;
+export const TermLabelSchema = z.object({
+  from: z.enum(TERM_LABEL_SOURCES),
+  /** The term expanded; null for an undeclared prefix. */
+  iri: z.string().nullable(),
+  label: z.string().nullable(),
+  kind: OntologyTermKindSchema.nullable(),
+  /** `"<id>@<version>"` of the first pinned version holding it. */
+  ontology: z.string().nullable(),
+  deprecated: z.boolean(),
+});
+export type TermLabel = z.infer<typeof TermLabelSchema>;
+export const TermLabelsSchema = z.object({ terms: z.record(z.string(), TermLabelSchema) });
+export type TermLabels = z.infer<typeof TermLabelsSchema>;
+
 /** Job event when a version is indexed; mirrors `ontology.ONTOLOGY_INDEXED` in the worker. */
 export const ONTOLOGY_INDEXED_EVENT = 'ontology indexed';
 

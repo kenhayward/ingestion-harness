@@ -4456,6 +4456,28 @@ button.endpoint-toggle {
   font-size: var(--ih-text-xs);
   color: var(--ih-muted);
 }
+.mapping-summary.named {
+  font-family: inherit;
+  font-size: var(--ih-text-sm);
+}
+/* A term's readable name under its box: "sent by · acme v1", or why it has none. */
+.term-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  font-size: var(--ih-text-sm);
+  color: var(--ih-text);
+}
+.term-name .term-from {
+  color: var(--ih-muted);
+}
+.term-name .term-from::before {
+  content: '· ';
+}
+.term-name.term-missing {
+  color: var(--ih-warn-fg);
+}
 .map-dot {
   width: 8px;
   height: 8px;
