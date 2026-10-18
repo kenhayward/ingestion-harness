@@ -421,3 +421,62 @@ about 36 tokens/s decode):
 
 Still to do: a frontier model on the same gold, and an expert's check of the gold's `# CHECK`
 picks.
+
+### Value nodes: covalidation with the 27B model (2026-10-18)
+
+The same gold after [value nodes](value-node-mapping.md) (PR #243): per-row results are now
+`as: node` (21 of the 35 class-scored columns), identifiers stay `as: entity`. Build
+`2026.10.18.6`, AFO, OBI and GS1 pinned, the local drafting model `qwen3.8-27b-mtp`, tools on.
+*Value as* now counts the node form, so it is not comparable with the tables above.
+
+| Matcher | Hit@1 | Precision | Recall | Value as | Class | Time |
+| --- | --- | --- | --- | --- | --- | --- |
+| current, the draft as it is | 79% | 79% | 100% | 0/35 | 0/35 | 437 s |
+| current, the draft without its mapping | 79% | 79% | 100% | 5/35 | 5/35 | 684 s |
+| per-output (PR #243) | 75% | 77% | 95% | 10/35 | 20/35 | 233 s |
+| **per-output, with the fixes below** | 83% | 83% | 95% | **20/35** | **22/35** | 257 s |
+
+- **The stage repeats the mapping it is shown.** The project's draft already holds an accepted
+  mapping with every column on AFO's generic `has value` literal; the stage's prompt shows it
+  (`<current_mapping>`), and the model proposed it again: no node at all. Run from the same draft
+  without its mapping (a one-off driver, nothing written), it made five nodes, all of the right
+  class (dissolution mean, minimum and maximum; both microbial counts), but needed its second try
+  and about 61,000 tokens, and left everything else a literal.
+- **The per-output matcher of PR #243 chose classes, but not for the measurements.** Twenty
+  classes were right: the identifiers (as nodes, where the gold wants entities), storage time and
+  the dissolution statistics. Water content, assay, the degradation products, solid-state NIR and
+  the counts went to `qudt:numericValue` literals. Three causes:
+  - the value-node defaults were offered beside an output's classes, and `qudt:numericValue`
+    (the default value property, with a fitting range) outscored every class;
+  - the right classes were often not retrieved, or ranked below processes, qualities and roles:
+    "Assay (%)" found *assay* (the process), not *assay result*; water content's class was 12th of
+    20 with 4 offered;
+  - a bug: a table's link replaced the value-node link (one variable reused), so value nodes were
+    linked by whatever the last table chose.
+- **Fixes** (`mapping_match.py`, tests in `test_mapping_match_nodes.py`):
+  - the value-node defaults are never an output's options;
+  - a value node's class options are re-ranked by kind of class: under IAO *information content
+    entity* or *data item* +0.3; under BFO process, quality, role or material, or labelled
+    "… role", -0.8 (more than an exact label is worth, so *assay* the process loses to *assay
+    result*). AFO files its role classes under information content entity, so for AFO only the
+    label rule catches them;
+  - class retrieval also asks for the name without its unit text, the name with "result", and
+    the quantity a unit names (`% w/w` a mass fraction, `CFU` a count), fused by reciprocal rank;
+    those phrases count as exact labels;
+  - the defaults' options match their own phrases exactly (*has data output*) and prefer an object
+    property whose range is data; the link is its own variable.
+- **After the fixes every measurement column is a node**, linked by AFO's *has data output*
+  (`AFX_0000544`, range information content entity). Right: assay result, solid-state NIR as a mass
+  fraction, the dissolution statistics, storage time, the identifiers' classes. Near misses: both
+  counts as *viable cell count*, a subclass of the gold's *count* and arguably the better answer
+  (the gold should accept it); water content as *mass fraction*, the parent of the gold's *water
+  mass fraction* (too general; the subclass was not offered); the time point as *time* (gold: time
+  datum or elapsed time). Wrong: the degradation products as AFO's *degradation product role*
+  classes despite the down-rank, total degradation products and the E. coli pass/fail as *assay
+  result*, appearance as *experiment result*.
+- **Still open.** Identifiers become nodes, though the gold wants entities shared across documents:
+  the matcher makes every class pick a node, and needs to tell an identifier (a class under
+  *identifier*, a name ending in number, id or code) from a measurement. The `<` qualifier columns
+  are still mapped (3 of 6, as boolean datum nodes). The high tier holds only 4 picks (100%), so the
+  spike's gate (half the classes, with a 95% high tier on a third of the outputs) is met on
+  classes, not on confidence.
