@@ -298,7 +298,9 @@ docker exec ingestion-worker-1 python -m ingest_worker.mapping_eval --gold /tmp/
 ```
 
 `--model` takes a model choice id or `endpoint/model` (default: the drafting model); `--matcher`
-picks `current`, `per-output` or both; `--json` for machine output. Nothing is written: the stage's
+picks `current`, `per-output` or both; `--json` for machine output; `--details` for each
+output's gold answer beside every matcher's pick. A matcher that fails is scored as leaving
+every output unmapped, and the report says why. Nothing is written: the stage's
 result and model log stay in memory. The report gives, per output kind, Hit@1, precision, recall,
 F1, retrieval recall@1/5/10 and MRR of each matcher's candidates, value-as and row-class accuracy,
 and precision per confidence tier, with model calls and time.
@@ -351,6 +353,69 @@ fit no class should stay unmapped (the instructions and the row-class error now 
 library gap again: a batch is a central thing in these documents and the library has no class for
 it.
 
-### Real gold
+### Real gold: covalidation, local model (2026-10-18)
 
-To be added: the covalidation gold, with the local model and a frontier model.
+The class-centric gold (`docs/design/mapping-gold/covalidation.yaml`: 53 outputs, the document,
+6 tables and 46 columns; AFO and OBI pinned; drafted by Claude, not yet checked by a domain
+expert), the local drafting model `qwen3.8-27b-mtp`, tools on, a base IRI set.
+
+| Matcher | Hit@1 | Precision | Recall | Value as | Class | High tier | Calls | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| current (one answer) | 58% | 95% | 48% | 86% | 10/35 (29%) | 21 picks, 95% | 1 | 576 s |
+| per-output | 77% | 77% | 98% | 29% | 0/35 (0%) | none (medium 44 at 73%) | 15 | 209 s |
+
+- **Hit@1 flatters the per-output matcher.** Most of this gold is `term: any` (the link is
+  structural in AFO), so any mapped column counts as a hit. The per-output matcher maps nearly
+  everything, mostly with generic literal properties (`AFX_0000690`, `qudt:numericValue`) and no
+  class; it also maps the outputs the gold leaves unmapped (storage condition, the `<` qualifier
+  columns), hence its lower precision. Its 19-point lead on Hit@1 is not a better mapping.
+- **Class is the score that carries the meaning, and both fail it.** The current stage got the
+  class right for exactly the identifier columns (batch number as `AFR_0001120`, study id as
+  `AFR_0003369`, in every table: 10 of 35) and left every measurement (assay, water content,
+  degradation products, dissolution, counts) unmapped. The per-output matcher chose a property
+  first and never a class for a literal value, so it scored none. No table got a gold row class:
+  the stage minted local ones (`…/batch_entry`, `…/dissolution_result`) for all six, the per-output
+  matcher picked unrelated AFO classes (a role, `AFC_0000091`).
+- **This confirms the measurement pattern (above).** The values the document exists for need "a
+  node of class X holding the value", which neither the format nor either matcher can say today.
+  More matching effort on properties will not move the class score.
+- **The decision gate is not met.** Hit@1 passes by the letter but not in substance; the
+  per-output matcher has no high-confidence tier at all, while the current stage's high tier
+  (21 picks, 95% precision, 40% of outputs) does meet the bar. Keep the stage; the next step is
+  the semantics change for measurements, then re-run this gold.
+- **The stage needed a fix to finish.** Its first run on this gold failed: the model used local
+  IRIs for all six table links without declaring them (`putLocalTerm`), and the run was refused
+  twice. A term under the recipe's local namespace used without a declaration is now declared for
+  it (kind from where it is used, label from the IRI, low confidence, for the reviewer to check),
+  which is how the run above finished. The harness now also scores a matcher that fails as
+  unmapped, says why and runs the next one, and `--details` lists each output's gold answer beside
+  every matcher's pick.
+
+### Larger local models: Nemotron 3.5 Super, Qwen 3.8 Flash Next (2026-10-18)
+
+The same gold with two larger local models: `nvidia/nemotron-3.5-super-vl` (IQ4_XS, LM Studio,
+about 250 tokens/s prompt processing and 21 tokens/s decode, its reasoning at the server's
+default) and `Qwen3.8-Flash-Next-UD-IQ4_XS` (177B parameters, IQ4_XS, llama.cpp, 262k context,
+about 36 tokens/s decode):
+
+| Matcher | Model | Hit@1 | Precision | Recall | Value as | Class | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| per-output | qwen3.8-27b-mtp | 77% | 77% | 98% | 29% | 0/35 | 209 s |
+| per-output | Nemotron 3.5 Super | 81% | 82% | 95% | 41% | 0/35 | 4,066 s |
+| per-output | Qwen 3.8 Flash Next | 75% | 79% | 90% | 38% | 0/35 | 590 s |
+| current (one answer) | Nemotron 3.5 Super | stopped: 20,000 reasoning tokens in 16 minutes, no answer and no tool call | | | | | |
+
+- **A little better, not different.** Nemotron left two more `<` qualifier columns correctly
+  unmapped and chose `entity` more often; Qwen Flash was a little more precise than the 27B model
+  but left more of the gold's mapped outputs unmapped (recall 90%). Neither chose a class: three
+  models now agree that the class score is the format's limit, not the model's.
+- **Qwen Flash costs about 3 times the 27B model's time** (10 minutes; 15 to 75 seconds a call)
+  for no gain. **Nemotron was about 19 times slower.** Each of its enum choices took 1,600 to 8,300 tokens of reasoning (3 to 7
+  minutes) where the 27B model took about 14 seconds. On the stage's one long answer its reasoning
+  never ended. Reasoning effort cannot be set from CT Studio for OpenAI-compatible endpoints; it is
+  the server's setting.
+- **For mapping, the 27B model stays the local choice.** The lever is the measurement pattern, then
+  a re-run of both models.
+
+Still to do: a frontier model on the same gold, and an expert's check of the gold's `# CHECK`
+picks.

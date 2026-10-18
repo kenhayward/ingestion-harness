@@ -535,6 +535,89 @@ def test_local_terms_live_under_the_recipe_namespace() -> None:
     assert any("set the customer under Administration > Linked data" in e for e in none)
 
 
+def test_a_local_term_used_but_not_declared_is_declared_for_the_model() -> None:
+    """A model that names a term under the recipe's namespace without putLocalTerm (seen on a
+    real run: every table link invented, none declared) gets the declaration added, its kind
+    from where it was used, rather than a failed run."""
+    ns = "https://data.acme.example/def/batch/"
+    body, errors = convert_with(
+        DRAFT,
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            blank(
+                "putTableMapping",
+                "tests",
+                tableLink=f"{ns}has_test_result",
+                rowClass=f"{ns}AssayRun",
+            ),
+            blank("putFieldMapping", "tests.assay", property=f"{ns}assayName"),
+        ],
+        local_namespace=ns,
+    )
+    assert errors == []
+    declared = {c["term"]["iri"]: c["term"] for c in body["changes"] if c["op"] == "putLocalTerm"}
+    assert declared == {
+        f"{ns}has_test_result": {
+            "iri": f"{ns}has_test_result",
+            "kind": "object_property",
+            "label": "has test result",
+        },
+        f"{ns}AssayRun": {"iri": f"{ns}AssayRun", "kind": "class", "label": "assay run"},
+        f"{ns}assayName": {
+            "iri": f"{ns}assayName",
+            "kind": "datatype_property",
+            "label": "assay name",
+        },
+    }
+    implied = next(c for c in body["changes"] if c["op"] == "putLocalTerm")
+    assert implied["confidence"] == "low"
+    assert "not declared" in implied["reason"]
+
+
+def test_a_declared_local_term_is_never_declared_twice() -> None:
+    ns = "https://data.acme.example/def/batch/"
+    body, errors = convert_with(
+        DRAFT,
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            blank("putLocalTerm", localIri=f"{ns}Stage", localKind="class", localLabel="Stage"),
+            blank("putFieldMapping", "lot", property=f"{ns}lotCode"),
+        ],
+        local_namespace=ns,
+    )
+    assert errors == []
+    terms = [c["term"] for c in body["changes"] if c["op"] == "putLocalTerm"]
+    assert [t["iri"] for t in terms] == [f"{ns}Stage", f"{ns}lotCode"]
+
+
+def test_local_terms_the_draft_already_declares_may_be_used_again() -> None:
+    ns = "https://data.acme.example/def/batch/"
+    draft = {
+        **MAPPED_DRAFT,
+        "semantics": {
+            **MAPPED_DRAFT["semantics"],
+            "local": [{"iri": f"{ns}lotCode", "kind": "datatype_property", "label": "lot code"}],
+        },
+    }
+    body, errors = convert_with(
+        draft, [blank("putFieldMapping", "lot", property=f"{ns}lotCode")], local_namespace=ns
+    )
+    assert errors == []
+    assert [c["op"] for c in body["changes"]] == ["putFieldMapping"]
+
+
+def test_without_a_base_iri_an_invented_term_is_still_refused() -> None:
+    _, errors = convert_with(
+        DRAFT,
+        [
+            blank("setDocumentMapping", documentClass=f"{PH}BatchRecord"),
+            blank("putFieldMapping", "lot", property="https://data.acme.example/def/batch/x"),
+        ],
+        local_namespace=None,
+    )
+    assert any("is not in the shortlist" in e for e in errors)
+
+
 def test_terms_imported_from_a_local_only_ontology_refuse_an_external_drafter(
     fixture_specs_dir: Path,
 ) -> None:
