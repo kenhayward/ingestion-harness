@@ -119,6 +119,23 @@ def test_outputs_by_property_maps_fields_columns_and_links() -> None:
     }
 
 
+def test_outputs_by_property_takes_a_value_nodes_default_link() -> None:
+    template = {
+        **TEMPLATE,
+        "semantics": {
+            **TEMPLATE["semantics"],
+            "valueNodes": {"link": "acme:hasCount", "value": "acme:numericValue"},
+            "fields": {
+                **TEMPLATE["semantics"]["fields"],
+                "pages": {"node": {"class": "acme:PageCount"}},
+            },
+        },
+    }
+    mapped = outputs_by_property(Template.model_validate(template))
+    assert mapped[f"{A}hasCount"] == "pages"
+    assert f"{A}pages" not in mapped
+
+
 def test_a_conforming_graph() -> None:
     report = validate(graph(), shapes(), ontology(), by_property())
     assert report.conforms

@@ -130,6 +130,14 @@ class _Renderer:
     def expand(self, curie: str) -> URIRef:
         return expand_term(curie, self.prefixes)
 
+    def link(self, mapping: OutputMapping) -> URIRef:
+        """The property an output hangs off its subject by (a value node's resolved link)."""
+        assert self.semantics is not None
+        term = self.semantics.link_of(mapping)
+        if term is None:  # refused by Template validation; never rendered
+            raise ValueError("an output mapping without a link")
+        return self.expand(term)
+
     def own(self, path: str) -> URIRef:
         return URIRef(self.base + path)
 
@@ -283,7 +291,7 @@ class _Renderer:
     def field(self, definition: ValueDef) -> None:
         entry = self.doc["fields"].get(definition.id) or {}
         mapping = self.semantics.fields.get(definition.id) if self.semantics else None
-        prop = self.expand(mapping.property) if mapping else self.default_term(definition.id)
+        prop = self.link(mapping) if mapping else self.default_term(definition.id)
         value = entry.get("value")
         nodes, problems = self.facts(
             (definition.id, None, None), value, definition, mapping, {"value": value}
@@ -336,9 +344,7 @@ class _Renderer:
             for column in table.columns:
                 col_map = mapping.columns.get(column.id) if mapping else None
                 prop = (
-                    self.expand(col_map.property)
-                    if col_map
-                    else self.default_term(f"{table_id}.{column.id}")
+                    self.link(col_map) if col_map else self.default_term(f"{table_id}.{column.id}")
                 )
                 nodes, found = self.facts(
                     (table_id, n, column.id), row.get(column.id), column, col_map, row

@@ -559,7 +559,8 @@ def _compact_terms(changes: list[dict[str, Any]], prefixes: dict[str, str]) -> N
     """Every term of the changes as a CURIE where a declared prefix covers it (in place)."""
 
     def output(m: dict[str, Any]) -> None:
-        m["property"] = compact_iri(m["property"], prefixes)
+        if "property" in m:
+            m["property"] = compact_iri(m["property"], prefixes)
         if "object" in m:
             m["object"]["class"] = compact_iri(m["object"]["class"], prefixes)
         concepts = m.get("concepts") or {}

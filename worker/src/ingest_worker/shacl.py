@@ -46,17 +46,19 @@ def outputs_by_property(template: Template) -> dict[str, str]:
     prefixes = {**CURIE_PREFIXES, **semantics.prefixes}
     out: dict[str, str] = {}
 
-    def add(term: str, output: str) -> None:
+    def add(term: str | None, output: str) -> None:
+        if term is None:
+            return
         # An unknown prefix is a validation issue; the graph never has that property.
         with contextlib.suppress(ValueError):
             out.setdefault(str(expand_term(term, prefixes)), output)
 
     for field_id, mapping in semantics.fields.items():
-        add(mapping.property, field_id)
+        add(semantics.link_of(mapping), field_id)
     for table_id, table in semantics.tables.items():
         add(table.link, table_id)
         for column_id, mapping in table.columns.items():
-            add(mapping.property, f"{table_id}.{column_id}")
+            add(semantics.link_of(mapping), f"{table_id}.{column_id}")
     return out
 
 

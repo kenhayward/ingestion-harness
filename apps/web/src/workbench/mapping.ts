@@ -40,9 +40,10 @@ export function mappingNote(c: DraftChange): string | null {
 
 type Def = Record<string, unknown>;
 interface Mapped {
-  property: string;
+  property?: string;
   object?: { class: string };
   concepts?: unknown;
+  node?: { class: string };
 }
 
 /** Every output of a definition and what it maps to; null: the recipe's default vocabulary. */
@@ -58,7 +59,13 @@ export function mappingRows(definition: Def | null): { path: string; term: strin
     tables?: Record<string, { link: string; class: string; columns?: Record<string, Mapped> }>;
   } | null;
   const describe = (m: Mapped | undefined) =>
-    m ? (m.object ? `${m.property} → ${m.object.class}` : m.property) : null;
+    !m
+      ? null
+      : m.node
+        ? `node of ${m.node.class}`
+        : m.object
+          ? `${m.property} → ${m.object.class}`
+          : (m.property ?? null);
   const rows: { path: string; term: string | null }[] = [
     { path: 'document', term: semantics?.document?.class || null },
   ];

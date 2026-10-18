@@ -109,7 +109,11 @@ function OutputRow({
     <fieldset className="mapping-row">
       <legend>{label}</legend>
       <div className="term-input">
-        <Text label="Property" value={m.property} onChange={(v) => set({ ...m, property: v })} />
+        <Text
+          label="Property"
+          value={m.property ?? ''}
+          onChange={(v) => set({ ...m, property: v })}
+        />
         <button type="button" onClick={() => find('property', (t) => set({ ...m, property: t }))}>
           Find a property
         </button>

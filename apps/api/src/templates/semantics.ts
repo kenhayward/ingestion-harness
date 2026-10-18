@@ -131,7 +131,9 @@ function uses(semantics: NonNullable<Template['semantics']>): Use[] {
     { path: 'semantics.document.class', term: semantics.document.class, want: 'class' },
   ];
   const output = (path: string, m: NonNullable<Template['semantics']>['fields'][string]) => {
-    out.push({ path: `${path}.property`, term: m.property, want: 'property' });
+    if (m.property !== undefined) {
+      out.push({ path: `${path}.property`, term: m.property, want: 'property' });
+    }
     if (m.object) out.push({ path: `${path}.object.class`, term: m.object.class, want: 'class' });
     if (m.concepts?.scheme) {
       out.push({ path: `${path}.concepts.scheme`, term: m.concepts.scheme, want: 'scheme' });

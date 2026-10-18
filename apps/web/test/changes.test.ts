@@ -289,3 +289,21 @@ describe('modelsInChip', () => {
     ['instructions edited', 'instructions edited'],
   ])('%s', (chip, text) => expect(modelsInChip(chip, MODEL_CHOICES)).toBe(text));
 });
+
+describe('value node changes', () => {
+  it.each<[string, Record<string, unknown>, string]>([
+    [
+      'with the recipe default link',
+      { node: { class: 'afr:WaterContent', unit: 'unit:PERCENT' } },
+      'node of afr:WaterContent · unit unit:PERCENT',
+    ],
+    [
+      'with its own link and value property',
+      { property: 'obo:hasOutput', node: { class: 'afr:Assay', value: 'qudt:numericValue' } },
+      'obo:hasOutput → node of afr:Assay · value qudt:numericValue',
+    ],
+  ])('a node %s', (_name, mapping, text) => {
+    const change = { op: 'putFieldMapping', field: 'water', mapping, reason: '' } as DraftChange;
+    expect(changeParts(change)).toEqual({ kind: 'MAPPING', tone: 'ok', id: 'water', text });
+  });
+});
