@@ -8,6 +8,21 @@ export function MappingHelp() {
         RDF is one of the delivered formats; CSV and JSON never use it.
       </p>
 
+      <h3>Outline and editor</h3>
+      <p>
+        The list on the left holds everything to map: the setup, every field, every table with its
+        columns, local terms and (in the Workbench) the preview. A green dot is mapped, an amber one
+        started but unfinished, a grey one not mapped yet. Pick an item to edit it on the right; ‹
+        and › step to the previous or next one. <strong>Find a …</strong> searches the pinned
+        ontologies right under the field.
+      </p>
+      <p>
+        Terms show by their readable name: the list says <em>has analyte</em> rather than an id like
+        af-x:AFX_0000117 (point at it to see the term), and each term box says under it which pinned
+        ontology or local term names it, and whether it is deprecated. When no pinned ontology or
+        local term has the term, or its prefix is not declared, the box says so.
+      </p>
+
       <h3>Ontologies</h3>
       <p>
         The ontologies whose terms the mapping may use, pinned to a version from the Ontologies

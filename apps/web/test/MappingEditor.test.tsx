@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Semantics } from '@ih/shared';
+import type { Semantics, TermLabel } from '@ih/shared';
 import type { Api } from '../src/api/client.js';
 import { MappingEditor } from '../src/templates/MappingEditor.js';
 import { fakeApi } from './fake-api.js';
@@ -34,6 +34,7 @@ function setup(
   initial: Semantics | undefined,
   api: Api = fakeApi(),
   preview?: { projectId: string },
+  readOnly?: boolean,
 ) {
   const changes: (Semantics | undefined)[] = [];
   function Host() {
@@ -44,6 +45,7 @@ function setup(
         definition={definition}
         semantics={value}
         preview={preview}
+        readOnly={readOnly}
         onChange={(next) => {
           changes.push(next);
           setValue(next);
@@ -54,6 +56,14 @@ function setup(
   render(<Host />);
   return { api, last: () => changes.at(-1) };
 }
+
+/** Opens an item of the outline (Ontologies, a field id, `Table lines`, `lines.sku`, …). */
+const open = (name: string) =>
+  userEvent.click(
+    within(screen.getByRole('navigation', { name: 'Mapping outline' })).getByRole('button', {
+      name,
+    }),
+  );
 
 describe('MappingEditor', () => {
   it('starts and removes a mapping', async () => {
@@ -106,32 +116,46 @@ describe('MappingEditor', () => {
       limit: 20,
     }));
     const { last } = setup(mapped, fakeApi({ listOntologyTerms }));
+    await open('sender');
     const row = screen.getByRole('group', { name: 'sender' });
     await userEvent.click(within(row).getByRole('button', { name: 'Find a property' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Find a property' });
-    await userEvent.type(within(dialog).getByLabelText('Search'), 'sent');
-    await userEvent.click(await within(dialog).findByRole('button', { name: /sent by/ }));
+    // The search opens under the field, not in a dialog.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const search = within(row).getByRole('group', { name: 'Find a property' });
+    await userEvent.type(within(search).getByLabelText('Search'), 'sent');
+    await userEvent.click(await within(search).findByRole('button', { name: /sent by/ }));
     expect(listOntologyTerms).toHaveBeenLastCalledWith('acme', 1, {
       q: 'sent',
       group: 'properties',
       limit: 20,
     });
     expect(last()?.fields.sender).toEqual({ property: 'acme:sentBy' });
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(row).queryByRole('group', { name: 'Find a property' })).toBeNull();
   });
 
   it('makes a field an entity with a readable IRI, or a concept per value', async () => {
     const { last } = setup({ ...mapped, fields: { sender: { property: 'acme:sentBy' } } });
+    await open('sender');
     const sender = screen.getByRole('group', { name: 'sender' });
-    await userEvent.selectOptions(within(sender).getByLabelText('Value as'), 'entity');
+    const valueAs = within(sender).getByRole('group', { name: 'Value as' });
+    await userEvent.click(within(valueAs).getByRole('button', { name: 'Entity' }));
+    expect(within(valueAs).getByRole('button', { name: 'Entity' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(last()?.fields.sender).toEqual({
       property: 'acme:sentBy',
       object: { class: '', iri: 'sender/{value|slug}' },
     });
 
+    await open('kind');
     const kind = screen.getByRole('group', { name: 'kind' });
     await userEvent.type(within(kind).getByLabelText('Property'), 'acme:kind');
-    await userEvent.selectOptions(within(kind).getByLabelText('Value as'), 'concept');
+    await userEvent.click(
+      within(within(kind).getByRole('group', { name: 'Value as' })).getByRole('button', {
+        name: 'Concept',
+      }),
+    );
     await userEvent.type(within(kind).getByLabelText('Concept for memo'), 'acme:Memo');
     expect(last()?.fields.kind).toEqual({
       property: 'acme:kind',
@@ -141,11 +165,13 @@ describe('MappingEditor', () => {
 
   it('maps a table: its link, row class and columns', async () => {
     const { last } = setup(mapped);
+    await open('Table lines');
     const lines = screen.getByRole('group', { name: 'Table lines' });
     await userEvent.type(within(lines).getByLabelText('Link from the document'), 'acme:hasLine');
     await userEvent.type(within(lines).getByLabelText('Row class'), 'acme:Line');
+    await open('lines.sku');
     await userEvent.type(
-      within(within(lines).getByRole('group', { name: 'lines.sku' })).getByLabelText('Property'),
+      within(screen.getByRole('group', { name: 'lines.sku' })).getByLabelText('Property'),
       'acme:sku',
     );
     expect(last()?.tables.lines).toEqual({
@@ -173,6 +199,7 @@ describe('MappingEditor', () => {
       },
     }));
     setup(mapped, fakeApi({ startGraphPreview, getGraphPreview }), { projectId: 'letter' });
+    await open('Preview');
     await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
     expect(startGraphPreview).toHaveBeenCalledWith('letter');
     await waitFor(() => expect(screen.getByText('<a> <b> <c> .')).toBeTruthy());
@@ -184,6 +211,7 @@ describe('MappingEditor', () => {
       throw new Error('set the customer under Administration > Linked data');
     });
     setup(mapped, fakeApi({ startGraphPreview }), { projectId: 'letter' });
+    await open('Preview');
     await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'set the customer under Administration > Linked data',
@@ -191,9 +219,205 @@ describe('MappingEditor', () => {
   });
 });
 
+describe('MappingEditor outline (option B)', () => {
+  const partly: Semantics = {
+    ...mapped,
+    fields: {
+      sender: { property: 'acme:sentBy' },
+      kind: { property: 'acme:kind', concepts: { values: { memo: 'acme:Memo' } } },
+    },
+  };
+
+  it('lists the setup, every field and every table column with how far each is mapped', async () => {
+    setup(partly);
+    const outline = screen.getByRole('navigation', { name: 'Mapping outline' });
+    const names = within(outline)
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label'));
+    expect(names).toEqual([
+      'Ontologies',
+      'Shapes',
+      'Prefixes',
+      'Document',
+      'sender',
+      'kind',
+      'Table lines',
+      'lines.sku',
+      'Local terms',
+    ]);
+    const item = (name: string) => within(outline).getByRole('button', { name });
+    expect(item('sender')).toHaveAccessibleDescription('acme:sentBy (mapped)');
+    expect(item('kind')).toHaveAccessibleDescription('concept · 1 of 2 (needs attention)');
+    expect(item('lines.sku')).toHaveAccessibleDescription('unmapped (not mapped)');
+    expect(screen.getByRole('img', { name: '1 of 3 outputs mapped' })).toBeInTheDocument();
+  });
+
+  it('opens on the ontologies until one is pinned, then on the first output to finish', async () => {
+    setup({ ...mapped, ontologies: [] });
+    expect(screen.getByRole('region', { name: 'Ontologies' })).toBeInTheDocument();
+  });
+
+  it('opens on the first output not yet mapped and steps through the outline', async () => {
+    setup(partly);
+    expect(screen.getByRole('region', { name: 'kind' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Mapping outline' })).getByRole('button', {
+        name: 'kind',
+      }),
+    ).toHaveAttribute('aria-current', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Next: Table lines' }));
+    expect(screen.getByRole('region', { name: 'Table lines' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Previous: kind' }));
+    expect(screen.getByRole('region', { name: 'kind' })).toBeInTheDocument();
+  });
+
+  it('stays on the item being edited when it becomes mapped', async () => {
+    const { last } = setup(mapped);
+    expect(screen.getByRole('region', { name: 'sender' })).toBeInTheDocument();
+    await userEvent.type(
+      within(screen.getByRole('group', { name: 'sender' })).getByLabelText('Property'),
+      'acme:sentBy',
+    );
+    expect(last()?.fields.sender).toEqual({ property: 'acme:sentBy' });
+    expect(screen.getByRole('region', { name: 'sender' })).toBeInTheDocument();
+  });
+
+  it('stays on the ontologies after pinning the first one', async () => {
+    const api = fakeApi({
+      listOntologies: vi.fn(async () => [
+        { id: 'acme', label: 'Acme' } as Awaited<ReturnType<Api['listOntologies']>>[number],
+      ]),
+      getOntology: vi.fn(async () => ({
+        id: 'acme',
+        label: 'Acme',
+        versions: [{ version: 1, status: 'ready' }],
+      })) as unknown as Api['getOntology'],
+    });
+    const { last } = setup({ ...mapped, ontologies: [] }, api);
+    const region = screen.getByRole('region', { name: 'Ontologies' });
+    await userEvent.selectOptions(await within(region).findByLabelText('Ontology'), 'acme');
+    await userEvent.selectOptions(await within(region).findByLabelText('Version'), '1');
+    await userEvent.click(within(region).getByRole('button', { name: 'Pin' }));
+    expect(last()?.ontologies).toEqual([{ id: 'acme', version: 1 }]);
+    expect(screen.getByRole('region', { name: 'Ontologies' })).toBeInTheDocument();
+  });
+
+  it('can be browsed read-only: the outline and stepping work, editing does not', async () => {
+    setup(mapped, fakeApi(), undefined, true);
+    const outline = screen.getByRole('navigation', { name: 'Mapping outline' });
+    for (const b of within(outline).getAllByRole('button')) expect(b).toBeEnabled();
+    await open('kind');
+    expect(
+      within(screen.getByRole('group', { name: 'kind' })).getByLabelText('Property'),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next: Table lines' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Remove the mapping' })).toBeDisabled();
+  });
+
+  it('cannot start a mapping read-only', () => {
+    setup(undefined, fakeApi(), undefined, true);
+    expect(screen.getByRole('button', { name: 'Map to ontologies' })).toBeDisabled();
+  });
+
+  it('lists the preview only in the Workbench', async () => {
+    setup(mapped, fakeApi(), { projectId: 'letter' });
+    expect(
+      within(screen.getByRole('navigation', { name: 'Mapping outline' })).getByRole('button', {
+        name: 'Preview',
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('MappingEditor term labels', () => {
+  const found = (label: string, iri: string): TermLabel => ({
+    from: 'ontology',
+    iri,
+    label,
+    kind: 'object_property',
+    ontology: 'acme@1',
+    deprecated: false,
+  });
+  const partly: Semantics = {
+    ...mapped,
+    fields: {
+      sender: { property: 'acme:sentBy' },
+      kind: { property: 'acme:kind', concepts: { values: { memo: 'acme:Memo' } } },
+    },
+    local: [{ iri: 'acme:Memo', kind: 'concept', label: 'Memo' }],
+  };
+
+  it('asks once for the name of every term the mapping uses', async () => {
+    const termLabels = vi.fn(async () => ({ terms: {} }));
+    setup(partly, fakeApi({ termLabels }));
+    await waitFor(() => expect(termLabels).toHaveBeenCalledTimes(1));
+    expect(termLabels).toHaveBeenCalledWith({
+      ontologies: [{ id: 'acme', version: 1 }],
+      prefixes: { acme: A },
+      local: [{ iri: 'acme:Memo', label: 'Memo' }],
+      terms: ['acme:Letter', 'acme:Memo', 'acme:kind', 'acme:sentBy'],
+    });
+  });
+
+  it('shows each term by its name in the outline and under its field', async () => {
+    const termLabels = vi.fn(async () => ({
+      terms: {
+        'acme:sentBy': found('sent by', `${A}sentBy`),
+        'acme:kind': { ...found('kind of letter', `${A}kind`), deprecated: true },
+        'acme:Memo': {
+          ...found('Memo', `${A}Memo`),
+          from: 'local' as const,
+          kind: null,
+          ontology: null,
+        },
+        'acme:Letter': {
+          ...found('', `${A}Letter`),
+          from: 'unknown' as const,
+          label: null,
+          kind: null,
+          ontology: null,
+        },
+      },
+    }));
+    setup(partly, fakeApi({ termLabels }));
+    const outline = screen.getByRole('navigation', { name: 'Mapping outline' });
+    await waitFor(() =>
+      expect(within(outline).getByRole('button', { name: 'sender' })).toHaveAccessibleDescription(
+        'sent by (acme:sentBy, mapped)',
+      ),
+    );
+    expect(within(outline).getByRole('button', { name: 'Document' })).toHaveAccessibleDescription(
+      'acme:Letter (mapped)',
+    );
+
+    const kind = screen.getByRole('group', { name: 'kind' });
+    expect(within(kind).getByText('kind of letter')).toBeInTheDocument();
+    expect(within(kind).getByText('deprecated')).toBeInTheDocument();
+    expect(within(kind).getByText('Memo')).toBeInTheDocument();
+    expect(within(kind).getByText('local term')).toBeInTheDocument();
+
+    await open('Document');
+    expect(screen.getByText(/Not in the pinned ontologies or the local terms/)).toBeInTheDocument();
+  });
+
+  it('still maps when the names cannot be read', async () => {
+    const termLabels = vi.fn(async () => {
+      throw new Error('offline');
+    });
+    const { last } = setup(mapped, fakeApi({ termLabels }));
+    await userEvent.type(
+      within(screen.getByRole('group', { name: 'sender' })).getByLabelText('Property'),
+      'acme:sentBy',
+    );
+    expect(last()?.fields.sender).toEqual({ property: 'acme:sentBy' });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
 describe('MappingEditor prefixes', () => {
   it('never overwrites a namespace when adding a prefix after removing one', async () => {
     const { last } = setup({ ...mapped, prefixes: {} });
+    await open('Prefixes');
     const add = () => userEvent.click(screen.getByRole('button', { name: 'Add a prefix' }));
     await add();
     await add();
@@ -209,6 +433,7 @@ describe('MappingEditor prefixes', () => {
       ...mapped,
       prefixes: { ex: 'https://ex.example/', ey: 'https://ey.example/' },
     });
+    await open('Prefixes');
     const second = screen.getAllByLabelText('Prefix')[1]!;
     await userEvent.clear(second);
     await userEvent.type(second, 'ex');
@@ -236,6 +461,7 @@ describe('MappingEditor shapes (ADR 0011 step 5)', () => {
       })) as unknown as Api['getOntology'],
     });
     const { last } = setup(mapped, api);
+    await open('Shapes');
     const shapes = screen.getByRole('region', { name: 'Shapes' });
     await userEvent.selectOptions(await within(shapes).findByLabelText('Ontology'), 'acme-shapes');
     await userEvent.selectOptions(await within(shapes).findByLabelText('Version'), '1');
@@ -271,6 +497,7 @@ describe('MappingEditor shapes (ADR 0011 step 5)', () => {
       result: { samples: [{ sampleId: 's1', fileName: 's1.pdf', turtle: '', triples: 0, report }] },
     }));
     setup(mapped, fakeApi({ startGraphPreview, getGraphPreview }), { projectId: 'letter' });
+    await open('Preview');
     await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
     expect(await screen.findByText(/1 violation/)).toBeInTheDocument();
     expect(screen.getByText(/sender: a letter names its sender/)).toBeInTheDocument();

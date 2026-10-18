@@ -118,6 +118,14 @@ export interface OntologyRepo {
     iris: string[],
   ): Promise<Record<string, OntologyTermKind[]>>;
   /**
+   * Each IRI's label, kind and deprecation from the first of `versions` holding it (in that
+   * order; imports included), for naming a mapping's terms; IRIs found nowhere are absent.
+   */
+  termLabels(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, FoundLabel>>;
+  /**
    * Rows whose IRI is in `iris`, or whose parents, domains, ranges or scheme name one of
    * them, by label, at most `limit` (the graph view's hops); null for an unknown version.
    */
@@ -240,6 +248,14 @@ function rank(q: string, t: OntologyTerm): number {
 
 function matches(q: string, t: OntologyTerm): boolean {
   return [t.label, t.iri, ...t.altLabels].some((s) => s.toLowerCase().includes(q));
+}
+
+/** A term found in a pinned version: `ontology` is `"<id>@<version>"`. */
+export interface FoundLabel {
+  label: string;
+  kind: OntologyTermKind;
+  ontology: string;
+  deprecated: boolean;
 }
 
 export type SeedTerm = Partial<OntologyTerm> & {
@@ -529,6 +545,27 @@ export class MemoryOntologyRepo implements OntologyRepo {
     for (const v of versions) {
       for (const t of this.termsByVersion.get(`${v.id}:${v.version}`) ?? []) {
         if (wanted.has(t.iri) && !(out[t.iri] ??= []).includes(t.kind)) out[t.iri]!.push(t.kind);
+      }
+    }
+    return out;
+  }
+
+  async termLabels(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, FoundLabel>> {
+    const wanted = new Set(iris);
+    const out: Record<string, FoundLabel> = {};
+    for (const v of versions) {
+      for (const t of this.termsByVersion.get(`${v.id}:${v.version}`) ?? []) {
+        if (wanted.has(t.iri) && !out[t.iri]) {
+          out[t.iri] = {
+            label: t.label,
+            kind: t.kind,
+            ontology: `${v.id}@${v.version}`,
+            deprecated: t.deprecated,
+          };
+        }
       }
     }
     return out;
@@ -1105,6 +1142,40 @@ export class PgOntologyRepo implements OntologyRepo {
       [versions.map((v) => v.id), versions.map((v) => v.version), iris],
     );
     return Object.fromEntries(rows.map((r) => [r.iri, r.kinds]));
+  }
+
+  async termLabels(
+    versions: { id: string; version: number }[],
+    iris: string[],
+  ): Promise<Record<string, FoundLabel>> {
+    if (!versions.length || !iris.length) return {};
+    const { rows } = await this.pool.query<{
+      iri: string;
+      label: string;
+      kind: OntologyTermKind;
+      ontology_id: string;
+      version: number;
+      deprecated: boolean;
+    }>(
+      `SELECT DISTINCT ON (t.iri) t.iri, t.label, t.kind, t.ontology_id, t.version, t.deprecated
+         FROM ontology_terms t
+         JOIN unnest($1::text[], $2::int[]) WITH ORDINALITY AS p(id, v, n)
+           ON t.ontology_id = p.id AND t.version = p.v
+        WHERE t.iri = ANY($3::text[])
+        ORDER BY t.iri, p.n, t.kind`,
+      [versions.map((v) => v.id), versions.map((v) => v.version), iris],
+    );
+    return Object.fromEntries(
+      rows.map((r) => [
+        r.iri,
+        {
+          label: r.label,
+          kind: r.kind,
+          ontology: `${r.ontology_id}@${r.version}`,
+          deprecated: r.deprecated,
+        },
+      ]),
+    );
   }
 
   async neighbours(

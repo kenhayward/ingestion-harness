@@ -37,6 +37,8 @@ import type {
   OntologyVersionView,
   TermDetail,
   TermGroup,
+  TermLabels,
+  TermLabelsBody,
   TermPage,
   Brief,
   BriefBody,
@@ -478,6 +480,8 @@ export interface Api {
   listOntologyTerms(id: string, version: number, query: OntologyTermQuery): Promise<TermPage>;
   /** One term with its neighbours. */
   getOntologyTerm(id: string, version: number, iri: string): Promise<TermDetail>;
+  /** The readable names of a mapping's terms (the Mapping tab). */
+  termLabels(body: TermLabelsBody): Promise<TermLabels>;
   /** Admin: import an ontology the worker fetches from an allowlisted URL. */
   importOntologyFromUrl(body: OntologyFromUrlBody): Promise<OntologyVersionView>;
   /** Allowed hosts for URL imports and the size limit. */
@@ -1140,6 +1144,7 @@ export function createHttpApi(base = '/api'): Api {
       ).then(json<TermPage>);
     },
     importOntologyFromUrl: (body) => post<OntologyVersionView>(`${base}/ontologies/from-url`, body),
+    termLabels: (body) => post<TermLabels>(`${base}/ontologies/term-labels`, body),
     getOntologySettings: () => apiFetch(`${base}/ontology-settings`).then(json<OntologySettings>),
     getLinkedData: () => apiFetch(`${base}/linked-data/settings`).then(json<LinkedDataView>),
     saveLinkedData: (body) => post<LinkedDataView>(`${base}/linked-data/settings`, body, 'PUT'),

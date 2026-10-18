@@ -1023,6 +1023,18 @@ describe('http api: ontologies', () => {
       '/api/ontologies/pv/versions/2/terms?group=classes&root=1',
     );
   });
+
+  it('posts a mapping term label lookup', async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ terms: {} })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const body = { ontologies: [{ id: 'pv', version: 2 }], terms: ['pv:Protocol'] };
+    expect(await createHttpApi('/api').termLabels(body)).toEqual({ terms: {} });
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/ontologies/term-labels');
+    expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: 'POST' });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body))).toEqual(body);
+  });
 });
 
 describe('http api: error messages', () => {
