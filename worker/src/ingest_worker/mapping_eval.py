@@ -18,12 +18,14 @@ from __future__ import annotations
 import json
 import sys
 import time
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Protocol
 
 import yaml
 
 from .drafting import DraftParams
+from .extract import ExtractionFailedError
 from .mapping_match import (
     ChoiceRequest,
     Chooser,
@@ -167,10 +169,7 @@ class KindScore:
     def add(self, pick: Pick, expected: Expected) -> None:
         self.outputs += 1
         mapped = expected.any_term or bool(expected.terms)
-        if expected.any_term:
-            right = pick.term is not None
-        else:
-            right = (pick.term in expected.terms) if expected.terms else pick.term is None
+        right = _right(pick, expected)
         self.hit += right
         tier = self.tiers.setdefault(pick.confidence, [0, 0])
         tier[0] += 1
@@ -191,8 +190,7 @@ class KindScore:
                 self.value_right += pick.value_as == expected.value_as
         if expected.row_class:
             self.class_total += 1
-            chosen = pick.row_class if pick.row_class is not None else pick.entity_class
-            self.class_right += chosen in expected.row_class
+            self.class_right += _chosen_class(pick) in expected.row_class
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -204,12 +202,27 @@ class KindScore:
         }
 
 
+def _right(pick: Pick, expected: Expected) -> bool:
+    """The pick is a right term, or unmapped where the gold leaves the output unmapped."""
+    if expected.any_term:
+        return pick.term is not None
+    return (pick.term in expected.terms) if expected.terms else pick.term is None
+
+
+def _chosen_class(pick: Pick) -> str | None:
+    """The class a pick gives its output: a table's row class, else a value's entity class."""
+    return pick.row_class if pick.row_class is not None else pick.entity_class
+
+
 @dataclass
 class Scores:
     overall: KindScore
     by_kind: dict[str, KindScore]
     seconds: float = 0.0
     calls: int = 0
+    picks: dict[str, Pick] = field(default_factory=dict)
+    #: Why the matcher gave no answer (its outputs then all count as unmapped), else None.
+    failed: str | None = None
 
 
 def score(picks: dict[str, Pick], gold: Gold, kinds: dict[str, str]) -> Scores:
@@ -220,7 +233,33 @@ def score(picks: dict[str, Pick], gold: Gold, kinds: dict[str, str]) -> Scores:
         pick = picks.get(path, Pick(None))
         overall.add(pick, expected)
         by_kind.setdefault(kinds.get(path, "field"), KindScore()).add(pick, expected)
-    return Scores(overall, by_kind)
+    return Scores(overall, by_kind, picks=dict(picks))
+
+
+#: A matcher run: its name and a one-item call counter -> picks per output path.
+MatcherRun = Callable[[str, list[int]], dict[str, Pick]]
+
+
+def run_matchers(
+    matchers: list[str], gold: Gold, kinds: dict[str, str], run: MatcherRun
+) -> dict[str, Scores]:
+    """Each matcher's picks scored against the gold. A matcher that fails (a model that never
+    gave a valid answer) is scored as leaving every output unmapped, with its reason in
+    `failed`, and the next matcher still runs."""
+    results: dict[str, Scores] = {}
+    for matcher in matchers:
+        started, calls = time.monotonic(), [0]
+        failed: str | None = None
+        try:
+            picks = run(matcher, calls)
+        except (DocumentError, ExtractionFailedError) as exc:
+            picks, failed = {}, str(exc)
+        result = score(picks, gold, kinds)
+        result.seconds = time.monotonic() - started
+        result.calls = calls[0]
+        result.failed = failed
+        results[matcher] = result
+    return results
 
 
 # --- matchers -------------------------------------------------------------------------------------
@@ -284,6 +323,54 @@ class _Quiet:
         return False
 
 
+def progress_line(data: dict[str, Any]) -> str:
+    """A drafting progress event as one line: the phase, the try, the reply's tokens so far and,
+    with tools, the tool running or the number of tool calls."""
+    if data.get("phase") != "model":
+        return "reading the inputs" if data.get("phase") == "reading" else str(data.get("phase"))
+    parts = ["model"]
+    if data.get("attempt") is not None:
+        parts[0] += f", try {data['attempt']} of {data.get('of')}"
+    if data.get("tokens") is not None:
+        parts.append(f"~{data['tokens']:,} tokens")
+    tool = data.get("tool")
+    if tool:
+        parts.append(str(tool.get("summary") or tool.get("name")))
+    elif data.get("toolCalls") is not None:
+        parts.append(f"{data['toolCalls']} tool calls")
+    return " · ".join(parts)
+
+
+class LiveProgress(_Quiet):
+    """The queue a matcher run reports to, printing each new progress line with the time since
+    the matcher started (the harness has no job to record events on)."""
+
+    def __init__(
+        self,
+        matcher: str,
+        write: Callable[[str], None],
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._matcher, self._write, self._clock = matcher, write, clock
+        self._started = clock()
+        self._last: str | None = None
+
+    def say(self, line: str) -> None:
+        elapsed = int(self._clock() - self._started)
+        self._write(f"[{elapsed // 60:02d}:{elapsed % 60:02d}] {self._matcher}: {line}")
+
+    def event(self, *args: Any, **_kwargs: Any) -> None:
+        from .drafting import DRAFT_PROGRESS
+
+        _job_id, _level, message, data = args
+        if message != DRAFT_PROGRESS:
+            return
+        line = progress_line(data)
+        if line != self._last:
+            self._last = line
+            self.say(line)
+
+
 def _job(params: DraftParams) -> ClaimedJob:
     draft = params.draft or {}
     return ClaimedJob(
@@ -300,12 +387,14 @@ def _observed(params: DraftParams) -> MappingInputs:
     return inputs.model_copy(update={"observed": {p: v for p, v in observed.items() if v}})
 
 
-def current_picks(deps: PipelineDeps, params: DraftParams, model_ref: str) -> dict[str, Pick]:
+def current_picks(
+    deps: PipelineDeps, params: DraftParams, model_ref: str, queue: Any = None
+) -> dict[str, Pick]:
     """Run the Workbench mapping stage as it is (one answer over the shortlists) and read its
     answer back; each pick's candidates are the stage's own shortlist (before the term budget)."""
     provider, model_id = deps.models.resolve(model_ref)
     job = _job(params)
-    queue: Any = _Quiet()
+    queue = queue if queue is not None else _Quiet()
     enforce_data_policy(job, deps, provider, model_ref)
     output = run_mapping(
         job, deps, queue, params, provider, model_id, f"{provider.name}/{model_id}"
@@ -373,10 +462,14 @@ def check_policy(deps: PipelineDeps, params: DraftParams, model_ref: str) -> Non
 
 
 def model_chooser(
-    deps: PipelineDeps, params: DraftParams, model_ref: str, counter: list[int]
+    deps: PipelineDeps,
+    params: DraftParams,
+    model_ref: str,
+    counter: list[int],
+    say: Callable[[str], None] | None = None,
 ) -> Chooser:
     """Answer each ChoiceRequest with one structured model call (enum per output), after the
-    data-policy checks (`check_policy`)."""
+    data-policy checks (`check_policy`). `say` hears each call and its reply's tokens so far."""
     from . import drafting
     from .extract import run_extraction
 
@@ -386,6 +479,14 @@ def model_chooser(
 
     def choose(request: ChoiceRequest) -> dict[str, str]:
         counter[0] += 1
+        n = counter[0]
+        streaming: dict[str, Any] = {}
+        if say is not None:
+            outputs = len(request.items)
+            say(f"choice {n} ({outputs} output{'' if outputs == 1 else 's'})")
+            streaming["on_tokens"] = drafting.TokenThrottle(
+                lambda tokens: say(f"choice {n}: ~{tokens:,} tokens")
+            )
         result = run_extraction(
             extraction_id="mapping-choice",
             provider=provider,
@@ -395,6 +496,7 @@ def model_chooser(
             max_attempts=2,
             max_tokens=limit,
             system=drafting.DRAFT_SYSTEM,
+            **streaming,
         )
         return {k: str(v) for k, v in result.data.items()}
 
@@ -465,6 +567,40 @@ def format_report(name: str, results: dict[str, Scores]) -> str:
             f"{t} {n} ({_pct(right, n)})" for t, (n, right) in s.overall.tiers.items() if n
         )
         lines.append(f"  {matcher}: {tiers}, {s.calls} model calls, {s.seconds:.0f} s")
+    failures = [f"  {m}: failed: {s.failed}" for m, s in results.items() if s.failed]
+    if failures:
+        lines += ["", "Failed matchers (scored as unmapped):", *failures]
+    return "\n".join(lines)
+
+
+def format_details(gold: Gold, results: dict[str, Scores], kinds: dict[str, str]) -> str:
+    """One line per gold output: the gold's answer, then each matcher's pick (term, value as,
+    class) marked ok or no, and class:ok or class:no where the gold names a class."""
+
+    def terms(iris: Iterable[str]) -> str:
+        return "/".join(sorted(_compact(i, gold.prefixes) for i in iris))
+
+    lines = []
+    for path, expected in gold.expected.items():
+        want = "any" if expected.any_term else terms(expected.terms) or "unmapped"
+        if expected.value_as:
+            want += f" as {expected.value_as}"
+        if expected.row_class:
+            want += f" class {terms(expected.row_class)}"
+        parts = [f"{path or '(document)':<36} {kinds.get(path, 'field'):<8} gold {want}"]
+        for matcher, s in results.items():
+            pick = s.picks.get(path, Pick(None))
+            got = _compact(pick.term, gold.prefixes) if pick.term else "unmapped"
+            if pick.term and pick.value_as:
+                got += f" as {pick.value_as}"
+            chosen = _chosen_class(pick)
+            if chosen:
+                got += f" class {_compact(chosen, gold.prefixes)}"
+            mark = "ok" if _right(pick, expected) else "no"
+            if expected.row_class:
+                mark += " class:ok" if chosen in expected.row_class else " class:no"
+            parts.append(f"| {matcher}: {got} {mark}")
+        lines.append(" ".join(parts))
     return "\n".join(lines)
 
 
@@ -478,6 +614,7 @@ def report_json(name: str, results: dict[str, Scores]) -> str:
                     "byKind": {k: v.summary() for k, v in s.by_kind.items()},
                     "seconds": round(s.seconds, 1),
                     "calls": s.calls,
+                    "failed": s.failed,
                 }
                 for m, s in results.items()
             },
@@ -589,6 +726,7 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     parser.add_argument("--matcher", default="current,per-output")
     parser.add_argument("--model", default="draft")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--details", action="store_true", help="each output's gold and picks")
     args = parser.parse_args(argv)
     if not args.gold and not args.template:
         parser.print_help()
@@ -610,22 +748,29 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         kinds = {o.path: o.kind for o in outputs_of(params.draft or {})}
         store = deps.ontologies
         assert store is not None
-        results: dict[str, Scores] = {}
         check_policy(deps, params, args.model)  # before any matcher calls the model
-        for matcher in matchers:
-            started, calls = time.monotonic(), [0]
+        unknown = [m for m in matchers if m not in ("current", "per-output")]
+        if unknown:
+            raise SystemExit(f"unknown matcher {', '.join(unknown)}")
+
+        def run(
+            matcher: str,
+            calls: list[int],
+            params: DraftParams = params,
+            store: OntologyStore = store,
+        ) -> dict[str, Pick]:
+            live = LiveProgress(matcher, lambda line: print(line, file=sys.stderr, flush=True))
             if matcher == "current":
-                picks = current_picks(deps, params, args.model)
                 calls[0] = 1
-            elif matcher == "per-output":
-                choose = model_chooser(deps, params, args.model, calls)
-                picks = per_output_picks(params, store, choose, _embedding(deps, params))
-            else:
-                raise SystemExit(f"unknown matcher {matcher}")
-            results[matcher] = score(picks, gold, kinds)
-            results[matcher].seconds = time.monotonic() - started
-            results[matcher].calls = calls[0]
+                return current_picks(deps, params, args.model, live)
+            choose = model_chooser(deps, params, args.model, calls, say=live.say)
+            return per_output_picks(params, store, choose, _embedding(deps, params))
+
+        results = run_matchers(matchers, gold, kinds, run)
         print(report_json(gold.name, results) if args.json else format_report(gold.name, results))
+        if args.details and not args.json:
+            print()
+            print(format_details(gold, results, kinds))
     return 0
 
 
