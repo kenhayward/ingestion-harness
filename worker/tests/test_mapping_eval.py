@@ -279,3 +279,45 @@ expected:
     assert s.overall.value_total == 2 and s.overall.value_right == 2
     unmapped = score({}, g, {"t.water": "column", "t.assay": "column"})
     assert unmapped.overall.hit == 0 and unmapped.overall.class_right == 0
+
+
+def test_a_failing_matcher_is_reported_and_the_others_still_run() -> None:
+    """A matcher that fails (the stage's model never gave a valid answer) is scored as leaving
+    every output unmapped and reported with its reason; the next matcher still runs."""
+    from ingest_worker.errors import DocumentError
+    from ingest_worker.mapping_eval import run_matchers
+
+    g = gold()
+
+    def run(matcher: str, calls: list[int]) -> dict[str, Pick]:
+        calls[0] += 1
+        if matcher == "current":
+            raise DocumentError("extraction 'draft-mapping' failed after 2 attempts: nope")
+        return {"lot": Pick(f"{PH}batchNumber", "literal")}
+
+    results = run_matchers(["current", "per-output"], g, kinds(), run)
+    assert results["current"].failed == "extraction 'draft-mapping' failed after 2 attempts: nope"
+    assert results["current"].overall.mapped == 0
+    assert results["per-output"].failed is None
+    assert results["per-output"].overall.mapped == 1
+    text = format_report(g.name, results)
+    assert "current: failed: extraction 'draft-mapping' failed" in text
+    assert json.loads(report_json(g.name, results))["matchers"]["current"]["failed"].startswith(
+        "extraction"
+    )
+
+
+def test_details_list_each_output_s_gold_and_every_matcher_s_pick() -> None:
+    from ingest_worker.mapping_eval import format_details, run_matchers
+
+    g = gold()
+    picks = {
+        "lot": Pick(f"{PH}batchNumber", "literal"),
+        "tests": Pick(f"{PH}hasResult", "entity", row_class=f"{PH}Other"),
+    }
+    results = run_matchers(["per-output"], g, kinds(), lambda _m, _c: picks)
+    text = format_details(g, results, kinds())
+    lines = {line.split()[0]: line for line in text.splitlines() if line.strip()}
+    assert "ok" in lines["lot"] and "ex:batchNumber" in lines["lot"]
+    assert "class ex:Other" in lines["tests"] and "class:no" in lines["tests"]
+    assert "unmapped" in lines["notes"]
