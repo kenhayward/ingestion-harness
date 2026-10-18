@@ -4368,28 +4368,216 @@ button.endpoint-toggle {
   overflow-wrap: anywhere;
 }
 
-/* Recipe Mapping tab (ADR 0011) */
+/* Recipe Mapping tab (ADR 0011): an outline of everything to map beside an inspector for the
+   item picked; the coverage line and Remove the mapping below. */
 .mapping-editor {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  container-type: inline-size;
 }
-.mapping-editor section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.mapping-row,
-.mapping-table {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px;
+.mapping-split {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
   border: 1px solid var(--ih-border);
-  border-radius: var(--ih-radius-md);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  overflow: hidden;
 }
-.mapping-table .mapping-row {
-  margin-left: 12px;
+.mapping-outline {
+  padding: 6px 0 10px;
+  border-right: 1px solid var(--ih-border);
+  max-height: calc(100vh - 220px);
+  min-height: 420px;
+  overflow-y: auto;
+}
+.mapping-outline-head {
+  display: flex;
+  justify-content: space-between;
+  margin: 10px 16px 4px;
+  font-size: var(--ih-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ih-muted);
+}
+.mapping-outline-head span + span {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.mapping-outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mapping-outline button {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ih-text);
+  font-size: var(--ih-text-md);
+  font-weight: 400;
+  text-align: left;
+}
+.mapping-outline button.indent {
+  padding-left: 32px;
+}
+.mapping-outline button:hover {
+  background: var(--ih-surface2);
+}
+.mapping-outline button[aria-current='true'] {
+  background: var(--ih-accent-soft);
+  box-shadow: inset 3px 0 0 var(--ih-accent);
+}
+.mapping-item {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapping-item.mono,
+.mapping-inspector-head h3.mono {
+  font-family: var(--ih-font-mono);
+}
+.mapping-summary {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ih-font-mono);
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+}
+.map-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ih-border-strong);
+}
+.map-dot.map-ok {
+  background: var(--ih-ok-fg);
+}
+.map-dot.map-partial {
+  background: var(--ih-warn-fg);
+}
+.map-dot.map-info {
+  background: transparent;
+  border: 1.5px solid var(--ih-border-strong);
+}
+.mapping-inspector {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 20px;
+}
+.mapping-inspector-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+.mapping-inspector-head h3 {
+  margin: 0;
+  font-size: var(--ih-text-xl);
+}
+.mapping-step {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.mapping-editor button.small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: var(--ih-text-md);
+}
+.mapping-editor button.ghost {
+  border-color: transparent;
+  color: var(--ih-muted);
+}
+.mapping-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.mapping-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mapping-key {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+  font-weight: 500;
+  color: var(--ih-muted);
+}
+.mapping-value-as {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.mapping-values {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ih-border-soft);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface2);
+}
+.term-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.term-bare {
+  flex: 1 1 200px;
+  display: flex;
+}
+.term-bare input {
+  width: 100%;
+}
+.mapping-inspector input,
+.mapping-inspector select,
+.mapping-inspector button:not(.icon-only):not(.term-hits button) {
+  min-height: 34px;
+}
+.mapping-inspector button.term-find {
+  padding: 0 10px;
+  font-size: var(--ih-text-md);
+  color: var(--ih-muted);
+}
+.mapping-inspector button.term-find[aria-expanded='true'] {
+  border-color: var(--ih-accent);
+  color: var(--ih-accent-soft-text);
+}
+.mapping-value-row {
+  display: grid;
+  grid-template-columns: minmax(70px, max-content) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+.mapping-value-row > code {
+  padding-top: 8px;
+  font-family: var(--ih-font-mono);
+  font-size: var(--ih-text-md);
+}
+.mapping-value-row > code.missing {
+  color: var(--ih-warn-fg);
 }
 .term-input,
 .pin-form,
@@ -4405,15 +4593,101 @@ button.endpoint-toggle {
 .local-row label {
   flex: 1 1 200px;
 }
+.term-input input.mono,
+.term-field input.mono,
+.local-row input.mono {
+  font-family: var(--ih-font-mono);
+  font-size: var(--ih-text-md);
+}
+.term-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ih-accent);
+  border-radius: var(--ih-radius-md);
+  background: var(--ih-surface);
+  box-shadow: 0 0 0 3px var(--ih-accent-soft);
+}
 .term-hits {
   list-style: none;
+  margin: 0;
   padding: 0;
-  max-height: 320px;
+  max-height: 280px;
   overflow-y: auto;
 }
 .term-hits button {
   width: 100%;
+  min-height: 36px;
+  justify-content: space-between;
+  border: 0;
   text-align: left;
+}
+.term-hits button code {
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+}
+.pins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-surface2);
+  font-size: var(--ih-text-md);
+}
+.pin-chip button.icon-only {
+  width: 22px;
+  min-height: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--ih-muted);
+}
+.mapping-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.mapping-meter {
+  width: 160px;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--ih-border-soft);
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-surface);
+}
+.mapping-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--ih-ok-fg);
+}
+.mapping-foot button.danger {
+  margin-left: auto;
+}
+/* Narrow: the outline above the inspector, with its own scroll. */
+@container (max-width: 720px) {
+  .mapping-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mapping-outline {
+    min-height: 0;
+    max-height: 260px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ih-border);
+  }
 }
 .turtle {
   max-height: 420px;
