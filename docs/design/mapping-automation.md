@@ -244,6 +244,8 @@ share one "99.1" entity. So:
   becomes mostly choosing a class, which retrieval does well; the link and value properties are
   few and can default per ontology. This needs its own design (both sides of the contract,
   rendering, SHACL, the Mapping editor) and is the change the evaluation most supports so far.
+  Designed in [Value nodes](value-node-mapping.md): a fourth output-mapping form, `node`, with
+  recipe-level defaults for the link, value and unit properties.
 
 The covalidation gold (`docs/design/mapping-gold/covalidation.yaml`) is written class-centric:
 `term: any` (any link property) with the class that matters, `as: entity`, and `unmapped` where the
