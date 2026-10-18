@@ -46,25 +46,30 @@ def outputs_by_property(template: Template) -> dict[str, str]:
     prefixes = {**CURIE_PREFIXES, **semantics.prefixes}
     out: dict[str, str] = {}
 
-    def add(term: str, output: str) -> None:
+    def add(term: str | None, output: str) -> None:
+        if term is None:
+            return
         # An unknown prefix is a validation issue; the graph never has that property.
         with contextlib.suppress(ValueError):
             out.setdefault(str(expand_term(term, prefixes)), output)
 
     for field_id, mapping in semantics.fields.items():
-        add(mapping.property, field_id)
+        add(semantics.link_of(mapping), field_id)
     for table_id, table in semantics.tables.items():
         add(table.link, table_id)
         for column_id, mapping in table.columns.items():
-            add(mapping.property, f"{table_id}.{column_id}")
+            add(semantics.link_of(mapping), f"{table_id}.{column_id}")
     return out
 
 
 def _validate_child(
-    conn: Connection, graphs: tuple[bytes, bytes, bytes], by: dict[str, str]
+    conn: Connection,
+    graphs: tuple[bytes, bytes, bytes],
+    by: dict[str, str],
+    nodes: dict[str, str] | None,
 ) -> None:
     data, shapes, ontologies = (Graph().parse(data=g, format="nt") for g in graphs)
-    conn.send(validate(data, shapes, ontologies, by).to_json())
+    conn.send(validate(data, shapes, ontologies, by, nodes).to_json())
     conn.close()
 
 
@@ -74,13 +79,17 @@ def validate_with_timeout(
     ontologies: Graph,
     by_property: dict[str, str],
     timeout_s: float = GRAPH_TIMEOUT_S,
+    *,
+    nodes: dict[str, str] | None = None,
 ) -> ShaclReport:
     """`rdf.validate` in a child process; an overrun is a DocumentError (the preview's review)."""
     graphs = tuple(g.serialize(format="nt", encoding="utf-8") for g in (graph, shapes, ontologies))
     method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
     ctx: Any = multiprocessing.get_context(method)  # typeshed: BaseContext has no Process
     parent, child = ctx.Pipe(duplex=False)
-    proc = ctx.Process(target=_validate_child, args=(child, graphs, by_property), daemon=True)
+    proc = ctx.Process(
+        target=_validate_child, args=(child, graphs, by_property, nodes), daemon=True
+    )
     try:
         proc.start()
         child.close()

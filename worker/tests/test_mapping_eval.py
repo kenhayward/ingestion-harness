@@ -39,7 +39,9 @@ def test_a_gold_file_expands_curies_and_reads_every_shape() -> None:
     g = gold()
     assert g.name == "batch-record (synthetic)" and g.project is None
     assert g.expected[""] == Expected(frozenset({f"{PH}BatchRecord"}))
-    assert g.expected["lot"] == Expected(frozenset({f"{PH}batchNumber"}), value_as="literal")
+    assert g.expected["lot"] == Expected(
+        frozenset({f"{PH}batchNumber"}), value_as=frozenset({"literal"})
+    )
     assert g.expected["notes"] == Expected(frozenset())  # unmapped is an answer
     assert g.expected["tests"].row_class == frozenset({f"{PH}TestResult"})
     assert g.expected["tests.ok"].terms == frozenset({f"{PH}conforms"})
@@ -279,6 +281,92 @@ expected:
     assert s.overall.value_total == 2 and s.overall.value_right == 2
     unmapped = score({}, g, {"t.water": "column", "t.assay": "column"})
     assert unmapped.overall.hit == 0 and unmapped.overall.class_right == 0
+
+
+AFR = "http://purl.allotrope.org/ontologies/result#"
+NODE_GOLD = """
+project: p
+prefixes: {afr: "http://purl.allotrope.org/ontologies/result#"}
+expected:
+  t.water: {term: any, class: afr:AFR_0002445, as: node}
+  t.batch: {term: any, class: afr:AFR_0001120, as: [entity, node]}
+"""
+
+
+def test_a_gold_may_say_as_node_or_list_several_forms() -> None:
+    g = load_gold(NODE_GOLD)
+    assert g.expected["t.water"].value_as == frozenset({"node"})
+    assert g.expected["t.batch"].value_as == frozenset({"entity", "node"})
+
+
+def test_a_value_node_pick_scores_value_as_and_class() -> None:
+    picks = {
+        "t.water": Pick("https://x/hasOutput", "node", entity_class=f"{AFR}AFR_0002445"),
+        "t.batch": Pick("https://x/hasOutput", "node", entity_class=f"{AFR}AFR_0001120"),
+    }
+    s = score(picks, load_gold(NODE_GOLD), {"t.water": "column", "t.batch": "column"})
+    assert (s.overall.value_total, s.overall.value_right) == (2, 2)
+    assert (s.overall.class_total, s.overall.class_right) == (2, 2)
+    as_entity = {
+        **picks,
+        "t.water": Pick("https://x/p", "entity", entity_class=f"{AFR}AFR_0002445"),
+    }
+    s = score(as_entity, load_gold(NODE_GOLD), {"t.water": "column", "t.batch": "column"})
+    assert s.overall.value_right == 1  # an entity is not the node the gold asks for
+
+
+def node_body(document: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "notes": "",
+        "changes": [
+            *([document] if document else []),
+            {
+                "op": "putTableMapping",
+                "table": "t",
+                "mapping": {
+                    "link": "https://x/hasRow",
+                    "class": "https://x/Row",
+                    "columns": {"water": {"node": {"class": "afr:AFR_0002445"}}},
+                },
+            },
+        ],
+    }
+
+
+def test_the_stage_answer_reads_back_a_value_node_with_the_answers_defaults() -> None:
+    document = {
+        "op": "setDocumentMapping",
+        "document": {"class": "https://x/Doc", "iri": "doc/{source}"},
+        "ontologies": [],
+        "prefixes": {"afr": AFR},
+        "valueNodes": {"link": "https://x/hasOutput", "value": "https://x/value"},
+    }
+    pick = picks_from_body(node_body(document), {})["t.water"]
+    assert (pick.term, pick.value_as, pick.entity_class) == (
+        "https://x/hasOutput",
+        "node",
+        f"{AFR}AFR_0002445",
+    )
+
+
+def test_the_stage_answer_reads_back_a_value_node_with_the_drafts_defaults() -> None:
+    defaults = {"link": "afr:hasOutput", "value": "afr:value"}
+    pick = picks_from_body(node_body(), {"afr": AFR}, defaults)["t.water"]
+    assert (pick.term, pick.value_as) == (f"{AFR}hasOutput", "node")
+
+
+def test_a_gold_template_prints_a_value_node_with_its_class() -> None:
+    picks = {
+        "": Pick(f"{PH}BatchRecord", ""),
+        "lot": Pick(f"{PH}hasResult", "node", entity_class=f"{PH}Batch"),
+    }
+    text = gold_template(
+        "demo", outputs_of(draft_params(gold(), None).draft or {}), picks, {"ex": PH}
+    )
+    assert "lot: {term: ex:hasResult, as: node, class: ex:Batch}" in text
+    again = load_gold(text)
+    assert again.expected["lot"].value_as == frozenset({"node"})
+    assert again.expected["lot"].row_class == frozenset({f"{PH}Batch"})
 
 
 def test_a_failing_matcher_is_reported_and_the_others_still_run() -> None:

@@ -81,6 +81,21 @@ describe('mapping helpers', () => {
       { path: 'tests.assay', term: null },
     ]);
   });
+
+  it('shows a value node by its class', () => {
+    const semantics = definition.semantics as Record<string, unknown>;
+    const withNode = {
+      ...definition,
+      semantics: {
+        ...semantics,
+        fields: { lot: { node: { class: 'pharma:LotIdentifier' } } },
+      },
+    };
+    expect(mappingRows(withNode).find((r) => r.path === 'lot')).toEqual({
+      path: 'lot',
+      term: 'node of pharma:LotIdentifier',
+    });
+  });
 });
 
 describe('MappingTab', () => {

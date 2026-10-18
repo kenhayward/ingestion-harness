@@ -2,8 +2,13 @@ import { CURIE_PREFIXES, IRI_UNSAFE, type OntologyTermKind, type Template } from
 import type { OntologyRepo } from '../ontologies/repo.js';
 import type { TemplateIssue } from './definitions.js';
 
-/** What a mapping position needs a term to be (ADR 0011). */
-type Want = 'class' | 'property' | 'concept' | 'scheme';
+/**
+ * What a mapping position needs a term to be (ADR 0011). `link`: the object property reaching a
+ * value node; `value`: the datatype property holding its value; `iri`: any IRI, never looked up
+ * (a unit: units are individuals, which the library does not index).
+ */
+type Want =
+  'class' | 'property' | 'concept' | 'scheme' | 'link' | 'value' | 'objectProperty' | 'iri';
 
 const PROPERTY_KINDS: OntologyTermKind[] = [
   'object_property',
@@ -15,12 +20,20 @@ const ACCEPTS: Record<Want, OntologyTermKind[]> = {
   property: PROPERTY_KINDS,
   concept: ['concept'],
   scheme: ['scheme'],
+  link: ['object_property'],
+  value: ['datatype_property'],
+  objectProperty: ['object_property'],
+  iri: [],
 };
 const WANT_NAME: Record<Want, string> = {
   class: 'a class',
   property: 'a property',
   concept: 'a concept',
   scheme: 'a concept scheme',
+  link: 'an object property: a value node is reached by an object property',
+  value: 'a datatype property',
+  objectProperty: 'an object property',
+  iri: 'an IRI',
 };
 const KIND_NAME: Record<OntologyTermKind, string> = {
   class: 'a class',
@@ -119,19 +132,70 @@ async function pinProblem(
   return null;
 }
 
+const XSD = 'http://www.w3.org/2001/XMLSchema#';
+/** The XSD types each output type's values fit (a type not listed: any range will do). */
+const XSD_FITS: Record<string, { name: string; types: string[] }> = {
+  integer: {
+    name: 'an integer',
+    types: ['integer', 'int', 'long', 'short', 'decimal', 'nonNegativeInteger', 'positiveInteger'],
+  },
+  decimal: { name: 'a decimal', types: ['decimal', 'double', 'float'] },
+  date: { name: 'a date', types: ['date', 'dateTime', 'dateTimeStamp'] },
+  boolean: { name: 'a boolean', types: ['boolean'] },
+};
+
+/**
+ * Why a value property cannot hold an output's values: every range it declares is an XSD type
+ * the output type does not fit. Null when it fits, or declares no XSD range.
+ */
+function rangeProblem(
+  term: string,
+  ranges: string[],
+  holds: { id: string; type: string },
+): string | null {
+  const fits = XSD_FITS[holds.type];
+  if (!fits || ranges.length === 0 || !ranges.every((r) => r.startsWith(XSD))) return null;
+  if (ranges.some((r) => fits.types.includes(r.slice(XSD.length)))) return null;
+  const named = ranges.map((r) => `xsd:${r.slice(XSD.length)}`).join(' or ');
+  return `${term} holds ${named} values: ${holds.id} is ${fits.name}`;
+}
+
 interface Use {
   path: string;
   term: string;
   want: Want;
+  /** A value node's value property: the output whose values it holds (the range warning). */
+  holds?: { id: string; type: string };
 }
 
+type OutputMapping = NonNullable<Template['semantics']>['fields'][string];
+
 /** Every term the mapping names, with where it is and what it must be. */
-function uses(semantics: NonNullable<Template['semantics']>): Use[] {
+function uses(semantics: NonNullable<Template['semantics']>, outputs: Template['outputs']): Use[] {
   const out: Use[] = [
     { path: 'semantics.document.class', term: semantics.document.class, want: 'class' },
   ];
-  const output = (path: string, m: NonNullable<Template['semantics']>['fields'][string]) => {
-    out.push({ path: `${path}.property`, term: m.property, want: 'property' });
+  const output = (path: string, m: OutputMapping, holds?: { id: string; type: string }) => {
+    if (m.property !== undefined) {
+      out.push({ path: `${path}.property`, term: m.property, want: m.node ? 'link' : 'property' });
+    }
+    if (m.node) {
+      out.push({ path: `${path}.node.class`, term: m.node.class, want: 'class' });
+      if (m.node.value !== undefined) {
+        out.push({ path: `${path}.node.value`, term: m.node.value, want: 'value', holds });
+      } else if (semantics.valueNodes?.value !== undefined && holds) {
+        // The default is kind-checked once, at semantics.valueNodes; only its range here.
+        const term = semantics.valueNodes.value;
+        out.push({ path: `${path}.node.value`, term, want: 'iri', holds });
+      }
+      if (m.node.unit !== undefined) {
+        out.push({ path: `${path}.node.unit`, term: m.node.unit, want: 'iri' });
+      }
+      if (m.node.unitProperty !== undefined) {
+        const term = m.node.unitProperty;
+        out.push({ path: `${path}.node.unitProperty`, term, want: 'objectProperty' });
+      }
+    }
     if (m.object) out.push({ path: `${path}.object.class`, term: m.object.class, want: 'class' });
     if (m.concepts?.scheme) {
       out.push({ path: `${path}.concepts.scheme`, term: m.concepts.scheme, want: 'scheme' });
@@ -140,12 +204,30 @@ function uses(semantics: NonNullable<Template['semantics']>): Use[] {
       out.push({ path: `${path}.concepts.values.${value}`, term, want: 'concept' });
     }
   };
-  for (const [id, m] of Object.entries(semantics.fields)) output(`semantics.fields.${id}`, m);
+  const defaults = semantics.valueNodes;
+  if (defaults?.link !== undefined) {
+    out.push({ path: 'semantics.valueNodes.link', term: defaults.link, want: 'link' });
+  }
+  if (defaults?.value !== undefined) {
+    out.push({ path: 'semantics.valueNodes.value', term: defaults.value, want: 'value' });
+  }
+  if (defaults?.unitProperty !== undefined) {
+    const term = defaults.unitProperty;
+    out.push({ path: 'semantics.valueNodes.unitProperty', term, want: 'objectProperty' });
+  }
+  const typed = (id: string, values: { id: string; type: string }[] | undefined) => {
+    const def = values?.find((v) => v.id === id);
+    return def ? { id, type: def.type } : undefined;
+  };
+  for (const [id, m] of Object.entries(semantics.fields)) {
+    output(`semantics.fields.${id}`, m, typed(id, outputs.fields));
+  }
   for (const [id, t] of Object.entries(semantics.tables)) {
     out.push({ path: `semantics.tables.${id}.link`, term: t.link, want: 'property' });
     out.push({ path: `semantics.tables.${id}.class`, term: t.class, want: 'class' });
+    const columns = outputs.tables.find((x) => x.id === id)?.columns;
     for (const [col, m] of Object.entries(t.columns)) {
-      output(`semantics.tables.${id}.columns.${col}`, m);
+      output(`semantics.tables.${id}.columns.${col}`, m, typed(col, columns));
     }
   }
   return out;
@@ -209,15 +291,25 @@ export async function semanticsIssues(
     }
   }
 
-  const expanded = uses(semantics).map((u) => ({ ...u, iri: expandTerm(u.term, prefixes) }));
+  const expanded = uses(semantics, template.outputs).map((u) => ({
+    ...u,
+    iri: expandTerm(u.term, prefixes),
+  }));
   const lookup = [
     ...new Set(
       expanded.flatMap((u) =>
-        u.iri && !local.has(u.iri) && !BUILT_IN.some((ns) => u.iri!.startsWith(ns)) ? [u.iri] : [],
+        u.iri &&
+        u.want !== 'iri' &&
+        !local.has(u.iri) &&
+        !BUILT_IN.some((ns) => u.iri!.startsWith(ns))
+          ? [u.iri]
+          : [],
       ),
     ),
   ];
   const known = lookup.length ? await ontologies.termKinds(pins, lookup) : {};
+  const held = [...new Set(expanded.flatMap((u) => (u.holds && u.iri ? [u.iri] : [])))];
+  const ranges = held.length ? await ontologies.termRanges(pins, held) : {};
   for (const u of expanded) {
     if (u.iri === null) {
       issues.push({ path: u.path, message: `unknown prefix in ${u.term}` });
@@ -227,7 +319,11 @@ export async function semanticsIssues(
       issues.push({ path: u.path, message: `${u.term} is not a valid IRI` });
       continue;
     }
-    if (BUILT_IN.some((ns) => u.iri!.startsWith(ns))) continue;
+    if (u.holds) {
+      const problem = rangeProblem(u.term, ranges[u.iri] ?? [], u.holds);
+      if (problem) issues.push({ path: u.path, message: problem, severity: 'warning' });
+    }
+    if (u.want === 'iri' || BUILT_IN.some((ns) => u.iri!.startsWith(ns))) continue;
     const kinds = local.get(u.iri) ?? known[u.iri] ?? [];
     if (kinds.length === 0) {
       issues.push({

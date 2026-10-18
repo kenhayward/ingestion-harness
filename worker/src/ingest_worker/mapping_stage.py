@@ -45,6 +45,21 @@ VALUES_IN_QUERY = 5
 #: Alternatives shown on a proposed change.
 ALTERNATIVES = 5
 
+#: Numeric and date outputs: a value node is the likely form, so fewer properties, more classes.
+NODE_TYPES = frozenset({"integer", "decimal", "date"})
+NODE_PROPERTY_CANDIDATES = 5
+NODE_CLASS_CANDIDATES = 10
+#: The value-node defaults' candidates: (path, query, kinds), searched like an output's.
+VALUE_NODES = "#valueNodes"
+VALUE_NODE_QUERIES: list[tuple[str, str, list[str]]] = [
+    (f"{VALUE_NODES}.link", "has output. has specified output. has data output. has result",
+     ["object_property"]),
+    (f"{VALUE_NODES}.value", "has value. numeric value. value", ["datatype_property"]),
+    (f"{VALUE_NODES}.unitProperty", "has unit. unit", ["object_property"]),
+]  # fmt: skip
+#: Units are not in the ontology library (QUDT units are individuals): only QUDT's are taken.
+QUDT_UNITS = "http://qudt.org/vocab/unit/"
+
 PROPERTY_KINDS = ["object_property", "datatype_property", "annotation_property"]
 CLASS_KINDS = ["class", "concept", "scheme"]
 FILTERS = {"slug", "upper"}
@@ -162,7 +177,7 @@ MAPPING_SCHEMA = _object(
                     "op": {"type": "string", "enum": MAPPING_OPS},
                     "target": _S,
                     "property": _S,
-                    "valueAs": {"type": "string", "enum": ["literal", "entity", "concept"]},
+                    "valueAs": {"type": "string", "enum": ["literal", "entity", "concept", "node"]},
                     "entityClass": _S,
                     "entityIri": _S,
                     "conceptScheme": _S,
@@ -190,6 +205,13 @@ MAPPING_SCHEMA = _object(
                     },
                     "localLabel": _S,
                     "localDefinition": _S,
+                    "nodeClass": _S,
+                    "nodeValue": _S,
+                    "nodeUnit": _S,
+                    "nodeUnitProperty": _S,
+                    "valueLink": _S,
+                    "valueProperty": _S,
+                    "unitProperty": _S,
                     "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
                     "reason": _S,
                     "evidence": {"type": "array", "items": _S},
@@ -211,14 +233,24 @@ graph. Choose only from the <candidates> of each output (their full IRIs), or de
 term (putLocalTerm) when no candidate fits and use its IRI.
 - setDocumentMapping (target ""): documentClass, the class of the whole document, and
   documentIri, a template under the base such as "doc/{source}" ({source}, {type} and
-  {version} only).
+  {version} only). Also the value-node defaults, from the value nodes' <candidates>: valueLink
+  (the object property from the document or row to a value node), valueProperty (the datatype
+  property holding the value) and unitProperty (the property to its unit).
 - putFieldMapping (target a field id, or "table.column" for a column): property, and valueAs:
   - literal: the value as it is;
   - entity: the value names a thing; entityClass and entityIri, a readable template such as
     "party/{value|slug}" ({value}; a column may also use its table's other columns; filters
     slug and upper);
   - concept: the value is a code; conceptValues maps enum values to concepts, or conceptScheme
-    with matchByLabel true matches values to the scheme's concepts by label.
+    with matchByLabel true matches values to the scheme's concepts by label;
+  - node: the value is a measurement or result of a kind the ontology names as a class (water
+    content, assay, elapsed time, count). nodeClass is that class (one of the output's class
+    candidates); the value sits on a node of it. property is the link from the document or row
+    to the node, nodeValue the property holding the value, nodeUnit a QUDT unit IRI when the
+    value has one (http://qudt.org/vocab/unit/PERCENT, …/MIN). Leave property, nodeValue and
+    nodeUnitProperty "" to use the value-node defaults.
+  When an ontology's properties are generic relations (has output, has value) and its classes
+  carry the meaning, prefer node over a literal with a generic property.
 - putTableMapping (target a table id): tableLink, the property from the document to each row;
   rowClass; rowIri, optional, from the table's columns ("line/{sku|upper}"). Map a table before
   its columns. A table needs both: when no class fits its rows, declare a local term for it (if
@@ -335,12 +367,76 @@ def convert_mapping(
                 used_namespaces.append(ns)
         return value
 
-    def output_mapping(where: str, c: dict[str, Any], scope: list[str]) -> dict[str, Any]:
+    # The value-node defaults a node may leave its terms to: this answer's, else the draft's.
+    answer_defaults: dict[str, Any] = next(
+        (c for c in changes if c.get("op") == "setDocumentMapping"), {}
+    )
+    draft_defaults = semantics.get("valueNodes") or {}
+    defaults = {
+        key: bool(str(answer_defaults.get(flat) or "").strip() or draft_defaults.get(key))
+        for key, flat in (("link", "valueLink"), ("value", "valueProperty"),
+                          ("unitProperty", "unitProperty"))
+    }  # fmt: skip
+
+    def value_node(where: str, c: dict[str, Any], value_type: str) -> dict[str, Any]:
+        """A value node's own terms (`node`), checked against the defaults it leaves terms to."""
+        if value_type == "list":
+            errors.append(
+                f"{where}: a list cannot be a value node: map its items as literals, entities "
+                "or concepts"
+            )
+        node: dict[str, Any] = {"class": term(f"{where}.nodeClass", c.get("nodeClass"), "class")}
+        picked = shortlisted.get(node["class"])
+        if picked is not None and picked.kind != "class":
+            errors.append(f"{where}.nodeClass: {node['class']} is a {picked.kind}, not a class")
+        value = str(c.get("nodeValue") or "").strip()
+        if value:
+            node["value"] = term(f"{where}.nodeValue", value, "datatype_property")
+        elif not defaults["value"]:
+            errors.append(
+                f"{where}.nodeValue: a value node needs a value property: give nodeValue or set "
+                "valueProperty on setDocumentMapping"
+            )
+        unit = str(c.get("nodeUnit") or "").strip()
+        if unit:
+            if (not unit.startswith(QUDT_UNITS) or unit == QUDT_UNITS) and unit not in local:
+                errors.append(
+                    f"{where}.nodeUnit: a unit is a QUDT unit ({QUDT_UNITS}…), not {unit}"
+                )
+            elif _IRI_UNSAFE.search(unit):
+                errors.append(f"{where}.nodeUnit: {unit} is not a valid IRI")
+            elif unit.startswith(QUDT_UNITS) and QUDT_UNITS not in used_namespaces:
+                used_namespaces.append(QUDT_UNITS)
+            node["unit"] = unit
+        unit_property = str(c.get("nodeUnitProperty") or "").strip()
+        if unit_property:
+            node["unitProperty"] = term(
+                f"{where}.nodeUnitProperty", unit_property, "object_property"
+            )
+        elif unit and not defaults["unitProperty"]:
+            errors.append(
+                f"{where}.nodeUnit: a unit needs a unit property: give nodeUnitProperty or set "
+                "unitProperty on setDocumentMapping"
+            )
+        return node
+
+    def output_mapping(
+        where: str, c: dict[str, Any], scope: list[str], value_type: str
+    ) -> dict[str, Any]:
         how = c.get("valueAs") or "literal"
         link_kind = "datatype_property" if how == "literal" else "object_property"
-        mapping: dict[str, Any] = {
-            "property": term(f"{where}.property", c.get("property"), link_kind)
-        }
+        if how == "node":
+            mapping: dict[str, Any] = {}
+            if str(c.get("property") or "").strip():
+                mapping["property"] = term(f"{where}.property", c.get("property"), link_kind)
+            elif not defaults["link"]:
+                errors.append(
+                    f"{where}.property: a value node needs a link: give its property or set "
+                    "valueLink on setDocumentMapping"
+                )
+            mapping["node"] = value_node(where, c, value_type)
+            return mapping
+        mapping = {"property": term(f"{where}.property", c.get("property"), link_kind)}
         if how == "entity":
             template = str(c.get("entityIri") or "").strip()
             if not template:
@@ -374,8 +470,10 @@ def convert_mapping(
     def meta(c: dict[str, Any], path: str | None, chosen: set[str]) -> dict[str, Any]:
         out: dict[str, Any] = {
             "reason": str(c.get("reason") or ""),
-            "confidence": c.get("confidence") or "medium",
+            "confidence": _confidence(c),
         }
+        if _has_unit(c):
+            out["reason"] = f"{out['reason']} (unit not checked against the library)".strip()
         evidence = [str(e) for e in c.get("evidence") or [] if str(e).strip()]
         if evidence:
             out["evidence"] = evidence
@@ -401,18 +499,27 @@ def convert_mapping(
             errors.extend(
                 _template_errors(f"{where}.documentIri", template, ["source", "type", "version"])
             )
-            typed.append(
-                {
-                    "op": op,
-                    "document": {
-                        "class": term(f"{where}.documentClass", c.get("documentClass"), "class"),
-                        "iri": template,
-                    },
-                    "ontologies": [{"id": v.id, "version": v.version} for v in inputs.versions],
-                    "prefixes": {},  # filled below, once every term is known
-                    **meta(c, None, set()),
-                }
-            )
+            doc_change: dict[str, Any] = {
+                "op": op,
+                "document": {
+                    "class": term(f"{where}.documentClass", c.get("documentClass"), "class"),
+                    "iri": template,
+                },
+                "ontologies": [{"id": v.id, "version": v.version} for v in inputs.versions],
+                "prefixes": {},  # filled below, once every term is known
+            }
+            value_nodes = {
+                key: term(f"{where}.{flat}", c.get(flat), kind)
+                for key, flat, kind in (
+                    ("link", "valueLink", "object_property"),
+                    ("value", "valueProperty", "datatype_property"),
+                    ("unitProperty", "unitProperty", "object_property"),
+                )
+                if str(c.get(flat) or "").strip()
+            }
+            if value_nodes:
+                doc_change["valueNodes"] = value_nodes
+            typed.append({**doc_change, **meta(c, None, set())})
         elif op == "putLocalTerm":
             iri = str(c.get("localIri") or "").strip()
             kind = c.get("localKind") or ""
@@ -474,14 +581,15 @@ def convert_mapping(
             if spec.kind == "column":
                 table, column = target.split(".", 1)
                 scope = ["value", *outputs[table].columns]
-                pending_columns.append((i, table, column, output_mapping(where, c, scope)))
+                mapping = output_mapping(where, c, scope, spec.type)
+                pending_columns.append((i, table, column, mapping))
                 continue
-            chosen = {str(c.get("property")), str(c.get("entityClass"))}
+            chosen = {str(c.get(k)) for k in ("property", "entityClass", "nodeClass")}
             typed.append(
                 {
                     "op": op,
                     "field": target,
-                    "mapping": output_mapping(where, c, ["value"]),
+                    "mapping": output_mapping(where, c, ["value"], spec.type),
                     **meta(c, target, chosen),
                 }
             )
@@ -503,7 +611,7 @@ def convert_mapping(
                     "table": table,
                     "mapping": merged,
                     "reason": changes[i].get("reason", ""),
-                    "confidence": changes[i].get("confidence") or "medium",
+                    "confidence": _confidence(changes[i]),
                 }
             )
         else:
@@ -547,6 +655,17 @@ def convert_mapping(
     return {"notes": str(data.get("notes") or ""), "changes": typed}, errors
 
 
+def _has_unit(c: dict[str, Any]) -> bool:
+    return c.get("valueAs") == "node" and bool(str(c.get("nodeUnit") or "").strip())
+
+
+def _confidence(c: dict[str, Any]) -> str:
+    """The change's stated confidence; a value node's unit, never checked against the library
+    (units are not indexed), caps it at medium."""
+    stated = str(c.get("confidence") or "medium")
+    return "medium" if stated == "high" and _has_unit(c) else stated
+
+
 def _implied_term(iri: str, kind: str, namespace: str) -> dict[str, Any]:
     """The declaration of a local term the model used without one: its label from the IRI's
     local name (`has_batch_entry` and `hasBatchEntry` read `has batch entry`)."""
@@ -559,7 +678,8 @@ def _compact_terms(changes: list[dict[str, Any]], prefixes: dict[str, str]) -> N
     """Every term of the changes as a CURIE where a declared prefix covers it (in place)."""
 
     def output(m: dict[str, Any]) -> None:
-        m["property"] = compact_iri(m["property"], prefixes)
+        if "property" in m:
+            m["property"] = compact_iri(m["property"], prefixes)
         if "object" in m:
             m["object"]["class"] = compact_iri(m["object"]["class"], prefixes)
         concepts = m.get("concepts") or {}
@@ -569,10 +689,16 @@ def _compact_terms(changes: list[dict[str, Any]], prefixes: dict[str, str]) -> N
             concepts["values"] = {
                 k: compact_iri(v, prefixes) for k, v in concepts["values"].items()
             }
+        node = m.get("node") or {}
+        for key in ("class", "value", "unit", "unitProperty"):
+            if key in node:
+                node[key] = compact_iri(node[key], prefixes)
 
     for c in changes:
         if c["op"] == "setDocumentMapping":
             c["document"]["class"] = compact_iri(c["document"]["class"], prefixes)
+            if "valueNodes" in c:
+                c["valueNodes"] = {k: compact_iri(v, prefixes) for k, v in c["valueNodes"].items()}
         elif c["op"] == "putFieldMapping":
             output(c["mapping"])
         elif c["op"] == "putTableMapping":
@@ -631,6 +757,13 @@ def mapping_context(
         if cands:
             body = "\n".join(_candidate_line(c) for c in cands)
             blocks.append(f'<candidates output="{o.path or "document"}">\n{body}\n</candidates>')
+    defaults = shortlists.get(VALUE_NODES, [])
+    if defaults:
+        body = "\n".join(_candidate_line(c) for c in defaults)
+        blocks.append(
+            '<candidates output="value nodes (valueLink, valueProperty, unitProperty)">\n'
+            f"{body}\n</candidates>"
+        )
     if draft.get("semantics"):
         current = yaml.safe_dump(draft["semantics"], sort_keys=False).strip()
         blocks.append(f"<current_mapping>\n{current}\n</current_mapping>")
@@ -834,23 +967,43 @@ def stage_shortlists(
     model_ref: str | None,
 ) -> dict[str, list[Candidate]]:
     """Each output's candidates before the term budget (`_cap`): properties for everything but
-    the document, classes, concepts and schemes for the document, tables, enums and text."""
+    the document; classes, concepts and schemes for the document, tables, enums and text;
+    classes for every other field and column (a value node's class: numeric and date outputs get
+    more of them and fewer properties); and the value-node defaults' candidates (`VALUE_NODES`)."""
     shortlists: dict[str, list[Candidate]] = {}
     for o in outputs:
         vector = vectors.get(o.path)
         found: list[Candidate] = []
+        node_like = o.kind in ("field", "column") and o.type in NODE_TYPES
         if o.kind != "document":
+            k = NODE_PROPERTY_CANDIDATES if node_like else PROPERTY_CANDIDATES
             found += shortlist(
                 store, versions, queries[o.path], PROPERTY_KINDS, vector=vector,
-                model_ref=model_ref, k=PROPERTY_CANDIDATES,
+                model_ref=model_ref, k=k,
             )[0]  # fmt: skip
         if o.kind in ("document", "table") or o.enum or o.type in ("text", "enum"):
             found += shortlist(
                 store, versions, queries[o.path], CLASS_KINDS, vector=vector,
                 model_ref=model_ref, k=CLASS_CANDIDATES,
             )[0]  # fmt: skip
+        elif o.kind in ("field", "column"):
+            k = NODE_CLASS_CANDIDATES if node_like else CLASS_CANDIDATES
+            found += shortlist(
+                store, versions, queries[o.path], ["class"], vector=vector,
+                model_ref=model_ref, k=k,
+            )[0]  # fmt: skip
         if found:
             shortlists[o.path] = found
+    defaults: list[Candidate] = []
+    for path, query, kinds in VALUE_NODE_QUERIES:
+        for c in shortlist(
+            store, versions, queries.get(path, query), kinds, vector=vectors.get(path),
+            model_ref=model_ref, k=NODE_PROPERTY_CANDIDATES,
+        )[0]:  # fmt: skip
+            if all(c.iri != d.iri for d in defaults):
+                defaults.append(c)
+    if defaults:
+        shortlists[VALUE_NODES] = defaults
     return shortlists
 
 
@@ -902,6 +1055,7 @@ def run_mapping(
     embedder = _embedder(job, deps, queue, local_only, notes)
     outputs = outputs_of(draft)
     queries = {o.path: query_text(o, observed.get(o.path, [])) for o in outputs}
+    queries.update({path: query for path, query, _kinds in VALUE_NODE_QUERIES})
     vectors: dict[str, list[float]] = {}
     if embedder is not None:
         missing = [

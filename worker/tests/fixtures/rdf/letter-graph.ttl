@@ -1,0 +1,141 @@
+@prefix acme: <https://acme.example/def/> .
+@prefix ct: <https://id.stocks-hayward.com/ns/ct#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix ns1: <https://data.acme.example/ct/def/letter/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/amount> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/2> ;
+    ct:property acme:amount ;
+    ct:quote "12.50" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value 12.5 .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/kind> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/1> ;
+    ct:property acme:kind ;
+    ct:quote "MEMO" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value acme:Memo .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/lines/1> a ct:Evidence ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/body> ;
+    ct:step "rows" ;
+    ct:subject <https://data.acme.example/ct/line/AB-1> .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/lines/2> a ct:Evidence ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/body> ;
+    ct:step "rows" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12/letter/lines/2> .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/pages> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/1> ;
+    ct:property acme:pages ;
+    ct:quote "2 pages" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value 2 .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/sender> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/1> ;
+    ct:property acme:sentBy ;
+    ct:quote "From: Ünïcorn Labs Ltd" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value <https://data.acme.example/ct/party/unicorn-labs-ltd> .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/sent> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/1> ;
+    ct:property acme:sent ;
+    ct:quote "11/02/2023" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value "2023-02-11"^^xsd:date .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/stage> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/2> ;
+    ct:property acme:stage ;
+    ct:quote "Granulation" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value acme:Granulation .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/tags> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/2> ;
+    ct:property acme:tag ;
+    ct:quote "a, b" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value "a",
+        "b" .
+
+<https://data.acme.example/ct/doc/ab12/fact/letter/urgent> a ct:Evidence ;
+    ct:page <https://data.acme.example/ct/doc/ab12/page/1> ;
+    ct:property acme:urgent ;
+    ct:quote "URGENT" ;
+    ct:section <https://data.acme.example/ct/doc/ab12/letter/section/head> ;
+    ct:step "head" ;
+    ct:subject <https://data.acme.example/ct/doc/ab12> ;
+    ct:value true .
+
+<https://data.acme.example/ct/job/j-1> a prov:Activity ;
+    prov:endedAtTime "2026-10-14T10:00:00+00:00"^^xsd:dateTime ;
+    ct:baseIri "https://data.acme.example/ct/" ;
+    ct:model "local/qwen" ;
+    ct:recipe "letter" ;
+    ct:recipeVersion 3 .
+
+<https://data.acme.example/ct/doc/ab12/letter/lines/2> a acme:Line ;
+    ns1:lines.qty 4 .
+
+<https://data.acme.example/ct/doc/ab12/letter/section/body> a ct:Section ;
+    rdfs:label "body" ;
+    ct:of <https://data.acme.example/ct/doc/ab12> ;
+    ct:order 2 .
+
+<https://data.acme.example/ct/line/AB-1> a acme:Line ;
+    acme:sku "ab-1" ;
+    ns1:lines.qty 3 .
+
+<https://data.acme.example/ct/party/unicorn-labs-ltd> a acme:Party ;
+    rdfs:label "Ünïcorn Labs Ltd" .
+
+<https://data.acme.example/ct/doc/ab12/page/2> a ct:Page ;
+    ct:of <https://data.acme.example/ct/doc/ab12> ;
+    ct:pageNumber 2 .
+
+<https://data.acme.example/ct/doc/ab12/page/1> a ct:Page ;
+    ct:of <https://data.acme.example/ct/doc/ab12> ;
+    ct:pageNumber 1 .
+
+<https://data.acme.example/ct/doc/ab12/letter/section/head> a ct:Section ;
+    rdfs:label "head" ;
+    ct:of <https://data.acme.example/ct/doc/ab12> ;
+    ct:order 1 .
+
+<https://data.acme.example/ct/doc/ab12> a acme:Letter ;
+    dcterms:source <urn:sha256:ab12> ;
+    prov:wasGeneratedBy <https://data.acme.example/ct/job/j-1> ;
+    acme:amount 12.5 ;
+    acme:hasLine <https://data.acme.example/ct/doc/ab12/letter/lines/2>,
+        <https://data.acme.example/ct/line/AB-1> ;
+    acme:kind acme:Memo ;
+    acme:pages 2 ;
+    acme:sent "2023-02-11"^^xsd:date ;
+    acme:sentBy <https://data.acme.example/ct/party/unicorn-labs-ltd> ;
+    acme:stage acme:Granulation ;
+    acme:tag "a",
+        "b" ;
+    acme:urgent true .
+

@@ -5,6 +5,7 @@ import { templateIssues } from '../src/templates/definitions.js';
 import { multipart, testApp } from './helpers.js';
 
 const A = 'https://acme.example/def/';
+const XSD = 'http://www.w3.org/2001/XMLSchema#';
 const TTL = Buffer.from('@prefix owl: <http://www.w3.org/2002/07/owl#> .\n');
 
 async function setup() {
@@ -33,6 +34,16 @@ async function setup() {
     { iri: `${A}qty`, kind: 'datatype_property', label: 'qty' },
     { iri: `${A}Memo`, kind: 'concept', label: 'Memo' },
     { iri: `${A}Kinds`, kind: 'scheme', label: 'Kinds' },
+    { iri: `${A}Quantity`, kind: 'class', label: 'Quantity' },
+    { iri: `${A}hasResult`, kind: 'object_property', label: 'has result' },
+    { iri: `${A}unit`, kind: 'object_property', label: 'unit' },
+    {
+      iri: `${A}numericValue`,
+      kind: 'datatype_property',
+      label: 'numeric value',
+      range: [`${XSD}decimal`],
+    },
+    { iri: `${A}dateValue`, kind: 'datatype_property', label: 'date value', range: [`${XSD}date`] },
   ]);
   return ctx;
 }
@@ -297,5 +308,108 @@ describe('publishing with mapping issues', () => {
         message: 'acme:Invoice is not in the pinned ontologies: declare it under local',
       },
     ]);
+  });
+});
+
+describe('value node validation', () => {
+  const DEFAULTS = {
+    link: 'acme:hasResult',
+    value: 'acme:numericValue',
+    unitProperty: 'acme:unit',
+  };
+  /** FULL with the value-node defaults and `qty` as a value node (`node` merged in). */
+  const withNode =
+    (node: Record<string, unknown>, extra: Semantics = {}) =>
+    (s: Semantics) => ({
+      ...s,
+      valueNodes: DEFAULTS,
+      ...extra,
+      tables: {
+        lines: {
+          ...(s.tables as any).lines, // eslint-disable-line @typescript-eslint/no-explicit-any -- a test patch
+          columns: {
+            sku: { property: 'acme:sku' },
+            qty: { node: { class: 'acme:Quantity', ...node } },
+          },
+        },
+      },
+    });
+  const Q = 'semantics.tables.lines.columns.qty';
+
+  it('a complete value node mapping to a ready ontology has no issues', async () => {
+    expect(await issuesOf(withNode({ unit: 'https://qudt.org/vocab/unit/NUM' }))).toEqual([]);
+  });
+
+  it.each<[string, (s: Semantics) => Semantics, string, string]>([
+    [
+      "a node's class that is a property",
+      withNode({ class: 'acme:hasResult' }),
+      `${Q}.node.class`,
+      'acme:hasResult is an object property, not a class',
+    ],
+    [
+      "a node's own link that is a datatype property",
+      (s) => {
+        const out = withNode({})(s);
+        const lines = (out.tables as any).lines; // eslint-disable-line @typescript-eslint/no-explicit-any -- a test patch
+        lines.columns.qty.property = 'acme:sku';
+        return out;
+      },
+      `${Q}.property`,
+      'acme:sku is a datatype property, not an object property: a value node is reached by an object property',
+    ],
+    [
+      'a value property that is an object property',
+      withNode({ value: 'acme:hasResult' }),
+      `${Q}.node.value`,
+      'acme:hasResult is an object property, not a datatype property',
+    ],
+    [
+      'a unit property that is a datatype property',
+      withNode({ unit: 'acme:Each', unitProperty: 'acme:sku' }),
+      `${Q}.node.unitProperty`,
+      'acme:sku is a datatype property, not an object property',
+    ],
+    [
+      'a unit with an undeclared prefix',
+      withNode({ unit: 'unit:PERCENT' }),
+      `${Q}.node.unit`,
+      'unknown prefix in unit:PERCENT',
+    ],
+    [
+      'a default link that is a class',
+      withNode({}, { valueNodes: { ...DEFAULTS, link: 'acme:Quantity' } }),
+      'semantics.valueNodes.link',
+      'acme:Quantity is a class, not an object property: a value node is reached by an object property',
+    ],
+  ])('%s', async (_name, patch, path, message) => {
+    expect(await issuesOf(patch)).toContainEqual({ path, message });
+  });
+
+  it('checks the defaults once, where they are written, not again for each node', async () => {
+    const issues = await issuesOf(
+      withNode({}, { valueNodes: { ...DEFAULTS, value: 'acme:Nope' } }),
+    );
+    expect(issues.filter((i) => i.message.startsWith('acme:Nope'))).toEqual([
+      {
+        path: 'semantics.valueNodes.value',
+        message: 'acme:Nope is not in the pinned ontologies: declare it under local',
+      },
+    ]);
+  });
+
+  it('does not look a unit up in the library: units are individuals it does not index', async () => {
+    const issues = await issuesOf(withNode({ unit: 'acme:NotATerm' }));
+    expect(issues.filter((i) => i.path.endsWith('.node.unit'))).toEqual([]);
+  });
+
+  it('warns when the value property cannot hold the output type', async () => {
+    // qty is an integer; acme:dateValue holds an xsd:date.
+    expect(await issuesOf(withNode({ value: 'acme:dateValue' }))).toContainEqual({
+      path: `${Q}.node.value`,
+      message: 'acme:dateValue holds xsd:date values: qty is an integer',
+      severity: 'warning',
+    });
+    expect(await issuesOf(withNode({}))).toEqual([]);
   });
 });

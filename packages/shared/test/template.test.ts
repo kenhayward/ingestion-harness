@@ -1,14 +1,23 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { definitionCanonical } from '../src/github-sync.js';
 import {
   deliveryFormats,
   deliveryTargets,
+  linkOf,
+  resolveNode,
+  SemanticsSchema,
   setDeliveryTarget,
   stepModel,
   TemplateSchema,
   type DeliveryTarget,
+  type OutputMapping,
 } from '../src/template.js';
 import { deliveryPublishTo } from '../src/publish-targets.js';
+
+/** definitionCanonical sha256 of the fixture's full mapping, pinned before value nodes. */
+const PINNED_SHA = '57cc1aac4720265403d78c4d61becfd388ee617a698d653ccc99582b13f44929';
 
 const valid = {
   id: 'demo',
@@ -178,6 +187,15 @@ describe('recipe semantics and delivery (shared with the worker)', () => {
     expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
   });
 
+  it('parses a recipe without value nodes to the same canonical recipe as before', () => {
+    // Pinned before value nodes existed: new keys must stay absent, so publish-gate snapshots,
+    // GitHub sync hashes and the change log see no change. Never update the hash to pass.
+    const full = semanticsFixture.cases.find((c) => c.name === 'full mapping with rdf delivery')!;
+    const parsed = TemplateSchema.parse({ ...semanticsFixture.base, ...full.patch });
+    const sha = createHash('sha256').update(definitionCanonical(parsed)).digest('hex');
+    expect(sha).toBe(PINNED_SHA);
+  });
+
   it('delivers CSV and JSON unless the recipe says otherwise', () => {
     const base = semanticsFixture.base as Parameters<typeof deliveryFormats>[0];
     expect(deliveryFormats(base)).toEqual(['csv', 'json']);
@@ -330,5 +348,30 @@ describe('delivery.publishTo (publishing targets, shared with the worker)', () =
     const rdf = setDeliveryTarget(def, 'rdf', true) as { delivery: unknown };
     expect(rdf.delivery).toEqual({ formats: ['csv', 'json', 'rdf'], publishTo: 'finance-lake' });
     expect(setDeliveryTarget(rdf, 'rdf', false)).toEqual(def);
+  });
+});
+
+describe('value nodes (shared with the worker)', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('./fixtures/value-nodes.json', import.meta.url), 'utf8'),
+  ) as {
+    semantics: unknown;
+    expected: Record<string, unknown>;
+    links: Record<string, string>;
+  };
+  const semantics = SemanticsSchema.parse(fixture.semantics);
+  const mappingAt = (path: string): OutputMapping => {
+    const [head, column] = path.split('.', 2) as [string, string | undefined];
+    return column === undefined
+      ? semantics.fields[head]!
+      : semantics.tables[head]!.columns[column]!;
+  };
+
+  it.each(Object.entries(fixture.expected))('resolves %s', (path, expected) => {
+    expect(resolveNode(semantics, mappingAt(path))).toStrictEqual(expected);
+  });
+
+  it.each(Object.entries(fixture.links))('links %s through %s', (path, link) => {
+    expect(linkOf(semantics, mappingAt(path))).toBe(link);
   });
 });

@@ -22,7 +22,10 @@ from typing import Any, Literal
 
 from .mapping_stage import (
     CLASS_KINDS,
+    NODE_TYPES,
     PROPERTY_KINDS,
+    VALUE_NODE_QUERIES,
+    VALUE_NODES,
     MappingInputs,
     OutputSpec,
     outputs_of,
@@ -40,6 +43,26 @@ OPTIONS = 6
 BATCH = 8
 #: A top option this far ahead of the next is a confident pick (re-rank score units).
 MARGIN = 0.3
+#: With value-node defaults, an output's options: this many classes and properties.
+NODE_CLASSES = 4
+NODE_PROPERTIES = 3
+#: What each value-node default is, for the model (the pseudo-outputs' names).
+VALUE_NODE_ROLES = {
+    f"{VALUE_NODES}.link": "value node link: the object property from a document or row to a "
+    "node that holds one value",
+    f"{VALUE_NODES}.value": "value node value: the datatype property holding the value on the node",
+    f"{VALUE_NODES}.unitProperty": "value node unit: the property from the node to its unit",
+}
+VALUE_NODES_NOTE = (
+    "\n\nThese are the defaults every value node uses: a value node is a node of a class (a water "
+    "content, an assay result, a count) that holds one value. Choose the ontology's generic "
+    "relations here, or none when it has no such pattern."
+)
+NODE_OPTIONS_NOTE = (
+    "\n\nA [class] option publishes the value on a node of that class (through the value-node "
+    "link and value properties); a property option publishes it with that property. When the "
+    "ontology's properties are generic relations and its classes carry the meaning, prefer a class."
+)
 
 #: Properties that fit almost anything: down-ranked unless the output is a label or note.
 GENERIC = frozenset(
@@ -329,13 +352,20 @@ def propose(
 
     picks: dict[str, Pick] = {}
 
-    def ask(what: str, batch: list[tuple[str, OutputSpec, list[Ranked]]]) -> dict[str, str]:
+    def ask(
+        what: str,
+        batch: list[tuple[str, OutputSpec, list[Ranked]]],
+        note: str = "",
+        limit: int | None = None,
+    ) -> dict[str, str]:
+        n = limit or options
         request = ChoiceRequest(
             what=what,
-            items=[(path, [r.iri for r in ranked[:options]]) for path, _, ranked in batch],
+            items=[(path, [r.iri for r in ranked[:n]]) for path, _, ranked in batch],
             prompt=choice_prompt(
-                what, [(o, ranked[:options], seen.get(o.path, [])) for _, o, ranked in batch]
-            ),
+                what, [(o, ranked[:n], seen.get(o.path, [])) for _, o, ranked in batch]
+            )
+            + note,
         )
         return choose(request)
 
@@ -351,6 +381,24 @@ def propose(
         tuple(r.iri for r in doc_ranked),
     )
     doc_owner = [doc_class] if doc_class else []
+
+    # 1b. The value-node defaults: the link to a node, the property holding its value, its unit.
+    defaults: dict[str, str | None] = {}
+    asked: list[tuple[str, OutputSpec, list[Ranked]]] = []
+    for path, query, kinds in VALUE_NODE_QUERIES:
+        spec = OutputSpec(path, "valueNodes", VALUE_NODE_ROLES[path], "", "property")
+        found, _ = shortlist(
+            store, versions, query, kinds, vector=None, model_ref=None, k=retrieve
+        )  # fmt: skip
+        ranked = rerank(terms, versions, spec, [c.iri for c in found], owner=[])
+        if ranked:
+            asked.append((path, spec, ranked))
+    if asked:
+        chosen = ask("value-node property", asked, VALUE_NODES_NOTE)
+        for path, _spec, ranked in asked:
+            defaults[path] = _answer(chosen, path, ranked[:options])
+    link = defaults.get(f"{VALUE_NODES}.link")
+    node_ready = link is not None and defaults.get(f"{VALUE_NODES}.value") is not None
 
     # 2. Each table's link from the document and its row class.
     row_class: dict[str, str | None] = {}
@@ -374,18 +422,40 @@ def propose(
             row_class=rows,
         )
 
-    # 3. Fields (they hang off the document), then each table's columns (off its rows).
+    # 3. Fields (they hang off the document), then each table's columns (off its rows). With
+    # value-node defaults, an output's options are classes (a node of that class holds the value)
+    # and properties together; numeric and date outputs list the classes first.
+    def options_of(o: OutputSpec, owner: list[str]) -> list[Ranked]:
+        props = rerank(terms, versions, o, candidates(o, PROPERTY_KINDS), owner=owner)
+        if not node_ready or o.enum or o.type == "list":
+            return props
+        classes = rerank(terms, versions, o, candidates(o, ["class"]), owner=[])
+        mixed = (classes[:NODE_CLASSES], props[:NODE_PROPERTIES])
+        return [*mixed[0], *mixed[1]] if o.type in NODE_TYPES else [*mixed[1], *mixed[0]]
+
     def map_outputs(group: list[OutputSpec], owner: list[str]) -> None:
-        ranked = [
-            (o.path, o, rerank(terms, versions, o, candidates(o, PROPERTY_KINDS), owner=owner))
-            for o in group
-        ]
+        ranked = [(o.path, o, options_of(o, owner)) for o in group]
         for start in range(0, len(ranked), BATCH):
             batch = ranked[start : start + BATCH]
-            chosen = ask("property", batch)
+            limit = NODE_CLASSES + NODE_PROPERTIES if node_ready else options
+            note = NODE_OPTIONS_NOTE if node_ready else ""
+            chosen = ask("property", batch, note, limit)
             for path, _output, rs in batch:
-                term = _answer(chosen, path, rs[:options])
-                picks[path] = _published(term, rs, terms, _confidence(term, rs[:options]))
+                shown = rs[:limit]
+                term = _answer(chosen, path, shown)
+                picked = next((r for r in shown if r.iri == term), None)
+                if picked is not None and picked.kind == "class":
+                    classes = [r for r in shown if r.kind == "class"]
+                    node_class, replaced = _specific(term, classes, terms)
+                    picks[path] = Pick(
+                        link,
+                        "node",
+                        "medium" if replaced else _confidence(term, shown),
+                        tuple(r.iri for r in rs),
+                        entity_class=node_class,
+                    )
+                    continue
+                picks[path] = _published(term, rs, terms, _confidence(term, shown))
 
     map_outputs([o for o in outputs if o.kind == "field"], doc_owner)
     for table_path, rows in row_class.items():

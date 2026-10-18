@@ -104,6 +104,13 @@ describe.skipIf(!url)('ontology library against Postgres', { timeout: 30_000 }, 
       ),
     ).toEqual({ [`${C}Protocol`]: ['class'], [`${C}hasProtocol`]: ['object_property'] });
     expect(await repo.termKinds([{ id: 'pv-pg', version: 2 }], [`${C}Protocol`])).toEqual({});
+    // A term without ranges is absent, like an unknown one.
+    expect(
+      await repo.termRanges(
+        [{ id: 'pv-pg', version: 1 }],
+        [`${C}hasProtocol`, `${C}Protocol`, `${C}Nope`],
+      ),
+    ).toEqual({ [`${C}hasProtocol`]: [`${C}Protocol`] });
     expect(
       await repo.termLabels(
         [

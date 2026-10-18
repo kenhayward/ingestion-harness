@@ -8,6 +8,7 @@ import {
   TableDefSchema,
   TableMappingSchema,
   ValueDefSchema,
+  ValueNodeDefaultsSchema,
 } from './template.js';
 import {
   DRAFT_STAGES,
@@ -63,6 +64,8 @@ export const DraftChangeSchema = z.discriminatedUnion('op', [
       document: z.object({ class: z.string().min(1), iri: z.string().min(1) }).strict(),
       ontologies: z.array(OntologyPinSchema),
       prefixes: z.record(z.string().regex(/^[A-Za-z][\w-]*$/), z.string().url()),
+      /** The value-node defaults (absent: the draft's are kept). */
+      valueNodes: ValueNodeDefaultsSchema.optional(),
       reason,
       answers,
       ...mappingMeta,
@@ -410,6 +413,7 @@ export function applyChanges(definition: Def, changes: DraftChange[]): Def {
         m.document = c.document;
         m.ontologies = c.ontologies;
         m.prefixes = { ...obj(m.prefixes), ...c.prefixes };
+        if (c.valueNodes) m.valueNodes = c.valueNodes;
         break;
       }
       case 'putFieldMapping': {

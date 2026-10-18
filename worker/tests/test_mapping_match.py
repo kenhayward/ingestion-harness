@@ -226,3 +226,90 @@ def test_a_parent_class_picked_over_an_exact_offered_subclass_becomes_the_subcla
     )
     assert picks[""].term == f"{PH}BatchRecord"
     assert picks[""].confidence == "medium"
+
+
+# --- value nodes ------------------------------------------------------------------------------
+
+DEFAULTS = {
+    "#valueNodes.link": f"{PH}hasResult",
+    "#valueNodes.value": f"{PH}resultValue",
+}
+
+
+def measured() -> dict[str, Any]:
+    """A recipe with measurement fields: a decimal result and a decimal maker (contrived, to
+    offer a class and its parent)."""
+    fields = [
+        {"id": "assay_result", "name": "Test result", "type": "decimal",
+         "description": "The outcome of one analytical test"},
+        {"id": "maker", "name": "Manufacturer", "type": "decimal",
+         "description": "The organisation that makes the medicinal product"},
+    ]  # fmt: skip
+    return {
+        **DRAFT,
+        "outputs": {"fields": fields, "tables": []},
+        "pipeline": [
+            {"type": "extract", "id": "h", "fields": [f["id"] for f in fields], "sections": ["all"]}
+        ],
+    }
+
+
+def recording(answers: dict[str, str]) -> tuple[list[ChoiceRequest], Any]:
+    requests: list[ChoiceRequest] = []
+
+    def choose(request: ChoiceRequest) -> dict[str, str]:
+        requests.append(request)
+        return {path: answers.get(path, "none") for path, _ in request.items}
+
+    return requests, choose
+
+
+def propose_measured(answers: dict[str, str]) -> tuple[list[ChoiceRequest], dict[str, Any]]:
+    requests, choose = recording({"": f"{PH}BatchRecord", **answers})
+    inputs = MappingInputs.model_validate({**PARAMS_MAPPING, "observed": {}})
+    store = MemoryOntologyStore()
+    store.saved[("pharma", 1)] = parse_ontology(FIXTURE.read_bytes(), "text/turtle", "o.ttl")
+    return requests, propose(measured(), inputs, store, VERSIONS, choose=choose, embed=None)
+
+
+def test_value_node_defaults_are_asked_once() -> None:
+    requests, _ = propose_measured(DEFAULTS)
+    asked = [r for r in requests if any(p.startswith("#valueNodes") for p, _ in r.items)]
+    assert len(asked) == 1
+    items = dict(asked[0].items)
+    assert set(items) == {"#valueNodes.link", "#valueNodes.value", "#valueNodes.unitProperty"}
+    assert f"{PH}hasResult" in items["#valueNodes.link"]
+    assert f"{PH}resultValue" in items["#valueNodes.value"]
+
+
+def test_outputs_get_classes_and_properties_once_defaults_exist() -> None:
+    requests, _ = propose_measured(DEFAULTS)
+    [request] = [r for r in requests if any(p == "assay_result" for p, _ in r.items)]
+    options = dict(request.items)["assay_result"]
+    kinds = [("class" if o[len(PH) :][:1].isupper() else "property") for o in options]
+    assert 1 <= kinds.count("class") <= 4 and kinds.count("property") <= 3
+    assert kinds[0] == "class"  # a decimal output lists its classes first
+    assert "publishes the value on a node of that class" in request.prompt
+
+
+def test_a_class_pick_is_a_value_node() -> None:
+    _, picks = propose_measured({**DEFAULTS, "assay_result": f"{PH}TestResult"})
+    pick = picks["assay_result"]
+    assert (pick.term, pick.value_as, pick.entity_class) == (
+        f"{PH}hasResult",
+        "node",
+        f"{PH}TestResult",
+    )
+
+
+def test_the_subclass_rule_applies_to_value_node_classes() -> None:
+    _, picks = propose_measured({**DEFAULTS, "maker": f"{PH}Organisation"})
+    assert picks["maker"].entity_class == f"{PH}Manufacturer"
+    assert picks["maker"].confidence == "medium"
+
+
+def test_without_defaults_outputs_get_properties_only() -> None:
+    requests, picks = propose_measured({"assay_result": f"{PH}TestResult"})
+    [request] = [r for r in requests if any(p == "assay_result" for p, _ in r.items)]
+    assert f"{PH}TestResult" not in dict(request.items)["assay_result"]
+    assert picks["assay_result"].value_as != "node"

@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from ingest_worker.config import REPO_ROOT
-from ingest_worker.template import Template, compile_step
+from ingest_worker.template import OutputMapping, Semantics, Template, compile_step
 
 from .covalidation import FIXTURE as REPEAT_FIXTURE
 
@@ -275,3 +275,29 @@ def test_delivery_still_refuses_unknown_keys_and_empty_formats() -> None:
     for delivery in ({"target": "x"}, {"formats": []}):
         with pytest.raises(ValidationError):
             Template.model_validate({**SEMANTICS_FIXTURE["base"], "delivery": delivery})
+
+
+VALUE_NODES_FIXTURE = json.loads(
+    (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "value-nodes.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+def _mapping_at(semantics: Semantics, path: str) -> OutputMapping:
+    head, _, column = path.partition(".")
+    return semantics.tables[head].columns[column] if column else semantics.fields[head]
+
+
+@pytest.mark.parametrize("path", list(VALUE_NODES_FIXTURE["expected"]))
+def test_value_nodes_resolve_as_the_shared_fixture_says(path: str) -> None:
+    semantics = Semantics.model_validate(VALUE_NODES_FIXTURE["semantics"])
+    resolved = semantics.resolve_node(_mapping_at(semantics, path))
+    expected = VALUE_NODES_FIXTURE["expected"][path]
+    assert (resolved.to_json() if resolved else None) == expected
+
+
+@pytest.mark.parametrize("path", list(VALUE_NODES_FIXTURE["links"]))
+def test_a_mappings_link_resolves_as_the_shared_fixture_says(path: str) -> None:
+    semantics = Semantics.model_validate(VALUE_NODES_FIXTURE["semantics"])
+    assert semantics.link_of(_mapping_at(semantics, path)) == VALUE_NODES_FIXTURE["links"][path]

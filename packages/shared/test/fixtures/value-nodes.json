@@ -1,0 +1,69 @@
+{
+  "description": "How a value node's terms resolve: its own, else semantics.valueNodes (resolveNode in packages/shared/src/template.ts, Semantics.resolve_node in the worker). null: not a value node.",
+  "semantics": {
+    "prefixes": { "acme": "https://acme.example/def/" },
+    "document": { "class": "acme:Letter" },
+    "valueNodes": {
+      "link": "acme:hasResult",
+      "value": "acme:numericValue",
+      "unitProperty": "acme:unit"
+    },
+    "fields": {
+      "sender": { "property": "acme:sentBy" },
+      "weight": { "node": { "class": "acme:Weight", "unit": "acme:Kilogram" } },
+      "note": { "property": "acme:hasNote", "node": { "class": "acme:Note", "value": "acme:text" } }
+    },
+    "tables": {
+      "lines": {
+        "link": "acme:hasLine",
+        "class": "acme:Line",
+        "columns": {
+          "qty": { "node": { "class": "acme:Quantity" } },
+          "price": {
+            "node": {
+              "class": "acme:Price",
+              "unit": "acme:Euro",
+              "unitProperty": "acme:currency"
+            }
+          }
+        }
+      }
+    }
+  },
+  "expected": {
+    "sender": null,
+    "weight": {
+      "link": "acme:hasResult",
+      "class": "acme:Weight",
+      "value": "acme:numericValue",
+      "unit": "acme:Kilogram",
+      "unitProperty": "acme:unit"
+    },
+    "note": {
+      "link": "acme:hasNote",
+      "class": "acme:Note",
+      "value": "acme:text",
+      "unitProperty": "acme:unit"
+    },
+    "lines.qty": {
+      "link": "acme:hasResult",
+      "class": "acme:Quantity",
+      "value": "acme:numericValue",
+      "unitProperty": "acme:unit"
+    },
+    "lines.price": {
+      "link": "acme:hasResult",
+      "class": "acme:Price",
+      "value": "acme:numericValue",
+      "unit": "acme:Euro",
+      "unitProperty": "acme:currency"
+    }
+  },
+  "links": {
+    "sender": "acme:sentBy",
+    "weight": "acme:hasResult",
+    "note": "acme:hasNote",
+    "lines.qty": "acme:hasResult",
+    "lines.price": "acme:hasResult"
+  }
+}

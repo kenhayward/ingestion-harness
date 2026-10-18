@@ -293,3 +293,21 @@ def test_rebuild_counts_a_graph_whose_target_is_gone_as_missing(tmp_path: Path) 
     lines = rebuild(deps)
     assert lines[-1] == "rebuild: 1 ontology graphs, 0 document graphs, 2 missing"
     assert sum("no publishing target finance-lake" in line for line in lines) == 2
+
+
+def test_remint_moves_value_nodes_under_the_new_base(tmp_path: Path) -> None:
+    deps, source = setup(tmp_path, job(1, "aa" * 32))
+    semantics = {
+        **MAPPED["semantics"],
+        "valueNodes": {"link": "acme:hasName", "value": "acme:text"},
+        "fields": {"sender": {"node": {"class": "acme:SenderName"}}},
+    }
+    source.templates[2] = {**MAPPED, "semantics": semantics}
+    backfill(deps, FakeQueue(), source, "letter")
+    deps.linked_data = MemoryLinkedDataSettings(NEW_BASE)
+    remint(deps, FakeQueue(), source)
+    body = store_of(deps).graphs[f"{NEW_BASE}graph/source/{'aa' * 32}/letter"]
+    graph = Graph().parse(data=body, format="turtle")
+    node = URIRef(f"{NEW_BASE}doc/{'aa' * 32}/letter/value/sender")
+    assert (node, None, None) in graph
+    assert not any(str(s).startswith(BASE) for s in graph.subjects())

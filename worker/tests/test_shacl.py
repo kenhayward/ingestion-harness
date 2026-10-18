@@ -119,6 +119,23 @@ def test_outputs_by_property_maps_fields_columns_and_links() -> None:
     }
 
 
+def test_outputs_by_property_takes_a_value_nodes_default_link() -> None:
+    template = {
+        **TEMPLATE,
+        "semantics": {
+            **TEMPLATE["semantics"],
+            "valueNodes": {"link": "acme:hasCount", "value": "acme:numericValue"},
+            "fields": {
+                **TEMPLATE["semantics"]["fields"],
+                "pages": {"node": {"class": "acme:PageCount"}},
+            },
+        },
+    }
+    mapped = outputs_by_property(Template.model_validate(template))
+    assert mapped[f"{A}hasCount"] == "pages"
+    assert f"{A}pages" not in mapped
+
+
 def test_a_conforming_graph() -> None:
     report = validate(graph(), shapes(), ontology(), by_property())
     assert report.conforms
@@ -208,3 +225,69 @@ def test_validation_in_a_capped_child_process() -> None:
     assert [v.output for v in report.violations()] == ["sender"]
     with pytest.raises(DocumentError, match="took longer than 0s"):
         validate_with_timeout(graph(), shapes(), ontology(), by_property(), 0)
+
+
+def node_rendering(**fields: Any) -> Any:
+    """`sender` and `pages` as value nodes sharing one link and one value property."""
+    from ingest_worker.rdf import render
+
+    template = {
+        **TEMPLATE,
+        "semantics": {
+            **TEMPLATE["semantics"],
+            "valueNodes": {"link": "acme:hasResult", "value": "acme:numericValue"},
+            "fields": {
+                **TEMPLATE["semantics"]["fields"],
+                "sender": {"node": {"class": "acme:SenderName"}},
+                "pages": {"node": {"class": "acme:PageCount"}},
+            },
+        },
+    }
+    document = {
+        "document_id": "d",
+        "job_id": "j",
+        "source_sha256": "ab12",
+        "fields": {
+            "sender": {"value": "Acme Ltd", "evidence": None, "page": None},
+            "kind": {"value": "memo", "evidence": None, "page": None},
+            "pages": {"value": 2, "evidence": None, "page": None},
+            **{k: {"value": v, "evidence": None, "page": None} for k, v in fields.items()},
+        },
+        "tables": {"lines": [{"sku": "AB-1"}]},
+        "issues": [],
+        "models": {},
+    }
+    t = Template.model_validate(template)
+    return t, render(t, document, GraphContext(BASE, lambda _scheme, _label: None))
+
+
+NODE_SHAPES = f"""@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix acme: <{A}> .
+acme:PageCountShape a sh:NodeShape ; sh:targetClass acme:PageCount ;
+  sh:property [ sh:path acme:numericValue ; sh:maxInclusive 3 ; sh:message "too many pages" ] .
+"""
+
+
+def test_a_class_targeted_shape_sees_value_nodes() -> None:
+    template, rendering = node_rendering()
+    shapes_graph = Graph().parse(data=NODE_SHAPES, format="turtle")
+    report = validate(
+        rendering.graph, shapes_graph, ontology(), outputs_by_property(template), rendering.nodes
+    )
+    assert report.conforms
+
+
+def test_a_result_on_a_value_node_names_its_output() -> None:
+    template, rendering = node_rendering(pages=9)
+    shapes_graph = Graph().parse(data=NODE_SHAPES, format="turtle")
+    by = outputs_by_property(template)
+    [violation] = validate(
+        rendering.graph, shapes_graph, ontology(), by, rendering.nodes
+    ).violations()
+    # The link and value property are shared with `sender`: only the focus node says which.
+    assert violation.output == "pages"
+    assert violation.reason() == "SHACL: PageCountShape on pages: too many pages"
+    [timed] = validate_with_timeout(
+        rendering.graph, shapes_graph, ontology(), by, 60, nodes=rendering.nodes
+    ).violations()
+    assert timed.output == "pages"
