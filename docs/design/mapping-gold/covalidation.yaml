@@ -4,8 +4,10 @@
 #
 # Class-centric (docs/design/mapping-automation.md, "The measurement pattern"): AFO and OBI put
 # the meaning in the class of the node a value sits on, and offer only generic links (has data
-# output, has identifier, has part). So most answers are `term: any` with the class that matters;
-# `as: entity` is the closest the current mapping format comes to "a node of that class".
+# output, has identifier, has part). So most answers are `term: any` with the class that matters.
+# Per-row results are `as: node`: a value node of that class holding the value
+# (docs/design/value-node-mapping.md). Identifiers, the internal code and the packaging stay
+# `as: entity`: things shared across documents, so one entity per value is the point (joins).
 # `unmapped` means the library has no fitting term: the output needs a local term.
 #
 # Drafted by Claude from the library's own terms (labels and definitions read in CT Studio), not by
@@ -30,7 +32,7 @@ shared:
   storage_condition: &storage_condition unmapped
   # CHECK: months on stability. Elapsed time (from a reference point) fits better than duration.
   storage_time_months:
-    &storage_time { term: any, class: [afr:AFR_0002050, afr:AFR_0000951], as: entity }
+    &storage_time { term: any, class: [afr:AFR_0002050, afr:AFR_0000951], as: node }
   # A results row: one storage condition and time point of the study. CHECK: study point fits the
   # (condition, time) design; an assay (the test run) is the other reading.
   results_row: &results_row [afre:AFRE_0000021, afp:AFP_0002680, obo:OBI_0000070]
@@ -46,7 +48,7 @@ expected:
   # the library has no batch class.
   batches: { term: any, class: [obo:CHMO_0000993, obo:OBI_0000747] }
   # CHECK: "index" (an ordering key); arguably unmapped.
-  batches.sequence: { term: any, class: afr:AFR_0000928, as: entity }
+  batches.sequence: { term: any, class: afr:AFR_0000928, as: node }
   batches.study_id: *study_id
   batches.batch_number: *batch_number
   # CHECK: material identifier for the internal code (LDLS000).
@@ -61,12 +63,12 @@ expected:
   appearance_water_content_table.storage_time_months: *storage_time
   # CHECK: "Complies" reads as a conformance assessment; a free text appearance as a description.
   appearance_water_content_table.appearance:
-    { term: any, class: [afr:AFR_0000922, afr:AFR_0001991], as: entity }
+    { term: any, class: [afr:AFR_0000922, afr:AFR_0001991], as: node }
   # Water mass fraction (% w/w); absolute water content is a mass.
   appearance_water_content_table.water_content_kf:
-    { term: any, class: [afr:AFR_0002448, afr:AFR_0002445], as: entity }
+    { term: any, class: [afr:AFR_0002448, afr:AFR_0002445], as: node }
   appearance_water_content_table.water_content_nir:
-    { term: any, class: [afr:AFR_0002448, afr:AFR_0002445], as: entity }
+    { term: any, class: [afr:AFR_0002448, afr:AFR_0002445], as: node }
 
   assay_chromatographic_purity_table: { term: any, class: *results_row }
   assay_chromatographic_purity_table.batch_number: *batch_number
@@ -75,17 +77,17 @@ expected:
   assay_chromatographic_purity_table.storage_time_months: *storage_time
   # Assay result.
   assay_chromatographic_purity_table.assay:
-    { term: any, class: [afr:AFR_0000207, afr:AFR_0001602], as: entity }
+    { term: any, class: [afr:AFR_0000207, afr:AFR_0001602], as: node }
   # CHECK: AFO has degradation product *roles* and a total impurities *quality*, but no datum for
   # an impurity's amount; mass fraction is the nearest result class.
   assay_chromatographic_purity_table.degradation_product_specified:
-    { term: any, class: afr:AFR_0002099, as: entity }
+    { term: any, class: afr:AFR_0002099, as: node }
   assay_chromatographic_purity_table.degradation_product_specified_below_threshold: *below
   assay_chromatographic_purity_table.degradation_product_unspecified:
-    { term: any, class: afr:AFR_0002099, as: entity }
+    { term: any, class: afr:AFR_0002099, as: node }
   assay_chromatographic_purity_table.degradation_product_unspecified_below_threshold: *below
   assay_chromatographic_purity_table.total_degradation_products:
-    { term: any, class: afr:AFR_0002099, as: entity }
+    { term: any, class: afr:AFR_0002099, as: node }
   assay_chromatographic_purity_table.total_degradation_products_below_threshold: *below
 
   dissolution_results_table: { term: any, class: *results_row }
@@ -95,16 +97,16 @@ expected:
   dissolution_results_table.storage_time_months: *storage_time
   # Minutes into the dissolution run: elapsed time.
   dissolution_results_table.time_point_min:
-    { term: any, class: [afr:AFR_0002050, afr:AFR_0000966], as: entity }
+    { term: any, class: [afr:AFR_0002050, afr:AFR_0000966], as: node }
   # Dissolved percentage (its statistic, arithmetic mean, is the other reading).
   dissolution_results_table.mean_percent:
-    { term: any, class: [afr:AFR_0003173, afr:AFR_0002208], as: entity }
+    { term: any, class: [afr:AFR_0003173, afr:AFR_0002208], as: node }
   # CHECK: dissolved percentage, or minimum value.
   dissolution_results_table.min_percent:
-    { term: any, class: [afr:AFR_0003173, afr:AFR_0002440], as: entity }
+    { term: any, class: [afr:AFR_0003173, afr:AFR_0002440], as: node }
   # CHECK: dissolved percentage, or maximum value.
   dissolution_results_table.max_percent:
-    { term: any, class: [afr:AFR_0003173, afr:AFR_0002441], as: entity }
+    { term: any, class: [afr:AFR_0003173, afr:AFR_0002441], as: node }
 
   solid_state_nir_table: { term: any, class: *results_row }
   solid_state_nir_table.batch_number: *batch_number
@@ -113,7 +115,7 @@ expected:
   solid_state_nir_table.storage_time_months: *storage_time
   # CHECK: a spectroscopy result, or the mass fraction of a solid form; AFO has no polymorph datum.
   solid_state_nir_table.solid_state_nir_percent:
-    { term: any, class: [afr:AFR_0000754, afr:AFR_0002099], as: entity }
+    { term: any, class: [afr:AFR_0000754, afr:AFR_0002099], as: node }
   solid_state_nir_table.solid_state_nir_below_threshold: *below
 
   microbial_purity_table: { term: any, class: *results_row }
@@ -122,10 +124,10 @@ expected:
   microbial_purity_table.storage_condition: *storage_condition
   microbial_purity_table.storage_time_months: *storage_time
   # CHECK: total aerobic microbial count as a count; AFO has no colony forming unit datum.
-  microbial_purity_table.t_amc_count: { term: any, class: afr:AFR_0000984, as: entity }
+  microbial_purity_table.t_amc_count: { term: any, class: afr:AFR_0000984, as: node }
   microbial_purity_table.t_amc_below_threshold: *below
   # CHECK: total yeast and mould count, as above.
-  microbial_purity_table.tymc_count: { term: any, class: afr:AFR_0000984, as: entity }
+  microbial_purity_table.tymc_count: { term: any, class: afr:AFR_0000984, as: node }
   microbial_purity_table.tymc_below_threshold: *below
   # CHECK: a pass/fail as a conformance assessment.
-  microbial_purity_table.ecoli_pass_fail: { term: any, class: afr:AFR_0001991, as: entity }
+  microbial_purity_table.ecoli_pass_fail: { term: any, class: afr:AFR_0001991, as: node }

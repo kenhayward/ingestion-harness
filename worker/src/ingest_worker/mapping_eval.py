@@ -49,8 +49,8 @@ from .pipeline import DocumentError, PipelineDeps, enforce_data_policy
 from .queue import ClaimedJob
 from .rdf import CURIE_PREFIXES
 
-ValueAs = Literal["literal", "entity", "concept"]
-VALUE_AS: tuple[str, ...] = ("literal", "entity", "concept")
+ValueAs = Literal["literal", "entity", "concept", "node"]
+VALUE_AS: tuple[str, ...] = ("literal", "entity", "concept", "node")
 KS = (1, 3, 5, 10)
 KINDS = ("document", "field", "table", "column")
 
@@ -61,11 +61,12 @@ KINDS = ("document", "field", "table", "column")
 @dataclass(frozen=True)
 class Expected:
     """One output's right answer: any of `terms` (empty: leave it unmapped, unless `any_term`:
-    any link property will do, the class carrying the meaning), how the value is published when
-    the gold says, and its class(es): a table's row class, a field or column's entity class."""
+    any link property will do, the class carrying the meaning), how the value may be published
+    when the gold says (empty: not scored), and its class(es): a table's row class, a field or
+    column's entity or value node class."""
 
     terms: frozenset[str]
-    value_as: str | None = None
+    value_as: frozenset[str] = frozenset()
     row_class: frozenset[str] = frozenset()
     any_term: bool = False
 
@@ -107,8 +108,9 @@ def load_gold(text: str) -> Gold:
         if value in (None, "unmapped"):
             expected[path] = Expected(frozenset())
         elif isinstance(value, dict):
-            how = value.get("as")
-            if how is not None and how not in VALUE_AS:
+            raw_as = value.get("as")
+            how = frozenset(raw_as if isinstance(raw_as, list) else [raw_as] if raw_as else [])
+            if not how <= set(VALUE_AS):
                 raise ValueError(f"{path}: as must be one of {', '.join(VALUE_AS)}")
             any_term = value.get("term") == "any"
             expected[path] = Expected(
@@ -187,7 +189,7 @@ class KindScore:
                 self.reciprocal_rank += 1 / ranks[0] if ranks else 0.0
             if expected.value_as and right:
                 self.value_total += 1
-                self.value_right += pick.value_as == expected.value_as
+                self.value_right += pick.value_as in expected.value_as
         if expected.row_class:
             self.class_total += 1
             self.class_right += _chosen_class(pick) in expected.row_class
@@ -265,12 +267,18 @@ def run_matchers(
 # --- matchers -------------------------------------------------------------------------------------
 
 
-def picks_from_body(body: dict[str, Any], prefixes: dict[str, str]) -> dict[str, Pick]:
-    """The mapping stage's answer (typed changes) as picks, terms expanded to full IRIs."""
+def picks_from_body(
+    body: dict[str, Any], prefixes: dict[str, str], defaults: dict[str, Any] | None = None
+) -> dict[str, Pick]:
+    """The mapping stage's answer (typed changes) as picks, terms expanded to full IRIs. A value
+    node without its own link takes the answer's value-node defaults, else `defaults` (the
+    draft's `semantics.valueNodes`)."""
     known = {**CURIE_PREFIXES, **prefixes}
+    link_default = (defaults or {}).get("link")
     for change in body.get("changes") or []:
         if change.get("op") == "setDocumentMapping":
             known.update(change.get("prefixes") or {})
+            link_default = (change.get("valueNodes") or {}).get("link") or link_default
 
     def full(term: str | None) -> str | None:
         if not term:
@@ -281,6 +289,10 @@ def picks_from_body(body: dict[str, Any], prefixes: dict[str, str]) -> dict[str,
             return term
 
     def output(mapping: dict[str, Any], confidence: Confidence) -> Pick:
+        node = mapping.get("node")
+        if node:
+            link = full(mapping.get("property") or link_default)
+            return Pick(link, "node", confidence, entity_class=full(node.get("class")))
         how = (
             "entity"
             if mapping.get("object")
@@ -400,7 +412,10 @@ def current_picks(
         job, deps, queue, params, provider, model_id, f"{provider.name}/{model_id}"
     )
     draft = params.draft or {}
-    picks = picks_from_body(output["body"], (draft.get("semantics") or {}).get("prefixes") or {})
+    semantics = draft.get("semantics") or {}
+    picks = picks_from_body(
+        output["body"], semantics.get("prefixes") or {}, semantics.get("valueNodes")
+    )
     store = deps.ontologies
     assert store is not None
     inputs = _observed(params)
@@ -584,7 +599,7 @@ def format_details(gold: Gold, results: dict[str, Scores], kinds: dict[str, str]
     for path, expected in gold.expected.items():
         want = "any" if expected.any_term else terms(expected.terms) or "unmapped"
         if expected.value_as:
-            want += f" as {expected.value_as}"
+            want += f" as {'/'.join(sorted(expected.value_as))}"
         if expected.row_class:
             want += f" class {terms(expected.row_class)}"
         parts = [f"{path or '(document)':<36} {kinds.get(path, 'field'):<8} gold {want}"]
@@ -660,7 +675,12 @@ def gold_template(
             row = f", class: {_compact(pick.row_class, prefixes)}" if pick.row_class else ""
             lines.append(f"  {key}: {{term: {_compact(pick.term, prefixes)}{row}}}")
         else:
-            lines.append(f"  {key}: {{term: {_compact(pick.term, prefixes)}, as: {pick.value_as}}}")
+            entity = (
+                f", class: {_compact(pick.entity_class, prefixes)}" if pick.entity_class else ""
+            )
+            lines.append(
+                f"  {key}: {{term: {_compact(pick.term, prefixes)}, as: {pick.value_as}{entity}}}"
+            )
     return "\n".join(lines) + "\n"
 
 
