@@ -549,3 +549,59 @@ def test_the_per_output_matcher_can_confirm_each_answer() -> None:
     counts.clear()
     per_output_picks(params, store(), choose, embed=None, confirm=True)
     assert len(counts) > once  # every field and column question asked a second time
+
+
+# --- mapping memory in the harness (docs/design/mapping-memory.md) ----------------------------------
+
+
+def test_the_matcher_skips_outputs_the_memory_answers() -> None:
+    g = gold()
+    params = draft_params(g, None)
+    asked: list[str] = []
+
+    def choose(request: ChoiceRequest) -> dict[str, str]:
+        asked.extend(path for path, _ in request.items)
+        return {path: "none" for path, _ in request.items}
+
+    remembered = {"lot": Pick(f"{PH}batchNumber", "literal", "high", (f"{PH}batchNumber",))}
+    picks = per_output_picks(params, store(), choose, embed=None, remembered=remembered)
+    assert "lot" not in asked
+    assert picks["lot"].term == f"{PH}batchNumber"
+
+
+SELF_LOO = """
+project: p
+prefixes: {ex: "https://ex.example/v#"}
+expected:
+  a.batch: {term: any, class: ex:BatchId, as: entity}
+  b.batch: {term: any, class: ex:BatchId, as: entity}
+  b.assay: {term: any, class: ex:Assay, as: node}
+"""
+
+
+def test_self_leave_one_out_answers_repeated_outputs_from_the_others() -> None:
+    from ingest_worker.mapping_eval import self_loo_picks
+    from ingest_worker.mapping_stage import OutputSpec
+
+    outputs = [
+        OutputSpec("a.batch", "column", "Batch number", "", "text"),
+        OutputSpec("b.batch", "column", "Batch number", "", "text"),
+        OutputSpec("b.assay", "column", "Assay (%)", "", "number"),
+    ]
+    picks = self_loo_picks(load_gold(SELF_LOO), outputs)
+    assert set(picks) == {"a.batch", "b.batch"}  # the assay has no other output like it
+    assert picks["a.batch"].entity_class == "https://ex.example/v#BatchId"
+    assert picks["a.batch"].value_as == "entity"
+    s = score(picks, load_gold(SELF_LOO), {o.path: "column" for o in outputs})
+    assert (s.overall.class_total, s.overall.class_right) == (3, 2)
+
+
+def test_answers_become_picks() -> None:
+    from ingest_worker.mapping_eval import answer_pick
+
+    node = answer_pick({"form": "node", "link": "x:l", "class": "x:C"}, "high")
+    assert (node.term, node.value_as, node.entity_class) == ("x:l", "node", "x:C")
+    table = answer_pick({"form": "table", "link": "x:has", "class": "x:Row"}, "medium")
+    assert (table.term, table.row_class) == ("x:has", "x:Row")
+    assert answer_pick({"form": "document", "class": "x:D", "iri": "d"}, "high").term == "x:D"
+    assert answer_pick({"form": "unmapped"}, "high").term is None

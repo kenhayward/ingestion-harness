@@ -1149,3 +1149,29 @@ def test_signatures_are_embedded_once_and_kept(fixture_specs_dir: Path) -> None:
     drafting.responses = [GOOD]
     run(deps, mapping_job())
     assert len(embedding.embed_calls) == calls + 2  # the outputs twice; the entry not again
+
+
+def test_an_external_embedder_sees_only_wording_that_may_leave(fixture_specs_dir: Path) -> None:
+    """The entry's own wording came from a local-only recipe; an external embedding model gets
+    the wording of the vote whose project allows external models, and the call is logged."""
+    from ingest_worker.mapping_memory import MemoryEntry, Vote, signature_of
+
+    drafting, embedding, _, deps = make(fixture_specs_dir, drafter="external", embedder="external")
+    sig = signature_of("field", "Lot number", "", "text", None)
+    mixed = MemoryEntry(
+        "m1", "field", sig.key, "Secret local lot label", "", "text", "",
+        {"form": "literal", "property": f"{PH}batchNumber"}, ("pharma",), "learned",
+        (
+            Vote("local", "lot", 1, "Secret local lot label", "", None, False),
+            Vote("shared", "lot", 1, "Lot number", "", None, True),
+        ),
+    )  # fmt: skip
+    deps = with_memory(deps, mixed)
+    drafting.responses = [GOOD]
+    queue = run(deps, mapping_job(dataPolicy="external"))
+    sent = [text for _model, texts in embedding.embed_calls for text in texts]
+    assert not any("Secret local" in t for t in sent)
+    assert any(t.startswith("Lot number") for t in sent)
+    assert "Secret local" not in drafting.calls[0][1].prompt
+    events = [e[3] for e in queue.event_details if e[2] == "external model call"]
+    assert any(e.get("purpose") == "embedding remembered mappings" for e in events)

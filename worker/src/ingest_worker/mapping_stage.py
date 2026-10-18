@@ -1172,7 +1172,9 @@ def run_mapping(
         external=deps.models.location(provider.name) == "external", embedder=embedder,
         notes=notes,
     )  # fmt: skip
-    if remembered_.embedded_externally and embedder is not None:
+    if embedder is not None and (
+        remembered_.outputs_embedded_externally or remembered_.embedded_externally
+    ):
         queue.event(
             job.id,
             "info",
@@ -1181,6 +1183,7 @@ def run_mapping(
                 "stage": "mapping",
                 "purpose": "embedding remembered mappings",
                 "model": embedder.model_ref,
+                "outputs": remembered_.outputs_embedded_externally,
                 "entries": remembered_.embedded_externally,
             },
         )
@@ -1302,7 +1305,9 @@ class Remembered:
     hints: dict[str, str] = field(default_factory=dict)
     candidates: dict[str, list[Candidate]] = field(default_factory=dict)
     rejected: dict[str, set[str]] = field(default_factory=dict)
-    #: Signatures embedded with an external embedding model (logged as an external call).
+    #: Signatures embedded with an external embedding model (logged as an external call): the
+    #: run's outputs (its own recipe's wording) and remembered entries (wording that may leave).
+    outputs_embedded_externally: int = 0
     embedded_externally: int = 0
 
     @property
@@ -1361,7 +1366,7 @@ def remember(
     looks = _looks(outputs, draft)
     output_vectors: dict[str, list[float]] = {}
     entry_vectors: dict[str, list[float]] = {}
-    embedded = 0
+    embedded = outputs_embedded = 0
     if embedder is not None:
         embedder_external = deps.models.location(embedder.provider.name) == "external"
         try:
@@ -1373,15 +1378,19 @@ def remember(
                     strict=True,
                 )
             )
+            outputs_embedded = len(texts) if embedder_external else 0
             entry_vectors = memory.vectors(embedder.model_ref, [e.id for e in entries])
-            missing = [
-                e for e in entries
-                if e.id not in entry_vectors and (e.shareable or not embedder_external)
-            ]  # fmt: skip
+            # An external embedding model sees only wording that may leave the deployment: a
+            # vote's from a project allowing external models (`MemoryEntry.wording`).
+            wordings = {
+                e.id: w
+                for e in entries
+                if e.id not in entry_vectors and (w := e.wording(embedder_external)) is not None
+            }
+            missing = [e for e in entries if e.id in wordings]
             if missing:
                 made = embedder.provider.embed(
-                    embedder.model_id,
-                    [signature_text(e.name, e.description) for e in missing],
+                    embedder.model_id, [signature_text(*wordings[e.id]) for e in missing]
                 )
                 fresh = {e.id: list(v) for e, v in zip(missing, made, strict=True)}
                 memory.store_vectors(embedder.model_ref, fresh)
@@ -1394,7 +1403,7 @@ def remember(
         entries, looks, usable=usable, external=external,
         output_vectors=output_vectors, entry_vectors=entry_vectors,
     )  # fmt: skip
-    out = Remembered(embedded_externally=embedded)
+    out = Remembered(outputs_embedded_externally=outputs_embedded, embedded_externally=embedded)
     for path, found in recalled.items():
         if found.rejected:
             out.rejected[path] = set().union(*(_main_terms(e.answer) for e in found.rejected))

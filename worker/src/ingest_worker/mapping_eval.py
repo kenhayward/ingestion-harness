@@ -19,7 +19,7 @@ import json
 import sys
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal, Protocol
 
 import yaml
@@ -477,14 +477,129 @@ def per_output_picks(
     embed: Embedding | None,
     *,
     confirm: bool = False,
+    remembered: dict[str, Pick] | None = None,
 ) -> dict[str, Pick]:
     """The per-output matcher's picks; `confirm` asks each field and column again with the
-    options reversed (`propose`)."""
+    options reversed; `remembered` outputs are answered by the mapping memory (`propose`)."""
     inputs = _observed(params)
     versions = [(v.id, v.version) for v in inputs.versions]
     return propose(
-        params.draft or {}, inputs, store, versions, choose=choose, embed=embed, confirm=confirm
-    )
+        params.draft or {}, inputs, store, versions, choose=choose, embed=embed,
+        confirm=confirm, remembered=remembered,
+    )  # fmt: skip
+
+
+# --- mapping memory (docs/design/mapping-memory.md) ----------------------------------------------
+
+
+def answer_pick(answer: dict[str, Any], confidence: str) -> Pick:
+    """A remembered answer as the pick the matchers make."""
+    conf: Confidence = confidence if confidence in ("high", "medium", "low") else "medium"  # type: ignore[assignment]
+    form = answer.get("form")
+    if form == "unmapped":
+        return Pick(None, "literal", conf)
+    if form == "document":
+        return Pick(answer["class"], "", conf, (answer["class"],))
+    if form == "table":
+        return Pick(answer["link"], "entity", conf, (answer["link"],), row_class=answer["class"])
+    if form == "node":
+        link = answer.get("link")
+        return Pick(link, "node", conf, (link,) if link else (), entity_class=answer["class"])
+    term = answer.get("property")
+    entity = answer.get("class") if form == "entity" else None
+    return Pick(term, str(form), conf, (term,) if term else (), entity_class=entity)
+
+
+def self_loo_picks(gold: Gold, outputs: list[OutputSpec]) -> dict[str, Pick]:
+    """Leave one out on the gold itself: each output answered by the gold's answer for another
+    output with the same signature (the memory a recipe repeating an output would give), its
+    own answer never used. Outputs no other output looks like get no pick."""
+    from .mapping_memory import signature_of
+
+    tables = {o.path: o.name for o in outputs if o.kind == "table"}
+    keys = {
+        o.path: signature_of(
+            o.kind, o.name, o.description, o.type,
+            tables.get(o.path.split(".", 1)[0]) if o.kind == "column" else None,
+        ).key
+        for o in outputs
+    }  # fmt: skip
+    picks: dict[str, Pick] = {}
+    for o in outputs:
+        for other in outputs:
+            expected = gold.expected.get(other.path)
+            if other.path == o.path or keys[other.path] != keys[o.path] or expected is None:
+                continue
+            if not expected.any_term and not expected.terms:
+                continue  # left unmapped: never pre-selected
+            term = "urn:any" if expected.any_term else sorted(expected.terms)[0]
+            cls = sorted(expected.row_class)[0] if expected.row_class else None
+            default = "entity" if o.kind == "table" else "literal"
+            how = sorted(expected.value_as)[0] if expected.value_as else default
+            picks[o.path] = Pick(
+                term, how, "high", (term,),
+                row_class=cls if o.kind == "table" else None,
+                entity_class=cls if o.kind != "table" else None,
+            )  # fmt: skip
+            break
+    return picks
+
+
+class LeaveOneOutMemory:
+    """The deployment's mapping memory without the votes of the recipe being evaluated (its
+    own answers would make the score meaningless), read only: no vectors are written."""
+
+    def __init__(self, inner: Any, template_id: str | None) -> None:
+        self._inner, self._template = inner, template_id
+
+    def entries(self, ontology_ids: Any) -> list[Any]:
+        from dataclasses import replace as replace_
+
+        out = []
+        for e in self._inner.entries(ontology_ids):
+            votes = tuple(v for v in e.votes if v.template_id != self._template)
+            if votes or e.status != "learned":
+                out.append(replace_(e, votes=votes))
+        return out
+
+    def vectors(self, model: str, entry_ids: Any) -> dict[str, list[float]]:
+        return dict(self._inner.vectors(model, entry_ids))
+
+    def store_vectors(self, model: str, vectors: dict[str, list[float]]) -> None:
+        return None
+
+
+def memory_picks(memory: Any, params: DraftParams, store: OntologyStore) -> dict[str, Pick]:
+    """The answers the mapping memory pre-selects for the gold's outputs (exact signatures)."""
+    from .mapping_memory import OutputLook, answer_terms, preselect, recall
+
+    inputs = MappingInputs.model_validate(params.mapping or {})
+    versions = [(v.id, v.version) for v in inputs.versions]
+    draft = params.draft or {}
+    outputs = outputs_of(draft)
+    tables = {o.path: o.name for o in outputs if o.kind == "table"}
+    looks = [
+        OutputLook(
+            o.path, o.kind, o.name, o.description, o.type,
+            tables.get(o.path.split(".", 1)[0]) if o.kind == "column" else None,
+        )
+        for o in outputs
+    ]  # fmt: skip
+
+    def usable(e: Any) -> bool:
+        return all(
+            (t := store.term(versions, iri)) is not None and not t.deprecated
+            for iri in answer_terms(e.answer)
+        )
+
+    entries = memory.entries(sorted({i for i, _ in versions}))
+    found = recall(entries, looks, usable=usable, external=False)
+    picks = {}
+    for path, f in found.items():
+        choice = preselect(f)
+        if choice is not None:
+            picks[path] = answer_pick(choice.entry.answer, choice.confidence)
+    return picks
 
 
 def check_policy(deps: PipelineDeps, params: DraftParams, model_ref: str) -> None:
@@ -724,6 +839,10 @@ class PgJobParams:
     def __init__(self, conn: Any) -> None:
         self._conn = conn
 
+    @property
+    def conn(self) -> Any:
+        return self._conn
+
     def newest_mapping_params(self, project: str) -> dict[str, Any] | None:
         row = self._conn.execute(
             """SELECT params FROM jobs
@@ -785,6 +904,13 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     parser.add_argument("--model", default="draft")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--details", action="store_true", help="each output's gold and picks")
+    parser.add_argument(
+        "--memory",
+        choices=["none", "deployment", "self-loo"],
+        default="none",
+        help="mapping memory: the deployment's (the gold's own recipe left out), or the gold's "
+        "own answers for other outputs like each one (leave one out); per-output and current",
+    )
     args = parser.parse_args(argv)
     if not args.gold and not args.template:
         parser.print_help()
@@ -811,20 +937,39 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         if unknown:
             raise SystemExit(f"unknown matcher {', '.join(unknown)}")
 
+        memory: Any = None
+        remembered: dict[str, Pick] = {}
+        if args.memory == "deployment":
+            from .mapping_memory import PgMappingMemoryStore
+
+            assert isinstance(rows, PgJobParams)
+            memory = LeaveOneOutMemory(PgMappingMemoryStore(rows.conn), gold.project)
+            remembered = memory_picks(memory, params, store)
+        elif args.memory == "self-loo":
+            remembered = self_loo_picks(gold, outputs_of(params.draft or {}))
+        if args.memory != "none":
+            print(
+                f"Memory ({args.memory}): {len(remembered)} outputs pre-selected", file=sys.stderr
+            )
+
         def run(
             matcher: str,
             calls: list[int],
             params: DraftParams = params,
             store: OntologyStore = store,
+            memory: Any = memory,
+            remembered: dict[str, Pick] = remembered,
         ) -> dict[str, Pick]:
             live = LiveProgress(matcher, lambda line: print(line, file=sys.stderr, flush=True))
             if matcher == "current":
                 calls[0] = 1
-                return current_picks(deps, params, args.model, live)
+                run_deps = replace(deps, mapping_memory=memory) if memory is not None else deps
+                return current_picks(run_deps, params, args.model, live)
             choose = model_chooser(deps, params, args.model, calls, say=live.say)
             return per_output_picks(
-                params, store, choose, _embedding(deps, params), confirm=args.confirm
-            )
+                params, store, choose, _embedding(deps, params), confirm=args.confirm,
+                remembered=remembered or None,
+            )  # fmt: skip
 
         results = run_matchers(matchers, gold, kinds, run)
         print(report_json(gold.name, results) if args.json else format_report(gold.name, results))

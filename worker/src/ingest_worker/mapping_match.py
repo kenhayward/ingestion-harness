@@ -500,8 +500,11 @@ def propose(
     retrieve: int = RETRIEVE,
     options: int = OPTIONS,
     confirm: bool = False,
+    remembered: dict[str, Pick] | None = None,
 ) -> dict[str, Pick]:
     """Map every output of `draft` (path -> Pick; a table's pick holds its link and row class).
+    `remembered`: picks the mapping memory pre-selected (docs/design/mapping-memory.md); those
+    outputs are not asked about.
     `confirm`: ask every field and column question a second time with its options reversed; a
     pick the second answer repeats goes up a confidence tier, one it changes is low (agreement
     under a perturbation, a better signal than the model's own word; twice the model calls)."""
@@ -533,7 +536,7 @@ def propose(
             rankings.append([c.iri for c in found])
         return [iri for iri, _score in fuse(rankings)]
 
-    picks: dict[str, Pick] = {}
+    picks: dict[str, Pick] = dict(remembered or {})
 
     def ask(
         what: str,
@@ -554,15 +557,18 @@ def propose(
 
     # 1. The document's class.
     document = next(o for o in outputs if o.kind == "document")
-    doc_ranked = rerank(terms, versions, document, candidates(document, ["class"]), owner=[])
-    doc_class = _answer(ask("class", [("", document, doc_ranked)]), "", doc_ranked[:options])
-    doc_class, replaced = _specific(doc_class, doc_ranked[:options], terms)
-    picks[""] = Pick(
-        doc_class,
-        "",
-        "medium" if replaced else _confidence(doc_class, doc_ranked[:options]),
-        tuple(r.iri for r in doc_ranked),
-    )
+    if "" in picks:
+        doc_class = picks[""].term
+    else:
+        doc_ranked = rerank(terms, versions, document, candidates(document, ["class"]), owner=[])
+        doc_class = _answer(ask("class", [("", document, doc_ranked)]), "", doc_ranked[:options])
+        doc_class, replaced = _specific(doc_class, doc_ranked[:options], terms)
+        picks[""] = Pick(
+            doc_class,
+            "",
+            "medium" if replaced else _confidence(doc_class, doc_ranked[:options]),
+            tuple(r.iri for r in doc_ranked),
+        )
     doc_owner = [doc_class] if doc_class else []
 
     # 1b. The value-node defaults: the link to a node, the property holding its value, its unit.
@@ -593,6 +599,9 @@ def propose(
     # 2. Each table's link from the document and its row class.
     row_class: dict[str, str | None] = {}
     for table in (o for o in outputs if o.kind == "table"):
+        if table.path in picks:
+            row_class[table.path] = picks[table.path].row_class
+            continue
         links = rerank(terms, versions, table, candidates(table, PROPERTY_KINDS), owner=doc_owner)
         classes = rerank(terms, versions, table, candidates(table, ["class"]), owner=[])
         chosen = ask(
@@ -638,7 +647,11 @@ def propose(
         qualifiers = {o.path for o in group if qualifier_of(o, group) is not None}
         for path in qualifiers:
             picks[path] = Pick(None, "literal", "high")
-        ranked = [(o.path, o, options_of(o, owner)) for o in group if o.path not in qualifiers]
+        ranked = [
+            (o.path, o, options_of(o, owner))
+            for o in group
+            if o.path not in qualifiers and o.path not in (remembered or {})
+        ]
         for start in range(0, len(ranked), BATCH):
             batch = ranked[start : start + BATCH]
             limit = NODE_CLASSES + NODE_PROPERTIES if node_ready else options
