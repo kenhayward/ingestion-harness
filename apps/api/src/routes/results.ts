@@ -9,6 +9,7 @@ import {
   type ResultDefinition,
   type ResultDetail,
   DEFAULT_TARGET_ID,
+  RESULT_SHOWS,
   outputExtension,
 } from '@ih/shared';
 import { zipSync } from 'fflate';
@@ -38,6 +39,12 @@ const ListQuery = z.object({
     .max(100)
     .optional()
     .transform((s) => (s ? s : undefined)),
+  show: z
+    .enum(RESULT_SHOWS)
+    .optional()
+    .describe(
+      '`reviewed`: approved by a person; `auto`: published without review; `issues`: with at least one issue.',
+    ),
 });
 
 /** Published results: what each document delivered to the final target. */
@@ -51,7 +58,8 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
         summary: 'List published results',
         description: md`
           Jobs that delivered outputs to the final target, newest publish first. Test runs are
-          never listed. \`q\` filters by file name (case-insensitive substring). Page with
+          never listed. \`q\` filters by file name (case-insensitive substring), \`show\` by review
+          (\`reviewed\`, \`auto\`) or to results with issues (\`issues\`). Page with
           \`before\` and \`beforeId\` set to the last row's \`publishedAt\` and \`jobId\`.
         `,
         querystring: ListQuery,

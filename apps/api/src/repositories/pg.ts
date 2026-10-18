@@ -764,6 +764,7 @@ export class PgRepo implements IngestionRepo {
     before,
     beforeId,
     q,
+    show,
   }: ListPublishedQuery): Promise<ResultSummary[]> {
     // Publish time = latest published job_outputs.created_at, compared at millisecond precision
     // because the `before` cursor is an ISO string (ms) taken from a previous page. Ties at the
@@ -794,12 +795,16 @@ export class PgRepo implements IngestionRepo {
          JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published' AND o.withdrawn_at IS NULL
         WHERE NOT j.test AND ($1::text IS NULL OR d.spec_id = $1)
           AND ($5::text IS NULL OR d.filename ILIKE '%' || $5 || '%' ESCAPE '!')
+          AND ($6::text IS DISTINCT FROM 'reviewed' OR j.reviewed_at IS NOT NULL)
+          AND ($6::text IS DISTINCT FROM 'auto' OR j.reviewed_at IS NULL)
         GROUP BY j.id, d.id
-       HAVING $2::timestamptz IS NULL
+       HAVING ($2::timestamptz IS NULL
            OR date_trunc('milliseconds', max(o.created_at)) < $2
            OR ($4::uuid IS NOT NULL
                AND date_trunc('milliseconds', max(o.created_at)) = $2
-               AND j.id < $4)
+               AND j.id < $4))
+          AND ($6::text IS DISTINCT FROM 'issues'
+               OR coalesce(max(o.row_count) FILTER (WHERE o.output_id = 'issues'), 0) > 0)
         ORDER BY published_at DESC, j.id DESC
         LIMIT $3`,
       [
@@ -809,6 +814,7 @@ export class PgRepo implements IngestionRepo {
         beforeId ?? null,
         // % and _ are literal in a file name filter: escape them (and the escape character, !).
         q?.replace(/[!%_]/g, (c) => `!${c}`) ?? null,
+        show ?? null,
       ],
     );
     return rows.map((r) => ({

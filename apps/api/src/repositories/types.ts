@@ -13,6 +13,7 @@ import type {
   SegmentDocument,
   StepRun,
   SuggestParams,
+  ResultShow,
 } from '@ih/shared';
 
 /**
@@ -212,6 +213,8 @@ export interface ListPublishedQuery {
   beforeId?: string;
   /** Case-insensitive file name substring (matched literally). */
   q?: string;
+  /** Reviewed by a person, published without review, or with at least one issue. */
+  show?: ResultShow;
 }
 
 /** A job's review as references read it (handoff RF1): decision, reviewer and every edit. */

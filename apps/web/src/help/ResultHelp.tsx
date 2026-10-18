@@ -19,10 +19,27 @@ export function ResultHelp() {
           reading them directly.
         </li>
         <li>
-          The links below download each output: the CSV files, the JSON document, and the graph when
-          RDF is delivered.
+          <strong>Original</strong> (or <strong>PDF</strong>) opens the uploaded document;{' '}
+          <strong>Download all · ZIP</strong> downloads every output at once.
+        </li>
+        <li>
+          The tiles count the fields, tables, checks and issues, and say what was edited in review
+          or needs a look.
         </li>
       </ul>
+
+      <h3>The contents</h3>
+      <p>
+        The list on the left holds everything the result contains: the fields, each table with its
+        rows, each check, the issues and the published files. Pick one to open it on the right. A
+        count in amber is something to look at: values edited in review, near matches, issues.
+      </p>
+      <p>
+        A table can be filtered (<strong>Filter rows</strong> keeps the rows with a matching value)
+        and downloaded as <strong>CSV</strong>; ‹ › step to the table before or after.{' '}
+        <strong>Published files</strong> downloads each output: the CSV files, the JSON document,
+        and the graph when RDF is delivered.
+      </p>
 
       <h3>Fields and tables</h3>
       <p>
@@ -34,8 +51,9 @@ export function ResultHelp() {
       <h3>Checks</h3>
       <p>
         Each check compares one output's values with a reference (for example the batch numbers in
-        each table against the batches table). Every value shows whether it matched, nearly matched
-        (a small difference, often an OCR misread) or did not match.
+        each table against the batches table). Every value found shows whether it matched exactly,
+        nearly matched (a small difference, often an OCR misread, with its edit distance) or was not
+        found; a reference no value matched is listed as not used.
       </p>
 
       <h3>Issues</h3>

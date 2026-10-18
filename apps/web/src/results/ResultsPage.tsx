@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ResultSummary } from '@ih/shared';
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { ResultShow, ResultSummary } from '@ih/shared';
 import type { Api } from '../api/client.js';
-import { isWordDocument } from '../documents.js';
-import { FilterChips } from '../ui/FilterChips.js';
 import { Icon } from '../ui/Icon.js';
-import { shortWhen } from './format.js';
+import { dayLabel, plural, timeOf } from './format.js';
+import { FileBadge, initials } from './FileBadge.js';
 import { ResultPreview } from './ResultPreview.js';
 import { HelpButton } from '../ui/Help.js';
 
@@ -13,24 +12,45 @@ export const RESULTS_PAGE_SIZE = 50;
 /** The file name filter is sent once typing pauses this long. */
 export const FILTER_DEBOUNCE_MS = 250;
 
-const when = shortWhen;
-
-function reviewedBy(r: ResultSummary): string {
-  if (!r.reviewedAt) return 'auto-approved';
-  return r.reviewer ?? 'unnamed reviewer';
+/** Who approved a result, as the list and preview show it. */
+export function Reviewer({ r }: { r: Pick<ResultSummary, 'reviewer' | 'reviewedAt'> }) {
+  if (!r.reviewedAt) return <span className="reviewer auto">Auto-approved</span>;
+  const name = r.reviewer ?? 'Unnamed reviewer';
+  return (
+    <span className="reviewer">
+      {r.reviewer && (
+        <span className="avatar-initials" aria-hidden="true">
+          {initials(r.reviewer)}
+        </span>
+      )}
+      <span>{name}</span>
+    </span>
+  );
 }
+
+const SHOWS: { value: ResultShow | ''; label: string; empty: string }[] = [
+  { value: '', label: 'All', empty: '' },
+  { value: 'reviewed', label: 'Reviewed', empty: 'No reviewed results.' },
+  { value: 'auto', label: 'Auto-approved', empty: 'No auto-approved results.' },
+  { value: 'issues', label: 'With issues', empty: 'No published results with issues.' },
+];
 
 /** Results (UI handoff §3): published outputs in the target, filtered on the server. */
 export function ResultsPage({
   api,
   query = '',
+  now,
 }: {
   api: Api;
   /** Top-bar search: fills the file name filter. */
   query?: string;
+  /** For tests: the time the day headings (Today, Yesterday) are counted from. */
+  now?: number;
 }) {
+  const typeId = useId();
   const [types, setTypes] = useState<{ id: string; title: string }[]>([]);
   const [templateId, setTemplateId] = useState('');
+  const [show, setShow] = useState<ResultShow | ''>('');
   /** What's typed in the file name field, and what was last sent (after the pause). */
   const [filter, setFilter] = useState(query);
   const [q, setQ] = useState(query.trim());
@@ -73,6 +93,7 @@ export function ResultsPage({
         const page = await api.listResults({
           templateId: templateId || undefined,
           q: q || undefined,
+          ...(show ? { show } : {}),
           ...cursor,
         });
         if (request !== latest.current) return;
@@ -88,7 +109,7 @@ export function ResultsPage({
         }
       }
     },
-    [api, templateId, q],
+    [api, templateId, q, show],
   );
 
   // The current rows stay until the new page arrives (load replaces them): clearing first would
@@ -114,136 +135,159 @@ export function ResultsPage({
           <HelpButton topic="results" />
         </div>
       </div>
-      <div className="toolbar">
-        <FilterChips
-          label="Filter by document type"
-          value={templateId}
-          onChange={setTemplateId}
-          chips={[
-            { value: '', label: 'All types' },
-            ...types.map((t) => ({ value: t.id, label: t.title })),
-          ]}
-        />
-        <input
-          type="search"
-          className="filter-field"
-          aria-label="Filter by file name"
-          maxLength={100}
-          placeholder="Filter by file name"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+      <div className="toolbar results-toolbar">
+        <span className="select-field">
+          <label htmlFor={typeId}>Document type</label>
+          <select id={typeId} value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+            <option value="">All types</option>
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+              </option>
+            ))}
+          </select>
+        </span>
+        <div role="group" aria-label="Show" className="segmented">
+          {SHOWS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={show === o.value}
+              onClick={() => setShow(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <span className="filter-search">
+          <Icon name="search" />
+          <input
+            type="search"
+            className="filter-field"
+            aria-label="Filter by file name"
+            maxLength={100}
+            placeholder="Filter by file name"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </span>
+        {loaded && !error && rows.length > 0 && (
+          <span className="results-count muted">
+            {plural(rows.length, 'result')}
+            {hasMore ? ' so far' : ''}
+          </span>
+        )}
       </div>
       {error && <p role="alert">Failed to load results: {error}</p>}
       <div className="results-layout">
         <div className="results-main">
           {loaded && !error && rows.length === 0 ? (
-            <p>
+            <p className="card results-empty">
               {q
                 ? `No results match “${q}”.`
-                : templateId
-                  ? 'No published results for this document type.'
-                  : 'No published results yet. Test runs and rejected documents never appear here.'}
+                : show
+                  ? SHOWS.find((o) => o.value === show)!.empty
+                  : templateId
+                    ? 'No published results for this document type.'
+                    : 'No published results yet. Test runs and rejected documents never appear here.'}
             </p>
           ) : (
-            <div className="list-box">
+            <div className="card results-list-card">
               <table className="result-list" aria-label="Published results">
                 <thead>
                   <tr>
-                    <th className="doc-cell">Document</th>
-                    <th className="type-cell">Document type</th>
-                    <th>Published</th>
+                    <th className="badge-col">
+                      <span className="visually-hidden">Kind</span>
+                    </th>
+                    <th>Document</th>
                     <th>Reviewed by</th>
+                    <th>Published</th>
                     <th>Issues</th>
-                    <th className="actions-col">
-                      <span className="visually-hidden">Actions</span>
+                    <th>Files</th>
+                    <th className="chev-col">
+                      <span className="visually-hidden">Open</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.jobId} className={r === selected ? 'selected' : undefined}>
-                      <td className="doc-cell">
-                        <button
-                          type="button"
-                          className="doc-button"
-                          aria-label={`Show preview of ${r.filename}`}
-                          aria-pressed={r === selected}
+                  {rows.map((r, i) => {
+                    const day = dayLabel(r.publishedAt, now);
+                    const newDay = i === 0 || dayLabel(rows[i - 1]!.publishedAt, now) !== day;
+                    return (
+                      <Fragment key={r.jobId}>
+                        {newDay && (
+                          <tr className="day-row">
+                            <th scope="row" colSpan={7}>
+                              {day}
+                            </th>
+                          </tr>
+                        )}
+                        <tr
+                          className={r === selected ? 'selected' : undefined}
                           onClick={() => setSelectedId(r.jobId)}
                         >
-                          {r.filename}
-                        </button>
-                      </td>
-                      <td className="type-cell">
-                        <span>
-                          {titleOf(r.specId)} v{r.specVersion}
-                        </span>
-                      </td>
-                      <td className="muted">{when(r.publishedAt)}</td>
-                      <td>{reviewedBy(r)}</td>
-                      <td className={r.issueCount ? 'issues-count' : 'muted'}>
-                        {r.issueCount ? r.issueCount : '—'}
-                      </td>
-                      <td className="actions-cell">
-                        <div className="row-actions">
-                          <a
-                            className="button icon bordered"
-                            href={`#/results/${r.jobId}`}
-                            aria-label={`Open full result for ${r.filename}`}
-                            title="Open full result"
-                          >
-                            <Icon name="open" />
-                          </a>
-                          {isWordDocument(r.contentType) ? (
-                            <a
-                              className="button icon bordered"
-                              href={api.documentUrl(r.jobId)}
-                              download
-                              aria-label={`Download original of ${r.filename}`}
-                              title="Download original (.docx)"
+                          <td className="badge-col">
+                            <FileBadge contentType={r.contentType} />
+                          </td>
+                          <td className="doc-cell">
+                            <button
+                              type="button"
+                              className="doc-button"
+                              aria-label={`Show preview of ${r.filename}`}
+                              aria-pressed={r === selected}
+                              title={r.filename}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedId(r.jobId);
+                              }}
                             >
-                              <Icon name="file" />
-                            </a>
-                          ) : (
-                            <a
-                              className="button icon bordered"
-                              href={api.documentUrl(r.jobId)}
-                              target="_blank"
-                              rel="noopener"
-                              aria-label={`View PDF of ${r.filename}`}
-                              title="View PDF"
-                            >
-                              <Icon name="file" />
-                            </a>
-                          )}
-                          <a
-                            className="button dl"
-                            href={api.archiveUrl(r.jobId)}
-                            aria-label={`Download ${r.filename} results as ZIP`}
-                            title={`Download all ${r.outputs.length} files as one ZIP`}
-                          >
-                            <Icon name="download" />
-                            ZIP
-                          </a>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                              <span className="doc-name">{r.filename}</span>
+                              <span className="doc-type">
+                                {titleOf(r.specId)} <span className="mono">v{r.specVersion}</span>
+                              </span>
+                            </button>
+                          </td>
+                          <td>
+                            <Reviewer r={r} />
+                          </td>
+                          <td className="muted when-cell">{timeOf(r.publishedAt)}</td>
+                          <td>
+                            {r.issueCount ? (
+                              <span className="issues-count">
+                                <Icon name="warning" />
+                                <span>{r.issueCount}</span>
+                              </span>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
+                          <td className="muted files-cell">{plural(r.outputCount, 'file')}</td>
+                          <td className="chev-col" aria-hidden="true">
+                            ›
+                          </td>
+                        </tr>
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
+              <div className="results-foot muted">
+                {hasMore ? (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => {
+                      const last = rows.at(-1);
+                      if (last) void load({ before: last.publishedAt, beforeId: last.jobId });
+                    }}
+                  >
+                    Load more
+                  </button>
+                ) : (
+                  <span>Showing {plural(rows.length, 'result')} · newest first</span>
+                )}
+              </div>
             </div>
-          )}
-          {hasMore && (
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => {
-                const last = rows.at(-1);
-                if (last) void load({ before: last.publishedAt, beforeId: last.jobId });
-              }}
-            >
-              Load more
-            </button>
           )}
         </div>
         {selected && (
