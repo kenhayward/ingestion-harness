@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+import type { PluginInfo } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../src/api/client.js';
 import { TemplateEditor, type EmbeddedEditor } from '../src/templates/TemplateEditor.js';
 import { fakeApi, job, projectOverview, projectView, publication, sampleView } from './fake-api.js';
@@ -1777,7 +1781,17 @@ describe('help on every recipe tab', () => {
 });
 
 describe('plugin steps in the recipe editors', () => {
-  const withPlugin = () => {
+  const catalogue = JSON.parse(
+    readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../../packages/shared/test/fixtures/plugin-catalogue.json',
+      ),
+      'utf8',
+    ),
+  ) as { plugins: PluginInfo[] };
+  const plugins = { listPlugins: vi.fn(async () => catalogue.plugins) };
+  const withPlugin = (uses = 'text.pattern@1') => {
     const d = validDefinition();
     return {
       ...d,
@@ -1786,7 +1800,7 @@ describe('plugin steps in the recipe editors', () => {
         {
           type: 'plugin',
           id: 'head',
-          uses: 'text.pattern@1',
+          uses,
           fields: ['sender'],
           sections: ['all'],
           with: { patterns: { sender: 'From: (.+)' } },
@@ -1795,22 +1809,184 @@ describe('plugin steps in the recipe editors', () => {
       ],
     };
   };
+  const saved = (api: Api) =>
+    vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as { pipeline: Record<string, unknown>[] };
 
-  it('shows a plugin step read-only on the Document types page, pointing to YAML', async () => {
-    setup(view(withPlugin()));
+  it('edits a plugin step: its plugin, what it fills and reads, and its settings', async () => {
+    const { api } = setup(view(withPlugin()), plugins);
     await userEvent.click(await tab(/Pipeline/));
     await userEvent.click(screen.getByRole('button', { name: /^1 PLUGIN head/ }));
     const step = screen.getByRole('group', { name: 'Step 1' });
-    expect(within(step).getByText('text.pattern@1')).toBeInTheDocument();
-    expect(within(step).getByText(/Edit a plugin step in the YAML tab/)).toBeInTheDocument();
-    expect(within(step).queryByLabelText('Model')).not.toBeInTheDocument();
+    expect(await within(step).findByRole('combobox', { name: 'Plugin' })).toHaveValue(
+      'text.pattern@1',
+    );
+    expect(within(step).getByText(catalogue.plugins[0]!.summary)).toBeInTheDocument();
+    expect(within(step).getByRole('checkbox', { name: 'sender' })).toBeChecked();
+    expect(within(step).getByRole('checkbox', { name: 'all' })).toBeChecked();
+    const value = within(step).getByRole('textbox', { name: 'Patterns: sender' });
+    expect(value).toHaveValue('From: (.+)');
+    fireEvent.change(value, { target: { value: 'Sender: (?P<value>.+)' } });
+    await userEvent.click(within(step).getByRole('checkbox', { name: 'Ignore case' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(saved(api).pipeline[0]).toEqual({
+      type: 'plugin',
+      id: 'head',
+      uses: 'text.pattern@1',
+      fields: ['sender'],
+      sections: ['all'],
+      with: { patterns: { sender: 'Sender: (?P<value>.+)' }, ignoreCase: true },
+    });
   });
 
-  it('shows a plugin step read-only in the Workbench pipeline', async () => {
-    setup(view(withPlugin()), {}, { onChanged: vi.fn() });
-    const detail = await screen.findByRole('region', { name: 'Step 1' });
+  it('adds a pattern for another field and removes one', async () => {
+    const { api } = setup(view(withPlugin()), plugins);
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^1 PLUGIN head/ }));
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    await userEvent.click(
+      await within(step).findByRole('button', { name: 'Remove sender from Patterns' }),
+    );
+    await userEvent.type(within(step).getByLabelText('New key for Patterns'), 'sender');
+    await userEvent.click(within(step).getByRole('button', { name: 'Add to Patterns' }));
+    fireEvent.change(within(step).getByRole('textbox', { name: 'Patterns: sender' }), {
+      target: { value: 'x' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(saved(api).pipeline[0]!.with).toEqual({ patterns: { sender: 'x' } });
+  });
+
+  it('adds a plugin step from the catalogue on the Document types page', async () => {
+    const d = validDefinition();
+    const { api } = setup(view({ ...d, version: 1, pipeline: [d.pipeline[1]!] }), plugins);
+    await userEvent.click(await tab(/Pipeline/));
+    const add = await screen.findByRole('combobox', { name: 'Add plugin step' });
+    await waitFor(() => expect(add).toBeEnabled());
+    await userEvent.selectOptions(add, 'text.pattern@1');
+    const step = screen.getByRole('group', { name: 'Step 2' });
+    await userEvent.type(within(step).getByLabelText('Step id'), 'head');
+    await userEvent.click(within(step).getByRole('checkbox', { name: 'sender' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(saved(api).pipeline[1]).toEqual({
+      type: 'plugin',
+      id: 'head',
+      uses: 'text.pattern@1',
+      fields: ['sender'],
+      sections: [],
+    });
+  });
+
+  it('adds a plugin step in the Workbench pipeline', async () => {
+    const d = validDefinition();
+    setup(view({ ...d, version: 1, pipeline: [d.pipeline[1]!] }), plugins, { onChanged: vi.fn() });
+    const add = await screen.findByRole('combobox', { name: 'Add plugin step' });
+    await waitFor(() => expect(add).toBeEnabled());
+    await userEvent.selectOptions(add, 'text.pattern@1');
+    const detail = screen.getByRole('region', { name: 'Step 2' });
     expect(within(detail).getByText('PLUGIN')).toBeInTheDocument();
-    expect(within(detail).getByText('text.pattern@1')).toBeInTheDocument();
-    expect(within(detail).getByText(/Edit a plugin step in the YAML tab/)).toBeInTheDocument();
+    expect(within(detail).getByRole('combobox', { name: 'Plugin' })).toHaveValue('text.pattern@1');
+  });
+
+  it('keeps a plugin no worker has, with its settings as JSON', async () => {
+    setup(view(withPlugin('acme.magic@3')), plugins, { onChanged: vi.fn() });
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    const select = await within(detail).findByRole('combobox', { name: 'Plugin' });
+    expect(select).toHaveValue('acme.magic@3');
+    expect(
+      within(select).getByRole('option', {
+        name: /acme.magic@3 \(not on this deployment's workers\)/,
+      }),
+    ).toBeInTheDocument();
+    expect(within(detail).getByRole('textbox', { name: 'Settings (JSON)' })).toHaveValue(
+      JSON.stringify({ patterns: { sender: 'From: (.+)' } }, null, 2),
+    );
+  });
+
+  const previewView = (status: 'queued' | 'succeeded', result: unknown = null) => ({
+    jobId: '00000000-0000-4000-8000-000000000001',
+    status,
+    error: null,
+    result,
+  });
+
+  it('previews a plugin step on the dev samples in the Workbench', async () => {
+    const result = {
+      stepId: 'head',
+      uses: 'text.pattern@1',
+      problem: null,
+      samples: [
+        {
+          sampleId: 's1',
+          fileName: 's1.pdf',
+          fields: { sender: { value: 'Acme', evidence: 'From: Acme', page: 1 } },
+          rows: null,
+          issues: [],
+          error: null,
+        },
+        { sampleId: 's2', fileName: 's2.pdf', fields: null, rows: null, issues: [],
+          error: 'missing required sections: all' },
+      ],
+    }; // prettier-ignore
+    const { api } = setup(
+      view(withPlugin()),
+      {
+        ...plugins,
+        startPluginPreview: vi.fn(async () => previewView('queued')),
+        getPluginPreview: vi.fn(async () => previewView('succeeded', result)),
+      },
+      { onChanged: vi.fn() },
+    );
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    await userEvent.click(within(detail).getByRole('button', { name: 'Preview on dev samples' }));
+    expect(api.startPluginPreview).toHaveBeenCalledWith('letter', 'head');
+    const first = await within(detail).findByRole('region', { name: 's1.pdf' });
+    expect(within(first).getByText('Acme')).toBeInTheDocument();
+    expect(within(first).getByText('From: Acme')).toBeInTheDocument();
+    const second = within(detail).getByRole('region', { name: 's2.pdf' });
+    expect(within(second).getByText('missing required sections: all')).toBeInTheDocument();
+  });
+
+  it('shows why a preview could not run', async () => {
+    const result = { stepId: 'head', uses: 'text.pattern@1', samples: [],
+      problem: 'text.pattern@1: sender: not a regular expression (missing ))' }; // prettier-ignore
+    setup(
+      view(withPlugin()),
+      {
+        ...plugins,
+        startPluginPreview: vi.fn(async () => previewView('queued')),
+        getPluginPreview: vi.fn(async () => previewView('succeeded', result)),
+      },
+      { onChanged: vi.fn() },
+    );
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    await userEvent.click(within(detail).getByRole('button', { name: 'Preview on dev samples' }));
+    expect(await within(detail).findByRole('alert')).toHaveTextContent('not a regular expression');
+  });
+
+  it('previews only the saved draft', async () => {
+    setup(view(withPlugin()), plugins, { onChanged: vi.fn() });
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    await userEvent.type(within(detail).getByLabelText('Step id'), 'x');
+    const button = within(detail).getByRole('button', { name: 'Preview on dev samples' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute(
+      'title',
+      'Save the draft first: the preview runs the saved draft',
+    );
+  });
+
+  it('has no preview on the Document types page (it needs dev samples)', async () => {
+    setup(view(withPlugin()), plugins);
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^1 PLUGIN head/ }));
+    expect(
+      screen.queryByRole('button', { name: 'Preview on dev samples' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('says why no plugin step can be added while no worker has published any', async () => {
+    setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
+    const add = await screen.findByRole('combobox', { name: 'Add plugin step' });
+    expect(add).toBeDisabled();
+    expect(add).toHaveAttribute('title', 'No plugins yet: no worker has published any');
   });
 });

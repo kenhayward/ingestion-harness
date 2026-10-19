@@ -42,6 +42,7 @@ import { workbenchRoutes } from './routes/workbench.js';
 import { workbenchBundleRoutes } from './routes/workbench-bundle.js';
 import { workbenchOverviewRoutes } from './routes/workbench-overview.js';
 import { workbenchGraphRoutes } from './routes/workbench-graph.js';
+import { workbenchPluginPreviewRoutes } from './routes/workbench-plugin-preview.js';
 import { workbenchSuggestionRoutes } from './routes/workbench-suggestions.js';
 import { workbenchPinsRoutes } from './routes/workbench-pins.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
@@ -194,6 +195,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(workbenchBundleRoutes, { prefix: '/api' });
   await app.register(workbenchOverviewRoutes, { prefix: '/api' });
   await app.register(workbenchGraphRoutes, { prefix: '/api' });
+  await app.register(workbenchPluginPreviewRoutes, { prefix: '/api' });
   await app.register(workbenchSuggestionRoutes, { prefix: '/api' });
   await app.register(workbenchPinsRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });

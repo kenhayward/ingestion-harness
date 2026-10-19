@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { JobStatusSchema } from './jobs.js';
 import { PLUGIN_REF } from './template.js';
 
 /**
@@ -18,3 +19,47 @@ export const PluginInfoSchema = z.object({
   settingsSchema: z.record(z.string(), z.unknown()),
 });
 export type PluginInfo = z.infer<typeof PluginInfoSchema>;
+
+/** A plugin step preview (recipe plugins 3c): which step, on which dev samples. */
+export const PluginPreviewBodySchema = z
+  .object({
+    /** A plugin step of the open draft. */
+    stepId: z.string().min(1),
+    /** Ready dev samples (default: every one). */
+    sampleIds: z.array(z.string().uuid()).min(1).max(50).optional(),
+  })
+  .strict();
+
+/** One sample's preview, as the worker writes it (`plugin_preview.preview_samples`). */
+export const PluginPreviewSampleSchema = z.object({
+  sampleId: z.string(),
+  fileName: z.string(),
+  /** A field step's values, typed as a run's would be (`{value, evidence, page}`); else null. */
+  fields: z.record(z.string(), z.record(z.string(), z.unknown())).nullable(),
+  /** A table step's rows, typed; else null. */
+  rows: z.array(z.record(z.string(), z.unknown())).nullable(),
+  /** Values that could not be typed, as a run lists them. */
+  issues: z.array(z.record(z.string(), z.unknown())),
+  /** Why this sample could not be previewed (not prepared, a missing section, the plugin failed). */
+  error: z.string().nullable(),
+});
+export type PluginPreviewSample = z.infer<typeof PluginPreviewSampleSchema>;
+
+/** Written by the worker's `plugin` task (runs bucket, `pluginPreviewKey`). */
+export const PluginPreviewResultSchema = z.object({
+  stepId: z.string(),
+  uses: z.string(),
+  /** Why the preview could not run at all (its settings, the time limit); null when it ran. */
+  problem: z.string().nullable(),
+  samples: z.array(PluginPreviewSampleSchema),
+});
+export type PluginPreviewResult = z.infer<typeof PluginPreviewResultSchema>;
+
+export const PluginPreviewViewSchema = z.object({
+  jobId: z.string().uuid(),
+  status: JobStatusSchema,
+  error: z.string().nullable(),
+  /** Present once the job succeeded. */
+  result: PluginPreviewResultSchema.nullable(),
+});
+export type PluginPreviewView = z.infer<typeof PluginPreviewViewSchema>;

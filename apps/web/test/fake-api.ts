@@ -402,6 +402,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       { id: 'finance-account', name: 'Finance account', status: 'ok' as const, statusReason: null },
     ]),
     listPublishTargetChoices: vi.fn(async () => []),
+    listPlugins: vi.fn(async () => []),
     createPublishTarget: vi.fn(async () => {
       throw new Error('createPublishTarget not stubbed');
     }),
@@ -459,6 +460,12 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     getGraphPreview: vi.fn(async () => {
       throw new Error('getGraphPreview not faked');
+    }),
+    startPluginPreview: vi.fn(async () => {
+      throw new Error('startPluginPreview not faked');
+    }),
+    getPluginPreview: vi.fn(async () => {
+      throw new Error('getPluginPreview not faked');
     }),
     getOntology: vi.fn(async () => {
       throw new Error('getOntology not stubbed');

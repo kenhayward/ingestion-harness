@@ -113,6 +113,16 @@ export interface GraphJobParams {
   definition: Record<string, unknown>;
 }
 
+/** jobs.params of a plugin step preview (worker: plugin_preview.PluginPreviewParams). */
+export interface PluginJobParams {
+  /** The plugin step to run. */
+  stepId: string;
+  /** The open draft. */
+  definition: Record<string, unknown>;
+  /** Ready dev samples, read from their prepared text. */
+  samples: { sampleId: string; fileName: string; sha256: string }[];
+}
+
 /** A document-less project job (segment previews, drafting runs, bundle exports). */
 export type ProjectJob = SegmentJob;
 
@@ -331,6 +341,15 @@ export interface IngestionRepo {
     params: GraphJobParams,
   ): Promise<{ job: ProjectJob; removed: string[] }>;
   getGraphJob(projectId: string, id: string): Promise<ProjectJob | null>;
+  /**
+   * Queue a plugin step preview (task 'plugin', no document, priority SEGMENT_PRIORITY), one
+   * per project like graph previews: earlier ones are deleted and returned in `removed`.
+   */
+  createPluginJob(
+    projectId: string,
+    params: PluginJobParams,
+  ): Promise<{ job: ProjectJob; removed: string[] }>;
+  getPluginJob(projectId: string, id: string): Promise<ProjectJob | null>;
   /**
    * Queue an ontology suggestion refresh (task 'suggest', no document, priority
    * SEGMENT_PRIORITY). One per project: earlier suggest jobs are deleted and returned in `removed`.

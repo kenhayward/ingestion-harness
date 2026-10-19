@@ -30,6 +30,7 @@ import {
   type SegmentJob,
   type SegmentJobParams,
   type GraphJobParams,
+  type PluginJobParams,
   type NewDocument,
   type NewReference,
   type NewEdit,
@@ -472,6 +473,41 @@ export class PgRepo implements IngestionRepo {
     } finally {
       client.release();
     }
+  }
+
+  async createPluginJob(projectId: string, params: PluginJobParams) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Serialized with the project's other previews: one lock per project.
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [projectId]);
+      const removed = await client.query<{ id: string }>(
+        `DELETE FROM jobs WHERE project_id = $1 AND task = 'plugin' RETURNING id`,
+        [projectId],
+      );
+      const { rows } = await client.query<SegmentRow>(
+        `INSERT INTO jobs (project_id, task, test, priority, max_attempts, params)
+         VALUES ($1, 'plugin', true, $2, 1, $3)
+         RETURNING id, project_id, status, error, created_at, updated_at`,
+        [projectId, SEGMENT_PRIORITY, JSON.stringify(params)],
+      );
+      await client.query('COMMIT');
+      return { job: toSegmentJob(rows[0]!), removed: removed.rows.map((r) => r.id) };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getPluginJob(projectId: string, id: string) {
+    const { rows } = await this.pool.query<SegmentRow>(
+      `SELECT id, project_id, status, error, created_at, updated_at FROM jobs
+        WHERE id = $1 AND project_id = $2 AND task = 'plugin'`,
+      [id, projectId],
+    );
+    return rows[0] ? toSegmentJob(rows[0]) : null;
   }
 
   async getGraphJob(projectId: string, id: string) {
