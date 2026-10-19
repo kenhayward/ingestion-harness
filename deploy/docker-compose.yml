@@ -1,5 +1,5 @@
-# Production-shaped stack: app (nginx + React) / api (Fastify) / worker (Python) on
-# Postgres + SeaweedFS. Run via deploy/scripts/deploy.sh (or compose.sh for ad-hoc commands).
+# Production-shaped stack: app (nginx + React) / api (Fastify) / worker (Python) / bridge (the
+# delivery bridge every publication goes through) on Postgres + SeaweedFS. Run via deploy/scripts/deploy.sh (or compose.sh for ad-hoc commands).
 # Build context is the repo root.
 
 name: ${COMPOSE_PROJECT_NAME:-ingestion}
@@ -14,13 +14,24 @@ x-s3-env: &s3-env
   S3_BUCKET_RUNS: ${S3_BUCKET_RUNS:-ingest-runs}
   # Backups and restore uploads (Administration > Backup); created by init-buckets, never backed up.
   S3_BUCKET_BACKUPS: ${S3_BUCKET_BACKUPS:-ingest-backups}
-  # Final target for approved outputs; empty endpoint/keys = same SeaweedFS as above.
+  # The `default` publishing target, seeded once; empty endpoint/keys = same SeaweedFS as above.
+  # Keys named here are read by the bridge (an env-keyed connection), never stored.
   TARGET_S3_ENDPOINT: ${TARGET_S3_ENDPOINT:-}
   TARGET_S3_REGION: ${TARGET_S3_REGION:-}
   TARGET_S3_ACCESS_KEY: ${TARGET_S3_ACCESS_KEY:-}
   TARGET_S3_SECRET_KEY: ${TARGET_S3_SECRET_KEY:-}
   TARGET_S3_BUCKET: ${TARGET_S3_BUCKET:-ingest-published}
   TARGET_S3_PREFIX: ${TARGET_S3_PREFIX:-}
+
+# The delivery bridge: CT Studio's API and worker sign every request to it with this shared key,
+# and it signs its events and handoff calls back with the same one.
+x-bridge-env: &bridge-env
+  BRIDGE_URL: http://bridge:3100
+  BRIDGE_CLIENT_KEY: ${BRIDGE_CLIENT_KEY:?set BRIDGE_CLIENT_KEY in deploy/.env (openssl rand -base64 32)}
+  BRIDGE_STAGING_BUCKET: ${BRIDGE_STAGING_BUCKET:-ingest-bridge}
+  # Where browsers reach the bridge's connections page: its own origin (recommended), or the
+  # /bridge path of this app (the default; weaker, see deploy/README.md).
+  BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:${APP_PORT:-8081}/bridge}
 
 x-db-env: &db-env
   DATABASE_URL: postgres://${POSTGRES_USER:-ingest}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-ingest}
@@ -132,7 +143,7 @@ services:
     image: ${IMAGE_PREFIX:-ingestion-harness}/worker:${IMAGE_TAG:-dev}
     command: ['python', '-m', 'ingest_worker.admin', 'init-buckets']
     environment:
-      <<: [*s3-env]
+      <<: [*s3-env, *bridge-env]
       DATABASE_URL: unused
     depends_on:
       seaweedfs: { condition: service_healthy }
@@ -147,6 +158,49 @@ services:
       postgres: { condition: service_healthy }
     restart: 'no'
 
+  migrate-bridge:
+    image: ${IMAGE_PREFIX:-ingestion-harness}/bridge:${IMAGE_TAG:-dev}
+    command: ['node', 'apps/bridge/dist/db/migrate-cli.js']
+    environment:
+      <<: [*db-env]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  bridge:
+    # The delivery bridge (docs/adr/0016-delivery-bridge.md): delivers packages to their targets'
+    # sinks (S3 built in), keeps shared connections encrypted under BRIDGE_SECRETS_KEY, and serves
+    # the connections page. No host port: the API and the worker reach it on the compose network,
+    # browsers reach only its connections page, through the app's nginx (/bridge/connections) or
+    # the page's own origin.
+    image: ${IMAGE_PREFIX:-ingestion-harness}/bridge:${IMAGE_TAG:-dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/bridge.Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      <<: [*db-env, *s3-env]
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      BRIDGE_CLIENT_KEY: ${BRIDGE_CLIENT_KEY:?set BRIDGE_CLIENT_KEY in deploy/.env (openssl rand -base64 32)}
+      # Encrypts connection secrets: keep it with LLM_SECRETS_KEY (a restore needs both).
+      BRIDGE_SECRETS_KEY: ${BRIDGE_SECRETS_KEY:?set BRIDGE_SECRETS_KEY in deploy/.env (openssl rand -base64 32)}
+      BRIDGE_SECRETS_KEY_PREVIOUS: ${BRIDGE_SECRETS_KEY_PREVIOUS:-}
+      BRIDGE_EVENTS_URL: http://api:3000/api/bridge/events
+      BRIDGE_PRODUCER_URL: http://api:3000/api
+      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:${APP_PORT:-8081}/bridge}
+      BRIDGE_COOKIE_SECURE: ${BRIDGE_COOKIE_SECURE:-true}
+      BRIDGE_STAGING_BUCKET: ${BRIDGE_STAGING_BUCKET:-ingest-bridge}
+    depends_on:
+      migrate-bridge: { condition: service_completed_successfully }
+      init-buckets: { condition: service_completed_successfully }
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3100/readyz || exit 1']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   api:
     image: ${IMAGE_PREFIX:-ingestion-harness}/api:${IMAGE_TAG:-dev}
     build:
@@ -159,7 +213,7 @@ services:
         APP_COMMIT: ${APP_COMMIT:-unknown}
     restart: unless-stopped
     environment:
-      <<: [*db-env, *s3-env]
+      <<: [*db-env, *s3-env, *bridge-env]
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
       ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
@@ -192,6 +246,7 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
+      bridge: { condition: service_healthy }
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3000/readyz || exit 1']
       interval: 10s
@@ -210,7 +265,7 @@ services:
         APP_COMMIT: ${APP_COMMIT:-unknown}
     restart: unless-stopped
     environment:
-      <<: [*db-env, *s3-env]
+      <<: [*db-env, *s3-env, *bridge-env]
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LOCAL_LLM_ENABLED: ${LOCAL_LLM_ENABLED:-true}
@@ -252,6 +307,7 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
+      bridge: { condition: service_healthy }
       converter: { condition: service_healthy }
       fuseki: { condition: service_healthy, required: false }
     deploy:
@@ -275,6 +331,8 @@ services:
       - ${APP_BIND:-0.0.0.0}:${APP_PORT:-8081}:80
     depends_on:
       api: { condition: service_healthy }
+      # nginx resolves the bridge's name when it starts (/bridge/connections).
+      bridge: { condition: service_healthy }
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1/healthz || exit 1']
       interval: 10s

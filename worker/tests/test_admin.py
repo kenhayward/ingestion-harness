@@ -4,7 +4,12 @@ from typing import Any
 
 import pytest
 
-from ingest_worker.admin import backups_bucket, ensure_buckets, target_buckets
+from ingest_worker.admin import (
+    backups_bucket,
+    bridge_staging_bucket,
+    ensure_buckets,
+    target_buckets,
+)
 from ingest_worker.publish_targets import TargetRow
 
 
@@ -77,3 +82,12 @@ def row(id: str, kind: str, bucket: str) -> TargetRow:
         storage_class=None,
         seeded_at=None,
     )
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [({}, "ingest-bridge"), ({"BRIDGE_STAGING_BUCKET": ""}, "ingest-bridge"),
+     ({"BRIDGE_STAGING_BUCKET": "staging"}, "staging")],
+)  # fmt: skip
+def test_the_bridge_staging_bucket_is_created_too(env: dict[str, str], expected: str) -> None:
+    assert bridge_staging_bucket(env) == expected

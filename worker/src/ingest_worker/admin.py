@@ -55,6 +55,12 @@ def env_target_bucket(env: Mapping[str, str], s3_endpoint: str) -> list[str]:
     return [env.get("TARGET_S3_BUCKET") or "ingest-published"] if endpoint == s3_endpoint else []
 
 
+def bridge_staging_bucket(env: Mapping[str, str]) -> str:
+    """Where the delivery bridge stages accepted packages (`BRIDGE_STAGING_BUCKET`, as the
+    bridge reads it: blank means the default)."""
+    return env.get("BRIDGE_STAGING_BUCKET") or "ingest-bridge"
+
+
 def backups_bucket(env: Mapping[str, str]) -> str:
     """The bucket the API keeps backups and restore uploads in (`S3_BUCKET_BACKUPS`, as the API
     reads it: blank means the default)."""
@@ -90,7 +96,13 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         aws_secret_access_key=s.s3_secret_key,
         config=Config(s3={"addressing_style": "path"}),
     )
-    buckets = [s.bucket_inbox, s.bucket_outputs, s.bucket_runs, backups_bucket(os.environ)]
+    buckets = [
+        s.bucket_inbox,
+        s.bucket_outputs,
+        s.bucket_runs,
+        backups_bucket(os.environ),
+        bridge_staging_bucket(os.environ),
+    ]
     fallback = env_target_bucket(os.environ, s.s3_endpoint)
     buckets += target_buckets(lambda: _stored_targets(s), fallback)
     created = ensure_buckets(client, list(dict.fromkeys(buckets)))
