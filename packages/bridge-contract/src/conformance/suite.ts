@@ -31,9 +31,9 @@ export interface CheckResult {
   detail?: string;
 }
 
-/** The shared document fixture: from src/conformance or dist/conformance alike. */
-function fixturePackage() {
-  const file = new URL('../../test/fixtures/package-document.json', import.meta.url);
+/** A shared package fixture: from src/conformance or dist/conformance alike. */
+function fixturePackage(name = 'package-document.json') {
+  const file = new URL(`../../test/fixtures/${name}`, import.meta.url);
   return PackageSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
 }
 
@@ -159,9 +159,13 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
     check('browse', true, 'skipped: the sink does not browse');
   }
 
-  // 5. deliver the fixture, waiting out a pending answer
-  const pkg = fixturePackage();
-  const deliver = async (): Promise<string | null> => {
+  // 5. deliver the fixture, waiting out a pending answer. A sink that takes graphs (`rdf`) gets
+  // the document whose package carries one, as CT Studio sends it.
+  const takesGraphs = described?.capabilities.accepts.includes('rdf') ?? false;
+  const documentPackage = fixturePackage(
+    takesGraphs ? 'package-document-rdf.json' : 'package-document.json',
+  );
+  const deliver = async (pkg = documentPackage): Promise<string | null> => {
     const res = await call('POST', '/deliveries', {
       instanceId: opts.instanceId,
       credential: opts.credential,
@@ -189,6 +193,16 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
     check('deliver', problem === null, problem ?? undefined);
   } catch (err) {
     check('deliver', false, String(err));
+  }
+
+  // 5b. a graph package (an ontology, a rebuilt graph), when the sink takes graphs
+  if (takesGraphs) {
+    try {
+      const problem = await deliver(fixturePackage('package-graph.json'));
+      check('deliver a graph package', problem === null, problem ?? undefined);
+    } catch (err) {
+      check('deliver a graph package', false, String(err));
+    }
   }
 
   // 6. the same key again, when the sink can replace

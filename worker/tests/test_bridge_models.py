@@ -17,6 +17,7 @@ from ingest_worker.bridge.models import (
     CreateDeliveriesRequest,
     DeliveryView,
     TargetTestResult,
+    graph_idempotency_key,
     idempotency_key,
 )
 
@@ -34,6 +35,7 @@ def fixture(name: str) -> Any:
     [
         ("package-document.json", BridgePackage),
         ("package-graph.json", BridgePackage),
+        ("package-document-rdf.json", BridgePackage),
         ("delivery-request.json", CreateDeliveriesRequest),
         ("delivery-view.json", DeliveryView),
         ("event.json", BridgeEvent),
@@ -76,3 +78,8 @@ def test_an_error_without_details_dumps_without_them() -> None:
 def test_idempotency_key_matches_the_typescript_one() -> None:
     f = fixture("idempotency.json")
     assert idempotency_key(f["sourceSha256"], f["recipeId"], f["recipeVersion"]) == f["key"]
+
+
+def test_graph_idempotency_key_matches_the_fixture() -> None:
+    g = fixture("idempotency.json")["graph"]
+    assert graph_idempotency_key(g["graphName"], g["version"]) == g["key"]

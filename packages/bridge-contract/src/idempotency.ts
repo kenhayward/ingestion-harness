@@ -13,3 +13,11 @@ export function idempotencyKey(
     .update(`${sourceSha256}\n${recipeId}\n${recipeVersion}`)
     .digest('hex');
 }
+
+/**
+ * What a graph package is about: one graph name at one version (an ontology version, or a rebuilt
+ * or reminted graph), so delivering it again is recognised as the same thing.
+ */
+export function graphIdempotencyKey(graphName: string, version: number): string {
+  return createHash('sha256').update(`graph\n${graphName}\n${version}`).digest('hex');
+}
