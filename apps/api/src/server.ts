@@ -33,7 +33,7 @@ import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { HttpBridgeApi } from './bridge/client.js';
 import { HandoffCodes } from './bridge/handoff.js';
-import { syncTargetsWithBridge } from './bridge/mirror.js';
+import { resyncAfterRestore, syncTargetsWithBridge } from './bridge/mirror.js';
 import { reconcileOnce } from './bridge/reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
@@ -232,12 +232,17 @@ backup?.enableRestore({
   live: new PgLiveDatabase(makePool(2)),
   openSide: (url) => PgSideDatabase.open(url),
   lakeIssuer: new SeaweedIamIssuer(s3),
-  // The restored targets are mirrored to the bridge again (and a restored target's keys from
-  // before the bridge are moved there), so its registry matches the database now in place.
+  // The triple store target is seeded again (a backup from before it lacks it), and the
+  // restored targets are mirrored to the bridge again (a restored target's keys from before the
+  // bridge are moved there), so its registry matches the database now in place.
   onSwapped: () =>
-    void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).catch(
-      (err: unknown) => app.log.error({ err }, 'restored targets could not be mirrored'),
-    ),
+    void resyncAfterRestore({
+      targets,
+      bridge,
+      secrets: llmSecrets,
+      log: app.log,
+      rdfSeed: tripleStoreSeed,
+    }).catch((err: unknown) => app.log.error({ err }, 'restored targets could not be mirrored')),
 });
 
 let stopReconciler = () => {};

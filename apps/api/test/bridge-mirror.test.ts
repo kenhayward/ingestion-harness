@@ -5,6 +5,7 @@ import {
   destinationOf,
   mirrorTargets,
   moveTargetsToBridge,
+  resyncAfterRestore,
   syncTargetsWithBridge,
 } from '../src/bridge/mirror.js';
 import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
@@ -264,5 +265,28 @@ describe('the triple store target on the bridge', () => {
     await mirrorTargets({ targets, bridge });
     expect(bridge.connections.has('rdf-default')).toBe(false);
     expect(bridge.targets.get('rdf-default')?.connectionId).toBe('rdf-default');
+  });
+});
+
+describe('after a restore swaps the database in', () => {
+  it('seeds the triple store target again (a backup from before it lacks it) and mirrors it', async () => {
+    const { targets, bridge, log } = await setup();
+    expect(await targets.get('rdf-default')).toBeNull(); // the restored database has none
+    await resyncAfterRestore({
+      targets,
+      bridge,
+      secrets: KEYS,
+      log,
+      rdfSeed: { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' },
+    });
+    expect(await targets.get('rdf-default')).toMatchObject({ kind: 'rdf', bucket: 'ct' });
+    expect(bridge.targets.get('rdf-default')?.sinkId).toBe('rdf');
+  });
+
+  it('without RDF_ENDPOINT only mirrors', async () => {
+    const { targets, bridge, log } = await setup();
+    await resyncAfterRestore({ targets, bridge, secrets: KEYS, log, rdfSeed: null });
+    expect(await targets.get('rdf-default')).toBeNull();
+    expect(bridge.targets.has('default')).toBe(true);
   });
 });

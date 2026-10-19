@@ -2,6 +2,7 @@ import { TRIPLE_STORE_TARGET_ID } from '@ih/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { decryptSecret, type SecretsKeys } from '../llm/secrets.js';
 import type { PublishTargetRepo, TargetRecord } from '../publish-targets/repo.js';
+import type { RdfSeed } from '../publish-targets/seed.js';
 import { BridgeApiError, type BridgeApi, type TargetMirror } from './client.js';
 
 /**
@@ -179,4 +180,18 @@ export async function syncTargetsWithBridge(
       await sleep(retryMs);
     }
   }
+}
+
+/**
+ * After a restore swapped the database in: the triple store target is seeded again from
+ * RDF_ENDPOINT (a backup from before it has none, and the worker would otherwise load nothing
+ * into Fuseki and drop no graph on withdraw), then every target is mirrored again (and a
+ * restored target's keys from before the bridge are moved there).
+ */
+export async function resyncAfterRestore(
+  deps: Parameters<typeof moveTargetsToBridge>[0] & { rdfSeed: RdfSeed | null },
+  opts: Parameters<typeof syncTargetsWithBridge>[1] = {},
+): Promise<{ moved: string[]; skipped: string[] }> {
+  if (deps.rdfSeed) await deps.targets.seedRdf(deps.rdfSeed);
+  return syncTargetsWithBridge(deps, opts);
 }
