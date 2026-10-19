@@ -30,24 +30,23 @@ from .extract import ExtractionResult
 from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
 from .graph_store import GraphStore
 from .llm.base import LLMProvider
-from .llm.registry import ModelResolutionError
 from .normalize import normalize_value
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell, content_type, encode_csv
 from .pipeline import (
     DocumentError,
+    JobModels,
     PipelineDeps,
     Prepared,
     ProcessResult,
     RepeatPlan,
     StepProgress,
     Target,
-    check_cancelled,
-    enforce_data_policy,
     page_images,
     prepare_document,
     publish_outputs,
     resolve_models,
     run_check_with_event,
+    run_nodes,
     run_step_extraction,
     target_for,
 )
@@ -176,32 +175,43 @@ def process_template_job(
     cache = workbench_step_cache(job, deps)
     _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
 
-    state = DocState(issues=tuple(segment_issues(doc)))
-    for step in template.pipeline:
-        check_cancelled(job, queue)
+    def node(step: ExtractStep | CheckStep) -> Callable[[DocState], DocState]:
+        """The step as a node: the state before it in, the state after it out."""
         if isinstance(step, CheckStep):
-            check = template.compile_check(step)
-            state = state.with_check(
-                step.id, run_check_with_event(job, queue, check, state.step_results)
+            check = step
+
+            def run_check(state: DocState) -> DocState:
+                compiled_check = template.compile_check(check)
+                result = run_check_with_event(job, queue, compiled_check, state.step_results)
+                return state.with_check(check.id, result)
+
+            return run_check
+
+        extract = step
+
+        def run_extract(state: DocState) -> DocState:
+            result = run_step(
+                job,
+                deps,
+                queue,
+                loaded,
+                extract,
+                compiled[extract.id],
+                resolved[extract.id],
+                doc,
+                state,
+                trigger="process",
+                cache=cache,
+                progress=step_reporter(
+                    job, queue, extract.id, extract_ids.index(extract.id) + 1, len(extract_ids)
+                ),
             )
-            continue
-        result = _run_step(
-            job,
-            deps,
-            queue,
-            loaded,
-            step,
-            compiled[step.id],
-            resolved[step.id],
-            doc,
-            state,
-            trigger="process",
-            cache=cache,
-            progress=step_reporter(
-                job, queue, step.id, extract_ids.index(step.id) + 1, len(extract_ids)
-            ),
-        )
-        state = state.apply(normalise_step(template, step, result.data, result.model_ref))
+            return state.apply(normalise_step(template, extract, result.data, result.model_ref))
+
+        return run_extract
+
+    nodes = [node(step) for step in template.pipeline]
+    state = run_nodes(job, queue, nodes, DocState(issues=tuple(segment_issues(doc))))
 
     reasons = _review_reasons(template, state.checks, list(state.issues))
     if reasons:
@@ -432,7 +442,7 @@ def key_column_issues(
     ]
 
 
-def _run_step(
+def run_step(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
@@ -543,19 +553,15 @@ def rerun_template_job(
     ex = compile_step(template, step)
     if params.get("pageImages"):  # reviewer shows the model the page(s) to read directly
         ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
-    try:
-        ref = params.get("model") or job.model_override or ex.model
-        model = deps.models.resolve(ref)
-    except ModelResolutionError as exc:
-        raise DocumentError(f"re-run of {step.id!r}: {exc}") from exc
-    enforce_data_policy(job, deps, model[0], ref)
+    ref = params.get("model") or job.model_override or ex.model
+    model = JobModels(job, deps.models).resolve(ref, what=f"re-run of {step.id!r}")
 
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
     stored = DocState.from_document(document)
     doc = prepare_document(job, deps, queue, template.document)
 
-    result = _run_step(
+    result = run_step(
         job,
         deps,
         queue,

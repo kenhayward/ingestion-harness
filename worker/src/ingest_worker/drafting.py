@@ -31,16 +31,15 @@ from .llm.base import (
     RefusalError,
     ToolCapable,
 )
-from .llm.registry import ModelResolutionError
 from .mapping_stage import MAPPING as MAPPING_STAGE
 from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queue_suggestions
 from .pipeline import (
     DocumentError,
     JobCancelled,
+    JobModels,
     PipelineDeps,
     advisory_event,
     check_cancelled,
-    enforce_data_policy,
 )
 from .queue import ClaimedJob, JobQueue
 from .storage import draft_log_key, drafting_key, prepared_text_key
@@ -627,11 +626,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         raise DocumentError(f"holdout samples are never sent to drafting: {', '.join(holdout)}")
 
     ref = params.model or "draft"
-    try:
-        provider, model_id = deps.models.resolve(ref)
-    except ModelResolutionError as exc:
-        raise DocumentError(f"drafting model: {exc}") from exc
-    enforce_data_policy(job, deps, provider, ref)
+    provider, model_id = JobModels(job, deps.models).resolve(ref, what="drafting model")
     model_ref = f"{provider.name}/{model_id}"
     if stage.id == "mapping":
         from .mapping_stage import run_mapping

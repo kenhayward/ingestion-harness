@@ -4,7 +4,7 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
@@ -233,30 +233,69 @@ def job_data_policy(job: ClaimedJob) -> Literal["local", "external"] | None:
     return "external" if (job.params or {}).get("dataPolicy") == "external" else "local"
 
 
-def enforce_data_policy(
-    job: ClaimedJob, deps: PipelineDeps, provider: LLMProvider, ref: str
-) -> None:
-    """Refuse, before any call, to send a local-only project's data to an external provider."""
-    if job_data_policy(job) == "local" and deps.models.location(provider.name) == "external":
-        raise DocumentError(
-            f"data policy: project is local-only but {ref} resolves to external provider "
-            f"{provider.name}"
-        )
+@dataclass(frozen=True)
+class JobModels:
+    """The models one job may use: the only way a node gets a chat, vision or OCR provider
+    (tests/test_nodes.py holds the worker to it), so the data policy is checked whenever one is
+    resolved, before any call."""
+
+    job: ClaimedJob
+    registry: ModelRegistry
+
+    def resolve(self, ref: str, *, what: str | None = None) -> tuple[LLMProvider, str]:
+        """`ref` resolved and allowed. With `what` (the model's use, e.g. "OCR model"), a ref
+        that does not resolve is a DocumentError naming it; without, ModelResolutionError."""
+        return self._allowed(self.registry.resolve, ref, what)
+
+    def resolve_ocr(self, ref: str, *, what: str | None = None) -> tuple[LLMProvider, str]:
+        """Like resolve(), on the provider's OCR endpoint (ModelRegistry.resolve_ocr)."""
+        return self._allowed(self.registry.resolve_ocr, ref, what)
+
+    def allow(self, provider: LLMProvider, ref: str) -> None:
+        """Refuse, before any call, to send a local-only project's data to an external provider."""
+        external = self.registry.location(provider.name) == "external"
+        if job_data_policy(self.job) == "local" and external:
+            raise DocumentError(
+                f"data policy: project is local-only but {ref} resolves to external provider "
+                f"{provider.name}"
+            )
+
+    def _allowed(
+        self,
+        resolve: Callable[[str], tuple[LLMProvider, str]],
+        ref: str,
+        what: str | None,
+    ) -> tuple[LLMProvider, str]:
+        try:
+            resolved = resolve(ref)
+        except ModelResolutionError as exc:
+            if what is None:
+                raise
+            raise DocumentError(f"{what}: {exc}") from exc
+        self.allow(resolved[0], ref)
+        return resolved
+
+
+def run_nodes[S](
+    job: ClaimedJob, queue: JobQueue, nodes: Iterable[Callable[[S], S]], state: S
+) -> S:
+    """Run `nodes` in order, each on the state the one before returned, with a safe point
+    before every node: a cancelled job stops before the next one starts (JobCancelled)."""
+    for node in nodes:
+        check_cancelled(job, queue)
+        state = node(state)
+    return state
 
 
 def resolve_models(
     job: ClaimedJob, deps: PipelineDeps, extractions: list[Extraction]
 ) -> dict[str, tuple[LLMProvider, str]]:
     """Resolve every model before the first LLM call so a config error costs no tokens."""
-    resolved: dict[str, tuple[LLMProvider, str]] = {}
-    for ex in extractions:
-        try:
-            ref = job.model_override or ex.model
-            resolved[ex.id] = deps.models.resolve(ref)
-        except ModelResolutionError as exc:
-            raise DocumentError(f"extraction {ex.id!r}: {exc}") from exc
-        enforce_data_policy(job, deps, resolved[ex.id][0], ref)
-    return resolved
+    allowed = JobModels(job, deps.models)
+    return {
+        ex.id: allowed.resolve(job.model_override or ex.model, what=f"extraction {ex.id!r}")
+        for ex in extractions
+    }
 
 
 def load_source(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Source:
@@ -535,11 +574,7 @@ def ocr_pages(
     targets = pages_needing_ocr(pages, mode, deps.ocr.min_chars)
     if not targets:
         return pages
-    try:
-        provider, model_id = deps.models.resolve_ocr(deps.ocr.model)
-    except ModelResolutionError as exc:
-        raise DocumentError(f"OCR model: {exc}") from exc
-    enforce_data_policy(job, deps, provider, deps.ocr.model)
+    provider, model_id = JobModels(job, deps.models).resolve_ocr(deps.ocr.model, what="OCR model")
 
     settings = deps.ocr
     pages = list(pages)
