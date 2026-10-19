@@ -62,6 +62,37 @@ describe('signed-request guard', () => {
     expect(res.json().details).toEqual({ reason: 'bad_signature' });
   });
 
+  it.each(['/%761/ping', '/%76%31/ping', '/v1%2Fping', '/V1/ping'])(
+    'cannot be skipped by spelling the path differently: %s',
+    async (url) => {
+      const res = await (await guarded()).inject(url);
+      expect([401, 404]).toContain(res.statusCode);
+      expect(res.body).not.toContain('pong');
+    },
+  );
+
+  it('guards every registered /v1 route', async () => {
+    const app = await guarded();
+    const v1 = app.registeredRoutes().filter((r) => / \/v1\//.test(r) && !r.startsWith('HEAD'));
+    expect(v1.length).toBeGreaterThan(3);
+    for (const route of v1) {
+      const [method, path] = route.split(' ') as ['GET' | 'POST', string];
+      const url = path.replace(/\{[^}]+\}/g, '00000000-0000-4000-8000-000000000000');
+      const res = await app.inject({ method, url });
+      expect(res.statusCode, route).toBe(401);
+    }
+  });
+
+  it('guards a body POSTed to an encoded path', async () => {
+    const res = await (await guarded()).inject({
+      method: 'POST',
+      url: '/%761/echo',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"a":1}',
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
   it('leaves health unsigned and tags every response with a request id', async () => {
     const app = await guarded();
     const health = await app.inject('/healthz');

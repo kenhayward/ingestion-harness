@@ -42,10 +42,13 @@ export function registerGuard(
   });
 
   app.addHook('preValidation', async (req, reply) => {
+    // Signed over the URL exactly as sent; guarded by the route it matched (the router decodes
+    // the path, so `/%761/...` reaches a `/v1/...` route and must be guarded like it).
     const path = req.url;
+    const route = req.routeOptions.url ?? path;
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     const mustSign = opts.signed ?? ((p: string) => p.startsWith('/v1/') || p === '/v1');
-    if (mustSign(path)) {
+    if (mustSign(route)) {
       const verdict = verifyRequest(
         opts.key,
         { method: req.method, path, body: raw, headers: req.headers },
