@@ -73,12 +73,26 @@ def error(cls: str, code: str, message: str) -> dict[str, Any]:
 
 
 def test_a_needs_user_422_raises_bridge_refused_carrying_the_error() -> None:
-    body = error("needs_user", "target_missing", "no target finance-lake")
+    body = error("needs_user", "connection_missing", "Finance has no connection")
     with pytest.raises(BridgeRefused) as raised:
         client(lambda _r: httpx.Response(422, json=body)).deliver(REQUEST)
     assert isinstance(raised.value, DocumentError)
-    assert str(raised.value) == "no target finance-lake"
-    assert raised.value.error.code == "target_missing"
+    assert str(raised.value) == "Finance has no connection"
+    assert raised.value.error.code == "connection_missing"
+
+
+def test_a_target_the_bridge_lacks_is_retried_not_sent_to_review() -> None:
+    # The worker resolved the target from CT Studio's registry, so the bridge is behind (the
+    # API mirrors targets after an upgrade or a restore): retry until it has caught up.
+    missing = error("needs_user", "target_missing", "no target finance-lake")
+    for status in (404, 422):
+        c = client(lambda _r, s=status: httpx.Response(s, json=missing))
+        with pytest.raises(BridgeUnavailable):
+            c.deliver(REQUEST)
+        with pytest.raises(BridgeUnavailable):
+            c.read_object("finance-lake", "pub", "out/a.csv")
+        with pytest.raises(BridgeUnavailable):
+            c.delete_objects("finance-lake", [("pub", "out/a.csv")])
 
 
 def refuse_connection(_request: httpx.Request) -> httpx.Response:

@@ -174,6 +174,8 @@ describe('target object routes', () => {
     expect(res.json().code).toBe('unsupported_part');
     const none = await call('POST', '/v1/targets/none/objects:read', { bucket: 'b', key: 'k' });
     expect(none.statusCode).toBe(404);
+    // Not `not_found`: the caller tells a target the bridge lacks (yet) from a missing object.
+    expect(none.json().code).toBe('target_missing');
   });
 });
 

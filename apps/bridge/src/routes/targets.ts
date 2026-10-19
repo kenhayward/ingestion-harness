@@ -78,7 +78,7 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
     fn: (target: Target) => Promise<unknown>,
   ) => {
     const target = await app.deps.targets.get(id);
-    if (!target) return reply.code(404).send(bridgeError('not_found', `no target ${id}`));
+    if (!target) return reply.code(404).send(bridgeError('target_missing', `no target ${id}`));
     try {
       return await fn(target);
     } catch (err) {

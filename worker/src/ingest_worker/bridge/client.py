@@ -50,6 +50,11 @@ def _error_of(response: httpx.Response) -> BridgeError | None:
         return None
 
 
+def _code_of(response: httpx.Response) -> str | None:
+    error = _error_of(response)
+    return error.code if error else None
+
+
 class HttpBridgeClient:
     """BridgeClient over HTTP (`BRIDGE_URL`, e.g. http://bridge:3100)."""
 
@@ -83,12 +88,15 @@ class HttpBridgeClient:
         if response.is_success:
             return
         error = _error_of(response)
-        # 401 is this deployment's key, not the document: retried until someone fixes it.
+        # 401 is this deployment's key, not the document: retried until someone fixes it. A
+        # target the bridge lacks is one CT Studio's registry has (the worker resolved it there
+        # first) and the API has not mirrored yet, after an upgrade or a restore: retried too.
         if (
             400 <= response.status_code < 500
             and response.status_code != 401
             and error is not None
             and error.class_ == "needs_user"
+            and error.code != "target_missing"
         ):
             raise BridgeRefused(error)
         detail = error.message if error else response.text[:200]
@@ -103,7 +111,7 @@ class HttpBridgeClient:
         response = self._post(
             f"/v1/targets/{target_id}/objects:read", {"bucket": bucket, "key": key}
         )
-        if response.status_code == 404:
+        if response.status_code == 404 and _code_of(response) != "target_missing":
             return None
         self._raise_for(response, "an object read")
         return base64.b64decode(response.json()["content"])
