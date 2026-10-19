@@ -236,6 +236,112 @@ PY
   echo "ok   deleting the job withdrew the object through the bridge"
 fi
 
+# --- RDF through the bridge (delivery bridge phase 3): a reviewed job of a mapped recipe ------
+# With a triple store (rdf-default, from RDF_ENDPOINT) and a Linked data base: approving it
+# delivers its outputs and its graph's versioned copy to the default target and its graph to the
+# triple store, in one package; deleting it withdraws both. Never changes the deployment's base:
+# without one the check is skipped.
+rdf_targets="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/publish-targets")" || fail "list the targets"
+rdf_base="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/linked-data/settings" | json_field effectiveBase | head -1)"
+if [[ -z "${SMOKE_COMPOSE:-}" ]]; then
+  echo "skip RDF through the bridge: SMOKE_COMPOSE is not set"
+elif ! grep -q '"id":"rdf-default"' <<<"$rdf_targets"; then
+  echo "skip RDF through the bridge: no triple store (RDF_ENDPOINT)"
+elif [[ -z "$rdf_base" ]]; then
+  echo "skip RDF through the bridge: no Linked data base"
+else
+  sc() { $SMOKE_COMPOSE "$@"; }
+  rdf_seeded="$(sc exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -qAt -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+INSERT INTO templates (id, version, status, definition, published_at)
+VALUES ('smoke-rdf', 1, 'published', '{"id": "smoke-rdf", "version": 1,
+  "name": "Smoke test (RDF)", "document": {"sections": [{"id": "all", "anchor": "\\A"}]},
+  "outputs": {"fields": [{"id": "sender", "type": "text"}]},
+  "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
+  "semantics": {"prefixes": {"ex": "https://smoke.example/def/"},
+                "document": {"class": "ex:Letter"},
+                "fields": {"sender": {"property": "ex:sender"}}},
+  "delivery": {"formats": ["json", "rdf"]},
+  "review": {"required": "always"}}', now())
+ON CONFLICT DO NOTHING;
+WITH doc AS (
+  INSERT INTO documents (filename, sha256, size_bytes, spec_id, spec_version, bucket, object_key)
+  VALUES ('smoke-rdf.pdf', encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 4,
+          'smoke-rdf', 1, 'ingest-inbox', 'smoke-rdf/v1/smoke.pdf')
+  RETURNING id, sha256
+), job AS (
+  INSERT INTO jobs (document_id, status, task, review_reasons)
+  SELECT id, 'awaiting_review', 'process', '["smoke test"]' FROM doc RETURNING id, document_id
+)
+SELECT job.id || ' ' || doc.id || ' ' || doc.sha256 FROM job JOIN doc ON doc.id = job.document_id;
+SQL
+)" || fail "seed a reviewed RDF job: $rdf_seeded"
+  read -r rdf_job rdf_doc rdf_sha <<<"$rdf_seeded"
+  [[ -n "$rdf_job" && -n "$rdf_sha" ]] || fail "seed a reviewed RDF job: $rdf_seeded"
+  sc exec -T worker python - "$rdf_doc" "$rdf_job" "$rdf_sha" <<'PY' || fail "write the RDF draft"
+import json, os, sys
+from ingest_worker.storage import S3ObjectStore
+doc, job, sha = sys.argv[1:4]
+store = S3ObjectStore(os.environ["S3_ENDPOINT"], os.environ.get("S3_REGION") or "us-east-1",
+                      os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"])
+draft = {"document_id": doc, "job_id": job, "source_sha256": sha,
+         "template": {"id": "smoke-rdf", "version": 1, "name": "Smoke test (RDF)"},
+         "extracted_at": "2026-10-20T00:00:00+00:00", "page_count": 1, "models": {},
+         "fields": {"sender": {"value": "Smoke", "evidence": None, "page": 1}},
+         "tables": {}, "checks": {}, "issues": [], "review_required": True,
+         "review_reasons": ["smoke test"]}
+bucket = os.environ.get("S3_BUCKET_OUTPUTS") or "ingest-outputs"
+store.put(bucket, f"smoke-rdf/v1/document/{doc}.json", json.dumps(draft).encode(), "application/json")
+PY
+  [[ "$(status -b "$ADMIN_JAR" -H 'content-type: application/json' -d '{}' \
+    "$BASE_URL/api/jobs/$rdf_job/approve")" == 200 ]] || fail "approve the RDF job"
+  rdf_status=""
+  for ((i = 1; i <= 90; i++)); do
+    rdf_status="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$rdf_job" | json_field status | head -1)"
+    [[ "$rdf_status" == succeeded || "$rdf_status" == failed || "$rdf_status" == needs_review || "$rdf_status" == awaiting_review ]] && break
+    sleep 2
+  done
+  [[ "$rdf_status" == succeeded ]] ||
+    fail "the RDF job must be delivered to the target and the triple store, got '$rdf_status': $(curl -sS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$rdf_job")"
+  echo "ok   approved RDF job delivered to its target and the triple store"
+  # The graph's versioned copy at today's key on the default target.
+  copy_at() {
+    sc exec -T worker python - "$rdf_sha" <<'PY'
+import os, sys
+from ingest_worker.storage import S3ObjectStore, graph_version_key
+store = S3ObjectStore(os.environ["S3_ENDPOINT"], os.environ.get("S3_REGION") or "us-east-1",
+                      os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"])
+bucket = os.environ.get("TARGET_S3_BUCKET") or "ingest-published"
+key = os.environ.get("TARGET_S3_PREFIX", "") + graph_version_key(sys.argv[1], "smoke-rdf", 1)
+print("present" if store.get_optional(bucket, key) is not None else "absent")
+PY
+  }
+  # Whether the triple store holds the graph (asked from the api container, on the rdf network).
+  rdf_graph="${rdf_base}graph/source/$rdf_sha/smoke-rdf"
+  graph_in_store() {
+    sc exec -T api node -e '
+      const graph = process.argv[1];
+      const auth = Buffer.from(`${process.env.RDF_USER}:${process.env.RDF_PASSWORD}`).toString("base64");
+      fetch(`${process.env.RDF_ENDPOINT.replace(/\/+$/, "")}/${process.env.RDF_DATASET || "ct"}/sparql`, {
+        method: "POST",
+        headers: { "content-type": "application/sparql-query", accept: "application/sparql-results+json", authorization: `Basic ${auth}` },
+        body: `ASK { GRAPH <${graph}> { ?s ?p ?o } }`,
+      }).then((r) => r.json()).then((j) => console.log(j.boolean ? "present" : "absent"), (e) => console.log(`error ${e}`));
+    ' "$rdf_graph"
+  }
+  [[ "$(copy_at)" == present ]] || fail "the graph's versioned copy is not at today's key"
+  [[ "$(graph_in_store)" == present ]] || fail "the triple store does not hold $rdf_graph"
+  echo "ok   graph copy at today's key, and the graph in the triple store"
+  [[ "$(status -b "$ADMIN_JAR" -X DELETE "$BASE_URL/api/jobs/$rdf_job")" == 204 ]] ||
+    fail "delete the RDF job"
+  for ((i = 1; i <= 60; i++)); do
+    [[ "$(graph_in_store)" == absent && "$(copy_at)" == absent ]] && break
+    sleep 2
+  done
+  [[ "$(graph_in_store)" == absent ]] || fail "deleting the job must drop its graph"
+  [[ "$(copy_at)" == absent ]] || fail "deleting the job must withdraw its graph copy"
+  echo "ok   deleting the RDF job dropped its graph and withdrew its copy"
+fi
+
 # --- Word documents (ADR 0009): a .docx sample is converted and prepared (no model call) ------
 word_project=smoke-word
 words_url="$BASE_URL/api/workbench/projects/$word_project"
