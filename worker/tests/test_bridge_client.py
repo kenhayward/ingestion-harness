@@ -81,6 +81,23 @@ def test_a_needs_user_422_raises_bridge_refused_carrying_the_error() -> None:
     assert raised.value.error.code == "connection_missing"
 
 
+def test_an_over_size_package_goes_to_review() -> None:
+    body = error("needs_user", "content_rejected", "the package is larger than this bridge takes")
+    with pytest.raises(BridgeRefused) as raised:
+        client(lambda _r: httpx.Response(413, json=body)).deliver(REQUEST)
+    assert raised.value.error.code == "content_rejected"
+
+
+def test_a_413_in_any_other_shape_goes_to_review_too() -> None:
+    # Sending the same bytes again cannot help, whoever answered (a proxy, an older bridge).
+    fastify = {"statusCode": 413, "code": "FST_ERR_CTP_BODY_TOO_LARGE", "error": "Too Large"}
+    for response in (httpx.Response(413, json=fastify), httpx.Response(413, text="<html>")):
+        with pytest.raises(BridgeRefused) as raised:
+            client(lambda _r, r=response: r).deliver(REQUEST)
+        assert raised.value.error.code == "content_rejected"
+        assert str(raised.value) == "the package is larger than the bridge takes"
+
+
 def test_a_target_the_bridge_lacks_is_retried_not_sent_to_review() -> None:
     # The worker resolved the target from CT Studio's registry, so the bridge is behind (the
     # API mirrors targets after an upgrade or a restore): retry until it has caught up.
