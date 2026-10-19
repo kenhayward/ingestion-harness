@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { S3PackageStore } from '../src/packages/s3.js';
 import { MemoryObjectStore, type ObjectStorePort, type S3StoreOptions } from '../src/s3/store.js';
 import { SinkError } from '../src/sinks/port.js';
-import { S3Sink } from '../src/sinks/s3.js';
+import { INTERNAL_CREDENTIAL, S3Sink } from '../src/sinks/s3.js';
 import { s3Failure, ThrowingStore } from './s3-fakes.js';
 import { deliverRequest, documentPackage } from './sink-builders.js';
 
@@ -38,6 +38,7 @@ function sinkOver(store: ObjectStorePort) {
   const built: S3StoreOptions[] = [];
   const sink = new S3Sink({
     internal: INTERNAL,
+    reservedBuckets: ['ingest-bridge'],
     make: (o) => {
       built.push(o);
       return store;
@@ -123,9 +124,32 @@ describe('S3Sink', () => {
   it('uses the bridge’s own S3 for a connection without keys (the internal one)', async () => {
     const { sink, built } = sinkOver(new MemoryObjectStore());
     await sink.deliver(
-      deliverRequest({ credential: {}, destination: { bucket: 'pub', prefix: '' } }),
+      deliverRequest({
+        credential: INTERNAL_CREDENTIAL,
+        destination: { bucket: 'pub', prefix: '' },
+      }),
     );
     expect(built[0]).toMatchObject({ ...INTERNAL, sse: 'none' });
+  });
+
+  it('never falls back to the bridge’s own keys for a connection that merely lacks keys', async () => {
+    const { sink, built } = sinkOver(new MemoryObjectStore());
+    for (const credential of [{}, { endpoint: 'https://s3.example.com', secretAccessKey: 's' }]) {
+      const error = await errorOf(
+        sink.deliver(deliverRequest({ credential, destination: { bucket: 'pub' } })),
+      );
+      expect(error.code).toBe('credential_missing');
+    }
+    expect(built).toEqual([]);
+  });
+
+  it('refuses the internal store’s reserved buckets (package staging)', async () => {
+    const { sink } = sinkOver(new MemoryObjectStore());
+    const place = { credential: INTERNAL_CREDENTIAL, destination: { bucket: 'ingest-bridge' } };
+    expect((await errorOf(sink.deliver(deliverRequest(place)))).code).toBe('content_rejected');
+    expect((await errorOf(sink.readObject(place, 'ingest-bridge', 'packages/p.json'))).code).toBe(
+      'content_rejected',
+    );
   });
 
   it('refuses a delivery with no credential at all', async () => {
@@ -209,7 +233,10 @@ describe('S3Sink', () => {
     ).toMatchObject({ ok: true });
     const denied = sinkOver(new ThrowingStore(() => s3Failure('AccessDenied'))).sink;
     expect(
-      await denied.probeTarget({ credential: {}, destination: { bucket: 'pub', prefix: '' } }),
+      await denied.probeTarget({
+        credential: INTERNAL_CREDENTIAL,
+        destination: { bucket: 'pub', prefix: '' },
+      }),
     ).toEqual({ ok: false, step: 'write', message: 'access denied' });
   });
 

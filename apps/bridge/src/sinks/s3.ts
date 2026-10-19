@@ -61,6 +61,15 @@ export interface S3Place {
   destination: Record<string, string>;
 }
 
+/**
+ * The credential of the seeded `internal` connection: the bridge's own S3 settings. Only the
+ * bridge's credential resolution produces it (connections hold only their sink's declared
+ * credential fields), so a connection that merely lacks keys never falls back to these.
+ */
+export const INTERNAL_CREDENTIAL: Readonly<Record<string, string>> = Object.freeze({
+  internal: 'true',
+});
+
 const SSE = new Set(['none', 'AES256', 'aws:kms']);
 
 /** An S3 failure in contract terms; never the error's own text, which can echo request detail. */
@@ -91,6 +100,8 @@ export class S3Sink implements SinkPort {
       /** The deployment's own S3 (`S3_*`). */
       internal: Omit<S3StoreOptions, 'sse' | 'kmsKeyId' | 'storageClass'>;
       make?: (o: S3StoreOptions) => ObjectStorePort;
+      /** Buckets of the internal store no target may use (the package staging bucket). */
+      reservedBuckets?: string[];
     },
   ) {
     this.make = opts.make ?? ((o) => new S3ObjectStore(o));
@@ -204,7 +215,7 @@ export class S3Sink implements SinkPort {
   }
 
   private isInternal(place: S3Place): boolean {
-    return place.credential !== null && !place.credential.accessKeyId;
+    return place.credential?.internal === 'true';
   }
 
   private options(place: S3Place): S3StoreOptions {
@@ -218,15 +229,22 @@ export class S3Sink implements SinkPort {
       kmsKeyId: destination.kmsKeyId || null,
       storageClass: destination.storageClass || null,
     };
-    if (this.isInternal(place)) return { ...this.opts.internal, ...write };
-    if (!credential.secretAccessKey) {
-      throw new SinkError(bridgeError('credential_missing', 'the connection has no secret key'));
+    if (this.isInternal(place)) {
+      if (this.opts.reservedBuckets?.includes(destination.bucket ?? '')) {
+        throw new SinkError(
+          bridgeError('content_rejected', `bucket ${destination.bucket} is reserved`),
+        );
+      }
+      return { ...this.opts.internal, ...write };
+    }
+    if (!credential.accessKeyId || !credential.secretAccessKey) {
+      throw new SinkError(bridgeError('credential_missing', 'the connection has no keys'));
     }
     const region = credential.region || this.opts.internal.region;
     return {
       endpoint: credential.endpoint || `https://s3.${region}.amazonaws.com`,
       region,
-      accessKeyId: credential.accessKeyId!,
+      accessKeyId: credential.accessKeyId,
       secretAccessKey: credential.secretAccessKey,
       forcePathStyle: credential.forcePathStyle !== 'false',
       ...write,
