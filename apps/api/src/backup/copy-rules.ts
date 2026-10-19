@@ -46,7 +46,7 @@ const CANCEL_REASON = 'restored as a copy';
 
 interface TargetRow {
   id: string;
-  kind: 'internal' | 'external';
+  kind: 'internal' | 'external' | 'rdf';
 }
 
 const rowsOf = async (c: pg.ClientBase, sql: string, values: unknown[] = []) =>
@@ -146,14 +146,17 @@ async function apply(side: pg.ClientBase, kept: KeptState): Promise<CopyResult> 
 
 /**
  * Staging's targets replace production's on a shared id and are added otherwise; production's
- * external-only targets become inert (no endpoint, no credentials). The delivery records of every
+ * external-only targets, and its triple store target when this server has none, become inert
+ * (no endpoint, no credentials or writer user), so nothing here delivers to production. The delivery records of every
  * target whose objects are not in this server's own SeaweedFS under that id (an inert one, or a
  * shared id that is not internal on both sides) are withdrawn, and their graph records dropped.
  */
 async function replaceTargets(side: pg.ClientBase, staging: TargetRow[]) {
   const backup = (await side.query<TargetRow>('SELECT id, kind FROM publish_targets')).rows;
   const stagingById = new Map(staging.map((t) => [t.id, t]));
-  const dropped = backup.filter((t) => t.kind === 'external' && !stagingById.has(t.id));
+  const dropped = backup.filter(
+    (t) => (t.kind === 'external' || t.kind === 'rdf') && !stagingById.has(t.id),
+  );
   const withdrawn = [
     ...dropped.map((t) => t.id),
     ...backup
