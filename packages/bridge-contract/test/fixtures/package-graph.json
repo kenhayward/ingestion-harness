@@ -1,0 +1,17 @@
+{
+  "kind": "graph",
+  "contractVersion": 1,
+  "producer": { "name": "ct-studio", "deployment": "default" },
+  "idempotencyKey": "0d6c1a7e2f8b3c9d4e5f6a7b8c9d0e1f2a3b4c5d6e4b4c6a1d1b1f0e2b9f3f5d",
+  "provenance": null,
+  "naming": {},
+  "files": [],
+  "data": null,
+  "rdf": {
+    "graphName": "https://example.com/graphs/invoice",
+    "version": 2,
+    "turtle": "<https://example.com/doc1> a <https://example.com/Invoice> ."
+  },
+  "narrative": null,
+  "images": null
+}

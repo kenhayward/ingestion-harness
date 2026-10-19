@@ -1,0 +1,101 @@
+{
+  "targets": ["specs-archive", "finance-lake"],
+  "actingUser": {
+    "id": "6f1e2d3c-4b5a-4968-8776-655443322110",
+    "name": "Pat Reviewer",
+    "email": "pat@example.com"
+  },
+  "overrides": {
+    "finance-lake": {
+      "documentName": "Invoice 001 (corrected)"
+    }
+  },
+  "package": {
+    "kind": "document",
+    "contractVersion": 1,
+    "producer": {
+      "name": "ct-studio",
+      "deployment": "default"
+    },
+    "idempotencyKey": "4b4c6a1d1b1f0e2b9f3f5d0d6c1a7e2f8b3c9d4e5f6a7b8c9d0e1f2a3b4c5d6e",
+    "provenance": {
+      "sourceSha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "sourceFilename": "invoice-001.pdf",
+      "jobId": "8a6f1c2e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+      "recipeId": "invoice",
+      "recipeVersion": 3,
+      "approver": {
+        "id": "6f1e2d3c-4b5a-4968-8776-655443322110",
+        "name": "Pat Reviewer",
+        "email": "pat@example.com"
+      },
+      "extractedAt": "2026-10-19T10:00:00.000Z",
+      "publishedAt": "2026-10-19T11:00:00.000Z"
+    },
+    "naming": {
+      "field:title": "Invoice 001",
+      "source.stem": "invoice-001"
+    },
+    "files": [
+      {
+        "output": "fields",
+        "format": "csv",
+        "contentType": "text/csv; charset=utf-8",
+        "name": "invoice/v3/fields/doc1.csv",
+        "content": "ZG9jdW1lbnRfaWQsdG90YWwKZG9jMSwxMgo="
+      },
+      {
+        "output": "lines",
+        "format": "csv",
+        "contentType": "text/csv; charset=utf-8",
+        "name": "invoice/v3/lines/doc1.csv",
+        "content": "ZG9jdW1lbnRfaWQsbGluZSxhbW91bnQKZG9jMSwxLDEyCg=="
+      },
+      {
+        "output": "document",
+        "format": "json",
+        "contentType": "application/json",
+        "name": "invoice/v3/document/doc1.json",
+        "content": "eyJkb2N1bWVudF9pZCI6ImRvYzEifQ=="
+      }
+    ],
+    "data": {
+      "fields": [
+        {
+          "id": "total",
+          "title": "Total",
+          "type": "number",
+          "value": 12,
+          "unit": "GBP"
+        }
+      ],
+      "tables": [
+        {
+          "id": "lines",
+          "title": "Invoice lines",
+          "columns": [
+            {
+              "id": "line",
+              "title": "Line",
+              "type": "integer"
+            },
+            {
+              "id": "amount",
+              "title": "Amount",
+              "type": "number"
+            }
+          ],
+          "rows": [
+            {
+              "line": 1,
+              "amount": 12
+            }
+          ]
+        }
+      ]
+    },
+    "rdf": null,
+    "narrative": null,
+    "images": null
+  }
+}

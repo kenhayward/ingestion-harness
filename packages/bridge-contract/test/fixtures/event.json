@@ -1,0 +1,14 @@
+{
+  "eventId": "3e4f5a6b-7c8d-4e9f-8a1b-2c3d4e5f6a7b",
+  "deliveryId": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+  "sequence": 3,
+  "status": "needs_user",
+  "error": {
+    "class": "needs_user",
+    "code": "name_conflict",
+    "message": "a document named Invoice 001 already exists",
+    "details": { "field": "documentName" }
+  },
+  "receipt": null,
+  "at": "2026-10-19T11:00:02.000Z"
+}

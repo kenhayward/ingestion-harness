@@ -3,6 +3,8 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/bridge-contract/package.json packages/bridge-contract/
+COPY apps/bridge/package.json apps/bridge/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN npm ci --no-audit --no-fund

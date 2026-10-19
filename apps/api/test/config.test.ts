@@ -53,10 +53,10 @@ describe('loadConfig', () => {
   it.each([
     ['', null],
     ['   ', null],
-    ['https://*.3dexperience.3ds.com', 'https://*.3dexperience.3ds.com'],
+    ['https://*.dashboard.example.com', 'https://*.dashboard.example.com'],
     [
-      ' https://*.3dexperience.3ds.com   https://portal.example.com:8443 ',
-      'https://*.3dexperience.3ds.com https://portal.example.com:8443',
+      ' https://*.dashboard.example.com   https://portal.example.com:8443 ',
+      'https://*.dashboard.example.com https://portal.example.com:8443',
     ],
   ])('reads FRAME_ANCESTORS %j as %j', (value, expected) => {
     expect(loadConfig({ ...base, FRAME_ANCESTORS: value }).FRAME_ANCESTORS).toBe(expected);
