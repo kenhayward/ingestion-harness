@@ -140,6 +140,39 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Tag
+        id: tag
         run: |
           tag="$(node deploy/scripts/version.mjs tag)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "### Tagged ${tag}" >> "$GITHUB_STEP_SUMMARY"
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+
+  bridge-release:
+    # What external sinks build against (delivery bridge design, "How private sinks get it"): the
+    # conformance suite as an image, and the bridge's OpenAPI document on the tag's release.
+    name: Bridge contract release assets
+    needs: [tag]
+    if: needs.tag.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Conformance image
+        env:
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          image="ghcr.io/${{ github.repository_owner }}/ct-bridge-conformance:${TAG}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker build -f deploy/docker/bridge-conformance.Dockerfile -t "${image}" .
+          docker push "${image}"
+      - name: OpenAPI document on the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          gh release view "${TAG}" >/dev/null 2>&1 || gh release create "${TAG}" --title "${TAG}" --notes "Build ${TAG}"
+          gh release upload "${TAG}" apps/bridge/openapi.json --clobber

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { JobOutputSchema, JobSummarySchema, OUTPUT_FORMATS } from './jobs.js';
-import { TableDefSchema, ValueDefSchema } from './template.js';
+import { SemanticsSchema, TableDefSchema, ValueDefSchema } from './template.js';
 
 /** A published file of a result (GET /api/results rows link their downloads with it). */
 export const ResultOutputSchema = z.object({
@@ -78,6 +78,11 @@ export const ResultDefinitionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('template'),
     fields: z.array(ValueDefSchema),
     tables: z.array(TableDefSchema),
+    /**
+     * What names the published graph's terms (`POST /api/ontologies/term-labels`): the recipe's
+     * pinned ontologies, prefixes and local terms. Absent for a recipe without a mapping.
+     */
+    semantics: SemanticsSchema.pick({ ontologies: true, prefixes: true, local: true }).optional(),
   }),
   z.object({ kind: z.literal('spec') }),
   /** The job's document type/version could not be resolved. */
