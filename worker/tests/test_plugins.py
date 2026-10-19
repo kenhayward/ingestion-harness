@@ -15,7 +15,7 @@ import yaml
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, DocumentError, PipelineDeps
-from ingest_worker.plugins import PLUGINS, PluginContext, resolve_plugins
+from ingest_worker.plugins import BUILTINS, PluginContext, plugins, resolve_plugins
 from ingest_worker.review import step_results
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
@@ -25,7 +25,7 @@ from ingest_worker.template_pipeline import step_inputs
 from .fakes import FakeProvider, FakeQueue
 from .test_template_pipeline import JOB
 
-PATTERN = PLUGINS["text.pattern@1"]
+PATTERN = BUILTINS["text.pattern@1"]
 
 RECIPE: dict[str, Any] = {
     "id": "demo",
@@ -184,7 +184,7 @@ def test_settings_are_checked_against_the_step(step_id: str, with_: Any, error: 
 
 
 def test_every_plugin_is_registered_under_its_id_and_major() -> None:
-    for ref, plugin in PLUGINS.items():
+    for ref, plugin in plugins().items():
         assert ref == f"{plugin.spec.id}@{plugin.spec.version}"
         assert plugin.spec.egress in ("none", "model")
         json.dumps(plugin.settings.model_json_schema())  # what the catalogue will publish

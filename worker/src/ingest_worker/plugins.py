@@ -5,16 +5,21 @@ A plugin is a node (ADR 0018) with settings: its `settings` model checks the ste
 `run` returns what an extract step's model would (`{field: {value, evidence, page}}`, or
 `{rows: [...]}` for a table), which `normalise_step` then types. A plugin reads only what
 `PluginContext` gives it, and reaches a model only through `JobModels` (none does yet).
-Plugins run in the worker process with its privileges: only plugins installed in the worker image
-run, and a third party's capability belongs behind A2A instead (ADR 0018).
+Plugins run in the worker process with its privileges: only the built-ins (`BUILTINS`) and plugins
+of packages installed in the worker's environment (entry point group `ct_studio.plugins`, slice
+3d) run, and a third party's capability belongs behind A2A instead (ADR 0018).
 """
 
 from __future__ import annotations
 
+import logging
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from functools import cache
+from importlib.metadata import entry_points
+from types import MappingProxyType
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -22,7 +27,9 @@ from .errors import DocumentError
 from .nodes import NodeSpec
 from .pipeline import JobModels
 from .queue import ClaimedJob
-from .template import PluginStep, Template
+from .template import PLUGIN_REF, PluginStep, Template
+
+log = logging.getLogger(__name__)
 
 #: A plugin step's reply: what an extract step's model returns.
 StepData = dict[str, Any]
@@ -47,6 +54,21 @@ class PluginContext:
     def text(self) -> str:
         """The step's sections in its own order, one after the other."""
         return "\n".join(self.sections.get(i, "") for i in self.step.sections)
+
+
+def plugin_context(
+    template: Template,
+    step: PluginStep,
+    sections: Mapping[str, str],
+    context: list[dict[str, str]] | None = None,
+) -> PluginContext:
+    """A context for running a plugin outside a job: a plugin author's tests (and the guide's).
+    The job is a stand-in test run of the recipe; events go nowhere."""
+    job = ClaimedJob(
+        "plugin-test", "", template.id, template.version, "", "", None, 1, 1,
+        task="process", test=True, filename="sample.pdf",
+    )  # fmt: skip
+    return PluginContext(job, template, step, sections, context or [], lambda *_: None)
 
 
 @dataclass(frozen=True)
@@ -88,7 +110,7 @@ def resolve_plugins(template: Template) -> dict[str, ResolvedPlugin]:
     plugin this worker lacks or bad settings is a DocumentError (needs review)."""
     resolved: dict[str, ResolvedPlugin] = {}
     for step in template.plugin_steps():
-        plugin = PLUGINS.get(step.uses)
+        plugin = plugins().get(step.uses)
         if plugin is None:
             raise DocumentError(f"step {step.id!r}: no plugin {step.uses} on this worker")
         try:
@@ -211,9 +233,93 @@ TEXT_PATTERN = Plugin(
 )  # fmt: skip
 
 
-def _registry(*plugins: Plugin) -> dict[str, Plugin]:
-    return {f"{p.spec.id}@{p.spec.version}": p for p in plugins}
+def _ref(plugin: Plugin) -> str:
+    return f"{plugin.spec.id}@{plugin.spec.version}"
 
 
-#: The plugins this worker can run, by `<id>@<major>` (a recipe step's `uses`).
-PLUGINS: dict[str, Plugin] = _registry(TEXT_PATTERN)
+#: The plugins built into the worker, by `<id>@<major>` (a recipe step's `uses`).
+BUILTINS: dict[str, Plugin] = {_ref(p): p for p in [TEXT_PATTERN]}
+
+
+# --- plugins from installed packages (slice 3d) ------------------------------------------------
+
+#: The entry point group a package declares its plugins in (`docs/plugins/writing-plugins.md`):
+#: each entry point loads a `Plugin`, or a list of them.
+ENTRY_POINT_GROUP = "ct_studio.plugins"
+
+
+class EntryPointLike(Protocol):
+    """What `load_installed` reads of an `importlib.metadata.EntryPoint`."""
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> str: ...
+    def load(self) -> Any: ...
+
+
+def check_plugin(plugin: Plugin) -> list[str]:
+    """What keeps a plugin out of the registry (empty: fine): its id and major must make a recipe
+    `uses` ref, its settings must refuse unknown keys and have a JSON Schema (the catalogue
+    publishes it), and it may reach no model or remote service (egress "none")."""
+    ref = _ref(plugin)
+    if not re.match(PLUGIN_REF, ref):
+        return [f"{ref} is not <id>@<major> (lower-case dotted id, major from 1)"]
+    problems: list[str] = []
+    if plugin.settings.model_config.get("extra") != "forbid":
+        problems.append(f"{ref}: its settings must refuse unknown keys")
+    try:
+        plugin.settings.model_json_schema(by_alias=True)
+    except Exception as exc:  # pydantic raises several kinds for a type without a schema
+        problems.append(f"{ref}: its settings have no JSON Schema ({exc})")
+    if plugin.spec.egress == "model":
+        problems.append(f"{ref}: egress model is not offered to plugins yet")
+    elif plugin.spec.egress == "remote":
+        problems.append(f"{ref}: egress remote belongs behind A2A, not in the worker (ADR 0018)")
+    return problems
+
+
+def load_installed(entry_points: Iterable[EntryPointLike]) -> tuple[dict[str, Plugin], list[str]]:
+    """The installed packages' plugins by ref, and why any was left out. One package's failure
+    never stops the others or the worker; a package cannot replace or extend a built-in plugin
+    id, and when two provide one ref the first entry point by name keeps it."""
+    builtin_ids = {p.spec.id for p in BUILTINS.values()}
+    loaded: dict[str, Plugin] = {}
+    owners: dict[str, str] = {}
+    problems: list[str] = []
+    for ep in sorted(entry_points, key=lambda e: (e.name, e.value)):
+        label = f"{ep.name} = {ep.value}"
+        try:
+            obj = ep.load()
+        except Exception as exc:  # anything a package's import can raise
+            problems.append(f"{label}: could not load ({type(exc).__name__}: {exc})")
+            continue
+        found = [obj] if isinstance(obj, Plugin) else obj if isinstance(obj, list | tuple) else None
+        if found is None or not all(isinstance(p, Plugin) for p in found):
+            problems.append(f"{label}: is not a Plugin (or a list of Plugins)")
+            continue
+        for plugin in found:
+            ref = _ref(plugin)
+            if plugin.spec.id in builtin_ids:
+                problems.append(
+                    f"{label}: {plugin.spec.id} is built in: a package cannot provide it"
+                )
+            elif ref in owners:
+                problems.append(f"{label}: {ref} is also provided by {owners[ref]}")
+            elif errors := check_plugin(plugin):
+                problems += [f"{label}: {e}" for e in errors]
+            else:
+                loaded[ref] = plugin
+                owners[ref] = label
+    return loaded, problems
+
+
+@cache
+def plugins() -> Mapping[str, Plugin]:
+    """The plugins this worker can run, by ref: the built-ins, then the installed packages'
+    (loaded once per process, so a preview's child process finds them too; a left-out one is
+    logged with the reason)."""
+    installed, problems = load_installed(entry_points(group=ENTRY_POINT_GROUP))
+    for problem in problems:
+        log.warning("plugin left out: %s", problem)
+    return MappingProxyType({**BUILTINS, **installed})

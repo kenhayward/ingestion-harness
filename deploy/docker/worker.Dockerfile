@@ -10,6 +10,13 @@ COPY worker/pyproject.toml worker/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY worker/src src
 RUN uv sync --frozen --no-dev
+# Recipe plugins from packages (docs/plugins/writing-plugins.md): WORKER_PLUGINS is what
+# `uv pip install` takes, space-separated (names from an index, git URLs, or packages kept under
+# worker/plugins as plugins/<folder>); empty installs none. The worker's locked versions
+# constrain them, so a plugin cannot move a dependency the worker was tested with.
+COPY worker/plugins plugins
+ARG WORKER_PLUGINS=
+RUN if [ -n "$WORKER_PLUGINS" ]; then       uv export --frozen --no-dev --no-hashes --no-emit-project -o /tmp/worker-constraints.txt       && uv pip install --python /opt/venv/bin/python -c /tmp/worker-constraints.txt $WORKER_PLUGINS       && rm /tmp/worker-constraints.txt;     fi
 COPY specs /app/specs
 COPY config /app/config
 ENV PATH=/opt/venv/bin:$PATH \
