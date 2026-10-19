@@ -88,6 +88,21 @@ class HttpBridgeClient:
         if response.is_success:
             return
         error = _error_of(response)
+        if response.status_code == 413:
+            # Too large for the bridge (BRIDGE_MAX_PACKAGE_MB): the same package always will be,
+            # so a person must look, whether or not the bridge's answer is a contract error.
+            raise BridgeRefused(
+                error
+                if error is not None and error.class_ == "needs_user"
+                else BridgeError.model_validate(
+                    {
+                        "class": "needs_user",
+                        "code": "content_rejected",
+                        "message": "the package is larger than the bridge takes "
+                        "(BRIDGE_MAX_PACKAGE_MB)",
+                    }
+                )
+            )
         # 401 is this deployment's key, not the document: retried until someone fixes it. A
         # target the bridge lacks is one CT Studio's registry has (the worker resolved it there
         # first) and the API has not mirrored yet, after an upgrade or a restore: retried too.
