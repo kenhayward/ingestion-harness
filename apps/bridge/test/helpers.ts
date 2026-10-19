@@ -1,6 +1,10 @@
 import { MemoryNonceStore, signRequest } from '@ih/bridge-contract';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { buildBridge, type BridgeDeps } from '../src/app.js';
+import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
+import { MemoryPackageStore } from '../src/packages/store.js';
+import { MapSinkRegistry } from '../src/sinks/port.js';
+import { MemoryTargetRepo } from '../src/targets/repo.js';
 
 export const KEY = 'k'.repeat(32);
 
@@ -23,7 +27,15 @@ export function signedInject(
 /** A bridge on in-memory fakes; `over` replaces any of them. */
 export async function testBridge(over: Partial<BridgeDeps> = {}): Promise<FastifyInstance> {
   return buildBridge({
-    config: { BRIDGE_CLIENT_KEY: KEY, BRIDGE_MAX_PACKAGE_MB: 50 },
+    config: {
+      BRIDGE_CLIENT_KEY: KEY,
+      BRIDGE_MAX_PACKAGE_MB: 50,
+      BRIDGE_PACKAGE_RETENTION_DAYS: 30,
+    },
+    deliveries: new MemoryDeliveryRepo(),
+    packages: new MemoryPackageStore(),
+    targets: new MemoryTargetRepo(),
+    sinks: new MapSinkRegistry({}),
     ready: async () => true,
     nonces: new MemoryNonceStore(),
     logger: false,

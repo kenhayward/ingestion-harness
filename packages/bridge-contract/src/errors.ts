@@ -25,6 +25,7 @@ export const ERROR_CODES = Object.freeze({
   pattern_unresolved: 'needs_user',
   instance_not_allowed: 'needs_user',
   unsupported_part: 'needs_user',
+  not_found: 'needs_user',
   instance_unavailable: 'retryable',
   sink_unavailable: 'retryable',
   timeout: 'retryable',
