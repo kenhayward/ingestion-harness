@@ -13,7 +13,7 @@ COPY packages/shared packages/shared
 COPY packages/bridge-contract packages/bridge-contract
 COPY apps/api apps/api
 RUN npm run build -w @ih/shared && npm run build -w @ih/bridge-contract \
-    && npm run build -w @ih/api && npm prune --omit=dev
+    && npm run build -w @ih/api && npm prune --omit=dev \n    && mkdir -p apps/api/node_modules
 
 FROM node:24-alpine
 # pg_dump/pg_restore for Administration > Backup: the same major version as the server (17).
@@ -30,6 +30,8 @@ COPY --from=build /app/packages/bridge-contract/package.json packages/bridge-con
 COPY --from=build /app/packages/bridge-contract/dist packages/bridge-contract/dist
 COPY --from=build /app/apps/api/package.json apps/api/
 COPY --from=build /app/apps/api/dist apps/api/dist
+# The api's own copies of packages the root has at another version (ajv 8; eslint keeps 6).
+COPY --from=build /app/apps/api/node_modules apps/api/node_modules
 COPY db/migrations db/migrations
 # A restore brings a backup from before the bridge forward with the bridge's migrations too.
 COPY db/bridge-migrations db/bridge-migrations
