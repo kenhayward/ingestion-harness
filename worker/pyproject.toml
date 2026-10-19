@@ -20,6 +20,8 @@ dependencies = [
   "cryptography>=44",
   "rdflib>=7.1",
   "pyshacl>=0.40.1",
+  "langgraph>=1.0",
+  "langgraph-checkpoint-postgres>=3.0",
 ]
 
 [project.scripts]

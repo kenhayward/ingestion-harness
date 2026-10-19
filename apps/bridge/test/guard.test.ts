@@ -1,7 +1,7 @@
 import { signRequest } from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { KEY, signedInject, testBridge } from './helpers.js';
+import { KEY, signedInject, TEST_CONFIG, testBridge } from './helpers.js';
 
 /** A bridge with two throwaway signed routes to guard. */
 async function guarded(): Promise<FastifyInstance> {
@@ -49,6 +49,24 @@ describe('signed-request guard', () => {
     const again = await app.inject({ method: 'POST', url: '/v1/echo', headers, payload: body });
     expect(again.statusCode).toBe(401);
     expect(again.json().details).toEqual({ reason: 'replayed' });
+  });
+
+  it('refuses a body over BRIDGE_MAX_PACKAGE_MB with a contract error a person must act on', async () => {
+    const app = await testBridge({
+      config: { ...TEST_CONFIG, BRIDGE_MAX_PACKAGE_MB: 1 },
+    });
+    app.post('/v1/echo', async () => ({ ok: true }));
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/echo',
+      body: { blob: 'x'.repeat(2 ** 20) },
+    });
+    expect(res.statusCode).toBe(413);
+    expect(res.json()).toMatchObject({
+      class: 'needs_user',
+      code: 'content_rejected',
+      message: 'the package is larger than this bridge takes (1 MB)',
+    });
   });
 
   it('refuses a body changed after signing', async () => {

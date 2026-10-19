@@ -37,7 +37,7 @@ DATABASE_URL=postgres://... BRIDGE_CLIENT_KEY=$(openssl rand -hex 32) npm run de
 | `BRIDGE_CLIENT_KEY` | (required, 32+ chars) | Shared with CT Studio; signs requests both ways |
 | `BRIDGE_EVENTS_URL` | unset | Where delivery events are posted; unset keeps them in the outbox |
 | `PORT` / `HOST` | `3100` / `0.0.0.0` | Listen address |
-| `BRIDGE_MAX_PACKAGE_MB` | `50` | Largest request body |
+| `BRIDGE_MAX_PACKAGE_MB` | `50` | Largest request body (larger: 413 `content_rejected`, the job goes to review) |
 | `BRIDGE_PACKAGE_RETENTION_DAYS` | `30` | How long staged packages are kept |
 | `BRIDGE_MAX_ATTEMPTS` | `8` | Retries before a delivery fails |
 | `BRIDGE_LEASE_SECONDS` | `300` | How long a claimed delivery is held before another runner may take it |

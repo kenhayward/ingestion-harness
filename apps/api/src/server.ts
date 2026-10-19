@@ -169,6 +169,7 @@ const app = await buildApp({
   bridgeAuth,
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
   buckets,
+  bridgeStagingBucket: config.BRIDGE_STAGING_BUCKET,
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
   access, // always enforced in production (ADR 0006)
   profiles: new PgProfileRepo(makePool(2)),

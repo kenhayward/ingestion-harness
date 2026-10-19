@@ -15,6 +15,7 @@ import {
 } from '@ih/bridge-contract';
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { INTERNAL_CONNECTION_ID } from '../connections/repo.js';
 import { hasObjects, SinkError, type SinkPort, type TargetPlace } from '../sinks/port.js';
 import type { Target } from '../targets/repo.js';
 import { sendSinkError } from './deliveries.js';
@@ -66,6 +67,11 @@ async function checkTarget(
     (f) => f.required && f.kind === 'fixed' && !t.destination[f.id],
   );
   if (missing) throw refuse('content_rejected', `${missing.label} is required`);
+  // Every staged package sits there: a target on it would hand them all to its readers.
+  const staging = app.deps.config.BRIDGE_STAGING_BUCKET;
+  if (t.connectionId === INTERNAL_CONNECTION_ID && t.destination.bucket === staging) {
+    throw refuse('content_rejected', `${staging} is the bridge's staging bucket: pick another`);
+  }
 }
 
 export const targetRoutes: FastifyPluginAsync = async (app) => {

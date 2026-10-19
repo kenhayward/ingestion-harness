@@ -31,7 +31,7 @@ describe('a recipe naming a publishing target, with targets mirrored to the brid
       payload: { label: 'Finance lake', kind: 'internal', bucket: 'finance-bucket' },
     });
     expect(created.statusCode).toBe(201);
-    await mirrorTargets({ targets: c.targets, bridge: c.bridge });
+    await mirrorTargets({ targets: c.targets, bridge: c.bridge, log: c.app.log });
     expect(c.bridge.targets.has('finance-lake')).toBe(true);
     expect(await issues()).toEqual([]);
   });

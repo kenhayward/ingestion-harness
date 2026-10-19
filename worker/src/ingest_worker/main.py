@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 import psycopg
@@ -59,6 +59,12 @@ from .publish_targets import LiveTargets, PgPublishTargetStore, seed_default_tar
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
 from .specs import LoadedTemplate, SpecRegistry, load_specs
+from .step_graph import (
+    ThreadPruner,
+    pg_orphaned_threads,
+    postgres_checkpointer,
+    step_graph_enabled,
+)
 from .storage import S3ObjectStore
 from .template_pipeline import (
     PUBLISH_REFUSED,
@@ -69,6 +75,9 @@ from .template_pipeline import (
 from .version import app_version
 from .withdrawal import run_republish, run_withdraw
 from .workbench import prepare_sample, run_segment
+
+if TYPE_CHECKING:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 log = logging.getLogger("ingest_worker")
 
@@ -370,6 +379,20 @@ class _Worker:
             log.warning("could not publish the plugin catalogue", exc_info=True)
         # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
         self.graph_conn = psycopg.connect(settings.database_url, autocommit=True)
+        # The LangGraph trial (WORKER_STEP_GRAPH=langgraph): a recipe's steps checkpointed in
+        # Postgres, so a stopped job resumes at the step it stopped at (step_graph.py).
+        self.step_checkpointer: BaseCheckpointSaver[Any] | None = None
+        self.close_checkpointer: Callable[[], None] = lambda: None
+        self.thread_pruner: ThreadPruner | None = None
+        if step_graph_enabled(os.environ):
+            self.step_checkpointer, self.close_checkpointer = postgres_checkpointer(
+                settings.database_url
+            )
+            # ADR 0018: a thread lives only while its job is queued or running.
+            self.thread_pruner = ThreadPruner(
+                self.step_checkpointer,
+                functools.partial(pg_orphaned_threads, settings.database_url),
+            )
         self.deps = PipelineDeps(
             store=S3ObjectStore(
                 settings.s3_endpoint,
@@ -399,6 +422,7 @@ class _Worker:
             graph_registry=PgGraphRegistry(self.graph_conn),
             graph_store=graph_store_from_env(os.environ),
             delivered_jobs=PgRebuildSource(self.library),
+            step_checkpointer=self.step_checkpointer,
             ontology_max_triples=settings.ontology_max_triples,
             ontology_fetch=(
                 functools.partial(
@@ -415,12 +439,13 @@ class _Worker:
         self.next_reap = 0.0
         self.next_config_check = 0.0
         log.info(
-            "worker %s connected: %d specs, providers=%s, ocr=%s, converter=%s",
+            "worker %s connected: %d specs, providers=%s, ocr=%s, converter=%s, steps=%s",
             settings.worker_id,
             len(specs),
             models.provider_names,
             ocr.model if ocr else "disabled",
             settings.converter_url or "disabled",
+            "langgraph (checkpointed)" if self.step_checkpointer else "loop",
         )
 
     def tick(self) -> None:
@@ -438,6 +463,8 @@ class _Worker:
             queue.upsert_models(discovered)
             log.info("model discovery: %d models", len(discovered))
             self.next_discovery = now + settings.discovery_interval_s
+        if self.thread_pruner is not None:
+            self.thread_pruner.tick()  # at start, then hourly
         if now >= self.next_reap:
             if reaped := queue.reap_stale(settings.stale_lock_s):
                 log.warning("re-queued %d stale jobs", reaped)
@@ -453,6 +480,7 @@ class _Worker:
             self.target_store.close,
             self.library.close,
             self.graph_conn.close,
+            self.close_checkpointer,
         ):
             with contextlib.suppress(Exception):
                 close()

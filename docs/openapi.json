@@ -74183,7 +74183,7 @@
             }
           },
           "400": {
-            "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`.",
+            "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`, or `{bucket} is the delivery bridge's staging bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74208,7 +74208,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`."
+                  "description": "Zod issues, `default is reserved`, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`, or `{bucket} is the delivery bridge's staging bucket: pick another`."
                 }
               }
             }
@@ -74947,7 +74947,7 @@
             }
           },
           "400": {
-            "description": "Zod issues, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`.",
+            "description": "Zod issues, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`, or `{bucket} is the delivery bridge's staging bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74972,7 +74972,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "Zod issues, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`."
+                  "description": "Zod issues, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`, or `{bucket} is the delivery bridge's staging bucket: pick another`."
                 }
               }
             }
@@ -75656,7 +75656,7 @@
             }
           },
           "400": {
-            "description": "Zod issues of the body, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`.",
+            "description": "Zod issues of the body, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`, or `{bucket} is the delivery bridge's staging bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -75681,7 +75681,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "Zod issues of the body, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`."
+                  "description": "Zod issues of the body, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`, or `{bucket} is the delivery bridge's staging bucket: pick another`."
                 }
               }
             }
