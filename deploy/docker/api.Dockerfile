@@ -20,7 +20,8 @@ FROM node:24-alpine
 RUN apk add --no-cache postgresql17-client
 ENV NODE_ENV=production \
     SPECS_DIR=/app/specs \
-    MIGRATIONS_DIR=/app/db/migrations \n    BRIDGE_MIGRATIONS_DIR=/app/db/bridge-migrations
+    MIGRATIONS_DIR=/app/db/migrations \
+    BRIDGE_MIGRATIONS_DIR=/app/db/bridge-migrations
 WORKDIR /app
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/packages/shared/package.json packages/shared/
