@@ -173,6 +173,10 @@
             <a href="#connections">Connections</a>
             <span>— external S3 credentials move to the bridge's connections page</span>
           </li>
+          <li>
+            <a href="#triple-store">The triple store through the bridge</a>
+            <span>— graphs are delivered by the bridge, to a Triple store target</span>
+          </li>
         </ul>
         <h4>Minor changes</h4>
         <ul>
@@ -231,6 +235,22 @@
       <p>
         On upgrade, each external target's keys move to a connection named after the target, and CT
         Studio's copy is cleared. Nothing to re-enter: test the target after upgrading to confirm.
+      </p>
+
+      <h3 id="triple-store">The triple store through the bridge</h3>
+      <p>
+        Graphs now reach the triple store through the delivery bridge too. When the deployment has
+        one (<code>RDF_ENDPOINT</code>), it appears under Administration &gt; Published outputs as
+        <strong>Triple store</strong>, and its connection under <strong>Manage connections</strong>.
+        A recipe that delivers RDF sends one package: its outputs and its graph's versioned copy go
+        to its own target, and its graph to the triple store. Graph names, copy keys and the loaded
+        Turtle are unchanged, and an older version never replaces a newer one when retries arrive
+        out of order.
+      </p>
+      <p>
+        The worker no longer connects to Fuseki: the bridge holds the writer's password
+        (<code>RDF_WRITER_PASSWORD</code>). Ontology loads, rebuilds and re-mints go through the
+        bridge as well; a rebuild job now waits in <em>Delivering</em> until its graphs are loaded.
       </p>
 
       <h2 id="minor">Minor changes</h2>

@@ -221,12 +221,18 @@ local SeaweedFS; the seeded `default` is one while `TARGET_S3_ENDPOINT` is empty
 
 Delivered graphs (recipes that deliver `rdf`, ADR 0011) go to Apache Jena Fuseki when the `rdf`
 profile is on: `COMPOSE_PROFILES=rdf`, `RDF_ENDPOINT=http://fuseki:3030`, and the two users'
-passwords `RDF_WRITER_PASSWORD` (the worker) and `RDF_READER_PASSWORD` (consumers) in the env
-file. Without them nothing changes: graphs still go to S3, and the Linked data page says so.
-Changing a password needs `deploy/scripts/compose.sh up -d fuseki worker`.
+passwords `RDF_WRITER_PASSWORD` (the delivery bridge) and `RDF_READER_PASSWORD` (consumers) in
+the env file. Without them nothing changes: graphs still go to S3, and the Linked data page says
+so. Changing a password needs `deploy/scripts/compose.sh up -d fuseki bridge`.
+
+The bridge writes the graphs, as the publishing target **Triple store** (`rdf-default`), seeded
+from `RDF_ENDPOINT` on first start: it is listed under Administration > Published outputs, and
+its connection (endpoint, user, and the password read from `RDF_WRITER_PASSWORD`) under
+*Manage connections*, where a stored password can replace the one from the env file. The worker
+has no route to Fuseki.
 
 - **Dataset:** `ct`, TDB2 on the `fuseki-data` volume, every named graph in the default graph.
-  The worker writes over the internal network `rdf`.
+  The bridge writes over the internal network `rdf` (the API reads it there for backups).
 - **Consumers** query as the shared read-only user `ct-reader` through NGINX Proxy Manager
   ([consumer guide](../docs/consumers/sparql.md)). Fuseki is published on
   `FUSEKI_BIND:FUSEKI_PUBLIC_PORT` (`127.0.0.1:3030` by default) for the proxy only:

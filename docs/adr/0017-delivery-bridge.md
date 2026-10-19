@@ -47,6 +47,9 @@ system's API, would put secrets and private code in a public product.
   record it as published.
 - Two target registries until phase 4 merges them: CT Studio's (`publish_targets`, mirrored) and
   the bridge's (authoritative for sink, destination and connection).
-- The graph's versioned copy is written synchronously in phase 2 (inside the graph registry's
-  lock, as before), and Fuseki is still written by the worker directly; phase 3 moves RDF into
-  the package and the RDF sink.
+- The graph's versioned copy was written synchronously in phase 2, and Fuseki by the worker.
+  **Phase 3** moved both into the package: the version is committed first, then one package
+  carries the graph (`rdf`) and its copy (`graph-version`) to the S3 target and the triple store
+  target `rdf-default` (seeded from `RDF_ENDPOINT`), whose built-in `rdf` sink never replaces a
+  newer version. Ontology loads, rebuilds and remints are `graph` packages; the worker holds no
+  Fuseki credential.
