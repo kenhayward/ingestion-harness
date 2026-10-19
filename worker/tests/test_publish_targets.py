@@ -246,3 +246,58 @@ def test_the_worker_rides_out_a_database_restart_while_refreshing_targets() -> N
 
     assert refresh_targets(Down()) is False  # type: ignore[arg-type]
     assert refresh_targets(Moved()) is True  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("case", FIXTURE["rdfSeed"], ids=lambda c: str(c["name"]))
+def test_rdf_seed_matches_the_shared_fixture(case: dict[str, Any]) -> None:
+    from ingest_worker.publish_targets import RdfSeed, rdf_seed
+
+    e = case["expected"]
+    assert rdf_seed(case["env"]) == (None if e is None else RdfSeed(**e))
+
+
+def test_rdf_default_is_seeded_from_rdf_endpoint_and_resolved_by_rdf() -> None:
+    from ingest_worker.publish_targets import seed_rdf_target
+
+    store = MemoryPublishTargetStore([row()])
+    targets = LiveTargets(store)
+    assert targets.rdf() is None
+    env = {"RDF_ENDPOINT": "http://fuseki:3030", "RDF_DATASET": "kb"}
+    assert seed_rdf_target(store, env) == []
+    assert targets.rdf() == Target("rdf-default", "kb", "")
+    [r] = [r for r in store.load() if r.id == "rdf-default"]
+    assert (r.kind, r.label, r.endpoint, r.access_key_id) == (
+        "rdf",
+        "Triple store",
+        "http://fuseki:3030",
+        "ct-writer",
+    )
+    # Once seeded, .env is only compared.
+    assert seed_rdf_target(store, {**env, "RDF_DATASET": "other"}) == ["dataset"]
+    assert targets.rdf() == Target("rdf-default", "kb", "")
+
+
+def test_without_rdf_endpoint_there_is_no_triple_store() -> None:
+    from ingest_worker.publish_targets import seed_rdf_target
+
+    store = MemoryPublishTargetStore([row()])
+    assert seed_rdf_target(store, {"RDF_ENDPOINT": ""}) == []
+    assert LiveTargets(store).rdf() is None
+    assert FakeTargets({}).rdf() is None
+    assert FakeTargets({}, rdf=Target("rdf-default", "ct", "")).rdf() == Target(
+        "rdf-default", "ct", ""
+    )
+
+
+@pytest.mark.integration
+def test_pg_store_seeds_rdf_default_once(pg: PgPublishTargetStore) -> None:
+    from ingest_worker.publish_targets import RdfSeed
+
+    pg._conn.execute("DELETE FROM publish_targets WHERE id = 'rdf-default'")
+    seed = RdfSeed(endpoint="http://fuseki:3030", dataset="ct", user="ct-writer")
+    assert pg.seed_rdf(seed) == "seeded"
+    assert pg.seed_rdf(seed) == "kept"
+    assert pg.seed_rdf(RdfSeed(endpoint="http://other:3030", dataset="ct", user="ct-writer")) == (
+        "differs"
+    )
+    assert LiveTargets(pg).rdf() == Target("rdf-default", "ct", "")

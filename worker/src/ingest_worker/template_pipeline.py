@@ -288,19 +288,20 @@ def publish_template_job(
     published: list[RenderedOutput] = []
     if target is not None:  # None: no publishing targets, nothing is delivered
         reviewer = queue.reviewer(job.id)
-        published, delivery_id = deliver_document(
+        delivered = deliver_document(
             deps,
             job,
             template=template,
             document=document,
             outputs=[o for o in rendered if o.format in formats],
-            target=target,
+            targets=[target],
             acting=reviewer or queue.uploader(job.id),
             approver=reviewer,
         )
+        published = delivered.outputs
         if on_published is not None:
             # Recorded before the graph: a store failure keeps the record.
-            on_published(published, target, delivery_id)
+            on_published(published, target, delivered.s3[1])
         if graph is not None and "rdf" in formats:
             publish_graph(job, deps, queue, template, document, graph, target)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})

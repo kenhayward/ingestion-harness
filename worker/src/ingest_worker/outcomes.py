@@ -102,18 +102,18 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         log.info("job %s %s with %d outputs", job.id, outcome.note, len(outcome.outputs))
         return
     check_cancelled(job, queue)
-    published, delivery_id = deliver_document(
+    delivered = deliver_document(
         deps,
         job,
         template=outcome.template,
         document=outcome.document,
         outputs=outcome.delivered,
-        target=target,
+        targets=[target],
         acting=queue.uploader(job.id),  # auto-published: the uploader acts
         approver=None,
     )
-    queue.record_published(job, published, target, delivery_id)
+    queue.record_published(job, delivered.outputs, target, delivered.s3[1])
     if outcome.graph is not None:
         outcome.graph.deliver(job, deps, queue, target)
-    queue.delivering(job, outcome.outputs, bucket, [(target.id, delivery_id)])
-    log.info("job %s handed %d outputs to the bridge", job.id, len(published))
+    queue.delivering(job, outcome.outputs, bucket, delivered.deliveries)
+    log.info("job %s handed %d outputs to the bridge", job.id, len(delivered.outputs))

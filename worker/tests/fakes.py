@@ -41,10 +41,12 @@ from ingest_worker.ontology import (
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.publish_targets import (
     DefaultSeed,
+    RdfSeed,
     SeedOutcome,
     Target,
     TargetMissing,
     TargetRow,
+    rdf_seed_differences,
     seed_differences,
 )
 from ingest_worker.queue import ClaimedJob
@@ -791,6 +793,33 @@ class MemoryPublishTargetStore:
         self.rows = list(rows)
         self._version += 1
 
+    def seed_rdf(self, seed: RdfSeed) -> SeedOutcome:
+        current = next((r for r in self.rows if r.id == "rdf-default"), None)
+        if current is not None:
+            return "differs" if rdf_seed_differences(current, seed) else "kept"
+        self.rows.append(
+            TargetRow(
+                id="rdf-default",
+                label="Triple store",
+                kind="rdf",
+                bucket=seed.dataset,
+                prefix="",
+                endpoint=seed.endpoint,
+                region=None,
+                access_key_id=seed.user,
+                secret_key_enc=None,
+                access_key_env=None,
+                secret_key_env=None,
+                path_style=False,
+                sse="none",
+                kms_key_id=None,
+                storage_class=None,
+                seeded_at=datetime.now(UTC),
+            )
+        )
+        self._version += 1
+        return "seeded"
+
     def seed_default(self, seed: DefaultSeed) -> SeedOutcome:
         i = next(n for n, r in enumerate(self.rows) if r.id == "default")
         current = self.rows[i]
@@ -815,11 +844,16 @@ class MemoryPublishTargetStore:
 
 
 class FakeTargets:
-    """Stands in for LiveTargets: a fixed map of target id to Target (`gets`: the ids asked for)."""
+    """Stands in for LiveTargets: a fixed map of target id to Target (`gets`: the ids asked for),
+    and the triple store target when there is one."""
 
-    def __init__(self, targets: dict[str, Target]) -> None:
+    def __init__(self, targets: dict[str, Target], rdf: Target | None = None) -> None:
         self.targets = targets
         self.gets: list[str] = []
+        self.triple_store = rdf
+
+    def rdf(self) -> Target | None:
+        return self.triple_store
 
     def refresh(self) -> bool:
         return False
@@ -836,16 +870,21 @@ class FakeBridge:
     """BridgeClient over a dict of objects keyed (bucket, key), or, for a target in `stores`, over
     that target's own MemoryObjectStore (separate S3 endpoints). A delivery to a target in
     `targets` (id -> (bucket, prefix)) writes the package's files at prefix + name, as the S3
-    sink does. `requests` records every delivery request; `refusals` are raised, in order, by the
-    next calls (a BridgeError becomes BridgeRefused; an exception is raised as it is)."""
+    sink does. A delivery to a target in `rdf` (a triple store) loads the package's graph into
+    `graphs` (graph name -> Turtle), and deleting an object there drops the graph named by its key.
+    `requests` records every delivery request; `refusals` are raised, in order, by the next calls
+    (a BridgeError becomes BridgeRefused; an exception is raised as it is)."""
 
     def __init__(
         self,
         targets: dict[str, tuple[str, str]] | None = None,
         stores: dict[str, MemoryObjectStore] | None = None,
+        rdf: set[str] | None = None,
     ) -> None:
         self.targets = dict(targets or {})
         self.stores = dict(stores or {})
+        self.rdf = set(rdf or ())
+        self.graphs: dict[str, str] = {}
         self.objects: dict[tuple[str, str], tuple[bytes, str]] = {}
         self.requests: list[CreateDeliveriesRequest] = []
         self.puts: list[tuple[str, str, str]] = []
@@ -868,6 +907,10 @@ class FakeBridge:
         self._next_refusal()
         self.requests.append(request)
         for target_id in request.targets:
+            if target_id in self.rdf:
+                if request.package.rdf is not None:
+                    self.graphs[request.package.rdf.graph_name] = request.package.rdf.turtle
+                continue
             bucket, prefix = self.targets.get(target_id, ("", ""))
             for f in request.package.files:
                 body = base64.b64decode(f.content)
@@ -905,7 +948,9 @@ class FakeBridge:
         self._next_refusal()
         self.deletes.append((target_id, list(objects)))
         for bucket, key in objects:
-            if target_id in self.stores:
+            if target_id in self.rdf:
+                self.graphs.pop(key, None)
+            elif target_id in self.stores:
                 self.stores[target_id].delete(bucket, key)
             else:
                 self.objects.pop((bucket, key), None)

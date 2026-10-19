@@ -175,19 +175,19 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[
         target = targets.get(template.publish_to())  # the job's version's own target
         formats = template.delivery_formats()
         rendered = render_document(template, document, graph)
-        published, delivery_id = deliver_document(
+        delivered = deliver_document(
             deps,
             run,
             template=template,
             document=document,
             outputs=[o for o in rendered if o.format in formats],
-            target=target,
+            targets=[target],
             acting=acting,
             approver=queue.reviewer(run.id),
         )
         if graph is not None and "rdf" in formats:
             publish_graph(run, deps, queue, template, document, graph, target)
-        queue.record_published(run, published, target, delivery_id)
-        deliveries.append((target.id, delivery_id))
+        queue.record_published(run, delivered.outputs, target, delivered.s3[1])
+        deliveries.extend(delivered.deliveries)
     queue.event(job.id, "info", REPUBLISHED, {"jobs": len(deliveries)})
     return deliveries

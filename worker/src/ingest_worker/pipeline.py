@@ -147,6 +147,10 @@ class Targets(Protocol):
 
     def get(self, target_id: str) -> Target: ...
 
+    def rdf(self) -> Target | None:
+        """The triple store target (`rdf-default`), or None when RDF_ENDPOINT is not set."""
+        ...
+
 
 @dataclass
 class PipelineDeps:
