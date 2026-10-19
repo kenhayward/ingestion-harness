@@ -8,6 +8,7 @@ import {
   TargetIdSchema,
   TargetPatchBodySchema,
   TargetTestBodySchema,
+  TargetTestResultSchema,
   targetInUse,
 } from '../src/publish-targets.js';
 
@@ -140,5 +141,17 @@ describe('target prefix', () => {
   it('accepts ordinary prefixes, trimmed', () => {
     expect(TargetCreateBodySchema.parse(body(' ingest/2026_q3/ ')).prefix).toBe('ingest/2026_q3/');
     expect(TargetCreateBodySchema.safeParse(body("it's(1)-a.b/")).success).toBe(true);
+  });
+});
+
+describe('TargetTestResultSchema', () => {
+  it('reads the bridge contract fixture unchanged (both sides share the shape)', () => {
+    const json: unknown = JSON.parse(
+      readFileSync(
+        new URL('../../bridge-contract/test/fixtures/target-test-result.json', import.meta.url),
+        'utf8',
+      ),
+    );
+    expect(TargetTestResultSchema.strict().parse(json)).toEqual(json);
   });
 });

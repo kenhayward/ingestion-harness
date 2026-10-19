@@ -35,6 +35,13 @@ const EnvSchema = z.object({
   ),
   BRIDGE_MAX_ATTEMPTS: z.preprocess(blank, z.coerce.number().int().positive().default(8)),
   BRIDGE_LEASE_SECONDS: z.preprocess(blank, z.coerce.number().int().positive().default(300)),
+  /** The deployment's own S3 (SeaweedFS): internal targets and the package staging bucket. */
+  S3_ENDPOINT: z.string().url(),
+  S3_REGION: z.preprocess(blank, z.string().default('us-east-1')),
+  S3_ACCESS_KEY: z.string().min(1),
+  S3_SECRET_KEY: z.string().min(1),
+  /** Where accepted packages wait until their deliveries are done. */
+  BRIDGE_STAGING_BUCKET: z.preprocess(blank, z.string().default('ingest-bridge')),
   /** Encrypts connection secrets at rest (32 bytes, base64). */
   BRIDGE_SECRETS_KEY: masterKey('BRIDGE_SECRETS_KEY'),
   /** The key before a rotation: still decrypts. */

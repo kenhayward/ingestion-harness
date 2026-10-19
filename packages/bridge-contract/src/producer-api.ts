@@ -77,3 +77,14 @@ export const TargetViewSchema = z.strictObject({
   destination: DestinationSchema,
 });
 export type TargetView = z.infer<typeof TargetViewSchema>;
+
+/**
+ * Test connection for a target: the first step that failed, or ok. The same shape as CT Studio's
+ * `TargetTestResultSchema` (@ih/shared); the fixture target-test-result.json keeps them equal.
+ */
+export const TargetTestResultSchema = z.strictObject({
+  ok: z.boolean(),
+  step: z.enum(['connect', 'write', 'read', 'delete']).nullable(),
+  message: z.string(),
+});
+export type TargetTestResult = z.infer<typeof TargetTestResultSchema>;

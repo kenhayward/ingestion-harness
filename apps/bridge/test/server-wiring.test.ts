@@ -7,6 +7,9 @@ const config = loadBridgeConfig({
   DATABASE_URL: 'postgres://x/y',
   BRIDGE_CLIENT_KEY: 'k'.repeat(32),
   BRIDGE_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+  S3_ENDPOINT: 'http://seaweedfs:8333',
+  S3_ACCESS_KEY: 'internal-key',
+  S3_SECRET_KEY: 'internal-secret',
 });
 
 const pool = (answer: () => Promise<unknown>) => ({ query: answer }) as unknown as pg.Pool;

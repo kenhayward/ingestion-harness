@@ -14,6 +14,7 @@
     "openapi": "vitest run -u --config vitest.config.ts test/openapi.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.850.0",
     "@fastify/swagger": "^9.9.2",
     "@ih/bridge-contract": "*",
     "fastify": "^5.12.7",
