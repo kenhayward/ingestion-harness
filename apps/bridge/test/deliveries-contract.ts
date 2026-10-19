@@ -229,5 +229,36 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       expect(await repo.usesTarget('t1')).toBe(true);
       expect(await repo.usesTarget('t2')).toBe(false);
     });
+
+    it('lists packages past their retention whose deliveries are all final, until pruned', async () => {
+      const repo = await make();
+      const done = pkg({ stagedKey: 'packages/done.json', expiresAt: at(100) });
+      const busy = pkg({ stagedKey: 'packages/busy.json', expiresAt: at(100) });
+      const young = pkg({ stagedKey: 'packages/young.json', expiresAt: at(1000) });
+      const kept = pkg({ stagedKey: 'packages/kept.json', expiresAt: null });
+      const ids = [delivery(), delivery(), delivery(), delivery()];
+      await repo.create(done, [ids[0]!], T0);
+      await repo.create(busy, [ids[1]!], at(1));
+      await repo.create(young, [ids[2]!], at(2));
+      await repo.create(kept, [ids[3]!], at(3));
+      const claims = [];
+      for (let n = 0; n < 4; n++) claims.push((await repo.claim(at(10), 300))!);
+      expect(claims.map((c) => c.id)).toEqual(ids.map((d) => d.id));
+      const final = { status: 'failed' as const, error: bridgeError('timeout', 'x') };
+      await repo.transition(
+        ids[0]!.id,
+        { status: 'succeeded', receipt: { written: [] } },
+        at(11),
+        claims[0]!.claimId,
+      );
+      // `busy` stays running; `young` and `kept` end, but are not past their retention.
+      await repo.transition(ids[2]!.id, final, at(11), claims[2]!.claimId);
+      await repo.transition(ids[3]!.id, final, at(11), claims[3]!.claimId);
+      expect(await repo.expiredPackages(at(200), 10)).toEqual([
+        { id: done.id, stagedKey: 'packages/done.json' },
+      ]);
+      await repo.markPruned(done.id, at(200));
+      expect(await repo.expiredPackages(at(200), 10)).toEqual([]);
+    });
   });
 }

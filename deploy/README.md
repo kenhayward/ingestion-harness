@@ -112,7 +112,9 @@ one-time link). Browsers reach it in one of two ways; set `BRIDGE_PUBLIC_URL` to
   expose the rest of the bridge: its API is for CT Studio only.
 
 The page's session cookie is `Secure`; set `BRIDGE_COOKIE_SECURE=false` only for plain HTTP away
-from localhost. Packages are staged in `BRIDGE_STAGING_BUCKET` (default `ingest-bridge`).
+from localhost. Packages are staged in `BRIDGE_STAGING_BUCKET` (default `ingest-bridge`) and
+deleted once every delivery of them is final and they are older than
+`BRIDGE_PACKAGE_RETENTION_DAYS`.
 
 **After upgrading:** on first start the API moves each external target's keys to the bridge as the
 connection `target-<id>` (named after the target) and clears them from CT Studio. Find and rotate

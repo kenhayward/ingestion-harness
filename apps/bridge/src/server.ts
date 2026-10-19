@@ -6,6 +6,7 @@ import { runOnce } from './deliveries/runner.js';
 import { dispatchOnce, HttpEventSender } from './events/dispatch.js';
 import { seedInternalConnection } from './connections/repo.js';
 import { withSchemaRepair } from './db/repair.js';
+import { prunePackagesOnce } from './packages/prune.js';
 import { buildFromConfig } from './wiring.js';
 
 const config = loadBridgeConfig();
@@ -53,6 +54,17 @@ const loops = [
     1000,
   ),
 ];
+loops.push(
+  loop(
+    'package pruner',
+    async () =>
+      (await prunePackagesOnce(
+        { deliveries: runner.deliveries, packages: runner.packages },
+        new Date(),
+      )) > 0,
+    10 * 60_000,
+  ),
+);
 if (config.BRIDGE_EVENTS_URL) {
   const sender = new HttpEventSender(config.BRIDGE_EVENTS_URL, config.BRIDGE_CLIENT_KEY);
   loops.push(

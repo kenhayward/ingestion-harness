@@ -4,6 +4,7 @@ import {
   type ClaimedRow,
   eventFor,
   type DeliveryRepo,
+  FINAL_STATUSES,
   type DeliveryRow,
   type NewDelivery,
   type NewPackage,
@@ -224,6 +225,22 @@ export class PgDeliveryRepo implements DeliveryRepo {
       [targetId],
     );
     return rows[0]!.used;
+  }
+
+  async expiredPackages(now: Date, limit: number): Promise<{ id: string; stagedKey: string }[]> {
+    const { rows } = await this.pool.query<{ id: string; staged_key: string }>(
+      `SELECT p.id, p.staged_key FROM bridge.packages p
+        WHERE p.pruned_at IS NULL AND p.expires_at <= $1
+          AND NOT EXISTS (SELECT 1 FROM bridge.deliveries d
+                           WHERE d.package_id = p.id AND d.status::text <> ALL ($3::text[]))
+        ORDER BY p.expires_at LIMIT $2`,
+      [now, limit, [...FINAL_STATUSES]],
+    );
+    return rows.map((r) => ({ id: r.id, stagedKey: r.staged_key }));
+  }
+
+  async markPruned(id: string, now: Date): Promise<void> {
+    await this.pool.query('UPDATE bridge.packages SET pruned_at = $2 WHERE id = $1', [id, now]);
   }
 
   async dueEvents(now: Date, limit: number): Promise<OutboxEvent[]> {
