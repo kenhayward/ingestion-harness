@@ -375,3 +375,37 @@ describe('value nodes (shared with the worker)', () => {
     expect(linkOf(semantics, mappingAt(path))).toBe(link);
   });
 });
+
+describe('plugin steps (shared with the worker)', () => {
+  const pluginFixture = JSON.parse(
+    readFileSync(new URL('./fixtures/plugin-steps.json', import.meta.url), 'utf8'),
+  ) as {
+    base: Record<string, unknown>;
+    cases: { name: string; valid: boolean; error?: string; pipeline: unknown[] }[];
+  };
+
+  it.each(pluginFixture.cases.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    const result = TemplateSchema.safeParse({ ...pluginFixture.base, pipeline: c.pipeline });
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
+    if (c.error) {
+      const messages = (result.error?.issues ?? []).map((i) => i.message).join('\n');
+      expect(messages).toContain(c.error);
+    }
+  });
+
+  it('keeps a plugin step as written, with empty defaults', () => {
+    const parsed = TemplateSchema.parse({
+      ...pluginFixture.base,
+      pipeline: pluginFixture.cases[0]!.pipeline,
+    });
+    expect(parsed.pipeline[0]).toEqual({
+      type: 'plugin',
+      id: 'refs',
+      uses: 'text.pattern@1',
+      fields: ['sender', 'reference'],
+      sections: ['head'],
+      context: {},
+      with: (pluginFixture.cases[0]!.pipeline[0] as { with: unknown }).with,
+    });
+  });
+});

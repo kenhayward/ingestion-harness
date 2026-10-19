@@ -229,6 +229,62 @@ export function ContextEditor({
   );
 }
 
+/**
+ * A plugin step, read-only: what it runs, fills and reads, and its settings. It is edited in the
+ * YAML tab until plugin settings get a form (docs/design/recipe-plugins.md, slice 3c).
+ */
+export function PluginStepDetail({ step }: { step: Definition }) {
+  const ids = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+  const fills = typeof step.table === 'string' ? [step.table] : ids(step.fields);
+  const reads = ids(step.sections);
+  const context =
+    step.context && typeof step.context === 'object' && !Array.isArray(step.context)
+      ? Object.entries(step.context as Record<string, unknown>)
+      : [];
+  const settings =
+    step.with && typeof step.with === 'object' && Object.keys(step.with).length > 0
+      ? JSON.stringify(step.with, null, 2)
+      : null;
+  return (
+    <div className="plugin-step">
+      <dl className="step-facts">
+        <dt>Plugin</dt>
+        <dd>
+          <code>{typeof step.uses === 'string' ? step.uses : ''}</code>
+        </dd>
+        <dt>Fills</dt>
+        <dd>
+          {fills.map((f) => (
+            <code key={f} className="fill-chip">
+              {f}
+            </code>
+          ))}
+        </dd>
+        <dt>Reads</dt>
+        <dd>{reads.length > 0 ? reads.join(', ') : 'earlier values only'}</dd>
+        {context.length > 0 && (
+          <>
+            <dt>Context</dt>
+            <dd>{context.map(([name, path]) => `${name} = ${String(path)}`).join(', ')}</dd>
+          </>
+        )}
+        {settings && (
+          <>
+            <dt>Settings</dt>
+            <dd>
+              <pre className="mono plugin-settings">{settings}</pre>
+            </dd>
+          </>
+        )}
+      </dl>
+      <p className="muted">
+        Edit a plugin step in the YAML tab; a form for its settings comes later. A plugin calls no
+        model.
+      </p>
+    </div>
+  );
+}
+
 export function CheckStep({
   step,
   paths,

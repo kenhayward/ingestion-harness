@@ -37,6 +37,22 @@ export function tabCounts(def: {
   };
 }
 
+/** What a pipeline step is, as its tag reads (an unknown or missing type reads as extract). */
+export type StepKind = 'EXTRACT' | 'CHECK' | 'PLUGIN';
+
+export function stepKind(step: Record<string, unknown>): StepKind {
+  if (step.type === 'check') return 'CHECK';
+  if (step.type === 'plugin') return 'PLUGIN';
+  return 'EXTRACT';
+}
+
+/** The tag tone of each kind of step. */
+export const STEP_KIND_TONE: Record<StepKind, string> = {
+  EXTRACT: 'tone-info',
+  CHECK: 'tone-neutral',
+  PLUGIN: 'tone-lock',
+};
+
 /**
  * One line describing a pipeline step on its collapsed card; `modelName` turns a model choice's
  * id into its label.
@@ -50,6 +66,16 @@ export function stepSummary(
     const values = text(step.values).trim();
     const reference = text(step.reference).trim();
     return values && reference ? `${values} vs ${reference}` : 'not set up yet';
+  }
+  if (step.type === 'plugin') {
+    const sections = list(step.sections).map(String);
+    const fills =
+      typeof step.table === 'string'
+        ? `Table ${step.table}`
+        : plural(list(step.fields).length, 'field');
+    return [text(step.uses), fills, ...(sections.length ? [`reads ${sections.join(', ')}`] : [])]
+      .filter(Boolean)
+      .join(' · ');
   }
   if (step.type !== 'extract') return '';
   const named = text(step.model);
@@ -87,6 +113,10 @@ export function stepListSummary(step: Record<string, unknown>): string {
   }
   const fills = typeof step.table === 'string' ? 1 : list(step.fields).length;
   const sections = list(step.sections).map(String);
+  if (step.type === 'plugin') {
+    const reads = sections.length ? sections.join(', ') : 'earlier values';
+    return `Runs ${text(step.uses)} · fills ${fills} · reads ${reads}`;
+  }
   return `Fills ${fills} · reads ${sections.length ? sections.join(', ') : 'no sections'}`;
 }
 

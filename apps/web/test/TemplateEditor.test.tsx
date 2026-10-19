@@ -1775,3 +1775,42 @@ describe('help on every recipe tab', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('plugin steps in the recipe editors', () => {
+  const withPlugin = () => {
+    const d = validDefinition();
+    return {
+      ...d,
+      version: 1,
+      pipeline: [
+        {
+          type: 'plugin',
+          id: 'head',
+          uses: 'text.pattern@1',
+          fields: ['sender'],
+          sections: ['all'],
+          with: { patterns: { sender: 'From: (.+)' } },
+        },
+        d.pipeline[1]!,
+      ],
+    };
+  };
+
+  it('shows a plugin step read-only on the Document types page, pointing to YAML', async () => {
+    setup(view(withPlugin()));
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^1 PLUGIN head/ }));
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    expect(within(step).getByText('text.pattern@1')).toBeInTheDocument();
+    expect(within(step).getByText(/Edit a plugin step in the YAML tab/)).toBeInTheDocument();
+    expect(within(step).queryByLabelText('Model')).not.toBeInTheDocument();
+  });
+
+  it('shows a plugin step read-only in the Workbench pipeline', async () => {
+    setup(view(withPlugin()), {}, { onChanged: vi.fn() });
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    expect(within(detail).getByText('PLUGIN')).toBeInTheDocument();
+    expect(within(detail).getByText('text.pattern@1')).toBeInTheDocument();
+    expect(within(detail).getByText(/Edit a plugin step in the YAML tab/)).toBeInTheDocument();
+  });
+});

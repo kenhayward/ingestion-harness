@@ -1,4 +1,4 @@
-/** Help topic `pipeline`: extract and check steps, in order. */
+/** Help topic `pipeline`: extract, plugin and check steps, in order. */
 export function PipelineHelp() {
   return (
     <>
@@ -59,6 +59,15 @@ export function PipelineHelp() {
         letter or two different, often OCR) are flagged; anything else is unmatched and sends the
         job for review. Aliases list other accepted spellings. One check compares one path: to check
         several tables, add one check per table.
+      </p>
+
+      <h3>Plugin steps</h3>
+      <p>
+        A plugin step runs a capability installed with CT Studio instead of asking a model, such as{' '}
+        <code>text.pattern@1</code>, which fills fields or a table by matching patterns in the
+        step's sections. It fills outputs like an extract step and can read earlier values, but it
+        calls no model and costs nothing to run. For now, add or change a plugin step in the YAML
+        tab: its card shows what it runs, fills and reads, and its settings.
       </p>
 
       <h3>Order</h3>

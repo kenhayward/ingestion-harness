@@ -99,6 +99,21 @@ function stepsPanel(metrics = METRICS, definition: Record<string, unknown> = BEF
 }
 
 describe('Steps tab', () => {
+  it('draws a plugin step with the plugin it runs and no model', async () => {
+    const plugin = {
+      type: 'plugin',
+      id: 'totals',
+      uses: 'text.pattern@1',
+      fields: ['total'],
+      sections: ['totals'],
+    };
+    stepsPanel(METRICS, { ...BEFORE, pipeline: [BEFORE.pipeline[0], plugin] });
+    const card = await screen.findByRole('listitem', { name: 'Step 2: totals' });
+    expect(within(card).getByText('PLUGIN')).toBeInTheDocument();
+    expect(within(card).getByText('text.pattern@1')).toBeInTheDocument();
+    expect(within(card).getByText('total')).toBeInTheDocument();
+  });
+
   it('shows which step fills each output and whether the proposal fixes the gaps', async () => {
     stepsPanel();
     expect(
