@@ -136,7 +136,9 @@ const backup =
     db: new PgDatabaseTools(config.DATABASE_URL),
     store,
     buckets,
-    internalTargetBuckets: () => internalTargetBuckets(targets, Object.values(buckets)),
+    // The bridge's package staging bucket is on this deployment's storage too.
+    internalTargetBuckets: () =>
+      internalTargetBuckets(targets, Object.values(buckets), [config.BRIDGE_STAGING_BUCKET]),
     triples: new FusekiTripleStore(fusekiConfig(config)),
     lake: new NoLakeIdentities(),
     master: llmSecrets.current,
@@ -223,6 +225,12 @@ backup?.enableRestore({
   live: new PgLiveDatabase(makePool(2)),
   openSide: (url) => PgSideDatabase.open(url),
   lakeIssuer: new SeaweedIamIssuer(s3),
+  // The restored targets are mirrored to the bridge again (and a restored target's keys from
+  // before the bridge are moved there), so its registry matches the database now in place.
+  onSwapped: () =>
+    void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).catch(
+      (err: unknown) => app.log.error({ err }, 'restored targets could not be mirrored'),
+    ),
 });
 
 let stopReconciler = () => {};

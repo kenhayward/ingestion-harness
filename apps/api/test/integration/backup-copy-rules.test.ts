@@ -7,6 +7,8 @@
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres \
  *     npx vitest run --config apps/api/vitest.integration.config.ts backup-copy-rules
  */
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,6 +18,23 @@ import { migrate } from '../../src/db/migrate.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
 const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
+const bridgeMigrations = fileURLToPath(
+  new URL('../../../../db/bridge-migrations', import.meta.url),
+);
+
+/** The bridge's schema as its migrations make it (the bridge runs them in its own process). */
+async function migrateBridge(name: string): Promise<void> {
+  await onDb(name, async (c) => {
+    await c.query('CREATE SCHEMA IF NOT EXISTS bridge');
+    for (const file of readdirSync(bridgeMigrations)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()) {
+      await c.query('SET search_path TO bridge');
+      await c.query(readFileSync(join(bridgeMigrations, file), 'utf8'));
+      await c.query('RESET search_path');
+    }
+  });
+}
 const NAMES = ['ih_cr_live', 'ih_cr_side', 'ih_cr_atomic'];
 
 const USER = '00000000-0000-4000-8000-000000000001';
@@ -107,6 +126,7 @@ const PRODUCTION = `
   INSERT INTO jobs (id, document_id, task, status, params) VALUES
     ('${J(8)}', NULL, 'ontology', 'queued', '{}'),
     ('${J(9)}', NULL, 'withdraw', 'running', '{"objects": [], "graphs": []}');
+  INSERT INTO jobs (id, document_id, task, status) VALUES ('${J(10)}', '${DOC}', 'publish', 'delivering');
   INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key, target_id) VALUES
     ('${J(4)}', 'fields', 'published', 'csv', 'ingest-published', 'invoice/4.csv', 'default'),
     ('${J(4)}', 'fields', 'draft', 'csv', 'ingest-outputs', 'invoice/4.csv', NULL),
@@ -138,6 +158,32 @@ const PRODUCTION = `
     ('to-prod-int', 1, 'published', '{"id": "to-prod-int", "version": 1, "pipeline": [], "delivery": {"publishTo": "prod-int"}}');
 `;
 
+/** Staging's bridge: its own shared connections (keys under staging's BRIDGE_SECRETS_KEY). */
+const BRIDGE_STAGING = `
+  INSERT INTO bridge.connections (id, kind, sink_id, name, fields, secret_enc)
+       VALUES ('internal', 'shared', 's3', 'This deployment', '{}', NULL),
+              ('staging-keys', 'shared', 's3', 'Staging keys', '{"accessKeyId": "AKST"}', 'v1:staging-bridge-secret');
+`;
+
+/** Production's bridge in its backup: its connections, targets, deliveries and unsent events. */
+const BRIDGE_PRODUCTION = `
+  INSERT INTO bridge.connections (id, kind, sink_id, name, fields, secret_enc)
+       VALUES ('internal', 'shared', 's3', 'This deployment', '{}', NULL),
+              ('staging-keys', 'shared', 's3', 'Same id, production keys', '{}', 'v1:prod-same-id'),
+              ('target-prod-ext', 'shared', 's3', 'Production lake', '{"accessKeyId": "AKPROD"}', 'v1:prod-bridge-secret');
+  INSERT INTO bridge.targets (id, label, sink_id, connection_id, destination)
+       VALUES ('default', 'Default', 's3', 'internal', '{"bucket": "ingest-published"}'),
+              ('prod-ext', 'Production lake', 's3', 'target-prod-ext', '{"bucket": "prod-lake"}'),
+              ('shared', 'Production shared', 's3', 'staging-keys', '{"bucket": "prod-shared"}');
+  INSERT INTO bridge.packages (id, kind, idempotency_key, manifest, staged_key)
+       VALUES ('00000000-0000-4000-8000-0000000000a1', 'document', 'k', '{}', 'packages/a1.json');
+  INSERT INTO bridge.deliveries (id, package_id, target_id, idempotency_key, status)
+       VALUES ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000a1', 'prod-ext', 'k', 'queued'),
+              ('00000000-0000-4000-8000-0000000000b2', '00000000-0000-4000-8000-0000000000a1', 'default', 'k', 'succeeded');
+  INSERT INTO bridge.events (id, delivery_id, sequence, body)
+       VALUES ('00000000-0000-4000-8000-0000000000e1', '00000000-0000-4000-8000-0000000000b1', 1, '{}');
+`;
+
 describe.skipIf(!url)('copy rules (Postgres)', () => {
   let result: CopyResult;
   const side = <T extends pg.QueryResultRow>(sql: string) =>
@@ -148,9 +194,10 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
     for (const n of NAMES) {
       await onDb('postgres', (c) => c.query(`CREATE DATABASE ${n}`));
       await migrate(databaseUrl(url!, n), migrations);
+      await migrateBridge(n);
     }
-    await onDb('ih_cr_live', (c) => c.query(STAGING));
-    await onDb('ih_cr_side', (c) => c.query(PRODUCTION));
+    await onDb('ih_cr_live', (c) => c.query(STAGING + BRIDGE_STAGING));
+    await onDb('ih_cr_side', (c) => c.query(PRODUCTION + BRIDGE_PRODUCTION));
     const kept = await onDb('ih_cr_live', (c) => readKeptState(c));
     result = await onDb('ih_cr_side', (c) => applyCopyRules(c, kept));
   }, 120_000);
@@ -325,19 +372,54 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
       { id: J(7), task: 'process', status: 'succeeded' },
       { id: J(8), task: 'ontology', status: 'cancelled' },
       { id: J(9), task: 'withdraw', status: 'cancelled' },
+      // Production's delivering job waits on production's bridge, never this one.
+      { id: J(10), task: 'publish', status: 'cancelled' },
     ]);
-    expect(result.cancelledJobs).toBe(4);
+    expect(result.cancelledJobs).toBe(5);
     expect(
       await side(
         "SELECT job_id::text AS job, level, data FROM job_events WHERE message = 'cancelled' ORDER BY job_id",
       ),
     ).toEqual(
-      [J(1), J(2), J(8), J(9)].map((job) => ({
+      [J(1), J(2), J(8), J(9), J(10)].map((job) => ({
         job,
         level: 'warn',
         data: { reason: 'restored as a copy' },
       })),
     );
+  });
+
+  it("a restore keeps the live bridge connections, not the backup's", async () => {
+    expect(await side('SELECT id, name, secret_enc FROM bridge.connections ORDER BY id')).toEqual([
+      { id: 'internal', name: 'This deployment', secret_enc: null },
+      { id: 'staging-keys', name: 'Staging keys', secret_enc: 'v1:staging-bridge-secret' },
+    ]);
+  });
+
+  it('a restored target naming a connection the live deployment lacks loses its connection', async () => {
+    expect(await side('SELECT id, connection_id FROM bridge.targets ORDER BY id')).toEqual([
+      { id: 'default', connection_id: 'internal' },
+      { id: 'prod-ext', connection_id: null },
+      { id: 'shared', connection_id: 'staging-keys' },
+    ]);
+  });
+
+  it("never delivers production's unfinished deliveries nor sends its events here", async () => {
+    expect(
+      await side(
+        `SELECT id::text, status, error->>'message' AS message FROM bridge.deliveries ORDER BY id`,
+      ),
+    ).toEqual([
+      {
+        id: '00000000-0000-4000-8000-0000000000b1',
+        status: 'failed',
+        message: 'restored as a copy',
+      },
+      { id: '00000000-0000-4000-8000-0000000000b2', status: 'succeeded', message: null },
+    ]);
+    expect(
+      await side('SELECT count(*)::int AS n FROM bridge.events WHERE sent_at IS NULL'),
+    ).toEqual([{ n: 0 }]);
   });
 
   it('lists recipes naming a missing model choice', () => {

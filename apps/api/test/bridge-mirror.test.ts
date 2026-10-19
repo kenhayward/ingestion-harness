@@ -207,3 +207,22 @@ describe('syncTargetsWithBridge', () => {
     expect(bridge.targets.has('default')).toBe(true);
   });
 });
+
+describe('mirrorTargets after a restore', () => {
+  it('mirrors a target whose connection the bridge lacks without it, and goes on', async () => {
+    const { targets, bridge } = await setup();
+    await targets.create(external('finance'), null);
+    await targets.markMoved('finance', 'target-finance');
+    await targets.create(external('archive', { secretKeyEnc: null }), null);
+    const put = bridge.putTarget.bind(bridge);
+    bridge.putTarget = async (id, t) => {
+      if (t.connectionId === 'target-finance') {
+        throw FakeBridgeApi.refusal('there is no connection target-finance', 'connection_missing');
+      }
+      return put(id, t);
+    };
+    expect(await mirrorTargets({ targets, bridge })).toBe(3);
+    expect(bridge.targets.get('finance')?.connectionId).toBeNull();
+    expect(bridge.targets.has('archive')).toBe(true);
+  });
+});

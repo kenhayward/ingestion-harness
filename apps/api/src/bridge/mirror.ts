@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { decryptSecret, type SecretsKeys } from '../llm/secrets.js';
 import type { PublishTargetRepo, TargetRecord } from '../publish-targets/repo.js';
-import type { BridgeApi, TargetMirror } from './client.js';
+import { BridgeApiError, type BridgeApi, type TargetMirror } from './client.js';
 
 /**
  * CT Studio keeps `publish_targets` as its recipient registry (their usage, locking, read-key
@@ -47,7 +47,15 @@ export async function mirrorTargets(deps: {
   for (const view of await deps.targets.list()) {
     const record = await deps.targets.get(view.id);
     if (!record) continue;
-    await deps.bridge.putTarget(record.id, mirrorOf(record));
+    const mirror = mirrorOf(record);
+    try {
+      await deps.bridge.putTarget(record.id, mirror);
+    } catch (err) {
+      // A connection the bridge does not have (a restore kept this server's connections): the
+      // target is mirrored without one, so its deliveries fail visibly until an admin picks one.
+      if (!(err instanceof BridgeApiError && err.error?.code === 'connection_missing')) throw err;
+      await deps.bridge.putTarget(record.id, { ...mirror, connectionId: null });
+    }
     n += 1;
   }
   return n;
