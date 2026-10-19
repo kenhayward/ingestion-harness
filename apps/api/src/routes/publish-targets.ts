@@ -53,16 +53,27 @@ export function usageText(u: TargetUsage): string {
 const issuesOf = (e: z.ZodError) => e.issues;
 
 const OWN_BUCKET =
-  "`{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`";
+  "`{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`, or " +
+  "`{bucket} is the delivery bridge's staging bucket: pick another`";
 
-/** Which of the deployment's own buckets an internal target would name, else null. */
+/**
+ * Which of the deployment's own buckets an internal target would name, else null. The bridge's
+ * staging bucket holds every package it delivers: a data-lake key granted on a target there
+ * would read them all.
+ */
 function ownBucketProblem(
   target: { kind: string; bucket: string },
-  buckets: { inbox: string; outputs: string; runs: string; backups: string },
+  deps: {
+    buckets: { inbox: string; outputs: string; runs: string; backups: string };
+    bridgeStagingBucket: string;
+  },
 ): string | null {
   if (target.kind !== 'internal') return null;
+  if (target.bucket === deps.bridgeStagingBucket) {
+    return `${target.bucket} is the delivery bridge's staging bucket: pick another`;
+  }
   const which = (['inbox', 'outputs', 'runs', 'backups'] as const).find(
-    (k) => buckets[k] === target.bucket,
+    (k) => deps.buckets[k] === target.bucket,
   );
   return which ? `${target.bucket} is CT Studio's own ${which} bucket: pick another` : null;
 }
@@ -331,7 +342,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(409).send({ error: `a publishing target ${id} already exists` });
       }
       const record = recordOf(id, b, null);
-      const own = ownBucketProblem(record, app.deps.buckets);
+      const own = ownBucketProblem(record, app.deps);
       if (own) return reply.code(400).send({ error: own });
       const problem = await bucketProblem(record);
       if (problem) return reply.code(502).send({ error: problem });
@@ -415,7 +426,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (!merged.success) return reply.code(400).send({ error: issuesOf(merged.error) });
       const next = recordOf(stored.id, merged.data, stored);
       if (patch.bucket !== undefined) {
-        const own = ownBucketProblem(next, app.deps.buckets);
+        const own = ownBucketProblem(next, app.deps);
         if (own) return reply.code(400).send({ error: own });
       }
 
@@ -557,7 +568,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         return bridge.testTarget(stored.id).catch(() => down);
       }
       const settings = recordOf('test', { label: 'test', ...body.data }, null);
-      const own = ownBucketProblem(settings, app.deps.buckets);
+      const own = ownBucketProblem(settings, app.deps);
       if (own) return reply.code(400).send({ error: own });
       return bridge
         .testSettings({

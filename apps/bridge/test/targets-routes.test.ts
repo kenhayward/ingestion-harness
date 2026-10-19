@@ -87,6 +87,24 @@ describe('PUT /v1/targets/:id', () => {
     expect((await call('PUT', '/v1/targets/x', { label: 'no sink' })).statusCode).toBe(400);
     expect((await call('GET', '/v1/targets')).json().targets).toEqual([]);
   });
+
+  it('refuses an internal target on its own staging bucket, which holds every package', async () => {
+    const { call } = await setup();
+    const staging = {
+      ...finance,
+      destination: { ...finance.destination, bucket: 'ingest-bridge' },
+    };
+    const res = await call('PUT', '/v1/targets/x', { ...staging, connectionId: 'internal' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      class: 'needs_user',
+      code: 'content_rejected',
+      message: "ingest-bridge is the bridge's staging bucket: pick another",
+    });
+    expect((await call('GET', '/v1/targets')).json().targets).toEqual([]);
+    // Another server's bucket of that name is not the bridge's.
+    expect((await call('PUT', '/v1/targets/x', staging)).statusCode).toBe(200);
+  });
 });
 
 describe('DELETE /v1/targets/:id', () => {

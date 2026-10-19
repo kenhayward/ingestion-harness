@@ -301,6 +301,9 @@ services:
       # The triple store (ADR 0011 step 6); empty: delivered graphs go to S3 only.
       RDF_ENDPOINT: ${RDF_ENDPOINT:-}
       RDF_DATASET: ${RDF_DATASET:-ct}
+      # The LangGraph trial (docs/design/langgraph-trial.md): `langgraph` checkpoints a recipe's
+      # steps so a stopped job resumes where it stopped; empty: the steps run as before.
+      WORKER_STEP_GRAPH: ${WORKER_STEP_GRAPH:-}
       RDF_USER: ct-writer
       RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
     networks: [default, converter, rdf]

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { bridgeError } from '@ih/bridge-contract';
 import type { PublishTargetRepo } from '../publish-targets/repo.js';
 import type { IngestionRepo } from '../repositories/types.js';
 import type { BridgeApi } from './client.js';
@@ -10,7 +11,9 @@ export const STRAGGLER_MINUTES = 10;
 /**
  * So a lost event cannot strand a job: every unfinished delivery not updated for ten minutes is
  * read from the bridge, and applied as the next event when the bridge has moved it on. A bridge
- * that cannot answer is asked again next time. Returns how many deliveries were moved on.
+ * that cannot answer is asked again next time. A delivery the bridge has no record of (its data
+ * lost or restored) will never get an event, so it fails, which finishes its job the normal way.
+ * Returns how many deliveries were moved on.
  */
 export async function reconcileOnce(
   deps: { repo: IngestionRepo; bridge: BridgeApi; targets: PublishTargetRepo },
@@ -24,14 +27,18 @@ export async function reconcileOnce(
     } catch {
       continue;
     }
-    if (!view || view.status === d.status) continue;
+    if (view?.status === d.status) continue;
     const applied = await applyEvent(deps, {
       eventId: randomUUID(),
       deliveryId: d.deliveryId,
       sequence: d.lastSequence + 1,
-      status: view.status,
-      error: view.error,
-      receipt: view.receipt,
+      ...(view
+        ? { status: view.status, error: view.error, receipt: view.receipt }
+        : {
+            status: 'failed' as const,
+            error: bridgeError('not_found', 'the bridge has no record of this delivery'),
+            receipt: null,
+          }),
       at: now.toISOString(),
     });
     if (applied === 'applied') moved += 1;

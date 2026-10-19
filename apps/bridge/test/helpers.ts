@@ -29,19 +29,22 @@ export function signedInject(
   return app.inject({ method: r.method, url: r.url, headers, payload });
 }
 
+export const TEST_CONFIG: BridgeDeps['config'] = {
+  BRIDGE_CLIENT_KEY: KEY,
+  BRIDGE_MAX_PACKAGE_MB: 50,
+  BRIDGE_PACKAGE_RETENTION_DAYS: 30,
+  BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
+  BRIDGE_COOKIE_SECURE: true,
+  BRIDGE_STAGING_BUCKET: 'ingest-bridge',
+  secrets: SECRETS,
+};
+
 /** A bridge on in-memory fakes; `over` replaces any of them. */
 export async function testBridge(over: Partial<BridgeDeps> = {}): Promise<FastifyInstance> {
   const targets = over.targets ?? new MemoryTargetRepo();
   const connections = over.connections ?? new MemoryConnectionRepo(targets);
   return buildBridge({
-    config: {
-      BRIDGE_CLIENT_KEY: KEY,
-      BRIDGE_MAX_PACKAGE_MB: 50,
-      BRIDGE_PACKAGE_RETENTION_DAYS: 30,
-      BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
-      BRIDGE_COOKIE_SECURE: true,
-      secrets: SECRETS,
-    },
+    config: TEST_CONFIG,
     deliveries: new MemoryDeliveryRepo(),
     packages: new MemoryPackageStore(),
     targets,
