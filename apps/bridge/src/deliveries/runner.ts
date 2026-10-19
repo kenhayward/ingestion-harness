@@ -100,6 +100,8 @@ export async function runOnce(deps: RunnerDeps, now: Date): Promise<'idle' | 'wo
   } catch (err) {
     transition = onError(row, asBridgeError(err), deps, now);
   }
-  await deps.deliveries.transition(row.id, transition, now);
+  // False when this run's lease expired and another runner took the delivery over: its outcome
+  // stands, and this late one is dropped.
+  await deps.deliveries.transition(row.id, transition, now, row.claimId);
   return 'worked';
 }

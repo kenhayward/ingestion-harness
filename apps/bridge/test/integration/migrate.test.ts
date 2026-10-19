@@ -9,7 +9,10 @@ describe.skipIf(!url)('migrateBridge', () => {
 
   it('applies its migrations once, into the bridge schema only', async () => {
     await pool.query('DROP SCHEMA IF EXISTS bridge CASCADE');
-    expect(await migrateBridge(url!, migrations)).toEqual(['202610191200_bridge_core.sql']);
+    expect(await migrateBridge(url!, migrations)).toEqual([
+      '202610191200_bridge_core.sql',
+      '202610191300_claim_fencing.sql',
+    ]);
     expect(await migrateBridge(url!, migrations)).toEqual([]);
     const tables = await pool.query<{ found: string | null; publicCopy: string | null }>(
       `SELECT to_regclass('bridge.deliveries')::text AS found,
@@ -17,6 +20,6 @@ describe.skipIf(!url)('migrateBridge', () => {
     );
     expect(tables.rows[0]).toEqual({ found: 'bridge.deliveries', publicCopy: null });
     const recorded = await pool.query('SELECT filename FROM bridge.schema_migrations');
-    expect(recorded.rows).toEqual([{ filename: '202610191200_bridge_core.sql' }]);
+    expect(recorded.rows).toHaveLength(2);
   });
 });

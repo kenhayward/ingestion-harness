@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import {
   applyTransition,
+  type ClaimedRow,
   eventFor,
   type DeliveryRepo,
   type DeliveryRow,
@@ -11,7 +12,7 @@ import {
 } from './repo.js';
 
 const COLUMNS = `id, package_id, target_id, idempotency_key, acting_user, overrides, status, attempts,
-  run_after, sink_job_id, error, receipt, skipped_for, created_at, updated_at`;
+  run_after, sink_job_id, error, receipt, skipped_for, claim_id, created_at, updated_at`;
 
 interface Row {
   id: string;
@@ -27,6 +28,7 @@ interface Row {
   error: DeliveryRow['error'];
   receipt: DeliveryRow['receipt'];
   skipped_for: string | null;
+  claim_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -45,6 +47,7 @@ const toRow = (r: Row): DeliveryRow => ({
   error: r.error,
   receipt: r.receipt,
   skippedFor: r.skipped_for,
+  claimId: r.claim_id,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -119,10 +122,11 @@ export class PgDeliveryRepo implements DeliveryRepo {
     });
   }
 
-  async claim(now: Date, leaseSeconds: number): Promise<DeliveryRow | null> {
+  async claim(now: Date, leaseSeconds: number): Promise<ClaimedRow | null> {
     const { rows } = await this.pool.query<Row>(
       `UPDATE bridge.deliveries
-          SET status = 'running', attempts = attempts + 1, updated_at = $1,
+          SET attempts = attempts + CASE WHEN status = 'waiting' THEN 0 ELSE 1 END,
+              status = 'running', claim_id = gen_random_uuid(), updated_at = $1,
               lease_until = $1 + make_interval(secs => $2)
         WHERE id = (
           SELECT id FROM bridge.deliveries
@@ -134,21 +138,22 @@ export class PgDeliveryRepo implements DeliveryRepo {
         RETURNING ${COLUMNS}`,
       [now, leaseSeconds],
     );
-    return rows[0] ? toRow(rows[0]) : null;
+    return rows[0] ? (toRow(rows[0]) as ClaimedRow) : null;
   }
 
-  async transition(id: string, t: Transition, now: Date): Promise<void> {
-    await this.tx(async (c) => {
+  async transition(id: string, t: Transition, now: Date, claimId: string): Promise<boolean> {
+    return this.tx(async (c) => {
       const { rows } = await c.query<Row>(
-        `SELECT ${COLUMNS} FROM bridge.deliveries WHERE id = $1 FOR UPDATE`,
-        [id],
+        `SELECT ${COLUMNS} FROM bridge.deliveries
+          WHERE id = $1 AND status = 'running' AND claim_id = $2 FOR UPDATE`,
+        [id, claimId],
       );
-      if (!rows[0]) throw new Error(`no delivery ${id}`);
+      if (!rows[0]) return false;
       const next = applyTransition(toRow(rows[0]), t, now);
       await c.query(
         `UPDATE bridge.deliveries
             SET status = $2, run_after = $3, sink_job_id = $4, error = $5, receipt = $6,
-                skipped_for = $7, updated_at = $8, lease_until = NULL
+                skipped_for = $7, updated_at = $8, lease_until = NULL, claim_id = NULL
           WHERE id = $1`,
         [
           id,
@@ -162,6 +167,7 @@ export class PgDeliveryRepo implements DeliveryRepo {
         ],
       );
       await this.emit(c, next, now);
+      return true;
     });
   }
 

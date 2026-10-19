@@ -119,6 +119,66 @@ describe('runOnce', () => {
     });
   });
 
+  it('a pending job that fails transiently is delivered afresh on retry', async () => {
+    const sink = new FakeSink({ capabilities: caps() })
+      .script('pending', 'succeed')
+      .scriptStatus({ error: 'instance_unavailable' });
+    const { deps, deliveries, submit } = await setup(sink);
+    const id = await submit();
+    await runOnce(deps, T0);
+    await runOnce(deps, at(30));
+    expect(await deliveries.get(id)).toMatchObject({
+      status: 'queued',
+      sinkJobId: null,
+      runAfter: at(60),
+    });
+    await runOnce(deps, at(60));
+    expect((await deliveries.get(id))?.status).toBe('succeeded');
+    expect(sink.delivered).toHaveLength(2);
+  });
+
+  it('polls do not use up attempts or stretch the backoff', async () => {
+    const polls = Array.from({ length: 10 }, () => 'pending' as const);
+    const sink = new FakeSink({ capabilities: caps() })
+      .script('pending')
+      .scriptStatus(...polls, { error: 'timeout' });
+    const { deps, deliveries, submit } = await setup(sink, 3);
+    const id = await submit();
+    await runOnce(deps, T0);
+    for (let i = 1; i <= 11; i++) await runOnce(deps, at(30 * i));
+    expect(await deliveries.get(id)).toMatchObject({
+      status: 'queued',
+      attempts: 1,
+      runAfter: at(330 + 30),
+      error: { code: 'timeout' },
+    });
+  });
+
+  it('drops the outcome of a run whose lease another runner took over', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const sink = new FakeSink({ capabilities: caps() });
+    const slowDeliver = sink.deliver.bind(sink);
+    let calls = 0;
+    sink.deliver = async (req) => {
+      calls += 1;
+      if (calls === 1) {
+        await gate;
+        throw new Error('late failure');
+      }
+      return slowDeliver(req);
+    };
+    const { deps, deliveries, submit } = await setup(sink);
+    const id = await submit();
+    const slow = runOnce(deps, T0);
+    await new Promise((r) => setTimeout(r, 10));
+    await runOnce(deps, at(301)); // the lease expired: another runner delivers
+    expect((await deliveries.get(id))?.status).toBe('succeeded');
+    release();
+    await slow;
+    expect((await deliveries.get(id))?.status).toBe('succeeded');
+  });
+
   it('a needs_user refusal stops without retry', async () => {
     const sink = new FakeSink({ capabilities: caps() }).script({ error: 'name_conflict' });
     const { deps, deliveries, submit } = await setup(sink);

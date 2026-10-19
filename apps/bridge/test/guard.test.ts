@@ -84,7 +84,9 @@ describe('signed-request guard', () => {
   });
 
   it('guards a body POSTed to an encoded path', async () => {
-    const res = await (await guarded()).inject({
+    const res = await (
+      await guarded()
+    ).inject({
       method: 'POST',
       url: '/%761/echo',
       headers: { 'content-type': 'application/json' },

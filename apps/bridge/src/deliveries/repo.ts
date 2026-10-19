@@ -38,9 +38,14 @@ export interface DeliveryRow {
   error: BridgeError | null;
   receipt: Receipt | null;
   skippedFor: string | null;
+  /** Who holds the current claim; a transition must present it (fencing against late runners). */
+  claimId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** A row as a claim returns it: always with the claim's id. */
+export type ClaimedRow = DeliveryRow & { claimId: string };
 
 /** A status change the runner records; `queued` with an error is a retry. */
 export type Transition =
@@ -62,11 +67,16 @@ export interface DeliveryRepo {
   create(pkg: NewPackage, deliveries: NewDelivery[], now: Date): Promise<void>;
   /**
    * Claims one due delivery ('queued' or 'waiting' with run_after <= now, or 'running' whose lease
-   * has expired): status 'running', attempts + 1, leased until now + leaseSeconds.
+   * has expired): status 'running', a fresh claimId, leased until now + leaseSeconds. Attempts
+   * count deliveries: + 1, except when claiming a 'waiting' delivery to poll its sink job.
    */
-  claim(now: Date, leaseSeconds: number): Promise<DeliveryRow | null>;
-  /** One transaction: the status change, the lease cleared, the next event in the outbox. */
-  transition(id: string, t: Transition, now: Date): Promise<void>;
+  claim(now: Date, leaseSeconds: number): Promise<ClaimedRow | null>;
+  /**
+   * One transaction: the status change, the lease cleared, the next event in the outbox. Only
+   * for the current claim: false (and nothing written) when the delivery is no longer running
+   * under `claimId`, e.g. its lease expired and another runner took it over.
+   */
+  transition(id: string, t: Transition, now: Date, claimId: string): Promise<boolean>;
   get(id: string): Promise<DeliveryRow | null>;
   /** The newest 'succeeded' delivery of this key to this target, other than `exceptId`. */
   latestSucceeded(
@@ -108,7 +118,8 @@ export function applyTransition(row: DeliveryRow, t: Transition, now: Date): Del
     case 'failed':
       return { ...next, error: t.error };
     case 'queued':
-      return { ...next, runAfter: t.runAfter, error: t.error };
+      // A retry delivers afresh: a sink job that failed is not polled again.
+      return { ...next, runAfter: t.runAfter, error: t.error, sinkJobId: null };
   }
 }
 
@@ -158,6 +169,7 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
         error: null,
         receipt: null,
         skippedFor: null,
+        claimId: null,
         createdAt: now,
         updatedAt: now,
         leaseUntil: null,
@@ -168,7 +180,7 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
     }
   }
 
-  async claim(now: Date, leaseSeconds: number): Promise<DeliveryRow | null> {
+  async claim(now: Date, leaseSeconds: number): Promise<ClaimedRow | null> {
     const due = [...this.deliveries.values()]
       .filter(
         (d) =>
@@ -178,19 +190,26 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
       .sort((a, b) => a.runAfter.getTime() - b.runAfter.getTime() || a.order - b.order);
     const row = due[0];
     if (!row) return null;
+    if (row.status !== 'waiting') row.attempts += 1;
     row.status = 'running';
-    row.attempts += 1;
+    row.claimId = randomUUID();
     row.leaseUntil = new Date(now.getTime() + leaseSeconds * 1000);
     row.updatedAt = now;
-    return strip(row);
+    return strip(row) as ClaimedRow;
   }
 
-  async transition(id: string, t: Transition, now: Date): Promise<void> {
+  async transition(id: string, t: Transition, now: Date, claimId: string): Promise<boolean> {
     const row = this.deliveries.get(id);
-    if (!row) throw new Error(`no delivery ${id}`);
-    const next = { ...applyTransition(row, t, now), leaseUntil: null, order: row.order };
+    if (!row || row.status !== 'running' || row.claimId !== claimId) return false;
+    const next = {
+      ...applyTransition(row, t, now),
+      claimId: null,
+      leaseUntil: null,
+      order: row.order,
+    };
     this.deliveries.set(id, next);
     this.emit(next, now);
+    return true;
   }
 
   async get(id: string): Promise<DeliveryRow | null> {
