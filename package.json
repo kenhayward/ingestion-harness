@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config apps/api/vitest.integration.config.ts",
+    "test:integration": "vitest run --config apps/api/vitest.integration.config.ts && vitest run --config apps/bridge/vitest.integration.config.ts",
     "test:coverage": "vitest run --coverage",
     "openapi": "vitest run --project api test/openapi.test.ts -u",
     "dev:api": "npm run dev -w @ih/api",
