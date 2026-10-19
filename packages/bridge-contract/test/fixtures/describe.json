@@ -1,0 +1,35 @@
+{
+  "name": "Example external sink",
+  "contractVersion": 1,
+  "connectionKind": "personal",
+  "instances": [{ "id": "sandbox", "label": "Sandbox" }],
+  "credentialFields": [
+    { "id": "username", "label": "Username", "secret": false },
+    { "id": "password", "label": "Password", "secret": true }
+  ],
+  "destinationFields": [
+    {
+      "id": "repository",
+      "label": "Repository",
+      "kind": "fixed",
+      "required": true,
+      "overridable": false,
+      "browse": true
+    },
+    {
+      "id": "documentName",
+      "label": "Document name",
+      "kind": "pattern",
+      "required": false,
+      "overridable": true,
+      "browse": false
+    }
+  ],
+  "capabilities": {
+    "browse": true,
+    "replace": true,
+    "withdraw": false,
+    "readBack": false,
+    "accepts": ["files", "data"]
+  }
+}
