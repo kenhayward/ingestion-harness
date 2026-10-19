@@ -95,6 +95,36 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
     check('unsigned refused', false, String(err));
   }
 
+  // 2b. a replayed signature (same nonce) is refused
+  try {
+    const headers = signRequest(opts.key, { method: 'GET', path: '/describe', body: '' });
+    const first = await fetchImpl(`${base}/describe`, { headers });
+    const again = await fetchImpl(`${base}/describe`, { headers });
+    await Promise.all([first.text(), again.text()]);
+    check('replay refused', first.status === 200 && again.status === 401, `status ${again.status}`);
+  } catch (err) {
+    check('replay refused', false, String(err));
+  }
+
+  // 2c. a body changed after signing is refused
+  try {
+    const signedBody = JSON.stringify({ instanceId: opts.instanceId, credential: {} });
+    const sentBody = JSON.stringify({ instanceId: `${opts.instanceId}-changed`, credential: {} });
+    const headers = {
+      ...signRequest(opts.key, { method: 'POST', path: '/connections:test', body: signedBody }),
+      'content-type': 'application/json',
+    };
+    const res = await fetchImpl(`${base}/connections:test`, {
+      method: 'POST',
+      headers,
+      body: sentBody,
+    });
+    await res.text();
+    check('tampered body refused', res.status === 401, `status ${res.status}`);
+  } catch (err) {
+    check('tampered body refused', false, String(err));
+  }
+
   // 3. connections:test answers a result or a contract error
   try {
     const res = await call('POST', '/connections:test', {

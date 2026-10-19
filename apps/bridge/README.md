@@ -58,6 +58,6 @@ docker run --rm -e SINK_URL=http://sink:8080 -e SINK_KEY=... -e SINK_INSTANCE=sa
   ghcr.io/<owner>/ct-bridge-conformance:<version>
 ```
 
-It checks describe, signature enforcement, connection test, browse (when offered), delivery of the
+It checks describe, that unsigned, replayed and tampered requests are refused, the connection test, browse (when offered), delivery of the
 contract's document fixture (waiting out a pending answer), a repeat delivery (when the sink can
 replace), and that every error body is a contract error.

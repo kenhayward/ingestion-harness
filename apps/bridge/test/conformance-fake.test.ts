@@ -33,6 +33,8 @@ describe('conformance suite', () => {
     expect(results.map((r) => r.name)).toEqual([
       'describe',
       'unsigned refused',
+      'replay refused',
+      'tampered body refused',
       'connections:test',
       'browse',
       'deliver',
@@ -40,6 +42,24 @@ describe('conformance suite', () => {
       'errors',
     ]);
     expect(sink.delivered).toHaveLength(2);
+  });
+
+  it('fails a sink that only checks the signature headers are present', async () => {
+    const real = await serveSink(new FakeSink(), KEY);
+    open.push(real);
+    const lax = Fastify();
+    lax.all('/*', async (req, reply) => {
+      if (!req.headers['x-bridge-signature']) return reply.code(401).send({});
+      const res = await real.inject({
+        method: 'GET',
+        url: '/describe',
+        headers: req.headers as Record<string, string>,
+      });
+      return reply.code(200).header('content-type', 'application/json').send(res.body);
+    });
+    const results = await run(await listen(lax));
+    expect(results.find((r) => r.name === 'replay refused')).toMatchObject({ ok: false });
+    expect(results.find((r) => r.name === 'tampered body refused')).toMatchObject({ ok: false });
   });
 
   it('fails a sink whose error bodies break the contract', async () => {
