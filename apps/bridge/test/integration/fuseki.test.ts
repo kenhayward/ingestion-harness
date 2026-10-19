@@ -13,12 +13,15 @@ import { SinkError } from '../../src/sinks/port.js';
 const url = process.env.IH_TEST_FUSEKI_URL;
 
 describe.skipIf(!url)('HttpGraphStore against Fuseki', () => {
-  const store = new HttpGraphStore({
-    endpoint: url!,
-    dataset: process.env.IH_TEST_FUSEKI_DATASET ?? 'ct',
-    user: process.env.IH_TEST_FUSEKI_USER ?? null,
-    password: process.env.IH_TEST_FUSEKI_PASSWORD ?? null,
-  });
+  // A skipped suite's body still runs while tests are collected: no store without a URL.
+  const store = url
+    ? new HttpGraphStore({
+        endpoint: url,
+        dataset: process.env.IH_TEST_FUSEKI_DATASET ?? 'ct',
+        user: process.env.IH_TEST_FUSEKI_USER ?? null,
+        password: process.env.IH_TEST_FUSEKI_PASSWORD ?? null,
+      })
+    : (null as unknown as HttpGraphStore);
   const graph = `https://test.example/graph/${randomUUID()}`;
   const turtle = (v: number) =>
     `<${graph}> <${GRAPH_VERSION}> ${v} .\n<${graph}#d> a <${graph}#T> .\n`;
