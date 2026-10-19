@@ -128,3 +128,10 @@ export const ObjectDeleteRequestSchema = z.strictObject({
   objects: z.array(ObjectRefSchema).min(1),
 });
 export const ObjectDeleteResultSchema = z.strictObject({ deleted: z.number().int() });
+
+/** The bridge redeems a one-time code (`POST {producer}/bridge/handoff/redeem`) for this user. */
+export const HandoffRedeemRequestSchema = z.strictObject({ code: z.string().min(1) });
+export const HandoffUserSchema = ActingUserSchema.extend({
+  role: z.enum(['admin', 'designer', 'operator']),
+});
+export type HandoffUser = z.infer<typeof HandoffUserSchema>;

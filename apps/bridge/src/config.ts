@@ -42,6 +42,18 @@ const EnvSchema = z.object({
   S3_SECRET_KEY: z.string().min(1),
   /** Where accepted packages wait until their deliveries are done. */
   BRIDGE_STAGING_BUCKET: z.preprocess(blank, z.string().default('ingest-bridge')),
+  /** CT Studio's API base, for signed calls back (handoff codes), e.g. http://api:3000/api. */
+  BRIDGE_PRODUCER_URL: z.string().url(),
+  /** Where browsers reach the connections page: its own origin, or a path under CT Studio's. */
+  BRIDGE_PUBLIC_URL: z.string().url(),
+  /** Marks the page's session cookie Secure (turn off only for plain-HTTP local use). */
+  BRIDGE_COOKIE_SECURE: z.preprocess(
+    blank,
+    z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((v) => v === 'true'),
+  ),
   /** Encrypts connection secrets at rest (32 bytes, base64). */
   BRIDGE_SECRETS_KEY: masterKey('BRIDGE_SECRETS_KEY'),
   /** The key before a rotation: still decrypts. */

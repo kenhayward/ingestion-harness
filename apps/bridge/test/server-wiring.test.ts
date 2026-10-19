@@ -11,6 +11,8 @@ const config = loadBridgeConfig({
   S3_ENDPOINT: 'http://seaweedfs:8333',
   S3_ACCESS_KEY: 'internal-key',
   S3_SECRET_KEY: 'internal-secret',
+  BRIDGE_PRODUCER_URL: 'http://api:3000/api',
+  BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
 });
 
 const pool = (answer: () => Promise<unknown>) => ({ query: answer }) as unknown as pg.Pool;

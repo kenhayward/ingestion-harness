@@ -8,6 +8,7 @@ import { PgConnectionRepo } from './connections/pg.js';
 import { PgDeliveryRepo } from './deliveries/pg.js';
 import type { RunnerDeps } from './deliveries/runner.js';
 import { S3PackageStore } from './packages/s3.js';
+import { HttpProducerClient } from './producer/client.js';
 import { S3ObjectStore, type ObjectStorePort } from './s3/store.js';
 import { MapSinkRegistry } from './sinks/port.js';
 import { S3_SINK_ID, S3Sink } from './sinks/s3.js';
@@ -61,6 +62,7 @@ export async function buildFromConfig(
     sinks,
     connections,
     credentials,
+    producer: new HttpProducerClient(config.BRIDGE_PRODUCER_URL, config.BRIDGE_CLIENT_KEY),
     nonces: new MemoryNonceStore(),
     logger: infra.logger ?? false,
     ready: async () => {
