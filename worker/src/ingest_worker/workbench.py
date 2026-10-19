@@ -29,7 +29,7 @@ from .pipeline import (
     check_cancelled,
     load_source,
     mark_pages,
-    ocr_pages,
+    read_pages,
 )
 from .queue import ClaimedJob, JobQueue
 from .segment import PAGE_BREAK, SectionSpan, key_issues, section_spans, select_copy
@@ -109,29 +109,14 @@ def prepare_sample(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict
 
 def _prepare(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
     source = load_source(job, deps, queue)
-    pdf, sha256 = source.pdf, source.sha256
-    pages = _extract(deps, pdf)
-    total = len(pages)
-
-    def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
-        # `pages`: the document's page count, which the Samples tab shows mid-OCR (#142).
-        data = {"stage": stage, "page": page, "of": of, "pages": total}
-        _quietly(job, "info", PREPARE_PROGRESS, data, queue)
-
-    report("text", len(pages), len(pages))
+    sha256 = source.sha256
+    read = read_pages(job, deps, queue, source, "auto", text_layer=lambda pdf: _extract(deps, pdf))
     ocr_numbers = (
-        [i + 1 for i in pages_needing_ocr(pages, "auto", deps.ocr.min_chars)] if deps.ocr else []
+        [i + 1 for i in pages_needing_ocr(read.layer, "auto", deps.ocr.min_chars)]
+        if deps.ocr
+        else []
     )
-    pages = ocr_pages(
-        job,
-        deps,
-        queue,
-        pdf,
-        pages,
-        "auto",
-        sha256=sha256,
-        progress=lambda done, total: report("ocr", done, total),
-    )
+    pages = read.pages
     if not any(p.strip() for p in pages):
         hint = "OCR is not configured" if deps.ocr is None else "OCR returned no text"
         raise DocumentError(f"no extractable text (scanned/image-only PDF?); {hint}")

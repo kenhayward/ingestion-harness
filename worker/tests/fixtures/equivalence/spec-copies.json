@@ -1,0 +1,268 @@
+{
+ "models": {
+  "calls": [
+   {
+    "images": [],
+    "max_tokens": 64000,
+    "model": "claude-opus-5-5",
+    "prompt": "You are extracting structured data from a supplier invoice.\n\nReturn only the fields defined by the JSON schema. Use ISO 8601 for dates and ISO 4217 for\ncurrency. If a numeric field is absent from the document, return null where the schema allows\nit; never invent values.\n\n\n<section id=\"header\">\nINVOICE INV-001\nAcme Supplies Ltd\nDate: 2026-03-01\n</section>\n\n<section id=\"totals\">\nSubtotal 13.00\nVAT 2.60\nTotal 15.60 GBP\n</section>\n\n",
+    "schema": {
+     "additionalProperties": false,
+     "properties": {
+      "currency": {
+       "description": "ISO 4217 code",
+       "type": "string"
+      },
+      "invoice_date": {
+       "description": "ISO 8601 date",
+       "type": "string"
+      },
+      "invoice_number": {
+       "type": "string"
+      },
+      "subtotal": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "supplier_name": {
+       "type": "string"
+      },
+      "tax": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "total": {
+       "type": "number"
+      }
+     },
+     "required": [
+      "invoice_number",
+      "invoice_date",
+      "supplier_name",
+      "currency",
+      "total"
+     ],
+     "type": "object"
+    },
+    "schema_name": "invoice_header",
+    "system": "You extract structured data from business documents. Respond only with JSON that satisfies the provided schema. Copy values exactly as they appear in the document; never invent values that are not present."
+   },
+   {
+    "images": [],
+    "max_tokens": 64000,
+    "model": "claude-opus-5-5",
+    "prompt": "You are extracting the line-item table from a supplier invoice.\n\nReturn one entry in `items` per table row, in document order. Skip subtotal/total rows and\npage-break headers repeated across pages. Quantities and prices are plain numbers (no currency\nsymbols or thousands separators).\n\n\n<section id=\"line_items\">\nDescription          Qty   Unit   Amount\nWidget               2     5.00   10.00\n\n\f\nGadget               1     3.00   3.00\n</section>\n\n",
+    "schema": {
+     "additionalProperties": false,
+     "properties": {
+      "items": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "amount": {
+          "type": "number"
+         },
+         "description": {
+          "type": "string"
+         },
+         "quantity": {
+          "type": "number"
+         },
+         "sku": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "unit_price": {
+          "type": "number"
+         }
+        },
+        "required": [
+         "description",
+         "quantity",
+         "unit_price",
+         "amount"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      }
+     },
+     "required": [
+      "items"
+     ],
+     "type": "object"
+    },
+    "schema_name": "line_items",
+    "system": "You extract structured data from business documents. Respond only with JSON that satisfies the provided schema. Copy values exactly as they appear in the document; never invent values that are not present."
+   }
+  ],
+  "vision": []
+ },
+ "queue": {
+  "awaiting": [],
+  "completed": [
+   [
+    "job-1",
+    [
+     "csv:example-invoice/v1/invoices/doc-1.csv",
+     "csv:example-invoice/v1/invoice_lines/doc-1.csv",
+     "json:example-invoice/v1/invoice_full/doc-1.json"
+    ]
+   ]
+  ],
+  "drafts": [
+   [
+    "job-1",
+    [
+     "csv:example-invoice/v1/invoices/doc-1.csv",
+     "csv:example-invoice/v1/invoice_lines/doc-1.csv",
+     "json:example-invoice/v1/invoice_full/doc-1.json"
+    ]
+   ]
+  ],
+  "events": [
+   [
+    "job-1",
+    "info",
+    "prepare progress",
+    {
+     "of": 3,
+     "page": 3,
+     "pages": 3,
+     "stage": "text"
+    }
+   ],
+   [
+    "job-1",
+    "info",
+    "selected copy",
+    {
+     "first_page": 2
+    }
+   ],
+   [
+    "job-1",
+    "info",
+    "segmented",
+    {
+     "pages": 2,
+     "sections": [
+      "header",
+      "line_items",
+      "totals"
+     ]
+    }
+   ],
+   [
+    "job-1",
+    "info",
+    "extracted invoice_header",
+    {
+     "attempts": 1,
+     "model": "anthropic/claude-opus-5-5"
+    }
+   ],
+   [
+    "job-1",
+    "info",
+    "extracted line_items",
+    {
+     "attempts": 1,
+     "model": "anthropic/claude-opus-5-5"
+    }
+   ]
+  ],
+  "failed": [],
+  "published": [],
+  "reviewed": [],
+  "step_runs": []
+ },
+ "store": {
+  "inbox/example-invoice/v1/doc-1.pdf": {
+   "body": {
+    "bytes": 9,
+    "sha256": "9d75a845cfb79271"
+   },
+   "type": "application/pdf"
+  },
+  "outputs/example-invoice/v1/invoice_full/doc-1.json": {
+   "body": {
+    "data": {
+     "invoice_header": {
+      "currency": "GBP",
+      "invoice_date": "2026-03-01",
+      "invoice_number": "INV-001",
+      "subtotal": 13.0,
+      "supplier_name": "Acme Supplies Ltd",
+      "tax": 2.6,
+      "total": 15.6
+     },
+     "line_items": {
+      "items": [
+       {
+        "amount": 10.0,
+        "description": "Widget",
+        "quantity": 2,
+        "sku": null,
+        "unit_price": 5.0
+       },
+       {
+        "amount": 3.0,
+        "description": "Gadget",
+        "quantity": 1,
+        "sku": null,
+        "unit_price": 3.0
+       }
+      ]
+     }
+    },
+    "document_id": "doc-1",
+    "extracted_at": "<time>",
+    "job_id": "job-1",
+    "models": {
+     "invoice_header": "anthropic/claude-opus-5-5",
+     "line_items": "anthropic/claude-opus-5-5"
+    },
+    "spec_id": "example-invoice",
+    "spec_version": 1
+   },
+   "type": "application/json"
+  },
+  "outputs/example-invoice/v1/invoice_lines/doc-1.csv": {
+   "body": "﻿document_id,sku,description,quantity,unit_price,amount\ndoc-1,,Widget,2,5.0,10.0\ndoc-1,,Gadget,1,3.0,3.0\n",
+   "type": "text/csv; charset=utf-8"
+  },
+  "outputs/example-invoice/v1/invoices/doc-1.csv": {
+   "body": "﻿document_id,invoice_number,invoice_date,supplier_name,currency,total\ndoc-1,INV-001,2026-03-01,Acme Supplies Ltd,GBP,15.6\n",
+   "type": "text/csv; charset=utf-8"
+  },
+  "runs/job-1/invoice_header/attempt-1.json": {
+   "body": {
+    "errors": [],
+    "input_tokens": 10,
+    "n": 1,
+    "output_tokens": 5,
+    "prompt": "You are extracting structured data from a supplier invoice.\n\nReturn only the fields defined by the JSON schema. Use ISO 8601 for dates and ISO 4217 for\ncurrency. If a numeric field is absent from the document, return null where the schema allows\nit; never invent values.\n\n\n<section id=\"header\">\nINVOICE INV-001\nAcme Supplies Ltd\nDate: 2026-03-01\n</section>\n\n<section id=\"totals\">\nSubtotal 13.00\nVAT 2.60\nTotal 15.60 GBP\n</section>\n\n",
+    "response": "{\"invoice_number\": \"INV-001\", \"invoice_date\": \"2026-03-01\", \"supplier_name\": \"Acme Supplies Ltd\", \"currency\": \"GBP\", \"subtotal\": 13.0, \"tax\": 2.6, \"total\": 15.6}"
+   },
+   "type": "application/json"
+  },
+  "runs/job-1/line_items/attempt-1.json": {
+   "body": {
+    "errors": [],
+    "input_tokens": 10,
+    "n": 1,
+    "output_tokens": 5,
+    "prompt": "You are extracting the line-item table from a supplier invoice.\n\nReturn one entry in `items` per table row, in document order. Skip subtotal/total rows and\npage-break headers repeated across pages. Quantities and prices are plain numbers (no currency\nsymbols or thousands separators).\n\n\n<section id=\"line_items\">\nDescription          Qty   Unit   Amount\nWidget               2     5.00   10.00\n\n\f\nGadget               1     3.00   3.00\n</section>\n\n",
+    "response": "{\"items\": [{\"sku\": null, \"description\": \"Widget\", \"quantity\": 2, \"unit_price\": 5.0, \"amount\": 10.0}, {\"sku\": null, \"description\": \"Gadget\", \"quantity\": 1, \"unit_price\": 3.0, \"amount\": 3.0}]}"
+   },
+   "type": "application/json"
+  }
+ }
+}
