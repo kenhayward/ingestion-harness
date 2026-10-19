@@ -31,14 +31,16 @@ export function ResultHelp() {
       <h3>The contents</h3>
       <p>
         The list on the left holds everything the result contains: the fields, each table with its
-        rows, each check, the issues and the published files. Pick one to open it on the right. A
-        count in amber is something to look at: values edited in review, near matches, issues.
+        rows, each check, the graph (when RDF is delivered), the issues and the published files.
+        Pick one to open it on the right. A count in amber is something to look at: values edited in
+        review, near matches, issues.
       </p>
       <p>
         A table can be filtered (<strong>Filter rows</strong> keeps the rows with a matching value)
         and downloaded as <strong>CSV</strong>; ‹ › step to the table before or after.{' '}
         <strong>Published files</strong> downloads each output: the CSV files, the JSON document,
-        and the graph when RDF is delivered.
+        and the graph when RDF is delivered. <strong>Graph</strong> shows that graph as cards, a
+        diagram or Turtle (see <em>Reading a graph</em>).
       </p>
 
       <h3>Fields and tables</h3>

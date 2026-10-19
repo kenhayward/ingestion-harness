@@ -1,6 +1,7 @@
-import type { JobOutput } from '@ih/shared';
+import { TemplateSchema, type JobOutput } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
-import { UnreachableStore, fakePdf, multipart, testApp } from './helpers.js';
+import { SpecRegistry } from '../src/specs/spec-registry.js';
+import { UnreachableStore, demoTemplate, fakePdf, multipart, testApp } from './helpers.js';
 
 type Ctx = Awaited<ReturnType<typeof testApp>>;
 
@@ -284,6 +285,36 @@ describe('GET /api/results/:jobId', () => {
       'batch',
       'value',
     ]);
+  });
+
+  it("carries the recipe's ontology pins, prefixes and local terms, to name the graph's terms", async () => {
+    const semantics = {
+      ontologies: [{ id: 'acme', version: 2 }],
+      prefixes: { acme: 'https://acme.example/def/' },
+      document: { class: 'acme:Batch' },
+      local: [{ iri: 'acme:lotCode', kind: 'datatype_property', label: 'Lot code' }],
+    };
+    const template = TemplateSchema.parse({ ...demoTemplate, semantics });
+    const ctx = await testApp({
+      specs: SpecRegistry.fromDefinitions([
+        { kind: 'template', id: 'tdemo', version: 1, template },
+      ]),
+    });
+    const job = await upload(ctx, 'tdemo', 'a.pdf');
+    publish(ctx, job.id, '2026-10-02T00:00:00.000Z', [out('results', 'published')]);
+    const body = (await ctx.app.inject(`/api/results/${job.id}`)).json();
+    expect(body.definition.semantics).toEqual({
+      ontologies: [{ id: 'acme', version: 2 }],
+      prefixes: { acme: 'https://acme.example/def/' },
+      local: [{ iri: 'acme:lotCode', kind: 'datatype_property', label: 'Lot code' }],
+    });
+    // A recipe without a mapping has none.
+    const plain = await testApp();
+    const other = await upload(plain, 'tdemo', 'b.pdf');
+    publish(plain, other.id, '2026-10-02T00:00:00.000Z', [out('results', 'published')]);
+    expect(
+      (await plain.app.inject(`/api/results/${other.id}`)).json().definition,
+    ).not.toHaveProperty('semantics');
   });
 
   it('reports a document missing from the target without failing', async () => {

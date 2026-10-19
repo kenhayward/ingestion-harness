@@ -194,16 +194,37 @@ describe('MappingEditor', () => {
       error: null,
       result: {
         samples: [
-          { sampleId: 's1', fileName: 's1.pdf', turtle: '<a> <b> <c> .', triples: 1, report: null },
+          {
+            sampleId: 's1',
+            fileName: 's1.pdf',
+            turtle: `<https://d/doc/s1> a <${A}Letter> ; <${A}sentBy> "Ünïcorn" .`,
+            triples: 2,
+            report: null,
+          },
         ],
       },
     }));
-    setup(mapped, fakeApi({ startGraphPreview, getGraphPreview }), { projectId: 'letter' });
+    const api = fakeApi({ startGraphPreview, getGraphPreview });
+    setup(mapped, api, { projectId: 'letter' });
     await open('Preview');
     await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
     expect(startGraphPreview).toHaveBeenCalledWith('letter');
-    await waitFor(() => expect(screen.getByText('<a> <b> <c> .')).toBeTruthy());
-    expect(screen.getByText(/s1\.pdf · 1 triple/)).toBeTruthy();
+    expect(await screen.findByText(/s1\.pdf · 2 triples/)).toBeTruthy();
+    // Each sample's graph reads as cards, named with the mapping's own pins.
+    const card = await screen.findByRole('article', { name: 'Letter s1' });
+    expect(
+      within(card).getByRole('rowheader', { name: 'Sent by' }).closest('tr'),
+    ).toHaveTextContent('Ünïcorn');
+    await waitFor(() =>
+      expect(api.termLabels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ontologies: [{ id: 'acme', version: 1 }],
+          terms: expect.arrayContaining([`${A}Letter`, `${A}sentBy`]),
+        }),
+      ),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Turtle' }));
+    expect(screen.getByText(/<https:\/\/d\/doc\/s1> a/)).toBeInTheDocument();
   });
 
   it('shows why a preview could not start', async () => {
