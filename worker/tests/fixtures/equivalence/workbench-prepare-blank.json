@@ -1,0 +1,133 @@
+{
+ "models": {
+  "calls": [],
+  "vision": [
+   {
+    "image": "ad91235e88229246",
+    "model": "olmocr-2-7b-1025",
+    "prompt": "Attached is one page of a document that you must process. Just return the plain text representation of this document as if you were reading it naturally. Convert equations to LateX and tables to HTML.\nIf there are any figures or charts, label them with the following markdown syntax ![Alt text describing the contents of the figure](page_startx_starty_width_height.png)\nReturn your output as markdown, with a front matter section on top specifying values for the primary_language, is_rotation_valid, rotation_correction, is_table, and is_diagram parameters."
+   },
+   {
+    "image": "871923f8e5535ef9",
+    "model": "olmocr-2-7b-1025",
+    "prompt": "Attached is one page of a document that you must process. Just return the plain text representation of this document as if you were reading it naturally. Convert equations to LateX and tables to HTML.\nIf there are any figures or charts, label them with the following markdown syntax ![Alt text describing the contents of the figure](page_startx_starty_width_height.png)\nReturn your output as markdown, with a front matter section on top specifying values for the primary_language, is_rotation_valid, rotation_correction, is_table, and is_diagram parameters."
+   }
+  ]
+ },
+ "queue": {
+  "awaiting": [],
+  "completed": [],
+  "drafts": [],
+  "events": [
+   [
+    "job-p",
+    "info",
+    "prepare progress",
+    {
+     "of": 2,
+     "page": 2,
+     "pages": 2,
+     "stage": "text"
+    }
+   ],
+   [
+    "job-p",
+    "info",
+    "prepare progress",
+    {
+     "of": 2,
+     "page": 0,
+     "pages": 2,
+     "stage": "ocr"
+    }
+   ],
+   [
+    "job-p",
+    "info",
+    "prepare progress",
+    {
+     "of": 2,
+     "page": 1,
+     "pages": 2,
+     "stage": "ocr"
+    }
+   ],
+   [
+    "job-p",
+    "info",
+    "prepare progress",
+    {
+     "of": 2,
+     "page": 2,
+     "pages": 2,
+     "stage": "ocr"
+    }
+   ],
+   [
+    "job-p",
+    "info",
+    "ocr",
+    {
+     "cached": [],
+     "model": "local/olmocr-2-7b-1025",
+     "pages": [
+      1,
+      2
+     ],
+     "shared": []
+    }
+   ],
+   [
+    "job-p",
+    "warn",
+    "prepare failed",
+    {
+     "code": "other",
+     "message": "no extractable text (scanned/image-only PDF?); OCR returned no text"
+    }
+   ],
+   [
+    "job-p",
+    "warn",
+    "needs review",
+    {
+     "reason": "no extractable text (scanned/image-only PDF?); OCR returned no text"
+    }
+   ]
+  ],
+  "failed": [],
+  "published": [],
+  "reviewed": [
+   [
+    "job-p",
+    "no extractable text (scanned/image-only PDF?); OCR returned no text"
+   ]
+  ],
+  "step_runs": []
+ },
+ "store": {
+  "inbox/letter/v1/doc-s.pdf": {
+   "body": {
+    "bytes": 21,
+    "sha256": "651e206ab6299ebb"
+   },
+   "type": "application/pdf"
+  },
+  "runs/job-p/ocr/page-1.md": {
+   "body": "---\nprimary_language: en\nis_rotation_valid: true\nrotation_correction: 0\n---\n",
+   "type": "text/markdown"
+  },
+  "runs/job-p/ocr/page-2.md": {
+   "body": "---\nprimary_language: en\nis_rotation_valid: true\nrotation_correction: 0\n---\n",
+   "type": "text/markdown"
+  },
+  "runs/ocr-cache/651e206ab6299ebb3a6a214fc3787f5e00ba35ddff6ca3cbb5c03d7e37946670/69fdaa9ac8f32706/page-1.md": {
+   "body": "---\nprimary_language: en\nis_rotation_valid: true\nrotation_correction: 0\n---\n",
+   "type": "text/markdown"
+  },
+  "runs/ocr-cache/651e206ab6299ebb3a6a214fc3787f5e00ba35ddff6ca3cbb5c03d7e37946670/69fdaa9ac8f32706/page-2.md": {
+   "body": "---\nprimary_language: en\nis_rotation_valid: true\nrotation_correction: 0\n---\n",
+   "type": "text/markdown"
+  }
+ }
+}
