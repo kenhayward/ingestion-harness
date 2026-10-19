@@ -69,7 +69,7 @@ and refreshing staging with production's data while staging stays staging.
   the kept previous one) and the files.
 - Files added while a backup runs may be missing; the restore report lists them.
 
-## Addendum, 2026-10-20: the delivery bridge (ADR 0016)
+## Addendum, 2026-10-20: the delivery bridge ([ADR 0017](0017-delivery-bridge.md))
 
 - **The bridge's schema is in the dump.** `pg_dump` takes the whole database, so the `bridge`
   schema (connections, targets, packages, deliveries, events) is backed up and restored with

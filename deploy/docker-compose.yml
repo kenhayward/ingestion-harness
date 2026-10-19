@@ -168,7 +168,7 @@ services:
     restart: 'no'
 
   bridge:
-    # The delivery bridge (docs/adr/0016-delivery-bridge.md): delivers packages to their targets'
+    # The delivery bridge (docs/adr/0017-delivery-bridge.md): delivers packages to their targets'
     # sinks (S3 built in), keeps shared connections encrypted under BRIDGE_SECRETS_KEY, and serves
     # the connections page. No host port: the API and the worker reach it on the compose network,
     # browsers reach only its connections page, through the app's nginx (/bridge/connections) or

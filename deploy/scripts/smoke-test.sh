@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Post-deploy checks through the nginx front door, including email and password access (ADR
-# 0013), publishing through the delivery bridge (ADR 0016), Word documents through the converter
+# 0013), publishing through the delivery bridge (ADR 0017), Word documents through the converter
 # (ADR 0009) and the data lake's read-only S3 keys (ADR 0008).
 #   ADMIN_TOKEN  required: the admin token the API logged at startup ("ADMIN TOKEN ..."), the
 #                password of the user "admin".
@@ -146,7 +146,7 @@ grep -q '"result":"password-changed"' <<<"$events" || fail "sign-in events: $eve
 [[ "$(status -b "$USER_JAR" "$BASE_URL/api/sign-ins")" == 401 ]] || fail "sign-ins need a session"
 echo "ok   users: add, first sign-in, password change, disable, sign-in events"
 
-# --- Delivery bridge (ADR 0016): its connections page, and a reviewed job published through it --
+# --- Delivery bridge (ADR 0017): its connections page, and a reviewed job published through it --
 got="$(status "$BASE_URL/bridge/connections/start?code=bad")"
 [[ "$got" == 401 ]] || fail "a bad connections link must be refused (401), got $got"
 echo "ok   connections page refuses a bad link"
