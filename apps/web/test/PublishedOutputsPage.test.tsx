@@ -29,6 +29,7 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     kind: 'internal',
     bucket: 'ingest-published',
     prefix: '',
+    endpoint: null,
     connectionId: null,
     connection: null,
     sse: 'none',

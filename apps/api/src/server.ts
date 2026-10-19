@@ -37,7 +37,7 @@ import { syncTargetsWithBridge } from './bridge/mirror.js';
 import { reconcileOnce } from './bridge/reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
-import { defaultSeed, seedDifferences } from './publish-targets/seed.js';
+import { defaultSeed, rdfSeed, seedDifferences } from './publish-targets/seed.js';
 import { TargetStores } from './publish-targets/stores.js';
 import { PgRepo } from './repositories/pg.js';
 import { PgS3KeyRepo } from './s3keys/pg.js';
@@ -84,6 +84,9 @@ const llmSecrets = secretsKeys(process.env);
 const targets = new PgPublishTargetRepo(makePool(2));
 const seed = defaultSeed(config);
 const seedOutcome = await targets.seedDefault(seed);
+// The triple store target (delivery bridge phase 3): seeded once from RDF_ENDPOINT, when set.
+const tripleStoreSeed = rdfSeed(config);
+const rdfSeedOutcome = tripleStoreSeed ? await targets.seedRdf(tripleStoreSeed) : null;
 // Internal targets' buckets are created on this deployment's SeaweedFS when they are saved.
 const targetStores = new TargetStores({ internal: s3 });
 // The delivery bridge publishes; targets are mirrored to it and their keys moved there once.
@@ -250,6 +253,12 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 if (seeded.length) app.log.info({ seeded }, 'imported template files into the database');
 if (seedOutcome === 'seeded') app.log.info('publishing target default seeded from .env');
+if (rdfSeedOutcome === 'seeded') app.log.info('triple store target seeded from RDF_ENDPOINT');
+if (rdfSeedOutcome === 'differs') {
+  app.log.warn(
+    'the triple store target differs from RDF_ENDPOINT/RDF_DATASET/RDF_USER: .env is ignored now',
+  );
+}
 if (seedOutcome === 'differs') {
   const stored = await targets.get('default');
   const fields = stored ? seedDifferences(stored, seed).join(', ') : '';

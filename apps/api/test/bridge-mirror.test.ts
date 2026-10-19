@@ -226,3 +226,43 @@ describe('mirrorTargets after a restore', () => {
     expect(bridge.targets.has('archive')).toBe(true);
   });
 });
+
+describe('the triple store target on the bridge', () => {
+  const RDF = { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' };
+
+  it('is mirrored to the rdf sink, with its env connection made once', async () => {
+    const { targets, bridge } = await setup();
+    await targets.seedRdf(RDF);
+    await mirrorTargets({ targets, bridge });
+    expect(bridge.targets.get('rdf-default')).toEqual({
+      label: 'Triple store',
+      sinkId: 'rdf',
+      instanceId: null,
+      connectionId: 'rdf-default',
+      destination: { dataset: 'ct' },
+    });
+    expect(bridge.connections.get('rdf-default')).toEqual({
+      id: 'rdf-default',
+      name: 'Triple store',
+      sinkId: 'rdf',
+      fields: { endpoint: 'http://fuseki:3030', user: 'ct-writer' },
+      secret: null,
+      secretEnv: 'RDF_PASSWORD',
+    });
+  });
+
+  it('leaves a connection the bridge already has (an admin may have stored a password)', async () => {
+    const { targets, bridge } = await setup();
+    await targets.seedRdf(RDF);
+    bridge.summaries.push({
+      id: 'rdf-default',
+      name: 'Triple store',
+      sinkId: 'rdf',
+      status: 'ok',
+      statusReason: null,
+    });
+    await mirrorTargets({ targets, bridge });
+    expect(bridge.connections.has('rdf-default')).toBe(false);
+    expect(bridge.targets.get('rdf-default')?.connectionId).toBe('rdf-default');
+  });
+});

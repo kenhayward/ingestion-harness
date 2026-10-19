@@ -794,3 +794,83 @@ describe('a recipe naming a publishing target', () => {
     expect(straight.statusCode).toBe(400);
   });
 });
+
+describe('the triple store target (rdf-default, from RDF_ENDPOINT)', () => {
+  const seeded = async () => {
+    const c = await setup();
+    await c.targets.seedRdf({ endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' });
+    return c;
+  };
+
+  it('is listed with its endpoint, dataset and connection', async () => {
+    const c = await seeded();
+    c.bridge.summaries.push({
+      id: 'rdf-default',
+      name: 'Triple store',
+      sinkId: 'rdf',
+      status: 'ok',
+      statusReason: null,
+    });
+    const targets = (await c.call('GET', '/publish-targets')).json().targets as PublishTargetView[];
+    expect(targets.find((t) => t.id === 'rdf-default')).toMatchObject({
+      label: 'Triple store',
+      kind: 'rdf',
+      bucket: 'ct',
+      endpoint: 'http://fuseki:3030',
+      connection: { id: 'rdf-default', name: 'Triple store', status: 'ok', statusReason: null },
+    });
+    const picker = (await c.call('GET', '/publish-targets/connections')).json();
+    expect(JSON.stringify(picker)).not.toContain('rdf-default');
+  });
+
+  it('cannot be created', async () => {
+    const c = await setup();
+    const res = await c.call('POST', '/publish-targets', {
+      label: 'Another store',
+      kind: 'rdf',
+      bucket: 'kb',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json().error)).toContain(
+      'triple store targets come from RDF_ENDPOINT',
+    );
+  });
+
+  it('takes a new label, mirrored, and nothing else', async () => {
+    const c = await seeded();
+    const renamed = await c.call('PATCH', '/publish-targets/rdf-default', {
+      label: 'Knowledge graph',
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json()).toMatchObject({ label: 'Knowledge graph', kind: 'rdf' });
+    expect(c.bridge.targets.get('rdf-default')).toMatchObject({
+      label: 'Knowledge graph',
+      sinkId: 'rdf',
+      destination: { dataset: 'ct' },
+    });
+    const moved = await c.call('PATCH', '/publish-targets/rdf-default', { bucket: 'other-ds' });
+    expect(moved.statusCode).toBe(400);
+    expect(moved.json().error).toBe('the triple store target takes a label only');
+  });
+
+  it('is never removed', async () => {
+    const c = await seeded();
+    const res = await c.call('DELETE', '/publish-targets/rdf-default');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('Triple store comes from RDF_ENDPOINT');
+  });
+
+  it('is no recipe target', async () => {
+    const c = await seeded();
+    await c.templates.create('letter', 1, letter(1, 'rdf-default'), 'draft');
+    const issues = (await c.call('GET', '/templates/letter/versions/1')).json().issues;
+    expect(issues).toEqual([
+      {
+        path: 'delivery.publishTo',
+        message: 'rdf-default is a triple store: name an S3 target',
+      },
+    ]);
+    const choices = (await c.call('GET', '/publish-targets/choices')).json();
+    expect(JSON.stringify(choices)).not.toContain('rdf-default');
+  });
+});

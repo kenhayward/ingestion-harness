@@ -201,5 +201,43 @@
         "forcePathStyle": true
       }
     }
+  ],
+  "rdfSeed": [
+    {
+      "name": "no RDF_ENDPOINT: no triple store",
+      "env": {},
+      "expected": null
+    },
+    {
+      "name": "a blank RDF_ENDPOINT: no triple store",
+      "env": {
+        "RDF_ENDPOINT": ""
+      },
+      "expected": null
+    },
+    {
+      "name": "endpoint only: dataset ct, user ct-writer",
+      "env": {
+        "RDF_ENDPOINT": "http://fuseki:3030"
+      },
+      "expected": {
+        "endpoint": "http://fuseki:3030",
+        "dataset": "ct",
+        "user": "ct-writer"
+      }
+    },
+    {
+      "name": "every setting",
+      "env": {
+        "RDF_ENDPOINT": "http://kb.internal:3030/",
+        "RDF_DATASET": "kb",
+        "RDF_USER": "writer"
+      },
+      "expected": {
+        "endpoint": "http://kb.internal:3030/",
+        "dataset": "kb",
+        "user": "writer"
+      }
+    }
   ]
 }

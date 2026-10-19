@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NewTarget, PublishTargetRepo } from '../src/publish-targets/repo.js';
-import type { DefaultSeed } from '../src/publish-targets/seed.js';
+import type { DefaultSeed, RdfSeed } from '../src/publish-targets/seed.js';
 
 /**
  * What the repo cannot see itself: published recipes, recorded outputs, consumer grants and
@@ -44,6 +44,8 @@ const SEED: DefaultSeed = {
   secretKeyEnv: null,
   forcePathStyle: true,
 };
+
+const RDF: RdfSeed = { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' };
 
 export function publishTargetsContract(
   name: string,
@@ -313,6 +315,43 @@ export function publishTargetsContract(
       await repo.markMoved('finance', 'target-finance');
       await repo.update('finance', { label: 'Renamed' }, null);
       expect(await repo.connectionOf('finance')).toBe('target-finance');
+    });
+
+    it('seeds the triple store target once, keeps it, and says when the environment moved', async () => {
+      const { repo } = await make();
+      expect(await repo.get('rdf-default')).toBeNull();
+      expect(await repo.seedRdf(RDF)).toBe('seeded');
+      expect(await repo.get('rdf-default')).toMatchObject({
+        id: 'rdf-default',
+        label: 'Triple store',
+        kind: 'rdf',
+        bucket: 'ct',
+        prefix: '',
+        endpoint: 'http://fuseki:3030',
+        accessKeyId: 'ct-writer',
+        source: 'env',
+      });
+      expect(await repo.seedRdf(RDF)).toBe('kept');
+      await repo.update('rdf-default', { label: 'Knowledge graph' }, 'Ann');
+      expect(await repo.seedRdf(RDF)).toBe('kept');
+      expect((await repo.get('rdf-default'))?.label).toBe('Knowledge graph');
+      expect(await repo.seedRdf({ ...RDF, dataset: 'kb' })).toBe('differs');
+      expect((await repo.get('rdf-default'))?.bucket).toBe('ct');
+    });
+
+    it('lists the triple store with its endpoint, offers it as no choice, and never removes it', async () => {
+      const { repo } = await make();
+      await repo.seedRdf(RDF);
+      const views = await repo.list();
+      expect(views.find((t) => t.id === 'rdf-default')).toMatchObject({
+        kind: 'rdf',
+        bucket: 'ct',
+        endpoint: 'http://fuseki:3030',
+      });
+      expect(views.find((t) => t.id === 'default')?.endpoint).toBeNull();
+      expect((await repo.choices()).map((c) => c.id)).toEqual(['default']);
+      expect(await repo.remove('rdf-default')).toBe('seeded');
+      expect(await repo.get('rdf-default')).not.toBeNull();
     });
   });
 }

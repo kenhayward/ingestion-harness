@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import {
   DEFAULT_TARGET_ID,
+  TRIPLE_STORE_TARGET_ID,
   targetInUse,
   type PublishTargetView,
   type TargetChoice,
@@ -10,6 +11,8 @@ import {
   byDefaultThenLabel,
   EMPTY_USAGE,
   patched,
+  rdfRecord,
+  rdfSeedDiffers,
   recordFrom,
   seeded,
   toView,
@@ -19,12 +22,12 @@ import {
   type TargetPatch,
   type TargetRecord,
 } from './repo.js';
-import { seedDifferences, type DefaultSeed } from './seed.js';
+import { seedDifferences, type DefaultSeed, type RdfSeed } from './seed.js';
 
 interface Row {
   id: string;
   label: string;
-  kind: 'internal' | 'external';
+  kind: 'internal' | 'external' | 'rdf';
   bucket: string;
   prefix: string;
   endpoint: string | null;
@@ -191,18 +194,22 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     }
   }
 
-  async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'in_use'> {
+  async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'> {
     if (id === DEFAULT_TARGET_ID) return 'default';
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const found = await client.query(
-        `SELECT 1 FROM publish_targets WHERE id = $1 AND ${LIVE} FOR UPDATE`,
+      const found = await client.query<{ kind: string }>(
+        `SELECT kind FROM publish_targets WHERE id = $1 AND ${LIVE} FOR UPDATE`,
         [id],
       );
       if (found.rowCount === 0) {
         await client.query('ROLLBACK');
         return 'missing';
+      }
+      if (found.rows[0]!.kind === 'rdf') {
+        await client.query('ROLLBACK');
+        return 'seeded';
       }
       if (targetInUse((await this.usageOf(id, client)).get(id) ?? EMPTY_USAGE)) {
         await client.query('ROLLBACK');
@@ -234,7 +241,7 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
 
   async choices(): Promise<TargetChoice[]> {
     const { rows } = await this.pool.query<TargetChoice>(
-      `SELECT id, label, kind, bucket FROM publish_targets WHERE ${LIVE}`,
+      `SELECT id, label, kind, bucket FROM publish_targets WHERE ${LIVE} AND kind <> 'rdf'`,
     );
     return rows.sort(byDefaultThenLabel);
   }
@@ -274,6 +281,19 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     } finally {
       client.release();
     }
+  }
+
+  async seedRdf(seed: RdfSeed): Promise<SeedOutcome> {
+    const r = rdfRecord(seed, new Date());
+    const inserted = await this.pool.query(
+      `INSERT INTO publish_targets (id, kind, ${WRITE.join(', ')})
+       VALUES ($1, $2, ${WRITE.map((_, i) => `$${i + 3}`).join(', ')})
+       ON CONFLICT (id) DO NOTHING`,
+      [r.id, r.kind, ...values(r)],
+    );
+    if (inserted.rowCount) return 'seeded';
+    const stored = await this.get(TRIPLE_STORE_TARGET_ID);
+    return stored && rdfSeedDiffers(stored, seed) ? 'differs' : 'kept';
   }
 
   async markMoved(id: string, connectionId: string): Promise<void> {

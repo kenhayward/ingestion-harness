@@ -73264,7 +73264,8 @@
                             "type": "string",
                             "enum": [
                               "internal",
-                              "external"
+                              "external",
+                              "rdf"
                             ]
                           },
                           "bucket": {
@@ -73272,6 +73273,12 @@
                           },
                           "prefix": {
                             "type": "string"
+                          },
+                          "endpoint": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "connectionId": {
                             "type": [
@@ -73400,6 +73407,7 @@
                           "kind",
                           "bucket",
                           "prefix",
+                          "endpoint",
                           "connectionId",
                           "connection",
                           "sse",
@@ -73658,7 +73666,8 @@
                       "type": "string",
                       "enum": [
                         "internal",
-                        "external"
+                        "external",
+                        "rdf"
                       ]
                     },
                     "bucket": {
@@ -73666,6 +73675,12 @@
                     },
                     "prefix": {
                       "type": "string"
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "connectionId": {
                       "type": [
@@ -73794,6 +73809,7 @@
                     "kind",
                     "bucket",
                     "prefix",
+                    "endpoint",
                     "connectionId",
                     "connection",
                     "sse",
@@ -74422,7 +74438,8 @@
                       "type": "string",
                       "enum": [
                         "internal",
-                        "external"
+                        "external",
+                        "rdf"
                       ]
                     },
                     "bucket": {
@@ -74430,6 +74447,12 @@
                     },
                     "prefix": {
                       "type": "string"
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "connectionId": {
                       "type": [
@@ -74558,6 +74581,7 @@
                     "kind",
                     "bucket",
                     "prefix",
+                    "endpoint",
                     "connectionId",
                     "connection",
                     "sse",
