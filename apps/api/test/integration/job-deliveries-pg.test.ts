@@ -111,6 +111,25 @@ describe.skipIf(!url)('job deliveries against Postgres', { timeout: 30_000 }, ()
     });
   });
 
+  it('a republish (no document to review) fails when a delivery needs a person', async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO jobs (task, status, params) VALUES ('republish', 'delivering', '{}') RETURNING id`,
+    );
+    const id = rows[0]!.id;
+    const d = randomUUID();
+    await repo.recordDeliveries(id, [{ targetId: 'default', deliveryId: d }]);
+    await applyEvent(
+      { repo, targets },
+      event(d, 2, {
+        status: 'needs_user',
+        receipt: null,
+        error: { class: 'needs_user', code: 'credential_rejected', message: 'access denied' },
+      }),
+    );
+    const row = await pool.query(`SELECT status, error FROM jobs WHERE id = $1`, [id]);
+    expect(row.rows[0]).toEqual({ status: 'failed', error: 'Default: access denied' });
+  });
+
   it('two concurrent events for the last two deliveries finalise the job exactly once', async () => {
     for (let round = 0; round < 5; round++) {
       const job = await delivering();

@@ -53,6 +53,14 @@ export interface DeliveryUpdate {
 }
 
 /** The job event a finished delivery writes. */
+/**
+ * How a job without a document (a background republish) finishes: it has nothing to review, so a
+ * delivery that needs a person fails it, naming each target and its reason.
+ */
+export function backgroundFinish(f: JobFinish): JobFinish {
+  return f.status === 'awaiting_review' ? { status: 'failed', error: f.reasons.join('; ') } : f;
+}
+
 export function finishEvent(f: JobFinish): { level: string; message: string; data: unknown } {
   if (f.status === 'succeeded') {
     return { level: 'info', message: DELIVERED_EVENT, data: { targets: f.targets } };

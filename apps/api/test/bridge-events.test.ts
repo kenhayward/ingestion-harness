@@ -126,6 +126,32 @@ describe('applyEvent', () => {
     });
   });
 
+  it('a republish (no document to review) fails when a delivery needs a person', async () => {
+    const { repo, deps } = await setup();
+    const id = randomUUID();
+    repo.backgroundJobs.push({
+      id,
+      task: 'republish',
+      priority: 0,
+      maxAttempts: 3,
+      params: { templateId: 'demo' },
+      status: 'delivering',
+      createdBy: null,
+    });
+    const d = randomUUID();
+    await repo.recordDeliveries(id, [{ targetId: 'finance-lake', deliveryId: d }]);
+    await applyEvent(
+      deps,
+      event(d, 2, {
+        status: 'needs_user',
+        receipt: null,
+        error: { class: 'needs_user', code: 'credential_rejected', message: 'access denied' },
+      }),
+    );
+    expect(repo.backgroundJobs.find((j) => j.id === id)?.status).toBe('failed');
+    expect((await repo.withdrawalStatus()).failed).toBe(1);
+  });
+
   it('a failed delivery fails the job, naming the target', async () => {
     const { repo, job, deps } = await setup();
     const d = randomUUID();

@@ -42,6 +42,7 @@ import {
   graphWithdrawals,
   type WithdrawnGraph,
   type DeliveryUpdate,
+  backgroundFinish,
   finishEvent,
   type JobDelivery,
   type JobFinish,
@@ -1473,8 +1474,8 @@ export class PgRepo implements IngestionRepo {
       }
       // The job's row first: events for its other deliveries wait, so the one that makes the
       // last delivery final sees every other one final too, and finishes the job once.
-      const job = await client.query<{ status: string }>(
-        'SELECT status FROM jobs WHERE id = $1 FOR UPDATE',
+      const job = await client.query<{ status: string; background: boolean }>(
+        'SELECT status, document_id IS NULL AS background FROM jobs WHERE id = $1 FOR UPDATE',
         [jobId],
       );
       const updated = await client.query(
@@ -1493,7 +1494,9 @@ export class PgRepo implements IngestionRepo {
         await client.query('ROLLBACK');
         return { outcome: 'stale', finished: null };
       }
-      const outcome = finish(await deliveriesIn(client, jobId));
+      const finishedAs = finish(await deliveriesIn(client, jobId));
+      const outcome =
+        finishedAs && job.rows[0]?.background ? backgroundFinish(finishedAs) : finishedAs;
       let finished: JobFinish | null = null;
       if (outcome && job.rows[0]?.status === 'delivering') {
         await client.query(

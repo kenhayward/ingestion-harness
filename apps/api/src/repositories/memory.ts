@@ -48,6 +48,7 @@ import {
   type WithdrawnGraph,
   type DeliveryUpdate,
   FINAL_DELIVERY,
+  backgroundFinish,
   finishEvent,
   type JobDelivery,
   type JobFinish,
@@ -975,10 +976,11 @@ export class MemoryRepo implements IngestionRepo {
       lastSequence: update.sequence,
       updatedAt: new Date().toISOString(),
     });
-    const outcome = finish(await this.deliveriesOf(d.jobId));
-    if (!outcome) return { outcome: 'applied', finished: null };
+    const finishedAs = finish(await this.deliveriesOf(d.jobId));
+    if (!finishedAs) return { outcome: 'applied', finished: null };
     const job = this.jobs.get(d.jobId);
     const background = this.backgroundJobs.find((j) => j.id === d.jobId);
+    const outcome = background ? backgroundFinish(finishedAs) : finishedAs;
     const status = job?.status ?? background?.status;
     if (status !== 'delivering') return { outcome: 'applied', finished: null };
     if (job) {
