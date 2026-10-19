@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { MemoryNonceStore, signRequest, verifyRequest } from '../src/index.js';
 
@@ -88,5 +89,36 @@ describe('request signing', () => {
     expect(store.seen('n', 10, 0)).toBe(false);
     expect(store.seen('n', 10, 5)).toBe(true);
     expect(store.seen('n', 30, 11)).toBe(false);
+  });
+});
+
+describe('the shared signing fixture (the worker signs the same way)', () => {
+  it('signRequest with its clock and nonce gives its signature, and it verifies', () => {
+    const f = JSON.parse(
+      readFileSync(new URL('./fixtures/signing.json', import.meta.url), 'utf8'),
+    ) as {
+      key: string;
+      method: string;
+      path: string;
+      timestamp: number;
+      nonce: string;
+      body: string;
+      signature: string;
+    };
+    const headers = signRequest(
+      f.key,
+      { method: f.method, path: f.path, body: Buffer.from(f.body, 'utf8') },
+      () => f.timestamp,
+      () => f.nonce,
+    );
+    expect(headers['x-bridge-signature']).toBe(f.signature);
+    expect(
+      verifyRequest(
+        f.key,
+        { method: f.method, path: f.path, body: f.body, headers },
+        new MemoryNonceStore(),
+        () => f.timestamp,
+      ),
+    ).toEqual({ ok: true });
   });
 });
