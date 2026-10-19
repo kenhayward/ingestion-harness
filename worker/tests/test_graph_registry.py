@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 from typing import Any
 
@@ -22,6 +23,7 @@ from ingest_worker.graph_registry import (
 
 SHA = "ab" * 32
 JOB = "11111111-1111-4111-8111-111111111111"
+JOB2 = "33333333-3333-4333-8333-333333333333"
 DOC = "22222222-2222-4222-8222-222222222222"
 BASE = "https://data.acme.example/"
 BATCH = f"{BASE}batch/pv-1"
@@ -94,13 +96,13 @@ def test_nothing_is_published_at_first(registry: GraphRegistry) -> None:
 def test_each_publish_is_the_next_version(registry: GraphRegistry) -> None:
     written: list[int] = []
     assert registry.publish(record(), written.append) == 1
-    assert registry.publish(record(triples=12), written.append) == 2
+    assert registry.publish(record(job_id=JOB2, triples=12), written.append) == 2
     assert written == [1, 2]
     current = registry.current(SHA, "letter")
     assert current is not None
     assert (current.version, current.triples, current.base_iri) == (2, 12, BASE)
     assert current.graph_iri == f"{BASE}graph/source/{SHA}/letter"
-    assert current.job_id == JOB
+    assert current.job_id == JOB2
     assert [g.version for g in registry.all_current()] == [2]
 
 
@@ -108,7 +110,7 @@ def test_each_version_records_its_publishing_target(registry: GraphRegistry) -> 
     registry.publish(record(), lambda _v: None)
     current = registry.current(SHA, "letter")
     assert current is not None and current.target_id == "default"
-    registry.publish(record(target_id="finance-lake"), lambda _v: None)
+    registry.publish(record(job_id=JOB2, target_id="finance-lake"), lambda _v: None)
     current = registry.current(SHA, "letter")
     assert current is not None and current.target_id == "finance-lake"
     assert [g.target_id for g in registry.all_current()] == ["finance-lake"]
@@ -165,7 +167,7 @@ def test_concurrent_publishes_of_one_graph_serialise() -> None:
             time.sleep(0.2)  # inside the lock: the other publish must wait
             order.append(version)
 
-        _pg(reset=False).publish(record(), write)
+        _pg(reset=False).publish(record(job_id=str(uuid.uuid4())), write)
 
     threads = [threading.Thread(target=one) for _ in range(2)]
     for t in threads:
@@ -179,26 +181,42 @@ def test_locked_reads_the_current_graph_and_its_versions(registry: GraphRegistry
     seen: list[tuple[int | None, set[int]]] = []
     registry.locked(SHA, "letter", lambda cur, vs: seen.append((cur and cur.version, vs)))
     registry.publish(record(), lambda _v: None)
-    registry.publish(record(), lambda _v: None)
+    registry.publish(record(job_id=JOB2), lambda _v: None)
     registry.locked(SHA, "letter", lambda cur, vs: seen.append((cur and cur.version, vs)))
     assert seen == [(None, set()), (2, {1, 2})]
 
 
-def _fail_delivery(registry: GraphRegistry, delivery_id: str) -> None:
-    """The delivery ended failed: job_deliveries in Postgres, a set in memory."""
+def _record_delivery(
+    registry: GraphRegistry, delivery_id: str, status: str, job_id: str | None = None
+) -> str:
+    """A job_deliveries row (Postgres) or the memory registry's view of one; returns its job."""
     if isinstance(registry, MemoryGraphRegistry):
-        registry.failed_deliveries.add(delivery_id)
-        return
+        known = dict(getattr(registry, "_test_statuses", {}))
+        known[delivery_id] = status
+        registry._test_statuses = known  # type: ignore[attr-defined]
+        registry.delivery_status = known.get
+        jobs = set(getattr(registry, "_test_jobs", set()))
+        jobs.add(job_id or "")
+        registry._test_jobs = jobs  # type: ignore[attr-defined]
+        registry.job_handed_over = jobs.__contains__
+        return job_id or ""
     assert isinstance(registry, PgGraphRegistry)
-    job = registry._conn.execute(
-        "INSERT INTO jobs (task, status, params) VALUES ('rebuild', 'failed', '{}') RETURNING id"
-    ).fetchone()
-    assert job is not None
+    if job_id is None:
+        row = registry._conn.execute(
+            "INSERT INTO jobs (task, status, params) VALUES ('rebuild', 'failed', '{}') RETURNING id"
+        ).fetchone()
+        assert row is not None
+        job_id = str(row[0])
     registry._conn.execute(
         """INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
-           VALUES (%s, %s, 'finance-lake', 'failed')""",
-        (delivery_id, job[0]),
+           VALUES (%s, %s, 'finance-lake', %s)""",
+        (delivery_id, job_id, status),
     )
+    return job_id
+
+
+def _fail_delivery(registry: GraphRegistry, delivery_id: str) -> None:
+    _record_delivery(registry, delivery_id, "failed")
 
 
 def test_an_ontology_whose_delivery_failed_is_not_loaded(registry: GraphRegistry) -> None:
@@ -207,8 +225,66 @@ def test_an_ontology_whose_delivery_failed_is_not_loaded(registry: GraphRegistry
     ok, failed = str(uuid.uuid4()), str(uuid.uuid4())
     registry.record_ontology("acme", 1, BASE, f"{BASE}graph/ontology/acme/1", ok)
     registry.record_ontology("acme", 2, BASE, f"{BASE}graph/ontology/acme/2", failed)
+    _record_delivery(registry, ok, "queued")
     _fail_delivery(registry, failed)
     assert registry.ontology_loaded("acme", 1, BASE)  # on its way, or done
     assert not registry.ontology_loaded("acme", 2, BASE)  # loaded again by the next publish
-    registry.record_ontology("acme", 2, BASE, f"{BASE}graph/ontology/acme/2", str(uuid.uuid4()))
+    again = str(uuid.uuid4())
+    registry.record_ontology("acme", 2, BASE, f"{BASE}graph/ontology/acme/2", again)
+    _record_delivery(registry, again, "succeeded")
     assert registry.ontology_loaded("acme", 2, BASE)
+
+
+def test_an_ontology_whose_delivery_no_job_recorded_is_not_loaded(registry: GraphRegistry) -> None:
+    """The job failed after the bridge took the load, or was deleted: nothing says it was loaded,
+    so the next publish sends it again."""
+    import uuid
+
+    lost = str(uuid.uuid4())
+    registry.record_ontology("acme", 3, BASE, f"{BASE}graph/ontology/acme/3", lost)
+    if isinstance(registry, MemoryGraphRegistry):
+        registry.delivery_status = lambda _d: None
+    assert not registry.ontology_loaded("acme", 3, BASE)
+    registry.record_ontology("acme", 4, BASE, f"{BASE}graph/ontology/acme/4")  # before the bridge
+    assert registry.ontology_loaded("acme", 4, BASE)
+
+
+def test_a_retry_of_a_job_never_handed_over_reuses_its_version(registry: GraphRegistry) -> None:
+    import uuid
+
+    job = str(uuid.uuid4())
+    if isinstance(registry, PgGraphRegistry):
+        row = registry._conn.execute(
+            "INSERT INTO jobs (task, status, params) VALUES ('rebuild', 'running', '{}') RETURNING id"
+        ).fetchone()
+        assert row is not None
+        job = str(row[0])
+    elif isinstance(registry, MemoryGraphRegistry):
+        registry.job_handed_over = lambda _j: False
+    first = registry.publish(record(job_id=job), lambda _v: None)
+    # The hand-off failed (the bridge was down): the retry is the same version, not the next.
+    assert registry.publish(record(job_id=job, triples=12), lambda _v: None) == first
+    current = registry.current(SHA, "letter")
+    assert current is not None and current.version == first and current.triples == 12
+    # Once the job handed something over, its next publish (approved again) is a new version.
+    _record_delivery(registry, str(uuid.uuid4()), "succeeded", job)
+    assert registry.publish(record(job_id=job), lambda _v: None) == first + 1
+
+
+@pytest.mark.integration
+def test_a_job_published_before_the_bridge_gets_a_new_version_when_published_again() -> None:
+    """It handed nothing to the bridge (no job_deliveries) but did publish (live published
+    outputs): approving it again is a new version, never a reuse of its own."""
+    pg = _pg()
+    job = pg._conn.execute(
+        "INSERT INTO jobs (task, status, params) VALUES ('rebuild', 'succeeded', '{}') RETURNING id"
+    ).fetchone()
+    assert job is not None
+    first = pg.publish(record(job_id=str(job[0])), lambda _v: None)
+    pg._conn.execute(
+        """INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key,
+                                    target_id)
+           VALUES (%s, 'document', 'published', 'json', 'pub', 'k.json', 'default')""",
+        (job[0],),
+    )
+    assert pg.publish(record(job_id=str(job[0])), lambda _v: None) == first + 1

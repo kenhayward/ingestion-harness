@@ -683,6 +683,25 @@ def to_publish(
 TRIPLES = Target("rdf-default", "ct", "")
 
 
+def hand_offs_of(deps: PipelineDeps, queue: FakeQueue, failed: set[str] | None = None) -> None:
+    """The memory registry reads deliveries and hand-offs as Postgres reads job_deliveries:
+    a delivery is known once its job was handed over (`queue.delivering`)."""
+    from ingest_worker.graph_registry import MemoryGraphRegistry
+
+    registry = deps.graph_registry
+    assert isinstance(registry, MemoryGraphRegistry)
+    lost = failed if failed is not None else set()
+
+    def status(delivery_id: str) -> str | None:
+        if delivery_id in lost:
+            return "failed"
+        recorded = {d for _, _, ds in queue.handed_over for _, d in ds}
+        return "queued" if delivery_id in recorded else None
+
+    registry.delivery_status = status
+    registry.job_handed_over = lambda job_id: any(j == job_id for j, _, _ in queue.handed_over)
+
+
 def with_triple_store(deps: PipelineDeps, bridge: FakeBridge) -> None:
     """rdf-default exists: the registry resolves it, the bridge loads graphs into it."""
     assert isinstance(deps.targets, FakeTargets)
@@ -780,17 +799,20 @@ def test_the_version_is_recorded_before_the_hand_off(tmp_path: Path) -> None:
     from ingest_worker.bridge.client import BridgeUnavailable
 
     deps, bridge, queue = to_publish(tmp_path)
+    hand_offs_of(deps, queue)
     bridge.refusals = [BridgeUnavailable("the bridge could not be reached")]
     run_once(queue, deps, "w1")
     assert queue.failed and not queue.published
-    # Committed under the graph's lock before the hand-off, as the spec says: a retry is the next.
+    # Committed under the graph's lock before the hand-off, as the spec says.
     current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
     assert current is not None and current.version == 1
+    # The retry reuses that version (never handed over), so no number is used up.
     queue.jobs = [replace(JOB, task="publish")]
     run_once(queue, deps, "w1")
     versions = [d["version"] for _, _, m, d in queue.event_details if m == "graph published"]
-    assert versions == [1, 2]
+    assert versions == [1, 1]
     assert queue.handed_over
+    assert has(bridge, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
 
 
 def test_a_refused_hand_off_goes_to_review(tmp_path: Path) -> None:
@@ -828,6 +850,7 @@ def test_the_pinned_ontologies_are_delivered_once_per_base_as_graph_packages(
     tmp_path: Path,
 ) -> None:
     deps, bridge, queue = pinned_publish(tmp_path)
+    hand_offs_of(deps, queue)
     run_once(queue, deps, "w1")
     queue.jobs = [replace(JOB, task="publish")]
     run_once(queue, deps, "w1")
@@ -843,6 +866,42 @@ def test_the_pinned_ontologies_are_delivered_once_per_base_as_graph_packages(
     assert deps.graph_registry.ontology_loaded("ex", 2, BASE_IRI)  # type: ignore[union-attr]
 
 
+def test_a_refused_tbox_records_no_graph_version(tmp_path: Path) -> None:
+    deps, bridge, queue = pinned_publish(tmp_path)
+    bridge.refusals = [
+        BridgeError(
+            class_="needs_user", code="content_rejected", message="the package is too large"
+        )
+    ]
+    run_once(queue, deps, "w1")
+    assert queue.reviewed
+    assert deps.graph_registry.current(SOURCE_SHA, "demo") is None  # type: ignore[union-attr]
+
+
+def test_a_tbox_load_whose_document_hand_off_failed_is_sent_again(tmp_path: Path) -> None:
+    from ingest_worker.bridge.client import BridgeUnavailable
+
+    deps, bridge, queue = pinned_publish(tmp_path)
+    hand_offs_of(deps, queue)
+    deliver = bridge.deliver
+    calls = [0]
+
+    def flaky(request: Any) -> Any:
+        calls[0] += 1
+        if calls[0] == 2:  # the document's hand-off, after the TBox's
+            raise BridgeUnavailable("the bridge could not be reached")
+        return deliver(request)
+
+    bridge.deliver = flaky  # type: ignore[method-assign]
+    run_once(queue, deps, "w1")
+    assert queue.failed
+    queue.jobs = [replace(JOB, task="publish")]
+    run_once(queue, deps, "w1")
+    # The first load was never recorded on a job: nothing says it happened, so it goes again.
+    assert [k for k, _, g in graphs_sent(bridge) if g == TBOX] == ["graph", "graph"]
+    assert queue.handed_over
+
+
 def test_the_job_is_delivering_on_every_delivery_tbox_included(tmp_path: Path) -> None:
     deps, _, queue = pinned_publish(tmp_path)
     run_once(queue, deps, "w1")
@@ -853,10 +912,12 @@ def test_the_job_is_delivering_on_every_delivery_tbox_included(tmp_path: Path) -
 
 def test_a_tbox_whose_delivery_failed_is_loaded_again(tmp_path: Path) -> None:
     deps, bridge, queue = pinned_publish(tmp_path)
+    failed: set[str] = set()
+    hand_offs_of(deps, queue, failed)
     run_once(queue, deps, "w1")
+    assert deps.graph_registry.ontology_loaded("ex", 2, BASE_IRI)  # type: ignore[union-attr]
     [(_, _, deliveries)] = queue.handed_over
-    tbox_delivery = deliveries[-1][1]
-    deps.graph_registry.failed_deliveries.add(tbox_delivery)  # type: ignore[union-attr]
+    failed.add(deliveries[-1][1])  # the TBox's delivery ended failed
     assert not deps.graph_registry.ontology_loaded("ex", 2, BASE_IRI)  # type: ignore[union-attr]
     queue.jobs = [replace(JOB, task="publish")]
     run_once(queue, deps, "w1")

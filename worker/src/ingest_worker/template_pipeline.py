@@ -324,21 +324,23 @@ def deliver_publication(
     acting: ActingUser | None,
     approver: ActingUser | None,
 ) -> Delivered:
-    """Hand one publication to the bridge. With a graph (a recipe delivering `rdf`): its next
-    version is committed first (prepare_graph), the pinned ontologies not loaded yet under its
-    base go to the triple store as graph packages, then one package carries the outputs, the
-    graph and its versioned copy to `target` and, when there is one, the triple store
-    (`rdf-default`). The returned deliveries include the ontology loads."""
-    version = (
-        prepare_graph(job, deps, queue, template, document, graph, target)
-        if graph is not None and template is not None and document is not None
-        else None
+    """Hand one publication to the bridge. With a graph (a recipe delivering `rdf`): the pinned
+    ontologies not loaded yet under its base go to the triple store first, as graph packages (a
+    refused one goes to review before any version is spent); then the graph's next version is
+    committed (prepare_graph); then one package carries the outputs, the graph and its versioned
+    copy to `target` and, when there is one, the triple store (`rdf-default`). The returned
+    deliveries include the ontology loads."""
+    publishes_graph = (
+        graph is not None
+        and template is not None
+        and document is not None
+        and deps.graph_registry is not None
     )
     triples = deps.targets.rdf() if deps.targets is not None else None
     loads: list[tuple[str, str]] = []
-    if version is not None and triples is not None and graph is not None:
+    if publishes_graph and triples is not None and graph is not None:
         registry = deps.graph_registry
-        assert registry is not None  # prepare_graph gave a version
+        assert registry is not None
         for load in tbox_packages(deps, registry, template, graph.base):  # type: ignore[arg-type]
             try:
                 delivery_id = deliver_graph_package(deps, load.package, triples, acting)
@@ -348,6 +350,11 @@ def deliver_publication(
                 load.ontology_id, load.version, graph.base, load.graph_iri, delivery_id
             )
             loads.append((triples.id, delivery_id))
+    version = (
+        prepare_graph(job, deps, queue, template, document, graph, target)  # type: ignore[arg-type]
+        if publishes_graph and graph is not None
+        else None
+    )
     targets = [target] + ([triples] if version is not None and triples is not None else [])
     delivered = deliver_document(
         deps,
