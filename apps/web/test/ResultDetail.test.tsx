@@ -384,3 +384,65 @@ describe('ResultDetailView help', () => {
     expect(screen.getByRole('dialog', { name: 'Reading a published result' })).toBeInTheDocument();
   });
 });
+
+describe('a result that delivered RDF', () => {
+  const A = 'https://acme.example/def/';
+  const TTL = `<https://d/doc/x> a <${A}Letter> ; <${A}sentBy> <https://d/party/p> .
+<https://d/party/p> a <${A}Party> ; <http://www.w3.org/2000/01/rdf-schema#label> "Ünïcorn" .`;
+  const graph = {
+    outputId: 'graph',
+    stage: 'published' as const,
+    format: 'rdf' as const,
+    bucket: 'ingest-published',
+    key: 'pvp/x/graph/d.ttl',
+    rowCount: 3,
+    targetId: 'default',
+  };
+
+  it('has a Graph item showing the published graph as cards, named with the recipe pins', async () => {
+    const base = resultDetail();
+    const detail = resultDetail({
+      outputs: [...base.outputs, graph],
+      definition: {
+        ...(base.definition as Extract<typeof base.definition, { kind: 'template' }>),
+        semantics: { ontologies: [{ id: 'acme', version: 1 }], prefixes: { acme: A }, local: [] },
+      },
+    });
+    const getOutputText = vi.fn(async () => TTL);
+    const api = fakeApi({ getResult: vi.fn(async () => detail), getOutputText });
+    render(<ResultDetailView api={api} jobId="j1" />);
+    await screen.findByRole('navigation', { name: 'Result contents' });
+    expect(
+      within(outline())
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Fields', 'Test results', 'batch_check', 'Graph', 'Issues', 'Published files']);
+    // Read only when opened.
+    expect(getOutputText).not.toHaveBeenCalled();
+    await open('Graph');
+    expect(getOutputText).toHaveBeenCalledWith('j1', 'graph', 'published');
+    const region = screen.getByRole('region', { name: 'Graph' });
+    expect(await within(region).findByRole('article', { name: 'Letter x' })).toBeInTheDocument();
+    expect(within(region).getByRole('article', { name: 'Ünïcorn' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.termLabels).toHaveBeenCalledWith(
+        expect.objectContaining({ ontologies: [{ id: 'acme', version: 1 }] }),
+      ),
+    );
+  });
+
+  it('reads the graph as a graph, not as CSV, when there is no document', async () => {
+    const detail = resultDetail({ document: null, definition: { kind: 'spec' }, outputs: [graph] });
+    render(
+      <ResultDetailView
+        api={fakeApi({
+          getResult: vi.fn(async () => detail),
+          getOutputText: vi.fn(async () => TTL),
+        })}
+        jobId="j1"
+      />,
+    );
+    expect(await screen.findByRole('article', { name: 'Letter x' })).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'graph.rdf' })).toBeNull();
+  });
+});

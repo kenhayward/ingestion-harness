@@ -2951,6 +2951,10 @@ a.crumb:hover {
   margin: 0;
   padding: 16px 14px;
 }
+.result-graph {
+  padding: 10px 14px 14px;
+  min-width: 0;
+}
 .result-fields {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);

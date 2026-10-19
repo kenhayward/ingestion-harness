@@ -33,7 +33,7 @@ describe('help index', () => {
       'draftModelLog',
     ]);
     const jobs = HELP_INDEX.find((e) => e.topic === 'jobs')!;
-    expect(jobs.children?.map((c) => c.topic)).toEqual(['review', 'reviewGraph']);
+    expect(jobs.children?.map((c) => c.topic)).toEqual(['review', 'graphViews']);
   });
 
   it('gathers the administration topics under Administration, last', () => {
