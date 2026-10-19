@@ -19,9 +19,9 @@ import io
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 import psycopg
 from rdflib import Graph
@@ -31,23 +31,22 @@ from .extract import ExtractionResult
 from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
 from .graph_store import GraphStore
 from .llm.base import LLMProvider
-from .llm.registry import ModelResolutionError
 from .normalize import normalize_value
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell, content_type, encode_csv
 from .pipeline import (
     DocumentError,
+    JobModels,
     PipelineDeps,
     Prepared,
     ProcessResult,
     RepeatPlan,
     StepProgress,
     Target,
-    check_cancelled,
-    enforce_data_policy,
     page_images,
     prepare_document,
     resolve_models,
     run_check_with_event,
+    run_nodes,
     run_step_extraction,
     target_for,
 )
@@ -113,6 +112,19 @@ class RenderedGraph:
     nodes: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class GraphDelivery:
+    """A drafted graph to publish once the document's outputs are delivered without review: its
+    copy to the target, then the triple store (`publish_graph`)."""
+
+    template: Template
+    document: dict[str, Any]
+    graph: RenderedGraph
+
+    def deliver(self, job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, target: Target) -> None:
+        publish_graph(job, deps, queue, self.template, self.document, self.graph, target)
+
+
 Progress = StepProgress
 
 
@@ -163,83 +175,59 @@ def process_template_job(
     cache = workbench_step_cache(job, deps)
     _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
 
-    fields: dict[str, dict[str, Any]] = {}
-    tables: dict[str, list[dict[str, Any]]] = {}
-    checks: dict[str, Any] = {}
-    issues: list[dict[str, Any]] = segment_issues(doc)
-    step_results: dict[str, Any] = {}  # normalised, keyed by step id (check paths use these)
-    models_used: dict[str, str] = {}
-
-    for step in template.pipeline:
-        check_cancelled(job, queue)
+    def node(step: ExtractStep | CheckStep) -> Callable[[DocState], DocState]:
+        """The step as a node: the state before it in, the state after it out."""
         if isinstance(step, CheckStep):
-            check = template.compile_check(step)
-            checks[step.id] = step_results[step.id] = run_check_with_event(
-                job, queue, check, step_results
-            )
-            continue
-        result = _run_step(
-            job,
-            deps,
-            queue,
-            loaded,
-            step,
-            compiled[step.id],
-            resolved[step.id],
-            doc,
-            fields,
-            tables,
-            trigger="process",
-            cache=cache,
-            progress=step_reporter(
-                job, queue, step.id, extract_ids.index(step.id) + 1, len(extract_ids)
-            ),
-        )
-        models_used[step.id] = result.model_ref
-        step_results[step.id] = _normalise_step(template, step, result.data, fields, tables, issues)
-        issues += key_column_issues(template, step, tables.get(step.table or "", []))
+            check = step
 
-    reasons = _review_reasons(template, checks, issues)
+            def run_check(state: DocState) -> DocState:
+                compiled_check = template.compile_check(check)
+                result = run_check_with_event(job, queue, compiled_check, state.step_results)
+                return state.with_check(check.id, result)
+
+            return run_check
+
+        extract = step
+
+        def run_extract(state: DocState) -> DocState:
+            result = run_step(
+                job,
+                deps,
+                queue,
+                loaded,
+                extract,
+                compiled[extract.id],
+                resolved[extract.id],
+                doc,
+                state,
+                trigger="process",
+                cache=cache,
+                progress=step_reporter(
+                    job, queue, extract.id, extract_ids.index(extract.id) + 1, len(extract_ids)
+                ),
+            )
+            return state.apply(normalise_step(template, extract, result.data, result.model_ref))
+
+        return run_extract
+
+    nodes = [node(step) for step in template.pipeline]
+    state = run_nodes(job, queue, nodes, DocState(issues=tuple(segment_issues(doc))))
+
+    reasons = _review_reasons(template, state.checks, list(state.issues))
     if reasons:
         queue.event(job.id, "warn", "review required", {"reasons": reasons})
-
-    document = {
-        "document_id": job.document_id,
-        "job_id": job.id,
-        "source_sha256": doc.sha256,
-        "template": {"id": template.id, "version": template.version, "name": template.name},
-        "extracted_at": datetime.now(UTC).isoformat(),
-        "page_count": doc.total_pages,
-        "models": models_used,
-        "fields": fields,
-        "tables": tables,
-        "checks": checks,
-        "issues": issues,
-        "review_required": bool(reasons),
-        "review_reasons": reasons,
-    }
-    graph = build_graph(job, deps, queue, template, document)
-    report = shacl_check(job, deps, queue, template, graph)
-    if report is not None:
-        add_report(report, issues, reasons)
-        document.update(review_required=bool(reasons), review_reasons=reasons)
-    outputs = render_document(template, document, graph)
-    for o in outputs:
-        ctype = content_type(o.format)
-        deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
+    done = finalise(
+        job, deps, queue, template, document_of(job, doc, template, state, reasons), mode="draft"
+    )
+    write_drafts(deps, done.outputs)
     formats: list[str] = list(template.delivery_formats())
-    delivered_graph = graph
-    deliver_graph = (
-        (
-            lambda target: publish_graph(
-                job, deps, queue, template, document, delivered_graph, target
-            )
-        )
-        if delivered_graph is not None and "rdf" in formats
+    graph = (
+        GraphDelivery(template, done.document, done.graph)
+        if done.graph is not None and "rdf" in formats
         else None
     )
     return ProcessResult(
-        outputs, reasons, formats, deliver_graph, document=document, template=template
+        done.outputs, done.reasons, formats, graph, document=done.document, template=template
     )
 
 
@@ -290,20 +278,9 @@ def publish_template_job(
         document["source_sha256"] = hashlib.sha256(
             deps.store.get(job.bucket, job.object_key)
         ).hexdigest()
-    graph = build_graph(job, deps, queue, template, document)
+    done = finalise(job, deps, queue, template, document, mode="publish")
+    graph, rendered = done.graph, done.outputs
     formats = template.delivery_formats()
-    # Before any write: a delivered graph must satisfy the shapes (ADR 0011 step 5).
-    if "rdf" in formats:
-        report = shacl_check(job, deps, queue, template, graph)
-    else:
-        # The graph is not delivered: its report is advisory, and missing shapes never block.
-        try:
-            report = shacl_check(job, deps, queue, template, graph)
-        except DocumentError:
-            report = None
-    if report is not None and report.violations() and "rdf" in formats:
-        raise ShapesViolated([v.reason() for v in report.violations()])
-    rendered = render_document(template, document, graph)
     published: list[RenderedOutput] = []
     if target is not None:  # None: no publishing targets, nothing is delivered
         reviewer = queue.reviewer(job.id)
@@ -482,7 +459,7 @@ def key_column_issues(
     ]
 
 
-def _run_step(
+def run_step(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
@@ -491,18 +468,17 @@ def _run_step(
     ex: Extraction,
     model: tuple[LLMProvider, str],
     doc: Prepared,
-    fields: dict[str, dict[str, Any]],
-    tables: dict[str, list[dict[str, Any]]],
+    state: DocState,
     *,
     trigger: str,
     extra_instructions: str | None = None,
     cache: StepCache | None = None,
     progress: Progress | None = None,
 ) -> ExtractionResult:
-    """Run one extract step with context from earlier steps; record it in step_runs."""
+    """Run one extract step with context from earlier steps (`state`); record it in step_runs."""
     provider, model_id = model
     context = dict(ex.prompt_context or {})
-    context["step_context"] = context_values(loaded.template, step, fields, tables)
+    context["step_context"] = context_values(loaded.template, step, state.fields, state.tables)
     context["source_file"] = job.filename or None
     if extra_instructions:
         guidance = f"Reviewer guidance for this re-run: {extra_instructions}"
@@ -594,20 +570,15 @@ def rerun_template_job(
     ex = compile_step(template, step)
     if params.get("pageImages"):  # reviewer shows the model the page(s) to read directly
         ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
-    try:
-        ref = params.get("model") or job.model_override or ex.model
-        model = deps.models.resolve(ref)
-    except ModelResolutionError as exc:
-        raise DocumentError(f"re-run of {step.id!r}: {exc}") from exc
-    enforce_data_policy(job, deps, model[0], ref)
+    ref = params.get("model") or job.model_override or ex.model
+    model = JobModels(job, deps.models).resolve(ref, what=f"re-run of {step.id!r}")
 
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
-    fields: dict[str, dict[str, Any]] = document["fields"]
-    tables: dict[str, list[dict[str, Any]]] = document["tables"]
+    stored = DocState.from_document(document)
     doc = prepare_document(job, deps, queue, template.document)
 
-    result = _run_step(
+    result = run_step(
         job,
         deps,
         queue,
@@ -616,15 +587,16 @@ def rerun_template_job(
         ex,
         model,
         doc,
-        fields,
-        tables,
+        stored,
         trigger="rerun",
         extra_instructions=params.get("instructions"),
     )
-    # The SHACL issues are the previous graph's: validated again below.
-    issues = [i for i in document.get("issues", []) if i.get("step") not in (step.id, "shacl")]
-    _normalise_step(template, step, result.data, fields, tables, issues)
-    issues += key_column_issues(template, step, tables.get(step.table or "", []))
+    # The step's issues are replaced; the SHACL ones are the previous graph's, validated below.
+    kept = tuple(i for i in stored.issues if i.get("step") not in (step.id, "shacl"))
+    state = replace(stored, issues=kept).apply(
+        normalise_step(template, step, result.data, result.model_ref)
+    )
+    fields, tables, issues = state.fields, state.tables, list(state.issues)
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
     document.update(
@@ -635,7 +607,7 @@ def rerun_template_job(
         issues=issues,
         review_required=True,
         review_reasons=reasons,
-        models={**document.get("models", {}), step.id: result.model_ref},
+        models=state.models,
         reruns=[
             *document.get("reruns", []),
             {
@@ -647,16 +619,9 @@ def rerun_template_job(
             },
         ],
     )
-    graph = build_graph(job, deps, queue, template, document)
-    report = shacl_check(job, deps, queue, template, graph)
-    if report is not None:
-        add_report(report, issues, reasons)
-        document.update(issues=issues, review_reasons=reasons)
-    outputs = render_document(template, document, graph)
-    for o in outputs:
-        ctype = content_type(o.format)
-        deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, reasons, list(template.delivery_formats()))
+    done = finalise(job, deps, queue, template, document, mode="draft")
+    write_drafts(deps, done.outputs)
+    return ProcessResult(done.outputs, done.reasons, list(template.delivery_formats()))
 
 
 def _save_previews(
@@ -671,24 +636,98 @@ def _save_previews(
         queue.event(job.id, "warn", "page previews unavailable", {"error": repr(exc)})
 
 
-def _normalise_step(
-    template: Template,
-    step: ExtractStep,
-    data: dict[str, Any],
-    fields: dict[str, dict[str, Any]],
-    tables: dict[str, list[dict[str, Any]]],
-    issues: list[dict[str, Any]],
-) -> dict[str, Any]:
+@dataclass(frozen=True)
+class StepOutcome:
+    """What one extract step adds to the document, normalised: a graph node's output."""
+
+    step_id: str
+    #: The step's result as checks read it: its fields by id, or `{"rows": …}` for a table.
+    result: dict[str, Any]
+    #: Field id -> `{value, evidence, page}`.
+    fields: dict[str, dict[str, Any]]
+    #: Table id -> rows (at most one table).
+    tables: dict[str, list[dict[str, Any]]]
+    #: Values that could not be normalised (kept as written), then rows missing their key.
+    issues: tuple[dict[str, Any], ...]
+    #: The model the step ran on (None: not recorded).
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class DocState:
+    """The document as a recipe's steps build it. Steps never change a state: `apply` and
+    `with_check` return a new one, so each state can be kept, compared or resumed from."""
+
+    fields: dict[str, dict[str, Any]] = field(default_factory=dict)
+    tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    checks: dict[str, Any] = field(default_factory=dict)
+    issues: tuple[dict[str, Any], ...] = ()
+    #: Each step's result by step id (extract steps and checks): what check paths read.
+    step_results: dict[str, Any] = field(default_factory=dict)
+    #: The model each extract step ran on.
+    models: dict[str, str] = field(default_factory=dict)
+
+    def apply(self, outcome: StepOutcome) -> DocState:
+        """The state after `outcome`: a step run again replaces its values where they were."""
+        models = self.models
+        if outcome.model is not None:
+            models = {**models, outcome.step_id: outcome.model}
+        return DocState(
+            fields={**self.fields, **outcome.fields},
+            tables={**self.tables, **outcome.tables},
+            checks=self.checks,
+            issues=(*self.issues, *outcome.issues),
+            step_results={**self.step_results, outcome.step_id: outcome.result},
+            models=models,
+        )
+
+    def with_check(self, check_id: str, result: dict[str, Any]) -> DocState:
+        return replace(
+            self,
+            checks={**self.checks, check_id: result},
+            step_results={**self.step_results, check_id: result},
+        )
+
+    @classmethod
+    def from_document(cls, document: dict[str, Any]) -> DocState:
+        """The state a stored draft `document.json` holds (step results are not stored)."""
+        return cls(
+            fields=dict(document["fields"]),
+            tables=dict(document["tables"]),
+            checks=dict(document.get("checks", {})),
+            issues=tuple(document.get("issues", [])),
+            models=dict(document.get("models", {})),
+        )
+
+
+def step_inputs(template: Template, step: ExtractStep) -> list[str]:
+    """The extract steps whose values `step` reads through its `context`, in pipeline order: the
+    step's dependencies. (A valid recipe fills each output with one step, and a context names
+    only outputs filled by earlier steps.)"""
+    writer = {
+        output: s.id
+        for s in template.extract_steps()
+        for output in [*s.fields, *([s.table] if s.table else [])]
+    }
+    wanted = {writer[path.partition(".")[0]] for path in step.context.values()}
+    return [s.id for s in template.extract_steps() if s.id in wanted]
+
+
+def normalise_step(
+    template: Template, step: ExtractStep, data: dict[str, Any], model: str | None = None
+) -> StepOutcome:
+    """A step's reply (`data`, never changed) as typed values plus the issues found."""
     order = template.document.date_order
+    issues: list[dict[str, Any]] = []
     if step.fields:
-        normalised: dict[str, Any] = {}
+        fields: dict[str, dict[str, Any]] = {}
         for field_id in step.fields:
             definition = template.field(field_id)
             entry = data.get(field_id) or {}
             value, issue = normalize_value(
                 entry.get("value"), definition.type, options=definition.enum, date_order=order
             )
-            fields[field_id] = normalised[field_id] = {
+            fields[field_id] = {
                 "value": value,
                 "evidence": entry.get("evidence"),
                 "page": entry.get("page"),
@@ -704,7 +743,7 @@ def _normalise_step(
                         "message": issue,
                     }
                 )
-        return normalised
+        return StepOutcome(step.id, dict(fields), fields, {}, tuple(issues), model)
 
     assert step.table is not None
     table = template.table(step.table)
@@ -728,8 +767,8 @@ def _normalise_step(
                     }
                 )
         rows.append(row)
-    tables[table.id] = rows
-    return {"rows": rows}
+    issues += key_column_issues(template, step, rows)
+    return StepOutcome(step.id, {"rows": rows}, {}, {table.id: rows}, tuple(issues), model)
 
 
 def _review_reasons(
@@ -848,6 +887,87 @@ def add_report(report: ShaclReport, issues: list[dict[str, Any]], reasons: list[
         for r in report.results
         if r.severity != "Violation"
     )
+
+
+def document_of(
+    job: ClaimedJob, doc: Prepared, template: Template, state: DocState, reasons: list[str]
+) -> dict[str, Any]:
+    """The draft `document.json` of a job: the state its steps built and the review reasons."""
+    return {
+        "document_id": job.document_id,
+        "job_id": job.id,
+        "source_sha256": doc.sha256,
+        "template": {"id": template.id, "version": template.version, "name": template.name},
+        "extracted_at": datetime.now(UTC).isoformat(),
+        "page_count": doc.total_pages,
+        "models": state.models,
+        "fields": state.fields,
+        "tables": state.tables,
+        "checks": state.checks,
+        "issues": list(state.issues),
+        "review_required": bool(reasons),
+        "review_reasons": reasons,
+    }
+
+
+#: `draft`: an extraction or a step re-run, whose shapes report joins the draft's issues and
+#: review reasons. `publish`: a reviewed document, left as it is; a delivered graph must satisfy
+#: the shapes, and one that is not delivered is checked only when its shapes can be read.
+FinaliseMode = Literal["draft", "publish"]
+
+
+@dataclass(frozen=True)
+class Finalised:
+    """A document with its graph and rendered outputs, nothing written yet (but the SHACL
+    report, which the check keeps in the runs bucket)."""
+
+    document: dict[str, Any]
+    graph: RenderedGraph | None
+    outputs: list[RenderedOutput]
+
+    @property
+    def reasons(self) -> list[str]:
+        """The document's review reasons (the list `document` holds)."""
+        reasons: list[str] = self.document["review_reasons"]
+        return reasons
+
+
+def finalise(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    document: dict[str, Any],
+    *,
+    mode: FinaliseMode,
+) -> Finalised:
+    """The ending every document shares: its graph, the shapes check, its outputs. In `draft`
+    mode the report's violations become review reasons and its warnings issues (`document` is
+    updated); in `publish` mode a delivered graph that violates the shapes is ShapesViolated."""
+    graph = build_graph(job, deps, queue, template, document)
+    delivered = "rdf" in template.delivery_formats()
+    if mode == "publish" and not delivered:
+        # The graph is not delivered: its report is advisory, and missing shapes never block.
+        try:
+            report = shacl_check(job, deps, queue, template, graph)
+        except DocumentError:
+            report = None
+    else:
+        report = shacl_check(job, deps, queue, template, graph)
+    if report is not None:
+        if mode == "draft":
+            add_report(report, document["issues"], document["review_reasons"])
+            document["review_required"] = bool(document["review_reasons"])
+        elif delivered and report.violations():
+            # Before any write: a delivered graph must satisfy the shapes (ADR 0011 step 5).
+            raise ShapesViolated([v.reason() for v in report.violations()])
+    return Finalised(document, graph, render_document(template, document, graph))
+
+
+def write_drafts(deps: PipelineDeps, outputs: list[RenderedOutput]) -> None:
+    """Put a draft's outputs in the outputs bucket (the reviewer and Delete find them there)."""
+    for o in outputs:
+        deps.store.put(deps.buckets.outputs, o.key, o.body, content_type(o.format))
 
 
 def render_document(

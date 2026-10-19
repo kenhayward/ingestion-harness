@@ -4,7 +4,7 @@ import hashlib
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
@@ -47,10 +47,19 @@ from .segment import (
     KeyIssue,
     MissingSectionsError,
     Occurrence,
+    Segmented,
     segment_occurrences,
     select_copy,
 )
-from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
+from .specs import (
+    Check,
+    DocumentLayout,
+    Extraction,
+    LoadedTemplate,
+    OcrMode,
+    PageRange,
+    SpecRegistry,
+)
 from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
@@ -64,6 +73,7 @@ if TYPE_CHECKING:
     from .ontology_fetch import Fetched
     from .rdf_rebuild import RebuildSource
     from .template import Template
+    from .template_pipeline import GraphDelivery
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 log = logging.getLogger("ingest_worker")
@@ -112,9 +122,9 @@ class ProcessResult:
     review_reasons: list[str] = field(default_factory=list)
     #: The output formats delivered on publishing (None: every output).
     formats: list[str] | None = None
-    #: Publishes the document's graph (its copy to the given target, then the triple store)
-    #: once its outputs are delivered without review (None: no graph is delivered).
-    deliver_graph: Callable[[Target], object] | None = None
+    #: The document's graph, published once its outputs are delivered without review (None: no
+    #: graph is delivered).
+    graph: GraphDelivery | None = None
     #: The publishing target of the job's recipe version (legacy specs: the default), resolved
     #: before extraction; None for test runs and without targets (nothing is delivered).
     target: Target | None = None
@@ -234,30 +244,69 @@ def job_data_policy(job: ClaimedJob) -> Literal["local", "external"] | None:
     return "external" if (job.params or {}).get("dataPolicy") == "external" else "local"
 
 
-def enforce_data_policy(
-    job: ClaimedJob, deps: PipelineDeps, provider: LLMProvider, ref: str
-) -> None:
-    """Refuse, before any call, to send a local-only project's data to an external provider."""
-    if job_data_policy(job) == "local" and deps.models.location(provider.name) == "external":
-        raise DocumentError(
-            f"data policy: project is local-only but {ref} resolves to external provider "
-            f"{provider.name}"
-        )
+@dataclass(frozen=True)
+class JobModels:
+    """The models one job may use: the only way a node gets a chat, vision or OCR provider
+    (tests/test_nodes.py holds the worker to it), so the data policy is checked whenever one is
+    resolved, before any call."""
+
+    job: ClaimedJob
+    registry: ModelRegistry
+
+    def resolve(self, ref: str, *, what: str | None = None) -> tuple[LLMProvider, str]:
+        """`ref` resolved and allowed. With `what` (the model's use, e.g. "OCR model"), a ref
+        that does not resolve is a DocumentError naming it; without, ModelResolutionError."""
+        return self._allowed(self.registry.resolve, ref, what)
+
+    def resolve_ocr(self, ref: str, *, what: str | None = None) -> tuple[LLMProvider, str]:
+        """Like resolve(), on the provider's OCR endpoint (ModelRegistry.resolve_ocr)."""
+        return self._allowed(self.registry.resolve_ocr, ref, what)
+
+    def allow(self, provider: LLMProvider, ref: str) -> None:
+        """Refuse, before any call, to send a local-only project's data to an external provider."""
+        external = self.registry.location(provider.name) == "external"
+        if job_data_policy(self.job) == "local" and external:
+            raise DocumentError(
+                f"data policy: project is local-only but {ref} resolves to external provider "
+                f"{provider.name}"
+            )
+
+    def _allowed(
+        self,
+        resolve: Callable[[str], tuple[LLMProvider, str]],
+        ref: str,
+        what: str | None,
+    ) -> tuple[LLMProvider, str]:
+        try:
+            resolved = resolve(ref)
+        except ModelResolutionError as exc:
+            if what is None:
+                raise
+            raise DocumentError(f"{what}: {exc}") from exc
+        self.allow(resolved[0], ref)
+        return resolved
+
+
+def run_nodes[S](
+    job: ClaimedJob, queue: JobQueue, nodes: Iterable[Callable[[S], S]], state: S
+) -> S:
+    """Run `nodes` in order, each on the state the one before returned, with a safe point
+    before every node: a cancelled job stops before the next one starts (JobCancelled)."""
+    for node in nodes:
+        check_cancelled(job, queue)
+        state = node(state)
+    return state
 
 
 def resolve_models(
     job: ClaimedJob, deps: PipelineDeps, extractions: list[Extraction]
 ) -> dict[str, tuple[LLMProvider, str]]:
     """Resolve every model before the first LLM call so a config error costs no tokens."""
-    resolved: dict[str, tuple[LLMProvider, str]] = {}
-    for ex in extractions:
-        try:
-            ref = job.model_override or ex.model
-            resolved[ex.id] = deps.models.resolve(ref)
-        except ModelResolutionError as exc:
-            raise DocumentError(f"extraction {ex.id!r}: {exc}") from exc
-        enforce_data_policy(job, deps, resolved[ex.id][0], ref)
-    return resolved
+    allowed = JobModels(job, deps.models)
+    return {
+        ex.id: allowed.resolve(job.model_override or ex.model, what=f"extraction {ex.id!r}")
+        for ex in extractions
+    }
 
 
 def load_source(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Source:
@@ -295,36 +344,73 @@ def load_source(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Source:
     return Source(data, sha256, "docx", pdf)
 
 
-def prepare_document(
-    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, document: DocumentLayout
-) -> Prepared:
-    source = load_source(job, deps, queue)
-    pdf = source.pdf
-    pages = deps.extract_text(pdf)
-    total_pages = len(pages)
+@dataclass(frozen=True)
+class PageText:
+    """A document's pages as read: `layer` is the PDF's text layer, `pages` the same pages after
+    OCR replaced the ones with too little text."""
+
+    layer: list[str]
+    pages: list[str]
+
+    @property
+    def total(self) -> int:
+        """The document's page count."""
+        return len(self.layer)
+
+
+@dataclass(frozen=True)
+class Selected:
+    """The pages segmentation reads: the kept copy, with page markers when the layout asks."""
+
+    pages: list[str]
+    #: 0-based index, in the document, of the first kept page.
+    first: int
+
+
+def read_pages(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    source: Source,
+    ocr: OcrMode,
+    *,
+    expected: PageRange | None = None,
+    text_layer: TextExtractor | None = None,
+) -> PageText:
+    """Node: read the text layer (`text_layer`, else `deps.extract_text`), refuse a page count
+    outside `expected` before any OCR, then OCR the pages that need it. Reports `prepare
+    progress` (the text layer, then each OCR page)."""
+    layer = (text_layer or deps.extract_text)(source.pdf)
+    total = len(layer)
 
     def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
         # `pages` is the document's page count, so a reader mid-OCR still knows it (#142).
-        data = {"stage": stage, "page": page, "of": of, "pages": total_pages}
+        data = {"stage": stage, "page": page, "of": of, "pages": total}
         advisory_event(job, queue, PREPARE_PROGRESS, data)
 
-    report("text", total_pages, total_pages)
-    if document.pages and not (document.pages.min <= len(pages) <= document.pages.max):
+    report("text", total, total)
+    if expected and not (expected.min <= total <= expected.max):
         raise DocumentError(
-            f"page count {len(pages)} outside expected range "
-            f"{document.pages.min}-{document.pages.max}"
+            f"page count {total} outside expected range {expected.min}-{expected.max}"
         )
-
     pages = ocr_pages(
         job,
         deps,
         queue,
-        pdf,
-        pages,
-        document.ocr,
+        source.pdf,
+        layer,
+        ocr,
         sha256=source.sha256,
-        progress=lambda done, total: report("ocr", done, total),
+        progress=lambda done, of: report("ocr", done, of),
     )
+    return PageText(layer, pages)
+
+
+def select_pages(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, pages: list[str], document: DocumentLayout
+) -> Selected:
+    """Node: keep one copy (`document.copies`), refuse a document with no text left, and mark
+    each page with its original number when the layout asks for page markers."""
     first = 0
     if document.copies:
         first, pages = select_copy(pages, document.copies)
@@ -341,21 +427,38 @@ def prepare_document(
         raise DocumentError(f"no extractable text (scanned/image-only PDF?); {hint}")
     if getattr(document, "page_markers", False):
         pages = mark_pages(pages, first + 1)
+    return Selected(pages, first)
 
+
+def segment_pages(
+    job: ClaimedJob, queue: JobQueue, selected: Selected, document: DocumentLayout
+) -> Segmented:
+    """Node: cut the selected pages into the layout's sections; a missing required section is a
+    DocumentError. Reports `segmented`."""
     try:
         marker = PAGE_MARKER if getattr(document, "page_markers", False) else None
-        segmented = segment_occurrences(pages, document.sections, page_marker=marker)
+        segmented = segment_occurrences(selected.pages, document.sections, page_marker=marker)
     except MissingSectionsError as exc:
         raise DocumentError(str(exc)) from exc
-    sections = segmented.sections
-    data: dict[str, Any] = {"pages": len(pages), "sections": list(sections)}
+    data: dict[str, Any] = {"pages": len(selected.pages), "sections": list(segmented.sections)}
     if segmented.occurrences:
         data["occurrences"] = {k: len(v) for k, v in segmented.occurrences.items()}
     queue.event(job.id, "info", SEGMENTED, data)
+    return segmented
+
+
+def prepare_document(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, document: DocumentLayout
+) -> Prepared:
+    """The source, read, selected and segmented: the nodes above in order."""
+    source = load_source(job, deps, queue)
+    read = read_pages(job, deps, queue, source, document.ocr, expected=document.pages)
+    selected = select_pages(job, deps, queue, read.pages, document)
+    segmented = segment_pages(job, queue, selected, document)
     return Prepared(
-        pdf,
-        total_pages,
-        sections,
+        source.pdf,
+        read.total,
+        segmented.sections,
         source.sha256,
         segmented.occurrences,
         segmented.key_issues,
@@ -471,11 +574,7 @@ def ocr_pages(
     targets = pages_needing_ocr(pages, mode, deps.ocr.min_chars)
     if not targets:
         return pages
-    try:
-        provider, model_id = deps.models.resolve_ocr(deps.ocr.model)
-    except ModelResolutionError as exc:
-        raise DocumentError(f"OCR model: {exc}") from exc
-    enforce_data_policy(job, deps, provider, deps.ocr.model)
+    provider, model_id = JobModels(job, deps.models).resolve_ocr(deps.ocr.model, what="OCR model")
 
     settings = deps.ocr
     pages = list(pages)

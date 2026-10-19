@@ -15,7 +15,6 @@ import httpx
 import psycopg
 
 from .bridge.client import HttpBridgeClient
-from .bridge.package import deliver_document
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
@@ -33,6 +32,15 @@ from .ocr import OcrSettings
 from .ontology import PgOntologyStore, run_ontology_import
 from .ontology_fetch import FetchPolicy, fetch_rdf
 from .ontology_suggest import run_suggest
+from .outcomes import (
+    AwaitReview,
+    Complete,
+    Deliver,
+    Delivering,
+    Outcome,
+    TaskHandler,
+    apply_outcome,
+)
 from .outputs import RenderedOutput
 from .pdf import extract_pages
 from .pipeline import (
@@ -108,132 +116,99 @@ def run_once(
     return True
 
 
-def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
+def handle_process(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """Extract (a recipe or a legacy spec): to review, else delivered at once."""
+    result = process_job(job, deps, queue)
+    reasons = result.review_reasons
+    if not reasons and (job.params or {}).get("forceReview"):
+        reasons = [FORCE_REVIEW_REASON]
+    if reasons:
+        return AwaitReview(result.outputs, reasons)
+    # The target was resolved before extraction (None: a test run, or no targets).
+    return Deliver(
+        result.outputs,
+        result.delivered(),
+        result.target,
+        result.graph,
+        document=result.document,
+        template=result.template,
+    )
+
+
+def handle_publish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """An approved review: apply the edits and deliver (publish_job)."""
+    check_cancelled(job, queue)
+    deliveries: list[tuple[str, str]] = []
+
+    def record(outputs: list[RenderedOutput], target: Target, delivery_id: str) -> None:
+        # Test runs never get here.
+        queue.record_published(job, outputs, target, delivery_id)
+        deliveries.append((target.id, delivery_id))
+
     try:
-        if job.task == "publish":
-            check_cancelled(job, queue)
-            deliveries: list[tuple[str, str]] = []
+        published = publish_job(job, deps, queue, record)
+    except ShapesViolated as refused:
+        # Nothing was delivered: the reviewer fixes the values and approves again.
+        queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
+        return AwaitReview([], refused.reasons, drafts=False, note="publish refused")
+    if not deliveries:
+        return Complete(note=f"published {len(published)} outputs")  # a test run
+    return Delivering([], deliveries, note=f"handed {len(published)} outputs to the bridge")
 
-            def record(outputs: list[RenderedOutput], target: Target, delivery_id: str) -> None:
-                # Test runs never get here.
-                queue.record_published(job, outputs, target, delivery_id)
-                deliveries.append((target.id, delivery_id))
 
-            try:
-                published = publish_job(job, deps, queue, record)
-            except ShapesViolated as refused:
-                # Nothing was delivered: the reviewer fixes the values and approves again.
-                queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
-                queue.await_review(job, [], deps.buckets.outputs, refused.reasons)
-                log.info("job %s publish refused: %s", job.id, "; ".join(refused.reasons))
-                return
-            if deliveries:
-                queue.delivering(job, [], deps.buckets.outputs, deliveries)
-            else:
-                queue.complete(job, [], deps.buckets.outputs)  # a test run: nothing delivered
-            log.info("job %s published %d outputs", job.id, len(published))
-            return
-        if job.task == "rerun":
-            loaded = load_definition(job, deps, queue)
-            if not isinstance(loaded, LoadedTemplate):
-                raise DocumentError("only documents run by a recipe can re-run steps")
-            rerun = rerun_template_job(job, deps, queue, loaded)
-            queue.record_drafts(job, rerun.outputs, deps.buckets.outputs)
-            check_cancelled(job, queue)
-            queue.await_review(job, rerun.outputs, deps.buckets.outputs, rerun.review_reasons)
-            log.info("job %s re-ran %s, back in review", job.id, (job.rerun or {}).get("step"))
-            return
-        if job.task == "prepare":
-            triage = prepare_sample(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s prepared %d pages", job.id, triage["pageCount"])
-            return
-        if job.task == "segment":
-            grid = run_segment(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s segmented %d samples", job.id, len(grid["samples"]))
-            return
-        if job.task == "draft":
-            drafted = run_draft(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s drafted stage %s with %s", job.id, drafted["stage"], drafted["model"])
-            return
-        if job.task == "export":
-            manifest = run_export(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s exported %d samples", job.id, len(manifest["samples"]))
-            return
-        if job.task == "graph":
-            preview = run_graph_preview(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s previewed %d graphs", job.id, len(preview["samples"]))
-            return
-        if job.task == "suggest":
-            suggested = run_suggest(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s suggested %d ontologies", job.id, len(suggested["suggestions"]))
-            return
-        if job.task == "embed":
-            embedded = run_embed(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s embedded %d terms", job.id, embedded)
-            return
-        if job.task == "withdraw":
-            withdrawn = run_withdraw(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s withdrew %d objects, %d graphs", job.id, *withdrawn)
-            return
-        if job.task == "republish":
-            deliveries = run_republish(job, deps, queue)
-            if deliveries:
-                queue.delivering(job, [], deps.buckets.outputs, deliveries)
-            else:
-                queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s re-delivered %d jobs", job.id, len(deliveries))
-            return
-        if job.task == "rebuild":
-            lines = run_rebuild_job(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s: %s", job.id, lines[-1])
-            return
-        if job.task == "ontology":
-            parsed = run_ontology_import(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s indexed %d ontology terms", job.id, len(parsed.terms))
-            return
-        result = process_job(job, deps, queue)
-        queue.record_drafts(job, result.outputs, deps.buckets.outputs)  # findable by Delete
-        check_cancelled(job, queue)
-        reasons = result.review_reasons
-        if not reasons and (job.params or {}).get("forceReview"):
-            reasons = [FORCE_REVIEW_REASON]
-        if reasons:
-            queue.await_review(job, result.outputs, deps.buckets.outputs, reasons)
-            log.info("job %s awaiting review: %s", job.id, "; ".join(reasons))
-        else:
-            target = result.target  # resolved before extraction (None: test run, no targets)
-            delivered = result.delivered()
-            if target is None or not delivered:
-                queue.complete(job, result.outputs, deps.buckets.outputs)
-                log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
-                return
-            check_cancelled(job, queue)
-            uploader = queue.uploader(job.id)  # auto-published: the uploader acts
-            published, delivery_id = deliver_document(
-                deps,
-                job,
-                template=result.template,
-                document=result.document,
-                outputs=delivered,
-                target=target,
-                acting=uploader,
-                approver=None,
-            )
-            queue.record_published(job, published, target, delivery_id)
-            if result.deliver_graph is not None:
-                result.deliver_graph(target)
-            queue.delivering(job, result.outputs, deps.buckets.outputs, [(target.id, delivery_id)])
-            log.info("job %s handed %d outputs to the bridge", job.id, len(published))
+def handle_rerun(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """A reviewer's step re-run: the draft goes back to review."""
+    loaded = load_definition(job, deps, queue)
+    if not isinstance(loaded, LoadedTemplate):
+        raise DocumentError("only documents run by a recipe can re-run steps")
+    rerun = rerun_template_job(job, deps, queue, loaded)
+    step = (job.rerun or {}).get("step")
+    return AwaitReview(rerun.outputs, rerun.review_reasons, note=f"re-ran {step}, back in review")
+
+
+def handle_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """Deliver a re-enabled type's withdrawn jobs again; the bridge's events finish the job."""
+    deliveries = run_republish(job, deps, queue)
+    if not deliveries:
+        return Complete(note="re-delivered 0 jobs")
+    return Delivering([], deliveries, note=f"re-delivered {len(deliveries)} jobs")
+
+
+def _completes[R](
+    run: Callable[[ClaimedJob, PipelineDeps, JobQueue], R], note: Callable[[R], str]
+) -> TaskHandler:
+    """A task that succeeds with no outputs of its own once `run` returns."""
+
+    def handle(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+        return Complete(note=note(run(job, deps, queue)))
+
+    return handle
+
+
+#: Every task's handler, by `jobs.task` (the database's jobs_task_check lists the same tasks).
+TASKS: dict[str, TaskHandler] = {
+    "process": handle_process,
+    "publish": handle_publish,
+    "rerun": handle_rerun,
+    "prepare": _completes(prepare_sample, lambda t: f"prepared {t['pageCount']} pages"),
+    "segment": _completes(run_segment, lambda g: f"segmented {len(g['samples'])} samples"),
+    "draft": _completes(run_draft, lambda r: f"drafted stage {r['stage']} with {r['model']}"),
+    "export": _completes(run_export, lambda m: f"exported {len(m['samples'])} samples"),
+    "graph": _completes(run_graph_preview, lambda p: f"previewed {len(p['samples'])} graphs"),
+    "suggest": _completes(run_suggest, lambda s: f"suggested {len(s['suggestions'])} ontologies"),
+    "embed": _completes(run_embed, lambda n: f"embedded {n} terms"),
+    "withdraw": _completes(run_withdraw, lambda w: "withdrew {} objects, {} graphs".format(*w)),
+    "republish": handle_republish,
+    "rebuild": _completes(run_rebuild_job, lambda lines: lines[-1]),
+    "ontology": _completes(run_ontology_import, lambda p: f"indexed {len(p.terms)} ontology terms"),
+}
+
+
+def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
+    """Run the job's handler and write its outcome; map what it raised to a status."""
+    try:
+        handler = TASKS.get(job.task, handle_process)
+        apply_outcome(job, handler(job, deps, queue), queue, deps)
     except JobCancelled:
         log.info("job %s cancelled, deleted or re-queued: stopping", job.id)
         _quietly(job, lambda: queue.event(job.id, "warn", "cancelled"))

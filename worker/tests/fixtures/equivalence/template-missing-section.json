@@ -1,0 +1,52 @@
+{
+ "models": {
+  "calls": [],
+  "vision": []
+ },
+ "queue": {
+  "awaiting": [],
+  "completed": [],
+  "delivering": [],
+  "drafts": [],
+  "events": [
+   [
+    "job-1",
+    "info",
+    "prepare progress",
+    {
+     "of": 2,
+     "page": 2,
+     "pages": 2,
+     "stage": "text"
+    }
+   ],
+   [
+    "job-1",
+    "warn",
+    "needs review",
+    {
+     "reason": "required sections not found: body"
+    }
+   ]
+  ],
+  "failed": [],
+  "published": [],
+  "published_deliveries": [],
+  "reviewed": [
+   [
+    "job-1",
+    "required sections not found: body"
+   ]
+  ],
+  "step_runs": []
+ },
+ "store": {
+  "inbox/demo/v1/doc-1.pdf": {
+   "body": {
+    "bytes": 4,
+    "sha256": "315d429b7714cedb"
+   },
+   "type": "application/pdf"
+  }
+ }
+}
