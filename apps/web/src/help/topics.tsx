@@ -34,6 +34,7 @@ import { VersionsHelp } from './VersionsHelp.js';
 import { WorkbenchHelp } from './WorkbenchHelp.js';
 import {
   ReviewHelp,
+  ReviewGraphHelp,
   WbBriefHelp,
   WbEvaluateHelp,
   WbMappingHelp,
@@ -81,6 +82,7 @@ export const HELP_TOPICS = {
   wbRuns: { title: 'Test runs', body: <WbRunsHelp /> },
   draftModelLog: { title: 'Reading a model log', body: <DraftModelLogHelp /> },
   review: { title: 'Reviewing a document', body: <ReviewHelp /> },
+  reviewGraph: { title: 'The document graph', body: <ReviewGraphHelp /> },
   ontologies: { title: 'The ontology library', body: <OntologiesHelp /> },
   ontology: { title: 'An ontology and its versions', body: <OntologyHelp /> },
   ontologyClasses: { title: 'Classes', body: <OntologyClassesHelp /> },

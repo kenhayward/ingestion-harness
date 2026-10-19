@@ -5559,6 +5559,206 @@ button.endpoint-toggle {
   font-family: var(--ih-font-mono);
   white-space: pre;
 }
+
+/* Review Graph tab: the graph as cards, a diagram, or Turtle */
+.graph-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.graph-view-head h3 {
+  margin: 0;
+}
+.graph-view-count {
+  margin-left: auto;
+  font-size: var(--ih-text-sm);
+}
+.graph-provenance {
+  margin: 6px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.rdf-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.rdf-card {
+  min-width: 0;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface);
+  padding: 12px 14px;
+  scroll-margin: 12px;
+}
+.rdf-card:focus-visible,
+.rdf-card:focus {
+  outline: 2px solid var(--ih-accent);
+  outline-offset: 2px;
+}
+.rdf-card-root {
+  grid-column: 1 / -1;
+}
+.rdf-card-violation {
+  border-color: var(--ih-danger-fg);
+}
+.rdf-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 6px;
+}
+.rdf-card-head h4 {
+  margin: 0;
+  font-size: var(--ih-text-md);
+  overflow-wrap: anywhere;
+}
+.rdf-type {
+  font-size: var(--ih-text-xs);
+  padding: 2px 8px;
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-surface2);
+  color: var(--ih-muted);
+}
+.rdf-type-root {
+  background: var(--ih-accent-soft);
+  color: var(--ih-accent-soft-text);
+}
+.rdf-flag {
+  margin-left: auto;
+  font-size: var(--ih-text-xs);
+  padding: 2px 8px;
+  border-radius: var(--ih-radius-pill);
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+}
+.rdf-flag-violation {
+  background: var(--ih-danger-bg);
+  color: var(--ih-danger-fg);
+}
+.rdf-props {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ih-text-sm);
+}
+.rdf-props th,
+.rdf-props td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 0;
+  border-top: 1px solid var(--ih-border-soft);
+}
+.rdf-props th {
+  width: min(38%, 200px);
+  padding-right: 12px;
+  font-weight: normal;
+  color: var(--ih-muted);
+}
+.rdf-props td {
+  overflow-wrap: anywhere;
+}
+.rdf-row-violation th,
+.rdf-row-violation td {
+  background: var(--ih-danger-bg);
+}
+.rdf-row-violation th {
+  color: var(--ih-danger-fg);
+}
+.rdf-row-warning th,
+.rdf-row-warning td {
+  background: var(--ih-warn-bg);
+}
+.rdf-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+.rdf-unit,
+.rdf-lang {
+  color: var(--ih-muted);
+}
+.rdf-lang {
+  margin-left: 4px;
+  font-size: var(--ih-text-xs);
+}
+.rdf-term {
+  padding: 0 6px;
+  border-radius: var(--ih-radius-sm);
+  background: var(--ih-surface2);
+}
+button.rdf-link {
+  display: inline;
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--ih-radius-sm);
+  background: var(--ih-info-bg);
+  color: var(--ih-info-fg);
+  font: inherit;
+  line-height: inherit;
+}
+button.rdf-link:hover:not(:disabled) {
+  background: var(--ih-info-bg);
+  text-decoration: underline;
+}
+.rdf-evidence {
+  display: block;
+  margin: 2px 0 0;
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+}
+.rdf-missing {
+  color: var(--ih-danger-fg);
+}
+.rdf-results {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ih-text-xs);
+}
+.rdf-incoming {
+  margin: 8px 0 0;
+  font-size: var(--ih-text-xs);
+  color: var(--ih-muted);
+}
+.rdf-diagram-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 12px;
+  margin-top: 12px;
+}
+.rdf-diagram {
+  height: 480px;
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius-lg);
+  background: var(--ih-surface2);
+}
+.rdf-diagram-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.rdf-entity-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ih-text-sm);
+}
+.rdf-entity-list [aria-current='true'] {
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .rdf-diagram-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rdf-diagram {
+    height: 340px;
+  }
+}
 .formats label {
   display: inline-flex;
   align-items: center;

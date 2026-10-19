@@ -497,6 +497,7 @@ describe('ReviewPage graph (ADR 0011 step 5)', () => {
       })),
     });
     await userEvent.click(await screen.findByRole('tab', { name: /Graph 1 \(flagged\)/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Turtle' }));
     expect(await screen.findByText('<a> <b> <c> .')).toBeInTheDocument();
     expect(api.getShaclReport).toHaveBeenCalledWith(JOB_ID);
     await userEvent.click(screen.getByRole('button', { name: 'Show results.batch' }));
