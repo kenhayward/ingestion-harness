@@ -915,6 +915,8 @@ export class PgRepo implements IngestionRepo {
            FROM jobs j JOIN documents d ON d.id = j.document_id
           WHERE o.job_id = j.id AND d.spec_id = $1 AND o.stage = 'published'
             AND o.withdrawn_at IS NULL
+            -- The bridge may still write a delivering job's objects: retiring again withdraws them.
+            AND j.status <> 'delivering'
         RETURNING o.bucket, o.object_key AS key, o.target_id AS target`,
         [typeId],
       );
@@ -959,7 +961,8 @@ export class PgRepo implements IngestionRepo {
       const { rowCount } = await client.query(
         `SELECT 1 FROM job_outputs o JOIN jobs j ON j.id = o.job_id
            JOIN documents d ON d.id = j.document_id
-          WHERE d.spec_id = $1 AND o.withdrawn_at IS NOT NULL LIMIT 1`,
+          WHERE d.spec_id = $1 AND o.withdrawn_at IS NOT NULL AND j.status = 'succeeded'
+          LIMIT 1`,
         [typeId],
       );
       return rowCount ? queueBackground(client, 'republish', { templateId: typeId }, by) : null;
@@ -1493,6 +1496,15 @@ export class PgRepo implements IngestionRepo {
       if (updated.rowCount === 0) {
         await client.query('ROLLBACK');
         return { outcome: 'stale', finished: null };
+      }
+      // A delivery that ends without its objects written: its published rows are withdrawn, so a
+      // republish (or approving again) delivers them anew and readers don't look for them.
+      if (update.status === 'failed' || update.status === 'needs_user') {
+        await client.query(
+          `UPDATE job_outputs SET withdrawn_at = now()
+            WHERE delivery_id = $1 AND stage = 'published' AND withdrawn_at IS NULL`,
+          [deliveryId],
+        );
       }
       const finishedAs = finish(await deliveriesIn(client, jobId));
       const outcome =

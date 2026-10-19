@@ -130,6 +130,37 @@ describe.skipIf(!url)('job deliveries against Postgres', { timeout: 30_000 }, ()
     expect(row.rows[0]).toEqual({ status: 'failed', error: 'Default: access denied' });
   });
 
+  it('a delivery that ends failed leaves its published outputs withdrawn, so republish finds them', async () => {
+    const job = await delivering();
+    const d = randomUUID();
+    await repo.recordDeliveries(job.id, [{ targetId: 'default', deliveryId: d }]);
+    await pool.query(
+      `INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key, target_id, delivery_id)
+       VALUES ($1, 'fields', 'published', 'csv', 'pub', 'k.csv', 'default', $2)`,
+      [job.id, d],
+    );
+    await applyEvent(
+      { repo, targets },
+      event(d, 2, {
+        status: 'failed',
+        receipt: null,
+        error: { class: 'retryable', code: 'instance_unavailable', message: 'down' },
+      }),
+    );
+    const row = await pool.query(
+      `SELECT withdrawn_at IS NOT NULL AS withdrawn FROM job_outputs WHERE job_id = $1`,
+      [job.id],
+    );
+    expect(row.rows).toEqual([{ withdrawn: true }]);
+    // The job failed, so it was never published: a republish of its type has nothing to do.
+    await pool.query(
+      `UPDATE documents SET spec_id = $2 FROM jobs j
+                       WHERE j.id = $1 AND documents.id = j.document_id`,
+      [job.id, `rf-${d.slice(0, 8)}`],
+    );
+    expect(await repo.republishType(`rf-${d.slice(0, 8)}`, 'admin')).toBeNull();
+  });
+
   it('two concurrent events for the last two deliveries finalise the job exactly once', async () => {
     for (let round = 0; round < 5; round++) {
       const job = await delivering();

@@ -588,7 +588,8 @@ export class MemoryRepo implements IngestionRepo {
   async withdrawType(typeId: string, by: string | null): Promise<string | null> {
     const objects: { bucket: string; key: string; target: string }[] = [];
     for (const job of this.jobs.values()) {
-      if (job.specId !== typeId) continue;
+      // The bridge may still write a delivering job's objects: retiring again withdraws them.
+      if (job.specId !== typeId || job.status === 'delivering') continue;
       const outputs = this.outputs.get(job.id) ?? [];
       const delivered = outputs.filter((o) => o.stage === 'published');
       if (!delivered.length) continue;

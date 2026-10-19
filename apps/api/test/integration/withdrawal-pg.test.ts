@@ -190,6 +190,20 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
     await pool.query(`DELETE FROM jobs WHERE task IN ('withdraw', 'republish')`);
   });
 
+  it('retiring leaves the outputs of a job still delivering: retiring again withdraws them', async () => {
+    const type = `rd-${randomUUID().slice(0, 8)}`;
+    const job = await delivered(type, randomUUID().replaceAll('-', ''));
+    await pool.query(`UPDATE jobs SET status = 'delivering' WHERE id = $1`, [job.id]);
+    // The bridge may still write these objects: withdrawing them now would leave them live.
+    expect(await repo.withdrawType(type, 'admin')).toBeNull();
+    expect((await repo.getJob(job.id))!.outputs.map((o) => o.stage).sort()).toEqual([
+      'draft',
+      'published',
+    ]);
+    await pool.query(`UPDATE jobs SET status = 'succeeded' WHERE id = $1`, [job.id]);
+    expect(await repo.withdrawType(type, 'admin')).not.toBeNull();
+  });
+
   it('retiring withdraws once, readers skip withdrawn outputs, unretiring republishes', async () => {
     const type = `rt-${randomUUID().slice(0, 8)}`;
     const sha = randomUUID().replaceAll('-', '');

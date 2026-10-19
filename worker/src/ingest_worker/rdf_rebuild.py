@@ -146,7 +146,7 @@ class PgRebuildSource:
             """SELECT j.id::text, j.document_id::text, d.spec_id, d.spec_version, d.sha256,
                       d.bucket, d.object_key
                  FROM jobs j JOIN documents d ON d.id = j.document_id
-                WHERE d.spec_id = %s AND NOT j.test
+                WHERE d.spec_id = %s AND NOT j.test AND j.status = 'succeeded'
                   AND EXISTS (SELECT 1 FROM job_outputs o
                                WHERE o.job_id = j.id AND o.withdrawn_at IS NOT NULL)
                 ORDER BY j.updated_at""",

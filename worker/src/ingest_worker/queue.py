@@ -293,15 +293,17 @@ class PgJobQueue:
         deliveries: list[tuple[str, str]],
     ) -> None:
         with self._conn.transaction():
-            if not self._finish(job, "delivering", None):
-                return  # cancelled meanwhile: record nothing
-            self._record_outputs(job, outputs, outputs_bucket, "draft")
+            # Cancelled meanwhile: the job keeps its status, but the bridge accepted the package
+            # and delivers it, so its deliveries are recorded (their events are applied, not
+            # resent for ever). A job deleted meanwhile has nothing to record them on.
+            if self._finish(job, "delivering", None):
+                self._record_outputs(job, outputs, outputs_bucket, "draft")
             for target_id, delivery_id in deliveries:
                 self._conn.execute(
                     """INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
-                       VALUES (%s, %s, %s, 'queued')
+                       SELECT %s, id, %s, 'queued' FROM jobs WHERE id = %s
                        ON CONFLICT (delivery_id) DO NOTHING""",
-                    (delivery_id, job.id, target_id),
+                    (delivery_id, target_id, job.id),
                 )
 
     def reviewer(self, job_id: str) -> ActingUser | None:

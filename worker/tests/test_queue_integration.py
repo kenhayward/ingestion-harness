@@ -367,18 +367,22 @@ def test_a_delivering_job_records_its_deliveries_and_its_drafts(
     assert drafts == (1,)
 
 
-def test_a_cancelled_job_is_never_handed_to_the_bridge(
+def test_a_job_cancelled_during_the_hand_off_keeps_its_status_and_records_the_deliveries(
     queue_and_job: tuple[PgJobQueue, ClaimedJob],
 ) -> None:
+    # The bridge accepted the package before the cancel landed, so it delivers anyway: its
+    # deliveries are recorded (their events are applied, not resent for ever) and the job
+    # stays cancelled.
     q, job = queue_and_job
     q._conn.execute("UPDATE jobs SET status = 'cancelled' WHERE id = %s", (job.id,))
-    q.delivering(job, [], "outputs", [("default", str(uuid.uuid4()))])
+    delivery = str(uuid.uuid4())
+    q.delivering(job, [], "outputs", [("default", delivery)])
     status = q._conn.execute("SELECT status FROM jobs WHERE id = %s", (job.id,)).fetchone()
     assert status == ("cancelled",)
     rows = q._conn.execute(
-        "SELECT count(*) FROM job_deliveries WHERE job_id = %s", (job.id,)
-    ).fetchone()
-    assert rows == (0,)
+        "SELECT delivery_id::text FROM job_deliveries WHERE job_id = %s", (job.id,)
+    ).fetchall()
+    assert rows == [(delivery,)]
 
 
 def test_a_claim_carries_the_documents_sha256(
@@ -414,3 +418,25 @@ def test_the_acting_users_are_the_reviewer_by_name_and_the_uploader_by_id(
         assert uploader.name == f"Up {name}"
     finally:
         q._conn.execute("DELETE FROM users WHERE id IN (%s, %s)", (reviewer_id, uploader_id))
+
+
+def test_republish_finds_only_succeeded_jobs_with_withdrawn_outputs(
+    queue_and_job: tuple[PgJobQueue, ClaimedJob],
+) -> None:
+    # A delivery that ended failed or needing a person leaves its rows withdrawn too; the job
+    # was never published, so a republish must not deliver it (a rejected job least of all).
+    from ingest_worker.rdf_rebuild import PgRebuildSource
+
+    q, job = queue_and_job
+    q._conn.execute(
+        """INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key,
+                                    target_id, withdrawn_at)
+           VALUES (%s, 'fields', 'published', 'csv', 'pub', 'k.csv', 'default', now())""",
+        (job.id,),
+    )
+    source = PgRebuildSource(q._conn)
+    for status in ("failed", "rejected", "awaiting_review"):
+        q._conn.execute("UPDATE jobs SET status = %s WHERE id = %s", (status, job.id))
+        assert job.id not in [j.job_id for j in source.withdrawn_jobs("demo")], status
+    q._conn.execute("UPDATE jobs SET status = 'succeeded' WHERE id = %s", (job.id,))
+    assert job.id in [j.job_id for j in source.withdrawn_jobs("demo")]
