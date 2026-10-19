@@ -1,3 +1,4 @@
+import { CONNECTION_ID } from '@ih/bridge-contract';
 import type { TargetRepo } from '../targets/repo.js';
 
 /**
@@ -54,11 +55,29 @@ export const CREDENTIAL_ENV_NAMES: ReadonlySet<string> = new Set([
   'S3_SECRET_KEY',
 ]);
 
-const ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+const ID = CONNECTION_ID;
+
+/** Writes the built-in connection when it is missing; never touches it afterwards. */
+export async function seedInternalConnection(connections: ConnectionRepo): Promise<void> {
+  if (await connections.get(INTERNAL_CONNECTION_ID)) return;
+  await connections.put({
+    id: INTERNAL_CONNECTION_ID,
+    kind: 'shared',
+    owner: null,
+    sinkId: 's3',
+    instanceId: null,
+    name: 'This deployment',
+    fields: {},
+    secretEnv: null,
+    status: 'untested',
+    statusReason: null,
+    secretEnc: null,
+  });
+}
 
 /** The rules the database's CHECKs enforce, for the memory repo and for early, clear errors. */
 export function connectionProblem(c: NewConnection): string | null {
-  if (!ID.test(c.id)) return 'an id is 1-40 of a-z, 0-9, _ and -, starting with a letter or digit';
+  if (!ID.test(c.id)) return 'an id is 1-64 of a-z, 0-9, _ and -, starting with a letter or digit';
   if ((c.kind === 'personal') !== (c.owner !== null)) {
     return 'a personal connection has an owner, a shared one has none';
   }

@@ -17,6 +17,10 @@ export interface TargetRecord extends Omit<
   accessKeyEnv: string | null;
   secretKeyEnv: string | null;
   seededAt: string | null;
+  /** The bridge connection this target delivers with (internal targets: none stored). */
+  connectionId: string | null;
+  /** When its keys moved to the bridge (then its ciphertext is gone). */
+  movedToBridgeAt: string | null;
 }
 
 /** What a create stores; the route has made the id and encrypted the secret. */
@@ -56,6 +60,10 @@ export interface PublishTargetRepo {
   version(): Promise<number>;
   /** Writes the default from `.env` once (while `seeded_at` is null); never overwrites after. */
   seedDefault(seed: DefaultSeed): Promise<SeedOutcome>;
+  /** Its keys are now the bridge's connection `connectionId`: the ciphertext is dropped. */
+  markMoved(id: string, connectionId: string): Promise<void>;
+  /** The bridge connection a target delivers with (null: none, or no such target). */
+  connectionOf(id: string): Promise<string | null>;
 }
 
 export const EMPTY_USAGE: TargetUsage = {
@@ -67,8 +75,18 @@ export const EMPTY_USAGE: TargetUsage = {
 };
 
 export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
-  const { secretKeyEnc, accessKeyEnv, secretKeyEnv, seededAt: _seededAt, ...rest } = r;
+  const {
+    secretKeyEnc,
+    accessKeyEnv,
+    secretKeyEnv,
+    seededAt: _seededAt,
+    connectionId: _connectionId,
+    movedToBridgeAt: _movedToBridgeAt,
+    ...rest
+  } = r;
   void _seededAt;
+  void _connectionId;
+  void _movedToBridgeAt;
   return {
     ...rest,
     secretSet: secretKeyEnc !== null,
@@ -85,6 +103,8 @@ export function recordFrom(input: NewTarget, by: string | null, now: Date): Targ
     ...input,
     source: 'ui',
     seededAt: null,
+    connectionId: null,
+    movedToBridgeAt: null,
     editedAt: null,
     updatedBy: by,
     createdAt: now.toISOString(),
@@ -147,6 +167,8 @@ export function initialDefault(now: Date): TargetRecord {
     editedAt: null,
     updatedBy: null,
     createdAt: now.toISOString(),
+    connectionId: null,
+    movedToBridgeAt: null,
   };
 }
 
@@ -268,5 +290,21 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
       return 'seeded';
     }
     return seedDifferences(r, seed).length > 0 ? 'differs' : 'kept';
+  }
+
+  async markMoved(id: string, connectionId: string): Promise<void> {
+    const r = this.targets.get(id);
+    if (!r) return;
+    this.targets.set(id, {
+      ...r,
+      connectionId,
+      secretKeyEnc: null,
+      movedToBridgeAt: new Date().toISOString(),
+    });
+    this.counter += 1;
+  }
+
+  async connectionOf(id: string): Promise<string | null> {
+    return (await this.get(id))?.connectionId ?? null;
   }
 }

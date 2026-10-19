@@ -4,6 +4,7 @@ import { loadBridgeConfig } from './config.js';
 import { migrateBridge } from './db/migrate.js';
 import { runOnce } from './deliveries/runner.js';
 import { dispatchOnce, HttpEventSender } from './events/dispatch.js';
+import { seedInternalConnection } from './connections/repo.js';
 import { buildFromConfig } from './wiring.js';
 
 const config = loadBridgeConfig();
@@ -13,11 +14,14 @@ const migrations =
 await migrateBridge(config.DATABASE_URL, migrations);
 
 const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 10 });
-const { app, runner } = await buildFromConfig(config, {
+const built = await buildFromConfig(config, {
   pool,
   logger: { level: config.LOG_LEVEL },
 });
+const { app, runner } = built;
 pool.on('error', (err) => app.log.error({ err }, 'database connection lost'));
+await seedInternalConnection(app.deps.connections);
+await built.internalStore.ensureBucket(config.BRIDGE_STAGING_BUCKET);
 
 let stopping = false;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

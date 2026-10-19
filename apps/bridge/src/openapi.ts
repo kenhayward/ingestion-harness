@@ -53,6 +53,10 @@ const OPENAPI = {
     { name: 'Deliveries', description: 'Packages delivered to targets.' },
     { name: 'Catalog', description: 'Sinks and targets the bridge knows.' },
     {
+      name: 'Connections',
+      description: 'Shared connections, without their secrets (managed on the connections page).',
+    },
+    {
       name: 'Targets',
       description: 'Targets kept by the producer, their object operations and Test connection.',
     },

@@ -16,6 +16,7 @@ import { S3KeyService } from '../src/s3keys/service.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { TargetStores } from '../src/publish-targets/stores.js';
+import { FakeBridgeApi } from './fake-bridge.js';
 import { MemoryObjectStore, type ObjectStore } from '../src/storage/object-store.js';
 import type { S3Options } from '../src/storage/s3.js';
 import { MemoryTemplateRepo } from '../src/templates/repo.js';
@@ -146,11 +147,13 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
       return found;
     },
   });
+  const bridge = new FakeBridgeApi();
   const app = await buildApp({
     repo,
     store,
     targets,
     targetStores,
+    bridge,
     templates,
     workbench,
     specs: SpecRegistry.fromDefinitions([
@@ -191,6 +194,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     targetStore,
     targets: (deps.targets ?? targets) as MemoryPublishTargetRepo,
     targetStores: deps.targetStores ?? targetStores,
+    bridge: (deps.bridge ?? bridge) as FakeBridgeApi,
     endpointStores,
     targetOptions,
     templates,

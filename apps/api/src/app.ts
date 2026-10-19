@@ -49,6 +49,7 @@ import { llmRoutes } from './routes/llm.js';
 import { ontologyRoutes } from './routes/ontologies.js';
 import { linkedDataRoutes } from './routes/linked-data.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
+import type { BridgeApi } from './bridge/client.js';
 import { publishTargetRoutes } from './routes/publish-targets.js';
 import { backupRoutes } from './routes/backup.js';
 
@@ -59,6 +60,8 @@ export interface AppDeps {
   targets: PublishTargetRepo;
   /** One object store per publishing target; published outputs are read through their own. */
   targetStores: TargetStores;
+  /** The delivery bridge: targets are mirrored to it, published files read back through it. */
+  bridge: BridgeApi;
   specs: SpecRegistry;
   templates: TemplateRepo;
   /** Workbench projects, samples and briefs (ADR 0007). */

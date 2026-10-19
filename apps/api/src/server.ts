@@ -31,6 +31,8 @@ import { HttpGitHub } from './profile/github.js';
 import { PgProfileRepo } from './profile/pg.js';
 import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
+import { HttpBridgeApi } from './bridge/client.js';
+import { syncTargetsWithBridge } from './bridge/mirror.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
 import { defaultSeed, seedDifferences } from './publish-targets/seed.js';
@@ -86,6 +88,8 @@ const targetStores = new TargetStores({
   secrets: llmSecrets,
   env: process.env,
 });
+// The delivery bridge publishes; targets are mirrored to it and their keys moved there once.
+const bridge = new HttpBridgeApi(config.BRIDGE_URL, config.BRIDGE_CLIENT_KEY);
 
 // Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
 // identity, granted per internal publishing target.
@@ -153,6 +157,7 @@ const app = await buildApp({
   store,
   targets,
   targetStores,
+  bridge,
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
   buckets,
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
@@ -255,6 +260,13 @@ const pruneSignIns = () =>
 void pruneSignIns();
 setInterval(() => void pruneSignIns(), 3_600_000).unref();
 if (s3Keys) stopReconciler = startReconciler(s3Keys, app.log);
+// Targets' keys move to the bridge once (after the seed above), and every target is mirrored.
+void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).then(
+  ({ moved, skipped }) => {
+    if (moved.length) app.log.info({ moved }, 'publishing target keys moved to the bridge');
+    if (skipped.length) app.log.warn({ skipped }, 'publishing targets left without keys');
+  },
+);
 // Fill the project list cache in the background (a cold cache takes seconds at scale).
 warmListCache(app).catch((err) => app.log.warn({ err }, 'project list cache warm-up failed'));
 // The mapping memory's backfill and repair: every recipe's votes recorded again.

@@ -2,7 +2,7 @@
 -- The secret is AES-256-GCM under BRIDGE_SECRETS_KEY (secret_enc), or read from the bridge's
 -- environment variable secret_env (an allowlisted name); fields hold the non-secret values.
 CREATE TABLE connections (
-  id            text PRIMARY KEY CHECK (id ~ '^[a-z0-9][a-z0-9_-]{0,39}$'),
+  id            text PRIMARY KEY CHECK (id ~ '^[a-z0-9][a-z0-9_-]{0,63}$'),
   kind          text NOT NULL CHECK (kind IN ('shared', 'personal')),
   owner         text,
   sink_id       text NOT NULL,

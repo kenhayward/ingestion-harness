@@ -89,22 +89,25 @@ export const TargetTestResultSchema = z.strictObject({
 });
 export type TargetTestResult = z.infer<typeof TargetTestResultSchema>;
 
-/** Target and connection ids: what CT Studio's target ids already are. */
+/** Target ids: what CT Studio's target ids already are. */
 export const RESOURCE_ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+/** Connection ids: room for `target-<target id>`, the ids the move from CT Studio makes. */
+export const CONNECTION_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /** `PUT /v1/targets/{id}`: creates or replaces a target. */
 export const TargetPutRequestSchema = z.strictObject({
   label: z.string().min(1),
   sinkId: z.string().min(1),
   instanceId: z.string().nullable(),
-  connectionId: z.string().regex(RESOURCE_ID).nullable(),
+  connectionId: z.string().regex(CONNECTION_ID).nullable(),
   destination: DestinationSchema,
 });
 export type TargetPutRequest = z.infer<typeof TargetPutRequestSchema>;
 
 /** `POST /v1/targets:test`: Test connection for settings not saved yet. */
 export const TargetSettingsTestRequestSchema = z.strictObject({
-  connectionId: z.string().regex(RESOURCE_ID),
+  connectionId: z.string().regex(CONNECTION_ID),
   destination: DestinationSchema,
 });
 export type TargetSettingsTestRequest = z.infer<typeof TargetSettingsTestRequestSchema>;
@@ -135,3 +138,28 @@ export const HandoffUserSchema = ActingUserSchema.extend({
   role: z.enum(['admin', 'designer', 'operator']),
 });
 export type HandoffUser = z.infer<typeof HandoffUserSchema>;
+
+/**
+ * `PUT /v1/connections/{id}`: a shared connection written by the producer. Used once, to move
+ * the keys CT Studio held for its targets onto the bridge; admins manage connections on the
+ * bridge's connections page. Either the secret (encrypted by the bridge on arrival) or the name
+ * of an allowlisted variable of the bridge's environment holding it.
+ */
+export const ConnectionPutRequestSchema = z.strictObject({
+  name: z.string().min(1),
+  sinkId: z.string().min(1),
+  fields: z.record(z.string(), z.string()),
+  secret: z.string().min(1).nullable(),
+  secretEnv: z.string().min(1).nullable(),
+});
+export type ConnectionPutRequest = z.infer<typeof ConnectionPutRequestSchema>;
+
+/** A connection as the producer sees it: never a secret, never a credential field. */
+export const ConnectionSummarySchema = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  sinkId: z.string(),
+  status: z.enum(['ok', 'needs_attention', 'untested']),
+  statusReason: z.string().nullable(),
+});
+export type ConnectionSummary = z.infer<typeof ConnectionSummarySchema>;

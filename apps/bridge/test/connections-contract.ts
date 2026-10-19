@@ -78,10 +78,10 @@ export function connectionsContract(
       expect(await connections.list({})).toEqual([]);
     });
 
-    it('refuses an id outside [a-z0-9_-], 40 characters at most', async () => {
+    it('refuses an id outside [a-z0-9_-], 64 characters at most', async () => {
       const { connections } = await make();
       await expect(connections.put(connection('Bad Id'))).rejects.toThrow();
-      await expect(connections.put(connection('x'.repeat(41)))).rejects.toThrow();
+      await expect(connections.put(connection('x'.repeat(65)))).rejects.toThrow();
     });
 
     it('mark records status, reason and last used', async () => {

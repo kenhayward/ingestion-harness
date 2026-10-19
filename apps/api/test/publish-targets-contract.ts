@@ -285,5 +285,29 @@ export function publishTargetsContract(
         keysFromEnv: { accessKey: 'TARGET_S3_ACCESS_KEY', secretKey: 'TARGET_S3_SECRET_KEY' },
       });
     });
+
+    it('marks a target moved to the bridge: its connection kept, its ciphertext gone', async () => {
+      const { repo } = await make();
+      await repo.create(lake('finance'), 'Ann');
+      expect(await repo.connectionOf('finance')).toBeNull();
+      expect((await repo.get('finance'))?.movedToBridgeAt).toBeNull();
+      const before = await repo.version();
+      await repo.markMoved('finance', 'target-finance');
+      const moved = await repo.get('finance');
+      expect(moved?.secretKeyEnc).toBeNull();
+      expect(moved?.movedToBridgeAt).not.toBeNull();
+      expect(moved?.accessKeyId).toBe('AKIA');
+      expect(await repo.connectionOf('finance')).toBe('target-finance');
+      expect(await repo.version()).toBeGreaterThan(before);
+      expect(await repo.connectionOf('nope')).toBeNull();
+    });
+
+    it('keeps the connection across other edits', async () => {
+      const { repo } = await make();
+      await repo.create(lake('finance'), null);
+      await repo.markMoved('finance', 'target-finance');
+      await repo.update('finance', { label: 'Renamed' }, null);
+      expect(await repo.connectionOf('finance')).toBe('target-finance');
+    });
   });
 }

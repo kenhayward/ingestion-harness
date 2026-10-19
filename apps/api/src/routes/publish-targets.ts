@@ -137,6 +137,8 @@ function recordOf(
     secretKeyEnc: stored?.secretKeyEnc ?? null,
     accessKeyEnv: external && sentKeyId === undefined ? (stored?.accessKeyEnv ?? null) : null,
     secretKeyEnv: stored?.secretKeyEnv ?? null,
+    connectionId: stored?.connectionId ?? null,
+    movedToBridgeAt: stored?.movedToBridgeAt ?? null,
     forcePathStyle: external ? b.forcePathStyle : false,
     sse: external ? b.sse : 'none',
     kmsKeyId: external ? (b.kmsKeyId ?? null) : null,

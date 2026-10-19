@@ -12,6 +12,7 @@ import { deliveryRoutes } from './routes/deliveries.js';
 import { pageRoutes } from './page/routes.js';
 import type { ProducerClient } from './producer/client.js';
 import { healthRoutes } from './routes/health.js';
+import { connectionRoutes } from './routes/connections.js';
 import { targetRoutes } from './routes/targets.js';
 import type { SinkRegistry } from './sinks/port.js';
 import type { TargetRepo } from './targets/repo.js';
@@ -66,6 +67,7 @@ export async function buildBridge(deps: BridgeDeps): Promise<FastifyInstance> {
   await app.register(deliveryRoutes);
   await app.register(catalogRoutes);
   await app.register(targetRoutes);
+  await app.register(connectionRoutes);
   await app.register(pageRoutes);
   return app;
 }
