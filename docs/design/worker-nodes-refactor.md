@@ -1,6 +1,6 @@
 # Worker nodes refactor (phase 1 of the agent graph research)
 
-Status: **in progress**, started 2026-10-19. Phase 1 of
+Status: **done** (parts 0-5), 2026-10-19. Phase 1 of
 [agent-graph-architecture.md](agent-graph-architecture.md) §8: turn the graph hidden in the
 worker into explicit nodes, **with no framework and no change in behaviour**. Each part below
 is one PR; parts can land independently, in the order given.
@@ -151,16 +151,34 @@ PR: let `read_pages` always use the Workbench reader.
   A publish still delivers inside its handler (`publish_template_job`) and returns `Complete`.
   `ShapesViolated` becomes an `AwaitReview` returned by the publish handler.
 
-## Part 5: node descriptions, one data-policy gate, one cancellation runner
+## Part 5: one data-policy gate, one cancellation runner, node descriptions
 
-- `NodeSpec` (id, version, input and output types, `effects`: pure, cacheable or effectful,
-  `egress`: none, model or remote, safe points) for every built-in node, in a `NODES` registry.
-  The registry is listed nowhere yet; it is the shape plugins will follow (phase 3).
-- `JobModels`: a per-job view of the `ModelRegistry` that enforces the data policy whenever it
-  resolves a model (extraction, OCR, re-run, drafting). It replaces the four
-  `enforce_data_policy` calls, so a node cannot get a provider without the check.
-- `run_nodes(job, queue, nodes, state)`: a sequential runner that calls `check_cancelled` before
-  each node. The in-call `checkpoint=` hooks (OCR pages, drafting turns) stay as they are.
+- `JobModels(job, registry)` (`pipeline.py`) is the only way to get a chat, vision or OCR
+  provider:
+  - `resolve(ref, what=…)` and `resolve_ocr(ref, what=…)` check the data policy before
+    returning. With `what`, a ref that does not resolve becomes a `DocumentError` naming its use,
+    such as `extraction 'header'`, `OCR model`, `re-run of 'header'` or `drafting model`; the
+    messages are the same as before.
+  - `allow(provider, ref)` checks a provider resolved elsewhere.
+  - It replaces `enforce_data_policy` and its four calls: extraction, OCR, step re-run and
+    drafting. The offline `mapping_eval` uses it too.
+  - A source test fails if any module outside `llm/` calls `models.resolve(` or
+    `models.resolve_ocr(` directly. Embeddings keep their own location checks in the mapping stage.
+- `run_nodes(job, queue, nodes, state)` runs nodes in order with a safe point before each one.
+  The recipe's step loop is now a list of nodes (`run_check`, `run_extract`) run by it, which
+  gives the same safe points as before. `_run_step` is now `run_step`.
+- `ingest_worker/nodes.py`: `NodeSpec` describes a node:
+  - `id`, `version`, `fn` and `output`;
+  - `effects`: `pure`, `cacheable` (writes only content-keyed caches and the audit trail, so it
+    is safe to run again) or `effectful` (writes results or deliveries, so a replay must be
+    idempotent);
+  - `egress`: `none`, `model` or `remote`;
+  - `cancels_inside` and `summary`.
+
+  `NODES` lists the eleven built-ins, from `source.load` to `graph.deliver`. Tests check each
+  entry's `output` against its function's return annotation, that only `read.pages` and
+  `extract.step` reach a model, and that only the three writers are effectful. Nothing reads
+  `NODES` at run time yet: it is the contract plugins will follow (phase 3).
 
 ## Out of scope for phase 1
 
@@ -177,4 +195,4 @@ PR: let `read_pages` always use the Workbench reader.
 | 2 `DocState` | done: `DocState`, `StepOutcome`, `normalise_step`, `step_inputs` (`tests/test_doc_state.py`); process and re-run use them |
 | 3 `finalise` | done: `document_of`, `finalise`, `write_drafts` (`tests/test_finalise.py`); process, re-run and publish use them |
 | 4 outcomes and `TASKS` | done: `outcomes.py`, `GraphDelivery`, `main.TASKS` (`tests/test_outcomes.py`) |
-| 5 `NodeSpec`, `JobModels`, `run_nodes` | — |
+| 5 `NodeSpec`, `JobModels`, `run_nodes` | done: `JobModels`, `run_nodes`, `nodes.py` (`tests/test_nodes.py`) |
