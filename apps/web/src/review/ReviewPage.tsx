@@ -218,7 +218,12 @@ export function ReviewPage({
           </div>
 
           {tab === 'graph' && hasGraph && (
-            <GraphTab api={api} jobId={jobId} onOpenOutput={openOutput} />
+            <GraphTab
+              api={api}
+              jobId={jobId}
+              onOpenOutput={openOutput}
+              {...(template.semantics ? { semantics: template.semantics } : {})}
+            />
           )}
 
           {tab === 'fields' && (
