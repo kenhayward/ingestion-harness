@@ -143,6 +143,11 @@ function checkTarget(
     return;
   }
   if (!b.connectionId) add('an external target needs a connection', ['connectionId']);
+  // The bridge's own S3 keys reach CT Studio's own buckets: only internal targets (and their
+  // bucket rules) may use them.
+  if (b.connectionId === 'internal') {
+    add('the built-in connection is for internal targets only', ['connectionId']);
+  }
   if (b.kmsKeyId && b.sse !== 'aws:kms') add('a KMS key needs sse "aws:kms"', ['kmsKeyId']);
 }
 

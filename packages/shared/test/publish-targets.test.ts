@@ -66,6 +66,7 @@ describe('target bodies', () => {
     ['external without a connection', { ...external, connectionId: undefined }],
     ['kms key without aws:kms', { ...external, sse: 'AES256', kmsKeyId: 'k' }],
     ['bad bucket', { ...external, bucket: 'My_Bucket' }],
+    ['external on the built-in connection', { ...external, connectionId: 'internal' }],
   ])('refuses %s', (_n, body) => {
     expect(TargetCreateBodySchema.safeParse(body).success).toBe(false);
   });
@@ -87,6 +88,15 @@ describe('target bodies', () => {
     });
     expect(JSON.stringify(r.error?.issues)).toContain(
       'internal targets take only a bucket and prefix',
+    );
+  });
+  it('keeps the built-in connection for internal targets (their bucket rules apply)', () => {
+    const r = TargetCreateBodySchema.safeParse({ ...external, connectionId: 'internal' });
+    expect(JSON.stringify(r.error?.issues)).toContain(
+      'the built-in connection is for internal targets only',
+    );
+    expect(TargetTestBodySchema.safeParse({ ...external, connectionId: 'internal' }).success).toBe(
+      false,
     );
   });
   it('refuses an empty patch', () => {
