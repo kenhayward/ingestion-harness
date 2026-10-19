@@ -1,5 +1,5 @@
 import type { NonceStore } from '@ih/bridge-contract';
-import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { BridgeConfig } from './config.js';
 import type { DeliveryRepo } from './deliveries/repo.js';
 import { registerGuard, requestIds } from './http/guard.js';
@@ -25,7 +25,7 @@ export interface BridgeDeps {
   ready: () => Promise<boolean>;
   /** Signature nonces seen inside the replay window. */
   nonces: NonceStore;
-  logger?: FastifyBaseLogger | false;
+  logger?: FastifyServerOptions['logger'];
 }
 
 declare module 'fastify' {

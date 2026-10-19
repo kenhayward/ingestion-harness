@@ -146,7 +146,8 @@ What each sink's `describe` declares:
 - its **instances**;
 - its **credential fields** (marked secret or not; an OAuth-style "redirect" type is reserved for
   later);
-- its **destination schema** (JSON Schema, with fields marked `pattern` and `overridable`);
+- its **destination fields**: a list of `{ id, label, kind: fixed | pattern, required, overridable, browse }`
+  (simpler to render than raw JSON Schema, and carrying the same information);
 - its **capabilities**: `browse`, `replace`, `withdraw`, `readBack`, and the package parts it
   accepts (`files`, `data`, `rdf`, `narrative`, `images`).
 
@@ -330,8 +331,9 @@ One package is built per document and publication, the same for every target. It
 
 How a package travels:
 
-- **Transport.** The worker uploads the package to the bridge as a multipart request (the JSON
-  manifest and data, with the files and images as parts). The bridge keeps it in its own staging
+- **Transport.** The worker uploads the package to the bridge as one JSON request, with file and
+  image bytes base64-encoded, so one HMAC signs the exact body (limit `BRIDGE_MAX_PACKAGE_MB`,
+  default 50). The bridge keeps it in its own staging
   bucket for as long as any delivery of it is unfinished, plus a retention period
   (`BRIDGE_PACKAGE_RETENTION_DAYS`, default 30).
 - **Archiving and replay.** The package can be written as-is (`package.json` plus its parts) by an
