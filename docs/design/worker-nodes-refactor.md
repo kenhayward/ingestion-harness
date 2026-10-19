@@ -150,8 +150,8 @@ never writes drafts. The three copies of this sequence go.
 
 | Part | State |
 | --- | --- |
-| 0 equivalence traces | in progress |
-| 1 split `prepare_document` | in progress |
+| 0 equivalence traces | done: `worker/tests/test_equivalence.py`, 7 scenarios |
+| 1 split `prepare_document` | done: `read_pages`, `select_pages`, `segment_pages` (`tests/test_prepare_nodes.py`); Workbench `prepare` uses `read_pages` |
 | 2 `DocState` | — |
 | 3 `finalise` | — |
 | 4 outcomes and `TASKS` | — |

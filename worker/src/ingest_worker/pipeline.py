@@ -47,10 +47,19 @@ from .segment import (
     KeyIssue,
     MissingSectionsError,
     Occurrence,
+    Segmented,
     segment_occurrences,
     select_copy,
 )
-from .specs import Check, DocumentLayout, Extraction, LoadedTemplate, OcrMode, SpecRegistry
+from .specs import (
+    Check,
+    DocumentLayout,
+    Extraction,
+    LoadedTemplate,
+    OcrMode,
+    PageRange,
+    SpecRegistry,
+)
 from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
@@ -284,36 +293,73 @@ def load_source(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Source:
     return Source(data, sha256, "docx", pdf)
 
 
-def prepare_document(
-    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, document: DocumentLayout
-) -> Prepared:
-    source = load_source(job, deps, queue)
-    pdf = source.pdf
-    pages = deps.extract_text(pdf)
-    total_pages = len(pages)
+@dataclass(frozen=True)
+class PageText:
+    """A document's pages as read: `layer` is the PDF's text layer, `pages` the same pages after
+    OCR replaced the ones with too little text."""
+
+    layer: list[str]
+    pages: list[str]
+
+    @property
+    def total(self) -> int:
+        """The document's page count."""
+        return len(self.layer)
+
+
+@dataclass(frozen=True)
+class Selected:
+    """The pages segmentation reads: the kept copy, with page markers when the layout asks."""
+
+    pages: list[str]
+    #: 0-based index, in the document, of the first kept page.
+    first: int
+
+
+def read_pages(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    source: Source,
+    ocr: OcrMode,
+    *,
+    expected: PageRange | None = None,
+    text_layer: TextExtractor | None = None,
+) -> PageText:
+    """Node: read the text layer (`text_layer`, else `deps.extract_text`), refuse a page count
+    outside `expected` before any OCR, then OCR the pages that need it. Reports `prepare
+    progress` (the text layer, then each OCR page)."""
+    layer = (text_layer or deps.extract_text)(source.pdf)
+    total = len(layer)
 
     def report(stage: Literal["text", "ocr"], page: int, of: int) -> None:
         # `pages` is the document's page count, so a reader mid-OCR still knows it (#142).
-        data = {"stage": stage, "page": page, "of": of, "pages": total_pages}
+        data = {"stage": stage, "page": page, "of": of, "pages": total}
         advisory_event(job, queue, PREPARE_PROGRESS, data)
 
-    report("text", total_pages, total_pages)
-    if document.pages and not (document.pages.min <= len(pages) <= document.pages.max):
+    report("text", total, total)
+    if expected and not (expected.min <= total <= expected.max):
         raise DocumentError(
-            f"page count {len(pages)} outside expected range "
-            f"{document.pages.min}-{document.pages.max}"
+            f"page count {total} outside expected range {expected.min}-{expected.max}"
         )
-
     pages = ocr_pages(
         job,
         deps,
         queue,
-        pdf,
-        pages,
-        document.ocr,
+        source.pdf,
+        layer,
+        ocr,
         sha256=source.sha256,
-        progress=lambda done, total: report("ocr", done, total),
+        progress=lambda done, of: report("ocr", done, of),
     )
+    return PageText(layer, pages)
+
+
+def select_pages(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, pages: list[str], document: DocumentLayout
+) -> Selected:
+    """Node: keep one copy (`document.copies`), refuse a document with no text left, and mark
+    each page with its original number when the layout asks for page markers."""
     first = 0
     if document.copies:
         first, pages = select_copy(pages, document.copies)
@@ -330,21 +376,38 @@ def prepare_document(
         raise DocumentError(f"no extractable text (scanned/image-only PDF?); {hint}")
     if getattr(document, "page_markers", False):
         pages = mark_pages(pages, first + 1)
+    return Selected(pages, first)
 
+
+def segment_pages(
+    job: ClaimedJob, queue: JobQueue, selected: Selected, document: DocumentLayout
+) -> Segmented:
+    """Node: cut the selected pages into the layout's sections; a missing required section is a
+    DocumentError. Reports `segmented`."""
     try:
         marker = PAGE_MARKER if getattr(document, "page_markers", False) else None
-        segmented = segment_occurrences(pages, document.sections, page_marker=marker)
+        segmented = segment_occurrences(selected.pages, document.sections, page_marker=marker)
     except MissingSectionsError as exc:
         raise DocumentError(str(exc)) from exc
-    sections = segmented.sections
-    data: dict[str, Any] = {"pages": len(pages), "sections": list(sections)}
+    data: dict[str, Any] = {"pages": len(selected.pages), "sections": list(segmented.sections)}
     if segmented.occurrences:
         data["occurrences"] = {k: len(v) for k, v in segmented.occurrences.items()}
     queue.event(job.id, "info", SEGMENTED, data)
+    return segmented
+
+
+def prepare_document(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, document: DocumentLayout
+) -> Prepared:
+    """The source, read, selected and segmented: the nodes above in order."""
+    source = load_source(job, deps, queue)
+    read = read_pages(job, deps, queue, source, document.ocr, expected=document.pages)
+    selected = select_pages(job, deps, queue, read.pages, document)
+    segmented = segment_pages(job, queue, selected, document)
     return Prepared(
-        pdf,
-        total_pages,
-        sections,
+        source.pdf,
+        read.total,
+        segmented.sections,
         source.sha256,
         segmented.occurrences,
         segmented.key_issues,
