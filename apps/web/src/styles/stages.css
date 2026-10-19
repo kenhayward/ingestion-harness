@@ -3766,3 +3766,36 @@ label.inline.list-select {
   margin: 4px 0 0;
   padding-left: 18px;
 }
+
+/* Recipe plugins 3c: a plugin step's settings, generated from the plugin's schema. */
+.settings-form {
+  display: grid;
+  gap: 12px;
+}
+.settings-form label,
+.map-input {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.map-input ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.map-input li,
+.map-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.map-input li input {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-settings textarea {
+  width: 100%;
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { outputCoverage, type ModelChoice, type OutputCoverage } from '@ih/shared';
+import { outputCoverage, type ModelChoice, type OutputCoverage, type PluginInfo } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
 import { ModelPicker } from '../ui/ModelPicker.js';
 import { sectionTone, TONE_COLOR } from '../ui/stageStyle.js';
@@ -13,7 +13,8 @@ import {
   type SectionLike,
 } from './editor-derive.js';
 import { Area, intList, opt, optInt, Text } from './fields.js';
-import { CheckStep, ContextEditor, PluginStepDetail, RepeatKeyColumn } from './StepForms.js';
+import { CheckStep, ContextEditor, RepeatKeyColumn } from './StepForms.js';
+import { AddPluginStep, PluginStepForm } from './PluginForms.js';
 import { moveItem, removeAt, setIn, type Definition } from './model.js';
 
 const ids = (v: unknown): string[] =>
@@ -58,6 +59,7 @@ export function PipelineEditor({
   typeModelLabel,
   paths,
   metrics,
+  plugins = [],
   resetKey = 0,
 }: {
   pipeline: Definition[];
@@ -75,6 +77,8 @@ export function PipelineEditor({
   paths: string[];
   /** Figures from the type's runs, by step id. */
   metrics: ReadonlyMap<string, StepMetric>;
+  /** The plugins a plugin step can run (recipe plugins 3b). */
+  plugins?: readonly PluginInfo[];
   /** Changes when the draft is replaced from outside (Discard, Reload, YAML): forms start over. */
   resetKey?: number;
 }) {
@@ -121,6 +125,7 @@ export function PipelineEditor({
           >
             Add check step
           </button>
+          <AddPluginStep plugins={plugins} onAdd={add} />
         </fieldset>
       </div>
       {current ? (
@@ -142,6 +147,7 @@ export function PipelineEditor({
           typeModelLabel={typeModelLabel}
           paths={paths}
           metric={typeof current.id === 'string' ? metrics.get(current.id) : undefined}
+          plugins={plugins}
           onSet={(key, value) => onChange(setIn(pipeline, [selected, key], value))}
           onReplace={(step) => onChange(setIn(pipeline, [selected], step))}
           onMove={(delta) => {
@@ -177,6 +183,7 @@ function StepDetail({
   typeModelLabel,
   paths,
   metric,
+  plugins,
   onSet,
   onReplace,
   onMove,
@@ -197,6 +204,7 @@ function StepDetail({
   typeModelLabel: string;
   paths: string[];
   metric: StepMetric | undefined;
+  plugins: readonly PluginInfo[];
   onSet: (key: string, value: unknown) => void;
   onReplace: (step: Definition) => void;
   onMove: (delta: -1 | 1) => void;
@@ -242,7 +250,15 @@ function StepDetail({
       </div>
       <fieldset className="step-body" disabled={readOnly}>
         {kind === 'PLUGIN' ? (
-          <PluginStepDetail step={step} />
+          <PluginStepForm
+            step={step}
+            plugins={plugins}
+            sectionDefs={sectionDefs}
+            fields={fields}
+            tables={tables}
+            set={onSet}
+            replace={onReplace}
+          />
         ) : kind === 'CHECK' ? (
           <CheckStep step={step} paths={paths} set={onSet} />
         ) : (

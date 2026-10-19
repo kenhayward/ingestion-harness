@@ -402,6 +402,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
       { id: 'finance-account', name: 'Finance account', status: 'ok' as const, statusReason: null },
     ]),
     listPublishTargetChoices: vi.fn(async () => []),
+    listPlugins: vi.fn(async () => []),
     createPublishTarget: vi.fn(async () => {
       throw new Error('createPublishTarget not stubbed');
     }),

@@ -73,6 +73,7 @@ import type {
   LlmEndpointView,
   PublishTargetView,
   TargetChoice,
+  PluginInfo,
   TargetConnection,
   TargetCreateBody,
   TargetPatchBody,
@@ -472,6 +473,8 @@ export interface Api {
   openConnections(): Promise<void>;
   /** What a recipe's Publish to picker offers (any designer or admin). */
   listPublishTargetChoices(): Promise<TargetChoice[]>;
+  /** The plugins recipe steps can run, as the workers published them (recipe plugins 3b). */
+  listPlugins(): Promise<PluginInfo[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
   listOntologies(opts?: { retired?: boolean }): Promise<OntologyListItem[]>;
   /** One ontology with every version, newest first. */
@@ -1094,6 +1097,7 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(`${base}/publish-targets/connections`)
         .then(json<{ connections: TargetConnection[] }>)
         .then((r) => r.connections),
+    listPlugins: () => apiFetch(`${base}/plugins`).then(json<PluginInfo[]>),
     listPublishTargetChoices: () =>
       apiFetch(`${base}/publish-targets/choices`)
         .then(json<{ choices: TargetChoice[] }>)

@@ -66,8 +66,13 @@ export function PipelineHelp() {
         A plugin step runs a capability installed with CT Studio instead of asking a model, such as{' '}
         <code>text.pattern@1</code>, which fills fields or a table by matching patterns in the
         step's sections. It fills outputs like an extract step and can read earlier values, but it
-        calls no model and costs nothing to run. For now, add or change a plugin step in the YAML
-        tab: its card shows what it runs, fills and reads, and its settings.
+        calls no model and costs nothing to run.
+      </p>
+      <p>
+        Add one with <em>Add plugin step</em>, which lists the plugins this deployment's workers can
+        run. Its form sets what it fills and reads, and its settings, laid out from what the plugin
+        asks for. A plugin no worker has any more keeps its settings as JSON, and the recipe cannot
+        be published until a worker has the plugin again or the step is changed.
       </p>
 
       <h3>Order</h3>
