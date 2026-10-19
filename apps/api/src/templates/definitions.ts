@@ -14,6 +14,8 @@ import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
 import type { TemplateRecord } from './repo.js';
 import { semanticsIssues } from './semantics.js';
+import type { PluginCatalogue } from '../plugins/catalogue.js';
+import { settingsProblems } from '../plugins/settings.js';
 
 export const TemplateIssueSchema = z.object({
   path: z.string().describe('Where in the definition, e.g. `outputs.fields.0.type`.'),
@@ -97,7 +99,7 @@ export function choiceProblem(
  * versions keep running theirs.
  */
 export async function templateIssues(
-  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets'>,
+  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets' | 'plugins'>,
   definition: unknown,
   { draft }: { draft: boolean },
 ): Promise<TemplateIssue[]> {
@@ -134,6 +136,7 @@ export async function templateIssues(
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),
     ...modelIssues,
+    ...(await pluginIssues(deps.plugins, parsed.data)),
     ...targetIssues,
     ...(await semanticsIssues(deps.ontologies, parsed.data)),
   ];
@@ -211,4 +214,40 @@ export async function listDefinitions(
       return includeRetired ? [{ ...d, retired }] : [];
     })
     .sort((a, b) => a.id.localeCompare(b.id) || a.version - b.version);
+}
+
+/**
+ * A recipe's plugin steps against the plugin catalogue (recipe plugins 3b): the plugin must be one
+ * the workers published, and the step's settings must fit its schema. Without a catalogue (unit
+ * tests of other routes) nothing is checked.
+ */
+async function pluginIssues(
+  catalogue: PluginCatalogue | null | undefined,
+  template: Template,
+): Promise<TemplateIssue[]> {
+  const steps = template.pipeline.flatMap((step, i) =>
+    step.type === 'plugin' ? [{ step, i }] : [],
+  );
+  if (!catalogue || steps.length === 0) return [];
+  const byRef = new Map((await catalogue.list()).map((p) => [p.ref, p]));
+  return steps.flatMap(({ step, i }) => {
+    const plugin = byRef.get(step.uses);
+    if (!plugin) {
+      return [
+        {
+          path: `pipeline.${i}.uses`,
+          message: `step "${step.id}": no plugin ${step.uses} on this deployment's workers`,
+        },
+      ];
+    }
+    const problems = settingsProblems(plugin, step.with);
+    return problems.length > 0
+      ? [
+          {
+            path: `pipeline.${i}.with`,
+            message: `step "${step.id}": ${step.uses} settings: ${problems.join('; ')}`,
+          },
+        ]
+      : [];
+  });
 }

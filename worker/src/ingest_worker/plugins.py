@@ -103,13 +103,32 @@ def resolve_plugins(template: Template) -> dict[str, ResolvedPlugin]:
 
 class PatternSettings(BaseModel):
     """`text.pattern@1`: a field step names a pattern per field; a table step one `row` pattern
-    whose named groups are column ids."""
+    whose named groups are column ids. The titles and descriptions are what the recipe editor
+    shows (the catalogue publishes this model's JSON Schema)."""
 
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+        title="Pattern settings",
+        json_schema_extra={
+            "description": "Fill a field step's fields, or a table step's rows, by matching "
+            "regular expressions in the step's sections."
+        },
+    )
 
-    patterns: dict[str, str] | None = None
-    row: str | None = None
-    ignore_case: bool = Field(default=False, alias="ignoreCase")
+    patterns: dict[str, str] | None = Field(
+        default=None,
+        title="Patterns",
+        description="For a field step: field id to regular expression. The value is the group "
+        "named value, else group 1, else the whole match.",
+    )
+    row: str | None = Field(
+        default=None,
+        title="Row pattern",
+        description="For a table step: one regular expression per row; its named groups are "
+        "column ids.",
+    )
+    ignore_case: bool = Field(default=False, alias="ignoreCase", title="Ignore case")
 
     def flags(self) -> int:
         return re.MULTILINE | (re.IGNORECASE if self.ignore_case else 0)

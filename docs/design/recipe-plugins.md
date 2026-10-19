@@ -1,6 +1,6 @@
 # Recipe plugins (phase 3 of the agent graph research)
 
-Status: **3a done**, 2026-10-19; 3b–3d to come. This is phase 3 of
+Status: **3a and 3b done**, 2026-10-19; 3c and 3d to come. This is phase 3 of
 [agent-graph-architecture.md](agent-graph-architecture.md) §8. It builds on the node contract in
 [ADR 0018](../adr/0018-capabilities-as-nodes.md).
 
@@ -91,15 +91,31 @@ Deterministic extraction by regular expression, with no model call and no cost.
 | Slice | What | Done when |
 | --- | --- | --- |
 | 3a | Recipe format (TS and Python, shared fixture), the worker's registry, `PluginContext`, plugin steps in the pipeline (validation before any call, step runs, events), `text.pattern@1` | a recipe with a plugin step processes end to end; equivalence traces unchanged; `npm run check` green |
-| 3b | Plugin catalogue: the worker upserts `NODES` and `PLUGINS` (id, version, summary, settings JSON Schema) into a table at start; `GET /api/plugins`; `templateIssues` checks `uses` exists and `with` is valid | publishing a recipe with an unknown plugin or bad settings is refused with the reason |
+| 3b | Plugin catalogue: the worker publishes `PLUGINS` (ref, summary, egress, settings JSON Schema) into a table at start; `GET /api/plugins`; `templateIssues` checks `uses` exists and `with` fits the schema | publishing a recipe with an unknown plugin or bad settings is refused with the reason |
 | 3c | Recipe editor: add a plugin step, a settings form from the JSON Schema, a capped preview on dev samples; help topic | a designer adds a `text.pattern` step without writing YAML |
 | 3d | Entry points for installed packages; a plugin-writing guide with a cookiecutter-style example | a plugin from another package runs in a recipe |
+
+## The catalogue (3b)
+
+- **What it holds.** The worker publishes the plugins it can run when it starts, and its set
+  replaces the table's. So the catalogue is what the newest worker to start has, and a plugin
+  removed from the image disappears. A short overlap of two images during a deploy can only
+  lose or add a plugin's row until the next worker start.
+- **Built-in nodes are not listed.** No recipe names them.
+- **What the API checks.** The API checks a plugin step against the catalogue: the plugin must be
+  listed, and `with` must fit its settings JSON Schema (ajv, draft 2020-12). Both issues block
+  publishing.
+- **What only the worker checks.** Rules a schema cannot state, such as a pattern that must
+  compile or a field the step must fill, are checked when the job runs. That remains a
+  `DocumentError` before any model call. The 3c editor's preview will show them sooner.
+- **Before any worker has started**, the catalogue is empty, and a recipe with plugin steps cannot
+  be published until one has.
 
 ## Progress
 
 | Slice | State |
 | --- | --- |
 | 3a | done. TS: `PluginStepSchema`, `PLUGIN_REF`, `FILLING_STEP_TYPES`; coverage and validation count plugin steps; shared fixture `packages/shared/test/fixtures/plugin-steps.json`. Worker: `template.PluginStep`, `filling_steps`; `plugins.py` (`Plugin`, `PluginContext`, `resolve_plugins`, `PLUGINS`, `text.pattern@1`); `template_pipeline.run_plugin_step`. Web: `stepKind`, `PluginStepDetail` (read-only, edited in YAML) on the Pipeline tabs, step cards and proposal chips. |
-| 3b | — |
+| 3b | done. Migration `202610191612_plugin_catalogue` (`plugin_catalogue`, `ref` = `plugin_id@major`); worker `plugin_catalogue.py` (`catalogue_rows`, `PgPluginCatalogue.publish`, which replaces the set in one transaction, at worker start, advisory); shared `PluginInfoSchema`; API `plugins/catalogue.ts` (`PluginCatalogue`, memory and Pg), `plugins/settings.ts` (`settingsProblems`: ajv 2020 against the schema), `GET /api/plugins` (designers and admins), `templateIssues`: `pipeline.N.uses` `no plugin X on this deployment's workers`, `pipeline.N.with` `X settings: …`, both blocking; shared fixture `plugin-catalogue.json` pins the worker's rows and the API's settings cases. |
 | 3c | — |
 | 3d | — |
