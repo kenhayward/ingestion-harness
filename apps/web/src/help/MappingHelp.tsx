@@ -104,8 +104,9 @@ export function MappingHelp() {
 
       <h3>Preview</h3>
       <p>
-        In the Workbench, the preview builds the graph from your samples, so you can see the triples
-        and any rule violations before publishing.
+        In the Workbench, the preview builds the graph from your samples, so you can see what it
+        will say and any rule violations before publishing. Each sample's graph reads as cards, a
+        diagram or Turtle (see <em>Reading a graph</em>).
       </p>
     </>
   );

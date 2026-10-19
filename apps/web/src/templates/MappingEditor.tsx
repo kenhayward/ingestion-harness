@@ -13,6 +13,7 @@ import type {
   TermLabelsBody,
 } from '@ih/shared';
 import { CURIE_PREFIXES } from '@ih/shared';
+import { RdfGraphView, type GraphSemantics } from '../rdf/RdfGraphView.js';
 import type { Api } from '../api/client.js';
 import { Text } from './fields.js';
 import { TermInfo } from '../ui/TermInfo.js';
@@ -772,10 +773,13 @@ export function GraphPreview({
   dirty,
   heading = true,
   request = 0,
+  semantics,
 }: {
   api: Api;
   projectId: string;
   dirty: boolean;
+  /** The mapping whose pins name the graph's terms. */
+  semantics?: GraphSemantics | undefined;
   /** Its own "Preview" heading; off where the caller already titles it (the mapping inspector). */
   heading?: boolean;
   /** Starts a preview (and scrolls to it) each time it goes up: the Mapping stage's next step. */
@@ -845,7 +849,7 @@ export function GraphPreview({
             {s.fileName} · {s.triples} {s.triples === 1 ? 'triple' : 'triples'}
           </summary>
           {s.report && <ReportSummary report={s.report} />}
-          <pre className="turtle">{s.turtle}</pre>
+          <RdfGraphView api={api} turtle={s.turtle} report={s.report} semantics={semantics} />
         </details>
       ))}
     </section>
@@ -1288,6 +1292,7 @@ function MappingOutline({
           projectId={preview.projectId}
           dirty={preview.dirty ?? false}
           heading={false}
+          semantics={s}
         />
       );
     }

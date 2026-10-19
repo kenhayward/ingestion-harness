@@ -21,7 +21,7 @@ export const HELP_INDEX: HelpEntry[] = [
     label: 'Jobs',
     children: [
       { topic: 'review', label: 'Reviewing a document' },
-      { topic: 'reviewGraph', label: 'The document graph' },
+      { topic: 'graphViews', label: 'Reading a graph' },
     ],
   },
   {
