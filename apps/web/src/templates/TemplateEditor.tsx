@@ -49,7 +49,7 @@ import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Area, opt, Select, Text } from './fields.js';
 import { MappingEditor } from './MappingEditor.js';
 import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
-import { AddPluginStep, PluginStepForm, usePlugins } from './PluginForms.js';
+import { AddPluginStep, PluginPreview, PluginStepForm, usePlugins } from './PluginForms.js';
 
 type Path = (string | number)[];
 type Tab =
@@ -985,6 +985,18 @@ export function TemplateEditor({
               paths={paths}
               metrics={metrics}
               plugins={plugins}
+              pluginPreview={
+                embedded
+                  ? (step) => (
+                      <PluginPreview
+                        api={api}
+                        projectId={templateId}
+                        stepId={typeof step.id === 'string' ? step.id : ''}
+                        dirty={dirty}
+                      />
+                    )
+                  : undefined
+              }
               resetKey={replaced}
             />
           )}

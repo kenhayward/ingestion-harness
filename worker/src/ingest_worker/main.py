@@ -54,6 +54,7 @@ from .pipeline import (
     process_job,
 )
 from .plugin_catalogue import PgPluginCatalogue, catalogue_rows
+from .plugin_preview import run_plugin_preview
 from .plugins import PLUGINS
 from .publish_targets import LiveTargets, PgPublishTargetStore, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
@@ -197,6 +198,7 @@ TASKS: dict[str, TaskHandler] = {
     "draft": _completes(run_draft, lambda r: f"drafted stage {r['stage']} with {r['model']}"),
     "export": _completes(run_export, lambda m: f"exported {len(m['samples'])} samples"),
     "graph": _completes(run_graph_preview, lambda p: f"previewed {len(p['samples'])} graphs"),
+    "plugin": _completes(run_plugin_preview, lambda r: f"previewed plugin step {r['stepId']}"),
     "suggest": _completes(run_suggest, lambda s: f"suggested {len(s['suggestions'])} ontologies"),
     "embed": _completes(run_embed, lambda n: f"embedded {n} terms"),
     "withdraw": _completes(run_withdraw, lambda w: "withdrew {} objects, {} graphs".format(*w)),

@@ -3799,3 +3799,33 @@ label.inline.list-select {
 .plugin-settings textarea {
   width: 100%;
 }
+
+.plugin-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.plugin-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.plugin-preview-sample h4 {
+  margin: 0 0 6px;
+}
+.plugin-preview-sample .evidence {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.preview-rows {
+  width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+  display: block;
+}
+.preview-rows th,
+.preview-rows td {
+  text-align: left;
+  padding: 2px 8px;
+}

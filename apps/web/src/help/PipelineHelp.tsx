@@ -74,6 +74,12 @@ export function PipelineHelp() {
         asks for. A plugin no worker has any more keeps its settings as JSON, and the recipe cannot
         be published until a worker has the plugin again or the step is changed.
       </p>
+      <p>
+        In the Workbench, <em>Preview on dev samples</em> runs the saved step on each prepared dev
+        sample, cut into sections as a run would, and shows what it found, what could not be read as
+        its type, and why a sample failed. It runs only this step (no earlier values) and stops
+        after 20 seconds, so a pattern that never finishes cannot stall anything.
+      </p>
 
       <h3>Order</h3>
       <p>

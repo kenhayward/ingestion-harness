@@ -1,6 +1,6 @@
 # Recipe plugins (phase 3 of the agent graph research)
 
-Status: **3a and 3b done**, 2026-10-19; 3c and 3d to come. This is phase 3 of
+Status: **3a to 3c done**, 2026-10-19; 3d to come. This is phase 3 of
 [agent-graph-architecture.md](agent-graph-architecture.md) §8. It builds on the node contract in
 [ADR 0018](../adr/0018-capabilities-as-nodes.md).
 
@@ -117,5 +117,5 @@ Deterministic extraction by regular expression, with no model call and no cost.
 | --- | --- |
 | 3a | done. TS: `PluginStepSchema`, `PLUGIN_REF`, `FILLING_STEP_TYPES`; coverage and validation count plugin steps; shared fixture `packages/shared/test/fixtures/plugin-steps.json`. Worker: `template.PluginStep`, `filling_steps`; `plugins.py` (`Plugin`, `PluginContext`, `resolve_plugins`, `PLUGINS`, `text.pattern@1`); `template_pipeline.run_plugin_step`. Web: `stepKind`, `PluginStepDetail` (read-only, edited in YAML) on the Pipeline tabs, step cards and proposal chips. |
 | 3b | done. Migration `202610191612_plugin_catalogue` (`plugin_catalogue`, `ref` = `plugin_id@major`); worker `plugin_catalogue.py` (`catalogue_rows`, `PgPluginCatalogue.publish`, which replaces the set in one transaction, at worker start, advisory); shared `PluginInfoSchema`; API `plugins/catalogue.ts` (`PluginCatalogue`, memory and Pg), `plugins/settings.ts` (`settingsProblems`: ajv 2020 against the schema), `GET /api/plugins` (designers and admins), `templateIssues`: `pipeline.N.uses` `no plugin X on this deployment's workers`, `pipeline.N.with` `X settings: …`, both blocking; shared fixture `plugin-catalogue.json` pins the worker's rows and the API's settings cases. |
-| 3c | — |
+| 3c | done. Editor: `Api.listPlugins`, `usePlugins`, `AddPluginStep`, `PluginStepForm` (id, plugin, fills, sections without repeating ones, context, settings), `settings-schema.ts` (`settingsFields`, `setSetting`: text, switches, numbers, choices, lists, text maps; anything else and an unknown plugin as JSON; empty values and defaults left out). Preview: task `plugin` (migration 202610191642), `POST|GET /api/workbench/projects/:id/plugin-previews` (open draft, ready dev samples, plugins with egress `none` only, one per project), worker `plugin_preview.py` (`preview_samples` in `capped.capped_call`, 20 s; problems in the result, never a failed job), `pluginPreviewKey`/`plugin_preview_key`, web `PluginPreview` under a plugin step in the Workbench pipeline (saved draft only). |
 | 3d | — |

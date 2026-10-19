@@ -1901,6 +1901,88 @@ describe('plugin steps in the recipe editors', () => {
     );
   });
 
+  const previewView = (status: 'queued' | 'succeeded', result: unknown = null) => ({
+    jobId: '00000000-0000-4000-8000-000000000001',
+    status,
+    error: null,
+    result,
+  });
+
+  it('previews a plugin step on the dev samples in the Workbench', async () => {
+    const result = {
+      stepId: 'head',
+      uses: 'text.pattern@1',
+      problem: null,
+      samples: [
+        {
+          sampleId: 's1',
+          fileName: 's1.pdf',
+          fields: { sender: { value: 'Acme', evidence: 'From: Acme', page: 1 } },
+          rows: null,
+          issues: [],
+          error: null,
+        },
+        { sampleId: 's2', fileName: 's2.pdf', fields: null, rows: null, issues: [],
+          error: 'missing required sections: all' },
+      ],
+    }; // prettier-ignore
+    const { api } = setup(
+      view(withPlugin()),
+      {
+        ...plugins,
+        startPluginPreview: vi.fn(async () => previewView('queued')),
+        getPluginPreview: vi.fn(async () => previewView('succeeded', result)),
+      },
+      { onChanged: vi.fn() },
+    );
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    await userEvent.click(within(detail).getByRole('button', { name: 'Preview on dev samples' }));
+    expect(api.startPluginPreview).toHaveBeenCalledWith('letter', 'head');
+    const first = await within(detail).findByRole('region', { name: 's1.pdf' });
+    expect(within(first).getByText('Acme')).toBeInTheDocument();
+    expect(within(first).getByText('From: Acme')).toBeInTheDocument();
+    const second = within(detail).getByRole('region', { name: 's2.pdf' });
+    expect(within(second).getByText('missing required sections: all')).toBeInTheDocument();
+  });
+
+  it('shows why a preview could not run', async () => {
+    const result = { stepId: 'head', uses: 'text.pattern@1', samples: [],
+      problem: 'text.pattern@1: sender: not a regular expression (missing ))' }; // prettier-ignore
+    setup(
+      view(withPlugin()),
+      {
+        ...plugins,
+        startPluginPreview: vi.fn(async () => previewView('queued')),
+        getPluginPreview: vi.fn(async () => previewView('succeeded', result)),
+      },
+      { onChanged: vi.fn() },
+    );
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    await userEvent.click(within(detail).getByRole('button', { name: 'Preview on dev samples' }));
+    expect(await within(detail).findByRole('alert')).toHaveTextContent('not a regular expression');
+  });
+
+  it('previews only the saved draft', async () => {
+    setup(view(withPlugin()), plugins, { onChanged: vi.fn() });
+    const detail = await screen.findByRole('region', { name: 'Step 1' });
+    await userEvent.type(within(detail).getByLabelText('Step id'), 'x');
+    const button = within(detail).getByRole('button', { name: 'Preview on dev samples' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute(
+      'title',
+      'Save the draft first: the preview runs the saved draft',
+    );
+  });
+
+  it('has no preview on the Document types page (it needs dev samples)', async () => {
+    setup(view(withPlugin()), plugins);
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^1 PLUGIN head/ }));
+    expect(
+      screen.queryByRole('button', { name: 'Preview on dev samples' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('says why no plugin step can be added while no worker has published any', async () => {
     setup(view({ ...validDefinition(), version: 1 }), {}, { onChanged: vi.fn() });
     const add = await screen.findByRole('combobox', { name: 'Add plugin step' });

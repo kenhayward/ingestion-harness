@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { PluginInfo } from '@ih/shared';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import type { PluginInfo, PluginPreviewView } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Text } from './fields.js';
 import type { SectionLike } from './editor-derive.js';
@@ -459,5 +459,148 @@ function JsonSettings({
       />
       {problem && <small className="error">{problem}</small>}
     </label>
+  );
+}
+
+const ACTIVE = new Set(['queued', 'running']);
+
+/**
+ * A plugin step's preview (recipe plugins 3c, Workbench only: it needs prepared dev samples): the
+ * saved draft's step run on each dev sample, with the typed values or rows, the values that could
+ * not be typed, and why a sample (or the whole preview) could not run.
+ */
+export function PluginPreview({
+  api,
+  projectId,
+  stepId,
+  dirty,
+}: {
+  api: Api;
+  projectId: string;
+  stepId: string;
+  dirty: boolean;
+}) {
+  const [view, setView] = useState<PluginPreviewView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const poll = (jobId: string, delay: number) => {
+    timer.current = setTimeout(() => {
+      api.getPluginPreview(projectId, jobId).then(
+        (next) => {
+          setView(next);
+          if (ACTIVE.has(next.status)) poll(jobId, 1000);
+          else setBusy(false);
+        },
+        (err: unknown) => {
+          setError((err as Error).message);
+          setBusy(false);
+        },
+      );
+    }, delay);
+  };
+  const start = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const started = await api.startPluginPreview(projectId, stepId);
+      setView(started);
+      poll(started.jobId, 0);
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+  const blocked = dirty
+    ? 'Save the draft first: the preview runs the saved draft'
+    : !stepId
+      ? 'Give the step an id first'
+      : undefined;
+  const result = view?.result;
+  const failed = view && !ACTIVE.has(view.status) && view.status !== 'succeeded';
+  return (
+    <section className="plugin-preview" aria-label="Preview">
+      <div className="plugin-preview-head">
+        <button type="button" disabled={busy || !!blocked} title={blocked} onClick={start}>
+          Preview on dev samples
+        </button>
+        {busy && <span className="muted">Running the plugin on the dev samples…</span>}
+      </div>
+      {error && <p role="alert">{error}</p>}
+      {failed && <p role="alert">{view.error ?? 'The preview did not finish.'}</p>}
+      {result?.problem && <p role="alert">{result.problem}</p>}
+      {result?.samples.map((s) => (
+        <section key={s.sampleId} className="card plugin-preview-sample" aria-label={s.fileName}>
+          <h4 className="mono">{s.fileName}</h4>
+          {s.error ? (
+            <p className="muted">{s.error}</p>
+          ) : s.fields ? (
+            <dl className="step-facts">
+              {Object.entries(s.fields).map(([field, v]) => (
+                <Fragment key={field}>
+                  <dt>
+                    <code>{field}</code>
+                  </dt>
+                  <dd>
+                    {v.value === null || v.value === undefined ? (
+                      <span className="muted">no match</span>
+                    ) : (
+                      <span>{String(v.value)}</span>
+                    )}
+                    {typeof v.evidence === 'string' && (
+                      <small className="muted evidence">{v.evidence}</small>
+                    )}
+                    {typeof v.page === 'number' && (
+                      <small className="muted"> · page {v.page}</small>
+                    )}
+                  </dd>
+                </Fragment>
+              ))}
+            </dl>
+          ) : (
+            <RowsTable rows={s.rows ?? []} />
+          )}
+          {s.issues.length > 0 && (
+            <ul className="plugin-preview-issues">
+              {s.issues.map((i, n) => (
+                <li key={n} className="muted">
+                  {String(i.target ?? '')}
+                  {typeof i.row === 'number' ? ` row ${i.row}` : ''}
+                  {i.column ? `.${String(i.column)}` : ''}: {String(i.message ?? '')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ))}
+    </section>
+  );
+}
+
+function RowsTable({ rows }: { rows: Record<string, unknown>[] }) {
+  if (rows.length === 0) return <p className="muted">No rows matched.</p>;
+  const columns = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+  return (
+    <table className="preview-rows">
+      <thead>
+        <tr>
+          {columns.map((c) => (
+            <th key={c} scope="col">
+              {c}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            {columns.map((c) => (
+              <td key={c}>{r[c] === null || r[c] === undefined ? '' : String(r[c])}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

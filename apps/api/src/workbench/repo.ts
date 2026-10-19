@@ -1431,11 +1431,12 @@ export class PgWorkbenchRepo implements WorkbenchRepo {
       );
       if (rows[0] && policy === 'local') {
         // Revocation reaches jobs already created (retries and step re-runs reuse their row).
-        // Never the reverse. Segment and graph previews are skipped: no model call, and their params are
-        // validated strictly by the worker (SegmentParams, GraphPreviewParams; extra="forbid").
+        // Never the reverse. Segment, graph and plugin previews are skipped: no model call, and their
+        // params are validated strictly by the worker (SegmentParams, GraphPreviewParams,
+        // PluginPreviewParams; extra="forbid").
         await client.query(
           `UPDATE jobs SET params = jsonb_set(COALESCE(params, '{}'::jsonb), '{dataPolicy}', '"local"')
-            WHERE project_id = $1 AND task NOT IN ('segment', 'graph')`,
+            WHERE project_id = $1 AND task NOT IN ('segment', 'graph', 'plugin')`,
           [id],
         );
       }
