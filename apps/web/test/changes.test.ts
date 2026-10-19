@@ -321,3 +321,47 @@ it('a document change names the value-node defaults it sets', () => {
     'afr:StudyDocument · afo v1 · value nodes: link obo:OBI_0000299, value qudt:numericValue, unit qudt:unit',
   );
 });
+
+describe('plugin steps in proposals', () => {
+  const plugin = (uses: string, more: Record<string, unknown> = {}) =>
+    ({
+      op: 'putStep',
+      reason: 'r',
+      step: {
+        type: 'plugin',
+        id: 'refs',
+        uses,
+        fields: ['reference'],
+        sections: ['head'],
+        ...more,
+      },
+    }) as unknown as DraftChange;
+
+  it('says which plugin a step runs and what it fills', () => {
+    expect(changeParts(plugin('text.pattern@1'))).toEqual({
+      kind: 'PLUGIN',
+      tone: 'info',
+      id: 'refs',
+      text: 'runs text.pattern@1, fills reference from head',
+    });
+  });
+
+  it('diffs a changed plugin step by plugin, fills, sections and settings', () => {
+    const def = {
+      pipeline: [
+        {
+          type: 'plugin',
+          id: 'refs',
+          uses: 'text.pattern@1',
+          fields: ['reference'],
+          sections: ['head'],
+          with: { a: 1 },
+        },
+      ],
+    };
+    expect(changeDiff(plugin('text.pattern@2', { with: { a: 2 } }), def, MODEL_CHOICES)).toBe(
+      'plugin text.pattern@1 → text.pattern@2, settings edited',
+    );
+    expect(changeDiff(plugin('text.pattern@1', { with: { a: 1 } }), def, MODEL_CHOICES)).toBeNull();
+  });
+});

@@ -14,6 +14,7 @@ export type ChangeKind =
   | 'COPIES'
   | 'EXTRACT'
   | 'CHECK'
+  | 'PLUGIN'
   | 'REMOVE'
   | 'PREAMBLE'
   | 'MAPPING'
@@ -92,6 +93,16 @@ export function changeParts(c: DraftChange): {
           : 'No copy selection',
       };
     case 'putStep':
+      if (c.step.type === 'plugin') {
+        const fills = c.step.table ? `table ${c.step.table}` : c.step.fields.join(', ');
+        const reads = c.step.sections.length ? ` from ${c.step.sections.join(', ')}` : '';
+        return {
+          kind: 'PLUGIN',
+          tone: 'info',
+          id: c.step.id,
+          text: `runs ${c.step.uses}, fills ${fills}${reads}`,
+        };
+      }
       return c.step.type === 'extract'
         ? {
             kind: 'EXTRACT',
@@ -277,6 +288,16 @@ export function changeDiff(
     const step = c.step as Def;
     if (before.type !== step.type) {
       parts = [`type ${shown(before.type)} → ${shown(step.type)}`];
+    } else if (step.type === 'plugin') {
+      parts = [
+        ...arrow('plugin', before.uses, step.uses),
+        ...setDiff(ids(before.fields), ids(step.fields)),
+        ...arrow('table', before.table, step.table),
+        ...setDiff(ids(before.sections), ids(step.sections), 'reads '),
+        ...(JSON.stringify(before.with ?? {}) === JSON.stringify(step.with ?? {})
+          ? []
+          : ['settings edited']),
+      ];
     } else if (step.type === 'extract') {
       parts = [
         ...setDiff(ids(before.fields), ids(step.fields)),

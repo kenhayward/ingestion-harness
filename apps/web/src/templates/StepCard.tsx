@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Icon } from '../ui/Icon.js';
-import { stepSummary } from './editor-derive.js';
+import { STEP_KIND_TONE, stepKind, stepSummary } from './editor-derive.js';
 
 /**
  * A pipeline step as a card (UI handoff §5): the header (number, kind, id, summary) toggles the
@@ -34,16 +34,14 @@ export function StepCard({
   children: ReactNode;
 }) {
   const n = index + 1;
-  const kind = step.type === 'check' ? 'CHECK' : 'EXTRACT';
+  const kind = stepKind(step);
   const id = typeof step.id === 'string' && step.id ? step.id : '(no id)';
   return (
     <div className={open ? 'step-card open' : 'step-card'}>
       <div className="step-head">
         <button type="button" className="step-toggle" aria-expanded={open} onClick={onToggle}>
           <span className="step-num">{n}</span>{' '}
-          <span className={`kind-tag ${kind === 'CHECK' ? 'tone-neutral' : 'tone-info'}`}>
-            {kind}
-          </span>{' '}
+          <span className={`kind-tag ${STEP_KIND_TONE[kind]}`}>{kind}</span>{' '}
           <span className="mono step-id">{id}</span>{' '}
           <span className="step-summary muted">{stepSummary(step, modelName, inheritedModel)}</span>
         </button>

@@ -48,7 +48,7 @@ import { choiceName } from '../jobs/derive.js';
 import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Area, opt, Select, Text } from './fields.js';
 import { MappingEditor } from './MappingEditor.js';
-import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
+import { CheckStep, defaultLabel, ExtractStep, PluginStepDetail } from './StepForms.js';
 
 type Path = (string | number)[];
 type Tab =
@@ -1013,7 +1013,9 @@ export function TemplateEditor({
                     else if (openStep !== null && openStep > i) setOpenStep(openStep - 1);
                   }}
                 >
-                  {step.type === 'extract' ? (
+                  {step.type === 'plugin' ? (
+                    <PluginStepDetail step={step} />
+                  ) : step.type === 'extract' ? (
                     <ExtractStep
                       step={step}
                       fields={fields.map((f) => f.id)}
