@@ -75869,6 +75869,179 @@
         }
       }
     },
+    "/api/plugins": {
+      "get": {
+        "operationId": "listPlugins",
+        "summary": "List the plugins recipe steps can run",
+        "tags": [
+          "Recipes"
+        ],
+        "description": "The plugins this deployment's workers can run, as the worker publishes them when it\nstarts: each one's ref (`<id>@<major>`, what a plugin step names in `uses`), summary,\nwhether it sends data out, and the JSON Schema of its settings (a step's `with`).\nEmpty before any worker has started. A recipe naming a plugin that is not listed, or\nsettings that do not fit its schema, cannot be published.",
+        "responses": {
+          "200": {
+            "description": "The plugins, by ref.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "major": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "egress": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "model",
+                          "remote"
+                        ]
+                      },
+                      "settingsSchema": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "id",
+                      "major",
+                      "summary",
+                      "egress",
+                      "settingsSchema"
+                    ]
+                  },
+                  "description": "The plugins, by ref."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bridge/connections-link": {
       "post": {
         "operationId": "createConnectionsLink",

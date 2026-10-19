@@ -54,11 +54,18 @@ import type { BridgeApi } from './bridge/client.js';
 import type { HandoffCodes } from './bridge/handoff.js';
 import { bridgeRoutes } from './routes/bridge.js';
 import { publishTargetRoutes } from './routes/publish-targets.js';
+import { pluginRoutes } from './routes/plugins.js';
+import type { PluginCatalogue } from './plugins/catalogue.js';
 import { backupRoutes } from './routes/backup.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
   store: ObjectStore;
+  /**
+   * The plugins the workers can run (recipe plugins 3b): recipes' plugin steps are checked
+   * against it. Absent or null: plugin steps are not checked (unit tests of other routes).
+   */
+  plugins?: PluginCatalogue | null;
   /** Publishing targets (migration 202610170019): where recipes deliver, edited under Administration. */
   targets: PublishTargetRepo;
   /** One object store per publishing target; published outputs are read through their own. */
@@ -196,6 +203,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(linkedDataRoutes, { prefix: '/api' });
   await app.register(maintenanceRoutes, { prefix: '/api' });
   await app.register(publishTargetRoutes, { prefix: '/api' });
+  await app.register(pluginRoutes, { prefix: '/api' });
   await app.register(bridgeRoutes, { prefix: '/api' });
   await app.register(backupRoutes, { prefix: '/api' });
   await app.register(versionRoutes, { prefix: '/api' });

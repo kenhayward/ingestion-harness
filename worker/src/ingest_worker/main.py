@@ -53,6 +53,8 @@ from .pipeline import (
     load_definition,
     process_job,
 )
+from .plugin_catalogue import PgPluginCatalogue, catalogue_rows
+from .plugins import PLUGINS
 from .publish_targets import LiveTargets, PgPublishTargetStore, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
@@ -369,6 +371,12 @@ class _Worker:
         self.targets = LiveTargets(self.target_store)
         # The ontology library and the Linked data settings share one autocommit connection.
         self.library = psycopg.connect(settings.database_url, autocommit=True)
+        # The plugins this image can run, for the API's recipe checks and the editor (recipe
+        # plugins 3b). Advisory: a database without the table yet must not stop the worker.
+        try:
+            PgPluginCatalogue(self.library).publish(catalogue_rows(PLUGINS), app_version())
+        except psycopg.Error:
+            log.warning("could not publish the plugin catalogue", exc_info=True)
         # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
         self.graph_conn = psycopg.connect(settings.database_url, autocommit=True)
         # The LangGraph trial (WORKER_STEP_GRAPH=langgraph): a recipe's steps checkpointed in
