@@ -8,6 +8,7 @@ import type {
 } from '@ih/shared';
 import { outputExtension } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { RdfGraphView, type GraphSemantics } from '../rdf/RdfGraphView.js';
 import { display } from '../review/effective.js';
 import { Icon } from '../ui/Icon.js';
 import { parseCsv } from './csv.js';
@@ -268,6 +269,7 @@ function DocumentView({
   const cellsEdited = tables.reduce((n, t) => n + cellEdits(t.id), 0);
   const checksToLook = checks.filter(([, c]) => toLook(c.rows) > 0).length;
   const issues = document.issues;
+  const graph = outputs.find((o) => o.format === 'rdf');
 
   const items: Item[] = [
     ...(fields.length
@@ -301,6 +303,16 @@ function DocumentView({
         warn: n > 0,
       };
     }),
+    ...(graph
+      ? [
+          {
+            key: 'graph',
+            group: 'More' as const,
+            label: 'Graph',
+            count: graph.rowCount === null ? 'RDF' : plural(graph.rowCount, 'triple'),
+          },
+        ]
+      : []),
     {
       key: 'issues',
       group: 'More',
@@ -412,6 +424,16 @@ function DocumentView({
       const id = item.key.slice(6);
       const rows = document.checks[id]?.rows ?? [];
       return <CheckView id={id} rows={rows} />;
+    }
+    if (item.key === 'graph' && graph) {
+      return (
+        <ResultGraph
+          api={api}
+          jobId={jobId}
+          output={graph}
+          semantics={definition.kind === 'template' ? definition.semantics : undefined}
+        />
+      );
     }
     if (item.key === 'issues') {
       return (
@@ -726,6 +748,45 @@ function SimpleTable({
   );
 }
 
+/** A published graph (ADR 0011), read from its target only when its outline item is opened. */
+function ResultGraph({
+  api,
+  jobId,
+  output,
+  semantics,
+}: {
+  api: Api;
+  jobId: string;
+  output: JobOutput;
+  semantics: GraphSemantics | undefined;
+}) {
+  const [text, setText] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.getOutputText(jobId, output.outputId, 'published').then(
+      (t) => live && setText(t),
+      (err: Error) => live && setFailed(err.message),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, jobId, output.outputId]);
+  return (
+    <>
+      <div className="result-view-head">
+        <h3>Graph</h3>
+        <a href={api.outputUrl(jobId, output.outputId, { stage: 'published' })}>Download Turtle</a>
+      </div>
+      <div className="result-graph">
+        {failed && <p role="alert">{failed}</p>}
+        {!failed && text === null && <p role="status">Loading the graph…</p>}
+        {text !== null && <RdfGraphView api={api} turtle={text} semantics={semantics} />}
+      </div>
+    </>
+  );
+}
+
 function OutputPreviews({
   api,
   jobId,
@@ -757,6 +818,7 @@ function OutputPreview({ api, jobId, output }: { api: Api; jobId: string; output
 
   if (failed) return <p className="hint">{`${name}: ${failed}`}</p>;
   if (text === null) return <p role="status">Loading {name}…</p>;
+  if (output.format === 'rdf') return <RdfGraphView api={api} turtle={text} title={name} />;
   if (output.format === 'json') {
     let pretty = text;
     try {

@@ -118,6 +118,15 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
               kind: 'template',
               fields: resolved.definition.template.outputs.fields,
               tables: resolved.definition.template.outputs.tables,
+              ...(resolved.definition.template.semantics
+                ? {
+                    semantics: {
+                      ontologies: resolved.definition.template.semantics.ontologies,
+                      prefixes: resolved.definition.template.semantics.prefixes,
+                      local: resolved.definition.template.semantics.local,
+                    },
+                  }
+                : {}),
             }
           : { kind: 'spec' };
 

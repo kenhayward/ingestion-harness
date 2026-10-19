@@ -108,14 +108,14 @@ function Results({
   onOpenOutput,
 }: {
   results: readonly ShaclResult[];
-  onOpenOutput: (output: string) => void;
+  onOpenOutput: ((output: string) => void) | undefined;
 }) {
   return (
     <ul className="rdf-results">
       {results.map((r, i) => (
         <li key={i}>
           <strong>{r.severity}</strong> {r.message}{' '}
-          {!IRI.test(r.output) && (
+          {onOpenOutput && !IRI.test(r.output) && (
             <button type="button" className="link" onClick={() => onOpenOutput(r.output)}>
               Show {r.output}
             </button>
@@ -145,7 +145,8 @@ export function EntityCard({
   naming: Naming;
   results: Map<string, ShaclResult[]> | undefined;
   onGo: (iri: string) => void;
-  onOpenOutput: (output: string) => void;
+  /** Lets a result open its output; none where there is nothing to open. */
+  onOpenOutput?: (output: string) => void;
 }) {
   const headingId = `rdf-${entity.iri}`;
   const all = [...(results?.values() ?? [])].flat();
@@ -248,7 +249,7 @@ export function GraphCards({
   model: RdfModel;
   naming: Naming;
   results: EntityResults;
-  onOpenOutput: (output: string) => void;
+  onOpenOutput?: (output: string) => void;
 }) {
   const go = (iri: string) => {
     const card = [...document.querySelectorAll<HTMLElement>('.rdf-card')].find(
@@ -268,7 +269,7 @@ export function GraphCards({
           naming={naming}
           results={results.get(e.iri)}
           onGo={go}
-          onOpenOutput={onOpenOutput}
+          {...(onOpenOutput ? { onOpenOutput } : {})}
         />
       ))}
     </div>

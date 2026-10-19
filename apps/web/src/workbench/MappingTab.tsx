@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { deliveryTargets, type DataPolicy, type OverviewItem } from '@ih/shared';
+import { SemanticsSchema, deliveryTargets, type DataPolicy, type OverviewItem } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { GraphPreview } from '../templates/MappingEditor.js';
 import { mappingBadge, mappingNote } from './mapping.js';
@@ -119,7 +119,13 @@ export function MappingTab({
           <MappingReview api={api} projectId={projectId} definition={shown} review={state} />
         )}
       />
-      <GraphPreview api={api} projectId={projectId} dirty={false} request={previewRequest} />
+      <GraphPreview
+        api={api}
+        projectId={projectId}
+        dirty={false}
+        request={previewRequest}
+        semantics={SemanticsSchema.safeParse(shown?.semantics).data}
+      />
     </div>
   );
 }
