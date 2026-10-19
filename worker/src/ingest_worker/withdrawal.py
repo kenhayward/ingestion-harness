@@ -10,7 +10,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
 from .bridge.client import BridgeClient
-from .bridge.package import deliver_document
 from .graph_registry import PublishedGraph
 from .pipeline import (
     DocumentError,
@@ -145,7 +144,7 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[
     the person who pressed Republish; returns the (target id, delivery id) of every delivery,
     which the bridge's events finish."""
     from .rdf_rebuild import claimed, delivered_document
-    from .template_pipeline import build_graph, publish_graph, render_document
+    from .template_pipeline import build_graph, deliver_publication, render_document
 
     params: RepublishParams = _params(job, RepublishParams, "republish")
     source, targets = deps.delivered_jobs, deps.targets
@@ -156,6 +155,7 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[
         return []
     acting = queue.uploader(job.id)  # who pressed Republish
     deliveries: list[tuple[str, str]] = []
+    jobs = 0
     for withdrawn in source.withdrawn_jobs(params.template_id):
         try:
             document = delivered_document(deps, withdrawn)
@@ -175,19 +175,20 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[
         target = targets.get(template.publish_to())  # the job's version's own target
         formats = template.delivery_formats()
         rendered = render_document(template, document, graph)
-        delivered = deliver_document(
-            deps,
+        delivered = deliver_publication(
             run,
+            deps,
+            queue,
             template=template,
             document=document,
             outputs=[o for o in rendered if o.format in formats],
-            targets=[target],
+            graph=graph if "rdf" in formats else None,
+            target=target,
             acting=acting,
             approver=queue.reviewer(run.id),
         )
-        if graph is not None and "rdf" in formats:
-            publish_graph(run, deps, queue, template, document, graph, target)
         queue.record_published(run, delivered.outputs, target, delivered.s3[1])
         deliveries.extend(delivered.deliveries)
-    queue.event(job.id, "info", REPUBLISHED, {"jobs": len(deliveries)})
+        jobs += 1
+    queue.event(job.id, "info", REPUBLISHED, {"jobs": jobs})
     return deliveries

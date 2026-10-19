@@ -12,7 +12,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from .bridge.package import deliver_document
 from .outputs import RenderedOutput
 from .pipeline import PipelineDeps, Target, check_cancelled
 from .queue import ClaimedJob, JobQueue
@@ -102,18 +101,20 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         log.info("job %s %s with %d outputs", job.id, outcome.note, len(outcome.outputs))
         return
     check_cancelled(job, queue)
-    delivered = deliver_document(
-        deps,
+    from .template_pipeline import deliver_publication
+
+    delivered = deliver_publication(
         job,
+        deps,
+        queue,
         template=outcome.template,
         document=outcome.document,
         outputs=outcome.delivered,
-        targets=[target],
+        graph=outcome.graph.graph if outcome.graph is not None else None,
+        target=target,
         acting=queue.uploader(job.id),  # auto-published: the uploader acts
         approver=None,
     )
     queue.record_published(job, delivered.outputs, target, delivered.s3[1])
-    if outcome.graph is not None:
-        outcome.graph.deliver(job, deps, queue, target)
     queue.delivering(job, outcome.outputs, bucket, delivered.deliveries)
     log.info("job %s handed %d outputs to the bridge", job.id, len(delivered.outputs))

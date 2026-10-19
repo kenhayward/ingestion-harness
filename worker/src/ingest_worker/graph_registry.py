@@ -81,10 +81,17 @@ class GraphRegistry(Protocol):
 
     def entity_sources(self, iri: str) -> list[tuple[str, str]]: ...
 
-    def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool: ...
+    def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool:
+        """Loaded under this base, by a delivery that has not failed (or before the bridge)."""
+        ...
 
     def record_ontology(
-        self, ontology_id: str, version: int, base_iri: str, graph_iri: str
+        self,
+        ontology_id: str,
+        version: int,
+        base_iri: str,
+        graph_iri: str,
+        delivery_id: str | None = None,
     ) -> None: ...
 
     def all_ontologies(self) -> list[tuple[str, int, str, str]]: ...
@@ -103,6 +110,10 @@ class MemoryGraphRegistry:
         self.entities: dict[str, tuple[str, list[str]]] = {}
         self.sources: dict[str, set[tuple[str, str]]] = {}
         self.ontologies: dict[tuple[str, int, str], str] = {}
+        #: The delivery that loaded each ontology graph (None: loaded before the bridge).
+        self.ontology_deliveries: dict[tuple[str, int, str], str | None] = {}
+        #: Deliveries that ended failed or needing a person (job_deliveries in Postgres).
+        self.failed_deliveries: set[str] = set()
         self._lock = threading.Lock()
 
     def publish(self, record: GraphPublish, write: Callable[[int], None]) -> int:
@@ -159,12 +170,22 @@ class MemoryGraphRegistry:
         return sorted(self.sources.get(iri, set()))
 
     def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool:
-        return (ontology_id, version, base_iri) in self.ontologies
+        key = (ontology_id, version, base_iri)
+        if key not in self.ontologies:
+            return False
+        delivery = self.ontology_deliveries.get(key)
+        return delivery is None or delivery not in self.failed_deliveries
 
     def record_ontology(
-        self, ontology_id: str, version: int, base_iri: str, graph_iri: str
+        self,
+        ontology_id: str,
+        version: int,
+        base_iri: str,
+        graph_iri: str,
+        delivery_id: str | None = None,
     ) -> None:
         self.ontologies[(ontology_id, version, base_iri)] = graph_iri
+        self.ontology_deliveries[(ontology_id, version, base_iri)] = delivery_id
 
     def all_ontologies(self) -> list[tuple[str, int, str, str]]:
         return sorted((i, v, b, g) for (i, v, b), g in self.ontologies.items())
@@ -305,21 +326,33 @@ class PgGraphRegistry:
         return [(r[0], r[1]) for r in rows]
 
     def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool:
+        # A row from before the bridge has no delivery; one whose delivery failed (or needs a
+        # person) is loaded again by the next publish.
         row = self._conn.execute(
-            """SELECT 1 FROM published_ontology_graphs
-                WHERE ontology_id = %s AND version = %s AND base_iri = %s""",
+            """SELECT 1 FROM published_ontology_graphs o
+                WHERE o.ontology_id = %s AND o.version = %s AND o.base_iri = %s
+                  AND NOT EXISTS (SELECT 1 FROM job_deliveries d
+                                   WHERE d.delivery_id = o.delivery_id
+                                     AND d.status IN ('failed', 'needs_user'))""",
             (ontology_id, version, base_iri),
         ).fetchone()
         return row is not None
 
     def record_ontology(
-        self, ontology_id: str, version: int, base_iri: str, graph_iri: str
+        self,
+        ontology_id: str,
+        version: int,
+        base_iri: str,
+        graph_iri: str,
+        delivery_id: str | None = None,
     ) -> None:
         self._conn.execute(
-            """INSERT INTO published_ontology_graphs (ontology_id, version, base_iri, graph_iri)
-               VALUES (%s, %s, %s, %s)
-               ON CONFLICT (ontology_id, version, base_iri) DO UPDATE SET loaded_at = now()""",
-            (ontology_id, version, base_iri, graph_iri),
+            """INSERT INTO published_ontology_graphs
+                   (ontology_id, version, base_iri, graph_iri, delivery_id)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (ontology_id, version, base_iri)
+               DO UPDATE SET loaded_at = now(), delivery_id = EXCLUDED.delivery_id""",
+            (ontology_id, version, base_iri, graph_iri, delivery_id),
         )
 
     def all_ontologies(self) -> list[tuple[str, int, str, str]]:

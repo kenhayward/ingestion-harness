@@ -15,6 +15,7 @@ import httpx
 import psycopg
 
 from .bridge.client import HttpBridgeClient
+from .bridge.package import Delivered
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
@@ -154,10 +155,10 @@ def handle_publish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outc
     check_cancelled(job, queue)
     deliveries: list[tuple[str, str]] = []
 
-    def record(outputs: list[RenderedOutput], target: Target, delivery_id: str) -> None:
+    def record(outputs: list[RenderedOutput], target: Target, delivered: Delivered) -> None:
         # Test runs never get here.
-        queue.record_published(job, outputs, target, delivery_id)
-        deliveries.append((target.id, delivery_id))
+        queue.record_published(job, outputs, target, delivered.s3[1])
+        deliveries.extend(delivered.deliveries)
 
     try:
         published = publish_job(job, deps, queue, record)
@@ -185,7 +186,7 @@ def handle_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Ou
     deliveries = run_republish(job, deps, queue)
     if not deliveries:
         return Complete(note="re-delivered 0 jobs")
-    return Delivering([], deliveries, note=f"re-delivered {len(deliveries)} jobs")
+    return Delivering([], deliveries, note=f"handed {len(deliveries)} deliveries to the bridge")
 
 
 def _completes[R](
@@ -251,7 +252,7 @@ def publish_job(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
-    on_published: Callable[[list[RenderedOutput], Target, str], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target, Delivered], None] | None = None,
 ) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
     reference) keeps the reviewed document but is never delivered to a target."""

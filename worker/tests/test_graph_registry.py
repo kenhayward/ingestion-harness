@@ -182,3 +182,33 @@ def test_locked_reads_the_current_graph_and_its_versions(registry: GraphRegistry
     registry.publish(record(), lambda _v: None)
     registry.locked(SHA, "letter", lambda cur, vs: seen.append((cur and cur.version, vs)))
     assert seen == [(None, set()), (2, {1, 2})]
+
+
+def _fail_delivery(registry: GraphRegistry, delivery_id: str) -> None:
+    """The delivery ended failed: job_deliveries in Postgres, a set in memory."""
+    if isinstance(registry, MemoryGraphRegistry):
+        registry.failed_deliveries.add(delivery_id)
+        return
+    assert isinstance(registry, PgGraphRegistry)
+    job = registry._conn.execute(
+        "INSERT INTO jobs (task, status, params) VALUES ('rebuild', 'failed', '{}') RETURNING id"
+    ).fetchone()
+    assert job is not None
+    registry._conn.execute(
+        """INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
+           VALUES (%s, %s, 'finance-lake', 'failed')""",
+        (delivery_id, job[0]),
+    )
+
+
+def test_an_ontology_whose_delivery_failed_is_not_loaded(registry: GraphRegistry) -> None:
+    import uuid
+
+    ok, failed = str(uuid.uuid4()), str(uuid.uuid4())
+    registry.record_ontology("acme", 1, BASE, f"{BASE}graph/ontology/acme/1", ok)
+    registry.record_ontology("acme", 2, BASE, f"{BASE}graph/ontology/acme/2", failed)
+    _fail_delivery(registry, failed)
+    assert registry.ontology_loaded("acme", 1, BASE)  # on its way, or done
+    assert not registry.ontology_loaded("acme", 2, BASE)  # loaded again by the next publish
+    registry.record_ontology("acme", 2, BASE, f"{BASE}graph/ontology/acme/2", str(uuid.uuid4()))
+    assert registry.ontology_loaded("acme", 2, BASE)

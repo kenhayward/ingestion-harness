@@ -15,6 +15,7 @@ import pytest
 import yaml
 from rdflib import RDFS, Graph, Literal, URIRef
 
+from ingest_worker.bridge.models import BridgeError
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, PipelineDeps, Target, mark_pages
@@ -653,10 +654,9 @@ def to_publish(
     store: bool = True,
     semantics: dict[str, Any] | None = None,
 ) -> tuple[PipelineDeps, FakeBridge, FakeQueue]:
-    """A reviewed job of a mapped recipe, about to be published (registry, optional store)."""
+    """A reviewed job of a mapped recipe, about to be published (a graph registry, and with
+    `store` the triple store target rdf-default on the bridge)."""
     from ingest_worker.graph_registry import MemoryGraphRegistry
-
-    from .fakes import FakeGraphStore
 
     template = {
         **TEMPLATE,
@@ -665,11 +665,9 @@ def to_publish(
         "delivery": {"formats": formats or ["json", "rdf"]},
     }
     deps, target = mapped_deps(tmp_path, template, BASE_IRI)
-    deps = replace(
-        deps,
-        graph_registry=MemoryGraphRegistry(),
-        graph_store=FakeGraphStore() if store else None,
-    )
+    deps = replace(deps, graph_registry=MemoryGraphRegistry())
+    if store:
+        with_triple_store(deps, target)
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, deps, "w1")
     assert queue.awaiting
@@ -682,26 +680,45 @@ def to_publish(
     return deps, target, queue
 
 
+TRIPLES = Target("rdf-default", "ct", "")
+
+
+def with_triple_store(deps: PipelineDeps, bridge: FakeBridge) -> None:
+    """rdf-default exists: the registry resolves it, the bridge loads graphs into it."""
+    assert isinstance(deps.targets, FakeTargets)
+    deps.targets.triple_store = TRIPLES
+    bridge.rdf.add("rdf-default")
+
+
+def documents(bridge: FakeBridge) -> list[Any]:
+    return [r for r in bridge.requests if r.package.kind == "document"]
+
+
 def graph_event(queue: FakeQueue) -> dict[str, Any]:
     [data] = [d for _, _, m, d in queue.event_details if m == "graph published"]
     return data
 
 
-def test_a_publish_puts_the_versioned_graph_into_the_store(tmp_path: Path) -> None:
-    deps, target, queue = to_publish(tmp_path)
+def test_a_publish_hands_the_graph_and_its_copy_to_the_bridge_in_one_package(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = to_publish(tmp_path)
     run_once(queue, deps, "w1")
     assert queue.finished
-    store = deps.graph_store
-    [(method, graph, body, ctype)] = store.requests  # type: ignore[union-attr]
-    assert (method, graph, ctype) == ("PUT", GRAPH_IRI, "text/turtle")
-    assert body is not None
-    put = Graph().parse(data=body, format="turtle")
+    [request] = documents(bridge)
+    assert request.targets == ["default", "rdf-default"]
+    rdf = request.package.rdf
+    assert rdf is not None and (rdf.graph_name, rdf.version) == (GRAPH_IRI, 1)
+    put = Graph().parse(data=rdf.turtle, format="turtle")
     assert (URIRef(GRAPH_IRI), URIRef(f"{CT}graphVersion"), Literal(1)) in put
-    copy = target.get("published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
-    assert copy == body
+    # The S3 target gets the copy at today's key; the triple store the same bytes.
+    copy = bridge.get("published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    assert copy == rdf.turtle.encode()
+    assert bridge.graphs[GRAPH_IRI] == rdf.turtle
     current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
     assert current is not None and current.version == 1 and current.job_id == "job-1"
     assert current.base_iri == BASE_IRI and current.triples == len(put) - 2
+    assert current.target_id == "default"
     assert graph_event(queue) == {
         "graph": GRAPH_IRI,
         "version": 1,
@@ -713,120 +730,181 @@ def test_a_publish_puts_the_versioned_graph_into_the_store(tmp_path: Path) -> No
         "https://ex.example/def/Product",
         ["Richfer capsules"],
     )
+    # The graph's copy is no output of the job: only the rendered outputs are recorded.
+    [(_, published, _)] = queue.published
+    assert "graph-version" not in {o.output_id for o in published}
 
 
 def test_publishing_the_same_file_again_is_the_next_version_of_its_graph(tmp_path: Path) -> None:
-    deps, target, queue = to_publish(tmp_path)
+    deps, bridge, queue = to_publish(tmp_path)
     run_once(queue, deps, "w1")
     queue.jobs = [replace(JOB, task="publish")]
     run_once(queue, deps, "w1")
-    store = deps.graph_store
-    assert [r[1] for r in store.requests] == [GRAPH_IRI, GRAPH_IRI]  # type: ignore[union-attr]
-    assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v2.ttl")
+    assert [r.package.rdf.version for r in documents(bridge)] == [1, 2]  # type: ignore[union-attr]
+    assert has(bridge, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v2.ttl")
     versions = [d["version"] for _, _, m, d in queue.event_details if m == "graph published"]
     assert versions == [1, 2]
 
 
-def test_without_a_store_the_version_is_still_recorded(tmp_path: Path) -> None:
-    deps, target, queue = to_publish(tmp_path, store=False)
+def test_without_rdf_default_the_graph_is_still_versioned_and_copied(tmp_path: Path) -> None:
+    deps, bridge, queue = to_publish(tmp_path, store=False)
     run_once(queue, deps, "w1")
     assert queue.finished
-    assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    [request] = documents(bridge)
+    assert request.targets == ["default"]
+    assert has(bridge, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
     assert graph_event(queue)["endpoint"] is False
+    assert bridge.graphs == {}
 
 
 def test_a_recipe_not_delivering_rdf_publishes_no_graph(tmp_path: Path) -> None:
-    deps, target, queue = to_publish(tmp_path, formats=["csv", "json"])
+    deps, bridge, queue = to_publish(tmp_path, formats=["csv", "json"])
     run_once(queue, deps, "w1")
     assert queue.finished
-    assert deps.graph_store.requests == []  # type: ignore[union-attr]
+    [request] = documents(bridge)
+    assert request.targets == ["default"] and request.package.rdf is None
     assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
-    assert not any(k.startswith("pvp/graphs/") for _, k in target.objects)
+    assert not any(k.startswith("pvp/graphs/") for _, k in bridge.objects)
 
 
-def test_an_approved_test_run_never_touches_the_store(tmp_path: Path) -> None:
-    deps, _, queue = to_publish(tmp_path)
+def test_an_approved_test_run_never_reaches_the_bridge(tmp_path: Path) -> None:
+    deps, bridge, queue = to_publish(tmp_path)
     queue.jobs = [replace(JOB, task="publish", test=True)]
     run_once(queue, deps, "w1")
     assert queue.finished
-    assert deps.graph_store.requests == []  # type: ignore[union-attr]
+    assert documents(bridge) == [] and bridge.graphs == {}
     assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
 
 
-def test_a_store_outage_is_retried_and_records_nothing(tmp_path: Path) -> None:
-    from ingest_worker.graph_store import GraphStoreUnavailable
+def test_the_version_is_recorded_before_the_hand_off(tmp_path: Path) -> None:
+    from ingest_worker.bridge.client import BridgeUnavailable
 
-    deps, _, queue = to_publish(tmp_path)
-    deps.graph_store.fail = GraphStoreUnavailable("graph store answered 503")  # type: ignore[union-attr]
+    deps, bridge, queue = to_publish(tmp_path)
+    bridge.refusals = [BridgeUnavailable("the bridge could not be reached")]
     run_once(queue, deps, "w1")
-    assert queue.failed and "503" in queue.failed[0][1]
-    assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
-    deps.graph_store.fail = None  # type: ignore[union-attr]
+    assert queue.failed and not queue.published
+    # Committed under the graph's lock before the hand-off, as the spec says: a retry is the next.
+    current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
+    assert current is not None and current.version == 1
     queue.jobs = [replace(JOB, task="publish")]
     run_once(queue, deps, "w1")
-    assert graph_event(queue)["version"] == 1  # the retry is the first version
+    versions = [d["version"] for _, _, m, d in queue.event_details if m == "graph published"]
+    assert versions == [1, 2]
+    assert queue.handed_over
 
 
-def test_a_refused_graph_goes_to_review(tmp_path: Path) -> None:
-    from ingest_worker.graph_store import GraphStoreRejected
-
-    deps, _, queue = to_publish(tmp_path)
-    deps.graph_store.fail = GraphStoreRejected("graph store refused the PUT (400): bad")  # type: ignore[union-attr]
+def test_a_refused_hand_off_goes_to_review(tmp_path: Path) -> None:
+    deps, bridge, queue = to_publish(tmp_path)
+    bridge.refusals = [
+        BridgeError(class_="needs_user", code="content_rejected", message="the store refused it")
+    ]
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
-    assert "refused the PUT (400)" in reason
-    assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
+    assert "the store refused it" in reason
+    assert not queue.published
 
 
-def test_the_pinned_ontologies_are_loaded_once_per_base(tmp_path: Path) -> None:
+NT = b'<https://ex.example/def/Product> <http://www.w3.org/2000/01/rdf-schema#label> "Product" .\n'
+TBOX = f"{BASE_IRI}graph/ontology/ex/2"
+
+
+def pinned_publish(tmp_path: Path) -> tuple[PipelineDeps, FakeBridge, FakeQueue]:
     from ingest_worker.storage import ontology_normalized_key
 
     pinned = {**ENTITY, "ontologies": [{"id": "ex", "version": 2}]}
-    deps, _, queue = to_publish(tmp_path, semantics=pinned)
-    nt = b'<https://ex.example/def/Product> <http://www.w3.org/2000/01/rdf-schema#label> "Product" .\n'
-    deps.store.put("runs", ontology_normalized_key("ex", 2), nt, "application/n-triples")
+    deps, bridge, queue = to_publish(tmp_path, semantics=pinned)
+    deps.store.put("runs", ontology_normalized_key("ex", 2), NT, "application/n-triples")
+    return deps, bridge, queue
+
+
+def graphs_sent(bridge: FakeBridge) -> list[tuple[str, list[str], str]]:
+    return [
+        (r.package.kind, list(r.targets), r.package.rdf.graph_name if r.package.rdf else "")
+        for r in bridge.requests
+    ]
+
+
+def test_the_pinned_ontologies_are_delivered_once_per_base_as_graph_packages(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = pinned_publish(tmp_path)
     run_once(queue, deps, "w1")
     queue.jobs = [replace(JOB, task="publish")]
     run_once(queue, deps, "w1")
-    tbox = f"{BASE_IRI}graph/ontology/ex/2"
-    requests = deps.graph_store.requests  # type: ignore[union-attr]
-    assert [(r[0], r[1], r[3]) for r in requests] == [
-        ("PUT", tbox, "application/n-triples"),
-        ("PUT", GRAPH_IRI, "text/turtle"),
-        ("PUT", GRAPH_IRI, "text/turtle"),
+    assert graphs_sent(bridge) == [
+        ("graph", ["rdf-default"], TBOX),
+        ("document", ["default", "rdf-default"], GRAPH_IRI),
+        ("document", ["default", "rdf-default"], GRAPH_IRI),
     ]
-    assert requests[0][2] == nt
+    tbox = bridge.requests[0].package
+    assert tbox.rdf is not None and tbox.rdf.turtle == NT.decode() and tbox.rdf.version == 2
+    assert tbox.provenance is None and tbox.files == []
+    assert bridge.graphs[TBOX] == NT.decode()
     assert deps.graph_registry.ontology_loaded("ex", 2, BASE_IRI)  # type: ignore[union-attr]
+
+
+def test_the_job_is_delivering_on_every_delivery_tbox_included(tmp_path: Path) -> None:
+    deps, _, queue = pinned_publish(tmp_path)
+    run_once(queue, deps, "w1")
+    [(_, _, deliveries)] = queue.handed_over
+    assert [t for t, _ in deliveries] == ["default", "rdf-default", "rdf-default"]
+    assert len({d for _, d in deliveries}) == 3
+
+
+def test_a_tbox_whose_delivery_failed_is_loaded_again(tmp_path: Path) -> None:
+    deps, bridge, queue = pinned_publish(tmp_path)
+    run_once(queue, deps, "w1")
+    [(_, _, deliveries)] = queue.handed_over
+    tbox_delivery = deliveries[-1][1]
+    deps.graph_registry.failed_deliveries.add(tbox_delivery)  # type: ignore[union-attr]
+    assert not deps.graph_registry.ontology_loaded("ex", 2, BASE_IRI)  # type: ignore[union-attr]
+    queue.jobs = [replace(JOB, task="publish")]
+    run_once(queue, deps, "w1")
+    assert [k for k, _, g in graphs_sent(bridge) if g == TBOX] == ["graph", "graph"]
+
+
+def test_ontologies_loaded_before_the_bridge_count_as_loaded(tmp_path: Path) -> None:
+    deps, bridge, queue = pinned_publish(tmp_path)
+    # A row from before the bridge has no delivery: it was loaded by the worker itself.
+    deps.graph_registry.record_ontology("ex", 2, BASE_IRI, TBOX)  # type: ignore[union-attr]
+    run_once(queue, deps, "w1")
+    assert [k for k, _, _ in graphs_sent(bridge)] == ["document"]
+
+
+def test_a_refused_tbox_package_sends_the_job_to_review_naming_the_ontology(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = pinned_publish(tmp_path)
+    bridge.refusals = [
+        BridgeError(
+            class_="needs_user", code="content_rejected", message="the package is too large"
+        )
+    ]
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert reason == "ex v2: the package is too large"
+    assert documents(bridge) == [] and not queue.published
 
 
 def test_a_document_delivered_without_review_publishes_its_graph(tmp_path: Path) -> None:
     from ingest_worker.graph_registry import MemoryGraphRegistry
 
-    from .fakes import FakeGraphStore
-
     template = {**TEMPLATE, "review": {"required": "never"}, "semantics": ENTITY,
                 "delivery": {"formats": ["json", "rdf"]}}  # fmt: skip
-    deps, target = mapped_deps(tmp_path, template, BASE_IRI)
-    deps = replace(deps, graph_registry=MemoryGraphRegistry(), graph_store=FakeGraphStore())
+    deps, bridge = mapped_deps(tmp_path, template, BASE_IRI)
+    deps = replace(deps, graph_registry=MemoryGraphRegistry())
+    with_triple_store(deps, bridge)
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, deps, "w1")
     assert queue.finished and not queue.awaiting
-    assert [r[1] for r in deps.graph_store.requests] == [GRAPH_IRI]  # type: ignore[union-attr]
-    assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    [request] = documents(bridge)
+    assert request.targets == ["default", "rdf-default"]
+    assert GRAPH_IRI in bridge.graphs
+    assert has(bridge, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
     assert graph_event(queue)["version"] == 1
     assert queue.published  # its outputs are recorded too
-
-
-def test_delivered_outputs_are_recorded_even_when_the_store_then_fails(tmp_path: Path) -> None:
-    from ingest_worker.graph_store import GraphStoreUnavailable
-
-    deps, target, queue = to_publish(tmp_path)
-    deps.graph_store.fail = GraphStoreUnavailable("graph store answered 503")  # type: ignore[union-attr]
-    run_once(queue, deps, "w1")
-    assert queue.failed
-    [(_, published, _)] = queue.published  # written to the target, so recorded
-    assert {o.format for o in published} == {"json", "rdf"}
-    assert has(target, "published", "pvp/" + GRAPH_KEY)
+    [(_, _, deliveries)] = queue.handed_over
+    assert [t for t, _ in deliveries] == ["default", "rdf-default"]
 
 
 # --- publishing targets: each recipe version delivers to its own target ------------------------
@@ -838,8 +916,6 @@ def finance_deps(
     """v1 of `template` (no publishTo) as a file; v2, naming finance-lake, in the database."""
     from ingest_worker.graph_registry import MemoryGraphRegistry
 
-    from .fakes import FakeGraphStore
-
     deps, bridge = mapped_deps(tmp_path, template, BASE_IRI)
     bridge.targets["finance-lake"] = ("finance", "fin/")
     default, finance = BucketView(bridge, "published"), BucketView(bridge, "finance")
@@ -849,12 +925,7 @@ def finance_deps(
             "finance-lake": Target("finance-lake", "finance", "fin/"),
         }
     )
-    deps = replace(
-        deps,
-        targets=targets,
-        graph_registry=MemoryGraphRegistry(),
-        graph_store=FakeGraphStore(),
-    )
+    deps = replace(deps, targets=targets, graph_registry=MemoryGraphRegistry())
     v2 = {
         **template,
         "version": 2,
@@ -1035,10 +1106,13 @@ def test_connection_refused_is_retryable_and_records_nothing(tmp_path: Path) -> 
     assert "BridgeUnavailable" in error
 
 
-def test_the_graph_copy_goes_through_put_object_at_todays_key(tmp_path: Path) -> None:
+def test_the_graph_copy_travels_in_the_package_at_todays_key(tmp_path: Path) -> None:
     deps, bridge, queue = to_publish(tmp_path)
     run_once(queue, deps, "w1")
-    assert ("default", "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl") in bridge.puts
+    assert bridge.puts == []  # no synchronous object write any more
+    [request] = documents(bridge)
+    copy = next(f for f in request.package.files if f.output == "graph-version")
+    assert copy.name == f"graphs/{SOURCE_SHA}/demo/v1.ttl"
     assert has(bridge, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
 
 

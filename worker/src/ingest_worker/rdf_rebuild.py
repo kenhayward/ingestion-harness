@@ -39,7 +39,7 @@ from .storage import (
     reviewed_document_key,
 )
 from .template import Template
-from .template_pipeline import build_graph, publish_graph
+from .template_pipeline import build_graph, deliver_publication
 
 
 @dataclass(frozen=True)
@@ -215,9 +215,12 @@ def _publish(
     source: RebuildSource,
     job: DeliveredJob,
     template: Template,
+    deliveries: list[tuple[str, str]] | None = None,
 ) -> int | None:
-    """Render a delivered job's reviewed document with `template` and publish its graph, its
-    copy to the target of the job's own recipe version."""
+    """Render a delivered job's reviewed document with `template` and publish its graph: its
+    next version, handed to the bridge with no outputs (the package carries the graph and its
+    copy to the target of the job's own recipe version, and the triple store). The deliveries
+    are added to `deliveries`; the version is returned."""
     document = delivered_document(deps, job)
     if document is None:
         return None
@@ -226,7 +229,24 @@ def _publish(
     graph = build_graph(run, deps, queue, template, document)
     if graph is None:
         return None
-    return publish_graph(run, deps, queue, template, document, graph, target)
+    # A system re-delivery acts as whoever last delivered the job (spec, acting users).
+    acting = queue.reviewer(job.job_id) or queue.uploader(job.job_id)
+    delivered = deliver_publication(
+        run,
+        deps,
+        queue,
+        template=template,
+        document=document,
+        outputs=[],
+        graph=graph,
+        target=target,
+        acting=acting,
+        approver=queue.reviewer(job.job_id),
+    )
+    if deliveries is not None:
+        deliveries.extend(delivered.deliveries)
+    current = deps.graph_registry.current(job.sha256, template.id) if deps.graph_registry else None
+    return current.version if current is not None else None
 
 
 def rebuild(deps: PipelineDeps) -> list[str]:
