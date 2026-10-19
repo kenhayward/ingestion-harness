@@ -20,7 +20,7 @@ import {
   s3KeysConfig,
   versionFromConfig,
 } from './config.js';
-import { migrate } from './db/migrate.js';
+import { migrateRestored } from './db/migrate.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
@@ -31,6 +31,10 @@ import { HttpGitHub } from './profile/github.js';
 import { PgProfileRepo } from './profile/pg.js';
 import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
+import { HttpBridgeApi } from './bridge/client.js';
+import { HandoffCodes } from './bridge/handoff.js';
+import { syncTargetsWithBridge } from './bridge/mirror.js';
+import { reconcileOnce } from './bridge/reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
 import { defaultSeed, seedDifferences } from './publish-targets/seed.js';
@@ -80,12 +84,15 @@ const llmSecrets = secretsKeys(process.env);
 const targets = new PgPublishTargetRepo(makePool(2));
 const seed = defaultSeed(config);
 const seedOutcome = await targets.seedDefault(seed);
-const targetStores = new TargetStores({
-  repo: targets,
-  internal: s3,
-  secrets: llmSecrets,
-  env: process.env,
-});
+// Internal targets' buckets are created on this deployment's SeaweedFS when they are saved.
+const targetStores = new TargetStores({ internal: s3 });
+// The delivery bridge publishes; targets are mirrored to it and their keys moved there once.
+const bridge = new HttpBridgeApi(config.BRIDGE_URL, config.BRIDGE_CLIENT_KEY);
+const bridgeAuth = {
+  key: config.BRIDGE_CLIENT_KEY,
+  publicUrl: config.BRIDGE_PUBLIC_URL,
+  codes: new HandoffCodes(),
+};
 
 // Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
 // identity, granted per internal publishing target.
@@ -129,7 +136,9 @@ const backup =
     db: new PgDatabaseTools(config.DATABASE_URL),
     store,
     buckets,
-    internalTargetBuckets: () => internalTargetBuckets(targets, Object.values(buckets)),
+    // The bridge's package staging bucket is on this deployment's storage too.
+    internalTargetBuckets: () =>
+      internalTargetBuckets(targets, Object.values(buckets), [config.BRIDGE_STAGING_BUCKET]),
     triples: new FusekiTripleStore(fusekiConfig(config)),
     lake: new NoLakeIdentities(),
     master: llmSecrets.current,
@@ -153,6 +162,8 @@ const app = await buildApp({
   store,
   targets,
   targetStores,
+  bridge,
+  bridgeAuth,
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
   buckets,
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
@@ -205,17 +216,25 @@ backup?.enableRestore({
     readdirSync(migrationsDir)
       .filter((f) => f.endsWith('.sql'))
       .sort(),
-  migrate: async (url) => {
-    await migrate(url, migrationsDir);
-  },
+  migrate: (url) =>
+    migrateRestored(url, {
+      migrations: migrationsDir,
+      bridgeMigrations:
+        process.env.BRIDGE_MIGRATIONS_DIR ??
+        fileURLToPath(new URL('../../../db/bridge-migrations', import.meta.url)),
+    }),
   rotateAdminToken: async () => printAdminToken(await access.rotateAdminPassword()),
   createEmbedJobs: (model) => ontologies.createEmbedJobs(model),
   liveDatabaseName: databaseName(config.DATABASE_URL),
   live: new PgLiveDatabase(makePool(2)),
   openSide: (url) => PgSideDatabase.open(url),
   lakeIssuer: new SeaweedIamIssuer(s3),
-  // The restored database's version counters may equal the old one's: forget the stores now.
-  onSwapped: () => targetStores.invalidate(),
+  // The restored targets are mirrored to the bridge again (and a restored target's keys from
+  // before the bridge are moved there), so its registry matches the database now in place.
+  onSwapped: () =>
+    void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).catch(
+      (err: unknown) => app.log.error({ err }, 'restored targets could not be mirrored'),
+    ),
 });
 
 let stopReconciler = () => {};
@@ -255,6 +274,21 @@ const pruneSignIns = () =>
 void pruneSignIns();
 setInterval(() => void pruneSignIns(), 3_600_000).unref();
 if (s3Keys) stopReconciler = startReconciler(s3Keys, app.log);
+// A delivery whose event was lost is read from the bridge, so no job is left delivering.
+setInterval(
+  () =>
+    void reconcileOnce({ repo, bridge, targets }, new Date())
+      .then((n) => n && app.log.info({ moved: n }, 'deliveries reconciled with the bridge'))
+      .catch((err: unknown) => app.log.warn({ err }, 'delivery reconcile failed')),
+  60_000,
+).unref();
+// Targets' keys move to the bridge once (after the seed above), and every target is mirrored.
+void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).then(
+  ({ moved, skipped }) => {
+    if (moved.length) app.log.info({ moved }, 'publishing target keys moved to the bridge');
+    if (skipped.length) app.log.warn({ skipped }, 'publishing targets left without keys');
+  },
+);
 // Fill the project list cache in the background (a cold cache takes seconds at scale).
 warmListCache(app).catch((err) => app.log.warn({ err }, 'project list cache warm-up failed'));
 // The mapping memory's backfill and repair: every recipe's votes recorded again.

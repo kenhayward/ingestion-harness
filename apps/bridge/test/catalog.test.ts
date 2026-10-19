@@ -37,12 +37,20 @@ describe('GET /v1/targets', () => {
       label: 'A',
       sinkId: 'fake',
       instanceId: null,
+      connectionId: null,
       destination: { bucket: 'b' },
     });
     const app = await testBridge({ targets });
     const res = await signedInject(app, KEY, { method: 'GET', url: '/v1/targets' });
     expect(res.json().targets.map((t: unknown) => TargetViewSchema.parse(t))).toEqual([
-      { id: 'a', label: 'A', sinkId: 'fake', instanceId: null, destination: { bucket: 'b' } },
+      {
+        id: 'a',
+        label: 'A',
+        sinkId: 'fake',
+        instanceId: null,
+        connectionId: null,
+        destination: { bucket: 'b' },
+      },
     ]);
   });
 });

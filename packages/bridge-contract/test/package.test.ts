@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { idempotencyKey, PackageSchema, partsOf } from '../src/index.js';
 import { docPackage, file } from './builders.js';
@@ -38,5 +39,14 @@ describe('package schema', () => {
     expect(partsOf({ ...docPackage, data: null, rdf: null })).toEqual(['files']);
     expect(partsOf(docPackage)).toEqual(['files', 'data']);
     expect(partsOf({ ...docPackage, files: [], data: null })).toEqual([]);
+  });
+});
+
+describe('the shared idempotency fixture (the worker computes the same key)', () => {
+  it('idempotencyKey gives its key', () => {
+    const f = JSON.parse(
+      readFileSync(new URL('./fixtures/idempotency.json', import.meta.url), 'utf8'),
+    ) as { sourceSha256: string; recipeId: string; recipeVersion: number; key: string };
+    expect(idempotencyKey(f.sourceSha256, f.recipeId, f.recipeVersion)).toBe(f.key);
   });
 });

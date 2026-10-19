@@ -15,6 +15,7 @@ import type {
   SuggestParams,
   ResultShow,
 } from '@ih/shared';
+import type { BridgeError, DeliveryStatus, Receipt } from '@ih/bridge-contract';
 
 /**
  * A reference to save. `templateVersion` pins it to a version (Workbench types) together with the
@@ -24,6 +25,62 @@ export type NewReference = Omit<
   Reference,
   'id' | 'createdAt' | 'templateVersion' | 'copiedFrom' | 'verifiedOutputs' | 'supersededAt'
 > & { templateVersion?: number | null; verifiedOutputs?: unknown };
+
+/** One bridge delivery of a job (`job_deliveries`), as its events last reported it. */
+export interface JobDelivery {
+  deliveryId: string;
+  jobId: string;
+  targetId: string;
+  status: DeliveryStatus;
+  error: BridgeError | null;
+  receipt: Receipt | null;
+  /** The newest event applied: older or repeated events change nothing. */
+  lastSequence: number;
+  updatedAt: string;
+}
+
+/** How a delivering job ends once every delivery is final. */
+export type JobFinish =
+  | { status: 'succeeded'; targets: string[] }
+  | { status: 'awaiting_review'; reasons: string[] }
+  | { status: 'failed'; error: string };
+
+export interface DeliveryUpdate {
+  status: DeliveryStatus;
+  error: BridgeError | null;
+  receipt: Receipt | null;
+  sequence: number;
+}
+
+/** The job event a finished delivery writes. */
+/**
+ * How a job without a document (a background republish) finishes: it has nothing to review, so a
+ * delivery that needs a person fails it, naming each target and its reason.
+ */
+export function backgroundFinish(f: JobFinish): JobFinish {
+  return f.status === 'awaiting_review' ? { status: 'failed', error: f.reasons.join('; ') } : f;
+}
+
+export function finishEvent(f: JobFinish): { level: string; message: string; data: unknown } {
+  if (f.status === 'succeeded') {
+    return { level: 'info', message: DELIVERED_EVENT, data: { targets: f.targets } };
+  }
+  if (f.status === 'awaiting_review') {
+    return { level: 'warn', message: 'delivery needs review', data: { reasons: f.reasons } };
+  }
+  return { level: 'error', message: 'delivery failed', data: { error: f.error } };
+}
+
+/** Final delivery statuses: the bridge changes them no more. */
+export const FINAL_DELIVERY: ReadonlySet<string> = new Set([
+  'succeeded',
+  'skipped',
+  'needs_user',
+  'failed',
+]);
+
+/** The job event of a job whose deliveries all succeeded. */
+export const DELIVERED_EVENT = 'delivered';
 
 /** Segment previews run before other workbench work, still after production (ADR 0007). */
 export const SEGMENT_PRIORITY = -5;
@@ -420,6 +477,22 @@ export interface IngestionRepo {
   requestRerun(jobId: string, step: string, params: RerunRequest): Promise<JobSummary | null>;
   /** awaiting_review -> rejected (final). Null if the job is not awaiting review. */
   reject(jobId: string, reviewer: string | null, reason: string): Promise<JobSummary | null>;
+  /** The bridge deliveries a job waits on (the worker writes them; tests and the reconcile too). */
+  recordDeliveries(jobId: string, rows: { targetId: string; deliveryId: string }[]): Promise<void>;
+  /**
+   * One transaction, holding the job's row: records `update` when its sequence is newer than the
+   * delivery's last one (else `stale`; `unknown` when there is no such delivery), then asks
+   * `finish` about all the job's deliveries; a finish it answers ends the job, only while it is
+   * still `delivering` (so it happens once), with a job event.
+   */
+  applyDeliveryUpdate(
+    deliveryId: string,
+    update: DeliveryUpdate,
+    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+  ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }>;
+  deliveriesOf(jobId: string): Promise<JobDelivery[]>;
+  /** Deliveries not final and not updated for `olderThanMinutes`, of jobs still delivering. */
+  stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]>;
 }
 
 export class ReferenceConflictError extends Error {}

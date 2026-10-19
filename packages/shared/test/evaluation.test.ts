@@ -72,6 +72,7 @@ describe('finishedJob', () => {
     awaiting_review: true,
     rejected: true,
     cancelled: true,
+    delivering: false,
   };
 
   it('classifies every job status', () => {

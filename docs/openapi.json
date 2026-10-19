@@ -11044,7 +11044,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "modelOverride": {
@@ -11528,7 +11529,8 @@
                 "needs_review",
                 "awaiting_review",
                 "rejected",
-                "cancelled"
+                "cancelled",
+                "delivering"
               ]
             },
             "in": "query",
@@ -11590,7 +11592,8 @@
                           "needs_review",
                           "awaiting_review",
                           "rejected",
-                          "cancelled"
+                          "cancelled",
+                          "delivering"
                         ]
                       },
                       "modelOverride": {
@@ -12014,7 +12017,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it);\n`stageTimes` says when this attempt finished reading the document and found its\nsections. `graph` is the newest graph the job published (ADR 0011): its IRI,\nversion and triples, and whether it reached the triple store.",
+        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it);\n`stageTimes` says when this attempt finished reading the document and found its\nsections. `graph` is the newest graph the job published (ADR 0011): its IRI,\nversion and triples, and whether it reached the triple store. `deliveries` are its\ndeliveries through the delivery bridge, each target's latest status (a `delivering`\njob finishes when all are final).",
         "parameters": [
           {
             "schema": {
@@ -12065,7 +12068,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "modelOverride": {
@@ -12442,6 +12446,44 @@
                         "readAt",
                         "segmentedAt"
                       ]
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "targetId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running",
+                              "waiting",
+                              "succeeded",
+                              "skipped",
+                              "needs_user",
+                              "failed"
+                            ]
+                          },
+                          "message": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "targetId",
+                          "label",
+                          "status",
+                          "message"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -12881,7 +12923,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "modelOverride": {
@@ -13298,7 +13341,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "modelOverride": {
@@ -15282,7 +15326,8 @@
                             "needs_review",
                             "awaiting_review",
                             "rejected",
-                            "cancelled"
+                            "cancelled",
+                            "delivering"
                           ]
                         },
                         "modelOverride": {
@@ -15659,6 +15704,44 @@
                             "readAt",
                             "segmentedAt"
                           ]
+                        },
+                        "deliveries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "targetId": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "waiting",
+                                  "succeeded",
+                                  "skipped",
+                                  "needs_user",
+                                  "failed"
+                                ]
+                              },
+                              "message": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "targetId",
+                              "label",
+                              "status",
+                              "message"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -17200,7 +17283,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "modelOverride": {
@@ -17640,7 +17724,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "modelOverride": {
@@ -18327,7 +18412,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "modelOverride": {
@@ -24315,7 +24401,8 @@
                               "needs_review",
                               "awaiting_review",
                               "rejected",
-                              "cancelled"
+                              "cancelled",
+                              "delivering"
                             ]
                           },
                           "modelOverride": {
@@ -24769,7 +24856,8 @@
                                       "needs_review",
                                       "awaiting_review",
                                       "rejected",
-                                      "cancelled"
+                                      "cancelled",
+                                      "delivering"
                                     ]
                                   },
                                   "error": {
@@ -25956,7 +26044,8 @@
                             "needs_review",
                             "awaiting_review",
                             "rejected",
-                            "cancelled"
+                            "cancelled",
+                            "delivering"
                           ]
                         },
                         "modelOverride": {
@@ -33905,7 +33994,8 @@
                               "needs_review",
                               "awaiting_review",
                               "rejected",
-                              "cancelled"
+                              "cancelled",
+                              "delivering"
                             ]
                           },
                           "modelOverride": {
@@ -34329,7 +34419,8 @@
                           "needs_review",
                           "awaiting_review",
                           "rejected",
-                          "cancelled"
+                          "cancelled",
+                          "delivering"
                         ]
                       },
                       "modelOverride": {
@@ -34774,7 +34865,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "error": {
@@ -35263,7 +35355,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "error": {
@@ -37453,7 +37546,8 @@
                               "needs_review",
                               "awaiting_review",
                               "rejected",
-                              "cancelled"
+                              "cancelled",
+                              "delivering"
                             ]
                           },
                           "modelOverride": {
@@ -40351,7 +40445,8 @@
                                   "needs_review",
                                   "awaiting_review",
                                   "rejected",
-                                  "cancelled"
+                                  "cancelled",
+                                  "delivering"
                                 ]
                               },
                               "error": {
@@ -41084,7 +41179,8 @@
                               "needs_review",
                               "awaiting_review",
                               "rejected",
-                              "cancelled"
+                              "cancelled",
+                              "delivering"
                             ]
                           },
                           "modelOverride": {
@@ -41543,7 +41639,8 @@
                               "needs_review",
                               "awaiting_review",
                               "rejected",
-                              "cancelled"
+                              "cancelled",
+                              "delivering"
                             ]
                           },
                           "modelOverride": {
@@ -50174,7 +50271,8 @@
                                   "needs_review",
                                   "awaiting_review",
                                   "rejected",
-                                  "cancelled"
+                                  "cancelled",
+                                  "delivering"
                                 ]
                               },
                               {
@@ -50817,7 +50915,8 @@
                                         "needs_review",
                                         "awaiting_review",
                                         "rejected",
-                                        "cancelled"
+                                        "cancelled",
+                                        "delivering"
                                       ]
                                     },
                                     {
@@ -51452,7 +51551,8 @@
                                         "needs_review",
                                         "awaiting_review",
                                         "rejected",
-                                        "cancelled"
+                                        "cancelled",
+                                        "delivering"
                                       ]
                                     },
                                     {
@@ -52274,7 +52374,8 @@
                                   "needs_review",
                                   "awaiting_review",
                                   "rejected",
-                                  "cancelled"
+                                  "cancelled",
+                                  "delivering"
                                 ]
                               },
                               {
@@ -53614,7 +53715,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "error": {
@@ -53920,7 +54022,8 @@
                           "needs_review",
                           "awaiting_review",
                           "rejected",
-                          "cancelled"
+                          "cancelled",
+                          "delivering"
                         ]
                       },
                       "error": {
@@ -54984,7 +55087,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "error": {
@@ -55381,7 +55485,8 @@
                         "needs_review",
                         "awaiting_review",
                         "rejected",
-                        "cancelled"
+                        "cancelled",
+                        "delivering"
                       ]
                     },
                     "error": {
@@ -73505,7 +73610,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Every publishing target with what uses it (`usage`: published\nrecipe versions naming it, delivered outputs and graph copies recording it, S3 key\nconsumers granted it). The `default` target is seeded from `.env` on first start.\nA secret is never returned, only `secretSet`.",
+        "description": "**Admins only.** Every publishing target with what uses it (`usage`: published\nrecipe versions naming it, delivered outputs and graph copies recording it, S3 key\nconsumers granted it). The `default` target is seeded from `.env` on first start.\nAn external target names the delivery bridge's connection holding its keys\n(`connection`: its name and status, null when the bridge cannot say); no credential\nis ever returned.",
         "x-admin": true,
         "responses": {
           "200": {
@@ -73540,51 +73645,49 @@
                           "prefix": {
                             "type": "string"
                           },
-                          "endpoint": {
+                          "connectionId": {
                             "type": [
                               "string",
                               "null"
                             ]
                           },
-                          "region": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "accessKeyId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "secretSet": {
-                            "type": "boolean"
-                          },
-                          "keysFromEnv": {
+                          "connection": {
                             "anyOf": [
                               {
                                 "type": "object",
                                 "properties": {
-                                  "accessKey": {
+                                  "id": {
                                     "type": "string"
                                   },
-                                  "secretKey": {
+                                  "name": {
                                     "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "ok",
+                                      "needs_attention",
+                                      "untested"
+                                    ]
+                                  },
+                                  "statusReason": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
                                   }
                                 },
                                 "required": [
-                                  "accessKey",
-                                  "secretKey"
+                                  "id",
+                                  "name",
+                                  "status",
+                                  "statusReason"
                                 ]
                               },
                               {
                                 "type": "null"
                               }
                             ]
-                          },
-                          "forcePathStyle": {
-                            "type": "boolean"
                           },
                           "sse": {
                             "type": "string",
@@ -73669,12 +73772,8 @@
                           "kind",
                           "bucket",
                           "prefix",
-                          "endpoint",
-                          "region",
-                          "accessKeyId",
-                          "secretSet",
-                          "keysFromEnv",
-                          "forcePathStyle",
+                          "connectionId",
+                          "connection",
                           "sse",
                           "kmsKeyId",
                           "storageClass",
@@ -73837,7 +73936,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** An internal target (a bucket on this deployment's SeaweedFS, whose\nbucket is created here when missing) or an external S3 bucket. The id is made from\nthe label when not given (`-2`, `-3`… when taken); `default` is reserved. Use the\nsame id on every deployment for the same recipient: recipes carry it. A secret is\nstored encrypted with `LLM_SECRETS_KEY` (409 without it).",
+        "description": "**Admins only.** An internal target (a bucket on this deployment's SeaweedFS, whose\nbucket is created here when missing) or an external S3 bucket reached with one of\nthe delivery bridge's shared connections (`connectionId`). The id is made from\nthe label when not given (`-2`, `-3`… when taken); `default` is reserved. Use the\nsame id on every deployment for the same recipient: recipes carry it. The target is\nmirrored to the bridge; when the bridge refuses it (422, its message) or cannot be\nreached (502), nothing is stored. No credential is accepted here.",
         "requestBody": {
           "required": true,
           "content": {
@@ -73873,25 +73972,9 @@
                     "maxLength": 512,
                     "pattern": "^[A-Za-z0-9!_.'()/-]*$"
                   },
-                  "endpoint": {
+                  "connectionId": {
                     "type": "string",
-                    "format": "uri"
-                  },
-                  "region": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "accessKeyId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "secretAccessKey": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "forcePathStyle": {
-                    "default": false,
-                    "type": "boolean"
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
                   },
                   "sse": {
                     "default": "none",
@@ -73956,51 +74039,49 @@
                     "prefix": {
                       "type": "string"
                     },
-                    "endpoint": {
+                    "connectionId": {
                       "type": [
                         "string",
                         "null"
                       ]
                     },
-                    "region": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "accessKeyId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "secretSet": {
-                      "type": "boolean"
-                    },
-                    "keysFromEnv": {
+                    "connection": {
                       "anyOf": [
                         {
                           "type": "object",
                           "properties": {
-                            "accessKey": {
+                            "id": {
                               "type": "string"
                             },
-                            "secretKey": {
+                            "name": {
                               "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "needs_attention",
+                                "untested"
+                              ]
+                            },
+                            "statusReason": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
-                            "accessKey",
-                            "secretKey"
+                            "id",
+                            "name",
+                            "status",
+                            "statusReason"
                           ]
                         },
                         {
                           "type": "null"
                         }
                       ]
-                    },
-                    "forcePathStyle": {
-                      "type": "boolean"
                     },
                     "sse": {
                       "type": "string",
@@ -74085,12 +74166,8 @@
                     "kind",
                     "bucket",
                     "prefix",
-                    "endpoint",
-                    "region",
-                    "accessKeyId",
-                    "secretSet",
-                    "keysFromEnv",
-                    "forcePathStyle",
+                    "connectionId",
+                    "connection",
                     "sse",
                     "kmsKeyId",
                     "storageClass",
@@ -74240,7 +74317,7 @@
             }
           },
           "409": {
-            "description": "`a publishing target {id} already exists`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`.",
+            "description": "`a publishing target {id} already exists`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74265,13 +74342,44 @@
                   "required": [
                     "error"
                   ],
-                  "description": "`a publishing target {id} already exists`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`."
+                  "description": "`a publishing target {id} already exists`."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The bridge's refusal, e.g. `there is no connection {id}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The bridge's refusal, e.g. `there is no connection {id}`."
                 }
               }
             }
           },
           "502": {
-            "description": "`could not create bucket {bucket}: {message}`; nothing is stored.",
+            "description": "`could not create bucket {bucket}: {message}`, or `the delivery bridge could not be reached`; nothing is stored.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74296,7 +74404,235 @@
                   "required": [
                     "error"
                   ],
-                  "description": "`could not create bucket {bucket}: {message}`; nothing is stored."
+                  "description": "`could not create bucket {bucket}: {message}`, or `the delivery bridge could not be reached`; nothing is stored."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/publish-targets/connections": {
+      "get": {
+        "operationId": "listPublishTargetConnections",
+        "summary": "List the connections a target may use",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** The delivery bridge's shared S3 connections (name and status, never\na credential), for the external target editor's picker. The built-in connection of\ninternal targets is not offered. 502 when the bridge cannot be reached.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The connections.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "needs_attention",
+                              "untested"
+                            ]
+                          },
+                          "statusReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "status",
+                          "statusReason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ],
+                  "description": "The connections."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`the delivery bridge could not be reached`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the delivery bridge could not be reached`."
                 }
               }
             }
@@ -74357,7 +74693,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Fields left out are kept; `null` clears the endpoint, KMS key or\nstorage class, and the KMS key is cleared whenever the encryption is not\n`aws:kms`. An internal target cannot move onto CT Studio's own inbox, outputs,\nruns or backups bucket (400). While the target is in use (a published recipe\nversion names it, an output or graph copy was delivered to it, an S3 key consumer is granted it, or a\nwithdrawal still to run names it) its bucket, prefix, endpoint and region cannot\nchange (409):\nadd a new target and publish a version naming it instead. The label, credentials,\npath style, encryption and storage class may always change, so a key is rotated\nwithout a new version. Keys read from `.env` are replaced only as a pair.",
+        "description": "**Admins only.** Fields left out are kept; `null` clears the KMS key or storage\nclass, and the KMS key is cleared whenever the encryption is not `aws:kms`. An\ninternal target cannot move onto CT Studio's own inbox, outputs, runs or backups\nbucket (400). While the target is in use (a published recipe version names it, an\noutput or graph copy was delivered to it, an S3 key consumer is granted it, or a\nwithdrawal still to run names it) its bucket and prefix cannot change (409): add a\nnew target and publish a version naming it instead. The label, connection,\nencryption and storage class may always change, so keys are rotated without a new\nversion. The change is mirrored to the bridge; when the bridge refuses it (422) or\ncannot be reached (502), the target is left as it was.",
         "requestBody": {
           "required": true,
           "content": {
@@ -74381,31 +74717,9 @@
                     "maxLength": 512,
                     "pattern": "^[A-Za-z0-9!_.'()/-]*$"
                   },
-                  "endpoint": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "region": {
+                  "connectionId": {
                     "type": "string",
-                    "minLength": 1
-                  },
-                  "accessKeyId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "secretAccessKey": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "forcePathStyle": {
-                    "type": "boolean"
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
                   },
                   "sse": {
                     "type": "string",
@@ -74489,51 +74803,49 @@
                     "prefix": {
                       "type": "string"
                     },
-                    "endpoint": {
+                    "connectionId": {
                       "type": [
                         "string",
                         "null"
                       ]
                     },
-                    "region": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "accessKeyId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "secretSet": {
-                      "type": "boolean"
-                    },
-                    "keysFromEnv": {
+                    "connection": {
                       "anyOf": [
                         {
                           "type": "object",
                           "properties": {
-                            "accessKey": {
+                            "id": {
                               "type": "string"
                             },
-                            "secretKey": {
+                            "name": {
                               "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "needs_attention",
+                                "untested"
+                              ]
+                            },
+                            "statusReason": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
-                            "accessKey",
-                            "secretKey"
+                            "id",
+                            "name",
+                            "status",
+                            "statusReason"
                           ]
                         },
                         {
                           "type": "null"
                         }
                       ]
-                    },
-                    "forcePathStyle": {
-                      "type": "boolean"
                     },
                     "sse": {
                       "type": "string",
@@ -74618,12 +74930,8 @@
                     "kind",
                     "bucket",
                     "prefix",
-                    "endpoint",
-                    "region",
-                    "accessKeyId",
-                    "secretSet",
-                    "keysFromEnv",
-                    "forcePathStyle",
+                    "connectionId",
+                    "connection",
                     "sse",
                     "kmsKeyId",
                     "storageClass",
@@ -74639,7 +74947,7 @@
             }
           },
           "400": {
-            "description": "Zod issues, `set the access key and the secret together`, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`.",
+            "description": "Zod issues, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74664,7 +74972,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "Zod issues, `set the access key and the secret together`, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`."
+                  "description": "Zod issues, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`."
                 }
               }
             }
@@ -74804,7 +75112,7 @@
             }
           },
           "409": {
-            "description": "`{label} is used by {what}: add a new target instead`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`.",
+            "description": "`{label} is used by {what}: add a new target instead`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74829,13 +75137,44 @@
                   "required": [
                     "error"
                   ],
-                  "description": "`{label} is used by {what}: add a new target instead`, or `LLM_SECRETS_KEY is not set: the API cannot store keys`."
+                  "description": "`{label} is used by {what}: add a new target instead`."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The bridge's refusal, e.g. `there is no connection {id}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The bridge's refusal, e.g. `there is no connection {id}`."
                 }
               }
             }
           },
           "502": {
-            "description": "`could not create bucket {bucket}: {message}`; nothing is changed.",
+            "description": "`could not create bucket {bucket}: {message}`, or `the delivery bridge could not be reached`; nothing is changed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74860,7 +75199,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "`could not create bucket {bucket}: {message}`; nothing is changed."
+                  "description": "`could not create bucket {bucket}: {message}`, or `the delivery bridge could not be reached`; nothing is changed."
                 }
               }
             }
@@ -74919,7 +75258,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it, no S3 key consumer is granted it and no withdrawal still\nto run names it. The `default`\ntarget is never removed.",
+        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it, no S3 key consumer is granted it and no withdrawal still\nto run names it. The `default` target is never removed. It is removed from the\nbridge first: one the bridge still has deliveries for stays (409), and nothing is\nremoved while the bridge cannot be reached (502).",
         "parameters": [
           {
             "schema": {
@@ -75071,7 +75410,7 @@
             }
           },
           "409": {
-            "description": "`default cannot be removed`, or `{label} is used by {what}`.",
+            "description": "`default cannot be removed`, `{label} is used by {what}`, or `{label} has deliveries on the bridge`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -75096,7 +75435,38 @@
                   "required": [
                     "error"
                   ],
-                  "description": "`default cannot be removed`, or `{label} is used by {what}`."
+                  "description": "`default cannot be removed`, `{label} is used by {what}`, or `{label} has deliveries on the bridge`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`the delivery bridge could not be reached`; nothing is removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the delivery bridge could not be reached`; nothing is removed."
                 }
               }
             }
@@ -75157,89 +75527,71 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** For an external target, checks the bucket exists (a missing one\nfails at `connect`: some servers would create it on the first write), then writes\na small file under the target's prefix, reads it back and deletes it. With an `id`,\nthe stored target's settings overlaid with the body as a save would overlay them\n(`null` clears, its stored secret when the body has none); without one, a full set\nof new settings (before saving). An internal target on CT Studio's own inbox, outputs,\nruns or backups bucket is refused (400). Always 200 for a test that ran:\n`ok: false` names the step that failed in plain words. A secret sent here is never\nstored, logged or echoed.",
+        "description": "**Admins only.** Through the delivery bridge: for an external target, checks the\nbucket exists (a missing one fails at `connect`), then writes a small file under the\ntarget's prefix with its connection, reads it back and deletes it. With an `id`\nalone, the saved target; otherwise settings not saved yet (a create body, the label\noptional). An internal target on CT Studio's own inbox, outputs, runs or backups\nbucket is refused (400). Always 200 for a test that ran: `ok: false` names the step\nthat failed in plain words, and a bridge that cannot be reached fails at\n`connect`.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
-                  },
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "internal",
-                      "external"
-                    ]
-                  },
-                  "bucket": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 63,
-                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
-                  },
-                  "prefix": {
-                    "type": "string",
-                    "maxLength": 512,
-                    "pattern": "^[A-Za-z0-9!_.'()/-]*$"
-                  },
-                  "endpoint": {
-                    "anyOf": [
-                      {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
                         "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
                       }
-                    ]
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
                   },
-                  "region": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "accessKeyId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "secretAccessKey": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "forcePathStyle": {
-                    "type": "boolean"
-                  },
-                  "sse": {
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "AES256",
-                      "aws:kms"
-                    ]
-                  },
-                  "kmsKeyId": {
-                    "anyOf": [
-                      {
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "internal",
+                          "external"
+                        ]
+                      },
+                      "bucket": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 63,
+                        "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                      },
+                      "prefix": {
+                        "default": "",
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9!_.'()/-]*$"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "sse": {
+                        "default": "none",
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "AES256",
+                          "aws:kms"
+                        ]
+                      },
+                      "kmsKeyId": {
                         "type": "string",
                         "minLength": 1
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "storageClass": {
-                    "anyOf": [
-                      {
+                      "storageClass": {
                         "type": "string",
                         "enum": [
                           "STANDARD",
@@ -75248,14 +75600,15 @@
                           "INTELLIGENT_TIERING",
                           "GLACIER_IR"
                         ]
-                      },
-                      {
-                        "type": "null"
                       }
-                    ]
+                    },
+                    "required": [
+                      "kind",
+                      "bucket"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -75303,7 +75656,7 @@
             }
           },
           "400": {
-            "description": "Zod issues of the body or of the merged settings, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`.",
+            "description": "Zod issues of the body, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -75328,7 +75681,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "Zod issues of the body or of the merged settings, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`."
+                  "description": "Zod issues of the body, or `{bucket} is CT Studio's own {inbox|outputs|runs|backups} bucket: pick another`."
                 }
               }
             }
@@ -75509,6 +75862,654 @@
                     "error",
                     "maintenance"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bridge/connections-link": {
+      "post": {
+        "operationId": "createConnectionsLink",
+        "summary": "Open the connections page",
+        "tags": [
+          "Bridge"
+        ],
+        "description": "**Admins only** (shared connections; personal ones come later). A one-time link to\nthe delivery bridge's connections page, good for 60 seconds, for the signed-in user:\nthe web app opens it in a new tab, and the bridge redeems its code with a signed call.\nCredentials are entered there, never in CT Studio.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The link.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "description": "The link."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bridge/handoff/redeem": {
+      "post": {
+        "operationId": "redeemBridgeHandoff",
+        "summary": "Redeem a connections-page code",
+        "tags": [
+          "Bridge"
+        ],
+        "description": "The bridge exchanges the one-time code of a connections link for the user it was\n          minted for (id, name, email, role). An unknown, used or expired code is `404`.\n\n          **Signed by the bridge (x-bridge-signature):** HMAC-SHA256 with the shared\n`BRIDGE_CLIENT_KEY` over the method, path, timestamp, nonce and body; no session. A stale,\nreplayed or unsigned request is `401`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "code"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "email"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "designer",
+                        "operator"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "email",
+                    "role"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The user."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ code }`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The body is not `{ code }`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`bridge signature refused`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`bridge signature refused`."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "cross-site request refused"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown or expired code`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`unknown or expired code`."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bridge/events": {
+      "post": {
+        "operationId": "receiveBridgeEvent",
+        "summary": "Receive a delivery event",
+        "tags": [
+          "Bridge"
+        ],
+        "description": "The bridge reports a delivery's status change (sequence-numbered, at least once). An\n          event newer than the last one recorded updates the delivery, and the job finishes once\n          every one of its deliveries has.\n\n          **Signed by the bridge (x-bridge-signature):** HMAC-SHA256 with the shared\n`BRIDGE_CLIENT_KEY` over the method, path, timestamp, nonce and body; no session. A stale,\nreplayed or unsigned request is `401`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eventId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "deliveryId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "waiting",
+                      "succeeded",
+                      "skipped",
+                      "needs_user",
+                      "failed"
+                    ]
+                  },
+                  "error": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "class": {
+                            "type": "string",
+                            "enum": [
+                              "needs_user",
+                              "retryable"
+                            ]
+                          },
+                          "code": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]*$"
+                          },
+                          "message": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "details": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "class",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "receipt": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "written": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "url": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "uri"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "id",
+                                "label",
+                                "url"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "written"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "eventId",
+                  "deliveryId",
+                  "sequence",
+                  "status",
+                  "error",
+                  "receipt",
+                  "at"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Recorded (or older than what is recorded)."
+          },
+          "400": {
+            "description": "The body is not a delivery event.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The body is not a delivery event."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`bridge signature refused`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`bridge signature refused`."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "cross-site request refused"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`unknown delivery`: not recorded here yet (the worker records it as it hands the job over); the bridge sends it again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`unknown delivery`: not recorded here yet (the worker records it as it hands the job over); the bridge sends it again later."
                 }
               }
             }
@@ -80314,6 +81315,10 @@
       "description": "Publishing targets: the S3 buckets published outputs are delivered to. Each recipe names one\n(`delivery.publishTo`, absent = `default`, seeded from `.env`); every delivered output\nrecords its target, so it is read and withdrawn there whatever changes later. A target in\nuse keeps its bucket, prefix, endpoint and region."
     },
     {
+      "name": "Bridge",
+      "description": "The delivery bridge publishing goes through: a link to its connections page (where\ncredentials are kept, never in CT Studio), and the routes the bridge calls back, signed with\nthe shared `BRIDGE_CLIENT_KEY` rather than a session."
+    },
+    {
       "name": "GitHub",
       "description": "Syncing transformation recipes with a GitHub repository: this deployment's instance name\nand default folder, a document type's repository link, and pushing a published version\nas a YAML file with the signed-in user's own linked GitHub account. Admins set the\nsettings and links; anyone with a linked account can push."
     },
@@ -80367,6 +81372,7 @@
         "Users",
         "Data-lake S3 keys",
         "Published outputs",
+        "Bridge",
         "Linked data",
         "GitHub",
         "Backup",

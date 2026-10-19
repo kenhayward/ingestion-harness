@@ -35,7 +35,7 @@ from it.
 - **Imports.** The bridge never imports from `apps/api`, `apps/web` or `worker`. It imports only
   `@ih/bridge-contract`. CT Studio code reaches it only through the contract (spec, "Where it
   lives").
-- **No vendor names.** No 3DEXPERIENCE, alloy-works or other vendor-specific names in code,
+- **No vendor names.** No product, vendor or private-repository names of any external sink in code,
   fixtures, tests or docs. External sinks are "external sinks".
 - **Migrations.** Forward-only. The bridge's migrations go in `db/bridge-migrations/`, are named
   `YYYYMMDDHHMM_description.sql` (UTC), are applied into schema `bridge`, and are tracked in

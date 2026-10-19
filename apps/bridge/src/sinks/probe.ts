@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { TargetTestResult } from '@ih/shared';
-import type { ObjectStore } from '../storage/object-store.js';
+import type { TargetTestResult } from '@ih/bridge-contract';
+import type { ObjectStorePort } from '../s3/store.js';
+
+/**
+ * Ported from CT Studio's apps/api/src/publish-targets/probe.ts, with the same steps and
+ * messages, so Test connection answers as it did before S3 moved behind the bridge.
+ */
 
 const NETWORK_CODES = new Set([
   'ECONNREFUSED',
@@ -13,9 +18,17 @@ const NETWORK_CODES = new Set([
   'UND_ERR_CONNECT_TIMEOUT',
 ]);
 
+const DENIED = new Set([
+  'AccessDenied',
+  'Forbidden',
+  'InvalidAccessKeyId',
+  'SignatureDoesNotMatch',
+]);
+
 type Step = 'write' | 'read' | 'delete';
 
-const isNetwork = (err: unknown): boolean => {
+/** An endpoint that cannot be reached (socket errors, timeouts). */
+export const isNetwork = (err: unknown): boolean => {
   const e = err as { name?: string; code?: string };
   return (
     (e.code !== undefined && NETWORK_CODES.has(e.code)) ||
@@ -24,13 +37,20 @@ const isNetwork = (err: unknown): boolean => {
   );
 };
 
+/** The keys were refused (as opposed to the request or the bucket). */
+export const isDenied = (err: unknown): boolean =>
+  DENIED.has((err as { name?: string }).name ?? '');
+
 /**
  * The bucket exists: a missing one is a failure before anything is written, since SeaweedFS
  * creates a missing bucket on the first put rather than refusing it. HEAD answers carry no
  * body, so a missing bucket is any 404 (`NotFound`). Any other refusal (403 for keys that may
  * write but not list) is left to the write step.
  */
-async function checkBucket(store: ObjectStore, bucket: string): Promise<TargetTestResult | null> {
+async function checkBucket(
+  store: ObjectStorePort,
+  bucket: string,
+): Promise<TargetTestResult | null> {
   try {
     await store.ping(bucket);
     return null;
@@ -48,17 +68,8 @@ async function checkBucket(store: ObjectStore, bucket: string): Promise<TargetTe
 /** A plain description of an S3 error; never its message, which can echo request detail. */
 function describe(err: unknown, step: Step): { step: TargetTestResult['step']; message: string } {
   const name = (err as { name?: string }).name ?? 'Error';
-  if (isNetwork(err)) {
-    return { step: 'connect', message: 'could not reach the endpoint' };
-  }
-  if (
-    name === 'AccessDenied' ||
-    name === 'Forbidden' ||
-    name === 'InvalidAccessKeyId' ||
-    name === 'SignatureDoesNotMatch'
-  ) {
-    return { step, message: 'access denied' };
-  }
+  if (isNetwork(err)) return { step: 'connect', message: 'could not reach the endpoint' };
+  if (isDenied(err)) return { step, message: 'access denied' };
   if (name === 'NoSuchBucket') return { step, message: 'no such bucket' };
   if (name === 'PermanentRedirect' || name === 'AuthorizationHeaderMalformed') {
     return { step, message: 'wrong region for this bucket' };
@@ -71,8 +82,8 @@ function describe(err: unknown, step: Step): { step: TargetTestResult['step']; m
  * it is saved), then writes a throwaway object under the prefix, reads it back and deletes it.
  * Reports the first step that failed; messages never carry credentials or the error's own text.
  */
-export async function probeTarget(
-  store: ObjectStore,
+export async function probe(
+  store: ObjectStorePort,
   bucket: string,
   prefix: string,
   { checkBucket: check = true }: { checkBucket?: boolean } = {},

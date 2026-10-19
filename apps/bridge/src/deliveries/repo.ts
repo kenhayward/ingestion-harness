@@ -85,6 +85,12 @@ export interface DeliveryRepo {
     exceptId: string,
   ): Promise<DeliveryRow | null>;
   getPackage(id: string): Promise<NewPackage | null>;
+  /** Whether any delivery names this target (which then cannot be removed). */
+  usesTarget(targetId: string): Promise<boolean>;
+  /** Packages past `expiresAt` (at `now`), not pruned, whose deliveries are all final. */
+  expiredPackages(now: Date, limit: number): Promise<{ id: string; stagedKey: string }[]>;
+  /** The package's staged bytes are gone. */
+  markPruned(id: string, now: Date): Promise<void>;
   /** Unsent events whose time has come, oldest first. */
   dueEvents(now: Date, limit: number): Promise<OutboxEvent[]>;
   markSent(eventId: string, now: Date): Promise<void>;
@@ -135,6 +141,14 @@ interface MemoryEvent extends OutboxEvent {
 }
 
 const strip = ({ leaseUntil: _l, order: _o, ...row }: MemoryDelivery): DeliveryRow => ({ ...row });
+
+/** Statuses a delivery never leaves. */
+export const FINAL_STATUSES: ReadonlySet<string> = new Set([
+  'succeeded',
+  'skipped',
+  'needs_user',
+  'failed',
+]);
 
 export class MemoryDeliveryRepo implements DeliveryRepo {
   private readonly packages = new Map<string, NewPackage>();
@@ -236,6 +250,31 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
 
   async getPackage(id: string): Promise<NewPackage | null> {
     return this.packages.get(id) ?? null;
+  }
+
+  async usesTarget(targetId: string): Promise<boolean> {
+    return [...this.deliveries.values()].some((d) => d.targetId === targetId);
+  }
+
+  private readonly pruned = new Set<string>();
+
+  async expiredPackages(now: Date, limit: number): Promise<{ id: string; stagedKey: string }[]> {
+    const deliveries = [...this.deliveries.values()];
+    return [...this.packages.values()]
+      .filter(
+        (p) =>
+          p.expiresAt !== null &&
+          p.expiresAt <= now &&
+          !this.pruned.has(p.id) &&
+          deliveries.every((d) => d.packageId !== p.id || FINAL_STATUSES.has(d.status)),
+      )
+      .sort((a, b) => a.expiresAt!.getTime() - b.expiresAt!.getTime())
+      .slice(0, limit)
+      .map((p) => ({ id: p.id, stagedKey: p.stagedKey }));
+  }
+
+  async markPruned(id: string): Promise<void> {
+    this.pruned.add(id);
   }
 
   async dueEvents(now: Date, limit: number): Promise<OutboxEvent[]> {

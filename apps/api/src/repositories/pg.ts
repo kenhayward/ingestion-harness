@@ -41,6 +41,11 @@ import {
   type BackgroundTask,
   graphWithdrawals,
   type WithdrawnGraph,
+  type DeliveryUpdate,
+  backgroundFinish,
+  finishEvent,
+  type JobDelivery,
+  type JobFinish,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -910,6 +915,8 @@ export class PgRepo implements IngestionRepo {
            FROM jobs j JOIN documents d ON d.id = j.document_id
           WHERE o.job_id = j.id AND d.spec_id = $1 AND o.stage = 'published'
             AND o.withdrawn_at IS NULL
+            -- The bridge may still write a delivering job's objects: retiring again withdraws them.
+            AND j.status <> 'delivering'
         RETURNING o.bucket, o.object_key AS key, o.target_id AS target`,
         [typeId],
       );
@@ -954,7 +961,8 @@ export class PgRepo implements IngestionRepo {
       const { rowCount } = await client.query(
         `SELECT 1 FROM job_outputs o JOIN jobs j ON j.id = o.job_id
            JOIN documents d ON d.id = j.document_id
-          WHERE d.spec_id = $1 AND o.withdrawn_at IS NOT NULL LIMIT 1`,
+          WHERE d.spec_id = $1 AND o.withdrawn_at IS NOT NULL AND j.status = 'succeeded'
+          LIMIT 1`,
         [typeId],
       );
       return rowCount ? queueBackground(client, 'republish', { templateId: typeId }, by) : null;
@@ -1436,4 +1444,151 @@ export class PgRepo implements IngestionRepo {
       curated: r.curated,
     }));
   }
+
+  async recordDeliveries(
+    jobId: string,
+    rows: { targetId: string; deliveryId: string }[],
+  ): Promise<void> {
+    for (const r of rows) {
+      await this.pool.query(
+        `INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
+         VALUES ($1, $2, $3, 'queued') ON CONFLICT (delivery_id) DO NOTHING`,
+        [r.deliveryId, jobId, r.targetId],
+      );
+    }
+  }
+
+  async applyDeliveryUpdate(
+    deliveryId: string,
+    update: DeliveryUpdate,
+    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+  ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query<{ job_id: string }>(
+        'SELECT job_id FROM job_deliveries WHERE delivery_id = $1',
+        [deliveryId],
+      );
+      const jobId = found.rows[0]?.job_id;
+      if (!jobId) {
+        await client.query('ROLLBACK');
+        return { outcome: 'unknown', finished: null };
+      }
+      // The job's row first: events for its other deliveries wait, so the one that makes the
+      // last delivery final sees every other one final too, and finishes the job once.
+      const job = await client.query<{ status: string; background: boolean }>(
+        'SELECT status, document_id IS NULL AS background FROM jobs WHERE id = $1 FOR UPDATE',
+        [jobId],
+      );
+      const updated = await client.query(
+        `UPDATE job_deliveries
+            SET status = $2, error = $3, receipt = $4, last_sequence = $5, updated_at = now()
+          WHERE delivery_id = $1 AND last_sequence < $5`,
+        [
+          deliveryId,
+          update.status,
+          update.error === null ? null : JSON.stringify(update.error),
+          update.receipt === null ? null : JSON.stringify(update.receipt),
+          update.sequence,
+        ],
+      );
+      if (updated.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return { outcome: 'stale', finished: null };
+      }
+      // A delivery that ends without its objects written: its published rows are withdrawn, so a
+      // republish (or approving again) delivers them anew and readers don't look for them.
+      if (update.status === 'failed' || update.status === 'needs_user') {
+        await client.query(
+          `UPDATE job_outputs SET withdrawn_at = now()
+            WHERE delivery_id = $1 AND stage = 'published' AND withdrawn_at IS NULL`,
+          [deliveryId],
+        );
+      }
+      const finishedAs = finish(await deliveriesIn(client, jobId));
+      const outcome =
+        finishedAs && job.rows[0]?.background ? backgroundFinish(finishedAs) : finishedAs;
+      let finished: JobFinish | null = null;
+      if (outcome && job.rows[0]?.status === 'delivering') {
+        await client.query(
+          `UPDATE jobs SET status = $2::job_status,
+                  error = CASE WHEN $2::text = 'failed' THEN $3 ELSE NULL END,
+                  review_reasons = CASE WHEN $2::text = 'awaiting_review' THEN $4::jsonb
+                                        ELSE review_reasons END,
+                  updated_at = now()
+            WHERE id = $1 AND status = 'delivering'`,
+          [
+            jobId,
+            outcome.status,
+            outcome.status === 'failed' ? outcome.error : null,
+            outcome.status === 'awaiting_review' ? JSON.stringify(outcome.reasons) : null,
+          ],
+        );
+        const e = finishEvent(outcome);
+        await client.query(
+          'INSERT INTO job_events (job_id, level, message, data) VALUES ($1, $2, $3, $4)',
+          [jobId, e.level, e.message, JSON.stringify(e.data)],
+        );
+        finished = outcome;
+      }
+      await client.query('COMMIT');
+      return { outcome: 'applied', finished };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deliveriesOf(jobId: string): Promise<JobDelivery[]> {
+    return deliveriesIn(this.pool, jobId);
+  }
+
+  async stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]> {
+    const { rows } = await this.pool.query<DeliveryRow>(
+      `SELECT ${DELIVERY_COLUMNS} FROM job_deliveries d JOIN jobs j ON j.id = d.job_id
+        WHERE j.status = 'delivering'
+          AND d.status NOT IN ('succeeded', 'skipped', 'needs_user', 'failed')
+          AND d.updated_at < $1::timestamptz - make_interval(mins => $2)
+        ORDER BY d.updated_at`,
+      [now, olderThanMinutes],
+    );
+    return rows.map(toDelivery);
+  }
+}
+
+interface DeliveryRow {
+  delivery_id: string;
+  job_id: string;
+  target_id: string;
+  status: JobDelivery['status'];
+  error: JobDelivery['error'];
+  receipt: JobDelivery['receipt'];
+  last_sequence: number;
+  updated_at: Date;
+}
+
+const DELIVERY_COLUMNS = `d.delivery_id::text, d.job_id::text, d.target_id, d.status, d.error,
+  d.receipt, d.last_sequence, d.updated_at`;
+
+const toDelivery = (r: DeliveryRow): JobDelivery => ({
+  deliveryId: r.delivery_id,
+  jobId: r.job_id,
+  targetId: r.target_id,
+  status: r.status,
+  error: r.error,
+  receipt: r.receipt,
+  lastSequence: r.last_sequence,
+  updatedAt: r.updated_at.toISOString(),
+});
+
+async function deliveriesIn(db: pg.Pool | pg.PoolClient, jobId: string): Promise<JobDelivery[]> {
+  const { rows } = await db.query<DeliveryRow>(
+    `SELECT ${DELIVERY_COLUMNS} FROM job_deliveries d WHERE d.job_id = $1
+      ORDER BY d.created_at, d.delivery_id`,
+    [jobId],
+  );
+  return rows.map(toDelivery);
 }

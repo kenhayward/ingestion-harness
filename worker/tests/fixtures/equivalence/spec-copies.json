@@ -116,6 +116,7 @@
     ]
    ]
   ],
+  "delivering": [],
   "drafts": [
    [
     "job-1",
@@ -180,6 +181,7 @@
   ],
   "failed": [],
   "published": [],
+  "published_deliveries": [],
   "reviewed": [],
   "step_runs": []
  },

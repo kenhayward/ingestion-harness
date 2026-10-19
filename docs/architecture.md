@@ -6,24 +6,39 @@
 | --- | --- | --- |
 | `app` | React 19 + Vite, served by nginx | Upload UI, job list, retry, output download. nginx proxies `/api`. |
 | `api` | Fastify 5, Node 24, TypeScript | Validates uploads against specs, stores PDFs and Word documents (`.docx`), enqueues jobs, serves job/spec/model data. Public API reference at `/api/docs/` ([design](design/api-docs.md)). |
-| `worker` | Python 3.14, uv | Claims jobs, segments PDFs, coordinates LLM extraction, writes outputs. Horizontally scalable. |
+| `worker` | Python 3.14, uv | Claims jobs, segments PDFs, coordinates LLM extraction, writes draft outputs, and hands each publication to the bridge as one package. Horizontally scalable. |
+| `bridge` | Fastify 5, Node 24, TypeScript, own schema `bridge` | The delivery bridge ([ADR 0017](adr/0017-delivery-bridge.md)): delivers packages to their targets' sinks (S3 built in) with retries, reports each delivery's status to the API as signed events, keeps shared connections (credentials) encrypted under `BRIDGE_SECRETS_KEY`, and serves the connections page. No host port; nginx exposes only `/bridge/connections`. |
 | `postgres` | Postgres 17 | `documents`, `jobs` (queue), `job_events`, `job_outputs`, `llm_models`. |
-| `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`. |
+| `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`, internal publishing targets' buckets, and the bridge's package staging bucket (`ingest-bridge`). |
 | `fuseki` | Apache Jena Fuseki (TDB2), opt-in (`COMPOSE_PROFILES=rdf`) | The triple store: one named graph per delivered document and document type, and the pinned ontologies as TBox graphs; only the worker writes ([ADR 0011](adr/0011-rdf-publishing-and-ontologies.md)). |
 | `converter` | Gotenberg (LibreOffice) | Converts Word (`.docx`) sources to PDF for the worker, on an internal network with no route out ([ADR 0009](adr/0009-word-documents.md)). |
 
 ## Job lifecycle
 
 ```
-upload ─► queued ─► running ─┬─► succeeded ......... published to the final target (no review needed)
-              ▲              ├─► awaiting_review ─┬─ approve ─► queued (task=publish) ─► succeeded
+upload ─► queued ─► running ─┬─► delivering ─┬─► succeeded ... every delivery succeeded (or skipped)
+              ▲              │  (no review)   ├─► awaiting_review   a delivery needs a person
+              │              │                └─► failed            a delivery failed after its retries
+              │              ├─► awaiting_review ─┬─ approve ─► queued (task=publish) ─► delivering ─► …
               │              │    (data review)   └─ reject ──► rejected (final, with reason)
-              │              ├─► needs_review      (processing problem: document/spec/config; Retry)
-              └── backoff ◄──┴─► failed            (transient errors, after max_attempts)
+              │              ├─► needs_review      (processing problem; or the bridge refused the package)
+              └── backoff ◄──┴─► failed            (transient errors incl. a bridge that is down, after max_attempts)
 
 queued / running ─ operator Cancel ─► cancelled   (worker stops at the next safe point; Retry)
-finished jobs ─ operator Delete ─► removed         (job, history, internal files; published copies kept)
+finished jobs ─ operator Delete ─► removed         (job, history, internal files; published copies withdrawn)
 ```
+
+**Delivering** ([ADR 0017](adr/0017-delivery-bridge.md)): publishing goes through the `bridge`.
+The worker renders the outputs as before, builds one package per document (the files, named by
+the keys they have always had, plus the fields and tables as data) and submits it, signed with
+`BRIDGE_CLIENT_KEY`; a refusal that needs a person sends the job to review, a bridge that cannot
+take it now makes the job retry, and nothing is recorded as published until the bridge accepted
+it. The job then waits in `delivering`, which cannot be cancelled. The bridge runs one delivery per
+target (the S3 sink writes each file at the target's prefix + its name), retries what can be
+retried, and posts every status change to `POST /api/bridge/events`; the API records each event
+once and in order (`job_deliveries.last_sequence`) and finishes the job when every delivery is
+final, exactly once (it holds the job's row). A reconcile asks the bridge about deliveries silent
+for ten minutes, so a lost event cannot strand a job. The job detail shows each target's delivery.
 
 Cancellation and deletion: [ADR 0005](adr/0005-job-cancellation-and-deletion.md).
 
@@ -45,24 +60,26 @@ whether a processed document waits in `awaiting_review`. Drafts stay in the outp
 Reviewers add edits (`POST /api/jobs/:id/edits`, recorded in `review_edits` with old/new value,
 editor, reason) and approve or reject. Approval re-queues the job as a *publish* task: the
 worker applies the edits to the draft `document.json` (re-normalised by type, issues for edited
-values replaced, checks re-run), renders the outputs with a `review` block and writes them to
-the recipe's publishing target (`delivery.publishTo`, default `default`: an admin-managed S3 endpoint/bucket/prefix, see below). Drafts are never modified.
+values replaced, checks re-run), renders the outputs with a `review` block and delivers them
+through the bridge to the recipe's publishing target (`delivery.publishTo`, default `default`: an
+admin-managed S3 bucket/prefix, see below), acting as the reviewer. Drafts are never modified.
 
 The **Results** page (`#/results`, `GET /api/results`, `GET /api/results/:jobId`, and
 `GET /api/results/:jobId/archive` for every published output as one ZIP) reads published
-outputs back from the target each output was delivered to (`job_outputs.target_id`;
-[ADR 0004](adr/0004-api-reads-publish-target.md)).
+outputs back, through the bridge, from the target each output was delivered to
+(`job_outputs.target_id`; [ADR 0004](adr/0004-api-reads-publish-target.md)).
 
 **Publishing targets** (migration 202610170019): published outputs go to a *publishing target*, an S3
 destination an admin manages under Administration > Published outputs (`publish_targets`; internal
-= the deployment's SeaweedFS, external = any S3 endpoint with its own keys, encrypted under
-`LLM_SECRETS_KEY`). A recipe picks one with `delivery.publishTo`; absent means `default`, which the
-API and worker seed once from `TARGET_S3_*` on first start (later `.env` changes only log a
-warning). Every delivered object, graph version and withdrawal records or names its target, so older
-outputs are read and withdrawn where they were written even after the recipe moves on. The API's
-`TargetStores` and the worker's `LiveTargets` rebuild their clients when a counter row moves, so
-edits and rotated secrets apply without a restart. S3 keys for the data lake
-([ADR 0008](adr/0008-s3-read-keys.md)) are granted per internal target.
+= the deployment's SeaweedFS, external = any S3 endpoint reached with a *connection* of the delivery
+bridge). Credentials live only on the bridge (its connections page, *Manage connections*); an
+upgrade moved each target's keys there once ([ADR 0017](adr/0017-delivery-bridge.md)). CT Studio
+keeps `publish_targets` as its registry and mirrors every write to the bridge. A recipe picks one
+with `delivery.publishTo`; absent means `default`, which the API and worker seed once from
+`TARGET_S3_*` on first start (later `.env` changes only log a warning). Every delivered object,
+graph version and withdrawal records or names its target, so older outputs are read (through the
+bridge) and withdrawn where they were written even after the recipe moves on. S3 keys for the data
+lake ([ADR 0008](adr/0008-s3-read-keys.md)) are granted per internal target.
 
 1. **Upload** (`POST /api/documents`): PDF magic-byte check, spec resolved (latest version unless
    pinned), optional model override validated against discovered models. PDF stored at

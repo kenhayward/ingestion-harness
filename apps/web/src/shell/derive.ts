@@ -40,6 +40,7 @@ const GROUP: Record<JobStatus, StatusGroup> = {
   succeeded: 'done',
   rejected: 'done',
   cancelled: 'done',
+  delivering: 'active',
 };
 
 export function statusGroup(status: JobStatus): StatusGroup {

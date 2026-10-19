@@ -80,6 +80,8 @@ jobs:
           sed -i "s/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}/" deploy/.env.ci
           sed -i "s/^IMAGE_PREFIX=.*/IMAGE_PREFIX=${IMAGE_PREFIX}/" deploy/.env.ci
           sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/; s/^SEAWEEDFS_MASTER_PORT=.*/SEAWEEDFS_MASTER_PORT=0/; s/^FUSEKI_PUBLIC_PORT=.*/FUSEKI_PUBLIC_PORT=0/" deploy/.env.ci
+          # The delivery bridge's two keys (the example leaves them blank: compose refuses that).
+          sed -i "s|^BRIDGE_CLIENT_KEY=.*|BRIDGE_CLIENT_KEY=$(openssl rand -base64 32)|; s|^BRIDGE_SECRETS_KEY=.*|BRIDGE_SECRETS_KEY=$(openssl rand -base64 32)|" deploy/.env.ci
       - name: Build images
         run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml build
       - name: Start stack
@@ -88,7 +90,8 @@ jobs:
           compose up -d postgres seaweedfs
           compose run --rm init-buckets
           compose run --rm migrate
-          compose up -d api worker app
+          compose run --rm migrate-bridge
+          compose up -d bridge api worker app
           echo "COMPOSE_FUSEKI=$(compose ps -q fuseki)" >> "$GITHUB_ENV"
           echo "APP_URL=http://$(compose port app 80)" >> "$GITHUB_ENV"
           echo "S3_URL=http://$(compose port seaweedfs 8333)" >> "$GITHUB_ENV"
@@ -96,7 +99,9 @@ jobs:
         run: |
           ADMIN_TOKEN="$(deploy/scripts/admin-token.sh --env-file deploy/.env.ci -f deploy/docker-compose.yml)"
           echo "::add-mask::$ADMIN_TOKEN"
-          BASE_URL="$APP_URL" S3_URL="$S3_URL" ADMIN_TOKEN="$ADMIN_TOKEN" deploy/scripts/smoke-test.sh
+          BASE_URL="$APP_URL" S3_URL="$S3_URL" ADMIN_TOKEN="$ADMIN_TOKEN" \
+            SMOKE_COMPOSE="docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml" \
+            deploy/scripts/smoke-test.sh
       - name: Triple store smoke test
         run: |
           compose() { docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml "$@"; }

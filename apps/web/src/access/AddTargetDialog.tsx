@@ -11,6 +11,7 @@ import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
+import { ConnectionPicker } from './ConnectionPicker.js';
 import { TestOutcome } from './TargetRow.js';
 
 const KINDS: readonly { value: TargetKind; label: string }[] = [
@@ -34,11 +35,7 @@ export function AddTargetDialog({
   const [id, setId] = useState<string | null>(null);
   const [bucket, setBucket] = useState('');
   const [prefix, setPrefix] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [region, setRegion] = useState('');
-  const [accessKeyId, setAccessKeyId] = useState('');
-  const [secret, setSecret] = useState('');
-  const [pathStyle, setPathStyle] = useState(false);
+  const [connectionId, setConnectionId] = useState('');
   const [sse, setSse] = useState<(typeof SSE_MODES)[number]>('none');
   const [kms, setKms] = useState('');
   const [storageClass, setStorageClass] = useState('');
@@ -59,11 +56,7 @@ export function AddTargetDialog({
     return {
       ...common,
       kind,
-      ...(endpoint.trim() ? { endpoint: endpoint.trim() } : {}),
-      region: region.trim(),
-      accessKeyId: accessKeyId.trim(),
-      secretAccessKey: secret.trim(),
-      forcePathStyle: pathStyle,
+      connectionId,
       sse,
       ...(sse === 'aws:kms' && kms.trim() ? { kmsKeyId: kms.trim() } : {}),
       ...(storageClass ? { storageClass: storageClass as TargetCreateBody['storageClass'] } : {}),
@@ -96,9 +89,7 @@ export function AddTargetDialog({
     });
 
   const complete =
-    label.trim() !== '' &&
-    bucket.trim() !== '' &&
-    (kind === 'internal' || (region.trim() && accessKeyId.trim() && secret.trim()));
+    label.trim() !== '' && bucket.trim() !== '' && (kind === 'internal' || connectionId !== '');
 
   const idHint = useId();
   const sseLabel = sse === 'none' ? 'None' : sse;
@@ -137,7 +128,7 @@ export function AddTargetDialog({
           <small className="muted">
             {kind === 'internal'
               ? "A bucket on this deployment's own S3."
-              : 'An S3 bucket elsewhere, reached with its own keys.'}
+              : 'An S3 bucket elsewhere, reached with a connection on the delivery bridge.'}
           </small>
         </div>
         <fieldset className="target-group">
@@ -196,55 +187,14 @@ export function AddTargetDialog({
           <>
             <fieldset className="target-group">
               <legend>Connection</legend>
-              <div className="target-grid">
-                <label>
-                  Endpoint
-                  <input
-                    value={endpoint}
-                    placeholder="AWS S3"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(e) => setEndpoint(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Region
-                  <input
-                    value={region}
-                    placeholder="eu-west-1"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(e) => setRegion(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Access key id
-                  <input
-                    className="mono"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={accessKeyId}
-                    onChange={(e) => setAccessKeyId(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Secret access key
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={secret}
-                    onChange={(e) => setSecret(e.target.value)}
-                  />
-                </label>
-                <label className="inline target-span">
-                  <input
-                    type="checkbox"
-                    checked={pathStyle}
-                    onChange={(e) => setPathStyle(e.target.checked)}
-                  />
-                  Path-style addressing
-                </label>
-              </div>
+              <ConnectionPicker
+                api={api}
+                value={connectionId}
+                onChange={(next) => {
+                  setConnectionId(next);
+                  setResult(null);
+                }}
+              />
             </fieldset>
             <details className="target-more">
               <summary>

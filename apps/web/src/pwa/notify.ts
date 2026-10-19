@@ -15,7 +15,7 @@ const OUTCOME: Partial<Record<JobStatus, Outcome>> = {
   failed: 'attention',
   succeeded: 'done',
 };
-const ACTIVE: readonly JobStatus[] = ['queued', 'running'];
+const ACTIVE: readonly JobStatus[] = ['queued', 'running', 'delivering'];
 
 function notice(job: JobSummary, outcome: Outcome): JobNotice {
   const tag = `ct-job-${job.id}`;

@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { loadBridgeConfig } from '../src/config.js';
 
-const base = { DATABASE_URL: 'postgres://x/y', BRIDGE_CLIENT_KEY: 'k'.repeat(32) };
+const base = {
+  DATABASE_URL: 'postgres://x/y',
+  BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+  BRIDGE_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+  S3_ENDPOINT: 'http://seaweedfs:8333',
+  S3_ACCESS_KEY: 'internal-key',
+  S3_SECRET_KEY: 'internal-secret',
+  BRIDGE_PRODUCER_URL: 'http://api:3000/api',
+  BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
+};
 
 describe('bridge config', () => {
   it('lists every config problem at once', () => {
@@ -28,5 +37,21 @@ describe('bridge config', () => {
       PORT: 4000,
       BRIDGE_MAX_ATTEMPTS: 3,
     });
+  });
+
+  it('needs BRIDGE_SECRETS_KEY as 32 bytes of base64, and parses the previous one', () => {
+    const noKey: Record<string, string> = { ...base };
+    delete noKey.BRIDGE_SECRETS_KEY;
+    expect(() => loadBridgeConfig(noKey)).toThrow(/BRIDGE_SECRETS_KEY/);
+    expect(() => loadBridgeConfig({ ...base, BRIDGE_SECRETS_KEY: 'short' })).toThrow(
+      /BRIDGE_SECRETS_KEY/,
+    );
+    const previous = Buffer.alloc(32, 9).toString('base64');
+    const c = loadBridgeConfig({ ...base, BRIDGE_SECRETS_KEY_PREVIOUS: previous });
+    expect(c.secrets.current).toEqual(Buffer.alloc(32, 7));
+    expect(c.secrets.previous).toEqual(Buffer.alloc(32, 9));
+    expect(
+      loadBridgeConfig({ ...base, BRIDGE_SECRETS_KEY_PREVIOUS: '' }).secrets.previous,
+    ).toBeNull();
   });
 });

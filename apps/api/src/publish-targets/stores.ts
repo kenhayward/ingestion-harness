@@ -1,131 +1,28 @@
-import type { SecretsKeys } from '../llm/secrets.js';
-import { decryptSecret } from '../llm/secrets.js';
 import type { ObjectStore } from '../storage/object-store.js';
 import { S3ObjectStore, type S3Options } from '../storage/s3.js';
-import type { PublishTargetRepo, TargetRecord } from './repo.js';
-
-export class TargetMissingError extends Error {
-  constructor(readonly targetId: string) {
-    super(`no publishing target ${targetId}`);
-    this.name = 'TargetMissingError';
-  }
-}
-
-/** The target exists but cannot be used now (for example its secret cannot be decrypted). */
-export class TargetUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TargetUnavailableError';
-  }
-}
-
-const VERSION_CHECK_MS = 1_000;
-
-/**
- * The only environment variables a target may read its keys from (the seeded default's), so a
- * stored variable name can never make the API read any other secret of its environment.
- */
-export const CREDENTIAL_ENV_NAMES: ReadonlySet<string> = new Set([
-  'TARGET_S3_ACCESS_KEY',
-  'TARGET_S3_SECRET_KEY',
-  'S3_ACCESS_KEY',
-  'S3_SECRET_KEY',
-]);
+import type { TargetRecord } from './repo.js';
 
 export interface TargetStoresOptions {
-  repo: PublishTargetRepo;
-  /** The API's own object store settings (SeaweedFS), used by internal targets. */
+  /** The API's own object store settings (SeaweedFS), where internal targets' buckets live. */
   internal: S3Options;
-  secrets: SecretsKeys | null;
-  env: NodeJS.ProcessEnv;
   make?: (o: S3Options) => ObjectStore;
 }
 
-/** One object store per publishing target, rebuilt when a target was written. */
+/**
+ * What the API still does on a target's storage itself: create an internal target's bucket on
+ * this deployment's SeaweedFS when the target is saved. Everything else (delivering, reading
+ * back, withdrawing, Test connection) goes through the delivery bridge, which holds the
+ * credentials.
+ */
 export class TargetStores {
-  private readonly cache = new Map<string, { store: ObjectStore; target: TargetRecord }>();
-  private seenVersion: number | null = null;
-  private checkedAt = 0;
+  private store: ObjectStore | null = null;
 
   constructor(private readonly opts: TargetStoresOptions) {}
 
-  async storeFor(targetId: string): Promise<{ store: ObjectStore; target: TargetRecord }> {
-    await this.refresh();
-    const hit = this.cache.get(targetId);
-    if (hit) return hit;
-    const target = await this.opts.repo.get(targetId);
-    if (!target) throw new TargetMissingError(targetId);
-    const entry = { store: this.storeOf(target), target };
-    this.cache.set(targetId, entry);
-    return entry;
-  }
-
-  /**
-   * A store for these settings, not cached (Test connection, a bucket to create before saving).
-   * `secretAccessKey` stands in for the stored or environment secret.
-   */
-  storeOf(target: TargetRecord, secretAccessKey?: string): ObjectStore {
-    const make = this.opts.make ?? ((o: S3Options) => new S3ObjectStore(o));
-    return make(this.options(target, secretAccessKey));
-  }
-
-  /** Creates the target's bucket if missing (internal targets: on this deployment's SeaweedFS). */
-  async ensureBucket(target: TargetRecord): Promise<void> {
-    await this.storeOf(target).ensureBucket(target.bucket);
-  }
-
-  /** Forget every store now (this API wrote a target), rather than within a second. */
-  invalidate(): void {
-    this.cache.clear();
-    this.seenVersion = null;
-  }
-
-  private async refresh(): Promise<void> {
-    const now = Date.now();
-    if (this.seenVersion !== null && now - this.checkedAt < VERSION_CHECK_MS) return;
-    const version = await this.opts.repo.version();
-    this.checkedAt = now;
-    if (version !== this.seenVersion) {
-      this.cache.clear();
-      this.seenVersion = version;
-    }
-  }
-
-  private options(t: TargetRecord, secretOverride?: string): S3Options {
-    if (t.kind === 'internal') return this.opts.internal;
-    const { env, secrets } = this.opts;
-    for (const name of [t.accessKeyEnv, t.secretKeyEnv]) {
-      if (name !== null && !CREDENTIAL_ENV_NAMES.has(name)) {
-        throw new TargetUnavailableError(`${t.label} names an unsupported credential variable`);
-      }
-    }
-    const region = t.region ?? this.opts.internal.region;
-    const accessKeyId = t.accessKeyId ?? (t.accessKeyEnv ? env[t.accessKeyEnv] : undefined);
-    let secretAccessKey: string | undefined;
-    if (secretOverride !== undefined) {
-      secretAccessKey = secretOverride;
-    } else if (t.secretKeyEnc) {
-      try {
-        if (!secrets) throw new Error('no master key');
-        secretAccessKey = decryptSecret(t.secretKeyEnc, secrets);
-      } catch {
-        throw new TargetUnavailableError(`cannot decrypt the secret of ${t.label}`);
-      }
-    } else if (t.secretKeyEnv) {
-      secretAccessKey = env[t.secretKeyEnv];
-    }
-    if (!accessKeyId || !secretAccessKey) {
-      throw new TargetUnavailableError(`${t.label} has no credentials`);
-    }
-    return {
-      endpoint: t.endpoint || `https://s3.${region}.amazonaws.com`,
-      region,
-      accessKeyId,
-      secretAccessKey,
-      forcePathStyle: t.forcePathStyle,
-      sse: t.sse,
-      kmsKeyId: t.kmsKeyId,
-      storageClass: t.storageClass,
-    };
+  /** Creates an internal target's bucket when it is missing; external targets are left alone. */
+  async ensureBucket(target: Pick<TargetRecord, 'kind' | 'bucket'>): Promise<void> {
+    if (target.kind !== 'internal') return;
+    this.store ??= (this.opts.make ?? ((o: S3Options) => new S3ObjectStore(o)))(this.opts.internal);
+    await this.store.ensureBucket(target.bucket);
   }
 }

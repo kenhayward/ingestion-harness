@@ -315,3 +315,19 @@ describe('grants per publishing target', () => {
     ]);
   });
 });
+
+describe('S3 read keys across the move to the delivery bridge', () => {
+  it('grants still resolve after the targets are mirrored and their keys moved', async () => {
+    const { issuer, targets, issue } = await setup();
+    const { FakeBridgeApi } = await import('./fake-bridge.js');
+    const { moveTargetsToBridge } = await import('../src/bridge/mirror.js');
+    const bridge = new FakeBridgeApi();
+    const log = { warn: () => {}, info: () => {}, error: () => {} } as never;
+    await moveTargetsToBridge({ targets, bridge, secrets: null, log });
+    expect(bridge.targets.get('finance')?.connectionId).toBe('internal');
+    const issued = await issue('Lake', 30, ['finance']);
+    expect(issuer.user(issued.consumer.userName)!.grants).toEqual([
+      { bucket: 'finance-lake', prefix: 'out/' },
+    ]);
+  });
+});

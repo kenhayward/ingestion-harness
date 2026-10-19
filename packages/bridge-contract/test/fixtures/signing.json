@@ -1,0 +1,10 @@
+{
+  "note": "Bridge request signing: HMAC-SHA256 over METHOD, path, timestamp, nonce and the hex sha256 of the exact body bytes (UTF-8), joined by newlines. TS signRequest (packages/bridge-contract) and the worker sign_request (ingest_worker.bridge.signing) both reproduce signature.",
+  "key": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+  "method": "POST",
+  "path": "/v1/deliveries",
+  "timestamp": 1760000000,
+  "nonce": "6f1c2d3e-0000-4000-8000-000000000001",
+  "body": "{\"targets\":[\"default\"],\"note\":\"ü\"}",
+  "signature": "c7bfa9a9ba5b707ec2b4db5e8511910a76ef9fa02daabd5e3a49eb543fc406cd"
+}

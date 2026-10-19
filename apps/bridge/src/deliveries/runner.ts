@@ -1,4 +1,6 @@
 import { bridgeError, type BridgeError, type SinkJobStatus } from '@ih/bridge-contract';
+import type { Credentials } from '../connections/credential.js';
+import type { ConnectionRepo } from '../connections/repo.js';
 import type { PackageStore } from '../packages/store.js';
 import { SinkError, type SinkPort, type SinkRegistry } from '../sinks/port.js';
 import type { TargetRepo } from '../targets/repo.js';
@@ -9,6 +11,10 @@ export interface RunnerDeps {
   packages: PackageStore;
   targets: TargetRepo;
   sinks: SinkRegistry;
+  /** Turns a target's connection into the credential its sink is called with. */
+  credentials?: Credentials;
+  /** Where a delivery's outcome flags its connection (needs attention, or ok and last used). */
+  connections?: ConnectionRepo;
   maxAttempts: number;
   leaseSeconds: number;
   /** How long to wait before asking a sink about a pending job again. */
@@ -48,7 +54,14 @@ function fromJobStatus(
   };
 }
 
-async function step(row: DeliveryRow, deps: RunnerDeps, now: Date): Promise<Transition> {
+const CREDENTIAL_ERRORS = new Set(['credential_rejected', 'credential_mfa_required']);
+
+async function step(
+  row: DeliveryRow,
+  deps: RunnerDeps,
+  now: Date,
+  used: { connectionId: string | null },
+): Promise<Transition> {
   const target = await deps.targets.get(row.targetId);
   if (!target) {
     throw new SinkError(bridgeError('target_missing', `no target ${row.targetId}`));
@@ -59,10 +72,12 @@ async function step(row: DeliveryRow, deps: RunnerDeps, now: Date): Promise<Tran
       bridgeError('sink_unavailable', `the sink of ${target.label} is not available`),
     );
   }
+  used.connectionId = target.connectionId;
   if (row.sinkJobId) {
     return fromJobStatus(await sink.deliveryStatus(row.sinkJobId), row, deps, now);
   }
-  const { capabilities } = await sink.describe();
+  const described = await sink.describe();
+  const { capabilities } = described;
   if (!capabilities.replace && !capabilities.withdraw) {
     const earlier = await deps.deliveries.latestSucceeded(row.targetId, row.idempotencyKey, row.id);
     if (earlier) return { status: 'skipped', skippedFor: earlier.id };
@@ -70,9 +85,12 @@ async function step(row: DeliveryRow, deps: RunnerDeps, now: Date): Promise<Tran
   const meta = await deps.deliveries.getPackage(row.packageId);
   const pkg = meta ? await deps.packages.get(meta.stagedKey) : null;
   if (!pkg) return { status: 'failed', error: bridgeError('internal', 'package expired') };
+  const credential = deps.credentials
+    ? await deps.credentials.resolve(target.connectionId, described)
+    : null;
   const result = await sink.deliver({
     instanceId: target.instanceId,
-    credential: null,
+    credential,
     destination: { ...target.destination, ...row.overrides },
     idempotencyKey: row.idempotencyKey,
     actingUser: row.actingUser,
@@ -95,13 +113,24 @@ export async function runOnce(deps: RunnerDeps, now: Date): Promise<'idle' | 'wo
   const row = await deps.deliveries.claim(now, deps.leaseSeconds);
   if (!row) return 'idle';
   let transition: Transition;
+  const used = { connectionId: null as string | null };
   try {
-    transition = await step(row, deps, now);
+    transition = await step(row, deps, now, used);
   } catch (err) {
     transition = onError(row, asBridgeError(err), deps, now);
   }
   // False when this run's lease expired and another runner took the delivery over: its outcome
   // stands, and this late one is dropped.
-  await deps.deliveries.transition(row.id, transition, now, row.claimId);
+  const recorded = await deps.deliveries.transition(row.id, transition, now, row.claimId);
+  if (recorded && used.connectionId && deps.connections) {
+    if (transition.status === 'succeeded') {
+      await deps.connections.mark(used.connectionId, 'ok', null, now);
+    } else if (
+      (transition.status === 'needs_user' || transition.status === 'failed') &&
+      CREDENTIAL_ERRORS.has(transition.error.code)
+    ) {
+      await deps.connections.mark(used.connectionId, 'needs_attention', transition.error.message);
+    }
+  }
   return 'worked';
 }

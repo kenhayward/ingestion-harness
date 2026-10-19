@@ -1,6 +1,6 @@
 # Delivery bridge: design
 
-Status: draft for review, 2026-10-19. Not yet planned. Replaces the worker's direct S3 and Fuseki
+Status: phases 1 and 2 built, 2026-10-19 (see Phase 2 as built). Replaces the worker's direct S3 and Fuseki
 publishing (`worker/src/ingest_worker/pipeline.py` `publish_outputs`,
 `template_pipeline.py` `publish_graph`) with delivery through a separate **bridge** service to
 pluggable **sinks**. It builds on, and in part supersedes,
@@ -503,6 +503,35 @@ pass the same conformance suite.
 | 6. External sinks | Sink registry, HTTP sink adapter, browse in the target editor, pattern fields, review overrides, name conflicts, delivering as the approver through `actingUser` | Fake external sink delivers end to end in a compose test; a private external sink can register and pass the conformance suite |
 
 Phase 6 is where private external sinks plug in.
+
+## Phase 2 as built
+
+Phase 2 (S3 behind the bridge) made these calls, recorded in
+[ADR 0017](../../adr/0017-delivery-bridge.md):
+
+- **`publish_targets` stays CT Studio's registry, mirrored to the bridge.** CT Studio keeps the
+  table (labels, locking, recipe validation, S3 read-key grants) and mirrors every write to the
+  bridge (`PUT /v1/targets/{id}`) as one unit: a bridge refusal or outage leaves the row unchanged.
+  The bridge becomes the registry in phase 4, with several targets per recipe.
+- **Target object routes instead of per-delivery files.** Read-back, withdraw and the RDF graph
+  copy use `POST /v1/targets/{id}/objects:read|put|delete`, confined to the target's bucket and
+  prefix. Outputs written before the bridge have no delivery id, so reading them by delivery was
+  not an option. `GET /deliveries/{id}/files/{output}` waits for sinks without object access.
+- **The graph copy stays synchronous in phase 2.** The worker writes the published graph copy
+  through `objects:put` while the job runs, as `publish_graph` did; it moves to the RDF sink in
+  phase 3.
+- **Hand-written Pydantic models.** The worker's `ingest_worker.bridge.models` are written by hand
+  and checked against the contract's JSON fixtures (every fixture re-serialises unchanged), not
+  generated from the OpenAPI document.
+- **`delivering` is a job status.** A job whose package the bridge accepted waits in `delivering`
+  (table `job_deliveries`) until every delivery is final. It counts as active and can't be
+  cancelled.
+- **`needs_user` goes to `awaiting_review`.** A delivery that ends `needs_user` sends the job back
+  to review with `<target label>: <message>`, so approving again re-delivers.
+- **Credentials move once.** On upgrade the API turns each external target's keys into the shared
+  connection `target-<id>`, re-encrypted under `BRIDGE_SECRETS_KEY`, and nulls CT Studio's copy.
+  The built-in connection `internal` (the bridge's own SeaweedFS keys) serves internal targets
+  only.
 
 ## Left to the builder
 

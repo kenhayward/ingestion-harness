@@ -18,14 +18,25 @@ const fixture = JSON.parse(
   ),
 ) as { seed: SeedCase[] };
 
+const BRIDGE = {
+  BRIDGE_URL: 'http://bridge:3100',
+  BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+  BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
+};
+
 describe('defaultSeed', () => {
   it.each(fixture.seed.map((c) => [c.name, c] as const))('%s', (_name, c) => {
-    const config = loadConfig({ DATABASE_URL: 'postgres://u:p@localhost:5432/ih', ...c.env });
+    const config = loadConfig({
+      ...BRIDGE,
+      DATABASE_URL: 'postgres://u:p@localhost:5432/ih',
+      ...c.env,
+    });
     expect(defaultSeed(config)).toStrictEqual(c.expected);
   });
 
   it('names the fields that moved since the first start', () => {
     const config = loadConfig({
+      ...BRIDGE,
       DATABASE_URL: 'postgres://u:p@localhost:5432/ih',
       S3_ENDPOINT: 'http://seaweed:8333',
       S3_ACCESS_KEY: 'k',

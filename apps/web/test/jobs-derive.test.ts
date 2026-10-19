@@ -123,6 +123,12 @@ describe('progressSteps', () => {
   it.each<[string, JobSummary, StepRun[] | null, string[]]>([
     ['queued', job({ status: 'queued' }), [], ['todo', 'todo', 'todo', 'todo', 'todo']],
     [
+      'delivering (handed to the bridge)',
+      job({ status: 'delivering' }),
+      [run()],
+      ['done', 'done', 'done', 'done', 'current'],
+    ],
+    [
       'running, nothing extracted yet',
       job({ status: 'running' }),
       [],

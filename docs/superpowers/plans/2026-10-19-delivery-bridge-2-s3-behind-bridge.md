@@ -847,8 +847,8 @@ export async function moveTargetsToBridge(deps: { targets: PublishTargetRepo; br
 
 - [ ] **Step 1: Write the docs.**
 - [ ] **Step 2: Check them.** Run `npm run format:check`, and
-  `rg -i "3dexperience|dassault|alloy" docs CLAUDE.md apps packages worker deploy`. Expected: no
-  matches.
+  a search of `docs CLAUDE.md apps packages worker deploy` for the external sinks' vendor and
+  repository names (kept outside this repo). Expected: no matches.
 - [ ] **Step 3: Commit.** `git commit -m "docs: delivery bridge ADR, contracts and deploy notes"`
 
 ---

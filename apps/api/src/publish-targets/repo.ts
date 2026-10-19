@@ -8,15 +8,22 @@ import {
 } from '@ih/shared';
 import { seedDifferences, type DefaultSeed } from './seed.js';
 
-/** A stored target: the view's fields plus what is never sent out (the encrypted secret). */
-export interface TargetRecord extends Omit<
-  PublishTargetView,
-  'usage' | 'secretSet' | 'keysFromEnv'
-> {
+/**
+ * A stored target: the view's fields plus what is never sent out. The credential columns are
+ * what a target held before its keys moved to the delivery bridge (they are read once, by the
+ * move, and the ciphertext is then dropped); new targets name a bridge connection instead.
+ */
+export interface TargetRecord extends Omit<PublishTargetView, 'usage' | 'connection'> {
+  endpoint: string | null;
+  region: string | null;
+  accessKeyId: string | null;
+  forcePathStyle: boolean;
   secretKeyEnc: string | null;
   accessKeyEnv: string | null;
   secretKeyEnv: string | null;
   seededAt: string | null;
+  /** When its keys moved to the bridge (then its ciphertext is gone). */
+  movedToBridgeAt: string | null;
 }
 
 /** What a create stores; the route has made the id and encrypted the secret. */
@@ -36,6 +43,8 @@ export interface NewTarget {
   sse: 'none' | 'AES256' | 'aws:kms';
   kmsKeyId: string | null;
   storageClass: string | null;
+  /** The bridge connection an external target delivers with. */
+  connectionId?: string | null;
 }
 
 /** Fields left out are kept; `null` clears an optional one. `kind` and `id` never change. */
@@ -56,6 +65,10 @@ export interface PublishTargetRepo {
   version(): Promise<number>;
   /** Writes the default from `.env` once (while `seeded_at` is null); never overwrites after. */
   seedDefault(seed: DefaultSeed): Promise<SeedOutcome>;
+  /** Its keys are now the bridge's connection `connectionId`: the ciphertext is dropped. */
+  markMoved(id: string, connectionId: string): Promise<void>;
+  /** The bridge connection a target delivers with (null: none, or no such target). */
+  connectionOf(id: string): Promise<string | null>;
 }
 
 export const EMPTY_USAGE: TargetUsage = {
@@ -66,16 +79,23 @@ export const EMPTY_USAGE: TargetUsage = {
   pendingJobs: 0,
 };
 
+/** The view of a record: no credential, and the connection as the route finds it on the bridge. */
 export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
-  const { secretKeyEnc, accessKeyEnv, secretKeyEnv, seededAt: _seededAt, ...rest } = r;
-  void _seededAt;
   return {
-    ...rest,
-    secretSet: secretKeyEnc !== null,
-    keysFromEnv:
-      accessKeyEnv !== null && secretKeyEnv !== null
-        ? { accessKey: accessKeyEnv, secretKey: secretKeyEnv }
-        : null,
+    id: r.id,
+    label: r.label,
+    kind: r.kind,
+    bucket: r.bucket,
+    prefix: r.prefix,
+    connectionId: r.connectionId,
+    connection: null,
+    sse: r.sse,
+    kmsKeyId: r.kmsKeyId,
+    storageClass: r.storageClass,
+    source: r.source,
+    editedAt: r.editedAt,
+    updatedBy: r.updatedBy,
+    createdAt: r.createdAt,
     usage,
   };
 }
@@ -85,6 +105,8 @@ export function recordFrom(input: NewTarget, by: string | null, now: Date): Targ
     ...input,
     source: 'ui',
     seededAt: null,
+    connectionId: input.connectionId ?? null,
+    movedToBridgeAt: null,
     editedAt: null,
     updatedBy: by,
     createdAt: now.toISOString(),
@@ -147,6 +169,8 @@ export function initialDefault(now: Date): TargetRecord {
     editedAt: null,
     updatedBy: null,
     createdAt: now.toISOString(),
+    connectionId: null,
+    movedToBridgeAt: null,
   };
 }
 
@@ -268,5 +292,21 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
       return 'seeded';
     }
     return seedDifferences(r, seed).length > 0 ? 'differs' : 'kept';
+  }
+
+  async markMoved(id: string, connectionId: string): Promise<void> {
+    const r = this.targets.get(id);
+    if (!r) return;
+    this.targets.set(id, {
+      ...r,
+      connectionId,
+      secretKeyEnc: null,
+      movedToBridgeAt: new Date().toISOString(),
+    });
+    this.counter += 1;
+  }
+
+  async connectionOf(id: string): Promise<string | null> {
+    return (await this.get(id))?.connectionId ?? null;
   }
 }

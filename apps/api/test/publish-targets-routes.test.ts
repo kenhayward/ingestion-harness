@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { JobOutput, JobSummary, PublishTargetView } from '@ih/shared';
+import { BridgeApiError } from '../src/bridge/client.js';
 import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
 import type { NewTarget } from '../src/publish-targets/repo.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
+import { FakeBridgeApi } from './fake-bridge.js';
 import { accessApp, fakePdf, multipart, signInNewUser, testApp } from './helpers.js';
 
 const keys: SecretsKeys = { current: Buffer.alloc(32, 7), previous: null };
@@ -14,14 +16,11 @@ const externalBody = (over: object = {}) => ({
   kind: 'external',
   bucket: 'finance-lake',
   prefix: 'ingest',
-  endpoint: FINANCE_ENDPOINT,
-  region: 'eu-west-2',
-  accessKeyId: 'AKIAFINANCE',
-  secretAccessKey: SECRET,
+  connectionId: 'finance-account',
   ...over,
 });
 
-/** A stored external target, as a create through the route would leave it. */
+/** A stored external target, its keys already moved to the bridge. */
 const financeRecord = (over: Partial<NewTarget> = {}): NewTarget => ({
   id: 'finance-lake',
   label: 'Finance lake',
@@ -53,6 +52,13 @@ const letter = (version: number, publishTo?: string) => ({
 
 async function setup(withKeys = true) {
   const ctx = await testApp({ llmSecrets: withKeys ? keys : null });
+  ctx.bridge.summaries.push({
+    id: 'finance-account',
+    name: 'Finance account',
+    sinkId: 's3',
+    status: 'ok',
+    statusReason: null,
+  });
   const call = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) =>
     ctx.app.inject({ method, url: `/api${url}`, ...(payload ? { payload } : {}) });
   return { ...ctx, call };
@@ -69,14 +75,19 @@ async function publishLetter(
 }
 
 describe('publishing target routes: list and choices', () => {
-  it('lists the default with its usage, never a secret', async () => {
+  it('lists the default with its usage and each connection as the bridge names it, never a secret', async () => {
     const c = await setup();
     await c.targets.create(financeRecord(), 'Ken');
+    await c.targets.markMoved('finance-lake', 'finance-account');
     const res = await c.call('GET', '/publish-targets');
     expect(res.statusCode).toBe(200);
     const { targets } = res.json() as { targets: PublishTargetView[] };
     expect(targets.map((t) => t.id)).toEqual(['default', 'finance-lake']);
-    expect(targets[1]).toMatchObject({ secretSet: true, accessKeyId: 'AKIAFINANCE' });
+    expect(targets[0]).toMatchObject({ connectionId: null, connection: null });
+    expect(targets[1]).toMatchObject({
+      connectionId: 'finance-account',
+      connection: { id: 'finance-account', name: 'Finance account', status: 'ok' },
+    });
     expect(targets[1]!.usage).toEqual({
       publishedVersions: 0,
       documentTypes: [],
@@ -84,8 +95,22 @@ describe('publishing target routes: list and choices', () => {
       consumers: 0,
       pendingJobs: 0,
     });
-    expect(res.body).not.toContain(SECRET);
-    expect(res.body).not.toContain('secretKeyEnc');
+    for (const hidden of [SECRET, 'secretKeyEnc', 'AKIAFINANCE', FINANCE_ENDPOINT, 'secretSet']) {
+      expect(res.body).not.toContain(hidden);
+    }
+  });
+
+  it('still lists the targets when the bridge cannot name their connections', async () => {
+    const c = await setup();
+    await c.targets.create(financeRecord(), 'Ken');
+    await c.targets.markMoved('finance-lake', 'finance-account');
+    c.bridge.failNext = new BridgeApiError(0, null, 'the bridge could not be reached');
+    const res = await c.call('GET', '/publish-targets');
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { targets: PublishTargetView[] }).targets[1]).toMatchObject({
+      connectionId: 'finance-account',
+      connection: null,
+    });
   });
 
   it('offers choices to designers; the rest is admin-only', async () => {
@@ -100,6 +125,7 @@ describe('publishing target routes: list and choices', () => {
     });
     const calls = [
       { method: 'GET' as const, url: '/api/publish-targets' },
+      { method: 'GET' as const, url: '/api/publish-targets/connections' },
       { method: 'POST' as const, url: '/api/publish-targets', payload: externalBody() },
       { method: 'PATCH' as const, url: '/api/publish-targets/default', payload: { label: 'x' } },
       { method: 'DELETE' as const, url: '/api/publish-targets/default' },
@@ -128,8 +154,34 @@ describe('publishing target routes: list and choices', () => {
   });
 });
 
+describe('GET /api/publish-targets/connections', () => {
+  it("lists the bridge's shared S3 connections, without the built-in one", async () => {
+    const c = await setup();
+    const res = await c.call('GET', '/publish-targets/connections');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      connections: [
+        {
+          id: 'finance-account',
+          name: 'Finance account',
+          status: 'ok',
+          statusReason: null,
+        },
+      ],
+    });
+  });
+
+  it('is a 502 when the bridge cannot be reached', async () => {
+    const c = await setup();
+    c.bridge.failNext = new BridgeApiError(0, null, 'the bridge could not be reached');
+    const res = await c.call('GET', '/publish-targets/connections');
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('the delivery bridge could not be reached');
+  });
+});
+
 describe('POST /api/publish-targets', () => {
-  it('adds an internal target, creating its bucket, with an id made from the label', async () => {
+  it('adds an internal target, creating its bucket and mirroring it, with an id made from the label', async () => {
     const c = await setup();
     const body = { label: 'Finance lake', kind: 'internal', bucket: 'finance-bucket' };
     const res = await c.call('POST', '/publish-targets', body);
@@ -140,9 +192,13 @@ describe('POST /api/publish-targets', () => {
       bucket: 'finance-bucket',
       prefix: '',
       source: 'ui',
-      secretSet: false,
+      connectionId: null,
     });
     expect((c.targetStore as MemoryObjectStore).ensured).toEqual(['finance-bucket']);
+    expect(c.bridge.targets.get('finance-lake')).toMatchObject({
+      connectionId: 'internal',
+      destination: { bucket: 'finance-bucket', prefix: '' },
+    });
     const again = await c.call('POST', '/publish-targets', body);
     expect(again.json().id).toBe('finance-lake-2');
     const third = await c.call('POST', '/publish-targets', body);
@@ -195,9 +251,21 @@ describe('POST /api/publish-targets', () => {
 
   it('answers 400 with the issues of an invalid body', async () => {
     const c = await setup();
-    const res = await c.call('POST', '/publish-targets', externalBody({ region: undefined }));
+    const res = await c.call('POST', '/publish-targets', externalBody({ connectionId: undefined }));
     expect(res.statusCode).toBe(400);
-    expect(JSON.stringify(res.json().error)).toContain('an external target needs a region');
+    expect(JSON.stringify(res.json().error)).toContain('an external target needs a connection');
+  });
+
+  it('a body carrying secretAccessKey is 400', async () => {
+    const c = await setup();
+    const res = await c.call(
+      'POST',
+      '/publish-targets',
+      externalBody({ accessKeyId: 'AKIA', secretAccessKey: SECRET }),
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.body).not.toContain(SECRET);
+    expect((await c.targets.list()).map((t) => t.id)).toEqual(['default']);
   });
 
   it('stores nothing when the bucket cannot be created', async () => {
@@ -215,23 +283,53 @@ describe('POST /api/publish-targets', () => {
     expect((await c.targets.list()).map((t) => t.id)).toEqual(['default']);
   });
 
-  it('encrypts an external secret and never returns it', async () => {
+  it('create external with a connectionId mirrors to the bridge and stores no secret column', async () => {
     const c = await setup();
     const res = await c.call('POST', '/publish-targets', externalBody());
     expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ id: 'finance-lake', secretSet: true, prefix: 'ingest/' });
-    expect(res.body).not.toContain(SECRET);
+    expect(res.json()).toMatchObject({
+      id: 'finance-lake',
+      prefix: 'ingest/',
+      connectionId: 'finance-account',
+      connection: { name: 'Finance account', status: 'ok' },
+    });
     const stored = (await c.targets.get('finance-lake'))!;
-    expect(stored.secretKeyEnc).toMatch(/^v1:/);
-    expect(stored.secretKeyEnc).not.toContain(SECRET);
+    expect(stored).toMatchObject({
+      secretKeyEnc: null,
+      accessKeyId: null,
+      accessKeyEnv: null,
+      secretKeyEnv: null,
+      endpoint: null,
+      connectionId: 'finance-account',
+    });
+    expect(c.bridge.targets.get('finance-lake')).toEqual({
+      label: 'Finance lake',
+      sinkId: 's3',
+      instanceId: null,
+      connectionId: 'finance-account',
+      destination: {
+        bucket: 'finance-lake',
+        prefix: 'ingest/',
+        sse: 'none',
+        kmsKeyId: '',
+        storageClass: '',
+      },
+    });
   });
 
-  it('is a 409 without LLM_SECRETS_KEY', async () => {
-    const c = await setup(false);
-    const res = await c.call('POST', '/publish-targets', externalBody());
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('LLM_SECRETS_KEY is not set: the API cannot store keys');
-    expect((await c.targets.list()).map((t) => t.id)).toEqual(['default']);
+  it('bridge refusal leaves no row behind', async () => {
+    const c = await setup();
+    c.bridge.failNext = FakeBridgeApi.refusal('there is no connection gone', 'connection_missing');
+    const res = await c.call('POST', '/publish-targets', externalBody({ connectionId: 'gone' }));
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toBe('there is no connection gone');
+    expect(await c.targets.get('finance-lake')).toBeNull();
+
+    c.bridge.failNext = new BridgeApiError(0, null, 'the bridge could not be reached');
+    const down = await c.call('POST', '/publish-targets', externalBody());
+    expect(down.statusCode).toBe(502);
+    expect(down.json().error).toBe('the delivery bridge could not be reached');
+    expect(await c.targets.get('finance-lake')).toBeNull();
   });
 });
 
@@ -269,7 +367,7 @@ describe('PATCH /api/publish-targets/:id', () => {
 
   it('changes locked fields only while the target is not in use', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), 'Ken');
+    await c.call('POST', '/publish-targets', externalBody());
     const free = await c.call('PATCH', '/publish-targets/finance-lake', {
       bucket: 'finance-other',
       prefix: 'p',
@@ -278,12 +376,7 @@ describe('PATCH /api/publish-targets/:id', () => {
     expect(free.json()).toMatchObject({ bucket: 'finance-other', prefix: 'p/' });
 
     await publishLetter(c, 1, 'finance-lake');
-    for (const change of [
-      { bucket: 'finance-third' },
-      { prefix: 'q/' },
-      { endpoint: 'https://s3.other.example' },
-      { region: 'us-east-1' },
-    ]) {
+    for (const change of [{ bucket: 'finance-third' }, { prefix: 'q/' }]) {
       const res = await c.call('PATCH', '/publish-targets/finance-lake', change);
       expect([change, res.statusCode, res.json().error]).toEqual([
         change,
@@ -291,24 +384,34 @@ describe('PATCH /api/publish-targets/:id', () => {
         'Finance lake is used by letter: add a new target instead',
       ]);
     }
-    // The same value is no change; label, credentials and options stay editable.
+    // The same value is no change; label, connection and options stay editable.
+    c.bridge.summaries.push({
+      id: 'finance-rotated',
+      name: 'Finance (rotated)',
+      sinkId: 's3',
+      status: 'ok',
+      statusReason: null,
+    });
     const same = await c.call('PATCH', '/publish-targets/finance-lake', {
       bucket: 'finance-other',
       prefix: 'p/',
       label: 'Finance',
-      accessKeyId: 'AKIANEW',
-      secretAccessKey: 'rotated-secret',
+      connectionId: 'finance-rotated',
       sse: 'AES256',
       storageClass: 'STANDARD_IA',
     });
     expect(same.statusCode).toBe(200);
     expect(same.json()).toMatchObject({
       label: 'Finance',
-      accessKeyId: 'AKIANEW',
+      connectionId: 'finance-rotated',
       sse: 'AES256',
       storageClass: 'STANDARD_IA',
     });
-    expect(same.body).not.toContain('rotated-secret');
+    expect(c.bridge.targets.get('finance-lake')).toMatchObject({
+      label: 'Finance',
+      connectionId: 'finance-rotated',
+      destination: { sse: 'AES256', storageClass: 'STANDARD_IA' },
+    });
   });
 
   it('keeps fields a patch leaves out', async () => {
@@ -316,15 +419,26 @@ describe('PATCH /api/publish-targets/:id', () => {
     const res = await c.call('PATCH', '/publish-targets/default', { label: 'Main' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ label: 'Main', bucket: 'published', prefix: 'pub/' });
+    expect(c.bridge.targets.get('default')).toMatchObject({ label: 'Main' });
   });
 
   it('refuses external settings on an internal target', async () => {
     const c = await setup();
-    const res = await c.call('PATCH', '/publish-targets/default', { region: 'eu-west-2' });
+    const res = await c.call('PATCH', '/publish-targets/default', { connectionId: 'x' });
     expect(res.statusCode).toBe(400);
     expect(JSON.stringify(res.json().error)).toContain(
       'internal targets take only a bucket and prefix',
     );
+  });
+
+  it('refuses credential fields', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    const res = await c.call('PATCH', '/publish-targets/finance-lake', {
+      secretAccessKey: SECRET,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).not.toContain(SECRET);
   });
 
   it("refuses moving an internal target onto CT Studio's own bucket", async () => {
@@ -339,9 +453,10 @@ describe('PATCH /api/publish-targets/:id', () => {
 
   it('clears optional settings with null, and the KMS key once encryption leaves KMS', async () => {
     const c = await setup();
-    await c.targets.create(
-      financeRecord({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'STANDARD_IA' }),
-      'Ken',
+    await c.call(
+      'POST',
+      '/publish-targets',
+      externalBody({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'STANDARD_IA' }),
     );
     await publishLetter(c, 1, 'finance-lake');
     const offKms = await c.call('PATCH', '/publish-targets/finance-lake', { sse: 'AES256' });
@@ -370,18 +485,6 @@ describe('PATCH /api/publish-targets/:id', () => {
     expect(JSON.stringify(bad.json().error)).toContain('a KMS key needs sse');
   });
 
-  it('clears the endpoint of a target not in use, never of one in use', async () => {
-    const c = await setup();
-    await c.targets.create(financeRecord(), 'Ken');
-    const res = await c.call('PATCH', '/publish-targets/finance-lake', { endpoint: null });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ endpoint: null });
-    await c.call('PATCH', '/publish-targets/finance-lake', { endpoint: FINANCE_ENDPOINT });
-    await publishLetter(c, 1, 'finance-lake');
-    const locked = await c.call('PATCH', '/publish-targets/finance-lake', { endpoint: null });
-    expect(locked.statusCode).toBe(409);
-  });
-
   it('keeps a prefix seeded verbatim from .env on other edits', async () => {
     const c = await setup();
     await c.targets.update('default', { prefix: 'ingest' }, null);
@@ -401,39 +504,19 @@ describe('PATCH /api/publish-targets/:id', () => {
     expect((c.targetStore as MemoryObjectStore).ensured).toEqual(['one-bucket', 'two-bucket']);
   });
 
-  it('replaces keys read from .env only as a pair', async () => {
+  it('puts the row back when the bridge refuses the change', async () => {
     const c = await setup();
-    await c.targets.create(
-      financeRecord({
-        accessKeyId: null,
-        secretKeyEnc: null,
-        accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
-        secretKeyEnv: 'TARGET_S3_SECRET_KEY',
-      }),
-      null,
-    );
-    for (const half of [{ accessKeyId: 'AKIANEW' }, { secretAccessKey: 'new-secret' }]) {
-      const res = await c.call('PATCH', '/publish-targets/finance-lake', half);
-      expect(res.statusCode).toBe(400);
-      expect(res.json().error).toBe('set the access key and the secret together');
-    }
-    const both = await c.call('PATCH', '/publish-targets/finance-lake', {
-      accessKeyId: 'AKIANEW',
-      secretAccessKey: 'new-secret',
+    await c.call('POST', '/publish-targets', externalBody());
+    c.bridge.failNext = FakeBridgeApi.refusal('there is no connection gone', 'connection_missing');
+    const res = await c.call('PATCH', '/publish-targets/finance-lake', {
+      label: 'Renamed',
+      connectionId: 'gone',
     });
-    expect(both.statusCode).toBe(200);
-    expect(both.json()).toMatchObject({
-      accessKeyId: 'AKIANEW',
-      secretSet: true,
-      keysFromEnv: null,
+    expect(res.statusCode).toBe(422);
+    expect(await c.targets.get('finance-lake')).toMatchObject({
+      label: 'Finance lake',
+      connectionId: 'finance-account',
     });
-  });
-
-  it('is a 409 for a secret without LLM_SECRETS_KEY', async () => {
-    const c = await setup(false);
-    await c.targets.create(financeRecord({ secretKeyEnc: null }), null);
-    const res = await c.call('PATCH', '/publish-targets/finance-lake', { secretAccessKey: 'x' });
-    expect(res.statusCode).toBe(409);
   });
 });
 
@@ -500,169 +583,86 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect(res.json().error).toBe('Finance lake is used by 2 pending withdrawals');
   });
 
-  it('removes an unused target', async () => {
+  it('removes an unused target, on the bridge too', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await c.call('POST', '/publish-targets', externalBody());
+    expect(c.bridge.targets.has('finance-lake')).toBe(true);
     expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
     expect(await c.targets.get('finance-lake')).toBeNull();
+    expect(c.bridge.targets.has('finance-lake')).toBe(false);
+  });
+
+  it('keeps a target the bridge still has deliveries for', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    c.bridge.inUse.add('finance-lake');
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('Finance lake has deliveries on the bridge');
+    expect(await c.targets.get('finance-lake')).not.toBeNull();
   });
 });
 
-class FailingStore extends MemoryObjectStore {
-  override async put(): Promise<void> {
-    throw Object.assign(new Error(`denied for ${SECRET}`), { name: 'AccessDenied' });
-  }
-}
-
-/** Remembers the keys written. */
-class RecordingStore extends MemoryObjectStore {
-  readonly keys: string[] = [];
-  override async put(bucket: string, key: string, body: Buffer, type: string): Promise<void> {
-    this.keys.push(key);
-    return super.put(bucket, key, body, type);
-  }
-}
-
-/** A bucket HEAD answers 404 for, as AWS and SeaweedFS do for a missing bucket. */
-class MissingBucketStore extends MemoryObjectStore {
-  override async ping(): Promise<void> {
-    throw Object.assign(new Error('not found'), {
-      name: 'NotFound',
-      $metadata: { httpStatusCode: 404 },
-    });
-  }
-}
-
 describe('POST /api/publish-targets/test', () => {
-  it('tests settings before saving', async () => {
+  it('test proxies to the bridge and returns its step and message', async () => {
     const c = await setup();
-    const res = await c.call('POST', '/publish-targets/test', externalBody());
+    c.bridge.testResult = { ok: false, step: 'write', message: 'access denied' };
+    const saved = await c.call('POST', '/publish-targets/test', { id: 'default' });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toEqual({ ok: false, step: 'write', message: 'access denied' });
+    expect(c.bridge.tests).toEqual([{ id: 'default' }]);
+
+    const unsaved = await c.call('POST', '/publish-targets/test', externalBody());
+    expect(unsaved.json()).toEqual({ ok: false, step: 'write', message: 'access denied' });
+    expect(c.bridge.tests.at(-1)).toEqual({
+      connectionId: 'finance-account',
+      destination: {
+        bucket: 'finance-lake',
+        prefix: 'ingest/',
+        sse: 'none',
+        kmsKeyId: '',
+        storageClass: '',
+      },
+    });
+
+    await c.call('POST', '/publish-targets/test', { kind: 'internal', bucket: 'new-archive' });
+    expect(c.bridge.tests.at(-1)).toMatchObject({
+      connectionId: 'internal',
+      destination: { bucket: 'new-archive', prefix: '' },
+    });
+  });
+
+  it('is a failed connect step when the bridge cannot be reached', async () => {
+    const c = await setup();
+    c.bridge.failNext = new BridgeApiError(0, null, 'the bridge could not be reached');
+    const res = await c.call('POST', '/publish-targets/test', { id: 'default' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      ok: true,
-      step: null,
-      message: 'Connected: wrote, read and deleted a test file',
+      ok: false,
+      step: 'connect',
+      message: 'the delivery bridge could not be reached',
     });
-    expect(c.targetOptions.at(-1)).toMatchObject({
-      endpoint: FINANCE_ENDPOINT,
-      accessKeyId: 'AKIAFINANCE',
-      secretAccessKey: SECRET,
-    });
-    expect(res.body).not.toContain(SECRET);
   });
 
-  it('tests a stored target with its stored secret, overlaid with the body', async () => {
+  it('is a 404 for an unknown target, and 400 for settings that cannot be saved', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
-    const res = await c.call('POST', '/publish-targets/test', {
-      id: 'finance-lake',
-      accessKeyId: 'AKIAOTHER',
-    });
-    expect(res.json().ok).toBe(true);
-    expect(c.targetOptions.at(-1)).toMatchObject({
-      accessKeyId: 'AKIAOTHER',
-      secretAccessKey: SECRET,
-    });
-    await c.call('POST', '/publish-targets/test', { id: 'finance-lake', secretAccessKey: 'typed' });
-    expect(c.targetOptions.at(-1)).toMatchObject({ secretAccessKey: 'typed' });
-  });
-
-  it('validates the merged settings', async () => {
-    const c = await setup();
-    const res = await c.call('POST', '/publish-targets/test', { id: 'default', region: 'r' });
-    expect(res.statusCode).toBe(400);
-    expect(JSON.stringify(res.json().error)).toContain(
-      'internal targets take only a bucket and prefix',
-    );
     expect((await c.call('POST', '/publish-targets/test', { id: 'nope' })).statusCode).toBe(404);
-  });
-
-  it('reports a failing step as ok: false, never echoing the secret', async () => {
-    const c = await setup();
-    c.endpointStores.set(FINANCE_ENDPOINT, new FailingStore());
-    const res = await c.call('POST', '/publish-targets/test', externalBody());
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: false, step: 'write', message: 'access denied' });
-    expect(res.body).not.toContain(SECRET);
-  });
-
-  it('says no such bucket for an external target whose bucket is missing', async () => {
-    const c = await setup();
-    const store = new MissingBucketStore();
-    c.endpointStores.set(FINANCE_ENDPOINT, store);
-    const res = await c.call('POST', '/publish-targets/test', externalBody());
-    expect(res.json()).toEqual({ ok: false, step: 'connect', message: 'no such bucket' });
-    expect(store.objects.size).toBe(0);
-  });
-
-  // Saving an internal target creates its bucket, so testing it first must not fail on that.
-  it('does not check the bucket of an internal target (saving creates it)', async () => {
-    const c = await testApp({ llmSecrets: keys, targetStore: new MissingBucketStore() });
-    const res = await c.app.inject({
-      method: 'POST',
-      url: '/api/publish-targets/test',
-      payload: { label: 'Archive', kind: 'internal', bucket: 'new-archive', prefix: '' },
-    });
-    expect(res.json()).toMatchObject({ ok: true });
-  });
-
-  it('tests a stored target with the same null clears and KMS rule as a save', async () => {
-    const c = await setup();
-    await c.targets.create(
-      financeRecord({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'STANDARD_IA' }),
-      null,
-    );
-    const res = await c.call('POST', '/publish-targets/test', {
-      id: 'finance-lake',
-      sse: 'AES256',
-      storageClass: null,
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().ok).toBe(true);
+    const bad = await c.call('POST', '/publish-targets/test', { bucket: 'b' });
+    expect(bad.statusCode).toBe(400);
   });
 
   it("refuses to test CT Studio's own bucket as an internal target", async () => {
     const c = await setup();
-    const res = await c.call('POST', '/publish-targets/test', {
-      label: 'Oops',
-      kind: 'internal',
-      bucket: 'runs',
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe("runs is CT Studio's own runs bucket: pick another");
-    const backups = await c.call('POST', '/publish-targets/test', {
-      label: 'Oops',
-      kind: 'internal',
-      bucket: 'backups',
-    });
-    expect(backups.statusCode).toBe(400);
-    expect(backups.json().error).toBe("backups is CT Studio's own backups bucket: pick another");
-    const overlay = await c.call('POST', '/publish-targets/test', {
-      id: 'default',
-      bucket: 'outputs',
-    });
-    expect(overlay.statusCode).toBe(400);
-  });
-
-  it('tests a prefix seeded verbatim from .env where it delivers', async () => {
-    const store = new RecordingStore();
-    const c = await testApp({ llmSecrets: keys, targetStore: store });
-    await c.targets.update('default', { prefix: 'ingest' }, null);
-    await c.app.inject({
-      method: 'POST',
-      url: '/api/publish-targets/test',
-      payload: { id: 'default' },
-    });
-    expect(store.keys.length).toBeGreaterThan(0);
-    for (const key of store.keys) {
-      expect([key, key.startsWith('ingest') && !key.startsWith('ingest/')]).toEqual([key, true]);
+    for (const bucket of ['runs', 'backups']) {
+      const res = await c.call('POST', '/publish-targets/test', {
+        label: 'Oops',
+        kind: 'internal',
+        bucket,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe(`${bucket} is CT Studio's own ${bucket} bucket: pick another`);
     }
-  });
-
-  it('tests the internal default', async () => {
-    const c = await setup();
-    const res = await c.call('POST', '/publish-targets/test', { id: 'default' });
-    expect(res.json()).toMatchObject({ ok: true });
+    expect(c.bridge.tests).toEqual([]);
   });
 });
 
@@ -676,13 +676,7 @@ const published = (jobId: string, targetId: string, bucket: string, prefix: stri
   targetId,
 });
 
-class Unreachable extends MemoryObjectStore {
-  override async get(): Promise<Buffer | null> {
-    throw new Error('connect ECONNREFUSED');
-  }
-}
-
-describe('reading published outputs from their recorded target', () => {
+describe('reading published outputs through the bridge, from their recorded target', () => {
   async function delivered(c: Awaited<ReturnType<typeof setup>>) {
     const res = await c.app.inject({
       method: 'POST',
@@ -693,21 +687,18 @@ describe('reading published outputs from their recorded target', () => {
     c.repo.jobs.set(job.id, { ...c.repo.jobs.get(job.id)!, status: 'succeeded' });
     return job;
   }
-  const doc = Buffer.from(JSON.stringify({ document_id: 'd', fields: {} }));
 
   it('serves each output from its own target', async () => {
     const c = await setup();
     await c.targets.create(financeRecord(), null);
-    const finance = new MemoryObjectStore();
-    c.endpointStores.set(FINANCE_ENDPOINT, finance);
     const a = await delivered(c);
     const b = await delivered(c);
     const onFinance = published(a.id, 'finance-lake', 'finance-lake', 'ingest/');
     const onDefault = published(b.id, 'default', 'published', 'pub/');
     c.repo.outputs.set(a.id, [onFinance]);
     c.repo.outputs.set(b.id, [onDefault]);
-    await finance.put('finance-lake', onFinance.key, Buffer.from('finance'), 'application/json');
-    await c.targetStore.put('published', onDefault.key, Buffer.from('default'), 'application/json');
+    c.bridge.put('finance-lake', 'finance-lake', onFinance.key, 'finance');
+    c.bridge.put('default', 'published', onDefault.key, 'default');
 
     expect((await c.app.inject(`/api/jobs/${a.id}/outputs/document`)).body).toBe('finance');
     expect((await c.app.inject(`/api/jobs/${b.id}/outputs/document`)).body).toBe('default');
@@ -720,34 +711,10 @@ describe('reading published outputs from their recorded target', () => {
     });
   });
 
-  it('reads with the rotated credentials at once', async () => {
+  it('answers 502 naming the target when the bridge cannot read it, and still shows the result', async () => {
     const c = await setup();
     await c.targets.create(financeRecord(), null);
-    const finance = new MemoryObjectStore();
-    c.endpointStores.set(FINANCE_ENDPOINT, finance);
-    const a = await delivered(c);
-    const out = published(a.id, 'finance-lake', 'finance-lake', 'ingest/');
-    c.repo.outputs.set(a.id, [out]);
-    await finance.put('finance-lake', out.key, doc, 'application/json');
-    expect((await c.app.inject(`/api/jobs/${a.id}/outputs/document`)).statusCode).toBe(200);
-
-    const rotated = await c.call('PATCH', '/publish-targets/finance-lake', {
-      accessKeyId: 'AKIAROTATED',
-      secretAccessKey: 'rotated-secret',
-    });
-    expect(rotated.statusCode).toBe(200);
-    const read = await c.app.inject(`/api/jobs/${a.id}/outputs/document`);
-    expect(read.statusCode).toBe(200);
-    expect(c.targetOptions.at(-1)).toMatchObject({
-      accessKeyId: 'AKIAROTATED',
-      secretAccessKey: 'rotated-secret',
-    });
-  });
-
-  it('answers 502 naming the target when it cannot be reached, and still shows the result', async () => {
-    const c = await setup();
-    await c.targets.create(financeRecord(), null);
-    c.endpointStores.set(FINANCE_ENDPOINT, new Unreachable());
+    c.bridge.failReads = new BridgeApiError(0, null, 'the bridge could not be reached');
     const a = await delivered(c);
     c.repo.outputs.set(a.id, [published(a.id, 'finance-lake', 'finance-lake', 'ingest/')]);
     for (const url of [`/api/jobs/${a.id}/outputs/document`, `/api/results/${a.id}/archive`]) {
@@ -766,9 +733,13 @@ describe('reading published outputs from their recorded target', () => {
     });
   });
 
-  it('answers 502 when the target cannot be used', async () => {
-    const c = await setup(false); // no master key: the stored secret cannot be decrypted
+  it('answers 502 when the bridge refuses the target (no connection)', async () => {
+    const c = await setup();
     await c.targets.create(financeRecord(), null);
+    c.bridge.failReads = FakeBridgeApi.refusal(
+      'the target has no connection',
+      'credential_missing',
+    );
     const a = await delivered(c);
     c.repo.outputs.set(a.id, [published(a.id, 'finance-lake', 'finance-lake', 'ingest/')]);
     const res = await c.app.inject(`/api/jobs/${a.id}/outputs/document`);

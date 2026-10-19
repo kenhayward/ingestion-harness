@@ -241,7 +241,8 @@
  },
  "queue": {
   "awaiting": [],
-  "completed": [
+  "completed": [],
+  "delivering": [
    [
     "job-1",
     [
@@ -251,6 +252,12 @@
      "csv:demo/v1/issues/doc-1.csv",
      "json:demo/v1/document/doc-1.json",
      "rdf:demo/v1/graph/doc-1.ttl"
+    ],
+    [
+     [
+      "default",
+      "00000000-0000-4000-8000-000000000002"
+     ]
     ]
    ]
   ],
@@ -409,6 +416,13 @@
      "rdf:pvp/demo/v1/graph/doc-1.ttl"
     ],
     "default"
+   ]
+  ],
+  "published_deliveries": [
+   [
+    "job-1",
+    "default",
+    "00000000-0000-4000-8000-000000000002"
    ]
   ],
   "reviewed": [],

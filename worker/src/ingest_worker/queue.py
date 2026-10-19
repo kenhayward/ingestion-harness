@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
+from .bridge.models import ActingUser
 from .llm.base import ModelDescriptor
 from .outputs import RenderedOutput
 
@@ -52,6 +53,8 @@ class ClaimedJob:
     #: The document's file name as uploaded ('' without a document): every extraction prompt
     #: names it, so a step can fill an output like the originating file name.
     filename: str = ""
+    #: sha256 of the uploaded file ('' without a document): the package's idempotency key.
+    source_sha256: str = ""
 
 
 class JobQueue(Protocol):
@@ -86,9 +89,33 @@ class JobQueue(Protocol):
         ...
 
     def record_published(
-        self, job: ClaimedJob, outputs: list[RenderedOutput], target: Target
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        target: Target,
+        delivery_id: str | None,
     ) -> None:
-        """Record outputs delivered to `target` (its id and bucket, the keys as written)."""
+        """Record outputs delivered to `target` (its id and bucket, the keys as written, and the
+        bridge's delivery that writes them)."""
+        ...
+
+    def delivering(
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        outputs_bucket: str,
+        deliveries: list[tuple[str, str]],
+    ) -> None:
+        """Hand the job to the bridge: status `delivering` with its draft outputs recorded, and
+        one `job_deliveries` row per (target id, delivery id). The bridge's events finish it."""
+        ...
+
+    def reviewer(self, job_id: str) -> ActingUser | None:
+        """The CT Studio user who approved the job (None: not reviewed, or no such user)."""
+        ...
+
+    def uploader(self, job_id: str) -> ActingUser | None:
+        """The CT Studio user who queued the job (None: not recorded)."""
         ...
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
@@ -146,7 +173,7 @@ WITH next AS (
 SELECT c.id::text, COALESCE(c.document_id::text, ''), COALESCE(d.spec_id, c.project_id, ''),
        COALESCE(d.spec_version, 0), COALESCE(d.bucket, ''), COALESCE(d.object_key, ''),
        c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at,
-       c.project_id, c.params, COALESCE(d.filename, '')
+       c.project_id, c.params, COALESCE(d.filename, ''), COALESCE(d.sha256, '')
   FROM claimed c LEFT JOIN documents d ON d.id = c.document_id
 """
 
@@ -203,17 +230,29 @@ class PgJobQueue:
         bucket: str,
         stage: str,
         target_id: str | None = None,
+        delivery_id: str | None = None,
     ) -> None:
         for o in outputs:
             self._conn.execute(
                 """INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key,
-                       row_count, target_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                       row_count, target_id, delivery_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (job_id, output_id, stage) DO UPDATE
                      SET bucket = EXCLUDED.bucket, object_key = EXCLUDED.object_key,
                          row_count = EXCLUDED.row_count, target_id = EXCLUDED.target_id,
-                         created_at = now(), withdrawn_at = NULL""",
-                (job.id, o.output_id, stage, o.format, bucket, o.key, o.row_count, target_id),
+                         delivery_id = EXCLUDED.delivery_id, created_at = now(),
+                         withdrawn_at = NULL""",
+                (
+                    job.id,
+                    o.output_id,
+                    stage,
+                    o.format,
+                    bucket,
+                    o.key,
+                    o.row_count,
+                    target_id,
+                    delivery_id,
+                ),
             )
 
     def await_review(
@@ -238,9 +277,52 @@ class PgJobQueue:
         self._record_outputs(job, outputs, bucket, "draft")
 
     def record_published(
-        self, job: ClaimedJob, outputs: list[RenderedOutput], target: Target
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        target: Target,
+        delivery_id: str | None,
     ) -> None:
-        self._record_outputs(job, outputs, target.bucket, "published", target.id)
+        self._record_outputs(job, outputs, target.bucket, "published", target.id, delivery_id)
+
+    def delivering(
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        outputs_bucket: str,
+        deliveries: list[tuple[str, str]],
+    ) -> None:
+        with self._conn.transaction():
+            # Cancelled meanwhile: the job keeps its status, but the bridge accepted the package
+            # and delivers it, so its deliveries are recorded (their events are applied, not
+            # resent for ever). A job deleted meanwhile has nothing to record them on.
+            if self._finish(job, "delivering", None):
+                self._record_outputs(job, outputs, outputs_bucket, "draft")
+            for target_id, delivery_id in deliveries:
+                self._conn.execute(
+                    """INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
+                       SELECT %s, id, %s, 'queued' FROM jobs WHERE id = %s
+                       ON CONFLICT (delivery_id) DO NOTHING""",
+                    (delivery_id, target_id, job.id),
+                )
+
+    def reviewer(self, job_id: str) -> ActingUser | None:
+        row = self._conn.execute(
+            """SELECT u.id::text, u.name, u.email FROM jobs j
+                 JOIN users u ON lower(btrim(u.name)) = lower(btrim(j.reviewer))
+                WHERE j.id = %s AND j.reviewed_at IS NOT NULL""",
+            (job_id,),
+        ).fetchone()
+        return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
+
+    def uploader(self, job_id: str) -> ActingUser | None:
+        row = self._conn.execute(
+            """SELECT j.created_by_user::text, COALESCE(u.name, j.created_by, ''), u.email
+                 FROM jobs j LEFT JOIN users u ON u.id = j.created_by_user
+                WHERE j.id = %s AND j.created_by_user IS NOT NULL""",
+            (job_id,),
+        ).fetchone()
+        return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         cur = self._conn.execute(

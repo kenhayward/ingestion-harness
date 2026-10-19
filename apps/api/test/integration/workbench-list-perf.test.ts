@@ -33,6 +33,9 @@ import { MemoryProfileRepo } from '../../src/profile/repo.js';
 import { PgTemplateRepo } from '../../src/templates/repo.js';
 import { PgWorkbenchRepo } from '../../src/workbench/repo.js';
 import { seedWorkbenchProjects } from '../../src/workbench/seed.js';
+import { HandoffCodes } from '../../src/bridge/handoff.js';
+import { FakeBridgeApi } from '../fake-bridge.js';
+import { TEST_BRIDGE_KEY } from '../helpers.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
 const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
@@ -65,16 +68,19 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
       repo,
       store: new MemoryObjectStore(), // no prepared triage or proposal bodies: read as missing
       targets: perfTargets,
+      bridge: new FakeBridgeApi(),
+      bridgeAuth: {
+        key: TEST_BRIDGE_KEY,
+        publicUrl: 'https://x.test/bridge',
+        codes: new HandoffCodes(),
+      },
       targetStores: new TargetStores({
-        repo: perfTargets,
         internal: {
           endpoint: 'http://s3.test',
           region: 'r',
           accessKeyId: 'a',
           secretAccessKey: 's',
         },
-        secrets: null,
-        env: {},
         make: () => new MemoryObjectStore(),
       }),
       templates: new PgTemplateRepo(templatesPool),

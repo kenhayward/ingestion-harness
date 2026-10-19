@@ -23,6 +23,9 @@ const PUBLIC = new Set([
   'GET /api/version',
   'POST /api/auth/login',
   'POST /api/auth/logout',
+  // Signed by the bridge (BRIDGE_CLIENT_KEY), never a session.
+  'POST /api/bridge/events',
+  'POST /api/bridge/handoff/redeem',
 ]);
 
 const ID = '00000000-0000-4000-8000-000000000000';
