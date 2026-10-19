@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "migrate": "tsx src/db/migrate-cli.ts"
+    "migrate": "tsx src/db/migrate-cli.ts",
+    "openapi": "vitest run -u --config vitest.config.ts test/openapi.test.ts"
   },
   "dependencies": {
     "@fastify/swagger": "^9.9.2",

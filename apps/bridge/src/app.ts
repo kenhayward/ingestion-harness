@@ -3,6 +3,8 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import type { BridgeConfig } from './config.js';
 import type { DeliveryRepo } from './deliveries/repo.js';
 import { registerGuard, requestIds } from './http/guard.js';
+import { registerOpenApi } from './openapi.js';
+import { catalogRoutes } from './routes/catalog.js';
 import type { PackageStore } from './packages/store.js';
 import { deliveryRoutes } from './routes/deliveries.js';
 import { healthRoutes } from './routes/health.js';
@@ -44,7 +46,9 @@ export async function buildBridge(deps: BridgeDeps): Promise<FastifyInstance> {
   // themselves, and responses are serialised as they are (as in apps/api).
   app.setValidatorCompiler(() => (data) => ({ value: data }));
   app.setSerializerCompiler(() => (data) => JSON.stringify(data));
+  await registerOpenApi(app); // before the routes: swagger collects them as they are added
   await app.register(healthRoutes);
   await app.register(deliveryRoutes);
+  await app.register(catalogRoutes);
   return app;
 }
