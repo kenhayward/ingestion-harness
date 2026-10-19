@@ -459,7 +459,6 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     group.add_argument("--remint", action="store_true", help="re-mint under the current base")
     args = parser.parse_args(argv)
 
-
     settings = Settings.from_env()
     library = psycopg.connect(settings.database_url, autocommit=True)
     deps = PipelineDeps(
