@@ -454,7 +454,7 @@ export function ReviewHelp() {
         </li>
         <li>
           <strong>Graph</strong> (linked data): the graph and any rules it breaks, as cards, a
-          diagram or Turtle (see <em>The document graph</em>).
+          diagram or Turtle (see <em>Reading a graph</em>).
         </li>
       </ul>
       <h3>Deciding</h3>
@@ -466,18 +466,29 @@ export function ReviewHelp() {
   );
 }
 
-export function ReviewGraphHelp() {
+export function GraphViewsHelp() {
   return (
     <>
       <p>
-        When the recipe delivers RDF, the <strong>Graph</strong> tab shows the linked data this
-        document will publish, and the rules (shapes) it breaks, if the recipe pins any.
+        When a recipe delivers RDF, each document becomes a graph of linked data. You see it in
+        three places, all read the same way:
       </p>
-      <h3>Shapes</h3>
-      <p>
-        Each result says what is wrong. <strong>Show</strong> opens the field or table it is about,
-        where you correct the value; the graph follows the corrected values when you approve.
-      </p>
+      <ul>
+        <li>
+          <strong>Review</strong>, the <strong>Graph</strong> tab: the graph this document will
+          publish, and the rules (shapes) it breaks if the recipe pins any. Each result says what is
+          wrong; <strong>Show</strong> opens the field or table it is about, where you correct the
+          value. The graph follows the corrected values when you approve.
+        </li>
+        <li>
+          The recipe&apos;s <strong>Mapping</strong> preview: the saved mapping over each dev
+          sample&apos;s newest test run, before anything is published.
+        </li>
+        <li>
+          A published <strong>result</strong>, its <strong>Graph</strong> item: the graph as it was
+          delivered.
+        </li>
+      </ul>
       <h3>Three views</h3>
       <ul>
         <li>

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { DraftChange, TermLabel, TermLabelsBody } from '@ih/shared';
@@ -415,8 +415,31 @@ describe('MappingTab', () => {
       error: null,
       result: null,
     }));
-    show(true, { startGraphPreview });
+    const getGraphPreview = vi.fn(async () => ({
+      jobId: 'g1',
+      status: 'succeeded' as const,
+      error: null,
+      result: {
+        samples: [
+          {
+            sampleId: 's1',
+            fileName: 's1.pdf',
+            turtle: `<https://d/doc/s1> a <${PH}BatchRecord> .`,
+            triples: 1,
+            report: null,
+          },
+        ],
+      },
+    }));
+    const { api } = show(true, { startGraphPreview, getGraphPreview });
     await userEvent.click(screen.getByRole('button', { name: 'Preview on dev samples' }));
     expect(startGraphPreview).toHaveBeenCalledWith('batch');
+    // The sample's graph as cards, its terms named with the draft's prefixes.
+    expect(await screen.findByRole('article', { name: 'Batch record s1' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.termLabels).toHaveBeenCalledWith(
+        expect.objectContaining({ prefixes: { pharma: PH } }),
+      ),
+    );
   });
 });
