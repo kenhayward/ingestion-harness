@@ -64,6 +64,8 @@ from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
 if TYPE_CHECKING:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+
     from .graph_registry import GraphRegistry
     from .graph_store import GraphStore
     from .linked_data import LinkedDataSettings
@@ -176,6 +178,9 @@ class PipelineDeps:
     graph_store: GraphStore | None = None
     #: Delivered and withdrawn jobs, for `republish` (None: republish goes to review).
     delivered_jobs: RebuildSource | None = None
+    #: Saves a recipe's steps after each one, so a stopped job resumes where it stopped
+    #: (step_graph, the LangGraph trial; None: the steps run as before).
+    step_checkpointer: BaseCheckpointSaver[Any] | None = None
 
 
 @dataclass(frozen=True)

@@ -46,7 +46,6 @@ from .pipeline import (
     publish_outputs,
     resolve_models,
     run_check_with_event,
-    run_nodes,
     run_step_extraction,
     target_for,
 )
@@ -210,16 +209,21 @@ def process_template_job(
 
         return run_extract
 
-    nodes = [node(step) for step in template.pipeline]
-    state = run_nodes(job, queue, nodes, DocState(issues=tuple(segment_issues(doc))))
+    from .step_graph import run_steps, step_thread, thread_key
 
-    reasons = _review_reasons(template, state.checks, list(state.issues))
-    if reasons:
-        queue.event(job.id, "warn", "review required", {"reasons": reasons})
-    done = finalise(
-        job, deps, queue, template, document_of(job, doc, template, state, reasons), mode="draft"
-    )
-    write_drafts(deps, done.outputs)
+    nodes = [(step.id, node(step)) for step in template.pipeline]
+    key = thread_key(job, template.id, template.version, doc.sha256)
+    last_attempt = job.attempts >= job.max_attempts
+    with step_thread(deps.step_checkpointer, key, last_attempt=last_attempt):
+        start = DocState(issues=tuple(segment_issues(doc)))
+        state = run_steps(job, queue, deps.step_checkpointer, key, nodes, start)
+
+        reasons = _review_reasons(template, state.checks, list(state.issues))
+        if reasons:
+            queue.event(job.id, "warn", "review required", {"reasons": reasons})
+        document = document_of(job, doc, template, state, reasons)
+        done = finalise(job, deps, queue, template, document, mode="draft")
+        write_drafts(deps, done.outputs)
     formats: list[str] = list(template.delivery_formats())
     graph = (
         GraphDelivery(template, done.document, done.graph)

@@ -6,6 +6,9 @@ step runs, model and OCR requests, graph store requests. The trace must equal th
 tests/fixtures/equivalence/, so a refactor that changes behaviour fails here even where no
 behavioural test happens to look. Wall-clock values are replaced with placeholders.
 
+Every scenario runs through both step executors (the plain loop and the LangGraph trial's
+step graph) against the same golden files.
+
 A golden file is rewritten only on purpose: IH_UPDATE_GOLDEN=1 uv run pytest tests/test_equivalence.py
 """
 
@@ -15,16 +18,19 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
 from rdflib import Graph
 from rdflib.compare import to_canonical_graph
 
+from ingest_worker import main
 from ingest_worker.graph_registry import MemoryGraphRegistry
 from ingest_worker.llm.base import CompletionResult, VisionRequest
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
@@ -146,6 +152,26 @@ def provider_of(deps: PipelineDeps, name: str) -> FakeProvider:
 
 
 # --- scenarios -------------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True, params=["loop", "langgraph"])
+def executor(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """Every scenario runs twice: its steps in the plain loop, then as a LangGraph graph with a
+    checkpoint after each step (step_graph). Both must leave the same trace, and the graph runs
+    must leave no thread behind (every scenario ends in a way a retry would not resume from)."""
+    savers: list[InMemorySaver] = []
+    if request.param == "langgraph":
+
+        def run(queue: FakeQueue, deps: PipelineDeps, worker_id: str) -> bool:
+            if deps.step_checkpointer is None:
+                deps.step_checkpointer = InMemorySaver()
+                savers.append(deps.step_checkpointer)
+            return main.run_once(queue, deps, worker_id)
+
+        monkeypatch.setattr(sys.modules[__name__], "run_once", run)
+    yield request.param
+    for saver in savers:
+        assert list(saver.list(None)) == []
 
 
 def test_template_review_rerun_publish(tmp_path: Path) -> None:

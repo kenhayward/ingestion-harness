@@ -374,7 +374,7 @@ extractor, or a team's in-house classifier, plugs in as a node without being dep
 | --- | --- | --- | --- |
 | 0 | Decide | ADR "capabilities as nodes"; this document reviewed | ADR accepted |
 | 1 | Explicit nodes, no framework ([worker-nodes-refactor.md](worker-nodes-refactor.md)) | split `prepare_document`; steps return values instead of mutating dicts; outcomes as values; `NodeSpec` + registry for built-ins | `npm run check` green, behaviour unchanged |
-| 2 | LangGraph spike | `process` executed by a `StateGraph` behind a flag; Postgres checkpointer; cancel and heartbeat wrappers; resume after a killed worker | regression suite equivalent; resume skips finished steps; cancel still wins |
+| 2 | LangGraph spike ([langgraph-trial.md](langgraph-trial.md)) | `process` executed by a `StateGraph` behind a flag; Postgres checkpointer; cancel and heartbeat wrappers; resume after a killed worker | regression suite equivalent; resume skips finished steps; cancel still wins |
 | 3 | Plugins | recipe `uses:` steps; node catalogue in the API and recipe editor; first plugin (type detection or table detection) | a plugin step runs in a published recipe, pinned by version |
 | 4 | A2A inbound | service accounts ADR; Agent Card; `SendMessage`/`GetTask`/`CancelTask`/stream; push webhooks | an external A2A client processes a document end to end, honouring retirement and data policy |
 | 5 | A2A outbound | remote-agent registry (admin), `uses: a2a` node with data-policy gate and allowlist | a recipe delegates one step to a registered remote agent |
