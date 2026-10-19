@@ -5,6 +5,7 @@ import {
 } from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { applyEvent } from '../bridge/events.js';
 import { guardBridgeSigned } from '../bridge/guard.js';
 import { error, md, noContent, res } from '../openapi/zod.js';
 
@@ -124,12 +125,20 @@ async function signedRoutes(app: FastifyInstance): Promise<void> {
           204: noContent('Recorded (or older than what is recorded).'),
           400: error('The body is not a delivery event.'),
           401: REFUSED,
+          409: error(
+            '`unknown delivery`: not recorded here yet (the worker records it as it hands the job over); the bridge sends it again later.',
+          ),
         },
       },
     },
     async (req, reply) => {
       const body = BridgeEventSchema.safeParse(req.body);
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const outcome = await applyEvent(
+        { repo: app.deps.repo, targets: app.deps.targets },
+        body.data,
+      );
+      if (outcome === 'unknown') return reply.code(409).send({ error: 'unknown delivery' });
       return reply.code(204).send();
     },
   );

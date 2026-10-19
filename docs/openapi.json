@@ -11955,7 +11955,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it);\n`stageTimes` says when this attempt finished reading the document and found its\nsections. `graph` is the newest graph the job published (ADR 0011): its IRI,\nversion and triples, and whether it reached the triple store.",
+        "description": "A job with its outputs: the drafts written before review (`stage: draft`, outputs\nbucket) and the copies delivered to the final target (`stage: published`).\nDownload one with `GET /api/jobs/{id}/outputs/{outputId}`. While an extraction\nruns, `progress` says where it is (as `GET /api/jobs/{id}/events` sends it);\n`stageTimes` says when this attempt finished reading the document and found its\nsections. `graph` is the newest graph the job published (ADR 0011): its IRI,\nversion and triples, and whether it reached the triple store. `deliveries` are its\ndeliveries through the delivery bridge, each target's latest status (a `delivering`\njob finishes when all are final).",
         "parameters": [
           {
             "schema": {
@@ -12384,6 +12384,44 @@
                         "readAt",
                         "segmentedAt"
                       ]
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "targetId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running",
+                              "waiting",
+                              "succeeded",
+                              "skipped",
+                              "needs_user",
+                              "failed"
+                            ]
+                          },
+                          "message": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "targetId",
+                          "label",
+                          "status",
+                          "message"
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -15604,6 +15642,44 @@
                             "readAt",
                             "segmentedAt"
                           ]
+                        },
+                        "deliveries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "targetId": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "waiting",
+                                  "succeeded",
+                                  "skipped",
+                                  "needs_user",
+                                  "failed"
+                                ]
+                              },
+                              "message": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "targetId",
+                              "label",
+                              "status",
+                              "message"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -76031,6 +76107,37 @@
                   "required": [
                     "error"
                   ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`unknown delivery`: not recorded here yet (the worker records it as it hands the job over); the bridge sends it again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`unknown delivery`: not recorded here yet (the worker records it as it hands the job over); the bridge sends it again later."
                 }
               }
             }

@@ -138,6 +138,11 @@ export function progressSteps(
     case 'succeeded':
       states = upTo(5, null);
       break;
+    case 'delivering':
+      // Reviewed (or not needed) and handed to the bridge: publishing is the step under way.
+      states = upTo(4, 'current');
+      running = 'Delivering';
+      break;
     case 'rejected':
       states = upTo(4, 'fail');
       break;

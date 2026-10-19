@@ -34,6 +34,7 @@ import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { HttpBridgeApi } from './bridge/client.js';
 import { HandoffCodes } from './bridge/handoff.js';
 import { syncTargetsWithBridge } from './bridge/mirror.js';
+import { reconcileOnce } from './bridge/reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
 import { defaultSeed, seedDifferences } from './publish-targets/seed.js';
@@ -267,6 +268,14 @@ const pruneSignIns = () =>
 void pruneSignIns();
 setInterval(() => void pruneSignIns(), 3_600_000).unref();
 if (s3Keys) stopReconciler = startReconciler(s3Keys, app.log);
+// A delivery whose event was lost is read from the bridge, so no job is left delivering.
+setInterval(
+  () =>
+    void reconcileOnce({ repo, bridge, targets }, new Date())
+      .then((n) => n && app.log.info({ moved: n }, 'deliveries reconciled with the bridge'))
+      .catch((err: unknown) => app.log.warn({ err }, 'delivery reconcile failed')),
+  60_000,
+).unref();
 // Targets' keys move to the bridge once (after the seed above), and every target is mirrored.
 void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).then(
   ({ moved, skipped }) => {

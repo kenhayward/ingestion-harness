@@ -46,6 +46,11 @@ import {
   type BackgroundTask,
   graphWithdrawals,
   type WithdrawnGraph,
+  type DeliveryUpdate,
+  FINAL_DELIVERY,
+  finishEvent,
+  type JobDelivery,
+  type JobFinish,
 } from './types.js';
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
@@ -925,6 +930,89 @@ export class MemoryRepo implements IngestionRepo {
       reviewNote: reason,
       reviewedAt: new Date().toISOString(),
     });
+  }
+
+  /** job_deliveries, by delivery id. */
+  readonly deliveries = new Map<string, JobDelivery>();
+
+  async recordDeliveries(
+    jobId: string,
+    rows: { targetId: string; deliveryId: string }[],
+  ): Promise<void> {
+    for (const r of rows) {
+      if (this.deliveries.has(r.deliveryId)) continue;
+      this.deliveries.set(r.deliveryId, {
+        deliveryId: r.deliveryId,
+        jobId,
+        targetId: r.targetId,
+        status: 'queued',
+        error: null,
+        receipt: null,
+        lastSequence: 0,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  /** Test helper: a delivery last updated at `at` (for the reconcile). */
+  ageDelivery(deliveryId: string, at: Date): void {
+    const d = this.deliveries.get(deliveryId);
+    if (d) d.updatedAt = at.toISOString();
+  }
+
+  async applyDeliveryUpdate(
+    deliveryId: string,
+    update: DeliveryUpdate,
+    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+  ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }> {
+    const d = this.deliveries.get(deliveryId);
+    if (!d) return { outcome: 'unknown', finished: null };
+    if (update.sequence <= d.lastSequence) return { outcome: 'stale', finished: null };
+    Object.assign(d, {
+      status: update.status,
+      error: update.error,
+      receipt: update.receipt,
+      lastSequence: update.sequence,
+      updatedAt: new Date().toISOString(),
+    });
+    const outcome = finish(await this.deliveriesOf(d.jobId));
+    if (!outcome) return { outcome: 'applied', finished: null };
+    const job = this.jobs.get(d.jobId);
+    const background = this.backgroundJobs.find((j) => j.id === d.jobId);
+    const status = job?.status ?? background?.status;
+    if (status !== 'delivering') return { outcome: 'applied', finished: null };
+    if (job) {
+      this.update(d.jobId, {
+        status: outcome.status,
+        error: outcome.status === 'failed' ? outcome.error : null,
+        reviewReasons: outcome.status === 'awaiting_review' ? outcome.reasons : job.reviewReasons,
+      });
+    } else if (background) {
+      background.status = outcome.status;
+    }
+    const e = finishEvent(outcome);
+    this.addEvent(d.jobId, e.level, e.message, e.data);
+    return { outcome: 'applied', finished: outcome };
+  }
+
+  async deliveriesOf(jobId: string): Promise<JobDelivery[]> {
+    return [...this.deliveries.values()].filter((d) => d.jobId === jobId).map((d) => ({ ...d }));
+  }
+
+  async stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]> {
+    const before = now.getTime() - olderThanMinutes * 60_000;
+    return [...this.deliveries.values()]
+      .filter((d) => {
+        const status =
+          this.jobs.get(d.jobId)?.status ??
+          this.backgroundJobs.find((j) => j.id === d.jobId)?.status;
+        return (
+          status === 'delivering' &&
+          !FINAL_DELIVERY.has(d.status) &&
+          Date.parse(d.updatedAt) < before
+        );
+      })
+      .map((d) => ({ ...d }));
   }
 
   private update(id: string, changes: Partial<JobSummary>): JobSummary {
