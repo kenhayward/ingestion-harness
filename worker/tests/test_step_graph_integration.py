@@ -15,6 +15,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
@@ -91,3 +92,58 @@ def _sha(data: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(data).hexdigest()
+
+
+STATUSES = ["queued", "running", "succeeded", "failed", "needs_review", "awaiting_review",
+            "cancelled", "rejected"]  # fmt: skip
+
+
+def test_the_prune_keeps_only_threads_of_queued_or_running_jobs(database_url: str) -> None:
+    """ORPHANS_SQL against CT Studio's own jobs table (db/migrations applied)."""
+    from ingest_worker.step_graph import pg_orphaned_threads, prune_threads, run_steps
+    from ingest_worker.template_pipeline import DocState
+
+    from .fakes import FakeQueue
+
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        if conn.execute("SELECT to_regclass('public.jobs')").fetchone() == (None,):
+            pytest.skip("needs db/migrations applied: npm run migrate with DATABASE_URL")
+        jobs = {status: str(uuid.uuid4()) for status in STATUSES}
+        for status, job_id in jobs.items():
+            conn.execute(
+                "INSERT INTO jobs (id, task, status) VALUES (%s, 'ontology', %s)",
+                (job_id, status),
+            )
+    keys = {name: f"process:{job_id}:prune" for name, job_id in jobs.items()}
+    keys["deleted"] = f"process:{uuid.uuid4()}:prune"  # its job row is gone
+
+    def stops(state: DocState) -> DocState:
+        raise RuntimeError("worker lost")
+
+    saver, close = postgres_checkpointer(database_url)
+    try:
+        for key in keys.values():  # a thread left by a run that stopped after one step
+            with pytest.raises(RuntimeError):
+                run_steps(
+                    job_named("prune"), FakeQueue(), saver, key,
+                    [("a", lambda s: s), ("b", stops)], DocState(),
+                )  # fmt: skip
+
+        orphans = pg_orphaned_threads(database_url)
+        ours = {key for key in orphans if key in keys.values()}  # other tests' threads too
+
+        assert ours == {keys[n] for n in keys if n not in ("queued", "running")}
+        assert orphans == sorted(orphans)
+        assert prune_threads(saver, lambda: sorted(ours)) == len(ours)
+        left = {k for k in keys.values() if saver.get_tuple(_config(k)) is not None}
+        assert left == {keys["queued"], keys["running"]}
+    finally:
+        for key in keys.values():
+            saver.delete_thread(key)
+        close()
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            conn.execute("DELETE FROM jobs WHERE id = ANY(%s)", (list(jobs.values()),))
+
+
+def _config(thread_id: str) -> Any:
+    return {"configurable": {"thread_id": thread_id}}

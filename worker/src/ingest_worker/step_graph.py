@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterator, Mapping, Sequence
+import logging
+import time
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict
 
@@ -32,6 +34,8 @@ from .template_pipeline import DocState
 if TYPE_CHECKING:
     from langchain_core.runnables import RunnableConfig
     from langgraph.checkpoint.base import BaseCheckpointSaver
+
+log = logging.getLogger("ingest_worker")
 
 #: Set to "langgraph" to run recipes' steps through LangGraph with checkpoints.
 STEP_GRAPH_ENV = "WORKER_STEP_GRAPH"
@@ -183,3 +187,91 @@ def postgres_checkpointer(database_url: str) -> tuple[BaseCheckpointSaver[Any], 
     saver = PostgresSaver(pool)
     saver.setup()
     return saver, pool.close
+
+
+# --- the thread prune (ADR 0017) ------------------------------------------------------------
+
+#: How often the worker prunes step graph threads (also once when it starts).
+PRUNE_EVERY_S = 3600.0
+THREAD_PREFIX = "process:"
+
+#: Thread ids (in any of LangGraph's tables) of step graph threads whose job is not queued or
+#: running: deleted, finished, cancelled while no worker held it, or ended by a restore. Only the
+#: `thread_id` columns of LangGraph's tables are read; deletes go through the saver.
+ORPHANS_SQL = f"""
+SELECT t.thread_id
+FROM (
+    SELECT thread_id FROM {CHECKPOINT_SCHEMA}.checkpoints
+    UNION SELECT thread_id FROM {CHECKPOINT_SCHEMA}.checkpoint_writes
+    UNION SELECT thread_id FROM {CHECKPOINT_SCHEMA}.checkpoint_blobs
+) t
+WHERE t.thread_id LIKE '{THREAD_PREFIX}%'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.jobs j
+    WHERE j.id::text = split_part(t.thread_id, ':', 2) AND j.status IN ('queued', 'running')
+  )
+ORDER BY 1
+"""
+
+
+def orphaned_threads(thread_ids: Iterable[str], live_jobs: Collection[str]) -> list[str]:
+    """The step graph threads (ids from `thread_key`) whose job is not in `live_jobs` (the
+    queued and running jobs), sorted; anything else is left alone. ORPHANS_SQL, in memory."""
+    return sorted(
+        {t for t in thread_ids if t.startswith(THREAD_PREFIX) and t.split(":")[1] not in live_jobs}
+    )
+
+
+def pg_orphaned_threads(database_url: str) -> list[str]:
+    """ORPHANS_SQL on the deployment's database: one statement, one snapshot of the jobs."""
+    import psycopg
+
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        return [row[0] for row in conn.execute(ORPHANS_SQL)]
+
+
+def prune_threads(
+    checkpointer: BaseCheckpointSaver[Any], find_orphans: Callable[[], Sequence[str]]
+) -> int:
+    """Delete every orphaned thread; how many. A retry of a job whose thread was pruned runs
+    its steps afresh, as without the trial: a prune can lose a resume, never change a result."""
+    orphans = find_orphans()
+    for thread_id in orphans:
+        checkpointer.delete_thread(thread_id)
+    return len(orphans)
+
+
+class ThreadPruner:
+    """Prunes when the worker starts (the first tick) and then every PRUNE_EVERY_S. A failure
+    (a database outage) is logged and waits for the next hour: it never stops the worker."""
+
+    def __init__(
+        self,
+        checkpointer: BaseCheckpointSaver[Any],
+        find_orphans: Callable[[], Sequence[str]],
+        *,
+        every_s: float = PRUNE_EVERY_S,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.checkpointer = checkpointer
+        self.find_orphans = find_orphans
+        self.every_s = every_s
+        self.clock = clock
+        self.next_at: float | None = None
+
+    def tick(self) -> None:
+        now = self.clock()
+        if self.next_at is not None and now < self.next_at:
+            return
+        self.next_at = now + self.every_s
+        try:
+            pruned = prune_threads(self.checkpointer, self.find_orphans)
+        except Exception:
+            log.warning(
+                "could not prune step graph threads; trying again in an hour", exc_info=True
+            )
+            return
+        if pruned:
+            log.info(
+                "pruned %d step graph threads whose job is no longer queued or running", pruned
+            )

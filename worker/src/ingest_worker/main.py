@@ -48,7 +48,12 @@ from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings, seed
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
 from .specs import LoadedTemplate, SpecRegistry, load_specs
-from .step_graph import postgres_checkpointer, step_graph_enabled
+from .step_graph import (
+    ThreadPruner,
+    pg_orphaned_threads,
+    postgres_checkpointer,
+    step_graph_enabled,
+)
 from .storage import S3ObjectStore
 from .template_pipeline import (
     PUBLISH_REFUSED,
@@ -349,9 +354,15 @@ class _Worker:
         # Postgres, so a stopped job resumes at the step it stopped at (step_graph.py).
         self.step_checkpointer: BaseCheckpointSaver[Any] | None = None
         self.close_checkpointer: Callable[[], None] = lambda: None
+        self.thread_pruner: ThreadPruner | None = None
         if step_graph_enabled(os.environ):
             self.step_checkpointer, self.close_checkpointer = postgres_checkpointer(
                 settings.database_url
+            )
+            # ADR 0017: a thread lives only while its job is queued or running.
+            self.thread_pruner = ThreadPruner(
+                self.step_checkpointer,
+                functools.partial(pg_orphaned_threads, settings.database_url),
             )
         self.deps = PipelineDeps(
             store=S3ObjectStore(
@@ -422,6 +433,8 @@ class _Worker:
             queue.upsert_models(discovered)
             log.info("model discovery: %d models", len(discovered))
             self.next_discovery = now + settings.discovery_interval_s
+        if self.thread_pruner is not None:
+            self.thread_pruner.tick()  # at start, then hourly
         if now >= self.next_reap:
             if reaped := queue.reap_stale(settings.stale_lock_s):
                 log.warning("re-queued %d stale jobs", reaped)

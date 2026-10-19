@@ -93,8 +93,8 @@ Worker suite: 1,518 passed (the loop and LangGraph executors both covered), and
    are now recorded in [ADR 0017](../adr/0017-capabilities-as-nodes.md).
 7. **Some threads can be orphaned.** A thread can outlive its job: a job deleted, or cancelled
    while no worker held it, or a worker killed after its last step. The thread then waits for a
-   retry that never comes. A periodic prune of threads whose job is no longer queued or running
-   is needed before this goes beyond a trial. It is not built yet.
+   retry that never comes. **Now pruned:** the worker deletes, at start and hourly, every thread
+   whose job is no longer queued or running (`ThreadPruner`, [ADR 0017](../adr/0017-capabilities-as-nodes.md)).
 8. **Re-runs still prepare again.** A resumed job re-reads the source and re-segments; OCR comes
    from the caches. Putting preparation inside the graph would need its output (pages,
    sections) kept as object-store references rather than in checkpoints. That was not worth it
@@ -103,8 +103,8 @@ Worker suite: 1,518 passed (the loop and LangGraph executors both covered), and
 ## Recommendation
 
 - **Keep the flag and the code, off by default.**
-- **Before turning it on anywhere real,** add the thread prune (7). [ADR 0017](../adr/0017-capabilities-as-nodes.md)
-  records 3 and 6 and the prune's rule: keep a thread only while its job is queued or running.
+- **The thread prune (7) is built.** [ADR 0017](../adr/0017-capabilities-as-nodes.md) records 3 and 6
+  and the prune's rule: keep a thread only while its job is queued or running.
 - **Next for the graph itself:** per-step channels (4), then fan-out of independent steps.
   Fan-out is the second concrete payoff, and the first one the loop cannot give.
 - **The decision on LangGraph versus the alternatives** (DBOS, our own executor) can wait.

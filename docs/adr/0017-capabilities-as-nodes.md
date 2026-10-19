@@ -1,8 +1,7 @@
 # 0017: Capabilities as nodes, and LangGraph as an optional executor
 
 **Status:** accepted · 2026-10-19. The node contract is in use. The LangGraph executor is a
-trial, off by default, and is not to be enabled on a real deployment until the thread prune
-below is built.
+trial, off by default; the thread prune below is built (`step_graph.ThreadPruner`).
 
 ## Context
 CT Studio wants to grow by plugging in new capabilities (new step kinds, other OCR engines,
@@ -104,17 +103,24 @@ that no node sees it enabled. Observability stays our own: job events, the runs 
   jobs that are in flight.
 - Backups (ADR 0015) carry it with the rest of the dump; nothing needs excluding.
 
-### Threads are pruned (to build before enabling)
+### Threads are pruned
 A thread can outlive its job: the job is deleted, cancelled while no worker held it, or its worker
 was killed after its last step. A restore (ADR 0015) also cancels running jobs, and a copy drops
 queued and running ones, so the threads it carries become orphans.
 
 The rule: **a thread is kept only while its job is `queued` or `running`.**
-- The worker prunes when it starts and then hourly. It lists `thread_id`s in
-  `langgraph.checkpoints` whose job (`split_part(thread_id, ':', 2)`) is not a queued or running
-  job, in one statement, and deletes each through `PostgresSaver.delete_thread`.
-- The prune reads only that one column of LangGraph's tables. It never writes them except
-  through the saver's API.
+- With the trial on, the worker prunes when it starts and then hourly
+  (`ThreadPruner`, `PRUNE_EVERY_S`).
+- It lists, in one statement (`ORPHANS_SQL`, `pg_orphaned_threads`), the `thread_id`s found in
+  `langgraph.checkpoints`, `checkpoint_writes` and `checkpoint_blobs` that start with `process:`
+  and whose job (`split_part(thread_id, ':', 2)`) is not a queued or running job. It then deletes
+  each through `PostgresSaver.delete_thread` (`prune_threads`).
+- The prune reads only the `thread_id` columns of LangGraph's tables. It never writes them except
+  through the saver's API, and never touches a thread not named `process:…`.
+- A failed prune (a database outage) is logged and waits for the next hour; it never stops the
+  worker.
+- The rule's in-memory form (`orphaned_threads`) is table-tested. `ORPHANS_SQL` is tested against
+  the migrated schema with a job in every status (`tests/test_step_graph_integration.py`).
 - A retry of a job whose thread was pruned starts its steps afresh. That is what happens today
   without the trial, so the prune can never change a result, only lose a resume.
 
@@ -136,5 +142,5 @@ The rule: **a thread is kept only while its job is `queued` or `running`.**
 - Preparation still runs again on resume, though OCR comes from the job's pages and the shared
   cache, so no model is called. Moving it into the graph would need its output kept as object-store
   references rather than in checkpoints.
-- Enabling the trial anywhere real waits for the prune. Turning it off again is safe: an unset
-  flag ignores the schema, and a retry runs its steps afresh.
+- Turning the trial off again is safe: an unset flag neither checkpoints nor prunes (threads
+  left behind are pruned the next time it is on), and a retry runs its steps afresh.
