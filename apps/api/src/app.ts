@@ -77,6 +77,8 @@ export interface AppDeps {
   workbench: WorkbenchRepo;
   /** CT Studio's own buckets; `backups` holds backups and restore uploads. */
   buckets: { inbox: string; outputs: string; runs: string; backups: string };
+  /** The delivery bridge's package staging bucket, on this deployment's storage too. */
+  bridgeStagingBucket: string;
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */
   access: AccessRepo | null;

@@ -37,6 +37,18 @@ export function registerGuard(
     (_req, body, done) => done(null, body),
   );
 
+  // A package over the limit is the document's problem, not the bridge's: a contract error the
+  // producer sends to review instead of Fastify's own 413 body, which it would retry.
+  app.setErrorHandler(async (err: { statusCode?: number }, _req, reply) => {
+    if (err.statusCode !== 413) throw err;
+    const mb = Math.round(opts.maxBodyBytes / 2 ** 20);
+    return reply
+      .code(413)
+      .send(
+        bridgeError('content_rejected', `the package is larger than this bridge takes (${mb} MB)`),
+      );
+  });
+
   app.addHook('onSend', async (req, reply) => {
     reply.header(REQUEST_ID, req.id);
   });
