@@ -4,6 +4,8 @@ export interface Target {
   label: string;
   sinkId: string;
   instanceId: string | null;
+  /** The connection a shared sink delivers with; null for none (delivery then fails visibly). */
+  connectionId: string | null;
   destination: Record<string, string>;
 }
 

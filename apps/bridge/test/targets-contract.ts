@@ -6,6 +6,7 @@ const target = (id: string, over: Partial<Target> = {}): Target => ({
   label: `Target ${id}`,
   sinkId: 'fake',
   instanceId: null,
+  connectionId: null,
   destination: { bucket: 'b', prefix: 'out/' },
   ...over,
 });

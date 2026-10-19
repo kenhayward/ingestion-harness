@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { loadBridgeConfig } from '../src/config.js';
 
-const base = { DATABASE_URL: 'postgres://x/y', BRIDGE_CLIENT_KEY: 'k'.repeat(32) };
+const base = {
+  DATABASE_URL: 'postgres://x/y',
+  BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+  BRIDGE_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+};
 
 describe('bridge config', () => {
   it('lists every config problem at once', () => {
@@ -28,5 +32,21 @@ describe('bridge config', () => {
       PORT: 4000,
       BRIDGE_MAX_ATTEMPTS: 3,
     });
+  });
+
+  it('needs BRIDGE_SECRETS_KEY as 32 bytes of base64, and parses the previous one', () => {
+    const noKey: Record<string, string> = { ...base };
+    delete noKey.BRIDGE_SECRETS_KEY;
+    expect(() => loadBridgeConfig(noKey)).toThrow(/BRIDGE_SECRETS_KEY/);
+    expect(() => loadBridgeConfig({ ...base, BRIDGE_SECRETS_KEY: 'short' })).toThrow(
+      /BRIDGE_SECRETS_KEY/,
+    );
+    const previous = Buffer.alloc(32, 9).toString('base64');
+    const c = loadBridgeConfig({ ...base, BRIDGE_SECRETS_KEY_PREVIOUS: previous });
+    expect(c.secrets.current).toEqual(Buffer.alloc(32, 7));
+    expect(c.secrets.previous).toEqual(Buffer.alloc(32, 9));
+    expect(
+      loadBridgeConfig({ ...base, BRIDGE_SECRETS_KEY_PREVIOUS: '' }).secrets.previous,
+    ).toBeNull();
   });
 });

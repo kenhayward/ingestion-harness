@@ -6,6 +6,7 @@ import { buildFromConfig } from '../src/wiring.js';
 const config = loadBridgeConfig({
   DATABASE_URL: 'postgres://x/y',
   BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+  BRIDGE_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
 });
 
 const pool = (answer: () => Promise<unknown>) => ({ query: answer }) as unknown as pg.Pool;

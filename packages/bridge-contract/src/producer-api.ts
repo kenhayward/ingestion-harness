@@ -72,6 +72,8 @@ export const TargetViewSchema = z.strictObject({
   label: z.string(),
   sinkId: z.string(),
   instanceId: z.string().nullable(),
+  /** The connection a shared sink delivers with (null: none yet). */
+  connectionId: z.string().nullable(),
   destination: DestinationSchema,
 });
 export type TargetView = z.infer<typeof TargetViewSchema>;

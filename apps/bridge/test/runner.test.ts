@@ -31,6 +31,7 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
     label: 'T1',
     sinkId: 'fake',
     instanceId: null,
+    connectionId: null,
     destination: { bucket: 'b', prefix: 'out/' },
   });
   const sinks = new MapSinkRegistry({ fake: sink });
@@ -263,6 +264,7 @@ describe('runOnce', () => {
       label: 'T1',
       sinkId: 'nosuch',
       instanceId: null,
+      connectionId: null,
       destination: {},
     });
     await runOnce(deps, T0);

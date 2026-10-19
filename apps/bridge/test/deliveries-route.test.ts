@@ -25,6 +25,7 @@ async function setup() {
       label: id,
       sinkId: 'fake',
       instanceId: null,
+      connectionId: null,
       destination: { bucket: 'b' },
     });
   }
@@ -33,6 +34,7 @@ async function setup() {
     label: 'gone',
     sinkId: 'nosuch',
     instanceId: null,
+    connectionId: null,
     destination: {},
   });
   const sink = new FakeSink({

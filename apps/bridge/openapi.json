@@ -1180,6 +1180,12 @@
                               "null"
                             ]
                           },
+                          "connectionId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "destination": {
                             "type": "object",
                             "propertyNames": {
@@ -1195,6 +1201,7 @@
                           "label",
                           "sinkId",
                           "instanceId",
+                          "connectionId",
                           "destination"
                         ],
                         "additionalProperties": false
