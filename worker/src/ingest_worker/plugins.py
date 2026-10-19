@@ -1,12 +1,12 @@
 """Recipe plugins (docs/design/recipe-plugins.md): capabilities a recipe's `plugin` step runs
 instead of a model call.
 
-A plugin is a node (ADR 0017) with settings: its `settings` model checks the step's `with`, and
+A plugin is a node (ADR 0018) with settings: its `settings` model checks the step's `with`, and
 `run` returns what an extract step's model would (`{field: {value, evidence, page}}`, or
 `{rows: [...]}` for a table), which `normalise_step` then types. A plugin reads only what
 `PluginContext` gives it, and reaches a model only through `JobModels` (none does yet).
 Plugins run in the worker process with its privileges: only plugins installed in the worker image
-run, and a third party's capability belongs behind A2A instead (ADR 0017).
+run, and a third party's capability belongs behind A2A instead (ADR 0018).
 """
 
 from __future__ import annotations

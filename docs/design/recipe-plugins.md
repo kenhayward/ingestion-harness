@@ -2,7 +2,7 @@
 
 Status: **3a done**, 2026-10-19; 3b–3d to come. This is phase 3 of
 [agent-graph-architecture.md](agent-graph-architecture.md) §8. It builds on the node contract in
-[ADR 0017](../adr/0017-capabilities-as-nodes.md).
+[ADR 0018](../adr/0018-capabilities-as-nodes.md).
 
 ## Goal
 
