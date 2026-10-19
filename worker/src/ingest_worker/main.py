@@ -14,6 +14,8 @@ from typing import Protocol
 import httpx
 import psycopg
 
+from .bridge.client import HttpBridgeClient
+from .bridge.package import deliver_document
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
@@ -42,9 +44,8 @@ from .pipeline import (
     check_cancelled,
     load_definition,
     process_job,
-    publish_outputs,
 )
-from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings, seed_default_target
+from .publish_targets import LiveTargets, PgPublishTargetStore, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
 from .specs import LoadedTemplate, SpecRegistry, load_specs
@@ -111,9 +112,12 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
     try:
         if job.task == "publish":
             check_cancelled(job, queue)
+            deliveries: list[tuple[str, str]] = []
 
-            def record(outputs: list[RenderedOutput], target: Target) -> None:
-                queue.record_published(job, outputs, target)  # test runs never get here
+            def record(outputs: list[RenderedOutput], target: Target, delivery_id: str) -> None:
+                # Test runs never get here.
+                queue.record_published(job, outputs, target, delivery_id)
+                deliveries.append((target.id, delivery_id))
 
             try:
                 published = publish_job(job, deps, queue, record)
@@ -123,7 +127,10 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
                 queue.await_review(job, [], deps.buckets.outputs, refused.reasons)
                 log.info("job %s publish refused: %s", job.id, "; ".join(refused.reasons))
                 return
-            queue.complete(job, [], deps.buckets.outputs)
+            if deliveries:
+                queue.delivering(job, [], deps.buckets.outputs, deliveries)
+            else:
+                queue.complete(job, [], deps.buckets.outputs)  # a test run: nothing delivered
             log.info("job %s published %d outputs", job.id, len(published))
             return
         if job.task == "rerun":
@@ -177,9 +184,12 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
             log.info("job %s withdrew %d objects, %d graphs", job.id, *withdrawn)
             return
         if job.task == "republish":
-            count = run_republish(job, deps, queue)
-            queue.complete(job, [], deps.buckets.outputs)
-            log.info("job %s re-delivered %d jobs", job.id, count)
+            deliveries = run_republish(job, deps, queue)
+            if deliveries:
+                queue.delivering(job, [], deps.buckets.outputs, deliveries)
+            else:
+                queue.complete(job, [], deps.buckets.outputs)
+            log.info("job %s re-delivered %d jobs", job.id, len(deliveries))
             return
         if job.task == "rebuild":
             lines = run_rebuild_job(job, deps, queue)
@@ -202,13 +212,28 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
             log.info("job %s awaiting review: %s", job.id, "; ".join(reasons))
         else:
             target = result.target  # resolved before extraction (None: test run, no targets)
-            published = [] if target is None else publish_outputs(deps, result.delivered(), target)
-            if target is not None and published:
-                queue.record_published(job, published, target)
-                if result.deliver_graph is not None:
-                    result.deliver_graph(target)
-            queue.complete(job, result.outputs, deps.buckets.outputs)
-            log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
+            delivered = result.delivered()
+            if target is None or not delivered:
+                queue.complete(job, result.outputs, deps.buckets.outputs)
+                log.info("job %s succeeded with %d outputs", job.id, len(result.outputs))
+                return
+            check_cancelled(job, queue)
+            uploader = queue.uploader(job.id)  # auto-published: the uploader acts
+            published, delivery_id = deliver_document(
+                deps,
+                job,
+                template=result.template,
+                document=result.document,
+                outputs=delivered,
+                target=target,
+                acting=uploader,
+                approver=None,
+            )
+            queue.record_published(job, published, target, delivery_id)
+            if result.deliver_graph is not None:
+                result.deliver_graph(target)
+            queue.delivering(job, result.outputs, deps.buckets.outputs, [(target.id, delivery_id)])
+            log.info("job %s handed %d outputs to the bridge", job.id, len(published))
     except JobCancelled:
         log.info("job %s cancelled, deleted or re-queued: stopping", job.id)
         _quietly(job, lambda: queue.event(job.id, "warn", "cancelled"))
@@ -237,7 +262,7 @@ def publish_job(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
-    on_published: Callable[[list[RenderedOutput], Target], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target, str], None] | None = None,
 ) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
     reference) keeps the reviewed document but is never delivered to a target."""
@@ -357,15 +382,7 @@ class _Worker:
         # connection, re-opened when lost; refreshed with the LLM config).
         self.target_store = PgPublishTargetStore.connect(settings.database_url)
         seed_default_target(self.target_store, os.environ)
-        self.targets = LiveTargets(
-            self.target_store,
-            S3Settings(
-                settings.s3_endpoint,
-                settings.s3_region,
-                settings.s3_access_key,
-                settings.s3_secret_key,
-            ),
-        )
+        self.targets = LiveTargets(self.target_store)
         # The ontology library and the Linked data settings share one autocommit connection.
         self.library = psycopg.connect(settings.database_url, autocommit=True)
         # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
@@ -383,6 +400,7 @@ class _Worker:
             buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
             ocr=ocr,
             targets=self.targets,
+            bridge=HttpBridgeClient(settings.bridge_url, settings.bridge_client_key),
             converter=(
                 GotenbergConverter(settings.converter_url) if settings.converter_url else None
             ),

@@ -55,6 +55,7 @@ from .step_cache import CachedStep, StepCache, step_cache_key
 from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
 
 if TYPE_CHECKING:
+    from .bridge.client import BridgeClient
     from .graph_registry import GraphRegistry
     from .graph_store import GraphStore
     from .linked_data import LinkedDataSettings
@@ -62,6 +63,7 @@ if TYPE_CHECKING:
     from .ontology import OntologyStore
     from .ontology_fetch import Fetched
     from .rdf_rebuild import RebuildSource
+    from .template import Template
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 log = logging.getLogger("ingest_worker")
@@ -116,6 +118,11 @@ class ProcessResult:
     #: The publishing target of the job's recipe version (legacy specs: the default), resolved
     #: before extraction; None for test runs and without targets (nothing is delivered).
     target: Target | None = None
+    #: The rendered document (a recipe's fields, tables, provenance): the package's data. None
+    #: for legacy specs.
+    document: dict[str, Any] | None = None
+    #: The recipe whose outputs these are (None: a legacy spec).
+    template: Template | None = None
 
     def delivered(self) -> list[RenderedOutput]:
         if self.formats is None:
@@ -144,6 +151,10 @@ class PipelineDeps:
     #: Where approved outputs are delivered, by publishing target id. None: outputs stay in the
     #: outputs bucket only.
     targets: Targets | None = None
+    #: The delivery bridge every publication goes through (None: nothing can be delivered).
+    bridge: BridgeClient | None = None
+    #: This deployment's id, as packages name their producer.
+    deployment: str = "default"
     #: YAML of a worked-example template shown to drafting models (None: no example).
     example_template: str | None = None
     #: Converts Word (.docx) sources to PDF (None: Word documents go to needs_review).
@@ -363,17 +374,6 @@ def target_for(deps: PipelineDeps, loaded: Any) -> Target | None:
     if isinstance(loaded, LoadedTemplate):
         return target_named(deps, loaded.template.publish_to())
     return target_named(deps, DEFAULT_TARGET_ID)
-
-
-def publish_outputs(
-    deps: PipelineDeps, outputs: list[RenderedOutput], target: Target
-) -> list[RenderedOutput]:
-    """Write outputs to `target` (same layout, keys prefixed). Returns what was written."""
-    published = [replace(o, key=f"{target.prefix}{o.key}") for o in outputs]
-    for o in published:
-        ctype = content_type(o.format)
-        target.store.put(target.bucket, o.key, o.body, ctype)
-    return published
 
 
 def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any:

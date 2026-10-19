@@ -21,6 +21,7 @@ const STATUS: Record<JobStatus, { label: string; tone: Tone }> = {
   succeeded: { label: 'Succeeded', tone: 'ok' },
   rejected: { label: 'Rejected', tone: 'neutral' },
   cancelled: { label: 'Cancelled', tone: 'neutral' },
+  delivering: { label: 'Delivering', tone: 'info' },
 };
 
 export const statusLabel = (status: JobStatus): string => STATUS[status].label;
@@ -37,6 +38,8 @@ const PRIMARY: Record<JobStatus, PrimaryAction> = {
   succeeded: 'view',
   rejected: null,
   cancelled: 'retry',
+  // The bridge owns a delivering job: it cannot be cancelled, only watched.
+  delivering: 'view',
 };
 
 /** The single most likely action for a job's status; the rest live in the ⋯ menu. */
@@ -63,6 +66,8 @@ export function jobNote(job: JobSummary): { text: string; tone: NoteTone } {
       return { text: job.reviewer ? `Rejected by ${job.reviewer}` : 'Rejected', tone: 'muted' };
     case 'cancelled':
       return { text: 'Cancelled by operator', tone: 'muted' };
+    case 'delivering':
+      return { text: 'Delivering', tone: 'muted' };
   }
 }
 

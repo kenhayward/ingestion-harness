@@ -58,7 +58,7 @@ const errorOf = async (p: Promise<unknown>) => {
 };
 
 describe('S3Sink', () => {
-  it('describes a shared-connection sink that takes files and can read back and withdraw', async () => {
+  it('describes a shared-connection sink that takes files (and packages carrying data) and can read back and withdraw', async () => {
     const { sink } = sinkOver(new MemoryObjectStore());
     const d = SinkDescribeSchema.parse(await sink.describe());
     expect(d.connectionKind).toBe('shared');
@@ -67,7 +67,7 @@ describe('S3Sink', () => {
       replace: true,
       withdraw: true,
       readBack: true,
-      accepts: ['files'],
+      accepts: ['files', 'data'],
     });
     expect(d.credentialFields.map((f) => [f.id, f.secret])).toEqual([
       ['endpoint', false],

@@ -316,7 +316,6 @@ def test_published_outputs_record_their_publishing_target(
     from ingest_worker.outputs import RenderedOutput
     from ingest_worker.publish_targets import Target
     from ingest_worker.rdf_rebuild import PgRebuildSource
-    from ingest_worker.storage import MemoryObjectStore
 
     q, job = queue_and_job
     q._conn.execute(
@@ -326,14 +325,92 @@ def test_published_outputs_record_their_publishing_target(
     )
     key = f"fin/demo/v2/fields/{job.document_id}.csv"
     output = RenderedOutput("fields", "csv", key, b"a\n", 1)
-    q.record_published(
-        job, [output], Target(MemoryObjectStore(), "finance", "fin/", "finance-lake")
-    )
+    delivery = str(uuid.uuid4())
+    q.record_published(job, [output], Target("finance-lake", "finance", "fin/"), delivery)
     row = q._conn.execute(
-        "SELECT bucket, object_key, target_id FROM job_outputs WHERE job_id = %s AND stage = 'published'",
+        """SELECT bucket, object_key, target_id, delivery_id::text FROM job_outputs
+            WHERE job_id = %s AND stage = 'published'""",
         (job.id,),
     ).fetchone()
-    assert row == ("finance", key, "finance-lake")
+    assert row == ("finance", key, "finance-lake", delivery)
     source = PgRebuildSource(q._conn)
     assert source.object_live("finance-lake", "finance", key)
     assert not source.object_live("default", "finance", key)
+
+
+def test_a_delivering_job_records_its_deliveries_and_its_drafts(
+    queue_and_job: tuple[PgJobQueue, ClaimedJob],
+) -> None:
+    from ingest_worker.outputs import RenderedOutput
+
+    q, job = queue_and_job
+    claimed = q._conn.execute(
+        "UPDATE jobs SET locked_at = now() WHERE id = %s RETURNING locked_at", (job.id,)
+    ).fetchone()
+    assert claimed is not None
+    mine = ClaimedJob(job.id, job.document_id, "demo", 1, "inbox", job.object_key, None, 1, 3,
+                      claimed_at=claimed[0])  # fmt: skip
+    draft = RenderedOutput("fields", "csv", f"demo/v1/fields/{job.document_id}.csv", b"a\n", 1)
+    delivery = str(uuid.uuid4())
+    q.delivering(mine, [draft], "outputs", [("default", delivery)])
+    status = q._conn.execute("SELECT status FROM jobs WHERE id = %s", (job.id,)).fetchone()
+    assert status == ("delivering",)
+    rows = q._conn.execute(
+        """SELECT delivery_id::text, target_id, status, last_sequence FROM job_deliveries
+            WHERE job_id = %s""",
+        (job.id,),
+    ).fetchall()
+    assert rows == [(delivery, "default", "queued", 0)]
+    drafts = q._conn.execute(
+        "SELECT count(*) FROM job_outputs WHERE job_id = %s AND stage = 'draft'", (job.id,)
+    ).fetchone()
+    assert drafts == (1,)
+
+
+def test_a_cancelled_job_is_never_handed_to_the_bridge(
+    queue_and_job: tuple[PgJobQueue, ClaimedJob],
+) -> None:
+    q, job = queue_and_job
+    q._conn.execute("UPDATE jobs SET status = 'cancelled' WHERE id = %s", (job.id,))
+    q.delivering(job, [], "outputs", [("default", str(uuid.uuid4()))])
+    status = q._conn.execute("SELECT status FROM jobs WHERE id = %s", (job.id,)).fetchone()
+    assert status == ("cancelled",)
+    rows = q._conn.execute(
+        "SELECT count(*) FROM job_deliveries WHERE job_id = %s", (job.id,)
+    ).fetchone()
+    assert rows == (0,)
+
+
+def test_a_claim_carries_the_documents_sha256(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, job_id = queue_with_queued_job
+    claimed = q.claim("w1")
+    assert claimed is not None and claimed.id == job_id
+    assert claimed.source_sha256 == "x"
+
+
+def test_the_acting_users_are_the_reviewer_by_name_and_the_uploader_by_id(
+    queue_and_job: tuple[PgJobQueue, ClaimedJob],
+) -> None:
+    q, job = queue_and_job
+    name = f"Rev {uuid.uuid4().hex[:8]}"
+    rows = q._conn.execute(
+        """INSERT INTO users (name, email, role, password_hash)
+           VALUES (%s, %s, 'designer', 'x'), (%s, %s, 'designer', 'x') RETURNING id::text""",
+        (name, f"{name.split()[1]}@example.com", f"Up {name}", f"up{name.split()[1]}@example.com"),
+    ).fetchall()
+    reviewer_id, uploader_id = rows[0][0], rows[1][0]
+    try:
+        assert q.reviewer(job.id) is None and q.uploader(job.id) is None
+        q._conn.execute(
+            """UPDATE jobs SET created_by_user = %s, created_by = 'someone',
+                      reviewer = %s, reviewed_at = now() WHERE id = %s""",
+            (uploader_id, f" {name.upper()} ", job.id),
+        )
+        reviewer, uploader = q.reviewer(job.id), q.uploader(job.id)
+        assert reviewer is not None and reviewer.id == reviewer_id and reviewer.name == name
+        assert uploader is not None and uploader.id == uploader_id
+        assert uploader.name == f"Up {name}"
+    finally:
+        q._conn.execute("DELETE FROM users WHERE id IN (%s, %s)", (reviewer_id, uploader_id))

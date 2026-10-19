@@ -12,6 +12,7 @@ from typing import Any
 
 from ingest_worker.bridge.client import BridgeRefused
 from ingest_worker.bridge.models import (
+    ActingUser,
     BridgeError,
     CreateDeliveriesRequest,
     CreateDeliveriesResult,
@@ -47,6 +48,7 @@ from ingest_worker.publish_targets import (
     seed_differences,
 )
 from ingest_worker.queue import ClaimedJob
+from ingest_worker.storage import MemoryObjectStore
 
 
 def fake_vector(text: str, dims: int = 16) -> list[float]:
@@ -178,6 +180,15 @@ class FakeQueue:
     awaiting: list[tuple[str, list[RenderedOutput], list[str]]] = field(default_factory=list)
     #: Published outputs recorded (job id, outputs, the publishing target's id).
     published: list[tuple[str, list[RenderedOutput], str]] = field(default_factory=list)
+    #: The delivery id each published record carried (job id, target id, delivery id).
+    published_deliveries: list[tuple[str, str, str | None]] = field(default_factory=list)
+    #: Jobs handed to the bridge (job id, outputs, [(target id, delivery id)]).
+    handed_over: list[tuple[str, list[RenderedOutput], list[tuple[str, str]]]] = field(
+        default_factory=list
+    )
+    #: Who reviewed and who uploaded each job, by job id (acting users).
+    reviewers: dict[str, ActingUser] = field(default_factory=dict)
+    uploaders: dict[str, ActingUser] = field(default_factory=dict)
     edits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Templates stored in the database, keyed by (id, version).
@@ -208,6 +219,26 @@ class FakeQueue:
     def complete(self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str) -> None:
         self.completed.append((job.id, outputs))
 
+    def delivering(
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        outputs_bucket: str,
+        deliveries: list[tuple[str, str]],
+    ) -> None:
+        self.handed_over.append((job.id, outputs, deliveries))
+
+    @property
+    def finished(self) -> list[str]:
+        """Jobs whose run ended well: completed, or handed to the bridge to finish."""
+        return [j for j, _ in self.completed] + [j for j, _, _ in self.handed_over]
+
+    def reviewer(self, job_id: str) -> ActingUser | None:
+        return self.reviewers.get(job_id)
+
+    def uploader(self, job_id: str) -> ActingUser | None:
+        return self.uploaders.get(job_id)
+
     def await_review(
         self,
         job: ClaimedJob,
@@ -221,9 +252,14 @@ class FakeQueue:
         self.drafts.append((job.id, outputs))
 
     def record_published(
-        self, job: ClaimedJob, outputs: list[RenderedOutput], target: Target
+        self,
+        job: ClaimedJob,
+        outputs: list[RenderedOutput],
+        target: Target,
+        delivery_id: str | None,
     ) -> None:
         self.published.append((job.id, outputs, target.id))
+        self.published_deliveries.append((job.id, target.id, delivery_id))
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         return self.edits.get(job_id, [])
@@ -797,13 +833,19 @@ class FakeTargets:
 
 
 class FakeBridge:
-    """BridgeClient over a dict of objects keyed (bucket, key). A delivery to a target in
+    """BridgeClient over a dict of objects keyed (bucket, key), or, for a target in `stores`, over
+    that target's own MemoryObjectStore (separate S3 endpoints). A delivery to a target in
     `targets` (id -> (bucket, prefix)) writes the package's files at prefix + name, as the S3
     sink does. `requests` records every delivery request; `refusals` are raised, in order, by the
     next calls (a BridgeError becomes BridgeRefused; an exception is raised as it is)."""
 
-    def __init__(self, targets: dict[str, tuple[str, str]] | None = None) -> None:
+    def __init__(
+        self,
+        targets: dict[str, tuple[str, str]] | None = None,
+        stores: dict[str, MemoryObjectStore] | None = None,
+    ) -> None:
         self.targets = dict(targets or {})
+        self.stores = dict(stores or {})
         self.objects: dict[tuple[str, str], tuple[bytes, str]] = {}
         self.requests: list[CreateDeliveriesRequest] = []
         self.puts: list[tuple[str, str, str]] = []
@@ -829,14 +871,26 @@ class FakeBridge:
             bucket, prefix = self.targets.get(target_id, ("", ""))
             for f in request.package.files:
                 body = base64.b64decode(f.content)
-                self.objects[(bucket, prefix + f.name)] = (body, f.content_type)
+                self._write(target_id, bucket, prefix + f.name, body, f.content_type)
         return CreateDeliveriesResult(
             package_id=self._id(),
             deliveries=[DeliveryRef(target_id=t, delivery_id=self._id()) for t in request.targets],
         )
 
+    def _write(self, target_id: str, bucket: str, key: str, body: bytes, ctype: str) -> None:
+        if target_id in self.stores:
+            self.stores[target_id].put(bucket, key, body, ctype)
+        else:
+            self.objects[(bucket, key)] = (body, ctype)
+
+    def get(self, bucket: str, key: str) -> bytes:
+        """The bytes of a delivered object (KeyError when there is none)."""
+        return self.objects[(bucket, key)][0]
+
     def read_object(self, target_id: str, bucket: str, key: str) -> bytes | None:
         self._next_refusal()
+        if target_id in self.stores:
+            return self.stores[target_id].get_optional(bucket, key)
         found = self.objects.get((bucket, key))
         return found[0] if found else None
 
@@ -845,11 +899,29 @@ class FakeBridge:
     ) -> None:
         self._next_refusal()
         self.puts.append((target_id, bucket, key))
-        self.objects[(bucket, key)] = (body, content_type)
+        self._write(target_id, bucket, key, body, content_type)
 
     def delete_objects(self, target_id: str, objects: list[tuple[str, str]]) -> int:
         self._next_refusal()
         self.deletes.append((target_id, list(objects)))
-        for o in objects:
-            self.objects.pop(o, None)
+        for bucket, key in objects:
+            if target_id in self.stores:
+                self.stores[target_id].delete(bucket, key)
+            else:
+                self.objects.pop((bucket, key), None)
         return len(objects)
+
+
+class BucketView:
+    """One bucket of a FakeBridge's objects, read like a MemoryObjectStore (`objects`, `get`)."""
+
+    def __init__(self, bridge: FakeBridge, bucket: str) -> None:
+        self.bridge = bridge
+        self.bucket = bucket
+
+    @property
+    def objects(self) -> dict[tuple[str, str], tuple[bytes, str]]:
+        return {k: v for k, v in self.bridge.objects.items() if k[0] == self.bucket}
+
+    def get(self, bucket: str, key: str) -> bytes:
+        return self.bridge.get(bucket, key)

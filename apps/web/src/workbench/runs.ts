@@ -184,6 +184,8 @@ export function runDetail(run: TestRun): { text: string; tone: DetailTone } {
       return { text: run.reviewNote ? `Rejected: ${run.reviewNote}` : 'Rejected', tone: 'muted' };
     case 'cancelled':
       return { text: 'Cancelled', tone: 'muted' };
+    case 'delivering':
+      return { text: 'Delivering', tone: 'info' };
   }
 }
 
@@ -205,6 +207,7 @@ const ACTIONS: Record<JobStatus, RunAction> = {
   queued: null,
   running: null,
   rejected: null,
+  delivering: null,
 };
 export const runAction = (run: TestRun): RunAction => ACTIONS[run.status];
 

@@ -175,6 +175,7 @@ def claimed(job: DeliveredJob, version: int | None = None) -> ClaimedJob:
         0,
         0,
         task="publish",
+        source_sha256=job.sha256,
     )
 
 
@@ -230,8 +231,9 @@ def _publish(
 
 def rebuild(deps: PipelineDeps) -> list[str]:
     store, registry, targets = deps.graph_store, deps.graph_registry, deps.targets
-    if store is None or registry is None or targets is None:
-        return ["rebuild needs RDF_ENDPOINT, the database and the publishing targets"]
+    bridge = deps.bridge
+    if store is None or registry is None or targets is None or bridge is None:
+        return ["rebuild needs RDF_ENDPOINT, the database, the publishing targets and the bridge"]
     lines: list[str] = []
     ontologies = graphs = missing = 0
     for ontology_id, version, _base, graph_iri in registry.all_ontologies():
@@ -253,7 +255,7 @@ def rebuild(deps: PipelineDeps) -> list[str]:
             lines.append(f"missing {g.graph_iri} v{g.version}: {exc}")
             continue
         key = target.prefix + graph_version_key(g.sha256, g.template_id, g.version)
-        body = target.store.get_optional(target.bucket, key)
+        body = bridge.read_object(target.id, target.bucket, key)
         if body is None:
             missing += 1
             lines.append(f"missing {key}")
@@ -399,7 +401,8 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     from .ontology import PgOntologyStore
     from .pdf import extract_pages
     from .pipeline import Buckets
-    from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings
+    from .bridge.client import HttpBridgeClient
+    from .publish_targets import LiveTargets, PgPublishTargetStore
     from .queue import PgJobQueue
     from .specs import load_specs
     from .storage import S3ObjectStore
@@ -422,15 +425,8 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         models=ModelRegistry({}, {}, {}),
         extract_text=extract_pages,
         buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
-        targets=LiveTargets(
-            PgPublishTargetStore.connect(settings.database_url),
-            S3Settings(
-                settings.s3_endpoint,
-                settings.s3_region,
-                settings.s3_access_key,
-                settings.s3_secret_key,
-            ),
-        ),
+        targets=LiveTargets(PgPublishTargetStore.connect(settings.database_url)),
+        bridge=HttpBridgeClient(settings.bridge_url, settings.bridge_client_key),
         ontologies=PgOntologyStore(library),
         linked_data=PgLinkedDataSettings(library),
         graph_registry=PgGraphRegistry(psycopg.connect(settings.database_url, autocommit=True)),

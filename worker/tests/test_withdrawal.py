@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from ingest_worker.bridge.models import ActingUser
 from ingest_worker.graph_registry import MemoryGraphRegistry
 from ingest_worker.graph_store import GraphStoreUnavailable
 from ingest_worker.llm.registry import ModelRegistry
@@ -19,7 +20,7 @@ from ingest_worker.rdf_rebuild import DeliveredJob, MemoryRebuildSource
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, graph_version_key
 
-from .fakes import FakeGraphStore, FakeQueue, FakeTargets, MemoryLinkedDataSettings
+from .fakes import FakeBridge, FakeGraphStore, FakeQueue, FakeTargets, MemoryLinkedDataSettings
 
 BASE = "https://data.acme.example/"
 SHA = "ab" * 32
@@ -61,7 +62,8 @@ def setup(tmp_path: Path) -> tuple[PipelineDeps, MemoryObjectStore]:
         models=ModelRegistry({}, {}, {}),
         extract_text=lambda _pdf: [],
         buckets=Buckets("inbox", "outputs", "runs"),
-        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
+        targets=FakeTargets({"default": Target("default", "published", "pvp/")}),
+        bridge=FakeBridge({"default": ("published", "pvp/")}, stores={"default": target}),
         linked_data=MemoryLinkedDataSettings(BASE),
         graph_registry=MemoryGraphRegistry(),
         graph_store=FakeGraphStore(),
@@ -125,7 +127,7 @@ def test_a_withdrawal_removes_the_objects_the_copies_and_the_graph(tmp_path: Pat
     store_of(deps).graphs[GRAPH] = b"<a> <b> <c> ."
     queue = FakeQueue(jobs=[background("withdraw", WITHDRAW)])
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert list(target.objects) == [("published", "pvp/other.csv")]
     assert GRAPH not in store_of(deps).graphs
     [data] = [d for _, _, m, d in queue.event_details if m == "withdrawn"]
@@ -164,11 +166,19 @@ def test_republish_delivers_the_withdrawn_jobs_again(tmp_path: Path) -> None:
     deps, target = setup(tmp_path)
     registry = deps.graph_registry
     assert isinstance(registry, MemoryGraphRegistry)
-    queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
+    pressed = ActingUser(id="u-9", name="Ria", email=None)
+    republish = background("republish", {"templateId": "letter"})
+    queue = FakeQueue(jobs=[republish], uploaders={republish.id: pressed})
     run_once(queue, deps, "w1")
-    assert queue.completed
+    # The republish job waits for the bridge to finish its deliveries.
+    [(waiting, _, deliveries)] = queue.handed_over
+    assert waiting == republish.id and not queue.completed
     [(job_id, published, target_id)] = queue.published
     assert job_id == DELIVERED.job_id and target_id == "default"
+    assert deliveries == [("default", queue.published_deliveries[0][2])]
+    assert isinstance(deps.bridge, FakeBridge)
+    [request] = deps.bridge.requests
+    assert request.acting_user == pressed  # who pressed Republish
     assert {o.format for o in published} == {"csv", "rdf"}
     assert all(target.get_optional("published", o.key) for o in published)
     current = registry.current(SHA, "letter")
@@ -222,7 +232,7 @@ def test_a_withdrawal_spares_what_was_published_again_since(tmp_path: Path) -> N
     source.live.add(("default", "published", "pvp/letter/v1/fields/doc.csv"))
     queue = FakeQueue(jobs=[background("withdraw", WITHDRAW)])
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert GRAPH in store_of(deps).graphs  # the current graph is not dropped
     assert set(target.objects) == {
         ("published", "pvp/letter/v1/fields/doc.csv"),
@@ -259,7 +269,7 @@ def test_republish_skips_a_job_it_cannot_render_and_goes_on(tmp_path: Path) -> N
     deps.store.put("runs", f"{legacy.job_id}/reviewed-document.json", reviewed, "application/json")
     queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert [j for j, _, _ in queue.published] == [DELIVERED.job_id]
     skipped = [d for _, _, m, d in queue.event_details if m == "republish skipped"]
     assert skipped and skipped[0]["job"] == legacy.job_id
@@ -272,7 +282,10 @@ def two_targets(deps: PipelineDeps) -> MemoryObjectStore:
     """Adds finance-lake (prefix fin/) next to the default target; its store."""
     assert isinstance(deps.targets, FakeTargets)
     finance = MemoryObjectStore()
-    deps.targets.targets["finance-lake"] = Target(finance, "finance", "fin/", "finance-lake")
+    deps.targets.targets["finance-lake"] = Target("finance-lake", "finance", "fin/")
+    assert isinstance(deps.bridge, FakeBridge)
+    deps.bridge.targets["finance-lake"] = ("finance", "fin/")
+    deps.bridge.stores["finance-lake"] = finance
     return finance
 
 
@@ -291,7 +304,7 @@ def test_outputs_delivered_to_two_targets_are_withdrawn_from_each(tmp_path: Path
     }
     queue = FakeQueue(jobs=[background("withdraw", params)])
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert not default.objects
     assert list(finance.objects) == [("published", "pvp/letter/v1/fields/doc.csv")]
 
@@ -312,7 +325,7 @@ def test_graph_copies_are_withdrawn_through_their_recorded_targets(tmp_path: Pat
     }
     queue = FakeQueue(jobs=[background("withdraw", params)])
     run_once(queue, deps, "w1")
-    assert queue.completed, queue.reviewed or queue.failed
+    assert queue.finished, queue.reviewed or queue.failed
     assert not default.objects and not finance.objects
     assert GRAPH not in store_of(deps).graphs
     [data] = [d for _, _, m, d in queue.event_details if m == "withdrawn"]
@@ -345,7 +358,7 @@ def test_republish_delivers_to_the_target_of_the_jobs_version(tmp_path: Path) ->
         templates={("letter", 1): v1},
     )
     run_once(queue, deps, "w1")
-    assert queue.completed, queue.reviewed or queue.failed
+    assert queue.finished, queue.reviewed or queue.failed
     [(_, published, target_id)] = queue.published
     assert target_id == "finance-lake"
     assert all(finance.get_optional("finance", o.key) for o in published)

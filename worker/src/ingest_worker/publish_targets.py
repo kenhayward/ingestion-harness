@@ -17,8 +17,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 
 from .errors import DocumentError
-from .llm.secrets import SecretError, decrypt_secret, secrets_keys
-from .storage import ObjectStore, S3ObjectStore
 
 if TYPE_CHECKING:
     import psycopg
@@ -29,12 +27,6 @@ _T = TypeVar("_T")
 
 DEFAULT_TARGET_ID = "default"
 DEFAULT_BUCKET = "ingest-published"
-
-#: The only variables a target may read its keys from (the seeded default's), so a stored name can
-#: never make the worker read another secret of its environment.
-CREDENTIAL_ENV_NAMES = frozenset(
-    {"TARGET_S3_ACCESS_KEY", "TARGET_S3_SECRET_KEY", "S3_ACCESS_KEY", "S3_SECRET_KEY"}
-)
 
 TargetKind = Literal["internal", "external"]
 SeedOutcome = Literal["seeded", "kept", "differs"]
@@ -123,14 +115,15 @@ def seed_differences(stored: TargetRow, seed: DefaultSeed) -> list[str]:
     return [name for name, have, want in pairs if have != want]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Target:
-    """Final destination for published outputs (any S3 endpoint/bucket; keys get `prefix`)."""
+    """A publishing target as the worker knows it: an id the bridge delivers to, and where its
+    files land (bucket, and the prefix of their keys) for the records. Its credentials live on
+    the bridge."""
 
-    store: ObjectStore
+    id: str
     bucket: str
     prefix: str = ""
-    id: str = DEFAULT_TARGET_ID
 
 
 class PublishTargetStore(Protocol):
@@ -260,16 +253,6 @@ def seed_default_target(store: PublishTargetStore, env: Mapping[str, str]) -> li
     return fields
 
 
-@dataclass(frozen=True)
-class S3Settings:
-    """The worker's own object store connection (SeaweedFS), used by internal targets."""
-
-    endpoint: str
-    region: str
-    access_key: str
-    secret_key: str
-
-
 class TargetMissing(DocumentError):
     """A recipe names a publishing target that does not exist (never a fallback to default)."""
 
@@ -278,26 +261,13 @@ class TargetMissing(DocumentError):
         self.target_id = target_id
 
 
-StoreFactory = Callable[..., ObjectStore]
-
-
 class LiveTargets:
-    """One object store per publishing target, rebuilt when the stored targets change."""
+    """The publishing targets by id, reloaded when the stored targets change."""
 
-    def __init__(
-        self,
-        store: PublishTargetStore,
-        internal: S3Settings,
-        env: Mapping[str, str] = os.environ,
-        make: StoreFactory = S3ObjectStore,
-    ) -> None:
+    def __init__(self, store: PublishTargetStore) -> None:
         self._store = store
-        self._internal = internal
-        self._env = env
-        self._make = make
         self._version = store.version()
         self._rows = {r.id: r for r in store.load()}
-        self._cache: dict[str, Target] = {}
 
     def refresh(self) -> bool:
         """Reload when a target was written; True when it did."""
@@ -306,59 +276,11 @@ class LiveTargets:
             return False
         self._version = version
         self._rows = {r.id: r for r in self._store.load()}
-        self._cache.clear()
         return True
 
     def get(self, target_id: str) -> Target:
         self.refresh()
-        hit = self._cache.get(target_id)
-        if hit is not None:
-            return hit
         row = self._rows.get(target_id)
         if row is None:
             raise TargetMissing(target_id)
-        target = Target(self._store_of(row), row.bucket, row.prefix, row.id)
-        self._cache[target_id] = target
-        return target
-
-    def _store_of(self, t: TargetRow) -> ObjectStore:
-        if t.kind == "internal":
-            i = self._internal
-            return self._make(
-                i.endpoint,
-                i.region,
-                i.access_key,
-                i.secret_key,
-                path_style=True,
-                sse="none",
-                kms_key_id=None,
-                storage_class=None,
-            )
-        for name in (t.access_key_env, t.secret_key_env):
-            if name is not None and name not in CREDENTIAL_ENV_NAMES:
-                raise DocumentError(f"{t.label} names an unsupported credential variable")
-        region = t.region or self._internal.region
-        access_key = t.access_key_id or (self._env.get(t.access_key_env or "") or None)
-        secret_key: str | None = None
-        if t.secret_key_enc:
-            try:
-                keys = secrets_keys(self._env)
-                if not keys:
-                    raise SecretError("no master key")
-                secret_key = decrypt_secret(t.secret_key_enc, keys)
-            except SecretError as exc:
-                raise DocumentError(f"cannot decrypt the secret of {t.label}") from exc
-        elif t.secret_key_env:
-            secret_key = self._env.get(t.secret_key_env) or None
-        if not access_key or not secret_key:
-            raise DocumentError(f"{t.label} has no credentials")
-        return self._make(
-            t.endpoint or f"https://s3.{region}.amazonaws.com",
-            region,
-            access_key,
-            secret_key,
-            path_style=t.path_style,
-            sse=t.sse,
-            kms_key_id=t.kms_key_id,
-            storage_class=t.storage_class,
-        )
+        return Target(row.id, row.bucket, row.prefix)

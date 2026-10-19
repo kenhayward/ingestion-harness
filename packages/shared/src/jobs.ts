@@ -15,6 +15,8 @@ export const JOB_STATUSES = [
   'awaiting_review',
   'rejected',
   'cancelled',
+  /** Handed to the delivery bridge: waiting for every delivery to finish. */
+  'delivering',
 ] as const;
 export const JobStatusSchema = z.enum(JOB_STATUSES);
 export type JobStatus = z.infer<typeof JobStatusSchema>;

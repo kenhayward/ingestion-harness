@@ -45,13 +45,14 @@ const DESCRIBE: SinkDescribe = {
     field('kmsKeyId', 'KMS key id'),
     field('storageClass', 'Storage class'),
   ],
-  // Browsing S3 comes later; phase 2 takes the rendered files only.
+  // Browsing S3 comes later. It writes the rendered files; a package's data (the same values,
+  // structured) is accepted and not needed.
   capabilities: {
     browse: false,
     replace: true,
     withdraw: true,
     readBack: true,
-    accepts: ['files'],
+    accepts: ['files', 'data'],
   },
 };
 
