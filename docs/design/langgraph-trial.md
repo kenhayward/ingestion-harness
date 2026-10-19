@@ -90,7 +90,7 @@ Worker suite: 1,518 passed (the loop and LangGraph executors both covered), and
 6. **Schema ownership is split.** `PostgresSaver.setup()` runs LangGraph's own migrations in
    schema `langgraph`. That is outside `db/migrations` and the forward-only rule (ADR 0014).
    Backups (ADR 0015) would carry these tables, which are transient and can be dropped. Both
-   need a line in an ADR before this leaves trial.
+   are now recorded in [ADR 0017](../adr/0017-capabilities-as-nodes.md).
 7. **Some threads can be orphaned.** A thread can outlive its job: a job deleted, or cancelled
    while no worker held it, or a worker killed after its last step. The thread then waits for a
    retry that never comes. A periodic prune of threads whose job is no longer queued or running
@@ -103,7 +103,8 @@ Worker suite: 1,518 passed (the loop and LangGraph executors both covered), and
 ## Recommendation
 
 - **Keep the flag and the code, off by default.**
-- **Before turning it on anywhere real,** add the thread prune (7) and an ADR covering 3, 6 and 7.
+- **Before turning it on anywhere real,** add the thread prune (7). [ADR 0017](../adr/0017-capabilities-as-nodes.md)
+  records 3 and 6 and the prune's rule: keep a thread only while its job is queued or running.
 - **Next for the graph itself:** per-step channels (4), then fan-out of independent steps.
   Fan-out is the second concrete payoff, and the first one the loop cannot give.
 - **The decision on LangGraph versus the alternatives** (DBOS, our own executor) can wait.
