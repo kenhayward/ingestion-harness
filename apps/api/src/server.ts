@@ -20,7 +20,7 @@ import {
   s3KeysConfig,
   versionFromConfig,
 } from './config.js';
-import { migrate } from './db/migrate.js';
+import { migrateRestored } from './db/migrate.js';
 import { PgJobWatch } from './jobs/watch.js';
 import { PgLlmConfigRepo } from './llm/repo.js';
 import { PgOntologyRepo } from './ontologies/repo.js';
@@ -216,9 +216,13 @@ backup?.enableRestore({
     readdirSync(migrationsDir)
       .filter((f) => f.endsWith('.sql'))
       .sort(),
-  migrate: async (url) => {
-    await migrate(url, migrationsDir);
-  },
+  migrate: (url) =>
+    migrateRestored(url, {
+      migrations: migrationsDir,
+      bridgeMigrations:
+        process.env.BRIDGE_MIGRATIONS_DIR ??
+        fileURLToPath(new URL('../../../db/bridge-migrations', import.meta.url)),
+    }),
   rotateAdminToken: async () => printAdminToken(await access.rotateAdminPassword()),
   createEmbedJobs: (model) => ontologies.createEmbedJobs(model),
   liveDatabaseName: databaseName(config.DATABASE_URL),

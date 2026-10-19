@@ -14,7 +14,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyCopyRules, readKeptState, type CopyResult } from '../../src/backup/copy-rules.js';
 import { databaseUrl } from '../../src/backup/pg-tools.js';
-import { migrate } from '../../src/db/migrate.js';
+import { migrate, migrateRestored } from '../../src/db/migrate.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
 const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
@@ -36,6 +36,8 @@ async function migrateBridge(name: string): Promise<void> {
   });
 }
 const NAMES = ['ih_cr_live', 'ih_cr_side', 'ih_cr_atomic'];
+/** A backup taken before the bridge: no `bridge` schema. */
+const PRE_BRIDGE = 'ih_cr_pre';
 
 const USER = '00000000-0000-4000-8000-000000000001';
 const DOC = '00000000-0000-4000-8000-0000000000d1';
@@ -55,7 +57,8 @@ async function onDb<T>(name: string, work: (c: pg.Client) => Promise<T>): Promis
 
 const dropAll = () =>
   onDb('postgres', async (c) => {
-    for (const n of NAMES) await c.query(`DROP DATABASE IF EXISTS ${n} WITH (FORCE)`);
+    for (const n of [...NAMES, PRE_BRIDGE])
+      await c.query(`DROP DATABASE IF EXISTS ${n} WITH (FORCE)`);
   });
 
 /** Staging: its own models, GitHub instance, base IRI, targets and data-lake consumer. */
@@ -447,5 +450,34 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
         async (c) => (await c.query('SELECT status::text FROM jobs')).rows,
       ),
     ).toEqual([{ status: 'queued' }]);
+  });
+});
+
+describe.skipIf(!url)('copy rules (Postgres): a backup from before the bridge', () => {
+  beforeAll(async () => {
+    await dropAll();
+    for (const n of ['ih_cr_live', PRE_BRIDGE]) {
+      await onDb('postgres', (c) => c.query(`CREATE DATABASE ${n}`));
+      await migrate(databaseUrl(url!, n), migrations);
+    }
+    await migrateBridge('ih_cr_live');
+    await onDb('ih_cr_live', (c) => c.query(BRIDGE_STAGING));
+  }, 120_000);
+  afterAll(dropAll);
+
+  it("the restore's migrations give it the bridge's schema, so this server's connections are kept", async () => {
+    await migrateRestored(databaseUrl(url!, PRE_BRIDGE), { migrations, bridgeMigrations });
+    const kept = await onDb('ih_cr_live', (c) => readKeptState(c));
+    await onDb(PRE_BRIDGE, (c) => applyCopyRules(c, kept));
+    expect(
+      await onDb(
+        PRE_BRIDGE,
+        async (c) =>
+          (await c.query('SELECT id, secret_enc FROM bridge.connections ORDER BY id')).rows,
+      ),
+    ).toEqual([
+      { id: 'internal', secret_enc: null },
+      { id: 'staging-keys', secret_enc: 'v1:staging-bridge-secret' },
+    ]);
   });
 });

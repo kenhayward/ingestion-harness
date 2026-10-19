@@ -20,7 +20,7 @@ FROM node:24-alpine
 RUN apk add --no-cache postgresql17-client
 ENV NODE_ENV=production \
     SPECS_DIR=/app/specs \
-    MIGRATIONS_DIR=/app/db/migrations
+    MIGRATIONS_DIR=/app/db/migrations \n    BRIDGE_MIGRATIONS_DIR=/app/db/bridge-migrations
 WORKDIR /app
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/packages/shared/package.json packages/shared/
@@ -30,6 +30,8 @@ COPY --from=build /app/packages/bridge-contract/dist packages/bridge-contract/di
 COPY --from=build /app/apps/api/package.json apps/api/
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY db/migrations db/migrations
+# A restore brings a backup from before the bridge forward with the bridge's migrations too.
+COPY db/bridge-migrations db/bridge-migrations
 COPY specs specs
 # The build's calendar version (ADR 0014). Last, so a new version reuses every layer above.
 ARG APP_VERSION=dev
