@@ -53,6 +53,9 @@ from .pipeline import (
     load_definition,
     process_job,
 )
+from .plugin_catalogue import PgPluginCatalogue, catalogue_rows
+from .plugin_preview import run_plugin_preview
+from .plugins import plugins
 from .publish_targets import (
     LiveTargets,
     PgPublishTargetStore,
@@ -217,6 +220,7 @@ TASKS: dict[str, TaskHandler] = {
     "draft": _completes(run_draft, lambda r: f"drafted stage {r['stage']} with {r['model']}"),
     "export": _completes(run_export, lambda m: f"exported {len(m['samples'])} samples"),
     "graph": _completes(run_graph_preview, lambda p: f"previewed {len(p['samples'])} graphs"),
+    "plugin": _completes(run_plugin_preview, lambda r: f"previewed plugin step {r['stepId']}"),
     "suggest": _completes(run_suggest, lambda s: f"suggested {len(s['suggestions'])} ontologies"),
     "embed": _completes(run_embed, lambda n: f"embedded {n} terms"),
     "withdraw": _completes(run_withdraw, lambda w: "withdrew {} objects, {} graphs".format(*w)),
@@ -383,6 +387,15 @@ class _Worker:
         self.targets = LiveTargets(self.target_store)
         # The ontology library and the Linked data settings share one autocommit connection.
         self.library = psycopg.connect(settings.database_url, autocommit=True)
+        # The plugins this image can run, for the API's recipe checks and the editor (recipe
+        # plugins 3b), built-in and from installed packages (3d: one that breaks the contract is
+        # logged and left out). Advisory: a database without the table yet must not stop the worker.
+        registry = plugins()
+        log.info("plugins: %s", ", ".join(sorted(registry)))
+        try:
+            PgPluginCatalogue(self.library).publish(catalogue_rows(registry), app_version())
+        except psycopg.Error:
+            log.warning("could not publish the plugin catalogue", exc_info=True)
         # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
         self.graph_conn = psycopg.connect(settings.database_url, autocommit=True)
         # The LangGraph trial (WORKER_STEP_GRAPH=langgraph): a recipe's steps checkpointed in

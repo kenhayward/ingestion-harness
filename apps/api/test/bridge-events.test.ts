@@ -275,6 +275,21 @@ describe('reconcileOnce', () => {
     bridge.failNext = new Error('down');
     expect(await reconcileOnce({ ...deps, bridge }, T0)).toBe(0);
   });
+
+  it('fails a delivery the bridge no longer knows, which finishes the job', async () => {
+    const { repo, job, deps } = await setup();
+    const bridge = new FakeBridgeApi();
+    const d = randomUUID();
+    await repo.recordDeliveries(job.id, [{ targetId: 'default', deliveryId: d }]);
+    repo.ageDelivery(d, new Date(T0.getTime() - 20 * 60_000));
+    expect(await reconcileOnce({ ...deps, bridge }, T0)).toBe(1);
+    expect((await repo.deliveriesOf(job.id))[0]).toMatchObject({
+      status: 'failed',
+      error: { code: 'not_found', message: 'the bridge has no record of this delivery' },
+    });
+    expect(statusOf(repo, job.id)).toBe('failed');
+    expect(repo.jobs.get(job.id)?.error).toBe('Default: the bridge has no record of this delivery');
+  });
 });
 
 describe('POST /api/bridge/events', () => {

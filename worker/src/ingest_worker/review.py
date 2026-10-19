@@ -21,7 +21,7 @@ def step_results(
 ) -> dict[str, Any]:
     """Rebuild the per-step results that check paths refer to."""
     results: dict[str, Any] = {}
-    for step in template.extract_steps():
+    for step in template.filling_steps():  # extract and plugin steps
         if step.table is not None:
             results[step.id] = {"rows": tables.get(step.table, [])}
         else:

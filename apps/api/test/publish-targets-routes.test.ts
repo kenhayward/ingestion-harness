@@ -441,6 +441,27 @@ describe('PATCH /api/publish-targets/:id', () => {
     expect(res.body).not.toContain(SECRET);
   });
 
+  it("refuses the bridge's staging bucket for an internal target", async () => {
+    const c = await setup();
+    const said = "ingest-bridge is the delivery bridge's staging bucket: pick another";
+    const created = await c.call('POST', '/publish-targets', {
+      label: 'Oops',
+      kind: 'internal',
+      bucket: 'ingest-bridge',
+    });
+    expect([created.statusCode, created.json().error]).toEqual([400, said]);
+    const moved = await c.call('PATCH', '/publish-targets/default', { bucket: 'ingest-bridge' });
+    expect([moved.statusCode, moved.json().error]).toEqual([400, said]);
+    expect((await c.targets.get('default'))!.bucket).toBe('published');
+    const tested = await c.call('POST', '/publish-targets/test', {
+      label: 'Oops',
+      kind: 'internal',
+      bucket: 'ingest-bridge',
+    });
+    expect([tested.statusCode, tested.json().error]).toEqual([400, said]);
+    expect(c.bridge.tests).toEqual([]);
+  });
+
   it("refuses moving an internal target onto CT Studio's own bucket", async () => {
     const c = await setup();
     const res = await c.call('PATCH', '/publish-targets/default', { bucket: 'inbox' });

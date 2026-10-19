@@ -78,8 +78,8 @@ describe('destinationOf and connectionIdOf', () => {
 
 describe('mirrorTargets', () => {
   it('mirrors internal targets with the internal connection', async () => {
-    const { targets, bridge } = await setup();
-    expect(await mirrorTargets({ targets, bridge })).toBe(1);
+    const { targets, bridge, log } = await setup();
+    expect(await mirrorTargets({ targets, bridge, log })).toBe(1);
     expect(bridge.targets.get('default')).toEqual({
       label: 'Default',
       sinkId: 's3',
@@ -222,7 +222,7 @@ describe('mirrorTargets after a restore', () => {
       }
       return put(id, t);
     };
-    expect(await mirrorTargets({ targets, bridge })).toBe(3);
+    expect(await mirrorTargets({ targets, bridge, log: logger().log })).toBe(3);
     expect(bridge.targets.get('finance')?.connectionId).toBeNull();
     expect(bridge.targets.has('archive')).toBe(true);
   });
@@ -232,9 +232,9 @@ describe('the triple store target on the bridge', () => {
   const RDF = { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' };
 
   it('is mirrored to the rdf sink, with its env connection made once', async () => {
-    const { targets, bridge } = await setup();
+    const { targets, bridge, log } = await setup();
     await targets.seedRdf(RDF);
-    await mirrorTargets({ targets, bridge });
+    await mirrorTargets({ targets, bridge, log });
     expect(bridge.targets.get('rdf-default')).toEqual({
       label: 'Triple store',
       sinkId: 'rdf',
@@ -253,7 +253,7 @@ describe('the triple store target on the bridge', () => {
   });
 
   it('leaves a connection the bridge already has (an admin may have stored a password)', async () => {
-    const { targets, bridge } = await setup();
+    const { targets, bridge, log } = await setup();
     await targets.seedRdf(RDF);
     bridge.summaries.push({
       id: 'rdf-default',
@@ -262,7 +262,7 @@ describe('the triple store target on the bridge', () => {
       status: 'ok',
       statusReason: null,
     });
-    await mirrorTargets({ targets, bridge });
+    await mirrorTargets({ targets, bridge, log });
     expect(bridge.connections.has('rdf-default')).toBe(false);
     expect(bridge.targets.get('rdf-default')?.connectionId).toBe('rdf-default');
   });
@@ -288,5 +288,48 @@ describe('after a restore swaps the database in', () => {
     await resyncAfterRestore({ targets, bridge, secrets: KEYS, log, rdfSeed: null });
     expect(await targets.get('rdf-default')).toBeNull();
     expect(bridge.targets.has('default')).toBe(true);
+  });
+});
+
+describe('one row the bridge refuses', () => {
+  it('is logged and skipped while the other targets are mirrored', async () => {
+    const { targets, bridge, log, warnings } = await setup();
+    await targets.create(external('finance'), null);
+    await targets.markMoved('finance', 'target-finance');
+    await targets.create(external('archive', { secretKeyEnc: null }), null);
+    const put = bridge.putTarget.bind(bridge);
+    bridge.putTarget = async (id, t) => {
+      if (id === 'finance') throw FakeBridgeApi.refusal('bucket name not allowed');
+      return put(id, t);
+    };
+    expect(await mirrorTargets({ targets, bridge, log })).toBe(2);
+    expect([...bridge.targets.keys()].sort()).toEqual(['archive', 'default']);
+    expect(warnings).toEqual([
+      'publishing target finance was refused by the bridge: bucket name not allowed',
+    ]);
+  });
+
+  it('keeps a refused connection unmoved, moves the others, and does not retry', async () => {
+    const { targets, bridge, log, warnings } = await setup();
+    await targets.create(external('finance'), null);
+    await targets.create(external('archive'), null);
+    const putConnection = bridge.putSharedConnection.bind(bridge);
+    bridge.putSharedConnection = async (c) => {
+      if (c.id === 'target-finance') throw FakeBridgeApi.refusal('endpoint not allowed');
+      return putConnection(c);
+    };
+    const waits: number[] = [];
+    const result = await syncTargetsWithBridge(
+      { targets, bridge, secrets: KEYS, log },
+      { retryMs: 5, sleep: async (ms) => void waits.push(ms) },
+    );
+    expect(result).toEqual({ moved: ['archive'], skipped: ['finance'] });
+    expect(waits).toEqual([]);
+    expect((await targets.get('finance'))?.secretKeyEnc).not.toBeNull();
+    expect((await targets.get('finance'))?.movedToBridgeAt).toBeNull();
+    expect(warnings).toEqual([
+      'publishing target finance: the bridge refused its connection (endpoint not allowed), so its keys were not moved; enter them on the connections page',
+    ]);
+    expect(bridge.targets.has('archive')).toBe(true);
   });
 });

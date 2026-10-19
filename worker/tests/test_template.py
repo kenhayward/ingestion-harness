@@ -301,3 +301,38 @@ def test_value_nodes_resolve_as_the_shared_fixture_says(path: str) -> None:
 def test_a_mappings_link_resolves_as_the_shared_fixture_says(path: str) -> None:
     semantics = Semantics.model_validate(VALUE_NODES_FIXTURE["semantics"])
     assert semantics.link_of(_mapping_at(semantics, path)) == VALUE_NODES_FIXTURE["links"][path]
+
+
+PLUGIN_FIXTURE = json.loads(
+    (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "plugin-steps.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    "case", PLUGIN_FIXTURE["cases"], ids=[c["name"] for c in PLUGIN_FIXTURE["cases"]]
+)
+def test_plugin_steps_match_the_shared_fixture(case: dict[str, Any]) -> None:
+    definition = {**PLUGIN_FIXTURE["base"], "pipeline": case["pipeline"]}
+    if case["valid"]:
+        Template.model_validate(definition)
+    elif "error" in case:
+        with pytest.raises(ValidationError, match=re.escape(case["error"])):
+            Template.model_validate(definition)
+    else:
+        with pytest.raises(ValidationError):
+            Template.model_validate(definition)
+
+
+def test_a_plugin_filled_output_resolves_to_its_step() -> None:
+    from ingest_worker.template import PluginStep
+
+    case = next(c for c in PLUGIN_FIXTURE["cases"] if c["name"].startswith("a check reads"))
+    t = Template.model_validate({**PLUGIN_FIXTURE["base"], "pipeline": case["pipeline"]})
+    [plugin] = [s for s in t.pipeline if isinstance(s, PluginStep)]
+    assert t.filler_of_table("lines") is plugin
+    assert [s.id for s in t.filling_steps()] == ["head", "rows"]
+    assert [s.id for s in t.extract_steps()] == ["head"]
+    check = t.compile_check(next(s for s in t.pipeline if s.type == "check"))
+    assert check.values == "rows.rows[*].sku"

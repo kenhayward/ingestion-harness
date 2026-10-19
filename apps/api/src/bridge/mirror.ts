@@ -69,10 +69,24 @@ async function ensureRdfConnection(bridge: BridgeApi, t: TargetRecord): Promise<
   });
 }
 
-/** Pushes every target row to the bridge (idempotent). Returns how many were pushed. */
+/**
+ * The bridge refused this one request (it answered, and not about this deployment's key): the
+ * row is at fault, so it is logged and skipped rather than holding up every other row. An
+ * unreachable or failing bridge is not a refusal; the whole sync is tried again.
+ */
+function refusal(err: unknown): string | null {
+  if (!(err instanceof BridgeApiError) || err.status < 400 || err.status >= 500) return null;
+  return err.status === 401 ? null : (err.error?.message ?? err.message);
+}
+
+/**
+ * Pushes every target row to the bridge (idempotent). A row the bridge refuses is logged and
+ * left out. Returns how many were pushed.
+ */
 export async function mirrorTargets(deps: {
   targets: PublishTargetRepo;
   bridge: BridgeApi;
+  log: FastifyBaseLogger;
 }): Promise<number> {
   let n = 0;
   for (const view of await deps.targets.list()) {
@@ -81,12 +95,22 @@ export async function mirrorTargets(deps: {
     if (record.kind === 'rdf') await ensureRdfConnection(deps.bridge, record);
     const mirror = mirrorOf(record);
     try {
-      await deps.bridge.putTarget(record.id, mirror);
+      try {
+        await deps.bridge.putTarget(record.id, mirror);
+      } catch (err) {
+        // A connection the bridge does not have (a restore kept this server's connections): the
+        // target is mirrored without one, so its deliveries fail visibly until an admin picks one.
+        if (!(err instanceof BridgeApiError && err.error?.code === 'connection_missing')) throw err;
+        await deps.bridge.putTarget(record.id, { ...mirror, connectionId: null });
+      }
     } catch (err) {
-      // A connection the bridge does not have (a restore kept this server's connections): the
-      // target is mirrored without one, so its deliveries fail visibly until an admin picks one.
-      if (!(err instanceof BridgeApiError && err.error?.code === 'connection_missing')) throw err;
-      await deps.bridge.putTarget(record.id, { ...mirror, connectionId: null });
+      const why = refusal(err);
+      if (why === null) throw err;
+      deps.log.warn(
+        { target: record.id },
+        `publishing target ${record.id} was refused by the bridge: ${why}`,
+      );
+      continue;
     }
     n += 1;
   }
@@ -101,7 +125,8 @@ export const movedConnectionId = (targetId: string): string => `target-${targetI
  * `target-<id>`, then the row's ciphertext is dropped and `moved_to_bridge_at` set. Keys read
  * from `.env` (the seeded default) become an env connection: the bridge reads the same allowlisted
  * variables in its own container. A row whose secret cannot be decrypted, or that has no keys, is
- * skipped and logged; it is mirrored without a connection, so its deliveries fail visibly.
+ * skipped and logged, as is one whose connection the bridge refuses; it is mirrored without a
+ * connection, so its deliveries fail visibly.
  */
 export async function moveTargetsToBridge(deps: {
   targets: PublishTargetRepo;
@@ -147,13 +172,24 @@ export async function moveTargetsToBridge(deps: {
     }
     fields.forcePathStyle = String(t.forcePathStyle);
     const connectionId = movedConnectionId(t.id);
-    await deps.bridge.putSharedConnection({
-      id: connectionId,
-      name: t.label,
-      fields,
-      secret,
-      secretEnv,
-    });
+    try {
+      await deps.bridge.putSharedConnection({
+        id: connectionId,
+        name: t.label,
+        fields,
+        secret,
+        secretEnv,
+      });
+    } catch (err) {
+      const why = refusal(err);
+      if (why === null) throw err;
+      deps.log.warn(
+        { target: t.id },
+        `publishing target ${t.id}: the bridge refused its connection (${why}), so its keys were not moved; enter them on the connections page`,
+      );
+      skipped.push(t.id);
+      continue;
+    }
     await deps.targets.markMoved(t.id, connectionId);
     moved.push(t.id);
   }

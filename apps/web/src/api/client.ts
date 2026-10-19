@@ -73,6 +73,8 @@ import type {
   LlmEndpointView,
   PublishTargetView,
   TargetChoice,
+  PluginInfo,
+  PluginPreviewView,
   TargetConnection,
   TargetCreateBody,
   TargetPatchBody,
@@ -472,6 +474,8 @@ export interface Api {
   openConnections(): Promise<void>;
   /** What a recipe's Publish to picker offers (any designer or admin). */
   listPublishTargetChoices(): Promise<TargetChoice[]>;
+  /** The plugins recipe steps can run, as the workers published them (recipe plugins 3b). */
+  listPlugins(): Promise<PluginInfo[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
   listOntologies(opts?: { retired?: boolean }): Promise<OntologyListItem[]>;
   /** One ontology with every version, newest first. */
@@ -514,6 +518,13 @@ export interface Api {
   /** Render the open draft's mapping over the newest finished run of each dev sample. */
   startGraphPreview(projectId: string, sampleIds?: string[]): Promise<GraphPreviewView>;
   getGraphPreview(projectId: string, jobId: string): Promise<GraphPreviewView>;
+  /** Run the open draft's plugin step on the dev samples (recipe plugins 3c). */
+  startPluginPreview(
+    projectId: string,
+    stepId: string,
+    sampleIds?: string[],
+  ): Promise<PluginPreviewView>;
+  getPluginPreview(projectId: string, jobId: string): Promise<PluginPreviewView>;
   getOntologySuggestions(projectId: string): Promise<OntologySuggestionsView>;
   refreshOntologySuggestions(projectId: string): Promise<OntologySuggestionsView>;
   /** A term and what it is related to, for the graph view. */
@@ -1094,6 +1105,7 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(`${base}/publish-targets/connections`)
         .then(json<{ connections: TargetConnection[] }>)
         .then((r) => r.connections),
+    listPlugins: () => apiFetch(`${base}/plugins`).then(json<PluginInfo[]>),
     listPublishTargetChoices: () =>
       apiFetch(`${base}/publish-targets/choices`)
         .then(json<{ choices: TargetChoice[] }>)
@@ -1221,6 +1233,15 @@ export function createHttpApi(base = '/api'): Api {
         `${base}/workbench/projects/${encodeURIComponent(projectId)}/ontology-suggestions`,
         {},
       ),
+    startPluginPreview: (projectId, stepId, sampleIds) =>
+      post<PluginPreviewView>(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/plugin-previews`,
+        sampleIds ? { stepId, sampleIds } : { stepId },
+      ),
+    getPluginPreview: (projectId, jobId) =>
+      apiFetch(
+        `${base}/workbench/projects/${encodeURIComponent(projectId)}/plugin-previews/${encodeURIComponent(jobId)}`,
+      ).then(json<PluginPreviewView>),
     getGraphPreview: (projectId, jobId) =>
       apiFetch(
         `${base}/workbench/projects/${encodeURIComponent(projectId)}/graph-previews/${encodeURIComponent(jobId)}`,

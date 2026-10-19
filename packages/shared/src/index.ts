@@ -28,3 +28,4 @@ export * from './profile.js';
 export * from './github-sync.js';
 export * from './publish-targets.js';
 export * from './build-version.js';
+export * from './plugins.js';

@@ -77,6 +77,11 @@ def graph_preview_key(project_id: str, job_id: str) -> str:
     return f"graphs/{project_id}/{job_id}.json"
 
 
+def plugin_preview_key(project_id: str, job_id: str) -> str:
+    """A plugin step preview's result per sample (runs bucket, plugin task; recipe plugins 3c)."""
+    return f"plugin-previews/{project_id}/{job_id}.json"
+
+
 def ontology_suggestions_key(project_id: str, job_id: str) -> str:
     """A survey's or refresh's ontology suggestions (runs bucket; TS ontologySuggestionsKey)."""
     return f"ontology-suggestions/{project_id}/{job_id}.json"

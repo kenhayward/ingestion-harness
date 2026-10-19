@@ -97,7 +97,39 @@ class CheckStep(_Model):
     max_distance: int = Field(default=2, ge=0, alias="maxDistance")
 
 
-Step = Annotated[ExtractStep | CheckStep, Field(discriminator="type")]
+#: A plugin's id and the major version a recipe runs: `text.pattern@1` (TS `PLUGIN_REF`).
+PLUGIN_REF = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+
+
+class PluginStep(_Model):
+    """A step that runs a registered worker plugin instead of a model call
+    (docs/design/recipe-plugins.md; PluginStepSchema in TS). It fills fields or one table like an
+    extract step; `with` is the plugin's own settings, checked against its schema before the job
+    calls any model (`plugins.resolve_plugins`)."""
+
+    type: Literal["plugin"]
+    id: Id
+    uses: str = Field(pattern=PLUGIN_REF)
+    fields: list[Id] = Field(default_factory=list)
+    table: Id | None = None
+    #: The text it reads (none: it reads only earlier values).
+    sections: list[Id] = Field(default_factory=list)
+    #: Earlier values it may read: name -> `<field>` or `<table>.<column>`.
+    context: dict[Id, str] = Field(default_factory=dict)
+    #: The plugin's own settings.
+    with_: dict[str, Any] = Field(default_factory=dict, alias="with")
+
+    @model_validator(mode="after")
+    def _fills(self) -> PluginStep:
+        if bool(self.fields) == (self.table is not None):
+            raise ValueError(f"step {self.id!r}: a step must fill either fields or a table")
+        return self
+
+
+#: The steps that fill outputs.
+FillingStep = ExtractStep | PluginStep
+
+Step = Annotated[ExtractStep | CheckStep | PluginStep, Field(discriminator="type")]
 
 
 class ReviewPolicy(_Model):
@@ -286,6 +318,13 @@ class Template(_Model):
     def extract_steps(self) -> list[ExtractStep]:
         return [s for s in self.pipeline if isinstance(s, ExtractStep)]
 
+    def plugin_steps(self) -> list[PluginStep]:
+        return [s for s in self.pipeline if isinstance(s, PluginStep)]
+
+    def filling_steps(self) -> list[FillingStep]:
+        """The steps that fill outputs (extract and plugin), in pipeline order."""
+        return [s for s in self.pipeline if isinstance(s, ExtractStep | PluginStep)]
+
     def step_model(self, step: ExtractStep) -> str:
         """The model a step runs: its own, else the template's, else the default choice."""
         if step.model != "default":
@@ -304,11 +343,11 @@ class Template(_Model):
             return self.delivery.publish_to
         return DEFAULT_PUBLISH_TARGET
 
-    def filler_of_field(self, field_id: str) -> ExtractStep:
-        return next(s for s in self.extract_steps() if field_id in s.fields)
+    def filler_of_field(self, field_id: str) -> FillingStep:
+        return next(s for s in self.filling_steps() if field_id in s.fields)
 
-    def filler_of_table(self, table_id: str) -> ExtractStep:
-        return next(s for s in self.extract_steps() if s.table == table_id)
+    def filler_of_table(self, table_id: str) -> FillingStep:
+        return next(s for s in self.filling_steps() if s.table == table_id)
 
     def _resolve(self, path: str) -> tuple[str, ValueDef] | None:
         """`<field>` or `<table>.<column>` -> (engine path, definition)."""
@@ -442,7 +481,8 @@ class Template(_Model):
         field_ids = [f.id for f in self.outputs.fields]
         table_ids = [t.id for t in self.outputs.tables]
         step_ids = [s.id for s in self.pipeline]
-        section_ids = {s.id for s in self.document.sections}
+        sections = {s.id: s for s in self.document.sections}
+        section_ids = set(sections)
 
         for label, ids in (("output", field_ids + table_ids), ("step", step_ids)):
             errors += [
@@ -452,7 +492,7 @@ class Template(_Model):
         errors += [f"output id {i!r} is reserved" for i in sorted(clashes & RESERVED_OUTPUT_IDS)]
 
         fills: dict[str, int] = {}
-        for step in self.extract_steps():
+        for step in self.filling_steps():
             errors += [
                 f"step {step.id!r}: unknown section {s!r}"
                 for s in step.sections
@@ -466,7 +506,14 @@ class Template(_Model):
                 if step.table not in table_ids:
                     errors.append(f"step {step.id!r}: unknown table {step.table!r}")
                 fills[step.table] = fills.get(step.table, 0) + 1
-            errors += self._repeat_errors(step)
+            if isinstance(step, ExtractStep):
+                errors += self._repeat_errors(step)
+            else:
+                repeating = [i for i in step.sections if i in sections and sections[i].repeat]
+                errors += [
+                    f"step {step.id!r}: a plugin step cannot read a repeating section ({i})"
+                    for i in repeating[:1]
+                ]
         for output_id in field_ids + table_ids:
             count = fills.get(output_id, 0)
             kind = "field" if output_id in field_ids else "table"
@@ -477,7 +524,7 @@ class Template(_Model):
 
         if not errors:  # context must come from steps that have already run
             order = {s.id: i for i, s in enumerate(self.pipeline)}
-            for step in self.extract_steps():
+            for step in self.filling_steps():
                 for name, path in step.context.items():
                     if self._resolve(path) is None:
                         errors.append(

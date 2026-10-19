@@ -34,6 +34,7 @@ import {
   type SegmentJob,
   type SegmentJobParams,
   type GraphJobParams,
+  type PluginJobParams,
   SEGMENT_PRIORITY,
   type NewDocument,
   type NewReference,
@@ -65,6 +66,7 @@ export class MemoryRepo implements IngestionRepo {
   /** Segment jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly segmentJobs = new Map<string, SegmentJob & { params: SegmentJobParams }>();
   readonly graphJobs = new Map<string, ProjectJob & { params: GraphJobParams }>();
+  readonly pluginJobs = new Map<string, ProjectJob & { params: PluginJobParams }>();
   /** Draft jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
   readonly draftJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** `queuePaused()` (tests set it). */
@@ -313,6 +315,32 @@ export class MemoryRepo implements IngestionRepo {
     this.graphJobs.set(job.id, { ...job, params });
     this.priorities.set(job.id, SEGMENT_PRIORITY);
     return { job, removed };
+  }
+
+  async createPluginJob(projectId: string, params: PluginJobParams) {
+    const removed = [...this.pluginJobs.values()]
+      .filter((j) => j.projectId === projectId)
+      .map((j) => j.id);
+    for (const id of removed) this.pluginJobs.delete(id);
+    const now = new Date().toISOString();
+    const job: ProjectJob = {
+      id: randomUUID(),
+      projectId,
+      status: 'queued',
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.pluginJobs.set(job.id, { ...job, params });
+    this.priorities.set(job.id, SEGMENT_PRIORITY);
+    return { job, removed };
+  }
+
+  async getPluginJob(projectId: string, id: string): Promise<ProjectJob | null> {
+    const stored = this.pluginJobs.get(id);
+    if (stored?.projectId !== projectId) return null;
+    const { id: jobId, status, error, createdAt, updatedAt } = stored;
+    return { id: jobId, projectId, status, error, createdAt, updatedAt };
   }
 
   async getGraphJob(projectId: string, id: string): Promise<ProjectJob | null> {

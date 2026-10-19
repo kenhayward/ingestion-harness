@@ -38,7 +38,10 @@ target (the S3 sink writes each file at the target's prefix + its name), retries
 retried, and posts every status change to `POST /api/bridge/events`; the API records each event
 once and in order (`job_deliveries.last_sequence`) and finishes the job when every delivery is
 final, exactly once (it holds the job's row). A reconcile asks the bridge about deliveries silent
-for ten minutes, so a lost event cannot strand a job. The job detail shows each target's delivery.
+for ten minutes, so a lost event cannot strand a job; a delivery the bridge has no record of (its
+data lost or restored) is failed (`not_found`), which finishes the job. A package over
+`BRIDGE_MAX_PACKAGE_MB` is refused with `content_rejected` (413) and the job goes to review. The
+job detail shows each target's delivery.
 
 Cancellation and deletion: [ADR 0005](adr/0005-job-cancellation-and-deletion.md).
 

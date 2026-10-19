@@ -264,6 +264,8 @@ services:
       context: ..
       dockerfile: deploy/docker/worker.Dockerfile
       args:
+        # Recipe plugin packages to install (docs/plugins/writing-plugins.md); empty: none.
+        WORKER_PLUGINS: ${WORKER_PLUGINS:-}
         # The build's calendar version (ADR 0014), set by deploy/scripts/deploy.{sh,ps1}.
         APP_VERSION: ${APP_VERSION:-dev}
         APP_VERSION_PREVIOUS: ${APP_VERSION_PREVIOUS:-}

@@ -42,6 +42,7 @@ import { workbenchRoutes } from './routes/workbench.js';
 import { workbenchBundleRoutes } from './routes/workbench-bundle.js';
 import { workbenchOverviewRoutes } from './routes/workbench-overview.js';
 import { workbenchGraphRoutes } from './routes/workbench-graph.js';
+import { workbenchPluginPreviewRoutes } from './routes/workbench-plugin-preview.js';
 import { workbenchSuggestionRoutes } from './routes/workbench-suggestions.js';
 import { workbenchPinsRoutes } from './routes/workbench-pins.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
@@ -54,11 +55,18 @@ import type { BridgeApi } from './bridge/client.js';
 import type { HandoffCodes } from './bridge/handoff.js';
 import { bridgeRoutes } from './routes/bridge.js';
 import { publishTargetRoutes } from './routes/publish-targets.js';
+import { pluginRoutes } from './routes/plugins.js';
+import type { PluginCatalogue } from './plugins/catalogue.js';
 import { backupRoutes } from './routes/backup.js';
 
 export interface AppDeps {
   repo: IngestionRepo;
   store: ObjectStore;
+  /**
+   * The plugins the workers can run (recipe plugins 3b): recipes' plugin steps are checked
+   * against it. Absent or null: plugin steps are not checked (unit tests of other routes).
+   */
+  plugins?: PluginCatalogue | null;
   /** Publishing targets (migration 202610170019): where recipes deliver, edited under Administration. */
   targets: PublishTargetRepo;
   /** One object store per publishing target; published outputs are read through their own. */
@@ -77,6 +85,8 @@ export interface AppDeps {
   workbench: WorkbenchRepo;
   /** CT Studio's own buckets; `backups` holds backups and restore uploads. */
   buckets: { inbox: string; outputs: string; runs: string; backups: string };
+  /** The delivery bridge's package staging bucket, on this deployment's storage too. */
+  bridgeStagingBucket: string;
   maxUploadBytes: number;
   /** Token access (ADR 0006). null disables enforcement - unit tests only. */
   access: AccessRepo | null;
@@ -185,6 +195,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(workbenchBundleRoutes, { prefix: '/api' });
   await app.register(workbenchOverviewRoutes, { prefix: '/api' });
   await app.register(workbenchGraphRoutes, { prefix: '/api' });
+  await app.register(workbenchPluginPreviewRoutes, { prefix: '/api' });
   await app.register(workbenchSuggestionRoutes, { prefix: '/api' });
   await app.register(workbenchPinsRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });
@@ -194,6 +205,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(linkedDataRoutes, { prefix: '/api' });
   await app.register(maintenanceRoutes, { prefix: '/api' });
   await app.register(publishTargetRoutes, { prefix: '/api' });
+  await app.register(pluginRoutes, { prefix: '/api' });
   await app.register(bridgeRoutes, { prefix: '/api' });
   await app.register(backupRoutes, { prefix: '/api' });
   await app.register(versionRoutes, { prefix: '/api' });

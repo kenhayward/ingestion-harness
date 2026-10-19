@@ -89,8 +89,7 @@ class HttpBridgeClient:
             return
         error = _error_of(response)
         if response.status_code == 413:
-            # Too large for the bridge (BRIDGE_MAX_PACKAGE_MB): the same package always will be,
-            # so a person must look, whether or not the bridge's answer is a contract error.
+            # Too large for the bridge: the same bytes sent again cannot fit either.
             raise BridgeRefused(
                 error
                 if error is not None and error.class_ == "needs_user"
@@ -98,8 +97,7 @@ class HttpBridgeClient:
                     {
                         "class": "needs_user",
                         "code": "content_rejected",
-                        "message": "the package is larger than the bridge takes "
-                        "(BRIDGE_MAX_PACKAGE_MB)",
+                        "message": "the package is larger than the bridge takes",
                     }
                 )
             )

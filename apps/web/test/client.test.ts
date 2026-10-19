@@ -118,6 +118,13 @@ describe('http api: sign-in and users', () => {
     });
   });
 
+  it('lists the plugin catalogue with GET /api/plugins', async () => {
+    const fetch = vi.fn(async () => Response.json([]));
+    vi.stubGlobal('fetch', fetch);
+    expect(await createHttpApi('/api').listPlugins()).toEqual([]);
+    expect(calls(fetch)).toEqual([{ url: '/api/plugins', method: 'GET', body: undefined }]);
+  });
+
   it('changes the password with PUT /api/auth/password', async () => {
     const fetch = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetch);

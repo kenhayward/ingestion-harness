@@ -37,6 +37,7 @@ import { resyncAfterRestore, syncTargetsWithBridge } from './bridge/mirror.js';
 import { reconcileOnce } from './bridge/reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
+import { PgPluginCatalogue } from './plugins/catalogue.js';
 import { defaultSeed, rdfSeed, seedDifferences } from './publish-targets/seed.js';
 import { TargetStores } from './publish-targets/stores.js';
 import { PgRepo } from './repositories/pg.js';
@@ -82,6 +83,7 @@ const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err)
 const llmSecrets = secretsKeys(process.env);
 // Publishing targets (migration 202610170019): .env seeds `default` once; the database wins afterwards.
 const targets = new PgPublishTargetRepo(makePool(2));
+const plugins = new PgPluginCatalogue(makePool(1));
 const seed = defaultSeed(config);
 const seedOutcome = await targets.seedDefault(seed);
 // The triple store target (delivery bridge phase 3): seeded once from RDF_ENDPOINT, when set.
@@ -163,12 +165,14 @@ const app = await buildApp({
   templates,
   workbench,
   store,
+  plugins,
   targets,
   targetStores,
   bridge,
   bridgeAuth,
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
   buckets,
+  bridgeStagingBucket: config.BRIDGE_STAGING_BUCKET,
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,
   access, // always enforced in production (ADR 0006)
   profiles: new PgProfileRepo(makePool(2)),

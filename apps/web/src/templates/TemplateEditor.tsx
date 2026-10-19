@@ -49,6 +49,7 @@ import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Area, opt, Select, Text } from './fields.js';
 import { MappingEditor } from './MappingEditor.js';
 import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
+import { AddPluginStep, PluginPreview, PluginStepForm, usePlugins } from './PluginForms.js';
 
 type Path = (string | number)[];
 type Tab =
@@ -159,6 +160,7 @@ export function TemplateEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const models = useModelChoices(api);
+  const plugins = usePlugins(api);
   const modelName = (id: string) => choiceName(id, models);
   /** The publishing targets a recipe may name (any designer may list them); [] until loaded. */
   const [targets, setTargets] = useState<TargetChoice[]>([]);
@@ -982,6 +984,19 @@ export function TemplateEditor({
               }
               paths={paths}
               metrics={metrics}
+              plugins={plugins}
+              pluginPreview={
+                embedded
+                  ? (step) => (
+                      <PluginPreview
+                        api={api}
+                        projectId={templateId}
+                        stepId={typeof step.id === 'string' ? step.id : ''}
+                        dirty={dirty}
+                      />
+                    )
+                  : undefined
+              }
               resetKey={replaced}
             />
           )}
@@ -1013,7 +1028,17 @@ export function TemplateEditor({
                     else if (openStep !== null && openStep > i) setOpenStep(openStep - 1);
                   }}
                 >
-                  {step.type === 'extract' ? (
+                  {step.type === 'plugin' ? (
+                    <PluginStepForm
+                      step={step}
+                      plugins={plugins}
+                      sectionDefs={sections}
+                      fields={fields.map((f) => f.id)}
+                      tables={tables.map((t) => t.id)}
+                      set={(key, v) => update(['pipeline', i, key], v)}
+                      replace={(next) => update(['pipeline', i], next)}
+                    />
+                  ) : step.type === 'extract' ? (
                     <ExtractStep
                       step={step}
                       fields={fields.map((f) => f.id)}
@@ -1072,6 +1097,14 @@ export function TemplateEditor({
               >
                 Add check step
               </button>
+              <AddPluginStep
+                plugins={plugins}
+                onAdd={(step) => {
+                  if (!editable) return;
+                  update(['pipeline'], [...pipeline, step]);
+                  setOpenStep(pipeline.length);
+                }}
+              />
             </div>
           )}
           {tab === 'pipeline' && stageLink('steps', 'Ask the model on the Pipeline tab')}
