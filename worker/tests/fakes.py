@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
@@ -9,6 +10,13 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
+from ingest_worker.bridge.client import BridgeRefused
+from ingest_worker.bridge.models import (
+    BridgeError,
+    CreateDeliveriesRequest,
+    CreateDeliveriesResult,
+    DeliveryRef,
+)
 from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
     CompletionRequest,
@@ -786,3 +794,62 @@ class FakeTargets:
             return self.targets[target_id]
         except KeyError:
             raise TargetMissing(target_id) from None
+
+
+class FakeBridge:
+    """BridgeClient over a dict of objects keyed (bucket, key). A delivery to a target in
+    `targets` (id -> (bucket, prefix)) writes the package's files at prefix + name, as the S3
+    sink does. `requests` records every delivery request; `refusals` are raised, in order, by the
+    next calls (a BridgeError becomes BridgeRefused; an exception is raised as it is)."""
+
+    def __init__(self, targets: dict[str, tuple[str, str]] | None = None) -> None:
+        self.targets = dict(targets or {})
+        self.objects: dict[tuple[str, str], tuple[bytes, str]] = {}
+        self.requests: list[CreateDeliveriesRequest] = []
+        self.puts: list[tuple[str, str, str]] = []
+        self.deletes: list[tuple[str, list[tuple[str, str]]]] = []
+        self.refusals: list[BridgeError | Exception] = []
+        self._ids = 0
+
+    def _next_refusal(self) -> None:
+        if self.refusals:
+            refusal = self.refusals.pop(0)
+            if isinstance(refusal, BridgeError):
+                raise BridgeRefused(refusal)
+            raise refusal
+
+    def _id(self) -> str:
+        self._ids += 1
+        return f"00000000-0000-4000-8000-{self._ids:012d}"
+
+    def deliver(self, request: CreateDeliveriesRequest) -> CreateDeliveriesResult:
+        self._next_refusal()
+        self.requests.append(request)
+        for target_id in request.targets:
+            bucket, prefix = self.targets.get(target_id, ("", ""))
+            for f in request.package.files:
+                body = base64.b64decode(f.content)
+                self.objects[(bucket, prefix + f.name)] = (body, f.content_type)
+        return CreateDeliveriesResult(
+            package_id=self._id(),
+            deliveries=[DeliveryRef(target_id=t, delivery_id=self._id()) for t in request.targets],
+        )
+
+    def read_object(self, target_id: str, bucket: str, key: str) -> bytes | None:
+        self._next_refusal()
+        found = self.objects.get((bucket, key))
+        return found[0] if found else None
+
+    def put_object(
+        self, target_id: str, bucket: str, key: str, body: bytes, content_type: str
+    ) -> None:
+        self._next_refusal()
+        self.puts.append((target_id, bucket, key))
+        self.objects[(bucket, key)] = (body, content_type)
+
+    def delete_objects(self, target_id: str, objects: list[tuple[str, str]]) -> int:
+        self._next_refusal()
+        self.deletes.append((target_id, list(objects)))
+        for o in objects:
+            self.objects.pop(o, None)
+        return len(objects)

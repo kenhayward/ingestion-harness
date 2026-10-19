@@ -48,6 +48,13 @@ def target_buckets(load: Callable[[], list[TargetRow]], fallback: list[str]) -> 
     return list(dict.fromkeys(r.bucket for r in rows if r.kind == "internal"))
 
 
+def env_target_bucket(env: Mapping[str, str], s3_endpoint: str) -> list[str]:
+    """The .env default target's bucket when it is on this deployment's S3 (`TARGET_S3_*` unset
+    or naming the same endpoint): the fallback when the stored targets cannot be read."""
+    endpoint = env.get("TARGET_S3_ENDPOINT") or s3_endpoint
+    return [env.get("TARGET_S3_BUCKET") or "ingest-published"] if endpoint == s3_endpoint else []
+
+
 def backups_bucket(env: Mapping[str, str]) -> str:
     """The bucket the API keeps backups and restore uploads in (`S3_BUCKET_BACKUPS`, as the API
     reads it: blank means the default)."""
@@ -84,7 +91,7 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         config=Config(s3={"addressing_style": "path"}),
     )
     buckets = [s.bucket_inbox, s.bucket_outputs, s.bucket_runs, backups_bucket(os.environ)]
-    fallback = [s.target_bucket] if s.target_endpoint == s.s3_endpoint else []
+    fallback = env_target_bucket(os.environ, s.s3_endpoint)
     buckets += target_buckets(lambda: _stored_targets(s), fallback)
     created = ensure_buckets(client, list(dict.fromkeys(buckets)))
     log.info("buckets ready (created: %s)", ", ".join(created) or "none")
