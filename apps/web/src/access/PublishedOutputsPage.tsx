@@ -46,9 +46,20 @@ export function PublishedOutputsPage({
       <p className="muted admin-lead">
         Where published outputs are delivered. A recipe names its publishing target on General, so
         what a recipe delivers to changes only with a new version. .env sets the default target
-        once; what you change here wins.
+        once; what you change here wins. Keys for external targets are kept as connections on the
+        delivery bridge: Manage connections opens its page in a new tab.
       </p>
       <InSlot slot={actions}>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            api.openConnections().catch((err: unknown) => setError((err as Error).message));
+          }}
+        >
+          <Icon name="key" />
+          Manage connections
+        </button>
         <button type="button" className="primary" onClick={() => setAdding(true)}>
           <Icon name="plus" />
           Add target

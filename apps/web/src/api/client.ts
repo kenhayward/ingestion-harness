@@ -468,6 +468,8 @@ export interface Api {
   testPublishTarget(body: TargetTestBody): Promise<TargetTestResult>;
   /** The delivery bridge's shared connections an external target may use (admins). */
   listSharedConnections(): Promise<TargetConnection[]>;
+  /** Opens the bridge's connections page in a new tab (a one-time link for this user). */
+  openConnections(): Promise<void>;
   /** What a recipe's Publish to picker offers (any designer or admin). */
   listPublishTargetChoices(): Promise<TargetChoice[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
@@ -1083,6 +1085,11 @@ export function createHttpApi(base = '/api'): Api {
         apiFetch(`${base}/publish-targets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
       ),
     testPublishTarget: (body) => post<TargetTestResult>(`${base}/publish-targets/test`, body),
+    openConnections: async () => {
+      const { url } = await post<{ url: string }>(`${base}/bridge/connections-link`, {});
+      // A new tab, not a frame (the page keeps its own session), and no window.opener for it.
+      window.open(url, '_blank', 'noopener');
+    },
     listSharedConnections: () =>
       apiFetch(`${base}/publish-targets/connections`)
         .then(json<{ connections: TargetConnection[] }>)

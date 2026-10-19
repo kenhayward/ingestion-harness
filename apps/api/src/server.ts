@@ -32,6 +32,7 @@ import { PgProfileRepo } from './profile/pg.js';
 import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { HttpBridgeApi } from './bridge/client.js';
+import { HandoffCodes } from './bridge/handoff.js';
 import { syncTargetsWithBridge } from './bridge/mirror.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
@@ -90,6 +91,11 @@ const targetStores = new TargetStores({
 });
 // The delivery bridge publishes; targets are mirrored to it and their keys moved there once.
 const bridge = new HttpBridgeApi(config.BRIDGE_URL, config.BRIDGE_CLIENT_KEY);
+const bridgeAuth = {
+  key: config.BRIDGE_CLIENT_KEY,
+  publicUrl: config.BRIDGE_PUBLIC_URL,
+  codes: new HandoffCodes(),
+};
 
 // Read-only keys for the data lake (ADR 0008), issued through SeaweedFS's IAM with the admin
 // identity, granted per internal publishing target.
@@ -158,6 +164,7 @@ const app = await buildApp({
   targets,
   targetStores,
   bridge,
+  bridgeAuth,
   specs: SpecRegistry.loadFromDir(config.SPECS_DIR),
   buckets,
   maxUploadBytes: config.MAX_UPLOAD_MB * 1024 * 1024,

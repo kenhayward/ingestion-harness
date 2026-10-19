@@ -18,7 +18,11 @@ const fixture = JSON.parse(
   ),
 ) as { seed: SeedCase[] };
 
-const BRIDGE = { BRIDGE_URL: 'http://bridge:3100', BRIDGE_CLIENT_KEY: 'k'.repeat(32) };
+const BRIDGE = {
+  BRIDGE_URL: 'http://bridge:3100',
+  BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+  BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
+};
 
 describe('defaultSeed', () => {
   it.each(fixture.seed.map((c) => [c.name, c] as const))('%s', (_name, c) => {

@@ -8,6 +8,7 @@ const base = {
   S3_SECRET_KEY: 's',
   BRIDGE_URL: 'http://bridge:3100',
   BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+  BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
 };
 
 describe('githubConfig', () => {

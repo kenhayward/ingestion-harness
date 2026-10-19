@@ -38,6 +38,7 @@ describe('versionFromConfig', () => {
     S3_SECRET_KEY: 'b',
     BRIDGE_URL: 'http://bridge:3100',
     BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+    BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
   };
 
   it('reads the build args the image sets', () => {

@@ -16,7 +16,11 @@ import { S3KeyService } from '../src/s3keys/service.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { TargetStores } from '../src/publish-targets/stores.js';
+import { HandoffCodes } from '../src/bridge/handoff.js';
 import { FakeBridgeApi } from './fake-bridge.js';
+
+/** The key test bridges sign their calls to the API with (BRIDGE_CLIENT_KEY). */
+export const TEST_BRIDGE_KEY = 'b'.repeat(32);
 import { MemoryObjectStore, type ObjectStore } from '../src/storage/object-store.js';
 import type { S3Options } from '../src/storage/s3.js';
 import { MemoryTemplateRepo } from '../src/templates/repo.js';
@@ -149,6 +153,11 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
   });
   const bridge = new FakeBridgeApi();
   const app = await buildApp({
+    bridgeAuth: {
+      key: TEST_BRIDGE_KEY,
+      publicUrl: 'https://ct.example.com/bridge',
+      codes: new HandoffCodes(),
+    },
     repo,
     store,
     targets,

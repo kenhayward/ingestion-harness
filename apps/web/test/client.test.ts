@@ -1144,4 +1144,17 @@ describe('http api: publishing targets', () => {
     expect(await api.listSharedConnections()).toEqual(connections);
     expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe('/api/publish-targets/connections');
   });
+
+  it('opens the connections page in a new tab, without an opener', async () => {
+    const api = createHttpApi('/api');
+    const url = 'https://ct.example.com/bridge/connections/start?code=abc';
+    const fetch = vi.fn(async () => respond(200, { url }));
+    vi.stubGlobal('fetch', fetch);
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    await api.openConnections();
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe('/api/bridge/connections-link');
+    expect((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].method).toBe('POST');
+    expect(open).toHaveBeenCalledWith(url, '_blank', 'noopener');
+  });
 });

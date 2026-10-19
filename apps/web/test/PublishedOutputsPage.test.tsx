@@ -453,6 +453,24 @@ describe('PublishedOutputsPage', () => {
   });
 });
 
+describe('Manage connections', () => {
+  it('opens the link in a new tab', async () => {
+    const api = page([target()], { openConnections: vi.fn(async () => undefined) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Manage connections' }));
+    expect(api.openConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a refusal on the page', async () => {
+    page([target()], {
+      openConnections: vi.fn(async () => {
+        throw new Error('admins only');
+      }),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Manage connections' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('admins only');
+  });
+});
+
 describe('AdminDialog Published outputs tab', () => {
   it('opens with Add target in the header', async () => {
     localStorage.removeItem('ih.adminTab');

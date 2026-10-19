@@ -52,6 +52,8 @@ const EnvSchema = z
     BRIDGE_URL: z.string().url(),
     /** Shared with the bridge and the worker: signs every request between them. */
     BRIDGE_CLIENT_KEY: z.string().min(32),
+    /** Where browsers reach the bridge's connections page (its own origin, or a path here). */
+    BRIDGE_PUBLIC_URL: z.string().url(),
     /** The URL the data lake reads the publish bucket through (the proxy, ADR 0008); display only. */
     S3_PUBLIC_URL: optional(z.string().url()),
     /** The URL consumers reach Fuseki's dataset through (the proxy, ADR 0011); display only. */
