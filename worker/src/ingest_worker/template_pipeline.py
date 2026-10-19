@@ -19,7 +19,7 @@ import io
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -163,19 +163,13 @@ def process_template_job(
     cache = workbench_step_cache(job, deps)
     _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
 
-    fields: dict[str, dict[str, Any]] = {}
-    tables: dict[str, list[dict[str, Any]]] = {}
-    checks: dict[str, Any] = {}
-    issues: list[dict[str, Any]] = segment_issues(doc)
-    step_results: dict[str, Any] = {}  # normalised, keyed by step id (check paths use these)
-    models_used: dict[str, str] = {}
-
+    state = DocState(issues=tuple(segment_issues(doc)))
     for step in template.pipeline:
         check_cancelled(job, queue)
         if isinstance(step, CheckStep):
             check = template.compile_check(step)
-            checks[step.id] = step_results[step.id] = run_check_with_event(
-                job, queue, check, step_results
+            state = state.with_check(
+                step.id, run_check_with_event(job, queue, check, state.step_results)
             )
             continue
         result = _run_step(
@@ -187,18 +181,17 @@ def process_template_job(
             compiled[step.id],
             resolved[step.id],
             doc,
-            fields,
-            tables,
+            state,
             trigger="process",
             cache=cache,
             progress=step_reporter(
                 job, queue, step.id, extract_ids.index(step.id) + 1, len(extract_ids)
             ),
         )
-        models_used[step.id] = result.model_ref
-        step_results[step.id] = _normalise_step(template, step, result.data, fields, tables, issues)
-        issues += key_column_issues(template, step, tables.get(step.table or "", []))
+        state = state.apply(normalise_step(template, step, result.data, result.model_ref))
 
+    fields, tables, checks, models_used = state.fields, state.tables, state.checks, state.models
+    issues = list(state.issues)  # the document's own list: a SHACL report adds to it below
     reasons = _review_reasons(template, checks, issues)
     if reasons:
         queue.event(job.id, "warn", "review required", {"reasons": reasons})
@@ -474,18 +467,17 @@ def _run_step(
     ex: Extraction,
     model: tuple[LLMProvider, str],
     doc: Prepared,
-    fields: dict[str, dict[str, Any]],
-    tables: dict[str, list[dict[str, Any]]],
+    state: DocState,
     *,
     trigger: str,
     extra_instructions: str | None = None,
     cache: StepCache | None = None,
     progress: Progress | None = None,
 ) -> ExtractionResult:
-    """Run one extract step with context from earlier steps; record it in step_runs."""
+    """Run one extract step with context from earlier steps (`state`); record it in step_runs."""
     provider, model_id = model
     context = dict(ex.prompt_context or {})
-    context["step_context"] = context_values(loaded.template, step, fields, tables)
+    context["step_context"] = context_values(loaded.template, step, state.fields, state.tables)
     context["source_file"] = job.filename or None
     if extra_instructions:
         guidance = f"Reviewer guidance for this re-run: {extra_instructions}"
@@ -586,8 +578,7 @@ def rerun_template_job(
 
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
-    fields: dict[str, dict[str, Any]] = document["fields"]
-    tables: dict[str, list[dict[str, Any]]] = document["tables"]
+    stored = DocState.from_document(document)
     doc = prepare_document(job, deps, queue, template.document)
 
     result = _run_step(
@@ -599,15 +590,16 @@ def rerun_template_job(
         ex,
         model,
         doc,
-        fields,
-        tables,
+        stored,
         trigger="rerun",
         extra_instructions=params.get("instructions"),
     )
-    # The SHACL issues are the previous graph's: validated again below.
-    issues = [i for i in document.get("issues", []) if i.get("step") not in (step.id, "shacl")]
-    _normalise_step(template, step, result.data, fields, tables, issues)
-    issues += key_column_issues(template, step, tables.get(step.table or "", []))
+    # The step's issues are replaced; the SHACL ones are the previous graph's, validated below.
+    kept = tuple(i for i in stored.issues if i.get("step") not in (step.id, "shacl"))
+    state = replace(stored, issues=kept).apply(
+        normalise_step(template, step, result.data, result.model_ref)
+    )
+    fields, tables, issues = state.fields, state.tables, list(state.issues)
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
     document.update(
@@ -618,7 +610,7 @@ def rerun_template_job(
         issues=issues,
         review_required=True,
         review_reasons=reasons,
-        models={**document.get("models", {}), step.id: result.model_ref},
+        models=state.models,
         reruns=[
             *document.get("reruns", []),
             {
@@ -654,24 +646,98 @@ def _save_previews(
         queue.event(job.id, "warn", "page previews unavailable", {"error": repr(exc)})
 
 
-def _normalise_step(
-    template: Template,
-    step: ExtractStep,
-    data: dict[str, Any],
-    fields: dict[str, dict[str, Any]],
-    tables: dict[str, list[dict[str, Any]]],
-    issues: list[dict[str, Any]],
-) -> dict[str, Any]:
+@dataclass(frozen=True)
+class StepOutcome:
+    """What one extract step adds to the document, normalised: a graph node's output."""
+
+    step_id: str
+    #: The step's result as checks read it: its fields by id, or `{"rows": …}` for a table.
+    result: dict[str, Any]
+    #: Field id -> `{value, evidence, page}`.
+    fields: dict[str, dict[str, Any]]
+    #: Table id -> rows (at most one table).
+    tables: dict[str, list[dict[str, Any]]]
+    #: Values that could not be normalised (kept as written), then rows missing their key.
+    issues: tuple[dict[str, Any], ...]
+    #: The model the step ran on (None: not recorded).
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class DocState:
+    """The document as a recipe's steps build it. Steps never change a state: `apply` and
+    `with_check` return a new one, so each state can be kept, compared or resumed from."""
+
+    fields: dict[str, dict[str, Any]] = field(default_factory=dict)
+    tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    checks: dict[str, Any] = field(default_factory=dict)
+    issues: tuple[dict[str, Any], ...] = ()
+    #: Each step's result by step id (extract steps and checks): what check paths read.
+    step_results: dict[str, Any] = field(default_factory=dict)
+    #: The model each extract step ran on.
+    models: dict[str, str] = field(default_factory=dict)
+
+    def apply(self, outcome: StepOutcome) -> DocState:
+        """The state after `outcome`: a step run again replaces its values where they were."""
+        models = self.models
+        if outcome.model is not None:
+            models = {**models, outcome.step_id: outcome.model}
+        return DocState(
+            fields={**self.fields, **outcome.fields},
+            tables={**self.tables, **outcome.tables},
+            checks=self.checks,
+            issues=(*self.issues, *outcome.issues),
+            step_results={**self.step_results, outcome.step_id: outcome.result},
+            models=models,
+        )
+
+    def with_check(self, check_id: str, result: dict[str, Any]) -> DocState:
+        return replace(
+            self,
+            checks={**self.checks, check_id: result},
+            step_results={**self.step_results, check_id: result},
+        )
+
+    @classmethod
+    def from_document(cls, document: dict[str, Any]) -> DocState:
+        """The state a stored draft `document.json` holds (step results are not stored)."""
+        return cls(
+            fields=dict(document["fields"]),
+            tables=dict(document["tables"]),
+            checks=dict(document.get("checks", {})),
+            issues=tuple(document.get("issues", [])),
+            models=dict(document.get("models", {})),
+        )
+
+
+def step_inputs(template: Template, step: ExtractStep) -> list[str]:
+    """The extract steps whose values `step` reads through its `context`, in pipeline order: the
+    step's dependencies. (A valid recipe fills each output with one step, and a context names
+    only outputs filled by earlier steps.)"""
+    writer = {
+        output: s.id
+        for s in template.extract_steps()
+        for output in [*s.fields, *([s.table] if s.table else [])]
+    }
+    wanted = {writer[path.partition(".")[0]] for path in step.context.values()}
+    return [s.id for s in template.extract_steps() if s.id in wanted]
+
+
+def normalise_step(
+    template: Template, step: ExtractStep, data: dict[str, Any], model: str | None = None
+) -> StepOutcome:
+    """A step's reply (`data`, never changed) as typed values plus the issues found."""
     order = template.document.date_order
+    issues: list[dict[str, Any]] = []
     if step.fields:
-        normalised: dict[str, Any] = {}
+        fields: dict[str, dict[str, Any]] = {}
         for field_id in step.fields:
             definition = template.field(field_id)
             entry = data.get(field_id) or {}
             value, issue = normalize_value(
                 entry.get("value"), definition.type, options=definition.enum, date_order=order
             )
-            fields[field_id] = normalised[field_id] = {
+            fields[field_id] = {
                 "value": value,
                 "evidence": entry.get("evidence"),
                 "page": entry.get("page"),
@@ -687,7 +753,7 @@ def _normalise_step(
                         "message": issue,
                     }
                 )
-        return normalised
+        return StepOutcome(step.id, dict(fields), fields, {}, tuple(issues), model)
 
     assert step.table is not None
     table = template.table(step.table)
@@ -711,8 +777,8 @@ def _normalise_step(
                     }
                 )
         rows.append(row)
-    tables[table.id] = rows
-    return {"rows": rows}
+    issues += key_column_issues(template, step, rows)
+    return StepOutcome(step.id, {"rows": rows}, {}, {table.id: rows}, tuple(issues), model)
 
 
 def _review_reasons(

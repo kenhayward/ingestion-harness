@@ -95,20 +95,27 @@ PR: let `read_pages` always use the Workbench reader.
 
 ## Part 2: state passed between steps, not shared
 
-- `DocState` (frozen): `fields`, `tables`, `checks`, `issues`, `step_results`, `models`.
-- `StepOutcome`: one step's normalised values, its issues and the model it ran on.
-- `normalise_step(template, step, data) -> StepOutcome` replaces `_normalise_step`, which edited
-  its arguments in place.
-- `DocState.apply(outcome) -> DocState`. The loop becomes
-  `state = state.apply(run_step(state, step))`.
-- `context_values(state, step)` reads upstream values from the state. The steps a step reads
-  become a recorded dependency (`step_inputs(template, step)`), which later allows fan-out.
-- `document_of(state, …)` builds the draft `document.json` in one place. A re-run builds its
-  `DocState` from the stored draft (`DocState.from_document`).
+- `DocState` (frozen): `fields`, `tables`, `checks`, `issues` (a tuple), `step_results`,
+  `models`. `apply` and `with_check` return a new state, and a step run again replaces its
+  values where they were.
+- `StepOutcome`: one step's normalised result (as checks read it), its fields or table, its
+  issues (normalisation, then rows missing their key) and the model it ran on.
+- `normalise_step(template, step, data, model) -> StepOutcome` replaces `_normalise_step`,
+  which edited its arguments in place. It also takes in `key_column_issues`, which the loop used
+  to add separately.
+- The process loop is `state = state.apply(normalise_step(…, _run_step(…, state, …).data, …))`.
+  `_run_step` reads the earlier steps' values from the state.
+- `step_inputs(template, step)` lists the steps a step reads through its `context`: its
+  dependencies, which later allow fan-out. A valid recipe fills each output with exactly one step,
+  and a context names only outputs filled by earlier steps, so each input has a single writer.
+- A re-run builds its state from the stored draft (`DocState.from_document`), drops the step's
+  own and the SHACL issues, and applies the new outcome. Building the draft `document.json` from
+  a state (`document_of`) moves to part 3, with the rest of the ending.
 
 ## Part 3: one ending for process, re-run and publish
 
-`finalise(job, deps, queue, template, document, mode) -> Finalised`, where `mode` is one of
+`document_of(job, doc, template, state, reasons)` builds the draft `document.json` from a state in
+one place. `finalise(job, deps, queue, template, document, mode) -> Finalised`, where `mode` is one of
 `draft`, `rerun` or `publish`. It builds the graph, runs the SHACL check (the advisory-or-blocking
 rule depends on `mode` and on whether `rdf` is delivered), adds the report to the issues and
 reasons, and renders the outputs. Writing the drafts stays with the caller, because a publish
@@ -152,7 +159,7 @@ never writes drafts. The three copies of this sequence go.
 | --- | --- |
 | 0 equivalence traces | done: `worker/tests/test_equivalence.py`, 7 scenarios |
 | 1 split `prepare_document` | done: `read_pages`, `select_pages`, `segment_pages` (`tests/test_prepare_nodes.py`); Workbench `prepare` uses `read_pages` |
-| 2 `DocState` | — |
+| 2 `DocState` | done: `DocState`, `StepOutcome`, `normalise_step`, `step_inputs` (`tests/test_doc_state.py`); process and re-run use them |
 | 3 `finalise` | — |
 | 4 outcomes and `TASKS` | — |
 | 5 `NodeSpec`, `JobModels`, `run_nodes` | — |
