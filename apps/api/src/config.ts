@@ -81,7 +81,7 @@ const EnvSchema = z
     ),
     /** Proxies whose X-Forwarded-* headers are trusted (default: private networks). */
     TRUST_PROXY: optional(z.string()),
-    /** Sites that may embed the app in a frame (e.g. https://*.3dexperience.3ds.com); null: none. */
+    /** Sites that may embed the app in a frame (e.g. https://*.dashboard.example.com); null: none. */
     FRAME_ANCESTORS: FrameAncestors,
     /** The GitHub OAuth app users link their accounts with (docs/design/profile.md); both or none. */
     GITHUB_CLIENT_ID: optional(z.string()),
