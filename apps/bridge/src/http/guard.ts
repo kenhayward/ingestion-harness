@@ -23,7 +23,13 @@ export function requestIds(): { genReqId: (req: { headers: Record<string, unknow
  */
 export function registerGuard(
   app: FastifyInstance,
-  opts: { key: string; nonces: NonceStore; maxBodyBytes: number },
+  opts: {
+    key: string;
+    nonces: NonceStore;
+    maxBodyBytes: number;
+    /** Which paths must be signed (default: everything under /v1). */
+    signed?: (path: string) => boolean;
+  },
 ): void {
   app.addContentTypeParser(
     'application/json',
@@ -38,7 +44,8 @@ export function registerGuard(
   app.addHook('preValidation', async (req, reply) => {
     const path = req.url;
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-    if (path.startsWith('/v1/') || path === '/v1') {
+    const mustSign = opts.signed ?? ((p: string) => p.startsWith('/v1/') || p === '/v1');
+    if (mustSign(path)) {
       const verdict = verifyRequest(
         opts.key,
         { method: req.method, path, body: raw, headers: req.headers },
