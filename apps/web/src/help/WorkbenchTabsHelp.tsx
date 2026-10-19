@@ -453,13 +453,56 @@ export function ReviewHelp() {
           wrong.
         </li>
         <li>
-          <strong>Graph</strong> (linked data): the graph and any rules it breaks.
+          <strong>Graph</strong> (linked data): the graph and any rules it breaks, as cards, a
+          diagram or Turtle (see <em>The document graph</em>).
         </li>
       </ul>
       <h3>Deciding</h3>
       <p>
         <strong>Approve</strong> (with an optional note) publishes the corrected values; for a test
         run it only finishes the review. <strong>Reject</strong> needs a reason and is final.
+      </p>
+    </>
+  );
+}
+
+export function ReviewGraphHelp() {
+  return (
+    <>
+      <p>
+        When the recipe delivers RDF, the <strong>Graph</strong> tab shows the linked data this
+        document will publish, and the rules (shapes) it breaks, if the recipe pins any.
+      </p>
+      <h3>Shapes</h3>
+      <p>
+        Each result says what is wrong. <strong>Show</strong> opens the field or table it is about,
+        where you correct the value; the graph follows the corrected values when you approve.
+      </p>
+      <h3>Three views</h3>
+      <ul>
+        <li>
+          <strong>Cards</strong> (the default): one card per thing the graph describes, the
+          document first and then what it links to. Types and properties use the names your pinned
+          ontologies give them; dates and yes/no values are spelled out, and a value with a unit
+          reads as one value (<em>12.5 kg</em>). Under a value, the page and the quote it was read
+          from. A blue chip is another card: click it to go there; <em>Linked from</em> goes back.
+          A rule the value breaks is shown on its row in red, and a value a rule needs but the
+          graph lacks is a <em>Missing</em> row.
+        </li>
+        <li>
+          <strong>Diagram</strong>: the same things as boxes and their links as arrows, the
+          document in the accent colour, a box with a broken rule outlined in red. Pick a box, or a
+          name in the list, to see its card beside the diagram. Drag to move, scroll to zoom.
+        </li>
+        <li>
+          <strong>Turtle</strong>: the graph as it is published, for checking the exact terms. A
+          graph that cannot be read is always shown this way.
+        </li>
+      </ul>
+      <p>
+        Pages, sections, quotes and the run that made the graph are part of it too (its
+        provenance); the cards show them beside the values instead of as cards of their own. The
+        view you pick is remembered.
       </p>
     </>
   );

@@ -49,7 +49,7 @@ export function graphElements(data: Neighbourhood, measure: (text: string) => nu
 }
 
 /** Measures text in `font` with a canvas; a rough estimate where there is none. */
-function textMeasurer(font: string): (text: string) => number {
+export function textMeasurer(font: string): (text: string) => number {
   const ctx = document.createElement('canvas').getContext('2d');
   if (!ctx) return (text) => text.length * FONT_SIZE * 0.6;
   ctx.font = font;
