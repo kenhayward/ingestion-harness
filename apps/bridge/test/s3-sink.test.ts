@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { SinkDescribeSchema, type BridgePackage } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { S3PackageStore } from '../src/packages/s3.js';
@@ -67,7 +68,7 @@ describe('S3Sink', () => {
       replace: true,
       withdraw: true,
       readBack: true,
-      accepts: ['files', 'data'],
+      accepts: ['files', 'data', 'rdf'],
     });
     expect(d.credentialFields.map((f) => [f.id, f.secret])).toEqual([
       ['endpoint', false],
@@ -83,6 +84,35 @@ describe('S3Sink', () => {
       'kmsKeyId',
       'storageClass',
     ]);
+  });
+
+  it('takes a package with a graph: writes graph-version at prefix + its name, ignores rdf', async () => {
+    const objects = new MemoryObjectStore();
+    const { sink } = sinkOver(objects);
+    const withGraph = SinkDescribeSchema.shape.capabilities.parse(
+      (await sink.describe()).capabilities,
+    );
+    expect(withGraph.accepts).toContain('rdf');
+    const rdfPackage = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../packages/bridge-contract/test/fixtures/package-document-rdf.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as BridgePackage;
+    await sink.deliver(
+      deliverRequest({
+        credential: CREDENTIAL,
+        destination: { bucket: 'pub', prefix: 'out/' },
+        package: rdfPackage,
+      }),
+    );
+    const copy = rdfPackage.files.find((f) => f.output === 'graph-version')!;
+    expect(await objects.get('pub', `out/${copy.name}`)).toEqual(
+      Buffer.from(copy.content, 'base64'),
+    );
   });
 
   it('delivers every file at prefix + name with its content type', async () => {
