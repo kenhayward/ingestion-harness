@@ -11,7 +11,7 @@ import {
   tryOnBlockedReason,
   unsavedText,
 } from '../src/templates/editor-derive.js';
-import { repeatNote } from '../src/templates/editor-derive.js';
+import { repeatNote, stepKind } from '../src/templates/editor-derive.js';
 import { RETIRED_REASON } from '../src/ui/retired.js';
 import { job } from './fake-api.js';
 
@@ -208,4 +208,31 @@ describe('repeatNote', () => {
       { note: null, disabled: {}, keyColumnReason: 'reads no repeating section' },
     ],
   ])('%s', (_, step, expected) => expect(repeatNote(step, REPEAT_SECTIONS)).toEqual(expected));
+});
+
+describe('plugin steps in the step summaries', () => {
+  const fields = {
+    type: 'plugin',
+    id: 'refs',
+    uses: 'text.pattern@1',
+    fields: ['a', 'b'],
+    sections: ['head'],
+  };
+  const table = { type: 'plugin', id: 'rows', uses: 'acme.lines@2', table: 'lines' };
+
+  it('names the plugin, what it fills and what it reads', () => {
+    expect(stepSummary(fields)).toBe('text.pattern@1 · 2 fields · reads head');
+    expect(stepSummary(table)).toBe('acme.lines@2 · Table lines');
+    expect(stepListSummary(fields)).toBe('Runs text.pattern@1 · fills 2 · reads head');
+    expect(stepListSummary(table)).toBe('Runs acme.lines@2 · fills 1 · reads earlier values');
+  });
+});
+
+describe('stepKind', () => {
+  it.each<[Record<string, unknown>, string]>([
+    [{ type: 'extract' }, 'EXTRACT'],
+    [{ type: 'check' }, 'CHECK'],
+    [{ type: 'plugin' }, 'PLUGIN'],
+    [{}, 'EXTRACT'],
+  ])('%j is %s', (step, kind) => expect(stepKind(step)).toBe(kind));
 });

@@ -142,3 +142,28 @@ describe('outputCoverage', () => {
     ]);
   });
 });
+
+describe('outputCoverage with plugin steps', () => {
+  it('counts a plugin step as filling its outputs', () => {
+    const plugin = { type: 'plugin', id: 'p1', uses: 'text.pattern@1', fields: ['a', 'b'] };
+    const covered = outputCoverage(def([plugin, extract('s2', { table: 't' })]));
+    expect(covered.uncovered).toEqual([]);
+    expect(covered.outputs[0]).toEqual({ id: 'a', kind: 'field', steps: ['p1'] });
+  });
+
+  it('counts an output filled by an extract and a plugin step twice', () => {
+    const plugin = { type: 'plugin', id: 'p1', uses: 'text.pattern@1', table: 't' };
+    const covered = outputCoverage(
+      def([extract('s1', { fields: ['a', 'b'] }), extract('s2', { table: 't' }), plugin]),
+    );
+    expect(covered.multiple).toEqual(['t']);
+  });
+
+  it('never counts a check step', () => {
+    const check = { type: 'check', id: 'c1', values: 'a', reference: 'a', fields: ['b'] };
+    expect(outputCoverage(def([extract('s1', { fields: ['a'] }), check])).uncovered).toEqual([
+      'b',
+      't',
+    ]);
+  });
+});

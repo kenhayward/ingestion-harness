@@ -13,6 +13,7 @@ import {
   type StepCard,
   type StepMetric,
 } from './steps.js';
+import { STEP_KIND_TONE } from '../templates/editor-derive.js';
 import { SectionChip } from './tags.js';
 
 export function StepFigures({
@@ -75,16 +76,22 @@ function Step({
         <span className="step-number" aria-hidden="true">
           {card.number}
         </span>
-        <span className={`kind-tag tone-${card.kind === 'EXTRACT' ? 'info' : 'neutral'}`}>
-          {card.kind}
-        </span>
+        <span className={`kind-tag ${STEP_KIND_TONE[card.kind]}`}>{card.kind}</span>
         <code className="step-id">{card.id}</code>
         {justAdded && <span className="kind-tag tone-ok">JUST ADDED</span>}
         {card.model && <span className="step-model muted">{choiceName(card.model, models)}</span>}
       </div>
-      {card.kind === 'EXTRACT' ? (
+      {card.kind !== 'CHECK' ? (
         <>
           <dl className="step-facts">
+            {card.uses !== undefined && (
+              <>
+                <dt>Plugin</dt>
+                <dd>
+                  <code>{card.uses}</code>
+                </dd>
+              </>
+            )}
             <dt>Fills</dt>
             <dd>
               {card.fills.map((f) => (
@@ -95,6 +102,9 @@ function Step({
             </dd>
             <dt>Reads</dt>
             <dd>
+              {card.kind === 'PLUGIN' && card.reads.length === 0 && (
+                <span className="muted">earlier values only</span>
+              )}
               {card.reads.map((s) => (
                 <SectionChip key={s} id={s} index={sections.indexOf(s)} />
               ))}

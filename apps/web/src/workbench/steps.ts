@@ -9,8 +9,10 @@ export type StepMetric = TemplateMetrics['steps'][number];
 export interface StepCard {
   number: number;
   id: string;
-  kind: 'EXTRACT' | 'CHECK';
-  /** Extract steps: the model ref (`default` when unset); check steps call no model. */
+  kind: 'EXTRACT' | 'CHECK' | 'PLUGIN';
+  /** Plugin steps: the plugin and major version they run (`text.pattern@1`). */
+  uses?: string;
+  /** Extract steps: the model ref (`default` when unset); check and plugin steps call none. */
   model: string | null;
   fills: string[];
   reads: string[];
@@ -31,31 +33,43 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export function stepCards(definition: Def): StepCard[] {
   return list(definition.pipeline)
     .filter((s): s is Def & { id: string } => typeof s.id === 'string')
-    .map((s, i) =>
-      s.type === 'check'
+    .map((s, i): StepCard =>
+      s.type === 'plugin'
         ? {
             number: i + 1,
             id: s.id,
-            kind: 'CHECK' as const,
+            kind: 'PLUGIN',
+            uses: typeof s.uses === 'string' ? s.uses : '',
             model: null,
-            fills: [],
-            reads: [],
-            chunkPages: null,
-            compares:
-              [s.values, s.reference]
-                .filter((x): x is string => typeof x === 'string' && x !== '')
-                .join(' = ') || null,
-          }
-        : {
-            number: i + 1,
-            id: s.id,
-            kind: 'EXTRACT' as const,
-            model: typeof s.model === 'string' ? s.model : 'default',
             fills: typeof s.table === 'string' ? [s.table] : ids(s.fields),
             reads: ids(s.sections),
-            chunkPages: typeof s.chunkPages === 'number' ? s.chunkPages : null,
+            chunkPages: null,
             compares: null,
-          },
+          }
+        : s.type === 'check'
+          ? {
+              number: i + 1,
+              id: s.id,
+              kind: 'CHECK' as const,
+              model: null,
+              fills: [],
+              reads: [],
+              chunkPages: null,
+              compares:
+                [s.values, s.reference]
+                  .filter((x): x is string => typeof x === 'string' && x !== '')
+                  .join(' = ') || null,
+            }
+          : {
+              number: i + 1,
+              id: s.id,
+              kind: 'EXTRACT' as const,
+              model: typeof s.model === 'string' ? s.model : 'default',
+              fills: typeof s.table === 'string' ? [s.table] : ids(s.fields),
+              reads: ids(s.sections),
+              chunkPages: typeof s.chunkPages === 'number' ? s.chunkPages : null,
+              compares: null,
+            },
     );
 }
 
