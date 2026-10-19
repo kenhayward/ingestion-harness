@@ -263,9 +263,9 @@ describe('the Diagram view', () => {
 });
 
 describe('help', () => {
-  it('opens The document graph from the Graph heading', async () => {
+  it('opens Reading a graph from the Graph heading', async () => {
     render(<GraphTab api={letterApi()} jobId="j1" onOpenOutput={vi.fn()} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Help: The document graph' }));
-    expect(await screen.findByRole('dialog', { name: 'The document graph' })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Help: Reading a graph' }));
+    expect(await screen.findByRole('dialog', { name: 'Reading a graph' })).toBeInTheDocument();
   });
 });

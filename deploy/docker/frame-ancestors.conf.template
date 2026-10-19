@@ -1,6 +1,6 @@
 # Who may show the app in a frame (ADR 0012). Rendered by the nginx image at start
 # (/etc/nginx/templates -> /etc/nginx/conf.d) from FRAME_ANCESTORS: space-separated https origins,
-# e.g. "https://*.3dexperience.3ds.com". The API validates the same value and refuses to start on
+# e.g. "https://*.dashboard.example.com". The API validates the same value and refuses to start on
 # a malformed one. Blank (the default) = nobody: frame-ancestors 'none' plus X-Frame-Options DENY.
 # Set, the allowed sites can frame the app ('self' too) and X-Frame-Options is not sent: it cannot
 # name a site, and a browser that sees DENY ignores frame-ancestors' allowance.

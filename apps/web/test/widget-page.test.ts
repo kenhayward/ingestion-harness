@@ -9,7 +9,7 @@ const html = readFileSync(web('public/widget.html'), 'utf8');
 const nginx = readFileSync(web('../../deploy/docker/nginx.conf'), 'utf8');
 
 /**
- * The page a dashboard that copies a page onto its own site (3DEXPERIENCE) is given (ADR 0012):
+ * The page a dashboard that copies a page onto its own site is given (ADR 0012):
  * it never changes between builds and only frames the app, which then runs on its own origin.
  */
 describe('widget.html', () => {

@@ -166,7 +166,7 @@ describe('email and password access', () => {
 
   it('keeps the strict cookie when framing is allowed but the request is plain HTTP', async () => {
     const access = new MemoryAccessRepo();
-    const { app } = await testApp({ access, frameAncestors: 'https://*.3dexperience.3ds.com' });
+    const { app } = await testApp({ access, frameAncestors: 'https://*.dashboard.example.com' });
     const { res } = await login(app, 'admin', await access.rotateAdminPassword());
     expect(cookieOf(res).header).toMatch(/SameSite=Strict/i);
     expect(cookieOf(res).header).not.toMatch(/Partitioned/i);
@@ -174,7 +174,7 @@ describe('email and password access', () => {
 
   it('sends the cookie into allowed frames over HTTPS: SameSite=None, Secure, Partitioned', async () => {
     const access = new MemoryAccessRepo();
-    const { app } = await testApp({ access, frameAncestors: 'https://*.3dexperience.3ds.com' });
+    const { app } = await testApp({ access, frameAncestors: 'https://*.dashboard.example.com' });
     const { res, cookie } = await login(app, 'admin', await access.rotateAdminPassword(), {
       'x-forwarded-proto': 'https',
     });
