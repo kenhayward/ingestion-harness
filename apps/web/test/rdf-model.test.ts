@@ -78,9 +78,10 @@ describe('parseGraph on the golden letter graph', () => {
         lang: null,
       },
     ]);
-    expect(prop(m, DOC, `${ACME}tag`)!.values.map((v) => v.kind === 'literal' && v.text)).toEqual(
-      ['a', 'b'],
-    );
+    expect(prop(m, DOC, `${ACME}tag`)!.values.map((v) => v.kind === 'literal' && v.text)).toEqual([
+      'a',
+      'b',
+    ]);
     expect(prop(m, DOC, `${ACME}hasLine`)!.values).toHaveLength(2);
   });
 

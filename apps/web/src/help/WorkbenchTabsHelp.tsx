@@ -481,18 +481,18 @@ export function ReviewGraphHelp() {
       <h3>Three views</h3>
       <ul>
         <li>
-          <strong>Cards</strong> (the default): one card per thing the graph describes, the
-          document first and then what it links to. Types and properties use the names your pinned
-          ontologies give them; dates and yes/no values are spelled out, and a value with a unit
-          reads as one value (<em>12.5 kg</em>). Under a value, the page and the quote it was read
-          from. A blue chip is another card: click it to go there; <em>Linked from</em> goes back.
-          A rule the value breaks is shown on its row in red, and a value a rule needs but the
-          graph lacks is a <em>Missing</em> row.
+          <strong>Cards</strong> (the default): one card per thing the graph describes, the document
+          first and then what it links to. Types and properties use the names your pinned ontologies
+          give them; dates and yes/no values are spelled out, and a value with a unit reads as one
+          value (<em>12.5 kg</em>). Under a value, the page and the quote it was read from. A blue
+          chip is another card: click it to go there; <em>Linked from</em> goes back. A rule the
+          value breaks is shown on its row in red, and a value a rule needs but the graph lacks is a{' '}
+          <em>Missing</em> row.
         </li>
         <li>
-          <strong>Diagram</strong>: the same things as boxes and their links as arrows, the
-          document in the accent colour, a box with a broken rule outlined in red. Pick a box, or a
-          name in the list, to see its card beside the diagram. Drag to move, scroll to zoom.
+          <strong>Diagram</strong>: the same things as boxes and their links as arrows, the document
+          in the accent colour, a box with a broken rule outlined in red. Pick a box, or a name in
+          the list, to see its card beside the diagram. Drag to move, scroll to zoom.
         </li>
         <li>
           <strong>Turtle</strong>: the graph as it is published, for checking the exact terms. A
@@ -500,9 +500,9 @@ export function ReviewGraphHelp() {
         </li>
       </ul>
       <p>
-        Pages, sections, quotes and the run that made the graph are part of it too (its
-        provenance); the cards show them beside the values instead of as cards of their own. The
-        view you pick is remembered.
+        Pages, sections, quotes and the run that made the graph are part of it too (its provenance);
+        the cards show them beside the values instead of as cards of their own. The view you pick is
+        remembered.
       </p>
     </>
   );

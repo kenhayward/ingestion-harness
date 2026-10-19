@@ -19,12 +19,7 @@ const CT = 'https://id.stocks-hayward.com/ns/ct#';
 const TYPE = `${RDF}type`;
 const LABELS = [`${RDFS}label`, `${SKOS}prefLabel`];
 /** Subjects of these types are the worker's provenance, not things the document describes. */
-const PROVENANCE_TYPES = new Set([
-  `${CT}Evidence`,
-  `${CT}Page`,
-  `${CT}Section`,
-  `${PROV}Activity`,
-]);
+const PROVENANCE_TYPES = new Set([`${CT}Evidence`, `${CT}Page`, `${CT}Section`, `${PROV}Activity`]);
 /** Shown elsewhere (title, provenance line), never as a property row. */
 const HIDDEN = new Set([TYPE, ...LABELS, `${PROV}wasGeneratedBy`, `${DCTERMS}source`]);
 /** Datatypes that say nothing beyond "a string". */
@@ -118,7 +113,11 @@ function literal(t: Term): RdfLiteral {
 }
 
 const keyOf = (iri: string) => {
-  const tail = iri.replace(/[/#]+$/, '').split(/[/#:]/).pop() ?? iri;
+  const tail =
+    iri
+      .replace(/[/#]+$/, '')
+      .split(/[/#:]/)
+      .pop() ?? iri;
   try {
     return decodeURIComponent(tail) || iri;
   } catch {

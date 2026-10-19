@@ -3,7 +3,14 @@ import { MAX_LABEL_TERMS, type Semantics, type ShaclReport, type TermLabel } fro
 import type { Api } from '../api/client.js';
 import { EntityCard, GraphCards, resultsByEntity, type Naming } from '../rdf/GraphCards.js';
 import { GraphDiagram, type GraphRenderer } from '../rdf/GraphDiagram.js';
-import { curieOf, formatLiteral, humanise, parseGraph, termsOf, type RdfModel } from '../rdf/model.js';
+import {
+  curieOf,
+  formatLiteral,
+  humanise,
+  parseGraph,
+  termsOf,
+  type RdfModel,
+} from '../rdf/model.js';
 import { HelpButton } from '../ui/Help.js';
 import { Segmented } from '../ui/Segmented.js';
 
@@ -219,12 +226,7 @@ export function GraphTab({
           <p role="alert">This graph could not be read, so it is shown as Turtle: {problem}</p>
         )}
         {model && shown === 'cards' && (
-          <GraphCards
-            model={model}
-            naming={naming}
-            results={results}
-            onOpenOutput={onOpenOutput}
-          />
+          <GraphCards model={model} naming={naming} results={results} onOpenOutput={onOpenOutput} />
         )}
         {model && shown === 'diagram' && (
           <div className="rdf-diagram-view">
