@@ -21,7 +21,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 import psycopg
 from rdflib import Graph
@@ -113,6 +113,19 @@ class RenderedGraph:
     nodes: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class GraphDelivery:
+    """A drafted graph to publish once the document's outputs are delivered without review: its
+    copy to the target, then the triple store (`publish_graph`)."""
+
+    template: Template
+    document: dict[str, Any]
+    graph: RenderedGraph
+
+    def deliver(self, job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, target: Target) -> None:
+        publish_graph(job, deps, queue, self.template, self.document, self.graph, target)
+
+
 Progress = StepProgress
 
 
@@ -190,48 +203,20 @@ def process_template_job(
         )
         state = state.apply(normalise_step(template, step, result.data, result.model_ref))
 
-    fields, tables, checks, models_used = state.fields, state.tables, state.checks, state.models
-    issues = list(state.issues)  # the document's own list: a SHACL report adds to it below
-    reasons = _review_reasons(template, checks, issues)
+    reasons = _review_reasons(template, state.checks, list(state.issues))
     if reasons:
         queue.event(job.id, "warn", "review required", {"reasons": reasons})
-
-    document = {
-        "document_id": job.document_id,
-        "job_id": job.id,
-        "source_sha256": doc.sha256,
-        "template": {"id": template.id, "version": template.version, "name": template.name},
-        "extracted_at": datetime.now(UTC).isoformat(),
-        "page_count": doc.total_pages,
-        "models": models_used,
-        "fields": fields,
-        "tables": tables,
-        "checks": checks,
-        "issues": issues,
-        "review_required": bool(reasons),
-        "review_reasons": reasons,
-    }
-    graph = build_graph(job, deps, queue, template, document)
-    report = shacl_check(job, deps, queue, template, graph)
-    if report is not None:
-        add_report(report, issues, reasons)
-        document.update(review_required=bool(reasons), review_reasons=reasons)
-    outputs = render_document(template, document, graph)
-    for o in outputs:
-        ctype = content_type(o.format)
-        deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
+    done = finalise(
+        job, deps, queue, template, document_of(job, doc, template, state, reasons), mode="draft"
+    )
+    write_drafts(deps, done.outputs)
     formats: list[str] = list(template.delivery_formats())
-    delivered_graph = graph
-    deliver_graph = (
-        (
-            lambda target: publish_graph(
-                job, deps, queue, template, document, delivered_graph, target
-            )
-        )
-        if delivered_graph is not None and "rdf" in formats
+    graph = (
+        GraphDelivery(template, done.document, done.graph)
+        if done.graph is not None and "rdf" in formats
         else None
     )
-    return ProcessResult(outputs, reasons, formats, deliver_graph)
+    return ProcessResult(done.outputs, done.reasons, formats, graph)
 
 
 def publish_template_job(
@@ -281,20 +266,9 @@ def publish_template_job(
         document["source_sha256"] = hashlib.sha256(
             deps.store.get(job.bucket, job.object_key)
         ).hexdigest()
-    graph = build_graph(job, deps, queue, template, document)
+    done = finalise(job, deps, queue, template, document, mode="publish")
+    graph, rendered = done.graph, done.outputs
     formats = template.delivery_formats()
-    # Before any write: a delivered graph must satisfy the shapes (ADR 0011 step 5).
-    if "rdf" in formats:
-        report = shacl_check(job, deps, queue, template, graph)
-    else:
-        # The graph is not delivered: its report is advisory, and missing shapes never block.
-        try:
-            report = shacl_check(job, deps, queue, template, graph)
-        except DocumentError:
-            report = None
-    if report is not None and report.violations() and "rdf" in formats:
-        raise ShapesViolated([v.reason() for v in report.violations()])
-    rendered = render_document(template, document, graph)
     published: list[RenderedOutput] = []
     if target is not None:  # None: no publishing targets, nothing is delivered
         published = publish_outputs(deps, [o for o in rendered if o.format in formats], target)
@@ -622,16 +596,9 @@ def rerun_template_job(
             },
         ],
     )
-    graph = build_graph(job, deps, queue, template, document)
-    report = shacl_check(job, deps, queue, template, graph)
-    if report is not None:
-        add_report(report, issues, reasons)
-        document.update(issues=issues, review_reasons=reasons)
-    outputs = render_document(template, document, graph)
-    for o in outputs:
-        ctype = content_type(o.format)
-        deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, reasons, list(template.delivery_formats()))
+    done = finalise(job, deps, queue, template, document, mode="draft")
+    write_drafts(deps, done.outputs)
+    return ProcessResult(done.outputs, done.reasons, list(template.delivery_formats()))
 
 
 def _save_previews(
@@ -897,6 +864,87 @@ def add_report(report: ShaclReport, issues: list[dict[str, Any]], reasons: list[
         for r in report.results
         if r.severity != "Violation"
     )
+
+
+def document_of(
+    job: ClaimedJob, doc: Prepared, template: Template, state: DocState, reasons: list[str]
+) -> dict[str, Any]:
+    """The draft `document.json` of a job: the state its steps built and the review reasons."""
+    return {
+        "document_id": job.document_id,
+        "job_id": job.id,
+        "source_sha256": doc.sha256,
+        "template": {"id": template.id, "version": template.version, "name": template.name},
+        "extracted_at": datetime.now(UTC).isoformat(),
+        "page_count": doc.total_pages,
+        "models": state.models,
+        "fields": state.fields,
+        "tables": state.tables,
+        "checks": state.checks,
+        "issues": list(state.issues),
+        "review_required": bool(reasons),
+        "review_reasons": reasons,
+    }
+
+
+#: `draft`: an extraction or a step re-run, whose shapes report joins the draft's issues and
+#: review reasons. `publish`: a reviewed document, left as it is; a delivered graph must satisfy
+#: the shapes, and one that is not delivered is checked only when its shapes can be read.
+FinaliseMode = Literal["draft", "publish"]
+
+
+@dataclass(frozen=True)
+class Finalised:
+    """A document with its graph and rendered outputs, nothing written yet (but the SHACL
+    report, which the check keeps in the runs bucket)."""
+
+    document: dict[str, Any]
+    graph: RenderedGraph | None
+    outputs: list[RenderedOutput]
+
+    @property
+    def reasons(self) -> list[str]:
+        """The document's review reasons (the list `document` holds)."""
+        reasons: list[str] = self.document["review_reasons"]
+        return reasons
+
+
+def finalise(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    template: Template,
+    document: dict[str, Any],
+    *,
+    mode: FinaliseMode,
+) -> Finalised:
+    """The ending every document shares: its graph, the shapes check, its outputs. In `draft`
+    mode the report's violations become review reasons and its warnings issues (`document` is
+    updated); in `publish` mode a delivered graph that violates the shapes is ShapesViolated."""
+    graph = build_graph(job, deps, queue, template, document)
+    delivered = "rdf" in template.delivery_formats()
+    if mode == "publish" and not delivered:
+        # The graph is not delivered: its report is advisory, and missing shapes never block.
+        try:
+            report = shacl_check(job, deps, queue, template, graph)
+        except DocumentError:
+            report = None
+    else:
+        report = shacl_check(job, deps, queue, template, graph)
+    if report is not None:
+        if mode == "draft":
+            add_report(report, document["issues"], document["review_reasons"])
+            document["review_required"] = bool(document["review_reasons"])
+        elif delivered and report.violations():
+            # Before any write: a delivered graph must satisfy the shapes (ADR 0011 step 5).
+            raise ShapesViolated([v.reason() for v in report.violations()])
+    return Finalised(document, graph, render_document(template, document, graph))
+
+
+def write_drafts(deps: PipelineDeps, outputs: list[RenderedOutput]) -> None:
+    """Put a draft's outputs in the outputs bucket (the reviewer and Delete find them there)."""
+    for o in outputs:
+        deps.store.put(deps.buckets.outputs, o.key, o.body, content_type(o.format))
 
 
 def render_document(

@@ -114,27 +114,42 @@ PR: let `read_pages` always use the Workbench reader.
 
 ## Part 3: one ending for process, re-run and publish
 
-`document_of(job, doc, template, state, reasons)` builds the draft `document.json` from a state in
-one place. `finalise(job, deps, queue, template, document, mode) -> Finalised`, where `mode` is one of
-`draft`, `rerun` or `publish`. It builds the graph, runs the SHACL check (the advisory-or-blocking
-rule depends on `mode` and on whether `rdf` is delivered), adds the report to the issues and
-reasons, and renders the outputs. Writing the drafts stays with the caller, because a publish
-never writes drafts. The three copies of this sequence go.
+- `document_of(job, doc, template, state, reasons)` builds the draft `document.json` from a state
+  in one place.
+- `finalise(job, deps, queue, template, document, *, mode) -> Finalised` (`document`, `graph`,
+  `outputs`, and `reasons`, the document's own list). It builds the graph, runs the shapes check
+  and renders the outputs. There are two modes:
+  - `draft` covers an extraction and a step re-run, which behave the same here. The report's
+    violations become review reasons and its warnings issues, and the document is updated.
+  - `publish` leaves the reviewed document as it is. A delivered graph that violates the shapes
+    raises `ShapesViolated`, and a graph that is not delivered is checked only when its shapes
+    can be read.
+- `write_drafts(deps, outputs)` puts the outputs in the outputs bucket. Process and re-run call
+  it; a publish never writes drafts.
+- The three copies of build graph → shapes → report → render → write are gone.
 
 ## Part 4: outcomes as values
 
-- `Outcome` is one of:
-  - `AwaitReview(outputs, reasons)`;
-  - `Deliver(outputs, formats, graph: GraphDelivery | None, target)`, where `GraphDelivery` is
-    data (the document, its graph and the template) instead of a closure;
-  - `Complete(outputs)`;
-  - `NeedsReview(reason)`.
-- `TASKS: dict[str, TaskHandler]` replaces the if-chain. Each handler is
-  `(job, deps, queue) -> Outcome`, and `apply_outcome(job, outcome, queue, deps)` performs the
-  status writes, including delivering outputs and then the graph, in today's order.
-- Errors still raise at the edges (`DocumentError`, `JobCancelled`, infrastructure errors).
-  `_run_claimed` keeps the one `try` that maps them, but it no longer decides anything else.
-  `ShapesViolated` becomes `AwaitReview` returned by the publish handler.
+- `ingest_worker/outcomes.py`: `Outcome` is one of
+  - `Complete(outputs, note)`;
+  - `AwaitReview(outputs, reasons, drafts=True, note)`. With `drafts`, the outputs are recorded
+    as drafts and the job stops at a safe point if it was cancelled. A refused publish passes
+    `drafts=False`, because it wrote nothing;
+  - `Deliver(outputs, delivered, target, graph)`, an extraction that needs no review.
+- `apply_outcome(job, outcome, queue, deps)` is the only place that writes a job's status. For
+  `Deliver`, it also makes the delivery in today's order: drafts, then the safe point, then the
+  outputs to the target, the publication record and the graph, then complete.
+- `GraphDelivery(template, document, graph)` replaces the `ProcessResult.deliver_graph` closure
+  (`ProcessResult.graph`, `GraphDelivery.deliver`).
+- `main.TASKS: dict[str, TaskHandler]` replaces the 14-branch if-chain. Each handler is
+  `(job, deps, queue) -> Outcome`: `handle_process`, `handle_publish`, `handle_rerun`, and
+  `_completes(run, note)` for the tasks that only succeed. A test checks that `TASKS` covers
+  exactly the tasks the newest `jobs_task_check` migration allows.
+- `_run_claimed` is now the handler, `apply_outcome`, and the one `try` that maps errors.
+- **Changed from the plan:** there is no `NeedsReview` outcome. `DocumentError`, `JobCancelled`
+  and outages are raised deep inside nodes, and they still map to a status in that one place.
+  A publish still delivers inside its handler (`publish_template_job`) and returns `Complete`.
+  `ShapesViolated` becomes an `AwaitReview` returned by the publish handler.
 
 ## Part 5: node descriptions, one data-policy gate, one cancellation runner
 
@@ -160,6 +175,6 @@ never writes drafts. The three copies of this sequence go.
 | 0 equivalence traces | done: `worker/tests/test_equivalence.py`, 7 scenarios |
 | 1 split `prepare_document` | done: `read_pages`, `select_pages`, `segment_pages` (`tests/test_prepare_nodes.py`); Workbench `prepare` uses `read_pages` |
 | 2 `DocState` | done: `DocState`, `StepOutcome`, `normalise_step`, `step_inputs` (`tests/test_doc_state.py`); process and re-run use them |
-| 3 `finalise` | — |
-| 4 outcomes and `TASKS` | — |
+| 3 `finalise` | done: `document_of`, `finalise`, `write_drafts` (`tests/test_finalise.py`); process, re-run and publish use them |
+| 4 outcomes and `TASKS` | done: `outcomes.py`, `GraphDelivery`, `main.TASKS` (`tests/test_outcomes.py`) |
 | 5 `NodeSpec`, `JobModels`, `run_nodes` | — |
