@@ -26,6 +26,7 @@ from typing import Any
 import psycopg
 from rdflib import Graph
 
+from .bridge.package import deliver_document
 from .extract import ExtractionResult
 from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
 from .graph_store import GraphStore
@@ -33,7 +34,6 @@ from .llm.base import LLMProvider
 from .llm.registry import ModelResolutionError
 from .normalize import normalize_value
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell, content_type, encode_csv
-from .bridge.package import deliver_document
 from .pipeline import (
     DocumentError,
     PipelineDeps,

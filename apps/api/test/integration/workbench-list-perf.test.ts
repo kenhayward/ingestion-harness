@@ -75,15 +75,12 @@ describe.skipIf(!url)('Workbench project list with 1,000 projects', { timeout: 6
         codes: new HandoffCodes(),
       },
       targetStores: new TargetStores({
-        repo: perfTargets,
         internal: {
           endpoint: 'http://s3.test',
           region: 'r',
           accessKeyId: 'a',
           secretAccessKey: 's',
         },
-        secrets: null,
-        env: {},
         make: () => new MemoryObjectStore(),
       }),
       templates: new PgTemplateRepo(templatesPool),

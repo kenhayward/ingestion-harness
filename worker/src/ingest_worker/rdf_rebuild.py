@@ -393,6 +393,7 @@ def run_rebuild_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> lis
 
 
 def main(argv: list[str] = sys.argv[1:]) -> int:
+    from .bridge.client import HttpBridgeClient
     from .config import Settings
     from .graph_registry import PgGraphRegistry
     from .graph_store import graph_store_from_env
@@ -401,7 +402,6 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     from .ontology import PgOntologyStore
     from .pdf import extract_pages
     from .pipeline import Buckets
-    from .bridge.client import HttpBridgeClient
     from .publish_targets import LiveTargets, PgPublishTargetStore
     from .queue import PgJobQueue
     from .specs import load_specs

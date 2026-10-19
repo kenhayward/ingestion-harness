@@ -379,3 +379,20 @@ def test_a_live_output_spares_only_its_own_targets_object(tmp_path: Path) -> Non
     queue = FakeQueue(jobs=[background("withdraw", {**WITHDRAW, "graphs": []})])
     run_once(queue, deps, "w1")
     assert queue.completed and not default.objects
+
+
+def test_withdraw_of_an_output_delivered_before_the_bridge_deletes_it_through_the_target(
+    tmp_path: Path,
+) -> None:
+    """An output published before the bridge existed has no delivery id: the withdrawal names
+    only its target, bucket and key, and the bridge deletes it with that target's connection."""
+    deps, target = setup(tmp_path)
+    key = "pvp/letter/v1/fields/doc.csv"
+    target.put("published", key, b"published before the bridge", "text/csv")
+    params = {"objects": [{"bucket": "published", "key": key, "target": "default"}], "graphs": []}
+    queue = FakeQueue(jobs=[background("withdraw", params)])
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.reviewed or queue.failed
+    assert isinstance(deps.bridge, FakeBridge)
+    assert deps.bridge.deletes == [("default", [("published", key)])]
+    assert target.get_optional("published", key) is None

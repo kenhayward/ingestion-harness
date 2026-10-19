@@ -31,6 +31,11 @@ export class FakeBridgeApi implements BridgeApi {
   failNext: Error | null = null;
   /** Thrown by every read (a bridge that is down for reads). */
   failReads: Error | null = null;
+  /**
+   * Where the bridge finds what `objects` does not hold: the deployment's own storage, which
+   * internal targets (the seeded `default`) deliver to.
+   */
+  fallback: { get(bucket: string, key: string): Promise<Buffer | null> } | null = null;
 
   private fail(): void {
     const err = this.failNext;
@@ -91,7 +96,9 @@ export class FakeBridgeApi implements BridgeApi {
   async readObject(targetId: string, bucket: string, key: string): Promise<Buffer | null> {
     this.fail();
     if (this.failReads) throw this.failReads;
-    return this.objects.get(targetId)?.get(`${bucket}/${key}`) ?? null;
+    const held = this.objects.get(targetId)?.get(`${bucket}/${key}`);
+    if (held) return held;
+    return this.fallback ? this.fallback.get(bucket, key) : null;
   }
 
   async getDelivery(id: string): Promise<DeliveryView | null> {

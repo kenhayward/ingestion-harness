@@ -476,4 +476,21 @@ describe('GET /api/results/:jobId/archive', () => {
     expect(res.statusCode).toBe(502);
     expect(res.json().error).toBe('publishing target Default unavailable');
   });
+
+  it('the archive still fails rather than sending a partial zip when the bridge read fails', async () => {
+    const ctx = await testApp();
+    const job = await upload(ctx, 'tdemo', 'a.pdf');
+    publish(ctx, job.id, '2026-10-02T00:00:00.000Z', [
+      out('document', 'published', null),
+      out('issues', 'published', 2),
+    ]);
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/issues/doc.csv', 'a,b\n');
+    expect((await ctx.app.inject(`/api/results/${job.id}/archive`)).statusCode).toBe(200);
+    ctx.bridge.failReads = new Error('the bridge could not be reached');
+    const res = await ctx.app.inject(`/api/results/${job.id}/archive`);
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('publishing target Default unavailable');
+    expect(res.headers['content-type']).not.toBe('application/zip');
+  });
 });

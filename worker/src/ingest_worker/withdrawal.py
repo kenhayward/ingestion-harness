@@ -9,9 +9,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
-from .graph_registry import PublishedGraph
 from .bridge.client import BridgeClient
 from .bridge.package import deliver_document
+from .graph_registry import PublishedGraph
 from .pipeline import (
     DocumentError,
     PipelineDeps,

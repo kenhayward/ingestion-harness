@@ -36,13 +36,14 @@ describe('bridge secrets', () => {
     expect(() => parseMasterKey('short', 'BRIDGE_SECRETS_KEY')).toThrow(/BRIDGE_SECRETS_KEY/);
   });
 
-  it('allows the same credential variables as the API', () => {
-    const api = readFileSync(
-      new URL('../../api/src/publish-targets/stores.ts', import.meta.url),
-      'utf8',
-    );
-    const block = /CREDENTIAL_ENV_NAMES[^[]*\[([^\]]*)\]/.exec(api)![1]!;
-    const names = [...block.matchAll(/'([A-Z0-9_]+)'/g)].map((m) => m[1]);
-    expect([...CREDENTIAL_ENV_NAMES].sort()).toEqual(names.sort());
+  // The variables CT Studio's targets read their keys from before the bridge (the seeded
+  // default's), so an env-keyed target moved here keeps working, and nothing else is readable.
+  it('allows exactly the credential variables targets used before the bridge', () => {
+    expect([...CREDENTIAL_ENV_NAMES].sort()).toEqual([
+      'S3_ACCESS_KEY',
+      'S3_SECRET_KEY',
+      'TARGET_S3_ACCESS_KEY',
+      'TARGET_S3_SECRET_KEY',
+    ]);
   });
 });

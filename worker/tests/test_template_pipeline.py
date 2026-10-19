@@ -988,7 +988,7 @@ def test_a_legacy_spec_always_delivers_to_the_default(specs_dir: Path) -> None:
 
 def test_an_auto_published_job_is_handed_to_the_bridge_at_todays_keys(tmp_path: Path) -> None:
     template = {**TEMPLATE, "review": {"required": "never"}}
-    store, bridge, queue = run_mapped(tmp_path, template, BASE_IRI)
+    _, bridge, queue = run_mapped(tmp_path, template, BASE_IRI)
     [request] = bridge.requests
     assert request.targets == ["default"]
     [(job_id, outputs, deliveries)] = queue.handed_over

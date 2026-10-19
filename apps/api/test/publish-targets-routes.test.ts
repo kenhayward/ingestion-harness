@@ -676,13 +676,7 @@ const published = (jobId: string, targetId: string, bucket: string, prefix: stri
   targetId,
 });
 
-class Unreachable extends MemoryObjectStore {
-  override async get(): Promise<Buffer | null> {
-    throw new Error('connect ECONNREFUSED');
-  }
-}
-
-describe('reading published outputs from their recorded target', () => {
+describe('reading published outputs through the bridge, from their recorded target', () => {
   async function delivered(c: Awaited<ReturnType<typeof setup>>) {
     const res = await c.app.inject({
       method: 'POST',
@@ -697,16 +691,14 @@ describe('reading published outputs from their recorded target', () => {
   it('serves each output from its own target', async () => {
     const c = await setup();
     await c.targets.create(financeRecord(), null);
-    const finance = new MemoryObjectStore();
-    c.endpointStores.set(FINANCE_ENDPOINT, finance);
     const a = await delivered(c);
     const b = await delivered(c);
     const onFinance = published(a.id, 'finance-lake', 'finance-lake', 'ingest/');
     const onDefault = published(b.id, 'default', 'published', 'pub/');
     c.repo.outputs.set(a.id, [onFinance]);
     c.repo.outputs.set(b.id, [onDefault]);
-    await finance.put('finance-lake', onFinance.key, Buffer.from('finance'), 'application/json');
-    await c.targetStore.put('published', onDefault.key, Buffer.from('default'), 'application/json');
+    c.bridge.put('finance-lake', 'finance-lake', onFinance.key, 'finance');
+    c.bridge.put('default', 'published', onDefault.key, 'default');
 
     expect((await c.app.inject(`/api/jobs/${a.id}/outputs/document`)).body).toBe('finance');
     expect((await c.app.inject(`/api/jobs/${b.id}/outputs/document`)).body).toBe('default');
@@ -719,10 +711,10 @@ describe('reading published outputs from their recorded target', () => {
     });
   });
 
-  it('answers 502 naming the target when it cannot be reached, and still shows the result', async () => {
+  it('answers 502 naming the target when the bridge cannot read it, and still shows the result', async () => {
     const c = await setup();
     await c.targets.create(financeRecord(), null);
-    c.endpointStores.set(FINANCE_ENDPOINT, new Unreachable());
+    c.bridge.failReads = new BridgeApiError(0, null, 'the bridge could not be reached');
     const a = await delivered(c);
     c.repo.outputs.set(a.id, [published(a.id, 'finance-lake', 'finance-lake', 'ingest/')]);
     for (const url of [`/api/jobs/${a.id}/outputs/document`, `/api/results/${a.id}/archive`]) {
@@ -741,9 +733,13 @@ describe('reading published outputs from their recorded target', () => {
     });
   });
 
-  it('answers 502 when the target cannot be used', async () => {
-    const c = await setup(false); // no master key: the stored secret cannot be decrypted
+  it('answers 502 when the bridge refuses the target (no connection)', async () => {
+    const c = await setup();
     await c.targets.create(financeRecord(), null);
+    c.bridge.failReads = FakeBridgeApi.refusal(
+      'the target has no connection',
+      'credential_missing',
+    );
     const a = await delivered(c);
     c.repo.outputs.set(a.id, [published(a.id, 'finance-lake', 'finance-lake', 'ingest/')]);
     const res = await c.app.inject(`/api/jobs/${a.id}/outputs/document`);

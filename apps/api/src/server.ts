@@ -84,12 +84,8 @@ const llmSecrets = secretsKeys(process.env);
 const targets = new PgPublishTargetRepo(makePool(2));
 const seed = defaultSeed(config);
 const seedOutcome = await targets.seedDefault(seed);
-const targetStores = new TargetStores({
-  repo: targets,
-  internal: s3,
-  secrets: llmSecrets,
-  env: process.env,
-});
+// Internal targets' buckets are created on this deployment's SeaweedFS when they are saved.
+const targetStores = new TargetStores({ internal: s3 });
 // The delivery bridge publishes; targets are mirrored to it and their keys moved there once.
 const bridge = new HttpBridgeApi(config.BRIDGE_URL, config.BRIDGE_CLIENT_KEY);
 const bridgeAuth = {
@@ -227,8 +223,6 @@ backup?.enableRestore({
   live: new PgLiveDatabase(makePool(2)),
   openSide: (url) => PgSideDatabase.open(url),
   lakeIssuer: new SeaweedIamIssuer(s3),
-  // The restored database's version counters may equal the old one's: forget the stores now.
-  onSwapped: () => targetStores.invalidate(),
 });
 
 let stopReconciler = () => {};

@@ -364,7 +364,6 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         await repo.remove(id);
         return bridgeFailure(reply, err);
       }
-      stores.invalidate();
       req.log.info({ target: id, kind: input.kind }, 'publishing target added');
       return reply.code(201).send((await withConnections([created]))[0]);
     },
@@ -457,7 +456,6 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         await repo.update(stored.id, previous, stored.updatedBy);
         return bridgeFailure(reply, err);
       }
-      stores.invalidate();
       req.log.info({ target: stored.id, fields: Object.keys(update) }, 'publishing target changed');
       return (await withConnections([updated]))[0];
     },
@@ -517,7 +515,6 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           .code(409)
           .send({ error: `${target.label} is used by ${usageText(await repo.usage(id))}` });
       }
-      stores.invalidate();
       req.log.info({ target: id }, 'publishing target removed');
       return reply.code(204).send();
     },
