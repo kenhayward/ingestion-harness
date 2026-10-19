@@ -33,6 +33,15 @@ export function PublishedOutputsHelp() {
         <code>.env</code>, and <code>default</code> can be edited but never removed.
       </p>
 
+      <h3>The triple store</h3>
+      <p>
+        When the deployment has a triple store (<code>RDF_ENDPOINT</code> in its <code>.env</code>),
+        it is listed here as <strong>Triple store</strong> (<code>rdf-default</code>). Recipes that
+        deliver RDF load their graphs into it as well as delivering to their own target; no recipe
+        names it. Only its label can change here; its credentials are a connection under{' '}
+        <em>Manage connections</em>.
+      </p>
+
       <h3>Choosing a target for a recipe</h3>
       <p>
         A recipe names its target on its General tab. The choice is part of the recipe, so it
