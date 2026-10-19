@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from .ontology import OntologyStore
     from .ontology_fetch import Fetched
     from .rdf_rebuild import RebuildSource
+    from .template_pipeline import GraphDelivery
 
 #: Render size for extraction page images (same as olmOCR's training size; legible for VLMs).
 log = logging.getLogger("ingest_worker")
@@ -119,9 +120,9 @@ class ProcessResult:
     review_reasons: list[str] = field(default_factory=list)
     #: The output formats delivered on publishing (None: every output).
     formats: list[str] | None = None
-    #: Publishes the document's graph (its copy to the given target, then the triple store)
-    #: once its outputs are delivered without review (None: no graph is delivered).
-    deliver_graph: Callable[[Target], object] | None = None
+    #: The document's graph, published once its outputs are delivered without review (None: no
+    #: graph is delivered).
+    graph: GraphDelivery | None = None
     #: The publishing target of the job's recipe version (legacy specs: the default), resolved
     #: before extraction; None for test runs and without targets (nothing is delivered).
     target: Target | None = None

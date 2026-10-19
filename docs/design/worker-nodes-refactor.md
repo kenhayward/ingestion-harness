@@ -130,18 +130,26 @@ PR: let `read_pages` always use the Workbench reader.
 
 ## Part 4: outcomes as values
 
-- `Outcome` is one of:
-  - `AwaitReview(outputs, reasons)`;
-  - `Deliver(outputs, formats, graph: GraphDelivery | None, target)`, where `GraphDelivery` is
-    data (the document, its graph and the template) instead of a closure;
-  - `Complete(outputs)`;
-  - `NeedsReview(reason)`.
-- `TASKS: dict[str, TaskHandler]` replaces the if-chain. Each handler is
-  `(job, deps, queue) -> Outcome`, and `apply_outcome(job, outcome, queue, deps)` performs the
-  status writes, including delivering outputs and then the graph, in today's order.
-- Errors still raise at the edges (`DocumentError`, `JobCancelled`, infrastructure errors).
-  `_run_claimed` keeps the one `try` that maps them, but it no longer decides anything else.
-  `ShapesViolated` becomes `AwaitReview` returned by the publish handler.
+- `ingest_worker/outcomes.py`: `Outcome` is one of
+  - `Complete(outputs, note)`;
+  - `AwaitReview(outputs, reasons, drafts=True, note)`. With `drafts`, the outputs are recorded
+    as drafts and the job stops at a safe point if it was cancelled. A refused publish passes
+    `drafts=False`, because it wrote nothing;
+  - `Deliver(outputs, delivered, target, graph)`, an extraction that needs no review.
+- `apply_outcome(job, outcome, queue, deps)` is the only place that writes a job's status. For
+  `Deliver`, it also makes the delivery in today's order: drafts, then the safe point, then the
+  outputs to the target, the publication record and the graph, then complete.
+- `GraphDelivery(template, document, graph)` replaces the `ProcessResult.deliver_graph` closure
+  (`ProcessResult.graph`, `GraphDelivery.deliver`).
+- `main.TASKS: dict[str, TaskHandler]` replaces the 14-branch if-chain. Each handler is
+  `(job, deps, queue) -> Outcome`: `handle_process`, `handle_publish`, `handle_rerun`, and
+  `_completes(run, note)` for the tasks that only succeed. A test checks that `TASKS` covers
+  exactly the tasks the newest `jobs_task_check` migration allows.
+- `_run_claimed` is now the handler, `apply_outcome`, and the one `try` that maps errors.
+- **Changed from the plan:** there is no `NeedsReview` outcome. `DocumentError`, `JobCancelled`
+  and outages are raised deep inside nodes, and they still map to a status in that one place.
+  A publish still delivers inside its handler (`publish_template_job`) and returns `Complete`.
+  `ShapesViolated` becomes an `AwaitReview` returned by the publish handler.
 
 ## Part 5: node descriptions, one data-policy gate, one cancellation runner
 
@@ -168,5 +176,5 @@ PR: let `read_pages` always use the Workbench reader.
 | 1 split `prepare_document` | done: `read_pages`, `select_pages`, `segment_pages` (`tests/test_prepare_nodes.py`); Workbench `prepare` uses `read_pages` |
 | 2 `DocState` | done: `DocState`, `StepOutcome`, `normalise_step`, `step_inputs` (`tests/test_doc_state.py`); process and re-run use them |
 | 3 `finalise` | done: `document_of`, `finalise`, `write_drafts` (`tests/test_finalise.py`); process, re-run and publish use them |
-| 4 outcomes and `TASKS` | — |
+| 4 outcomes and `TASKS` | done: `outcomes.py`, `GraphDelivery`, `main.TASKS` (`tests/test_outcomes.py`) |
 | 5 `NodeSpec`, `JobModels`, `run_nodes` | — |

@@ -113,6 +113,19 @@ class RenderedGraph:
     nodes: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class GraphDelivery:
+    """A drafted graph to publish once the document's outputs are delivered without review: its
+    copy to the target, then the triple store (`publish_graph`)."""
+
+    template: Template
+    document: dict[str, Any]
+    graph: RenderedGraph
+
+    def deliver(self, job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, target: Target) -> None:
+        publish_graph(job, deps, queue, self.template, self.document, self.graph, target)
+
+
 Progress = StepProgress
 
 
@@ -198,17 +211,12 @@ def process_template_job(
     )
     write_drafts(deps, done.outputs)
     formats: list[str] = list(template.delivery_formats())
-    document, delivered_graph = done.document, done.graph
-    deliver_graph = (
-        (
-            lambda target: publish_graph(
-                job, deps, queue, template, document, delivered_graph, target
-            )
-        )
-        if delivered_graph is not None and "rdf" in formats
+    graph = (
+        GraphDelivery(template, done.document, done.graph)
+        if done.graph is not None and "rdf" in formats
         else None
     )
-    return ProcessResult(done.outputs, done.reasons, formats, deliver_graph)
+    return ProcessResult(done.outputs, done.reasons, formats, graph)
 
 
 def publish_template_job(
