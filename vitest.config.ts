@@ -7,6 +7,7 @@ export default defineConfig({
       'packages/shared/vitest.config.ts',
       'packages/bridge-contract/vitest.config.ts',
       'apps/api/vitest.config.ts',
+      'apps/bridge/vitest.config.ts',
       'apps/web/vitest.config.ts',
     ],
     coverage: {

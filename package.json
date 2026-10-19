@@ -23,6 +23,7 @@
     "openapi": "vitest run --project api test/openapi.test.ts -u",
     "dev:api": "npm run dev -w @ih/api",
     "dev:web": "npm run dev -w @ih/web",
+    "dev:bridge": "npm run dev -w @ih/bridge",
     "migrate": "npm run migrate -w @ih/api",
     "worker:test": "uv run --directory worker pytest",
     "worker:lint": "uv run --directory worker ruff check . && uv run --directory worker ruff format --check . && uv run --directory worker mypy src",
