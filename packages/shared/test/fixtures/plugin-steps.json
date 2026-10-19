@@ -1,0 +1,275 @@
+{
+  "description": "Plugin steps in a recipe (docs/design/recipe-plugins.md). Read by packages/shared/test/template.test.ts (TemplateSchema) and worker/tests/test_template.py (Template): every case's pipeline replaces the base's; `error` is a substring both sides' messages contain.",
+  "base": {
+    "id": "letter",
+    "version": 1,
+    "name": "Letter",
+    "document": {
+      "sections": [
+        { "id": "head", "anchor": "\\A" },
+        { "id": "items", "anchor": "^ITEM", "repeat": true }
+      ]
+    },
+    "outputs": {
+      "fields": [
+        { "id": "sender", "type": "text" },
+        { "id": "reference", "type": "text" }
+      ],
+      "tables": [
+        {
+          "id": "lines",
+          "columns": [
+            { "id": "sku", "type": "text" },
+            { "id": "qty", "type": "integer" }
+          ]
+        }
+      ]
+    },
+    "pipeline": []
+  },
+  "cases": [
+    {
+      "name": "a plugin step fills fields from a section",
+      "valid": true,
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["sender", "reference"],
+          "sections": ["head"],
+          "with": { "patterns": { "reference": "Ref:\\s*(?P<value>\\S+)" } }
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "a plugin step fills a table from earlier values only",
+      "valid": true,
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "plugin",
+          "id": "rows",
+          "uses": "acme.lines_from_ref@2",
+          "table": "lines",
+          "context": { "ref": "reference" }
+        }
+      ]
+    },
+    {
+      "name": "an extract step reads a plugin step's output",
+      "valid": true,
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "extract",
+          "id": "who",
+          "fields": ["sender"],
+          "sections": ["head"],
+          "context": { "ref": "reference" }
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "a check reads a plugin-filled column",
+      "valid": true,
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "plugin",
+          "id": "rows",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "sections": ["head"]
+        },
+        { "type": "check", "id": "sku_check", "values": "lines.sku", "reference": "lines.sku" }
+      ]
+    },
+    {
+      "name": "a plugin step must fill something",
+      "valid": false,
+      "error": "a step must fill either fields or a table",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        { "type": "plugin", "id": "idle", "uses": "text.pattern@1", "sections": ["head"] }
+      ]
+    },
+    {
+      "name": "an output is filled by an extract step and a plugin step",
+      "valid": false,
+      "error": "is filled by more than one step",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["reference"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "a plugin step names an unknown section",
+      "valid": false,
+      "error": "unknown section",
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["sender", "reference"],
+          "sections": ["nope"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "a plugin step names an unknown field",
+      "valid": false,
+      "error": "unknown field",
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["sender", "reference", "nope"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "a plugin step cannot read a repeating section yet",
+      "valid": false,
+      "error": "a plugin step cannot read a repeating section",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "plugin",
+          "id": "rows",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "sections": ["items"]
+        }
+      ]
+    },
+    {
+      "name": "a plugin step's context names a later output",
+      "valid": false,
+      "error": "which is not filled by an earlier step",
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["reference"],
+          "sections": ["head"],
+          "context": { "who": "sender" }
+        },
+        { "type": "extract", "id": "who", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "an extract step's context names a later plugin output",
+      "valid": false,
+      "error": "which is not filled by an earlier step",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "who",
+          "fields": ["sender"],
+          "sections": ["head"],
+          "context": { "ref": "reference" }
+        },
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["reference"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "uses names a plugin id and a major version",
+      "valid": false,
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "Text Pattern",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "uses needs a version",
+      "valid": false,
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "a plugin step names no model",
+      "valid": false,
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "model": "main",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    }
+  ]
+}

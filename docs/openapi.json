@@ -9895,6 +9895,68 @@
                                       "reference"
                                     ],
                                     "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "enum": [
+                                          "plugin"
+                                        ]
+                                      },
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                      },
+                                      "uses": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                      },
+                                      "fields": {
+                                        "default": [],
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_-]*$"
+                                        }
+                                      },
+                                      "table": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                      },
+                                      "sections": {
+                                        "default": [],
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_-]*$"
+                                        }
+                                      },
+                                      "context": {
+                                        "default": {},
+                                        "type": "object",
+                                        "propertyNames": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_-]*$"
+                                        },
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "with": {
+                                        "default": {},
+                                        "type": "object",
+                                        "additionalProperties": {}
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "id",
+                                      "uses"
+                                    ],
+                                    "additionalProperties": false
                                   }
                                 ]
                               }
@@ -16014,6 +16076,68 @@
                                   "id",
                                   "values",
                                   "reference"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "plugin"
+                                    ]
+                                  },
+                                  "id": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "uses": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                  },
+                                  "fields": {
+                                    "default": [],
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    }
+                                  },
+                                  "table": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "sections": {
+                                    "default": [],
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    }
+                                  },
+                                  "context": {
+                                    "default": {},
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "with": {
+                                    "default": {},
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "id",
+                                  "uses"
                                 ],
                                 "additionalProperties": false
                               }
@@ -38144,6 +38268,68 @@
                                                   "reference"
                                                 ],
                                                 "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "plugin"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "uses": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                  },
+                                                  "fields": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "table": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "sections": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "context": {
+                                                    "default": {},
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "with": {
+                                                    "default": {},
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "uses"
+                                                ],
+                                                "additionalProperties": false
                                               }
                                             ]
                                           },
@@ -43036,6 +43222,68 @@
                                                     "reference"
                                                   ],
                                                   "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "type": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "plugin"
+                                                      ]
+                                                    },
+                                                    "id": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "uses": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                    },
+                                                    "fields": {
+                                                      "default": [],
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      }
+                                                    },
+                                                    "table": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "sections": {
+                                                      "default": [],
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      }
+                                                    },
+                                                    "context": {
+                                                      "default": {},
+                                                      "type": "object",
+                                                      "propertyNames": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      },
+                                                      "additionalProperties": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "with": {
+                                                      "default": {},
+                                                      "type": "object",
+                                                      "additionalProperties": {}
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "type",
+                                                    "id",
+                                                    "uses"
+                                                  ],
+                                                  "additionalProperties": false
                                                 }
                                               ]
                                             },
@@ -45662,6 +45910,68 @@
                                                   "reference"
                                                 ],
                                                 "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "plugin"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "uses": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                  },
+                                                  "fields": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "table": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "sections": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "context": {
+                                                    "default": {},
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "with": {
+                                                    "default": {},
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "uses"
+                                                ],
+                                                "additionalProperties": false
                                               }
                                             ]
                                           },
@@ -47951,6 +48261,68 @@
                                                   "id",
                                                   "values",
                                                   "reference"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "plugin"
+                                                    ]
+                                                  },
+                                                  "id": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "uses": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                  },
+                                                  "fields": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "table": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "sections": {
+                                                    "default": [],
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
+                                                  },
+                                                  "context": {
+                                                    "default": {},
+                                                    "type": "object",
+                                                    "propertyNames": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "additionalProperties": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "with": {
+                                                    "default": {},
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                  }
+                                                },
+                                                "required": [
+                                                  "type",
+                                                  "id",
+                                                  "uses"
                                                 ],
                                                 "additionalProperties": false
                                               }

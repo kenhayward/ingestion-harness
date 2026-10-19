@@ -90,13 +90,44 @@ export const CheckStepSchema = z
   })
   .strict();
 
-export const StepSchema = z.discriminatedUnion('type', [ExtractStepSchema, CheckStepSchema]);
+/** A plugin's id and the major version a recipe runs: `text.pattern@1` (worker `PLUGIN_REF`). */
+export const PLUGIN_REF = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$/;
 
-/** Which extract steps fill one output (handoff TP2). */
+/**
+ * A step that runs a registered worker plugin instead of a model call (docs/design/recipe-plugins.md).
+ * It fills fields or one table like an extract step; `with` is the plugin's own settings, checked
+ * against its schema by the worker (and, once the plugin catalogue exists, by the API).
+ */
+export const PluginStepSchema = z
+  .object({
+    type: z.literal('plugin'),
+    id: Id,
+    uses: z.string().regex(PLUGIN_REF, 'name a plugin and its major version, e.g. text.pattern@1'),
+    fields: z.array(Id).default([]),
+    table: Id.optional(),
+    /** The text it reads (none: it reads only earlier values). */
+    sections: z.array(Id).default([]),
+    /** Earlier values it may read: name -> `<field>` or `<table>.<column>`. */
+    context: z.record(Id, z.string().min(1)).default({}),
+    /** The plugin's own settings. */
+    with: z.record(z.string(), z.unknown()).default({}),
+  })
+  .strict();
+
+export const StepSchema = z.discriminatedUnion('type', [
+  ExtractStepSchema,
+  CheckStepSchema,
+  PluginStepSchema,
+]);
+
+/** The step types that fill outputs (extract and plugin steps). */
+export const FILLING_STEP_TYPES: ReadonlySet<string> = new Set(['extract', 'plugin']);
+
+/** Which steps fill one output (handoff TP2): extract and plugin steps. */
 export interface OutputFill {
   id: string;
   kind: 'field' | 'table';
-  /** Ids of the extract steps that fill it, in pipeline order (listed twice: appears twice). */
+  /** Ids of the steps that fill it, in pipeline order (listed twice: appears twice). */
   steps: string[];
 }
 
@@ -117,7 +148,7 @@ const looseIds = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 
 /**
- * Which extract step fills each output. Reads any definition, parsed or a raw draft (the Pipeline
+ * Which step (extract or plugin) fills each output. Reads any definition, parsed or a raw draft (the Pipeline
  * tab's coverage strip), skipping malformed parts. The template validation's "is not filled by
  * any step" / "is filled by more than one step" issues come from this.
  */
@@ -126,13 +157,14 @@ export function outputCoverage(definition: unknown): OutputCoverage {
   const outputs = looseObj(def.outputs);
   const fieldIds = looseIds(looseList(outputs.fields).map((f) => f.id));
   const tableIds = [...new Set(looseIds(looseList(outputs.tables).map((t) => t.id)))];
-  const extracts = looseList(def.pipeline).filter(
-    (s): s is Loose & { id: string } => s.type === 'extract' && typeof s.id === 'string',
+  const fillers = looseList(def.pipeline).filter(
+    (s): s is Loose & { id: string } =>
+      FILLING_STEP_TYPES.has(String(s.type)) && typeof s.id === 'string',
   );
   const rows: OutputFill[] = [...fieldIds, ...tableIds].map((id) => ({
     id,
     kind: fieldIds.includes(id) ? 'field' : 'table',
-    steps: extracts.flatMap((s) => [
+    steps: fillers.flatMap((s) => [
       ...looseIds(s.fields)
         .filter((f) => f === id)
         .map(() => s.id),
@@ -367,6 +399,7 @@ export const TemplateSchema = z
     const tables = new Map(t.outputs.tables.map((tb) => [tb.id, tb]));
     const sectionIds = new Set(t.document.sections.map((s) => s.id));
     const extracts = t.pipeline.filter((s) => s.type === 'extract');
+    const fillers = t.pipeline.filter((s) => s.type === 'extract' || s.type === 'plugin');
     const sectionById = new Map(t.document.sections.map((s) => [s.id, s]));
     keyFromIssues(t.document.sections).forEach(({ message }) => issue(message));
 
@@ -377,15 +410,9 @@ export const TemplateSchema = z
       .filter((id) => RESERVED_OUTPUT_IDS.has(id))
       .forEach((id) => issue(`output id "${id}" is reserved`));
 
-    for (const step of extracts) {
+    for (const step of fillers) {
       if (step.fields.length > 0 === (step.table !== undefined)) {
         issue(`step "${step.id}": a step must fill either fields or a table`);
-      }
-      if (step.chunkPages !== undefined && step.table === undefined) {
-        issue(`step "${step.id}": only table steps can be chunked`);
-      }
-      if (step.chunkPages !== undefined && step.sections.length !== 1) {
-        issue(`step "${step.id}": chunked steps need exactly one section`);
       }
       step.sections
         .filter((s) => !sectionIds.has(s))
@@ -395,6 +422,20 @@ export const TemplateSchema = z
       }
       if (step.table !== undefined && !tables.has(step.table)) {
         issue(`step "${step.id}": unknown table "${step.table}"`);
+      }
+      if (step.type === 'plugin') {
+        const repeating = step.sections.find((s) => sectionById.get(s)?.repeat);
+        if (repeating) {
+          issue(`step "${step.id}": a plugin step cannot read a repeating section (${repeating})`);
+        }
+      }
+    }
+    for (const step of extracts) {
+      if (step.chunkPages !== undefined && step.table === undefined) {
+        issue(`step "${step.id}": only table steps can be chunked`);
+      }
+      if (step.chunkPages !== undefined && step.sections.length !== 1) {
+        issue(`step "${step.id}": chunked steps need exactly one section`);
       }
       const repeating = step.sections.filter((s) => sectionById.get(s)?.repeat);
       if (step.fields.length > 0 && repeating.length > 0) {
@@ -443,9 +484,9 @@ export const TemplateSchema = z
     const order = new Map(t.pipeline.map((s, i) => [s.id, i]));
     const fillerOf = (path: string) => {
       const [head, column] = path.split('.', 2) as [string, string | undefined];
-      return extracts.find((s) => (column ? s.table === head : s.fields.includes(head)));
+      return fillers.find((s) => (column ? s.table === head : s.fields.includes(head)));
     };
-    for (const step of extracts) {
+    for (const step of fillers) {
       for (const [name, path] of Object.entries(step.context)) {
         if (!resolves(path)) {
           issue(`step "${step.id}": context "${name}": ${unknownPath(path)}`);

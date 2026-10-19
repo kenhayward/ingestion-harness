@@ -5,9 +5,15 @@ import { ModelPicker } from '../ui/ModelPicker.js';
 import { sectionTone, TONE_COLOR } from '../ui/stageStyle.js';
 import { StepFigures } from '../workbench/StepsView.js';
 import type { StepMetric } from '../workbench/steps.js';
-import { repeatNote, stepListSummary, type SectionLike } from './editor-derive.js';
+import {
+  repeatNote,
+  STEP_KIND_TONE,
+  stepKind,
+  stepListSummary,
+  type SectionLike,
+} from './editor-derive.js';
 import { Area, intList, opt, optInt, Text } from './fields.js';
-import { CheckStep, ContextEditor, RepeatKeyColumn } from './StepForms.js';
+import { CheckStep, ContextEditor, PluginStepDetail, RepeatKeyColumn } from './StepForms.js';
 import { moveItem, removeAt, setIn, type Definition } from './model.js';
 
 const ids = (v: unknown): string[] =>
@@ -197,13 +203,11 @@ function StepDetail({
   onRemove: () => void;
 }) {
   const n = index + 1;
-  const kind = step.type === 'check' ? 'CHECK' : 'EXTRACT';
+  const kind = stepKind(step);
   return (
     <section className="card step-detail" aria-label={`Step ${n}`}>
       <div className="step-detail-head">
-        <span className={`kind-tag ${kind === 'CHECK' ? 'tone-neutral' : 'tone-info'}`}>
-          {kind}
-        </span>
+        <span className={`kind-tag ${STEP_KIND_TONE[kind]}`}>{kind}</span>
         <h3 className="mono">{typeof step.id === 'string' && step.id ? step.id : '(no id)'}</h3>
         <fieldset className="step-tools" disabled={readOnly}>
           <button
@@ -237,7 +241,9 @@ function StepDetail({
         </fieldset>
       </div>
       <fieldset className="step-body" disabled={readOnly}>
-        {step.type === 'check' ? (
+        {kind === 'PLUGIN' ? (
+          <PluginStepDetail step={step} />
+        ) : kind === 'CHECK' ? (
           <CheckStep step={step} paths={paths} set={onSet} />
         ) : (
           <ExtractDetail

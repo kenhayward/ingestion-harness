@@ -21,7 +21,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import psycopg
 from rdflib import Graph
@@ -41,6 +41,7 @@ from .pipeline import (
     RepeatPlan,
     StepProgress,
     Target,
+    advisory_event,
     page_images,
     prepare_document,
     publish_outputs,
@@ -64,7 +65,10 @@ from .storage import (
     reviewed_document_key,
     shacl_report_key,
 )
-from .template import CheckStep, ExtractStep, Template, compile_step
+from .template import CheckStep, ExtractStep, FillingStep, PluginStep, Template, compile_step
+
+if TYPE_CHECKING:
+    from .plugins import ResolvedPlugin
 
 ISSUE_COLUMNS = ["step", "target", "row", "column", "raw", "message"]
 
@@ -171,12 +175,25 @@ def process_template_job(
     compiled = {s.id: compile_step(template, s) for s in template.extract_steps()}
     extract_ids = [s.id for s in template.extract_steps()]
     resolved = resolve_models(job, deps, list(compiled.values()))
+    from .plugins import resolve_plugins
+
+    plugins = resolve_plugins(template)  # like models: before the first model call
     doc = prepare_document(job, deps, queue, template.document)
     cache = workbench_step_cache(job, deps)
     _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
 
-    def node(step: ExtractStep | CheckStep) -> Callable[[DocState], DocState]:
+    def node(step: ExtractStep | CheckStep | PluginStep) -> Callable[[DocState], DocState]:
         """The step as a node: the state before it in, the state after it out."""
+        if isinstance(step, PluginStep):
+            plugin_step = step
+
+            def run_plugin(state: DocState) -> DocState:
+                data = run_plugin_step(
+                    job, queue, template, plugin_step, plugins[plugin_step.id], doc, state
+                )
+                return state.apply(normalise_step(template, plugin_step, data))
+
+            return run_plugin
         if isinstance(step, CheckStep):
             check = step
 
@@ -372,7 +389,7 @@ def load_tbox(
 
 def context_values(
     template: Template,
-    step: ExtractStep,
+    step: FillingStep,
     fields: dict[str, dict[str, Any]],
     tables: dict[str, list[dict[str, Any]]],
 ) -> list[dict[str, str]]:
@@ -421,9 +438,11 @@ def segment_issues(doc: Prepared) -> list[dict[str, Any]]:
 
 
 def key_column_issues(
-    template: Template, step: ExtractStep, rows: list[dict[str, Any]]
+    template: Template, step: FillingStep, rows: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """A row whose occurrence had no key: the worker could not fill the step's keyColumn."""
+    if not isinstance(step, ExtractStep):
+        return []  # only extract steps read repeating sections
     section = template.repeating_section(step)
     column = step.key_column
     if section is None or column is None or step.table is None:
@@ -535,6 +554,56 @@ def run_step(
         {"model": result.model_ref, "attempts": len(result.attempts)},
     )
     return result
+
+
+def run_plugin_step(
+    job: ClaimedJob,
+    queue: JobQueue,
+    template: Template,
+    step: PluginStep,
+    resolved: ResolvedPlugin,
+    doc: Prepared,
+    state: DocState,
+) -> dict[str, Any]:
+    """Run one plugin step on the text of its sections and the values before it; record it in
+    step_runs (no model) and as the event `ran <step>`."""
+    from .plugins import PluginContext
+
+    ctx = PluginContext(
+        job,
+        template,
+        step,
+        {i: doc.sections.get(i, "") for i in step.sections},
+        context_values(template, step, state.fields, state.tables),
+        lambda message, data: advisory_event(job, queue, message, data),
+    )
+    run: dict[str, Any] = {
+        "step_id": step.id,
+        "trigger": "process",
+        "model": None,
+        "attempts": 1,
+        "input_tokens": None,
+        "output_tokens": None,
+        "started_at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        data = resolved.plugin.run(ctx, resolved.settings)
+    except Exception as exc:
+        queue.record_step_run(
+            job.id,
+            {
+                **run,
+                "status": "failed",
+                "error": str(exc)[:2000],
+                "finished_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        raise
+    queue.record_step_run(
+        job.id, {**run, "status": "succeeded", "finished_at": datetime.now(UTC).isoformat()}
+    )
+    queue.event(job.id, "info", f"ran {step.id}", {"plugin": step.uses})
+    return data
 
 
 def rerun_template_job(
@@ -683,21 +752,21 @@ class DocState:
         )
 
 
-def step_inputs(template: Template, step: ExtractStep) -> list[str]:
-    """The extract steps whose values `step` reads through its `context`, in pipeline order: the
+def step_inputs(template: Template, step: FillingStep) -> list[str]:
+    """The steps (extract or plugin) whose values `step` reads through its `context`, in pipeline order: the
     step's dependencies. (A valid recipe fills each output with one step, and a context names
     only outputs filled by earlier steps.)"""
     writer = {
         output: s.id
-        for s in template.extract_steps()
+        for s in template.filling_steps()
         for output in [*s.fields, *([s.table] if s.table else [])]
     }
     wanted = {writer[path.partition(".")[0]] for path in step.context.values()}
-    return [s.id for s in template.extract_steps() if s.id in wanted]
+    return [s.id for s in template.filling_steps() if s.id in wanted]
 
 
 def normalise_step(
-    template: Template, step: ExtractStep, data: dict[str, Any], model: str | None = None
+    template: Template, step: FillingStep, data: dict[str, Any], model: str | None = None
 ) -> StepOutcome:
     """A step's reply (`data`, never changed) as typed values plus the issues found."""
     order = template.document.date_order

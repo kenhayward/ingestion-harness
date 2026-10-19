@@ -206,3 +206,24 @@ describe('repeatLine', () => {
     [{ table: 't', sections: ['front'] }, null],
   ])('%#', (step, text) => expect(repeatLine(def(step), 's')).toBe(text));
 });
+
+describe('stepCards with a plugin step', () => {
+  it('draws a plugin step with its plugin, what it fills and reads, and no model', () => {
+    const [card] = stepCards({
+      pipeline: [
+        { type: 'plugin', id: 'refs', uses: 'text.pattern@1', fields: ['a'], sections: ['head'] },
+      ],
+    });
+    expect(card).toEqual({
+      number: 1,
+      id: 'refs',
+      kind: 'PLUGIN',
+      uses: 'text.pattern@1',
+      model: null,
+      fills: ['a'],
+      reads: ['head'],
+      chunkPages: null,
+      compares: null,
+    });
+  });
+});
