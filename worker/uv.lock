@@ -395,6 +395,11 @@ wheels = [
 ]
 
 [[package]]
+name = "ct-plugin-example"
+version = "1.0.0"
+source = { editable = "plugins/example" }
+
+[[package]]
 name = "docstring-parser"
 version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -520,6 +525,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "ct-plugin-example" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -550,6 +556,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "ct-plugin-example", editable = "plugins/example" },
     { name = "mypy", specifier = ">=1.17" },
     { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.2" },

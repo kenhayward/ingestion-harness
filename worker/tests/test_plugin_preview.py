@@ -175,11 +175,12 @@ def test_only_plugins_that_send_no_data_out_are_previewed(
 ) -> None:
     from dataclasses import replace
 
-    from ingest_worker.plugins import PLUGINS
+    from ingest_worker.plugins import BUILTINS, plugins
 
-    pattern = PLUGINS["text.pattern@1"]
+    pattern = BUILTINS["text.pattern@1"]
     calling = replace(pattern, spec=replace(pattern.spec, egress="model"))
-    monkeypatch.setitem(PLUGINS, "text.pattern@1", calling)
+    registry = {**plugins(), "text.pattern@1": calling}
+    monkeypatch.setattr("ingest_worker.plugin_preview.plugins", lambda: registry)
     deps, queue = deps_with(tmp_path), FakeQueue(jobs=[preview_job()])
     run_once(queue, deps, "w1")
     assert "only plugins that send no data out can be previewed" in stored(deps)["problem"]

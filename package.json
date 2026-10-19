@@ -26,7 +26,7 @@
     "dev:bridge": "npm run dev -w @ih/bridge",
     "migrate": "npm run migrate -w @ih/api",
     "worker:test": "uv run --directory worker pytest",
-    "worker:lint": "uv run --directory worker ruff check . && uv run --directory worker ruff format --check . && uv run --directory worker mypy src",
+    "worker:lint": "uv run --directory worker ruff check . && uv run --directory worker ruff format --check . && uv run --directory worker mypy",
     "check": "npm run lint && npm run typecheck && npm test && npm run worker:lint && npm run worker:test"
   },
   "devDependencies": {

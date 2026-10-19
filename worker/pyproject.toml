@@ -34,7 +34,13 @@ dev = [
   "types-pyyaml>=6.0",
   "types-jsonschema>=4.25",
   "types-boto3[s3]>=1.40",
+  # The plugin-writing guide's example package (docs/plugins/writing-plugins.md), installed for
+  # its tests and the worker's; the image installs plugins only through WORKER_PLUGINS.
+  "ct-plugin-example",
 ]
+
+[tool.uv.sources]
+ct-plugin-example = { path = "plugins/example", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -44,7 +50,7 @@ build-backend = "hatchling.build"
 packages = ["src/ingest_worker"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "plugins/example/tests"]
 addopts = "-ra --strict-markers -m 'not integration'"
 markers = ["integration: needs Postgres + SeaweedFS (deploy/docker-compose.yml)"]
 # rdflib's own JSON-LD parser still builds a ConjunctiveGraph internally.
@@ -61,7 +67,7 @@ ignore = ["E501"] # ruff format owns line length; long SQL/f-strings are fine
 [tool.mypy]
 strict = true
 python_version = "3.14"
-files = ["src"]
+files = ["src", "plugins/example/src"]
 
 [[tool.mypy.overrides]]
 module = ["pypdfium2", "pypdfium2.*"]

@@ -1,6 +1,6 @@
 # Recipe plugins (phase 3 of the agent graph research)
 
-Status: **3a to 3c done**, 2026-10-19; 3d to come. This is phase 3 of
+Status: **3a to 3d done**, 2026-10-19. This is phase 3 of
 [agent-graph-architecture.md](agent-graph-architecture.md) §8. It builds on the node contract in
 [ADR 0018](../adr/0018-capabilities-as-nodes.md).
 
@@ -61,8 +61,9 @@ PluginContext (what a plugin may read, nothing else)
   event(message, data): an advisory job event
 ```
 
-- **Registry.** `ingest_worker.plugins.PLUGINS` holds the built-ins. Packages installed in the
-  worker image add theirs through the entry point group `ct_studio.plugins` (3d).
+- **Registry.** `ingest_worker.plugins.BUILTINS` holds the built-ins, and `plugins()` adds those of
+  packages installed in the worker image, through the entry point group `ct_studio.plugins` (3d,
+  [the plugin-writing guide](../plugins/writing-plugins.md)).
 - **Trust.** A plugin runs in the worker process with the worker's privileges, so only plugins
   installed in the image run. It gets models through `JobModels` and nothing else (no bucket,
   no database, no queue writes). A third party's capability belongs behind A2A (phase 5), not
@@ -91,7 +92,7 @@ Deterministic extraction by regular expression, with no model call and no cost.
 | Slice | What | Done when |
 | --- | --- | --- |
 | 3a | Recipe format (TS and Python, shared fixture), the worker's registry, `PluginContext`, plugin steps in the pipeline (validation before any call, step runs, events), `text.pattern@1` | a recipe with a plugin step processes end to end; equivalence traces unchanged; `npm run check` green |
-| 3b | Plugin catalogue: the worker publishes `PLUGINS` (ref, summary, egress, settings JSON Schema) into a table at start; `GET /api/plugins`; `templateIssues` checks `uses` exists and `with` fits the schema | publishing a recipe with an unknown plugin or bad settings is refused with the reason |
+| 3b | Plugin catalogue: the worker publishes its plugins (ref, summary, egress, settings JSON Schema) into a table at start; `GET /api/plugins`; `templateIssues` checks `uses` exists and `with` fits the schema | publishing a recipe with an unknown plugin or bad settings is refused with the reason |
 | 3c | Recipe editor: add a plugin step, a settings form from the JSON Schema, a capped preview on dev samples; help topic | a designer adds a `text.pattern` step without writing YAML |
 | 3d | Entry points for installed packages; a plugin-writing guide with a cookiecutter-style example | a plugin from another package runs in a recipe |
 
@@ -118,4 +119,4 @@ Deterministic extraction by regular expression, with no model call and no cost.
 | 3a | done. TS: `PluginStepSchema`, `PLUGIN_REF`, `FILLING_STEP_TYPES`; coverage and validation count plugin steps; shared fixture `packages/shared/test/fixtures/plugin-steps.json`. Worker: `template.PluginStep`, `filling_steps`; `plugins.py` (`Plugin`, `PluginContext`, `resolve_plugins`, `PLUGINS`, `text.pattern@1`); `template_pipeline.run_plugin_step`. Web: `stepKind`, `PluginStepDetail` (read-only, edited in YAML) on the Pipeline tabs, step cards and proposal chips. |
 | 3b | done. Migration `202610191612_plugin_catalogue` (`plugin_catalogue`, `ref` = `plugin_id@major`); worker `plugin_catalogue.py` (`catalogue_rows`, `PgPluginCatalogue.publish`, which replaces the set in one transaction, at worker start, advisory); shared `PluginInfoSchema`; API `plugins/catalogue.ts` (`PluginCatalogue`, memory and Pg), `plugins/settings.ts` (`settingsProblems`: ajv 2020 against the schema), `GET /api/plugins` (designers and admins), `templateIssues`: `pipeline.N.uses` `no plugin X on this deployment's workers`, `pipeline.N.with` `X settings: …`, both blocking; shared fixture `plugin-catalogue.json` pins the worker's rows and the API's settings cases. |
 | 3c | done. Editor: `Api.listPlugins`, `usePlugins`, `AddPluginStep`, `PluginStepForm` (id, plugin, fills, sections without repeating ones, context, settings), `settings-schema.ts` (`settingsFields`, `setSetting`: text, switches, numbers, choices, lists, text maps; anything else and an unknown plugin as JSON; empty values and defaults left out). Preview: task `plugin` (migration 202610191642), `POST|GET /api/workbench/projects/:id/plugin-previews` (open draft, ready dev samples, plugins with egress `none` only, one per project), worker `plugin_preview.py` (`preview_samples` in `capped.capped_call`, 20 s; problems in the result, never a failed job), `pluginPreviewKey`/`plugin_preview_key`, web `PluginPreview` under a plugin step in the Workbench pipeline (saved draft only). |
-| 3d | — |
+| 3d | done. Worker: `BUILTINS`, `plugins()` (cached per process, so a preview's spawned child loads the same set), `ENTRY_POINT_GROUP` `ct_studio.plugins` (an entry point loads a `Plugin` or a list), `load_installed` (sorted by entry point name; a package that does not load, a non-Plugin, a bad ref, settings without `extra="forbid"` or a JSON Schema, egress other than `none`, a built-in id or a ref already taken is logged and left out, the rest load), `check_plugin`, `plugin_context`; the worker logs `plugins: …` and publishes them all in the catalogue. Example package `worker/plugins/example` (`example.label_value@1`), a dev dependency of the worker; image: build argument `WORKER_PLUGINS` (`uv pip install` under the worker's locked versions, `deploy/.env`). Guide: [docs/plugins/writing-plugins.md](../plugins/writing-plugins.md). |

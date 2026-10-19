@@ -27,7 +27,7 @@ from .pipeline import (
     check_cancelled,
     mark_pages,
 )
-from .plugins import PLUGINS, PluginContext
+from .plugins import PluginContext, plugins
 from .queue import ClaimedJob, JobQueue
 from .segment import MissingSectionsError, segment_occurrences, select_copy
 from .storage import plugin_preview_key
@@ -78,7 +78,7 @@ def preview_samples(
     in the capped child; the parent has checked the step, the plugin and its settings."""
     template = Template.model_validate(definition)
     step = next(s for s in template.plugin_steps() if s.id == step_id)
-    plugin = PLUGINS[step.uses]
+    plugin = plugins()[step.uses]
     settings = plugin.settings_for(template, step)
     document = template.document
     marker = PAGE_MARKER if document.page_markers else None
@@ -163,7 +163,7 @@ def run_plugin_preview(
     )
     if step is None:
         return problem(f"no plugin step {params.step_id} in the recipe")
-    plugin = PLUGINS.get(step.uses)
+    plugin = plugins().get(step.uses)
     if plugin is None:
         return problem(f"no plugin {step.uses} on this worker", step.uses)
     if plugin.spec.egress != "none":

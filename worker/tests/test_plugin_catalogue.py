@@ -15,7 +15,7 @@ from ingest_worker.plugin_catalogue import (
     PgPluginCatalogue,
     catalogue_rows,
 )
-from ingest_worker.plugins import PLUGINS
+from ingest_worker.plugins import BUILTINS
 
 FIXTURE: dict[str, Any] = json.loads(
     (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "plugin-catalogue.json").read_text(
@@ -25,9 +25,9 @@ FIXTURE: dict[str, Any] = json.loads(
 
 
 def test_the_catalogue_is_what_the_shared_fixture_pins() -> None:
-    """The API checks recipes against these rows: a change to a plugin's settings model is a
-    change to the fixture, made on purpose, and to the API's expectations with it."""
-    assert catalogue_rows(PLUGINS) == FIXTURE["plugins"]
+    """The API checks recipes against these rows: a change to a built-in plugin's settings model
+    is a change to the fixture, made on purpose, and to the API's expectations with it."""
+    assert catalogue_rows(BUILTINS) == FIXTURE["plugins"]
 
 
 def test_publishing_replaces_the_catalogue_with_this_workers_plugins() -> None:
