@@ -23,7 +23,6 @@ from .drafting import run_draft
 from .embeddings import run_embed
 from .graph_preview import run_graph_preview
 from .graph_registry import PgGraphRegistry
-from .graph_store import graph_store_from_env
 from .heartbeat import HEARTBEAT_S, JobHeartbeat, PgJobHeartbeat, beating
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
@@ -189,6 +188,14 @@ def handle_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Ou
     return Delivering([], deliveries, note=f"handed {len(deliveries)} deliveries to the bridge")
 
 
+def handle_rebuild(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """Rebuild, backfill or re-mint the triple store; the bridge's events finish the job."""
+    lines, deliveries = run_rebuild_job(job, deps, queue)
+    if not deliveries:
+        return Complete(note=lines[-1])
+    return Delivering([], deliveries, note=lines[-1])
+
+
 def _completes[R](
     run: Callable[[ClaimedJob, PipelineDeps, JobQueue], R], note: Callable[[R], str]
 ) -> TaskHandler:
@@ -214,7 +221,7 @@ TASKS: dict[str, TaskHandler] = {
     "embed": _completes(run_embed, lambda n: f"embedded {n} terms"),
     "withdraw": _completes(run_withdraw, lambda w: "withdrew {} objects, {} graphs".format(*w)),
     "republish": handle_republish,
-    "rebuild": _completes(run_rebuild_job, lambda lines: lines[-1]),
+    "rebuild": handle_rebuild,
     "ontology": _completes(run_ontology_import, lambda p: f"indexed {len(p.terms)} ontology terms"),
 }
 
@@ -419,7 +426,6 @@ class _Worker:
             mapping_memory=PgMappingMemoryStore(self.library),
             embedding_model=self.live.embedding_model,
             graph_registry=PgGraphRegistry(self.graph_conn),
-            graph_store=graph_store_from_env(os.environ),
             delivered_jobs=PgRebuildSource(self.library),
             step_checkpointer=self.step_checkpointer,
             ontology_max_triples=settings.ontology_max_triples,

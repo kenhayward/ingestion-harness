@@ -43,7 +43,7 @@ from ingest_worker.storage import MemoryObjectStore, ontology_normalized_key
 from . import test_pipeline as legacy
 from . import test_template_pipeline as recipes
 from . import test_workbench as workbench
-from .fakes import FakeGraphStore, FakeProvider, FakeQueue
+from .fakes import FakeBridge, FakeProvider, FakeQueue
 
 GOLDEN = Path(__file__).parent / "fixtures" / "equivalence"
 UPDATE = os.environ.get("IH_UPDATE_GOLDEN") == "1"
@@ -136,6 +136,28 @@ def model_trace(provider: FakeProvider) -> dict[str, Any]:
     }
 
 
+def deliveries_trace(bridge: FakeBridge) -> list[dict[str, Any]]:
+    """Every hand-off to the bridge: its targets, the package's kind and file names, and its
+    graph (name, version, canonical triples), which the triple store target loads."""
+    return [
+        {
+            "targets": list(r.targets),
+            "kind": r.package.kind,
+            "files": [f.name for f in r.package.files],
+            "rdf": (
+                {
+                    "graphName": r.package.rdf.graph_name,
+                    "version": r.package.rdf.version,
+                    "triples": triples(r.package.rdf.turtle.encode(), "turtle"),
+                }
+                if r.package.rdf is not None
+                else None
+            ),
+        }
+        for r in bridge.requests
+    ]
+
+
 def check(name: str, trace: dict[str, Any]) -> None:
     path = GOLDEN / f"{name}.json"
     text = json.dumps(trace, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
@@ -187,7 +209,8 @@ def test_template_review_rerun_publish(tmp_path: Path) -> None:
         "delivery": {"formats": ["csv", "json", "rdf"]},
     }
     deps, target = recipes.mapped_deps(tmp_path, template, recipes.BASE_IRI)
-    deps = replace(deps, graph_registry=MemoryGraphRegistry(), graph_store=FakeGraphStore())
+    deps = replace(deps, graph_registry=MemoryGraphRegistry())
+    recipes.with_triple_store(deps, target)
     key = ontology_normalized_key("ex-shapes", 1)
     deps.store.put("runs", key, recipes.WARNING_NT, "application/n-triples")
     provider = provider_of(deps, "local")
@@ -210,7 +233,6 @@ def test_template_review_rerun_publish(tmp_path: Path) -> None:
     assert queue.handed_over, queue.reviewed or queue.failed
 
     assert isinstance(deps.store, MemoryObjectStore)
-    assert isinstance(deps.graph_store, FakeGraphStore)
     check(
         "template-review-rerun-publish",
         {
@@ -218,10 +240,7 @@ def test_template_review_rerun_publish(tmp_path: Path) -> None:
             "target": objects(target),
             "queue": queue_trace(queue),
             "models": model_trace(provider),
-            "graph_store": [
-                [m, g, triples(b, "turtle") if b else None, c]
-                for m, g, b, c in deps.graph_store.requests
-            ],
+            "deliveries": deliveries_trace(target),
         },
     )
 
@@ -230,7 +249,8 @@ def test_template_delivered(tmp_path: Path) -> None:
     """Mapped recipe never reviewed: delivered at once, graph included."""
     template = recipes.mapped(delivery={"formats": ["csv", "json", "rdf"]})
     deps, target = recipes.mapped_deps(tmp_path, template, recipes.BASE_IRI)
-    deps = replace(deps, graph_registry=MemoryGraphRegistry(), graph_store=FakeGraphStore())
+    deps = replace(deps, graph_registry=MemoryGraphRegistry())
+    recipes.with_triple_store(deps, target)
     queue = FakeQueue(jobs=[recipes.JOB])
     run_once(queue, deps, "w1")
     assert queue.handed_over, queue.reviewed or queue.failed
@@ -243,6 +263,7 @@ def test_template_delivered(tmp_path: Path) -> None:
             "target": objects(target),
             "queue": queue_trace(queue),
             "models": model_trace(provider_of(deps, "local")),
+            "deliveries": deliveries_trace(target),
         },
     )
 

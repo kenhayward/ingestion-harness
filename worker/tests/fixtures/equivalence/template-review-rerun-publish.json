@@ -1,93 +1,114 @@
 {
- "graph_store": [
-  [
-   "PUT",
-   "https://data.acme.example/graph/ontology/ex-shapes/1",
-   [
-    "<https://ex.example/def/ProtocolShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .",
-    "<https://ex.example/def/ProtocolShape> <http://www.w3.org/ns/shacl#property> _:cb0 .",
-    "<https://ex.example/def/ProtocolShape> <http://www.w3.org/ns/shacl#targetClass> <https://ex.example/def/Protocol> .",
-    "_:cb0 <http://www.w3.org/ns/shacl#maxLength> \"5\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
-    "_:cb0 <http://www.w3.org/ns/shacl#path> <https://ex.example/def/product> .",
-    "_:cb0 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Warning> ."
+ "deliveries": [
+  {
+   "files": [],
+   "kind": "graph",
+   "rdf": {
+    "graphName": "https://data.acme.example/graph/ontology/ex-shapes/1",
+    "triples": [
+     "<https://ex.example/def/ProtocolShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .",
+     "<https://ex.example/def/ProtocolShape> <http://www.w3.org/ns/shacl#property> _:cb0 .",
+     "<https://ex.example/def/ProtocolShape> <http://www.w3.org/ns/shacl#targetClass> <https://ex.example/def/Protocol> .",
+     "_:cb0 <http://www.w3.org/ns/shacl#maxLength> \"5\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+     "_:cb0 <http://www.w3.org/ns/shacl#path> <https://ex.example/def/product> .",
+     "_:cb0 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Warning> ."
+    ],
+    "version": 1
+   },
+   "targets": [
+    "rdf-default"
+   ]
+  },
+  {
+   "files": [
+    "demo/v1/fields/doc-1.csv",
+    "demo/v1/results/doc-1.csv",
+    "demo/v1/batch_check/doc-1.csv",
+    "demo/v1/issues/doc-1.csv",
+    "demo/v1/document/doc-1.json",
+    "demo/v1/graph/doc-1.ttl",
+    "graphs/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/v1.ttl"
    ],
-   "application/n-triples"
-  ],
-  [
-   "PUT",
-   "https://data.acme.example/graph/source/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo",
-   [
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://data.acme.example/def/demo/results/Row> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> <https://data.acme.example/def/demo/results.batch> \"G1\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> <https://data.acme.example/def/demo/results.value> \"137.8\"^^<http://www.w3.org/2001/XMLSchema#decimal> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://data.acme.example/def/demo/results/Row> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <https://data.acme.example/def/demo/results.aliases> \"G-2\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <https://data.acme.example/def/demo/results.batch> \"G2\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <https://data.acme.example/def/demo/results.value> \"Complies\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Section> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <http://www.w3.org/2000/01/rdf-schema#label> \"body\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <https://id.stocks-hayward.com/ns/ct#of> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <https://id.stocks-hayward.com/ns/ct#order> \"2\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Section> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <http://www.w3.org/2000/01/rdf-schema#label> \"head\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <https://id.stocks-hayward.com/ns/ct#of> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <https://id.stocks-hayward.com/ns/ct#order> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#page> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#property> <https://data.acme.example/def/demo/executed_on> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#quote> \"Made 16/02/2023\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#step> \"date\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#value> \"2023-02-16\"^^<http://www.w3.org/2001/XMLSchema#date> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#property> <https://data.acme.example/def/demo/kind> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#step> \"header\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#value> \"protocol\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#page> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#property> <https://ex.example/def/product> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#quote> \"Product: Richfer capsules\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#step> \"header\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#value> <https://data.acme.example/product/ferric-capsules> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <https://id.stocks-hayward.com/ns/ct#step> \"data\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#normalisationIssue> \"value: 'Complies' is not a valid decimal\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#step> \"data\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Page> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> <https://id.stocks-hayward.com/ns/ct#of> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> <https://id.stocks-hayward.com/ns/ct#pageNumber> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <http://purl.org/dc/terms/source> <urn:sha256:315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ex.example/def/Protocol> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <http://www.w3.org/ns/prov#wasGeneratedBy> <https://data.acme.example/job/job-1> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/executed_on> \"2023-02-16\"^^<http://www.w3.org/2001/XMLSchema#date> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/kind> \"protocol\" .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/results> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/results> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> .",
-    "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://ex.example/def/product> <https://data.acme.example/product/ferric-capsules> .",
-    "<https://data.acme.example/graph/source/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo> <http://purl.org/dc/terms/modified> \"<time>\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .",
-    "<https://data.acme.example/graph/source/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo> <https://id.stocks-hayward.com/ns/ct#graphVersion> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
-    "<https://data.acme.example/job/job-1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Activity> .",
-    "<https://data.acme.example/job/job-1> <http://www.w3.org/ns/prov#endedAtTime> \"<time>\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .",
-    "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#baseIri> \"https://data.acme.example/\" .",
-    "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#model> \"local/qwen\" .",
-    "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#recipe> \"demo\" .",
-    "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#recipeVersion> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
-    "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#reviewedBy> \"kh\" .",
-    "<https://data.acme.example/product/ferric-capsules> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ex.example/def/Product> .",
-    "<https://data.acme.example/product/ferric-capsules> <http://www.w3.org/2000/01/rdf-schema#label> \"Ferric capsules\" ."
-   ],
-   "text/turtle"
-  ]
+   "kind": "document",
+   "rdf": {
+    "graphName": "https://data.acme.example/graph/source/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo",
+    "triples": [
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://data.acme.example/def/demo/results/Row> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> <https://data.acme.example/def/demo/results.batch> \"G1\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> <https://data.acme.example/def/demo/results.value> \"137.8\"^^<http://www.w3.org/2001/XMLSchema#decimal> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://data.acme.example/def/demo/results/Row> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <https://data.acme.example/def/demo/results.aliases> \"G-2\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <https://data.acme.example/def/demo/results.batch> \"G2\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> <https://data.acme.example/def/demo/results.value> \"Complies\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Section> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <http://www.w3.org/2000/01/rdf-schema#label> \"body\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <https://id.stocks-hayward.com/ns/ct#of> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> <https://id.stocks-hayward.com/ns/ct#order> \"2\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Section> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <http://www.w3.org/2000/01/rdf-schema#label> \"head\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <https://id.stocks-hayward.com/ns/ct#of> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> <https://id.stocks-hayward.com/ns/ct#order> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#page> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#property> <https://data.acme.example/def/demo/executed_on> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#quote> \"Made 16/02/2023\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#step> \"date\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/executed_on> <https://id.stocks-hayward.com/ns/ct#value> \"2023-02-16\"^^<http://www.w3.org/2001/XMLSchema#date> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#property> <https://data.acme.example/def/demo/kind> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#step> \"header\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/kind> <https://id.stocks-hayward.com/ns/ct#value> \"protocol\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#page> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#property> <https://ex.example/def/product> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#quote> \"Product: Richfer capsules\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/head> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#step> \"header\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/product> <https://id.stocks-hayward.com/ns/ct#value> <https://data.acme.example/product/ferric-capsules> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <https://id.stocks-hayward.com/ns/ct#step> \"data\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/1> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Evidence> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#normalisationIssue> \"value: 'Complies' is not a valid decimal\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#section> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/section/body> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#step> \"data\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/fact/demo/results/2> <https://id.stocks-hayward.com/ns/ct#subject> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://id.stocks-hayward.com/ns/ct#Page> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> <https://id.stocks-hayward.com/ns/ct#of> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/page/1> <https://id.stocks-hayward.com/ns/ct#pageNumber> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <http://purl.org/dc/terms/source> <urn:sha256:315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ex.example/def/Protocol> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <http://www.w3.org/ns/prov#wasGeneratedBy> <https://data.acme.example/job/job-1> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/executed_on> \"2023-02-16\"^^<http://www.w3.org/2001/XMLSchema#date> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/kind> \"protocol\" .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/results> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/1> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://data.acme.example/def/demo/results> <https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo/results/2> .",
+     "<https://data.acme.example/doc/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027> <https://ex.example/def/product> <https://data.acme.example/product/ferric-capsules> .",
+     "<https://data.acme.example/graph/source/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo> <http://purl.org/dc/terms/modified> \"<time>\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .",
+     "<https://data.acme.example/graph/source/315d429b7714cedb6ad04ac31240145257692630457f3c88253c5beceac76027/demo> <https://id.stocks-hayward.com/ns/ct#graphVersion> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+     "<https://data.acme.example/job/job-1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Activity> .",
+     "<https://data.acme.example/job/job-1> <http://www.w3.org/ns/prov#endedAtTime> \"<time>\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .",
+     "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#baseIri> \"https://data.acme.example/\" .",
+     "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#model> \"local/qwen\" .",
+     "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#recipe> \"demo\" .",
+     "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#recipeVersion> \"1\"^^<http://www.w3.org/2001/XMLSchema#integer> .",
+     "<https://data.acme.example/job/job-1> <https://id.stocks-hayward.com/ns/ct#reviewedBy> \"kh\" .",
+     "<https://data.acme.example/product/ferric-capsules> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ex.example/def/Product> .",
+     "<https://data.acme.example/product/ferric-capsules> <http://www.w3.org/2000/01/rdf-schema#label> \"Ferric capsules\" ."
+    ],
+    "version": 1
+   },
+   "targets": [
+    "default",
+    "rdf-default"
+   ]
+  }
  ],
  "models": {
   "calls": [
@@ -458,6 +479,14 @@
     [
      [
       "default",
+      "00000000-0000-4000-8000-000000000004"
+     ],
+     [
+      "rdf-default",
+      "00000000-0000-4000-8000-000000000005"
+     ],
+     [
+      "rdf-default",
       "00000000-0000-4000-8000-000000000002"
      ]
     ]
@@ -687,7 +716,7 @@
    [
     "job-1",
     "default",
-    "00000000-0000-4000-8000-000000000002"
+    "00000000-0000-4000-8000-000000000004"
    ]
   ],
   "reviewed": [],

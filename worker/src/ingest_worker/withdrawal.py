@@ -130,8 +130,10 @@ def _withdraw_graph(
         ]
         bridge.delete_objects(target.id, copies)
     graph_iri = next((g.graph_iri for g in entries if g.graph_iri is not None), None)
-    if graph_iri is not None and current is None and deps.graph_store is not None:
-        deps.graph_store.delete(graph_iri)
+    triples = targets.rdf()
+    if graph_iri is not None and current is None and triples is not None:
+        # Through the triple store target: its sink drops the named graph from its dataset.
+        bridge.delete_objects(triples.id, [(triples.bucket, graph_iri)])
         dropped.append(1)
 
 

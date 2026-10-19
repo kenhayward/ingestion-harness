@@ -68,7 +68,6 @@ if TYPE_CHECKING:
 
     from .bridge.client import BridgeClient
     from .graph_registry import GraphRegistry
-    from .graph_store import GraphStore
     from .linked_data import LinkedDataSettings
     from .mapping_memory import MappingMemoryStore
     from .ontology import OntologyStore
@@ -189,8 +188,6 @@ class PipelineDeps:
     embedding_model: str | None = None
     #: The published graphs' versions and entities (None: delivered graphs are not recorded).
     graph_registry: GraphRegistry | None = None
-    #: The triple store (RDF_ENDPOINT; None: delivered graphs go to S3 only).
-    graph_store: GraphStore | None = None
     #: Delivered and withdrawn jobs, for `republish` (None: republish goes to review).
     delivered_jobs: RebuildSource | None = None
     #: Saves a recipe's steps after each one, so a stopped job resumes where it stopped

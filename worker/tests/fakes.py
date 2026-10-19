@@ -753,28 +753,6 @@ class MemoryLinkedDataSettings:
         return self.base
 
 
-@dataclass
-class FakeGraphStore:
-    """GraphStore that records every request (`(method, graph, body, content type)`) and holds
-    the graphs; `fail` (an exception) is raised by the next requests instead."""
-
-    graphs: dict[str, bytes] = field(default_factory=dict)
-    requests: list[tuple[str, str, bytes | None, str | None]] = field(default_factory=list)
-    fail: Exception | None = None
-
-    def put(self, graph_iri: str, body: bytes, content_type: str) -> None:
-        if self.fail is not None:
-            raise self.fail
-        self.requests.append(("PUT", graph_iri, body, content_type))
-        self.graphs[graph_iri] = body
-
-    def delete(self, graph_iri: str) -> bool:
-        if self.fail is not None:
-            raise self.fail
-        self.requests.append(("DELETE", graph_iri, None, None))
-        return self.graphs.pop(graph_iri, None) is not None
-
-
 class MemoryPublishTargetStore:
     """In-memory PublishTargetStore with PgPublishTargetStore's seeding rule: the default row is
     written from .env once (while `seeded_at` is None), then only compared."""

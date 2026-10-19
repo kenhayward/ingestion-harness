@@ -18,7 +18,6 @@ from ingest_worker.template import Template
 
 from .fakes import (
     FakeBridge,
-    FakeGraphStore,
     FakeQueue,
     FakeTargets,
     MemoryLinkedDataSettings,
@@ -76,11 +75,15 @@ def setup(tmp_path: Path, *jobs: DeliveredJob) -> tuple[PipelineDeps, MemoryRebu
         models=ModelRegistry({}, {}, {}),
         extract_text=lambda _pdf: [],
         buckets=Buckets("inbox", "outputs", "runs"),
-        targets=FakeTargets({"default": Target("default", "published", "pvp/")}),
-        bridge=FakeBridge({"default": ("published", "pvp/")}, stores={"default": target}),
+        targets=FakeTargets(
+            {"default": Target("default", "published", "pvp/")},
+            rdf=Target("rdf-default", "ct", ""),
+        ),
+        bridge=FakeBridge(
+            {"default": ("published", "pvp/")}, stores={"default": target}, rdf={"rdf-default"}
+        ),
         linked_data=MemoryLinkedDataSettings(BASE),
         graph_registry=MemoryGraphRegistry(),
-        graph_store=FakeGraphStore(),
     )
     store.put("runs", ontology_normalized_key("acme", 1), ONTOLOGY, "application/n-triples")
     for j in jobs:
@@ -110,9 +113,10 @@ def setup_reviewed(deps: PipelineDeps, j: DeliveredJob) -> None:
     )
 
 
-def store_of(deps: PipelineDeps) -> FakeGraphStore:
-    assert isinstance(deps.graph_store, FakeGraphStore)
-    return deps.graph_store
+def store_of(deps: PipelineDeps) -> FakeBridge:
+    """The bridge, whose `graphs` are the triple store target's (rdf-default)."""
+    assert isinstance(deps.bridge, FakeBridge)
+    return deps.bridge
 
 
 def registry_of(deps: PipelineDeps) -> MemoryGraphRegistry:
@@ -161,9 +165,15 @@ def test_rebuild_reloads_the_ontologies_and_the_current_graphs(tmp_path: Path) -
     before = dict(store.graphs)
     store.graphs.clear()
     store.requests.clear()
-    lines = rebuild(deps)
+    deliveries: list[tuple[str, str]] = []
+    lines = rebuild(deps, deliveries)
     assert store.graphs == before
-    assert [r[0] for r in store.requests] == ["PUT", "PUT"]
+    # Graph packages to the triple store, read from the published copies, nothing re-rendered.
+    assert [(r.package.kind, r.targets) for r in store.requests] == [
+        ("graph", ["rdf-default"]),
+        ("graph", ["rdf-default"]),
+    ]
+    assert [t for t, _ in deliveries] == ["rdf-default", "rdf-default"]
     assert lines[-1] == "rebuild: 1 ontology graphs, 1 document graphs, 0 missing"
 
 
@@ -200,6 +210,27 @@ def test_backfill_ignores_mappings_that_do_not_deliver_rdf(tmp_path: Path) -> No
     assert store_of(deps).requests == []
 
 
+def test_rebuild_without_rdf_default_refuses(tmp_path: Path) -> None:
+    deps, _ = setup(tmp_path)
+    assert isinstance(deps.targets, FakeTargets)
+    deps.targets.triple_store = None
+    assert rebuild(deps) == [
+        "rebuild needs RDF_ENDPOINT, the database, the publishing targets and the bridge"
+    ]
+
+
+def test_backfill_and_remint_hand_their_graphs_to_the_bridge(tmp_path: Path) -> None:
+    deps, source = setup(tmp_path, job(1, "aa" * 32))
+    deliveries: list[tuple[str, str]] = []
+    backfill(deps, FakeQueue(), source, "letter", deliveries)
+    # The TBox, then the graph with its copy (to the S3 target and the triple store).
+    assert [t for t, _ in deliveries] == ["default", "rdf-default", "rdf-default"]
+    deps.linked_data = MemoryLinkedDataSettings(NEW_BASE)
+    reminted: list[tuple[str, str]] = []
+    remint(deps, FakeQueue(), source, reminted)
+    assert [t for t, _ in reminted] == ["default", "rdf-default", "rdf-default"]
+
+
 def test_backfill_reads_a_document_delivered_without_review(tmp_path: Path) -> None:
     from ingest_worker.storage import output_key
 
@@ -215,16 +246,15 @@ def test_backfill_reads_a_document_delivered_without_review(tmp_path: Path) -> N
 def test_remint_drops_the_old_graph_first_and_a_failure_is_retried_by_the_next_run(
     tmp_path: Path,
 ) -> None:
-    from ingest_worker.graph_store import GraphStoreUnavailable
+    from ingest_worker.bridge.client import BridgeUnavailable
 
     deps, source = setup(tmp_path, job(1, "aa" * 32), job(2, "bb" * 32))
     backfill(deps, FakeQueue(), source, "letter")
     deps.linked_data = MemoryLinkedDataSettings(NEW_BASE)
-    store_of(deps).fail = GraphStoreUnavailable("graph store answered 503")
+    store_of(deps).refusals = [BridgeUnavailable("the bridge could not be reached")] * 2
     lines = remint(deps, FakeQueue(), source)
     assert lines[-1] == f"remint under {NEW_BASE}: 0 re-minted, 0 already there, 2 failed"
     assert all(g.base_iri == BASE for g in registry_of(deps).all_current())
-    store_of(deps).fail = None
     assert remint(deps, FakeQueue(), source)[-1] == (
         f"remint under {NEW_BASE}: 2 re-minted, 0 already there, 0 failed"
     )
