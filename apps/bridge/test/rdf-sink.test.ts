@@ -102,6 +102,14 @@ describe('the rdf sink', () => {
     expect(store.graphs.get(pkg.rdf!.graphName)).toBe(pkg.rdf!.turtle);
   });
 
+  it('a graph package (a rebuild) replaces even a newer stored version', async () => {
+    const { store, deliver } = setup();
+    await store.put(G, turtle(7), 'text/turtle'); // Fuseki ahead of the registry (a restore)
+    const rebuilt = fixture('package-graph.json');
+    await deliver({ ...rebuilt, rdf: { graphName: G, version: 3, turtle: turtle(3) } });
+    expect(store.graphs.get(G)).toBe(turtle(3));
+  });
+
   it('a package without rdf is content_rejected', async () => {
     const { deliver } = setup();
     expect(await codeOf(deliver(fixture('package-document.json')))).toBe('content_rejected');

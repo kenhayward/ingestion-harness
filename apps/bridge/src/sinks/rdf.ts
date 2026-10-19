@@ -94,9 +94,14 @@ export class RdfSink implements SinkPort, TargetObjects {
       );
     }
     const store = this.storeFor({ credential: req.credential, destination: req.destination });
-    const stored = await store.version(rdf.graphName);
-    if (stored !== null && stored >= rdf.version) {
-      return this.receipt(rdf.graphName, `superseded by v${stored}`);
+    // A document's graph never replaces a newer version (retries may arrive out of order; the
+    // bridge's one runner makes the read and the PUT a pair). A `graph` package (an ontology, a
+    // rebuild from the published copies) always replaces: it is what the registry says is true.
+    if (req.package.kind === 'document') {
+      const stored = await store.version(rdf.graphName);
+      if (stored !== null && stored >= rdf.version) {
+        return this.receipt(rdf.graphName, `superseded by v${stored}`);
+      }
     }
     await store.put(rdf.graphName, rdf.turtle, 'text/turtle');
     return this.receipt(rdf.graphName, `v${rdf.version}`);
