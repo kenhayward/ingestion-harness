@@ -114,12 +114,19 @@ PR: let `read_pages` always use the Workbench reader.
 
 ## Part 3: one ending for process, re-run and publish
 
-`document_of(job, doc, template, state, reasons)` builds the draft `document.json` from a state in
-one place. `finalise(job, deps, queue, template, document, mode) -> Finalised`, where `mode` is one of
-`draft`, `rerun` or `publish`. It builds the graph, runs the SHACL check (the advisory-or-blocking
-rule depends on `mode` and on whether `rdf` is delivered), adds the report to the issues and
-reasons, and renders the outputs. Writing the drafts stays with the caller, because a publish
-never writes drafts. The three copies of this sequence go.
+- `document_of(job, doc, template, state, reasons)` builds the draft `document.json` from a state
+  in one place.
+- `finalise(job, deps, queue, template, document, *, mode) -> Finalised` (`document`, `graph`,
+  `outputs`, and `reasons`, the document's own list). It builds the graph, runs the shapes check
+  and renders the outputs. There are two modes:
+  - `draft` covers an extraction and a step re-run, which behave the same here. The report's
+    violations become review reasons and its warnings issues, and the document is updated.
+  - `publish` leaves the reviewed document as it is. A delivered graph that violates the shapes
+    raises `ShapesViolated`, and a graph that is not delivered is checked only when its shapes
+    can be read.
+- `write_drafts(deps, outputs)` puts the outputs in the outputs bucket. Process and re-run call
+  it; a publish never writes drafts.
+- The three copies of build graph → shapes → report → render → write are gone.
 
 ## Part 4: outcomes as values
 
@@ -160,6 +167,6 @@ never writes drafts. The three copies of this sequence go.
 | 0 equivalence traces | done: `worker/tests/test_equivalence.py`, 7 scenarios |
 | 1 split `prepare_document` | done: `read_pages`, `select_pages`, `segment_pages` (`tests/test_prepare_nodes.py`); Workbench `prepare` uses `read_pages` |
 | 2 `DocState` | done: `DocState`, `StepOutcome`, `normalise_step`, `step_inputs` (`tests/test_doc_state.py`); process and re-run use them |
-| 3 `finalise` | — |
+| 3 `finalise` | done: `document_of`, `finalise`, `write_drafts` (`tests/test_finalise.py`); process, re-run and publish use them |
 | 4 outcomes and `TASKS` | — |
 | 5 `NodeSpec`, `JobModels`, `run_nodes` | — |
