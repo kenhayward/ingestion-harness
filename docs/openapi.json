@@ -26324,6 +26324,82 @@
                                 ],
                                 "additionalProperties": false
                               }
+                            },
+                            "semantics": {
+                              "type": "object",
+                              "properties": {
+                                "ontologies": {
+                                  "default": [],
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "version": {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "prefixes": {
+                                  "default": {},
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z][\\w-]*$"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  }
+                                },
+                                "local": {
+                                  "default": [],
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "iri": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "class",
+                                          "object_property",
+                                          "datatype_property",
+                                          "annotation_property",
+                                          "concept"
+                                        ]
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "definition": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "iri",
+                                      "kind",
+                                      "label"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "additionalProperties": false
                             }
                           },
                           "required": [

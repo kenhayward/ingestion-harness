@@ -113,16 +113,17 @@ The app needs a sign-in everywhere, LAN included ([ADR 0013](../docs/adr/0013-em
      needed here; a proxy that ignores that header must not buffer that path (in nginx,
      `proxy_buffering off;`), or Home shows each running job stuck on its first step until it
      finishes.
-   - Embedding in another site's iframe (e.g. a 3DEXPERIENCE dashboard,
+   - Embedding in another site's iframe (e.g. a third-party dashboard,
      [ADR 0012](../docs/adr/0012-embedding-in-a-frame.md)): set `FRAME_ANCESTORS` in
-     `deploy/.env`, e.g. `FRAME_ANCESTORS=https://*.3dexperience.3ds.com`, and redeploy. Leave
+     `deploy/.env`, e.g. `FRAME_ANCESTORS=https://*.dashboard.example.com`, and redeploy. Leave
      NPM's headers alone: a proxy host that adds `X-Frame-Options` or its own
      `Content-Security-Policy: frame-ancestors` blocks the frame again. Sign-in inside the frame
      needs HTTPS (the session cookie becomes `SameSite=None; Secure; Partitioned`). If the frame
      still stays blank, the browser console names the refused ancestor: every site in the frame
      chain must be listed. Register `https://<host>/widget.html` as the widget, not the app's root:
-     a 3DEXPERIENCE "Run your app" widget copies the page it is given onto its own site, where the
-     app's own page would call `/api` on 3DEXPERIENCE and name assets the next deploy removes
+     some dashboards' "run your app" widgets copy the page they are given onto their own site, where
+     the app's own page would call `/api` on the dashboard's site and name assets the next deploy
+     removes
      (blank widget, 404s for `/assets/index-….js` in the app's log). `widget.html` only frames
      the app, so it runs on its own origin and survives deploys.
 4. **Forward only that host.** Keep `SEAWEEDFS_MASTER_BIND`, `S3_PUBLIC_BIND` and the other binds

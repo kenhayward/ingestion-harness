@@ -1,0 +1,29 @@
+{
+  "name": "@ih/bridge",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch --tsconfig tsconfig.json src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "tsx src/db/migrate-cli.ts",
+    "openapi": "vitest run -u --config vitest.config.ts test/openapi.test.ts"
+  },
+  "dependencies": {
+    "@fastify/swagger": "^9.9.2",
+    "@ih/bridge-contract": "*",
+    "fastify": "^5.12.7",
+    "pg": "^8.16.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.15.0",
+    "tsx": "^4.20.0"
+  }
+}
