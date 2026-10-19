@@ -88,3 +88,43 @@ export const TargetTestResultSchema = z.strictObject({
   message: z.string(),
 });
 export type TargetTestResult = z.infer<typeof TargetTestResultSchema>;
+
+/** Target and connection ids: what CT Studio's target ids already are. */
+export const RESOURCE_ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+/** `PUT /v1/targets/{id}`: creates or replaces a target. */
+export const TargetPutRequestSchema = z.strictObject({
+  label: z.string().min(1),
+  sinkId: z.string().min(1),
+  instanceId: z.string().nullable(),
+  connectionId: z.string().regex(RESOURCE_ID).nullable(),
+  destination: DestinationSchema,
+});
+export type TargetPutRequest = z.infer<typeof TargetPutRequestSchema>;
+
+/** `POST /v1/targets:test`: Test connection for settings not saved yet. */
+export const TargetSettingsTestRequestSchema = z.strictObject({
+  connectionId: z.string().regex(RESOURCE_ID),
+  destination: DestinationSchema,
+});
+export type TargetSettingsTestRequest = z.infer<typeof TargetSettingsTestRequestSchema>;
+
+export const ObjectRefSchema = z.strictObject({
+  bucket: z.string().min(1),
+  key: z.string().min(1),
+});
+export type ObjectRef = z.infer<typeof ObjectRefSchema>;
+
+/** `POST /v1/targets/{id}/objects:read` answers the object's bytes, base64. */
+export const ObjectReadResultSchema = z.strictObject({ content: z.string().base64() });
+
+export const ObjectPutRequestSchema = ObjectRefSchema.extend({
+  contentType: z.string().min(1),
+  content: z.string().base64(),
+});
+export type ObjectPutRequest = z.infer<typeof ObjectPutRequestSchema>;
+
+export const ObjectDeleteRequestSchema = z.strictObject({
+  objects: z.array(ObjectRefSchema).min(1),
+});
+export const ObjectDeleteResultSchema = z.strictObject({ deleted: z.number().int() });

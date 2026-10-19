@@ -11,7 +11,7 @@ import {
   type TargetTestResult,
 } from '@ih/bridge-contract';
 import { S3ObjectStore, type ObjectStorePort, type S3StoreOptions } from '../s3/store.js';
-import { SinkError, type SinkPort } from './port.js';
+import { SinkError, type SinkPort, type TargetObjects, type TargetPlace } from './port.js';
 import { isDenied, isNetwork, probe } from './probe.js';
 
 export const S3_SINK_ID = 's3';
@@ -55,11 +55,7 @@ const DESCRIBE: SinkDescribe = {
   },
 };
 
-/** Where an S3 target writes: the connection's credential and the target's destination. */
-export interface S3Place {
-  credential: Record<string, string> | null;
-  destination: Record<string, string>;
-}
+type S3Place = TargetPlace;
 
 /**
  * The credential of the seeded `internal` connection: the bridge's own S3 settings. Only the
@@ -91,7 +87,7 @@ export function s3Error(err: unknown, bucket: string): BridgeError {
  * object keys stay exactly what CT Studio wrote before the bridge. A connection without keys
  * (the seeded `internal` one) uses the bridge's own S3 settings: the deployment's SeaweedFS.
  */
-export class S3Sink implements SinkPort {
+export class S3Sink implements SinkPort, TargetObjects {
   private readonly stores = new Map<string, ObjectStorePort>();
   private readonly make: (o: S3StoreOptions) => ObjectStorePort;
 

@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { loadBridgeConfig } from '../src/config.js';
+import { S3PackageStore } from '../src/packages/s3.js';
 import { buildFromConfig } from '../src/wiring.js';
 
 const config = loadBridgeConfig({
@@ -32,6 +33,15 @@ describe('buildFromConfig', () => {
   it('gives the loops the same repos the routes use', async () => {
     const built = await buildFromConfig(config, { pool: pool(async () => ({ rows: [] })) });
     expect(built.runner.deliveries).toBe(built.app.deps.deliveries);
+    expect(built.runner.packages).toBe(built.app.deps.packages);
+    expect(built.runner.credentials).toBe(built.app.deps.credentials);
+    expect(built.runner.connections).toBe(built.app.deps.connections);
     expect(built.runner).toMatchObject({ maxAttempts: 8, leaseSeconds: 300 });
+  });
+
+  it('registers the built-in s3 sink and stages packages in S3', async () => {
+    const built = await buildFromConfig(config, { pool: pool(async () => ({ rows: [] })) });
+    expect(built.app.deps.sinks.ids()).toEqual(['s3']);
+    expect(built.app.deps.packages).toBeInstanceOf(S3PackageStore);
   });
 });

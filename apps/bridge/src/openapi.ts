@@ -52,6 +52,10 @@ const OPENAPI = {
     { name: 'Health', description: 'Liveness and readiness, unsigned.' },
     { name: 'Deliveries', description: 'Packages delivered to targets.' },
     { name: 'Catalog', description: 'Sinks and targets the bridge knows.' },
+    {
+      name: 'Targets',
+      description: 'Targets kept by the producer, their object operations and Test connection.',
+    },
   ],
 };
 
@@ -60,7 +64,11 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
   const routes: string[] = [];
   app.addHook('onRoute', (route) => {
     for (const method of [route.method].flat()) {
-      routes.push(`${method} ${route.url.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`);
+      // `::` is a literal colon (`objects:read`); `:id(regex)` a constrained parameter.
+      const path = route.url
+        .replace(/(?<!:):([A-Za-z0-9_]+)(\([^)]*\))?/g, '{$1}')
+        .replaceAll('::', ':');
+      routes.push(`${method} ${path}`);
     }
   });
   app.decorate('registeredRoutes', () => [...routes]);

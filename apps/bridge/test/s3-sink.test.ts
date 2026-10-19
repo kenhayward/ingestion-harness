@@ -134,7 +134,10 @@ describe('S3Sink', () => {
 
   it('never falls back to the bridge’s own keys for a connection that merely lacks keys', async () => {
     const { sink, built } = sinkOver(new MemoryObjectStore());
-    for (const credential of [{}, { endpoint: 'https://s3.example.com', secretAccessKey: 's' }]) {
+    for (const credential of [
+      {} as Record<string, string>,
+      { endpoint: 'https://s3.example.com', secretAccessKey: 's' },
+    ]) {
       const error = await errorOf(
         sink.deliver(deliverRequest({ credential, destination: { bucket: 'pub' } })),
       );

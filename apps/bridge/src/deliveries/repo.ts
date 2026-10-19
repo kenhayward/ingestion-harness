@@ -85,6 +85,8 @@ export interface DeliveryRepo {
     exceptId: string,
   ): Promise<DeliveryRow | null>;
   getPackage(id: string): Promise<NewPackage | null>;
+  /** Whether any delivery names this target (which then cannot be removed). */
+  usesTarget(targetId: string): Promise<boolean>;
   /** Unsent events whose time has come, oldest first. */
   dueEvents(now: Date, limit: number): Promise<OutboxEvent[]>;
   markSent(eventId: string, now: Date): Promise<void>;
@@ -236,6 +238,10 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
 
   async getPackage(id: string): Promise<NewPackage | null> {
     return this.packages.get(id) ?? null;
+  }
+
+  async usesTarget(targetId: string): Promise<boolean> {
+    return [...this.deliveries.values()].some((d) => d.targetId === targetId);
   }
 
   async dueEvents(now: Date, limit: number): Promise<OutboxEvent[]> {

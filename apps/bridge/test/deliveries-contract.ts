@@ -221,5 +221,13 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       await repo.create(p, [delivery()], T0);
       expect(await repo.getPackage(p.id)).toMatchObject({ id: p.id, stagedKey: p.stagedKey });
     });
+
+    it('usesTarget says whether any delivery names the target', async () => {
+      const repo = await make();
+      expect(await repo.usesTarget('t1')).toBe(false);
+      await repo.create(pkg(), [delivery('t1')], T0);
+      expect(await repo.usesTarget('t1')).toBe(true);
+      expect(await repo.usesTarget('t2')).toBe(false);
+    });
   });
 }

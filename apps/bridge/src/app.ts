@@ -1,6 +1,8 @@
 import type { NonceStore } from '@ih/bridge-contract';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { BridgeConfig } from './config.js';
+import type { Credentials } from './connections/credential.js';
+import type { ConnectionRepo } from './connections/repo.js';
 import type { DeliveryRepo } from './deliveries/repo.js';
 import { registerGuard, requestIds } from './http/guard.js';
 import { registerOpenApi } from './openapi.js';
@@ -8,6 +10,7 @@ import { catalogRoutes } from './routes/catalog.js';
 import type { PackageStore } from './packages/store.js';
 import { deliveryRoutes } from './routes/deliveries.js';
 import { healthRoutes } from './routes/health.js';
+import { targetRoutes } from './routes/targets.js';
 import type { SinkRegistry } from './sinks/port.js';
 import type { TargetRepo } from './targets/repo.js';
 
@@ -21,6 +24,9 @@ export interface BridgeDeps {
   packages: PackageStore;
   targets: TargetRepo;
   sinks: SinkRegistry;
+  connections: ConnectionRepo;
+  /** Turns a target's connection into its sink's credential. */
+  credentials: Credentials;
   /** Whether the bridge can serve (its database answers). */
   ready: () => Promise<boolean>;
   /** Signature nonces seen inside the replay window. */
@@ -50,5 +56,6 @@ export async function buildBridge(deps: BridgeDeps): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(deliveryRoutes);
   await app.register(catalogRoutes);
+  await app.register(targetRoutes);
   return app;
 }

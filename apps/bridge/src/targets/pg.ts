@@ -45,4 +45,9 @@ export class PgTargetRepo implements TargetRepo {
       [t.id, t.label, t.sinkId, t.instanceId, t.connectionId, JSON.stringify(t.destination)],
     );
   }
+
+  async remove(id: string): Promise<boolean> {
+    const { rowCount } = await this.pool.query('DELETE FROM bridge.targets WHERE id = $1', [id]);
+    return (rowCount ?? 0) > 0;
+  }
 }

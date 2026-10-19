@@ -30,5 +30,13 @@ export function targetsContract(name: string, make: () => Promise<TargetRepo>): 
       expect(await repo.get('a')).toMatchObject({ label: 'Renamed', destination: { bucket: 'c' } });
       expect(await repo.list()).toHaveLength(1);
     });
+
+    it('remove deletes the target, and says when there was none', async () => {
+      const repo = await make();
+      await repo.put(target('a'));
+      expect(await repo.remove('a')).toBe(true);
+      expect(await repo.get('a')).toBeNull();
+      expect(await repo.remove('a')).toBe(false);
+    });
   });
 }

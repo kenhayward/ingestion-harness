@@ -5,8 +5,13 @@ import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
 import { MemoryPackageStore } from '../src/packages/store.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
+import { Credentials } from '../src/connections/credential.js';
+import { MemoryConnectionRepo } from '../src/connections/repo.js';
 
 export const KEY = 'k'.repeat(32);
+
+/** The connection secrets key of test bridges. */
+export const SECRETS = { current: Buffer.alloc(32, 3), previous: null };
 
 /** `app.inject` with the request signed by `key`. */
 export function signedInject(
@@ -26,6 +31,8 @@ export function signedInject(
 
 /** A bridge on in-memory fakes; `over` replaces any of them. */
 export async function testBridge(over: Partial<BridgeDeps> = {}): Promise<FastifyInstance> {
+  const targets = over.targets ?? new MemoryTargetRepo();
+  const connections = over.connections ?? new MemoryConnectionRepo(targets);
   return buildBridge({
     config: {
       BRIDGE_CLIENT_KEY: KEY,
@@ -34,7 +41,9 @@ export async function testBridge(over: Partial<BridgeDeps> = {}): Promise<Fastif
     },
     deliveries: new MemoryDeliveryRepo(),
     packages: new MemoryPackageStore(),
-    targets: new MemoryTargetRepo(),
+    targets,
+    connections,
+    credentials: new Credentials({ connections, secrets: SECRETS, env: {} }),
     sinks: new MapSinkRegistry({}),
     ready: async () => true,
     nonces: new MemoryNonceStore(),
