@@ -1132,3 +1132,16 @@ describe('http api: mapping memory', () => {
     ]);
   });
 });
+
+describe('http api: publishing targets', () => {
+  it("lists the bridge's shared connections for the target editor", async () => {
+    const api = createHttpApi('/api');
+    const connections = [
+      { id: 'finance-account', name: 'Finance account', status: 'ok', statusReason: null },
+    ];
+    const fetch = vi.fn(async () => respond(200, { connections }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await api.listSharedConnections()).toEqual(connections);
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe('/api/publish-targets/connections');
+  });
+});

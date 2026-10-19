@@ -54,18 +54,30 @@ export function targetInUse(u: TargetUsage): boolean {
   return u.publishedVersions > 0 || u.deliveredOutputs > 0 || u.consumers > 0 || u.pendingJobs > 0;
 }
 
+/** A connection id on the delivery bridge (where a target's credentials live). */
+export const ConnectionIdSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'a connection id');
+
+export const CONNECTION_STATUSES = ['ok', 'needs_attention', 'untested'] as const;
+
+/** A shared connection as the bridge shows it to CT Studio: never a credential. */
+export const TargetConnectionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(CONNECTION_STATUSES),
+  statusReason: z.string().nullable(),
+});
+export type TargetConnection = z.infer<typeof TargetConnectionSchema>;
+
 export const PublishTargetViewSchema = z.object({
   id: TargetIdSchema,
   label: z.string(),
   kind: z.enum(TARGET_KINDS),
   bucket: z.string(),
   prefix: z.string(),
-  endpoint: z.string().nullable(),
-  region: z.string().nullable(),
-  accessKeyId: z.string().nullable(),
-  secretSet: z.boolean(),
-  keysFromEnv: z.object({ accessKey: z.string(), secretKey: z.string() }).nullable(),
-  forcePathStyle: z.boolean(),
+  /** The bridge connection an external target delivers with (internal targets: null). */
+  connectionId: z.string().nullable(),
+  /** That connection as the bridge describes it now; null when there is none, or it is unknown. */
+  connection: TargetConnectionSchema.nullable(),
   sse: z.enum(SSE_MODES),
   kmsKeyId: z.string().nullable(),
   storageClass: z.string().nullable(),
@@ -91,16 +103,7 @@ const PrefixSchema = z
   .regex(/^[A-Za-z0-9!_.'()/-]*$/, "prefix may use letters, digits and ! _ . ' ( ) / - only")
   .refine((p) => !p.split('/').includes('..'), 'prefix must not contain a .. segment');
 
-const EXTERNAL_ONLY = [
-  'endpoint',
-  'region',
-  'accessKeyId',
-  'secretAccessKey',
-  'forcePathStyle',
-  'sse',
-  'kmsKeyId',
-  'storageClass',
-] as const;
+const EXTERNAL_ONLY = ['connectionId', 'sse', 'kmsKeyId', 'storageClass'] as const;
 
 /** A target's fields without defaults: patches and tests keep what they leave out. */
 const TARGET_FIELDS = {
@@ -109,11 +112,8 @@ const TARGET_FIELDS = {
   kind: z.enum(TARGET_KINDS),
   bucket: BucketSchema,
   prefix: PrefixSchema,
-  endpoint: z.string().url().optional(),
-  region: z.string().min(1).optional(),
-  accessKeyId: z.string().min(1).optional(),
-  secretAccessKey: z.string().min(1).optional(),
-  forcePathStyle: z.boolean(),
+  /** External targets: the bridge connection holding the credentials. */
+  connectionId: ConnectionIdSchema.optional(),
   sse: z.enum(SSE_MODES),
   kmsKeyId: z.string().min(1).optional(),
   storageClass: z.enum(STORAGE_CLASSES).optional(),
@@ -123,37 +123,40 @@ const TargetFieldsSchema = z
   .object({
     ...TARGET_FIELDS,
     prefix: TARGET_FIELDS.prefix.default(''),
-    forcePathStyle: TARGET_FIELDS.forcePathStyle.default(false),
     sse: TARGET_FIELDS.sse.default('none'),
   })
   .strict();
 
-export const TargetCreateBodySchema = TargetFieldsSchema.superRefine((b, ctx) => {
+/** The create rules, shared by a create and a test of unsaved settings. */
+function checkTarget(
+  b: Pick<z.infer<typeof TargetFieldsSchema>, 'kind' | (typeof EXTERNAL_ONLY)[number]>,
+  ctx: z.RefinementCtx,
+): void {
   const add = (message: string, path: string[] = []) =>
     ctx.addIssue({ code: 'custom', message, path });
   if (b.kind === 'internal') {
     const touched = EXTERNAL_ONLY.filter((k) => {
       const v = b[k];
-      return v !== undefined && v !== false && v !== 'none';
+      return v !== undefined && v !== 'none';
     });
     if (touched.length > 0) add('internal targets take only a bucket and prefix', [touched[0]!]);
     return;
   }
-  if (!b.region) add('an external target needs a region', ['region']);
-  if (!b.accessKeyId) add('an external target needs an access key id', ['accessKeyId']);
-  if (!b.secretAccessKey) add('an external target needs a secret access key', ['secretAccessKey']);
+  if (!b.connectionId) add('an external target needs a connection', ['connectionId']);
   if (b.kmsKeyId && b.sse !== 'aws:kms') add('a KMS key needs sse "aws:kms"', ['kmsKeyId']);
-});
+}
+
+/** No credential is ever accepted here: they live on the delivery bridge's connections page. */
+export const TargetCreateBodySchema = TargetFieldsSchema.superRefine(checkTarget);
 export type TargetCreateBody = z.infer<typeof TargetCreateBodySchema>;
 
-/** What `null` clears in a patch (or a test of a stored target). */
+/** What `null` clears in a patch. */
 const CLEARABLE = {
-  endpoint: z.string().url().nullable(),
   kmsKeyId: z.string().min(1).nullable(),
   storageClass: z.enum(STORAGE_CLASSES).nullable(),
 };
 
-/** Fields left out are kept; `null` clears the endpoint, KMS key or storage class. */
+/** Fields left out are kept; `null` clears the KMS key or storage class. */
 export const TargetPatchBodySchema = z
   .object(TARGET_FIELDS)
   .omit({ id: true, kind: true })
@@ -164,19 +167,15 @@ export const TargetPatchBodySchema = z
 export type TargetPatchBody = z.infer<typeof TargetPatchBodySchema>;
 
 /**
- * Test connection: an existing id tests its stored settings overlaid with the body; no id means
- * the body must be a full create body.
+ * Test connection: a saved target by its id alone, or settings not saved yet (a create body
+ * whose label may be left out).
  */
-export const TargetTestBodySchema = z
-  .object(TARGET_FIELDS)
-  .extend(CLEARABLE)
-  .partial()
-  .strict()
-  .superRefine((b, ctx) => {
-    if (b.id !== undefined) return;
-    const full = TargetCreateBodySchema.safeParse(b);
-    if (!full.success) full.error.issues.forEach((i) => ctx.addIssue({ ...i }));
-  });
+export const TargetTestBodySchema = z.union([
+  z.object({ id: TargetIdSchema }).strict(),
+  TargetFieldsSchema.extend({ label: TARGET_FIELDS.label.optional() })
+    .omit({ id: true })
+    .superRefine(checkTarget),
+]);
 export type TargetTestBody = z.infer<typeof TargetTestBodySchema>;
 
 export const TargetTestResultSchema = z.object({

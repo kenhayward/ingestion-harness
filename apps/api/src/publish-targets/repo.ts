@@ -8,17 +8,20 @@ import {
 } from '@ih/shared';
 import { seedDifferences, type DefaultSeed } from './seed.js';
 
-/** A stored target: the view's fields plus what is never sent out (the encrypted secret). */
-export interface TargetRecord extends Omit<
-  PublishTargetView,
-  'usage' | 'secretSet' | 'keysFromEnv'
-> {
+/**
+ * A stored target: the view's fields plus what is never sent out. The credential columns are
+ * what a target held before its keys moved to the delivery bridge (they are read once, by the
+ * move, and the ciphertext is then dropped); new targets name a bridge connection instead.
+ */
+export interface TargetRecord extends Omit<PublishTargetView, 'usage' | 'connection'> {
+  endpoint: string | null;
+  region: string | null;
+  accessKeyId: string | null;
+  forcePathStyle: boolean;
   secretKeyEnc: string | null;
   accessKeyEnv: string | null;
   secretKeyEnv: string | null;
   seededAt: string | null;
-  /** The bridge connection this target delivers with (internal targets: none stored). */
-  connectionId: string | null;
   /** When its keys moved to the bridge (then its ciphertext is gone). */
   movedToBridgeAt: string | null;
 }
@@ -40,6 +43,8 @@ export interface NewTarget {
   sse: 'none' | 'AES256' | 'aws:kms';
   kmsKeyId: string | null;
   storageClass: string | null;
+  /** The bridge connection an external target delivers with. */
+  connectionId?: string | null;
 }
 
 /** Fields left out are kept; `null` clears an optional one. `kind` and `id` never change. */
@@ -74,26 +79,23 @@ export const EMPTY_USAGE: TargetUsage = {
   pendingJobs: 0,
 };
 
+/** The view of a record: no credential, and the connection as the route finds it on the bridge. */
 export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
-  const {
-    secretKeyEnc,
-    accessKeyEnv,
-    secretKeyEnv,
-    seededAt: _seededAt,
-    connectionId: _connectionId,
-    movedToBridgeAt: _movedToBridgeAt,
-    ...rest
-  } = r;
-  void _seededAt;
-  void _connectionId;
-  void _movedToBridgeAt;
   return {
-    ...rest,
-    secretSet: secretKeyEnc !== null,
-    keysFromEnv:
-      accessKeyEnv !== null && secretKeyEnv !== null
-        ? { accessKey: accessKeyEnv, secretKey: secretKeyEnv }
-        : null,
+    id: r.id,
+    label: r.label,
+    kind: r.kind,
+    bucket: r.bucket,
+    prefix: r.prefix,
+    connectionId: r.connectionId,
+    connection: null,
+    sse: r.sse,
+    kmsKeyId: r.kmsKeyId,
+    storageClass: r.storageClass,
+    source: r.source,
+    editedAt: r.editedAt,
+    updatedBy: r.updatedBy,
+    createdAt: r.createdAt,
     usage,
   };
 }
@@ -103,7 +105,7 @@ export function recordFrom(input: NewTarget, by: string | null, now: Date): Targ
     ...input,
     source: 'ui',
     seededAt: null,
-    connectionId: null,
+    connectionId: input.connectionId ?? null,
     movedToBridgeAt: null,
     editedAt: null,
     updatedBy: by,

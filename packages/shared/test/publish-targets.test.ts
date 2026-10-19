@@ -41,9 +41,7 @@ describe('target bodies', () => {
     label: 'Lake',
     kind: 'external',
     bucket: 'my-lake',
-    region: 'eu-west-2',
-    accessKeyId: 'AKIA',
-    secretAccessKey: 'secret',
+    connectionId: 'finance-account',
   };
   it('accepts an internal and an external target, with defaults', () => {
     expect(
@@ -56,24 +54,36 @@ describe('target bodies', () => {
     });
     expect(TargetCreateBodySchema.parse(external)).toMatchObject({
       prefix: '',
-      forcePathStyle: false,
       sse: 'none',
+      connectionId: 'finance-account',
     });
   });
   it.each([
-    ['internal with a region', { label: 'x', kind: 'internal', bucket: 'pub', region: 'r' }],
-    ['external without a region', { ...external, region: undefined }],
+    [
+      'internal with a connection',
+      { label: 'x', kind: 'internal', bucket: 'pub', connectionId: 'c' },
+    ],
+    ['external without a connection', { ...external, connectionId: undefined }],
     ['kms key without aws:kms', { ...external, sse: 'AES256', kmsKeyId: 'k' }],
     ['bad bucket', { ...external, bucket: 'My_Bucket' }],
   ])('refuses %s', (_n, body) => {
     expect(TargetCreateBodySchema.safeParse(body).success).toBe(false);
   });
+  it.each(['secretAccessKey', 'accessKeyId', 'endpoint', 'region', 'forcePathStyle'])(
+    'refuses a credential field: %s (credentials live on the bridge)',
+    (field) => {
+      const value = field === 'forcePathStyle' ? true : field === 'endpoint' ? 'https://s3.x' : 'v';
+      expect(TargetCreateBodySchema.safeParse({ ...external, [field]: value }).success).toBe(false);
+      expect(TargetPatchBodySchema.safeParse({ [field]: value }).success).toBe(false);
+      expect(TargetTestBodySchema.safeParse({ ...external, [field]: value }).success).toBe(false);
+    },
+  );
   it('says why an internal target refuses external fields', () => {
     const r = TargetCreateBodySchema.safeParse({
       label: 'x',
       kind: 'internal',
       bucket: 'pub',
-      region: 'r',
+      connectionId: 'c',
     });
     expect(JSON.stringify(r.error?.issues)).toContain(
       'internal targets take only a bucket and prefix',
@@ -93,11 +103,14 @@ describe('target bodies', () => {
   it('adds no defaults to a one-field patch', () => {
     expect(TargetPatchBodySchema.parse({ label: 'x' })).toStrictEqual({ label: 'x' });
     expect(TargetPatchBodySchema.parse({ sse: 'AES256' })).toStrictEqual({ sse: 'AES256' });
+    expect(TargetPatchBodySchema.parse({ connectionId: 'c2' })).toStrictEqual({
+      connectionId: 'c2',
+    });
   });
-  it('clears the endpoint, KMS key and storage class with null, nothing else', () => {
-    const cleared = { endpoint: null, kmsKeyId: null, storageClass: null };
+  it('clears the KMS key and storage class with null, nothing else', () => {
+    const cleared = { kmsKeyId: null, storageClass: null };
     expect(TargetPatchBodySchema.parse(cleared)).toStrictEqual(cleared);
-    for (const field of ['label', 'bucket', 'prefix', 'region', 'sse', 'accessKeyId']) {
+    for (const field of ['label', 'bucket', 'prefix', 'sse', 'connectionId']) {
       expect([field, TargetPatchBodySchema.safeParse({ [field]: null }).success]).toEqual([
         field,
         false,
@@ -118,12 +131,13 @@ describe('target bodies', () => {
     expect(targetInUse({ ...none, deliveredOutputs: 1 })).toBe(true);
     expect(targetInUse({ ...none, publishedVersions: 1 })).toBe(true);
   });
-  it('test bodies: an id alone or with overrides, else a full create body', () => {
+  it('test bodies: an id alone, else full settings (no label needed)', () => {
     expect(TargetTestBodySchema.safeParse({ id: 'finance-lake' }).success).toBe(true);
-    expect(
-      TargetTestBodySchema.safeParse({ id: 'finance-lake', secretAccessKey: 'new' }).success,
-    ).toBe(true);
+    expect(TargetTestBodySchema.safeParse({ id: 'finance-lake', bucket: 'b' }).success).toBe(false);
     expect(TargetTestBodySchema.safeParse(external).success).toBe(true);
+    const { label: _l, ...unlabelled } = external;
+    void _l;
+    expect(TargetTestBodySchema.safeParse(unlabelled).success).toBe(true);
     expect(TargetTestBodySchema.safeParse({ bucket: 'my-lake' }).success).toBe(false);
   });
 });
@@ -135,7 +149,7 @@ describe('target prefix', () => {
     (prefix) => {
       expect(TargetCreateBodySchema.safeParse(body(prefix)).success).toBe(false);
       expect(TargetPatchBodySchema.safeParse({ prefix }).success).toBe(false);
-      expect(TargetTestBodySchema.safeParse({ ...body(prefix), id: 'x' }).success).toBe(false);
+      expect(TargetTestBodySchema.safeParse(body(prefix)).success).toBe(false);
     },
   );
   it('accepts ordinary prefixes, trimmed', () => {
