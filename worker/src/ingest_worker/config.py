@@ -27,13 +27,10 @@ class Settings:
     stale_lock_s: float
     #: Seconds between a running job's heartbeats (heartbeat.py); keep it well under stale_lock_s.
     heartbeat_s: float
-    #: Final target for published outputs (defaults: same S3 as the working buckets).
-    target_endpoint: str
-    target_region: str
-    target_access_key: str
-    target_secret_key: str
-    target_bucket: str
-    target_prefix: str
+    #: The delivery bridge publishing goes through (`BRIDGE_URL`), and the key that signs every
+    #: request to it (`BRIDGE_CLIENT_KEY`).
+    bridge_url: str
+    bridge_client_key: str
     #: Worked-example template.yaml shown to drafting models.
     example_template: Path
     #: Gotenberg converting Word (.docx) sources to PDF; None: Word documents need review.
@@ -49,7 +46,14 @@ class Settings:
     def from_env(cls, env: Mapping[str, str] = os.environ) -> Settings:
         missing = [
             k
-            for k in ("DATABASE_URL", "S3_ENDPOINT", "S3_ACCESS_KEY", "S3_SECRET_KEY")
+            for k in (
+                "DATABASE_URL",
+                "S3_ENDPOINT",
+                "S3_ACCESS_KEY",
+                "S3_SECRET_KEY",
+                "BRIDGE_URL",
+                "BRIDGE_CLIENT_KEY",
+            )
             if not env.get(k)
         ]
         if missing:
@@ -71,12 +75,8 @@ class Settings:
             discovery_interval_s=float(env.get("DISCOVERY_INTERVAL_S", "3600")),
             stale_lock_s=float(env.get("STALE_LOCK_S", "900")),
             heartbeat_s=float(env.get("HEARTBEAT_S", "60")),
-            target_endpoint=env.get("TARGET_S3_ENDPOINT") or env["S3_ENDPOINT"],
-            target_region=env.get("TARGET_S3_REGION") or env.get("S3_REGION", "us-east-1"),
-            target_access_key=env.get("TARGET_S3_ACCESS_KEY") or env["S3_ACCESS_KEY"],
-            target_secret_key=env.get("TARGET_S3_SECRET_KEY") or env["S3_SECRET_KEY"],
-            target_bucket=env.get("TARGET_S3_BUCKET", "ingest-published"),
-            target_prefix=env.get("TARGET_S3_PREFIX", ""),
+            bridge_url=env["BRIDGE_URL"],
+            bridge_client_key=env["BRIDGE_CLIENT_KEY"],
             example_template=Path(
                 env.get(
                     "WORKBENCH_EXAMPLE_TEMPLATE",

@@ -372,7 +372,7 @@ extractor, or a team's in-house classifier, plugs in as a node without being dep
 
 | Phase | Goal | Scope | Done when |
 | --- | --- | --- | --- |
-| 0 | Decide | ADR "capabilities as nodes" ([ADR 0017](../adr/0017-capabilities-as-nodes.md)); this document reviewed | ADR accepted |
+| 0 | Decide | ADR "capabilities as nodes" ([ADR 0018](../adr/0018-capabilities-as-nodes.md)); this document reviewed | ADR accepted |
 | 1 | Explicit nodes, no framework ([worker-nodes-refactor.md](worker-nodes-refactor.md)) | split `prepare_document`; steps return values instead of mutating dicts; outcomes as values; `NodeSpec` + registry for built-ins | `npm run check` green, behaviour unchanged |
 | 2 | LangGraph spike ([langgraph-trial.md](langgraph-trial.md)) | `process` executed by a `StateGraph` behind a flag; Postgres checkpointer; cancel and heartbeat wrappers; resume after a killed worker | regression suite equivalent; resume skips finished steps; cancel still wins |
 | 3 | Plugins | recipe `uses:` steps; node catalogue in the API and recipe editor; first plugin (type detection or table detection) | a plugin step runs in a published recipe, pinned by version |

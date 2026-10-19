@@ -6,6 +6,7 @@
  "queue": {
   "awaiting": [],
   "completed": [],
+  "delivering": [],
   "drafts": [],
   "events": [
    [
@@ -30,6 +31,7 @@
   ],
   "failed": [],
   "published": [],
+  "published_deliveries": [],
   "reviewed": [
    [
     "job-1",

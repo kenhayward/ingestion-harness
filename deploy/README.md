@@ -1,6 +1,6 @@
 # Deploy
 
-Docker Compose deployment of `app` / `api` / `worker` on Postgres + SeaweedFS.
+Docker Compose deployment of `app` / `api` / `worker` / `bridge` on Postgres + SeaweedFS.
 
 ```
 deploy/
@@ -80,6 +80,48 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 | `SEAWEEDFS_MASTER_PORT` (9334) | SeaweedFS master UI (unauthenticated) | `127.0.0.1` (set `SEAWEEDFS_MASTER_BIND`) |
 | 8888 | SeaweedFS filer UI | dev overlay only, `127.0.0.1` |
 | `CONVERTER_PORT` (3010) | Word converter (Gotenberg) | dev overlay only, `127.0.0.1` |
+| 3100 | Delivery bridge | none: compose network only; browsers reach `/bridge/connections` through nginx |
+
+## Delivery bridge ([ADR 0017](../docs/adr/0017-delivery-bridge.md))
+
+Every publication goes through the `bridge` service: the worker hands it one package per
+document, the bridge writes the files to the target (S3 built in, at the same keys as before) and
+reports each delivery back to the API. It keeps the credentials for external publishing targets;
+CT Studio no longer stores them. `deploy.sh` runs its migrations (`migrate-bridge`, schema
+`bridge` in the same Postgres) before starting it.
+
+**Two keys, both required** (`openssl rand -base64 32` each):
+
+- `BRIDGE_CLIENT_KEY` signs every request between CT Studio (api, worker) and the bridge.
+- `BRIDGE_SECRETS_KEY` encrypts the credentials kept on the bridge. Store it with
+  `LLM_SECRETS_KEY`, away from this server: a restore needs both. To rotate, move the old value to
+  `BRIDGE_SECRETS_KEY_PREVIOUS`, set a new one and redeploy; connections saved again are
+  re-encrypted under the new key.
+
+**The connections page.** Admins add, test and rotate S3 credentials on the bridge's own page
+(Administration > Published outputs > *Manage connections*, which opens it in a new tab with a
+one-time link). Browsers reach it in one of two ways; set `BRIDGE_PUBLIC_URL` to match:
+
+- **Under this app** (default, blank `BRIDGE_PUBLIC_URL` = `http://localhost:APP_PORT/bridge`):
+  nginx forwards only `/bridge/connections` to the bridge. Behind NPM, set
+  `BRIDGE_PUBLIC_URL=https://ct.example.com/bridge`.
+- **Its own origin** (stronger: the page's cookie and scripts are kept apart from the app's):
+  an NPM proxy host such as `connections.example.com`, with NPM on the stack's Docker network,
+  forwarding to `http://bridge:3100` with a custom location for `/connections` only (and
+  `location / { return 404; }`), then `BRIDGE_PUBLIC_URL=https://connections.example.com`. Never
+  expose the rest of the bridge: its API is for CT Studio only.
+
+The page's session cookie is `Secure`; set `BRIDGE_COOKIE_SECURE=false` only for plain HTTP away
+from localhost. Packages are staged in `BRIDGE_STAGING_BUCKET` (default `ingest-bridge`) and
+deleted once every delivery of them is final and they are older than
+`BRIDGE_PACKAGE_RETENTION_DAYS`.
+
+**After upgrading:** on first start the API moves each external target's keys to the bridge as the
+connection `target-<id>` (named after the target) and clears them from CT Studio. Find and rotate
+them under *Manage connections*. A target whose keys couldn't be moved (for example,
+`LLM_SECRETS_KEY` was missing) logs a warning and its deliveries fail with `credential_missing`
+until you pick or add a connection for it. Older outputs are read and withdrawn through the bridge
+at the keys they were written to.
 
 ## Remote access (NGINX Proxy Manager)
 

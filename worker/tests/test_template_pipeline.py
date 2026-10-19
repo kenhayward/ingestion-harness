@@ -23,7 +23,14 @@ from ingest_worker.rdf import CT
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
 
-from .fakes import FakeProvider, FakeQueue, FakeTargets, MemoryLinkedDataSettings
+from .fakes import (
+    BucketView,
+    FakeBridge,
+    FakeProvider,
+    FakeQueue,
+    FakeTargets,
+    MemoryLinkedDataSettings,
+)
 
 TEMPLATE = {
     "id": "demo",
@@ -91,7 +98,18 @@ RESPONSES = [
     {"rows": [{"batch": "G2", "value": "Complies", "aliases": ["G-2"]}]},
 ]
 
-JOB = ClaimedJob("job-1", "doc-1", "demo", 1, "inbox", "demo/v1/doc-1.pdf", None, 1, 3)
+JOB = ClaimedJob(
+    "job-1",
+    "doc-1",
+    "demo",
+    1,
+    "inbox",
+    "demo/v1/doc-1.pdf",
+    None,
+    1,
+    3,
+    source_sha256=hashlib.sha256(b"%PDF").hexdigest(),
+)
 
 
 @pytest.fixture
@@ -129,7 +147,7 @@ def read_csv(store: MemoryObjectStore, key: str) -> list[dict[str, str]]:
 def test_job_completes_with_one_call_per_step_and_chunk(run) -> None:  # type: ignore[no-untyped-def]
     provider, _, queue = run
     # the 'Complies' normalisation issue means the draft waits for review (see test_review.py)
-    assert queue.awaiting and not queue.completed, queue.reviewed or queue.failed
+    assert queue.awaiting and not queue.finished, queue.reviewed or queue.failed
     assert len(provider.calls) == 4
 
 
@@ -284,11 +302,11 @@ BASE_IRI = "https://data.acme.example/"
 
 def mapped_deps(
     tmp_path: Path, template: dict[str, Any], base: str | None
-) -> tuple[PipelineDeps, MemoryObjectStore]:
+) -> tuple[PipelineDeps, FakeBridge]:
     directory = tmp_path / "demo" / "v1"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "template.yaml").write_text(yaml.safe_dump(template), encoding="utf-8")
-    store, target = MemoryObjectStore(), MemoryObjectStore()
+    store, target = MemoryObjectStore(), FakeBridge({"default": ("published", "pvp/")})
     store.put("inbox", JOB.object_key, b"%PDF", "application/pdf")
     deps = PipelineDeps(
         store=store,
@@ -300,7 +318,8 @@ def mapped_deps(
         ),
         extract_text=lambda _pdf: PAGES,
         buckets=Buckets("inbox", "outputs", "runs"),
-        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
+        targets=FakeTargets({"default": Target("default", "published", "pvp/")}),
+        bridge=target,
         linked_data=MemoryLinkedDataSettings(base),
     )
     return deps, target
@@ -308,7 +327,7 @@ def mapped_deps(
 
 def run_mapped(
     tmp_path: Path, template: dict[str, Any], base: str | None
-) -> tuple[MemoryObjectStore, MemoryObjectStore, FakeQueue]:
+) -> tuple[MemoryObjectStore, FakeBridge, FakeQueue]:
     deps, target = mapped_deps(tmp_path, template, base)
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, deps, "w1")
@@ -316,7 +335,7 @@ def run_mapped(
     return deps.store, target, queue
 
 
-def has(store: MemoryObjectStore, bucket: str, key: str) -> bool:
+def has(store: MemoryObjectStore | FakeBridge | BucketView, bucket: str, key: str) -> bool:
     return (bucket, key) in store.objects
 
 
@@ -339,7 +358,7 @@ def test_without_a_base_the_graph_is_skipped(tmp_path: Path) -> None:
     store, _, queue = run_mapped(tmp_path, mapped(), None)
     assert not has(store, "outputs", GRAPH_KEY)
     assert any(e[2].startswith("graph skipped") for e in queue.events)
-    assert queue.completed
+    assert queue.finished
 
 
 def test_delivery_formats_choose_what_is_published(tmp_path: Path) -> None:
@@ -375,7 +394,7 @@ BAD_BASE = "https://data.acme.example/my ids/"  # a space: rdflib cannot seriali
 
 def test_a_graph_that_cannot_be_rendered_leaves_csv_and_json_delivered(tmp_path: Path) -> None:
     store, target, queue = run_mapped(tmp_path, mapped(), BAD_BASE)
-    assert queue.completed and not queue.reviewed and not queue.failed
+    assert queue.finished and not queue.reviewed and not queue.failed
     assert not has(store, "outputs", GRAPH_KEY)
     assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
     assert any(e[2].startswith("graph failed") for e in queue.events)
@@ -391,7 +410,7 @@ def test_a_delivered_graph_that_cannot_be_rendered_goes_to_review(tmp_path: Path
 def test_a_document_iri_template_that_names_nothing_is_a_graph_failure(tmp_path: Path) -> None:
     semantics = {**SEMANTICS, "document": {"class": "ex:Protocol", "iri": "p/{protocol}"}}
     store, _, queue = run_mapped(tmp_path, mapped(semantics=semantics), BASE_IRI)
-    assert queue.completed and not has(store, "outputs", GRAPH_KEY)
+    assert queue.finished and not has(store, "outputs", GRAPH_KEY)
     assert any(e[2].startswith("graph failed") for e in queue.events)
 
 
@@ -399,7 +418,7 @@ def test_rdf_only_delivery_without_a_base_goes_to_review(tmp_path: Path) -> None
     _, target, queue = run_mapped(tmp_path, mapped(delivery={"formats": ["rdf"]}), None)
     [(_, reason)] = queue.reviewed
     assert "set the customer under Administration > Linked data" in reason
-    assert not target.objects and not queue.completed
+    assert not target.objects and not queue.finished
 
 
 ENTITY = {
@@ -444,7 +463,7 @@ def test_approval_publishes_the_graph_of_the_reviewed_document(tmp_path: Path) -
     }
     run_once(queue, deps, "w1")
 
-    assert queue.completed
+    assert queue.finished
     [(_, published, _)] = queue.published
     assert {o.format for o in published} == {"json", "rdf"}
     assert not has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
@@ -472,7 +491,7 @@ def test_approving_an_old_draft_without_a_mapping_never_reads_the_inbox(tmp_path
     store.delete("inbox", JOB.object_key)
     queue.jobs = [replace(JOB, task="publish")]
     run_once(queue, deps, "w1")
-    assert queue.completed and not queue.failed
+    assert queue.finished and not queue.failed
     assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
 
 
@@ -517,7 +536,7 @@ def test_without_a_graph_nothing_is_validated(tmp_path: Path) -> None:
     deps, _ = mapped_deps(tmp_path, mapped(semantics=SHAPED), None)
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, with_shapes(deps), "w1")
-    assert queue.completed and not queue.awaiting
+    assert queue.finished and not queue.awaiting
     assert ("runs", "job-1/shacl-report.json") not in deps.store.objects  # type: ignore[attr-defined]
 
 
@@ -529,9 +548,7 @@ def test_missing_shapes_send_the_job_to_review(tmp_path: Path) -> None:
     assert "ex-shapes v1 is not available" in reason
 
 
-def shaped_review(
-    tmp_path: Path, formats: list[str]
-) -> tuple[PipelineDeps, MemoryObjectStore, FakeQueue]:
+def shaped_review(tmp_path: Path, formats: list[str]) -> tuple[PipelineDeps, FakeBridge, FakeQueue]:
     template = {
         **TEMPLATE,
         "review": {"required": "always"},
@@ -563,7 +580,7 @@ def test_a_publish_that_delivers_rdf_is_refused_while_the_graph_violates_shapes(
 ) -> None:
     deps, target, queue = shaped_review(tmp_path, ["json", "rdf"])
     run_once(queue, deps, "w1")
-    assert not queue.completed and not queue.published and not target.objects
+    assert not queue.finished and not queue.published and not target.objects
     (_, outputs, reasons) = queue.awaiting[-1]
     assert len(queue.awaiting) == 2 and outputs == []
     assert "SHACL: ProtocolShape on product: a product code is short" in reasons
@@ -574,14 +591,14 @@ def test_after_an_edit_that_fixes_the_value_the_publish_goes_through(tmp_path: P
     deps, target, queue = shaped_review(tmp_path, ["json", "rdf"])
     queue.edits["job-1"] = [product_edit("Rich")]
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert has(target, "published", "pvp/" + GRAPH_KEY)
 
 
 def test_without_rdf_delivered_a_violation_never_stops_the_publish(tmp_path: Path) -> None:
     deps, target, queue = shaped_review(tmp_path, ["csv", "json"])
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
     assert any(e[2] == "graph violates shapes" for e in queue.events)
 
@@ -620,7 +637,7 @@ def test_a_publish_without_rdf_needs_no_shapes_file(tmp_path: Path) -> None:
     deps, target, queue = shaped_review(tmp_path, ["csv", "json"])
     del deps.store.objects[("runs", ontology_normalized_key("ex-shapes", 1))]  # type: ignore[attr-defined]
     run_once(queue, deps, "w1")
-    assert queue.completed and not queue.reviewed
+    assert queue.finished and not queue.reviewed
     assert has(target, "published", "pvp/demo/v1/fields/doc-1.csv")
 
 
@@ -635,7 +652,7 @@ def to_publish(
     formats: list[str] | None = None,
     store: bool = True,
     semantics: dict[str, Any] | None = None,
-) -> tuple[PipelineDeps, MemoryObjectStore, FakeQueue]:
+) -> tuple[PipelineDeps, FakeBridge, FakeQueue]:
     """A reviewed job of a mapped recipe, about to be published (registry, optional store)."""
     from ingest_worker.graph_registry import MemoryGraphRegistry
 
@@ -673,7 +690,7 @@ def graph_event(queue: FakeQueue) -> dict[str, Any]:
 def test_a_publish_puts_the_versioned_graph_into_the_store(tmp_path: Path) -> None:
     deps, target, queue = to_publish(tmp_path)
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     store = deps.graph_store
     [(method, graph, body, ctype)] = store.requests  # type: ignore[union-attr]
     assert (method, graph, ctype) == ("PUT", GRAPH_IRI, "text/turtle")
@@ -713,7 +730,7 @@ def test_publishing_the_same_file_again_is_the_next_version_of_its_graph(tmp_pat
 def test_without_a_store_the_version_is_still_recorded(tmp_path: Path) -> None:
     deps, target, queue = to_publish(tmp_path, store=False)
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
     assert graph_event(queue)["endpoint"] is False
 
@@ -721,17 +738,17 @@ def test_without_a_store_the_version_is_still_recorded(tmp_path: Path) -> None:
 def test_a_recipe_not_delivering_rdf_publishes_no_graph(tmp_path: Path) -> None:
     deps, target, queue = to_publish(tmp_path, formats=["csv", "json"])
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert deps.graph_store.requests == []  # type: ignore[union-attr]
     assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
-    assert not any(k.startswith("pvp/graphs/") for _, k in target.objects)  # type: ignore[attr-defined]
+    assert not any(k.startswith("pvp/graphs/") for _, k in target.objects)
 
 
 def test_an_approved_test_run_never_touches_the_store(tmp_path: Path) -> None:
     deps, _, queue = to_publish(tmp_path)
     queue.jobs = [replace(JOB, task="publish", test=True)]
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     assert deps.graph_store.requests == []  # type: ignore[union-attr]
     assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
 
@@ -793,7 +810,7 @@ def test_a_document_delivered_without_review_publishes_its_graph(tmp_path: Path)
     deps = replace(deps, graph_registry=MemoryGraphRegistry(), graph_store=FakeGraphStore())
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, deps, "w1")
-    assert queue.completed and not queue.awaiting
+    assert queue.finished and not queue.awaiting
     assert [r[1] for r in deps.graph_store.requests] == [GRAPH_IRI]  # type: ignore[union-attr]
     assert has(target, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
     assert graph_event(queue)["version"] == 1
@@ -817,18 +834,19 @@ def test_delivered_outputs_are_recorded_even_when_the_store_then_fails(tmp_path:
 
 def finance_deps(
     tmp_path: Path, template: dict[str, Any]
-) -> tuple[PipelineDeps, MemoryObjectStore, MemoryObjectStore, FakeQueue]:
+) -> tuple[PipelineDeps, BucketView, BucketView, FakeQueue]:
     """v1 of `template` (no publishTo) as a file; v2, naming finance-lake, in the database."""
     from ingest_worker.graph_registry import MemoryGraphRegistry
 
     from .fakes import FakeGraphStore
 
-    deps, default = mapped_deps(tmp_path, template, BASE_IRI)
-    finance = MemoryObjectStore()
+    deps, bridge = mapped_deps(tmp_path, template, BASE_IRI)
+    bridge.targets["finance-lake"] = ("finance", "fin/")
+    default, finance = BucketView(bridge, "published"), BucketView(bridge, "finance")
     targets = FakeTargets(
         {
-            "default": Target(store=default, bucket="published", prefix="pvp/"),
-            "finance-lake": Target(finance, "finance", "fin/", "finance-lake"),
+            "default": Target("default", "published", "pvp/"),
+            "finance-lake": Target("finance-lake", "finance", "fin/"),
         }
     )
     deps = replace(
@@ -860,7 +878,7 @@ def test_a_version_naming_a_target_delivers_its_outputs_and_graph_there(tmp_path
     queue.jobs = [V2]
     deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
     run_once(queue, deps, "w1")
-    assert queue.completed, queue.reviewed or queue.failed
+    assert queue.finished, queue.reviewed or queue.failed
     [(_, published, target_id)] = queue.published
     assert target_id == "finance-lake"
     assert all(o.key.startswith("fin/demo/v2/") for o in published)
@@ -892,7 +910,7 @@ def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: 
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
     assert reason == "no publishing target finance-lake"
-    assert not queue.published and not queue.completed
+    assert not queue.published and not queue.finished
     assert not default.objects and not finance.objects
     assert deps.graph_registry.all_current() == []  # type: ignore[union-attr]
     provider = deps.models._providers["local"]
@@ -925,7 +943,7 @@ def test_an_approval_delivers_to_the_jobs_version_target(tmp_path: Path) -> None
     run_once(queue, deps, "w1")
     queue.jobs = [replace(V2, task="publish")]
     run_once(queue, deps, "w1")
-    assert queue.completed
+    assert queue.finished
     [(_, _, target_id)] = queue.published
     assert target_id == "finance-lake"
     assert has(finance, "finance", f"fin/graphs/{SOURCE_SHA}/demo/v1.ttl")
@@ -938,7 +956,7 @@ def test_a_draft_test_run_never_touches_a_target(tmp_path: Path) -> None:
     queue.jobs = [replace(V2, test=True)]
     deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
     run_once(queue, deps, "w1")
-    assert queue.completed and not queue.published
+    assert queue.finished and not queue.published
     reviewed = {**DELIVERED_TEMPLATE, "review": {"required": "always"}}
     queue.templates[("demo", 2)] = {**reviewed, "version": 2}
     queue.jobs = [replace(V2, test=True, task="publish")]
@@ -951,7 +969,7 @@ def test_a_legacy_spec_always_delivers_to_the_default(specs_dir: Path) -> None:
     from ingest_worker.pipeline import target_for
 
     legacy = load_specs(specs_dir).get("process-validation-protocol", 2)
-    default = Target(MemoryObjectStore(), "published")
+    default = Target("default", "published")
     targets = FakeTargets({"default": default})
     deps = PipelineDeps(
         store=MemoryObjectStore(),
@@ -963,3 +981,86 @@ def test_a_legacy_spec_always_delivers_to_the_default(specs_dir: Path) -> None:
     )
     assert target_for(deps, legacy) is default
     assert target_for(replace(deps, targets=None), legacy) is None
+
+
+# --- delivery through the bridge (delivery bridge phase 2) --------------------------------------
+
+
+def test_an_auto_published_job_is_handed_to_the_bridge_at_todays_keys(tmp_path: Path) -> None:
+    template = {**TEMPLATE, "review": {"required": "never"}}
+    _, bridge, queue = run_mapped(tmp_path, template, BASE_IRI)
+    [request] = bridge.requests
+    assert request.targets == ["default"]
+    [(job_id, outputs, deliveries)] = queue.handed_over
+    [(_, published, _)] = queue.published
+    # Each file's key, under the target's prefix, is the key publishing wrote before the bridge.
+    expected = {"pvp/" + o.key for o in outputs if o.format in ("csv", "json")}
+    assert {"pvp/" + f.name for f in request.package.files} == expected
+    assert {o.key for o in published} == expected
+    assert "pvp/demo/v1/fields/doc-1.csv" in expected
+    assert has(bridge, "published", "pvp/demo/v1/fields/doc-1.csv")
+    assert not queue.completed
+    assert job_id == "job-1" and outputs
+    [(target_id, delivery_id)] = deliveries
+    assert target_id == "default"
+    assert queue.published_deliveries == [("job-1", "default", delivery_id)]
+
+
+def test_a_refused_delivery_sends_the_job_to_review_with_the_bridges_message(
+    tmp_path: Path,
+) -> None:
+    from ingest_worker.bridge.models import BridgeError
+
+    template = {**TEMPLATE, "review": {"required": "never"}}
+    deps, bridge = mapped_deps(tmp_path, template, BASE_IRI)
+    bridge.refusals = [
+        BridgeError(class_="needs_user", code="target_missing", message="no target default")
+    ]
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    assert queue.reviewed == [("job-1", "no target default")]
+    assert not queue.published and not queue.handed_over and not bridge.objects
+
+
+def test_connection_refused_is_retryable_and_records_nothing(tmp_path: Path) -> None:
+    from ingest_worker.bridge.client import BridgeUnavailable
+
+    template = {**TEMPLATE, "review": {"required": "never"}}
+    deps, bridge = mapped_deps(tmp_path, template, BASE_IRI)
+    bridge.refusals = [BridgeUnavailable("the bridge could not be reached: connection refused")]
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    assert queue.published == [] and not queue.handed_over and not queue.reviewed
+    [(_, error)] = queue.failed
+    assert "BridgeUnavailable" in error
+
+
+def test_the_graph_copy_goes_through_put_object_at_todays_key(tmp_path: Path) -> None:
+    deps, bridge, queue = to_publish(tmp_path)
+    run_once(queue, deps, "w1")
+    assert ("default", "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl") in bridge.puts
+    assert has(bridge, "published", f"pvp/graphs/{SOURCE_SHA}/demo/v1.ttl")
+
+
+def test_auto_published_jobs_act_as_the_uploader_reviewed_ones_as_the_reviewer(
+    tmp_path: Path,
+) -> None:
+    from ingest_worker.bridge.models import ActingUser
+
+    uploader = ActingUser(id="u-up", name="Uma", email=None)
+    reviewer = ActingUser(id="u-rev", name="kh", email="kh@example.com")
+    auto = {**TEMPLATE, "review": {"required": "never"}}
+    deps, bridge = mapped_deps(tmp_path, auto, BASE_IRI)
+    queue = FakeQueue(jobs=[JOB], uploaders={"job-1": uploader})
+    run_once(queue, deps, "w1")
+    assert bridge.requests[-1].acting_user == uploader
+    assert bridge.requests[-1].package.provenance is not None
+    assert bridge.requests[-1].package.provenance.approver is None
+
+    deps, bridge, queue = to_publish(tmp_path / "reviewed")
+    queue.uploaders["job-1"] = uploader
+    queue.reviewers["job-1"] = reviewer
+    run_once(queue, deps, "w1")
+    assert bridge.requests[-1].acting_user == reviewer
+    assert bridge.requests[-1].package.provenance is not None
+    assert bridge.requests[-1].package.provenance.approver == reviewer

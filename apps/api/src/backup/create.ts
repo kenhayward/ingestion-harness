@@ -30,12 +30,13 @@ export const backupFileKey = (id: string): string => `${id}.ctbak`;
 export async function internalTargetBuckets(
   targets: Pick<PublishTargetRepo, 'list'>,
   own: string[],
+  /** More buckets of this deployment's storage to keep (the bridge's package staging bucket). */
+  extra: string[] = [],
 ): Promise<string[]> {
   const out: string[] = [];
-  for (const t of await targets.list()) {
-    if (t.kind === 'internal' && !own.includes(t.bucket) && !out.includes(t.bucket)) {
-      out.push(t.bucket);
-    }
+  const internal = (await targets.list()).filter((t) => t.kind === 'internal').map((t) => t.bucket);
+  for (const bucket of [...internal, ...extra]) {
+    if (!own.includes(bucket) && !out.includes(bucket)) out.push(bucket);
   }
   return out;
 }

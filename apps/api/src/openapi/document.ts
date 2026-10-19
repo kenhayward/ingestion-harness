@@ -114,6 +114,11 @@ export const TAGS = {
     records its target, so it is read and withdrawn there whatever changes later. A target in
     use keeps its bucket, prefix, endpoint and region.
   `,
+  Bridge: md`
+    The delivery bridge publishing goes through: a link to its connections page (where
+    credentials are kept, never in CT Studio), and the routes the bridge calls back, signed with
+    the shared \`BRIDGE_CLIENT_KEY\` rather than a session.
+  `,
   GitHub: md`
     Syncing transformation recipes with a GitHub repository: this deployment's instance name
     and default folder, a document type's repository link, and pushing a published version
@@ -159,6 +164,7 @@ export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
       'Users',
       'Data-lake S3 keys',
       'Published outputs',
+      'Bridge',
       'Linked data',
       'GitHub',
       'Backup',

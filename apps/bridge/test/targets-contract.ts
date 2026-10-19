@@ -6,6 +6,7 @@ const target = (id: string, over: Partial<Target> = {}): Target => ({
   label: `Target ${id}`,
   sinkId: 'fake',
   instanceId: null,
+  connectionId: null,
   destination: { bucket: 'b', prefix: 'out/' },
   ...over,
 });
@@ -28,6 +29,14 @@ export function targetsContract(name: string, make: () => Promise<TargetRepo>): 
       await repo.put(target('a', { label: 'Renamed', destination: { bucket: 'c' } }));
       expect(await repo.get('a')).toMatchObject({ label: 'Renamed', destination: { bucket: 'c' } });
       expect(await repo.list()).toHaveLength(1);
+    });
+
+    it('remove deletes the target, and says when there was none', async () => {
+      const repo = await make();
+      await repo.put(target('a'));
+      expect(await repo.remove('a')).toBe(true);
+      expect(await repo.get('a')).toBeNull();
+      expect(await repo.remove('a')).toBe(false);
     });
   });
 }

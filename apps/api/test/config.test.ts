@@ -6,6 +6,9 @@ const base = {
   S3_ENDPOINT: 'http://localhost:8333',
   S3_ACCESS_KEY: 'k',
   S3_SECRET_KEY: 's',
+  BRIDGE_URL: 'http://bridge:3100',
+  BRIDGE_CLIENT_KEY: 'k'.repeat(32),
+  BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
 };
 
 describe('githubConfig', () => {
@@ -172,6 +175,19 @@ describe('backup settings', () => {
       dataset: 'acme',
       user: 'ct-writer',
       password: 'pw',
+    });
+  });
+});
+
+describe('the delivery bridge', () => {
+  it('needs BRIDGE_URL and a BRIDGE_CLIENT_KEY of 32 characters or more', () => {
+    const { BRIDGE_URL: _u, ...noUrl } = base;
+    void _u;
+    expect(() => loadConfig(noUrl)).toThrow(/BRIDGE_URL/);
+    expect(() => loadConfig({ ...base, BRIDGE_CLIENT_KEY: 'short' })).toThrow(/BRIDGE_CLIENT_KEY/);
+    expect(loadConfig(base)).toMatchObject({
+      BRIDGE_URL: 'http://bridge:3100',
+      BRIDGE_CLIENT_KEY: 'k'.repeat(32),
     });
   });
 });

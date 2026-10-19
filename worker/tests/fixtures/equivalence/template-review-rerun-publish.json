@@ -450,10 +450,17 @@
     ]
    ]
   ],
-  "completed": [
+  "completed": [],
+  "delivering": [
    [
     "job-1",
-    []
+    [],
+    [
+     [
+      "default",
+      "00000000-0000-4000-8000-000000000002"
+     ]
+    ]
    ]
   ],
   "drafts": [
@@ -674,6 +681,13 @@
      "rdf:pvp/demo/v1/graph/doc-1.ttl"
     ],
     "default"
+   ]
+  ],
+  "published_deliveries": [
+   [
+    "job-1",
+    "default",
+    "00000000-0000-4000-8000-000000000002"
    ]
   ],
   "reviewed": [],

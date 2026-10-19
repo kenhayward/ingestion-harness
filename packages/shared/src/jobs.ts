@@ -15,6 +15,8 @@ export const JOB_STATUSES = [
   'awaiting_review',
   'rejected',
   'cancelled',
+  /** Handed to the delivery bridge: waiting for every delivery to finish. */
+  'delivering',
 ] as const;
 export const JobStatusSchema = z.enum(JOB_STATUSES);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
@@ -317,6 +319,17 @@ export const StageTimesSchema = z.object({
 });
 export type StageTimes = z.infer<typeof StageTimesSchema>;
 
+/** One delivery of a job through the delivery bridge, as its events last reported it. */
+export const JobDeliveryViewSchema = z.object({
+  targetId: z.string(),
+  /** The target's label (its id when the target is gone). */
+  label: z.string(),
+  status: z.enum(['queued', 'running', 'waiting', 'succeeded', 'skipped', 'needs_user', 'failed']),
+  /** What went wrong, in the bridge's words; null when nothing did. */
+  message: z.string().nullable(),
+});
+export type JobDeliveryView = z.infer<typeof JobDeliveryViewSchema>;
+
 export const JobDetailSchema = JobSummarySchema.extend({
   outputs: z.array(JobOutputSchema),
   /** `GET /api/jobs/:id` only: the newest graph this job published (ADR 0011), else null. */
@@ -325,6 +338,8 @@ export const JobDetailSchema = JobSummarySchema.extend({
   progress: JobProgressSchema.nullable().optional(),
   /** `GET /api/jobs/:id` only: when this attempt finished reading and segmenting. */
   stageTimes: StageTimesSchema.optional(),
+  /** `GET /api/jobs/:id` only: its deliveries through the bridge (none before it delivers). */
+  deliveries: z.array(JobDeliveryViewSchema).optional(),
 });
 export type JobDetail = z.infer<typeof JobDetailSchema>;
 

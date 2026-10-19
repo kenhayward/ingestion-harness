@@ -1,4 +1,4 @@
-# 0017: Capabilities as nodes, and LangGraph as an optional executor
+# 0018: Capabilities as nodes, and LangGraph as an optional executor
 
 **Status:** accepted · 2026-10-19. The node contract is in use. The LangGraph executor is a
 trial, off by default; the thread prune below is built (`step_graph.ThreadPruner`).
@@ -49,8 +49,9 @@ This ADR records what both settled.
   a cancelled job still stops at the next step (ADR 0005).
 - **Outcomes are values.**
   - A task's handler (`main.TASKS`, which covers exactly the tasks `jobs_task_check` allows)
-    returns `Complete`, `AwaitReview` or `Deliver`.
-  - `apply_outcome` alone writes the job's status and an unreviewed delivery.
+    returns `Complete`, `AwaitReview`, `Deliver` or `Delivering`.
+  - `apply_outcome` alone writes the job's status and hands an unreviewed delivery to the
+    delivery bridge ([ADR 0017](0017-delivery-bridge.md)).
   - `GraphDelivery` is data, not a closure.
   - Errors still raise at the edges and are mapped in one place (`DocumentError` →
     `needs_review`, `JobCancelled`, any other exception → retry).

@@ -7,6 +7,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@ih/shared': fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url)),
+      '@ih/bridge-contract': fileURLToPath(
+        new URL('../../packages/bridge-contract/src/index.ts', import.meta.url),
+      ),
     },
   },
   test: {

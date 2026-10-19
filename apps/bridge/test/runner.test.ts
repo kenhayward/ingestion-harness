@@ -8,6 +8,11 @@ import { MemoryPackageStore } from '../src/packages/store.js';
 import { FakeSink } from '../src/sinks/fake.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
+import { Credentials } from '../src/connections/credential.js';
+import { MemoryConnectionRepo } from '../src/connections/repo.js';
+import { encryptSecret } from '../src/secrets.js';
+import { connection } from './connections-contract.js';
+import { SECRETS } from './helpers.js';
 import { documentPackage } from './sink-builders.js';
 
 const T0 = new Date('2026-10-19T12:00:00.000Z');
@@ -31,6 +36,7 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
     label: 'T1',
     sinkId: 'fake',
     instanceId: null,
+    connectionId: null,
     destination: { bucket: 'b', prefix: 'out/' },
   });
   const sinks = new MapSinkRegistry({ fake: sink });
@@ -263,6 +269,7 @@ describe('runOnce', () => {
       label: 'T1',
       sinkId: 'nosuch',
       instanceId: null,
+      connectionId: null,
       destination: {},
     });
     await runOnce(deps, T0);
@@ -275,5 +282,68 @@ describe('runOnce', () => {
   it("returns 'idle' when nothing is due", async () => {
     const { deps } = await setup();
     expect(await runOnce(deps, T0)).toBe('idle');
+  });
+});
+
+describe('runOnce with a connection', () => {
+  const credentialFields = [
+    { id: 'user', label: 'User', secret: false },
+    { id: 'token', label: 'Token', secret: true },
+  ];
+
+  async function withConnection(sink: FakeSink) {
+    const { deps, deliveries, submit } = await setup(sink);
+    const connections = new MemoryConnectionRepo(deps.targets);
+    await connections.put({
+      ...connection('c1', { sinkId: 'fake', fields: { user: 'pat' } }),
+      secretEnc: encryptSecret('tok', SECRETS),
+    });
+    const t1 = (await deps.targets.get('t1'))!;
+    await deps.targets.put({ ...t1, connectionId: 'c1' });
+    const full = {
+      ...deps,
+      connections,
+      credentials: new Credentials({ connections, secrets: SECRETS, env: {} }),
+    };
+    return { deps: full, deliveries, connections, submit };
+  }
+
+  it("passes the connection's decrypted secret as the credential", async () => {
+    const sink = new FakeSink({ capabilities: caps(), credentialFields });
+    const { deps, connections, submit } = await withConnection(sink);
+    await submit();
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.credential).toEqual({ user: 'pat', token: 'tok' });
+    expect(await connections.get('c1')).toMatchObject({ status: 'ok', lastUsedAt: T0 });
+  });
+
+  it('a rejected credential marks the connection needs_attention', async () => {
+    const sink = new FakeSink({ capabilities: caps(), credentialFields }).script({
+      error: 'credential_rejected',
+    });
+    const { deps, deliveries, connections, submit } = await withConnection(sink);
+    const id = await submit();
+    await runOnce(deps, T0);
+    expect((await deliveries.get(id))?.status).toBe('needs_user');
+    expect(await connections.get('c1')).toMatchObject({
+      status: 'needs_attention',
+      statusReason: 'scripted credential_rejected',
+      lastUsedAt: null,
+    });
+  });
+
+  it('a missing connection stops the delivery for a person', async () => {
+    const sink = new FakeSink({ capabilities: caps(), credentialFields });
+    const { deps, deliveries, connections, submit } = await withConnection(sink);
+    const t1 = (await deps.targets.get('t1'))!;
+    await deps.targets.put({ ...t1, connectionId: 'gone' });
+    const id = await submit();
+    await runOnce(deps, T0);
+    expect(await deliveries.get(id)).toMatchObject({
+      status: 'needs_user',
+      error: { code: 'connection_missing' },
+    });
+    expect(sink.delivered).toEqual([]);
+    expect((await connections.get('c1'))?.status).toBe('untested');
   });
 });

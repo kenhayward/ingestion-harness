@@ -67,6 +67,9 @@ const PUBLIC = [
   'POST /api/auth/login',
   'POST /api/auth/logout',
   'POST /api/backup/restores/:id/confirm',
+  // The delivery bridge calls these, signed with BRIDGE_CLIENT_KEY instead of a session.
+  'POST /api/bridge/events',
+  'POST /api/bridge/handoff/redeem',
 ];
 
 describe('email and password access', () => {

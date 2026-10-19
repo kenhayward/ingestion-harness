@@ -1,10 +1,10 @@
-"""Publishing targets in the worker: seeding from .env, live stores, credential rules.
+"""Publishing targets in the worker: seeding from .env, and reading them (their credentials
+live on the delivery bridge).
 
 The seed and prefix cases come from the fixture the API's tests read too."""
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 from collections.abc import Iterator
@@ -19,21 +19,17 @@ from ingest_worker.publish_targets import (
     DefaultSeed,
     LiveTargets,
     PgPublishTargetStore,
-    S3Settings,
     TargetMissing,
     TargetRow,
     default_seed,
     normalise_prefix,
 )
-from ingest_worker.storage import MemoryObjectStore
 
 from .fakes import FakeTargets, MemoryPublishTargetStore
 
 FIXTURES = REPO_ROOT / "packages" / "shared" / "test" / "fixtures"
 FIXTURE = json.loads((FIXTURES / "publish-targets.json").read_text(encoding="utf-8"))
 SECRET_FIXTURE = json.loads((FIXTURES / "llm-secret.json").read_text(encoding="utf-8"))
-
-INTERNAL = S3Settings("http://seaweed:8333", "us-east-1", "k", "s")
 
 
 @pytest.mark.parametrize("case", FIXTURE["prefixes"], ids=lambda c: repr(c["input"]))
@@ -78,187 +74,34 @@ def row(**kw: Any) -> TargetRow:
     return replace(base, **kw)
 
 
-class Spy:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-
-    def __call__(
-        self, endpoint: str, region: str, access_key: str, secret_key: str, **kw: Any
-    ) -> Any:
-        self.calls.append(
-            {
-                "endpoint": endpoint,
-                "region": region,
-                "access_key": access_key,
-                "secret_key": secret_key,
-                **kw,
-            }
-        )
-        return MemoryObjectStore()
-
-
-def live(
-    rows: list[TargetRow], env: dict[str, str] | None = None
-) -> tuple[LiveTargets, MemoryPublishTargetStore, Spy]:
+def live(rows: list[TargetRow]) -> tuple[LiveTargets, MemoryPublishTargetStore]:
     store = MemoryPublishTargetStore(rows)
-    spy = Spy()
-    return LiveTargets(store, INTERNAL, env or {}, make=spy), store, spy
+    return LiveTargets(store), store
 
 
-def test_internal_target_uses_the_workers_own_connection() -> None:
-    targets, _, spy = live([row(prefix="pvp/")])
-    t = targets.get("default")
-    assert (t.id, t.bucket, t.prefix) == ("default", "ingest-published", "pvp/")
-    assert spy.calls == [
-        {
-            "endpoint": "http://seaweed:8333",
-            "region": "us-east-1",
-            "access_key": "k",
-            "secret_key": "s",
-            "path_style": True,
-            "sse": "none",
-            "kms_key_id": None,
-            "storage_class": None,
-        }
-    ]
-
-
-def test_external_target_passes_its_options_and_defaults_the_endpoint() -> None:
-    r = row(
-        id="lake",
-        label="Lake",
-        kind="external",
-        bucket="lake",
-        region="eu-west-2",
-        access_key_id="AK",
-        secret_key_env="S3_SECRET_KEY",
-        path_style=False,
-        sse="aws:kms",
-        kms_key_id="kms-1",
-        storage_class="STANDARD_IA",
-    )
-    targets, _, spy = live([row(), r], {"S3_SECRET_KEY": "envsecret"})
-    targets.get("lake")
-    assert spy.calls == [
-        {
-            "endpoint": "https://s3.eu-west-2.amazonaws.com",
-            "region": "eu-west-2",
-            "access_key": "AK",
-            "secret_key": "envsecret",
-            "path_style": False,
-            "sse": "aws:kms",
-            "kms_key_id": "kms-1",
-            "storage_class": "STANDARD_IA",
-        }
-    ]
-
-
-def test_seeded_default_reads_its_keys_from_the_named_variables() -> None:
-    r = row(
-        kind="external",
-        endpoint="https://s3.example.com",
-        region="eu-west-2",
-        access_key_env="TARGET_S3_ACCESS_KEY",
-        secret_key_env="TARGET_S3_SECRET_KEY",
-    )
-    targets, _, spy = live([r], {"TARGET_S3_ACCESS_KEY": "ak", "TARGET_S3_SECRET_KEY": "sk"})
-    targets.get("default")
-    assert (spy.calls[0]["access_key"], spy.calls[0]["secret_key"]) == ("ak", "sk")
-
-
-def test_each_credential_half_resolves_independently() -> None:
-    r = row(
-        kind="external",
-        endpoint="https://s3.example.com",
-        region="r",
-        access_key_id="stored-ak",
-        secret_key_env="TARGET_S3_SECRET_KEY",
-    )
-    targets, _, spy = live([r], {"TARGET_S3_SECRET_KEY": "sk"})
-    targets.get("default")
-    assert (spy.calls[0]["access_key"], spy.calls[0]["secret_key"]) == ("stored-ak", "sk")
-
-
-def test_a_stored_secret_is_decrypted_with_the_master_key() -> None:
-    r = row(
-        kind="external",
-        endpoint="https://s3.example.com",
-        region="r",
-        access_key_id="ak",
-        secret_key_enc=SECRET_FIXTURE["ciphertext"],
-    )
-    targets, _, spy = live([r], {"LLM_SECRETS_KEY": SECRET_FIXTURE["key"]})
-    targets.get("default")
-    assert spy.calls[0]["secret_key"] == SECRET_FIXTURE["plaintext"]
-
-
-def test_an_undecryptable_secret_is_a_document_error() -> None:
-    r = row(
-        label="Lake",
-        kind="external",
-        endpoint="https://s3.example.com",
-        region="r",
-        access_key_id="ak",
-        secret_key_enc="v1:" + base64.b64encode(b"x" * 40).decode(),
-    )
-    targets, _, _ = live([r], {"LLM_SECRETS_KEY": base64.b64encode(b"k" * 32).decode()})
-    with pytest.raises(DocumentError, match="cannot decrypt the secret of Lake"):
-        targets.get("default")
-
-
-def test_a_stored_secret_without_a_master_key_is_a_document_error() -> None:
-    r = row(
-        label="Lake",
-        kind="external",
-        endpoint="https://s3.example.com",
-        region="r",
-        access_key_id="ak",
-        secret_key_enc=SECRET_FIXTURE["ciphertext"],
-    )
-    targets, _, _ = live([r])
-    with pytest.raises(DocumentError, match="cannot decrypt the secret of Lake"):
-        targets.get("default")
-
-
-def test_missing_credentials_are_a_document_error() -> None:
-    r = row(label="Lake", kind="external", endpoint="https://s3.example.com", region="r")
-    targets, _, _ = live([r])
-    with pytest.raises(DocumentError, match="Lake has no credentials"):
-        targets.get("default")
-
-
-@pytest.mark.parametrize("field", ["access_key_env", "secret_key_env"])
-def test_only_the_seeded_variables_may_be_read(field: str) -> None:
-    kw: dict[str, Any] = {"access_key_id": "ak", "secret_key_env": "S3_SECRET_KEY"}
-    kw[field] = "DATABASE_URL"
-    r = row(label="Lake", kind="external", endpoint="https://s3.example.com", region="r", **kw)
-    targets, _, _ = live([r], {"DATABASE_URL": "postgres://secret", "S3_SECRET_KEY": "s"})
-    with pytest.raises(DocumentError, match="Lake names an unsupported credential variable"):
-        targets.get("default")
+def test_a_target_is_its_id_bucket_and_prefix_only() -> None:
+    targets, _ = live([row(prefix="pvp/")])
+    assert targets.get("default") == Target("default", "ingest-published", "pvp/")
 
 
 def test_an_unknown_target_is_missing_never_the_default() -> None:
-    targets, _, _ = live([row()])
+    targets, _ = live([row()])
     with pytest.raises(TargetMissing, match="no publishing target gone"):
         targets.get("gone")
     assert issubclass(TargetMissing, DocumentError)
 
 
-def test_refresh_rebuilds_only_when_the_version_moved() -> None:
-    targets, store, spy = live([row()])
+def test_refresh_reloads_only_when_the_version_moved() -> None:
+    targets, store = live([row()])
     targets.get("default")
     assert targets.refresh() is False
-    targets.get("default")
-    assert len(spy.calls) == 1  # cached
-
     store.set_rows([row(bucket="moved")])
     assert targets.refresh() is True
     assert targets.get("default").bucket == "moved"
-    assert len(spy.calls) == 2
 
 
 def test_get_refreshes_before_resolving() -> None:
-    targets, store, _ = live([row()])
+    targets, store = live([row()])
     assert targets.get("default").bucket == "ingest-published"
     store.set_rows([row(bucket="moved")])
     assert targets.get("default").bucket == "moved"
@@ -274,15 +117,14 @@ def test_memory_store_seeds_once() -> None:
 
 
 def test_fake_targets_get() -> None:
-    t = Target(MemoryObjectStore(), "b", "p/", "x")
+    t = Target("x", "b", "p/")
     assert FakeTargets({"x": t}).get("x") is t
     with pytest.raises(TargetMissing):
         FakeTargets({}).get("y")
 
 
-def test_target_keeps_positional_construction_and_defaults_its_id() -> None:
-    t = Target(MemoryObjectStore(), "published")
-    assert (t.id, t.prefix) == ("default", "")
+def test_target_defaults_its_prefix() -> None:
+    assert Target("default", "published").prefix == ""
 
 
 @pytest.fixture
@@ -341,7 +183,7 @@ def test_inert_target_is_missing(pg: PgPublishTargetStore) -> None:
     )
     assert "prod-lake" not in [r.id for r in pg.load()]
     with pytest.raises(TargetMissing):
-        LiveTargets(pg, INTERNAL).get("prod-lake")
+        LiveTargets(pg).get("prod-lake")
 
 
 def test_seeding_reports_the_fields_env_now_disagrees_on() -> None:

@@ -21,7 +21,7 @@ from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
 from ingest_worker.template import Template
 
-from .fakes import FakeProvider, FakeQueue, FakeTargets
+from .fakes import FakeBridge, FakeProvider, FakeQueue, FakeTargets
 from .test_template_pipeline import JOB, PAGES, RESPONSES, TEMPLATE
 
 
@@ -41,7 +41,8 @@ def make_deps(tmp_path: Path, template: dict[str, Any]) -> tuple[PipelineDeps, M
         ),
         extract_text=lambda _pdf: PAGES,
         buckets=Buckets("inbox", "outputs", "runs"),
-        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
+        targets=FakeTargets({"default": Target("default", "published", "pvp/")}),
+        bridge=FakeBridge({"default": ("published", "pvp/")}, stores={"default": target}),
     )
     return deps, target
 
@@ -170,7 +171,7 @@ def test_documents_without_review_are_published_straight_away(tmp_path: Path) ->
     deps, target = make_deps(tmp_path, {**TEMPLATE, "review": {"required": "never"}})
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, deps, "w1")
-    assert queue.completed and not queue.awaiting
+    assert queue.finished and not queue.awaiting
     [(_, published, target_id)] = queue.published
     assert target_id == "default"
     assert published[0].key.startswith("pvp/demo/v1/")
@@ -213,7 +214,7 @@ def test_approval_publishes_the_draft_with_edits_applied(tmp_path: Path) -> None
     }
     run_once(queue, deps, "w1")
 
-    assert queue.completed and queue.published
+    assert queue.finished and queue.published
     fields = target_csv(target, "pvp/demo/v1/fields/doc-1.csv")[0]
     assert fields["executed_on"] == "2023-02-17"
     assert [r["value"] for r in target_csv(target, "pvp/demo/v1/results/doc-1.csv")] == [

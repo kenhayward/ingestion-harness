@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 import httpx
 import psycopg
 
+from .bridge.client import HttpBridgeClient
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
@@ -31,7 +32,15 @@ from .ocr import OcrSettings
 from .ontology import PgOntologyStore, run_ontology_import
 from .ontology_fetch import FetchPolicy, fetch_rdf
 from .ontology_suggest import run_suggest
-from .outcomes import AwaitReview, Complete, Deliver, Outcome, TaskHandler, apply_outcome
+from .outcomes import (
+    AwaitReview,
+    Complete,
+    Deliver,
+    Delivering,
+    Outcome,
+    TaskHandler,
+    apply_outcome,
+)
 from .outputs import RenderedOutput
 from .pdf import extract_pages
 from .pipeline import (
@@ -44,7 +53,7 @@ from .pipeline import (
     load_definition,
     process_job,
 )
-from .publish_targets import LiveTargets, PgPublishTargetStore, S3Settings, seed_default_target
+from .publish_targets import LiveTargets, PgPublishTargetStore, seed_default_target
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
 from .specs import LoadedTemplate, SpecRegistry, load_specs
@@ -125,15 +134,25 @@ def handle_process(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outc
     if reasons:
         return AwaitReview(result.outputs, reasons)
     # The target was resolved before extraction (None: a test run, or no targets).
-    return Deliver(result.outputs, result.delivered(), result.target, result.graph)
+    return Deliver(
+        result.outputs,
+        result.delivered(),
+        result.target,
+        result.graph,
+        document=result.document,
+        template=result.template,
+    )
 
 
 def handle_publish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
     """An approved review: apply the edits and deliver (publish_job)."""
     check_cancelled(job, queue)
+    deliveries: list[tuple[str, str]] = []
 
-    def record(outputs: list[RenderedOutput], target: Target) -> None:
-        queue.record_published(job, outputs, target)  # test runs never get here
+    def record(outputs: list[RenderedOutput], target: Target, delivery_id: str) -> None:
+        # Test runs never get here.
+        queue.record_published(job, outputs, target, delivery_id)
+        deliveries.append((target.id, delivery_id))
 
     try:
         published = publish_job(job, deps, queue, record)
@@ -141,7 +160,9 @@ def handle_publish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outc
         # Nothing was delivered: the reviewer fixes the values and approves again.
         queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
         return AwaitReview([], refused.reasons, drafts=False, note="publish refused")
-    return Complete(note=f"published {len(published)} outputs")
+    if not deliveries:
+        return Complete(note=f"published {len(published)} outputs")  # a test run
+    return Delivering([], deliveries, note=f"handed {len(published)} outputs to the bridge")
 
 
 def handle_rerun(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
@@ -152,6 +173,14 @@ def handle_rerun(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcom
     rerun = rerun_template_job(job, deps, queue, loaded)
     step = (job.rerun or {}).get("step")
     return AwaitReview(rerun.outputs, rerun.review_reasons, note=f"re-ran {step}, back in review")
+
+
+def handle_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """Deliver a re-enabled type's withdrawn jobs again; the bridge's events finish the job."""
+    deliveries = run_republish(job, deps, queue)
+    if not deliveries:
+        return Complete(note="re-delivered 0 jobs")
+    return Delivering([], deliveries, note=f"re-delivered {len(deliveries)} jobs")
 
 
 def _completes[R](
@@ -178,7 +207,7 @@ TASKS: dict[str, TaskHandler] = {
     "suggest": _completes(run_suggest, lambda s: f"suggested {len(s['suggestions'])} ontologies"),
     "embed": _completes(run_embed, lambda n: f"embedded {n} terms"),
     "withdraw": _completes(run_withdraw, lambda w: "withdrew {} objects, {} graphs".format(*w)),
-    "republish": _completes(run_republish, lambda n: f"re-delivered {n} jobs"),
+    "republish": handle_republish,
     "rebuild": _completes(run_rebuild_job, lambda lines: lines[-1]),
     "ontology": _completes(run_ontology_import, lambda p: f"indexed {len(p.terms)} ontology terms"),
 }
@@ -217,7 +246,7 @@ def publish_job(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
-    on_published: Callable[[list[RenderedOutput], Target], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target, str], None] | None = None,
 ) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
     reference) keeps the reviewed document but is never delivered to a target."""
@@ -337,15 +366,7 @@ class _Worker:
         # connection, re-opened when lost; refreshed with the LLM config).
         self.target_store = PgPublishTargetStore.connect(settings.database_url)
         seed_default_target(self.target_store, os.environ)
-        self.targets = LiveTargets(
-            self.target_store,
-            S3Settings(
-                settings.s3_endpoint,
-                settings.s3_region,
-                settings.s3_access_key,
-                settings.s3_secret_key,
-            ),
-        )
+        self.targets = LiveTargets(self.target_store)
         # The ontology library and the Linked data settings share one autocommit connection.
         self.library = psycopg.connect(settings.database_url, autocommit=True)
         # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
@@ -359,7 +380,7 @@ class _Worker:
             self.step_checkpointer, self.close_checkpointer = postgres_checkpointer(
                 settings.database_url
             )
-            # ADR 0017: a thread lives only while its job is queued or running.
+            # ADR 0018: a thread lives only while its job is queued or running.
             self.thread_pruner = ThreadPruner(
                 self.step_checkpointer,
                 functools.partial(pg_orphaned_threads, settings.database_url),
@@ -377,6 +398,7 @@ class _Worker:
             buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
             ocr=ocr,
             targets=self.targets,
+            bridge=HttpBridgeClient(settings.bridge_url, settings.bridge_client_key),
             converter=(
                 GotenbergConverter(settings.converter_url) if settings.converter_url else None
             ),

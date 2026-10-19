@@ -49,6 +49,10 @@ import { llmRoutes } from './routes/llm.js';
 import { ontologyRoutes } from './routes/ontologies.js';
 import { linkedDataRoutes } from './routes/linked-data.js';
 import { maintenanceRoutes } from './routes/maintenance.js';
+import { MemoryNonceStore, type NonceStore } from '@ih/bridge-contract';
+import type { BridgeApi } from './bridge/client.js';
+import type { HandoffCodes } from './bridge/handoff.js';
+import { bridgeRoutes } from './routes/bridge.js';
 import { publishTargetRoutes } from './routes/publish-targets.js';
 import { backupRoutes } from './routes/backup.js';
 
@@ -59,6 +63,14 @@ export interface AppDeps {
   targets: PublishTargetRepo;
   /** One object store per publishing target; published outputs are read through their own. */
   targetStores: TargetStores;
+  /** The delivery bridge: targets are mirrored to it, published files read back through it. */
+  bridge: BridgeApi;
+  /**
+   * How the bridge and CT Studio trust each other in this direction: the shared key its signed
+   * calls carry, where browsers reach its connections page, and the one-time codes that hand a
+   * signed-in user to that page.
+   */
+  bridgeAuth: { key: string; publicUrl: string; codes: HandoffCodes; nonces?: NonceStore };
   specs: SpecRegistry;
   templates: TemplateRepo;
   /** Workbench projects, samples and briefs (ADR 0007). */
@@ -148,6 +160,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       },
       (err, id) => app.log.warn({ err, id }, 'mapping memory not recorded'),
     ),
+    // Signed calls from the bridge: nonces seen inside the replay window (one API instance).
+    bridgeAuth: { ...deps.bridgeAuth, nonces: deps.bridgeAuth.nonces ?? new MemoryNonceStore() },
   };
   app.decorate('deps', remembering);
   app.decorate('maintenance', new MaintenanceGate(deps.maintenance));
@@ -180,6 +194,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(linkedDataRoutes, { prefix: '/api' });
   await app.register(maintenanceRoutes, { prefix: '/api' });
   await app.register(publishTargetRoutes, { prefix: '/api' });
+  await app.register(bridgeRoutes, { prefix: '/api' });
   await app.register(backupRoutes, { prefix: '/api' });
   await app.register(versionRoutes, { prefix: '/api' });
 

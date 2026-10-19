@@ -4,6 +4,8 @@ export interface Target {
   label: string;
   sinkId: string;
   instanceId: string | null;
+  /** The connection a shared sink delivers with; null for none (delivery then fails visibly). */
+  connectionId: string | null;
   destination: Record<string, string>;
 }
 
@@ -13,6 +15,8 @@ export interface TargetRepo {
   list(): Promise<Target[]>;
   /** Creates or replaces the target with this id. */
   put(t: Target): Promise<void>;
+  /** False when there was no such target. */
+  remove(id: string): Promise<boolean>;
 }
 
 export class MemoryTargetRepo implements TargetRepo {
@@ -31,5 +35,9 @@ export class MemoryTargetRepo implements TargetRepo {
 
   async put(t: Target): Promise<void> {
     this.targets.set(t.id, structuredClone(t));
+  }
+
+  async remove(id: string): Promise<boolean> {
+    return this.targets.delete(id);
   }
 }

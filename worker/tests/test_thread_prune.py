@@ -1,4 +1,4 @@
-"""The thread prune of ADR 0017: a step graph thread is kept only while its job is queued or
+"""The thread prune of ADR 0018: a step graph thread is kept only while its job is queued or
 running; the worker prunes the others when it starts and then hourly."""
 
 from __future__ import annotations

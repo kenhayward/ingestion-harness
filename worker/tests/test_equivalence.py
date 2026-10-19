@@ -107,6 +107,10 @@ def queue_trace(queue: FakeQueue) -> dict[str, Any]:
         "failed": [[j, re.sub(r"0x[0-9a-f]+", "<addr>", e)] for j, e in queue.failed],
         "completed": [[j, outputs(o)] for j, o in queue.completed],
         "published": [[j, outputs(o), t] for j, o, t in queue.published],
+        # Handed to the delivery bridge (ADR 0017): drafts recorded, deliveries the bridge's
+        # events finish, and the delivery each published record carries.
+        "delivering": [[j, outputs(o), [list(d) for d in ds]] for j, o, ds in queue.handed_over],
+        "published_deliveries": [list(p) for p in queue.published_deliveries],
         "step_runs": scrub(queue.step_runs),
     }
 
@@ -203,7 +207,7 @@ def test_template_review_rerun_publish(tmp_path: Path) -> None:
         "reviewed_at": "2026-10-14T10:05:00Z",
     }
     run_once(queue, deps, "w1")
-    assert queue.completed, queue.reviewed or queue.failed
+    assert queue.handed_over, queue.reviewed or queue.failed
 
     assert isinstance(deps.store, MemoryObjectStore)
     assert isinstance(deps.graph_store, FakeGraphStore)
@@ -229,7 +233,7 @@ def test_template_delivered(tmp_path: Path) -> None:
     deps = replace(deps, graph_registry=MemoryGraphRegistry(), graph_store=FakeGraphStore())
     queue = FakeQueue(jobs=[recipes.JOB])
     run_once(queue, deps, "w1")
-    assert queue.completed, queue.reviewed or queue.failed
+    assert queue.handed_over, queue.reviewed or queue.failed
 
     assert isinstance(deps.store, MemoryObjectStore)
     check(

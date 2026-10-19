@@ -189,7 +189,7 @@ def postgres_checkpointer(database_url: str) -> tuple[BaseCheckpointSaver[Any], 
     return saver, pool.close
 
 
-# --- the thread prune (ADR 0017) ------------------------------------------------------------
+# --- the thread prune (ADR 0018) ------------------------------------------------------------
 
 #: How often the worker prunes step graph threads (also once when it starts).
 PRUNE_EVERY_S = 3600.0

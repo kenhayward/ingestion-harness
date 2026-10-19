@@ -68,3 +68,23 @@ and refreshing staging with production's data while staging stays staging.
 - A restore needs space for the uploaded file, a second copy of the database while it runs (and
   the kept previous one) and the files.
 - Files added while a backup runs may be missing; the restore report lists them.
+
+## Addendum, 2026-10-20: the delivery bridge ([ADR 0017](0017-delivery-bridge.md))
+
+- **The bridge's schema is in the dump.** `pg_dump` takes the whole database, so the `bridge`
+  schema (connections, targets, packages, deliveries, events) is backed up and restored with
+  CT Studio's own tables. Its staging bucket (`BRIDGE_STAGING_BUCKET`) is backed up like an
+  internal target's bucket.
+- **Keep `BRIDGE_SECRETS_KEY` with `LLM_SECRETS_KEY`.** Shared connections' secrets are encrypted
+  under it: without it, a restored deployment's connections cannot be read and its external
+  targets stop delivering until their keys are entered again on the connections page.
+- **A copy keeps this server's connections.** `bridge.connections` is kept from the live
+  deployment, as its LLM keys are (production's secrets are under production's key). A restored
+  bridge target naming a connection this server lacks loses it, so its deliveries fail visibly
+  (`credential_missing`) until an admin picks one; production's unfinished deliveries are failed
+  and its unsent events dropped, and its `delivering` jobs are cancelled with the rest of its
+  backlog.
+- **After the swap the API mirrors its targets to the bridge again**, and moves the keys of any
+  restored target that still holds them (a backup from before the bridge) onto the bridge. When
+  the restored database has no `bridge` schema at all, the bridge migrates again the first time it
+  finds a table missing.
