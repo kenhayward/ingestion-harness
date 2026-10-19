@@ -255,4 +255,15 @@ describe('internalTargetBuckets', () => {
     ]);
     expect(await internalTargetBuckets(repo, ['ingest-published'])).toEqual(['lake-bucket']);
   });
+
+  it("the staging bucket is in the backup's bucket list (the bridge's packages)", async () => {
+    const repo = new MemoryPublishTargetRepo();
+    expect(await internalTargetBuckets(repo, ['inbox'], ['ingest-bridge'])).toEqual([
+      'ingest-published',
+      'ingest-bridge',
+    ]);
+    expect(await internalTargetBuckets(repo, ['inbox'], ['ingest-published', 'inbox'])).toEqual([
+      'ingest-published',
+    ]);
+  });
 });

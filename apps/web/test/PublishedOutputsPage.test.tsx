@@ -29,12 +29,8 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     kind: 'internal',
     bucket: 'ingest-published',
     prefix: '',
-    endpoint: null,
-    region: null,
-    accessKeyId: null,
-    secretSet: false,
-    keysFromEnv: null,
-    forcePathStyle: false,
+    connectionId: null,
+    connection: null,
     sse: 'none',
     kmsKeyId: null,
     storageClass: null,
@@ -54,10 +50,13 @@ const external = (over: Partial<PublishTargetView> = {}) =>
     kind: 'external',
     bucket: 'finance-bucket',
     prefix: 'ingest/',
-    endpoint: 'https://s3.example.com',
-    region: 'eu-west-1',
-    accessKeyId: 'AKIA1',
-    secretSet: true,
+    connectionId: 'finance-account',
+    connection: {
+      id: 'finance-account',
+      name: 'Finance account',
+      status: 'ok',
+      statusReason: null,
+    },
     source: 'ui',
     updatedBy: 'Sam',
     usage: NO_USE,
@@ -105,8 +104,9 @@ describe('PublishedOutputsPage', () => {
     page([external({ usage: { ...NO_USE, publishedVersions: 1, documentTypes: ['po'] } })]);
     const r = await open('Finance lake');
     expect(within(r).getByLabelText('Bucket')).toHaveAttribute('readonly');
-    expect(within(r).getByLabelText('Region')).toHaveAttribute('readonly');
+    expect(within(r).getByLabelText('Prefix')).toHaveAttribute('readonly');
     expect(within(r).getByLabelText('Label')).not.toHaveAttribute('readonly');
+    expect(within(r).getByLabelText('Connection')).not.toBeDisabled();
     expect(r).toHaveTextContent('In use: add a new target to move');
   });
 
@@ -117,45 +117,61 @@ describe('PublishedOutputsPage', () => {
     expect(r).not.toHaveTextContent('In use: add a new target to move');
   });
 
-  it('shows no credential fields for an internal target, and says where keys come from', async () => {
+  it('shows the connection an external target uses, never a credential field', async () => {
     page([
       target(),
       external({
-        secretSet: false,
-        accessKeyId: null,
-        keysFromEnv: { accessKey: 'TARGET_S3_ACCESS_KEY', secretKey: 'TARGET_S3_SECRET_KEY' },
+        connection: {
+          id: 'finance-account',
+          name: 'Finance account',
+          status: 'needs_attention',
+          statusReason: 'access denied',
+        },
       }),
     ]);
     const def = await open('Default');
-    expect(within(def).queryByLabelText('Region')).toBeNull();
-    expect(within(def).queryByText(/Secret stored/)).toBeNull();
+    expect(within(def).queryByLabelText('Connection')).toBeNull();
     const fin = await open('Finance lake');
-    expect(fin).toHaveTextContent('Keys from .env (TARGET_S3_ACCESS_KEY, TARGET_S3_SECRET_KEY)');
+    expect(within(fin).getByLabelText('Connection')).toHaveValue('finance-account');
+    expect(fin).toHaveTextContent('Needs attention: access denied');
+    for (const field of ['Region', 'Endpoint', 'Access key id', 'Secret access key']) {
+      expect(within(fin).queryByLabelText(field)).toBeNull();
+    }
+    expect(fin).not.toHaveTextContent('Set secret');
   });
 
-  it('saves changed fields, and replaces the keys as a pair', async () => {
+  it('says when an external target has no connection yet', async () => {
+    page([external({ connectionId: null, connection: null })]);
+    const fin = await open('Finance lake');
+    expect(fin).toHaveTextContent('No connection: choose one, or add it under Manage connections');
+  });
+
+  it('saves changed fields, and a new connection', async () => {
     const api = page([external()], {
       updatePublishTarget: vi.fn(async () => external({ label: 'Finance' })),
+      listSharedConnections: vi.fn(async () => [
+        { id: 'finance-account', name: 'Finance account', status: 'ok', statusReason: null },
+        { id: 'finance-2026', name: 'Finance (2026 keys)', status: 'ok', statusReason: null },
+      ]),
     });
     const r = await open('Finance lake');
-    expect(r).toHaveTextContent('Secret stored (encrypted)');
     const label = within(r).getByLabelText('Label');
     await userEvent.clear(label);
     await userEvent.type(label, 'Finance');
-    await userEvent.click(within(r).getByRole('button', { name: 'Set secret' }));
-    await userEvent.type(within(r).getByLabelText('New access key id'), 'AKIA2');
-    await userEvent.type(within(r).getByLabelText('New secret access key'), 'shh');
+    await userEvent.selectOptions(
+      await within(r).findByRole('combobox', { name: 'Connection' }),
+      'Finance (2026 keys) (OK)',
+    );
     await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(api.updatePublishTarget).toHaveBeenCalledWith('finance-lake', {
         label: 'Finance',
-        accessKeyId: 'AKIA2',
-        secretAccessKey: 'shh',
+        connectionId: 'finance-2026',
       }),
     );
   });
 
-  it('clears the typed keys and the old test result after saving', async () => {
+  it('clears the old test result after saving', async () => {
     page([external()], {
       updatePublishTarget: vi.fn(async () => external()),
       testPublishTarget: vi.fn(async () => ({ ok: true, step: null, message: 'fine' })),
@@ -163,15 +179,9 @@ describe('PublishedOutputsPage', () => {
     const r = await open('Finance lake');
     await userEvent.click(within(r).getByRole('button', { name: 'Test connection' }));
     expect(await within(r).findByRole('status')).toBeInTheDocument();
-    await userEvent.click(within(r).getByRole('button', { name: 'Set secret' }));
-    await userEvent.type(within(r).getByLabelText('New access key id'), 'AKIA2');
-    await userEvent.type(within(r).getByLabelText('New secret access key'), 'shh');
+    await userEvent.type(within(r).getByLabelText('Label'), ' 2');
     await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(within(r).queryByLabelText('New secret access key')).toBeNull());
-    expect(within(r).queryByRole('status')).toBeNull();
-    expect(within(r).getByRole('button', { name: 'Save' })).toBeDisabled();
-    await userEvent.click(within(r).getByRole('button', { name: 'Set secret' }));
-    expect(within(r).getByLabelText('New secret access key')).toHaveValue('');
+    await waitFor(() => expect(within(r).queryByRole('status')).toBeNull());
   });
 
   it('says what holds a target, naming only the non-zero parts', async () => {
@@ -216,17 +226,15 @@ describe('PublishedOutputsPage', () => {
     expect(archive).not.toHaveTextContent('added here');
   });
 
-  it('clears the storage class, the KMS key and the endpoint with null', async () => {
+  it('clears the storage class and the KMS key with null', async () => {
     const stored = external({ sse: 'aws:kms', kmsKeyId: 'key-1', storageClass: 'STANDARD_IA' });
     const api = page([stored], { updatePublishTarget: vi.fn(async () => stored) });
     const r = await open('Finance lake');
     await userEvent.selectOptions(within(r).getByLabelText('Storage class'), 'Bucket default');
     await userEvent.clear(within(r).getByLabelText('KMS key id'));
-    await userEvent.clear(within(r).getByLabelText('Endpoint'));
     await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(api.updatePublishTarget).toHaveBeenCalledWith('finance-lake', {
-        endpoint: null,
         kmsKeyId: null,
         storageClass: null,
       }),
@@ -322,7 +330,7 @@ describe('PublishedOutputsPage', () => {
     );
   });
 
-  it('adds an external target with its secret, after a test connection', async () => {
+  it('the external form shows a connection picker and no secret field', async () => {
     const api = page([target()], {
       createPublishTarget: vi.fn(async () => external()),
       testPublishTarget: vi.fn(async () => ({ ok: true, step: null, message: 'fine' })),
@@ -330,23 +338,23 @@ describe('PublishedOutputsPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
     const dialog = screen.getByRole('dialog', { name: 'Add publishing target' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
+    for (const field of ['Region', 'Endpoint', 'Access key id', 'Secret access key']) {
+      expect(within(dialog).queryByLabelText(field)).toBeNull();
+    }
     await userEvent.type(within(dialog).getByLabelText('Label'), 'Finance lake');
     await userEvent.type(within(dialog).getByLabelText('Bucket'), 'finance-bucket');
-    await userEvent.type(within(dialog).getByLabelText('Endpoint'), 'https://s3.example.com');
-    await userEvent.type(within(dialog).getByLabelText('Region'), 'eu-west-1');
-    await userEvent.type(within(dialog).getByLabelText('Access key id'), 'AKIA1');
-    await userEvent.type(within(dialog).getByLabelText('Secret access key'), 'shh');
+    const picker = await within(dialog).findByRole('combobox', { name: 'Connection' });
+    expect(
+      within(picker).getByRole('option', { name: 'Finance account (OK)' }),
+    ).toBeInTheDocument();
+    await userEvent.selectOptions(picker, 'Finance account (OK)');
     const body = {
       id: 'finance-lake',
       label: 'Finance lake',
       kind: 'external',
       bucket: 'finance-bucket',
       prefix: '',
-      endpoint: 'https://s3.example.com',
-      region: 'eu-west-1',
-      accessKeyId: 'AKIA1',
-      secretAccessKey: 'shh',
-      forcePathStyle: false,
+      connectionId: 'finance-account',
       sse: 'none',
     };
     await userEvent.click(within(dialog).getByRole('button', { name: 'Test connection' }));
@@ -354,6 +362,19 @@ describe('PublishedOutputsPage', () => {
     expect(api.testPublishTarget).toHaveBeenCalledWith(body);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
     await waitFor(() => expect(api.createPublishTarget).toHaveBeenCalledWith(body));
+  });
+
+  it('points to the connections page when there is no connection yet', async () => {
+    page([target()], { listSharedConnections: vi.fn(async () => []) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add publishing target' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
+    expect(
+      await within(dialog).findByText(
+        'No connections yet: add one under Manage connections, then come back.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Add' })).toBeDisabled();
   });
 
   it('lays the add dialog out in labelled groups, encryption folded away', async () => {
@@ -368,8 +389,8 @@ describe('PublishedOutputsPage', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
     const connection = within(dialog).getByRole('group', { name: 'Connection' });
-    expect(within(connection).getByLabelText('Region')).toBeInTheDocument();
-    expect(within(connection).getByLabelText('Secret access key')).toBeInTheDocument();
+    expect(await within(connection).findByLabelText('Connection')).toBeInTheDocument();
+    expect(within(connection).queryByLabelText('Secret access key')).toBeNull();
     const more = within(dialog).getByText('Encryption and storage class').closest('details')!;
     expect(more).not.toHaveAttribute('open');
     expect(more).toHaveTextContent('None · bucket default');
@@ -383,9 +404,10 @@ describe('PublishedOutputsPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
     await userEvent.type(within(dialog).getByLabelText('Label'), 'Archive');
     await userEvent.type(within(dialog).getByLabelText('Bucket'), 'archive');
-    await userEvent.type(within(dialog).getByLabelText('Region'), 'eu-west-1');
-    await userEvent.type(within(dialog).getByLabelText('Access key id'), 'AKIA1');
-    await userEvent.type(within(dialog).getByLabelText('Secret access key'), 'shh');
+    await userEvent.selectOptions(
+      await within(dialog).findByRole('combobox', { name: 'Connection' }),
+      'Finance account (OK)',
+    );
     const more = within(dialog).getByText('Encryption and storage class').closest('details')!;
     await userEvent.click(within(more).getByText('Encryption and storage class'));
     expect(more).toHaveAttribute('open');
@@ -412,17 +434,12 @@ describe('PublishedOutputsPage', () => {
       'Use the same id on every deployment for the same recipient.',
     );
     expect(within(dialog).getByLabelText('Label')).toHaveAttribute('autocomplete', 'off');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'External' }));
-    expect(within(dialog).getByLabelText('Secret access key')).toHaveAttribute(
-      'autocomplete',
-      'new-password',
-    );
   });
 
   it('keeps a refusal in the dialog', async () => {
     page([target()], {
       createPublishTarget: vi.fn(async () => {
-        throw new Error('LLM_SECRETS_KEY is not set: the API cannot store keys');
+        throw new Error('the delivery bridge could not be reached');
       }),
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
@@ -430,7 +447,27 @@ describe('PublishedOutputsPage', () => {
     await userEvent.type(within(dialog).getByLabelText('Label'), 'X');
     await userEvent.type(within(dialog).getByLabelText('Bucket'), 'xbucket');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('LLM_SECRETS_KEY');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'the delivery bridge could not be reached',
+    );
+  });
+});
+
+describe('Manage connections', () => {
+  it('opens the link in a new tab', async () => {
+    const api = page([target()], { openConnections: vi.fn(async () => undefined) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Manage connections' }));
+    expect(api.openConnections).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a refusal on the page', async () => {
+    page([target()], {
+      openConnections: vi.fn(async () => {
+        throw new Error('admins only');
+      }),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Manage connections' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('admins only');
   });
 });
 

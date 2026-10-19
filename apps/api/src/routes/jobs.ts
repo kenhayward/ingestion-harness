@@ -151,7 +151,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           runs, \`progress\` says where it is (as \`GET /api/jobs/{id}/events\` sends it);
           \`stageTimes\` says when this attempt finished reading the document and found its
           sections. \`graph\` is the newest graph the job published (ADR 0011): its IRI,
-          version and triples, and whether it reached the triple store.
+          version and triples, and whether it reached the triple store. \`deliveries\` are its
+          deliveries through the delivery bridge, each target's latest status (a \`delivering\`
+          job finishes when all are final).
         `,
         params: JobParams,
         response: { 200: res('The job.', JobDetailSchema), 404: NOT_FOUND },
@@ -167,11 +169,21 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         [job.id],
         [...PROGRESS_EVENTS, GRAPH_PUBLISHED_EVENT],
       );
+      const deliveries = await app.deps.repo.deliveriesOf(job.id);
+      const labels = deliveries.length
+        ? new Map((await app.deps.targets.list()).map((t) => [t.id, t.label]))
+        : new Map<string, string>();
       return {
         ...job,
         progress: jobProgress(job, events),
         stageTimes: stageTimes(job, events),
         graph: jobGraph(events),
+        deliveries: deliveries.map((d) => ({
+          targetId: d.targetId,
+          label: labels.get(d.targetId) ?? d.targetId,
+          status: d.status,
+          message: d.error?.message ?? null,
+        })),
       };
     },
   );

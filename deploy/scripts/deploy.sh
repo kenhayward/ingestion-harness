@@ -60,14 +60,18 @@ fi
 compose up -d postgres seaweedfs
 compose run --rm init-buckets
 compose run --rm migrate
-compose up -d --remove-orphans api worker app
+compose run --rm migrate-bridge
+compose up -d --remove-orphans bridge api worker app
 
 ADMIN_TOKEN="$("$DEPLOY_DIR/scripts/admin-token.sh" --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.yml")"
 export ADMIN_TOKEN
 # Under GitHub Actions (deploy.yml) the token must never reach the job log.
 [[ "${GITHUB_ACTIONS:-}" == true ]] && echo "::add-mask::$ADMIN_TOKEN"
+# SMOKE_COMPOSE lets the smoke test seed a reviewed job and check the delivered object.
 APP_PORT="$(env_value APP_PORT "$ENV_FILE")" S3_PUBLIC_PORT="$(env_value S3_PUBLIC_PORT "$ENV_FILE")" \
-  FRAME_ANCESTORS="$(env_value FRAME_ANCESTORS "$ENV_FILE")" "$DEPLOY_DIR/scripts/smoke-test.sh"
+  FRAME_ANCESTORS="$(env_value FRAME_ANCESTORS "$ENV_FILE")" \
+  SMOKE_COMPOSE="docker compose --env-file $ENV_FILE -f $DEPLOY_DIR/docker-compose.yml" \
+  "$DEPLOY_DIR/scripts/smoke-test.sh"
 
 echo "==> deployed $VERSION (IMAGE_TAG=$IMAGE_TAG)"
 compose ps

@@ -8,6 +8,7 @@ import type {
   SinkDeliverResult,
   SinkDescribe,
   SinkJobStatus,
+  TargetTestResult,
 } from '@ih/bridge-contract';
 
 /** A sink as the bridge drives it: built in, or an external one behind an HTTP adapter. */
@@ -18,6 +19,33 @@ export interface SinkPort {
   deliver(req: SinkDeliverRequest): Promise<SinkDeliverResult>;
   deliveryStatus(sinkJobId: string): Promise<SinkJobStatus>;
 }
+
+/** Where a target writes: its connection's credential and its destination. */
+export interface TargetPlace {
+  credential: Record<string, string> | null;
+  destination: Record<string, string>;
+}
+
+/**
+ * Synchronous object operations on a target, for sinks that store files (S3): reading published
+ * files back, writing a graph's versioned copy, withdrawing. Each stays inside the target.
+ */
+export interface TargetObjects {
+  readObject(place: TargetPlace, bucket: string, key: string): Promise<Buffer | null>;
+  putObject(
+    place: TargetPlace,
+    bucket: string,
+    key: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<void>;
+  deleteObject(place: TargetPlace, bucket: string, key: string): Promise<void>;
+  /** Test connection for a target: which step failed, if any. */
+  probeTarget(place: TargetPlace): Promise<TargetTestResult>;
+}
+
+export const hasObjects = (sink: SinkPort): sink is SinkPort & TargetObjects =>
+  'readObject' in sink && 'probeTarget' in sink;
 
 /**
  * A sink's refusal in contract terms. Anything else a sink throws is treated as a retryable

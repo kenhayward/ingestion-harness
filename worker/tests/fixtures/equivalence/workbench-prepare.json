@@ -17,6 +17,7 @@
     []
    ]
   ],
+  "delivering": [],
   "drafts": [],
   "events": [
    [
@@ -79,6 +80,7 @@
   ],
   "failed": [],
   "published": [],
+  "published_deliveries": [],
   "reviewed": [],
   "step_runs": []
  },

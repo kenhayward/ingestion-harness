@@ -42,6 +42,8 @@ interface Row {
   edited_at: Date | null;
   updated_by: string | null;
   created_at: Date;
+  connection_id: string | null;
+  moved_to_bridge_at: Date | null;
 }
 
 const iso = (d: Date | null): string | null => d?.toISOString() ?? null;
@@ -67,11 +69,13 @@ const toRecord = (r: Row): TargetRecord => ({
   editedAt: iso(r.edited_at),
   updatedBy: r.updated_by,
   createdAt: r.created_at.toISOString(),
+  connectionId: r.connection_id,
+  movedToBridgeAt: iso(r.moved_to_bridge_at),
 });
 
 const COLUMNS = `id, label, kind, bucket, prefix, endpoint, region, access_key_id, secret_key_enc,
   access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, source,
-  seeded_at, edited_at, updated_by, created_at`;
+  seeded_at, edited_at, updated_by, created_at, connection_id, moved_to_bridge_at`;
 
 /**
  * Rows a copy restore made inert (`inert_at`: a dropped external target its delivery records
@@ -98,6 +102,7 @@ const WRITE = [
   'seeded_at',
   'edited_at',
   'updated_by',
+  'connection_id',
 ] as const;
 
 const values = (r: TargetRecord): unknown[] => [
@@ -118,6 +123,7 @@ const values = (r: TargetRecord): unknown[] => [
   r.seededAt,
   r.editedAt,
   r.updatedBy,
+  r.connectionId,
 ];
 
 export class PgPublishTargetRepo implements PublishTargetRepo {
@@ -268,6 +274,19 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     } finally {
       client.release();
     }
+  }
+
+  async markMoved(id: string, connectionId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE publish_targets
+          SET connection_id = $2, secret_key_enc = NULL, moved_to_bridge_at = now()
+        WHERE id = $1`,
+      [id, connectionId],
+    );
+  }
+
+  async connectionOf(id: string): Promise<string | null> {
+    return (await this.get(id))?.connectionId ?? null;
   }
 
   /** Usage per target (one id, or all when null), from the four places a target is named. */

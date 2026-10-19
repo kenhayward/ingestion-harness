@@ -62,19 +62,20 @@ export function publishTargetsContract(
       expect((await repo.get('default'))?.seededAt).toBeNull();
     });
 
-    it('creates, lists and gets, never exposing the secret', async () => {
+    it('creates, lists and gets, never exposing a credential', async () => {
       const { repo } = await make();
-      const view = await repo.create(lake('finance'), 'Ann');
+      const view = await repo.create(lake('finance', { connectionId: 'finance-account' }), 'Ann');
       expect(view).not.toBe('exists');
       expect(view).toMatchObject({
         id: 'finance',
-        secretSet: true,
-        accessKeyId: 'AKIA',
+        connectionId: 'finance-account',
+        connection: null,
         source: 'ui',
         updatedBy: 'Ann',
-        keysFromEnv: null,
       });
       expect(JSON.stringify(view)).not.toContain('v1:abc');
+      expect(JSON.stringify(view)).not.toContain('AKIA');
+      expect((await repo.get('finance'))?.accessKeyId).toBe('AKIA');
       expect((await repo.get('finance'))?.secretKeyEnc).toBe('v1:abc');
       expect((await repo.list()).map((t) => t.id)).toEqual(['default', 'finance']);
       expect(await repo.get('nope')).toBeNull();
@@ -87,9 +88,9 @@ export function publishTargetsContract(
       expect(await repo.create(lake('default'), null)).toBe('exists');
     });
 
-    it('reports keys read from the environment', async () => {
+    it('keeps the names of keys read from the environment (for the move to the bridge)', async () => {
       const { repo } = await make();
-      const view = await repo.create(
+      await repo.create(
         lake('envkeys', {
           accessKeyId: null,
           secretKeyEnc: null,
@@ -98,9 +99,10 @@ export function publishTargetsContract(
         }),
         null,
       );
-      expect(view).toMatchObject({
-        secretSet: false,
-        keysFromEnv: { accessKey: 'A_KEY', secretKey: 'A_SECRET' },
+      expect(await repo.get('envkeys')).toMatchObject({
+        secretKeyEnc: null,
+        accessKeyEnv: 'A_KEY',
+        secretKeyEnv: 'A_SECRET',
       });
     });
 
@@ -113,7 +115,6 @@ export function publishTargetsContract(
         sse: 'AES256',
         bucket: 'lake',
         prefix: 'out/',
-        secretSet: true,
         updatedBy: 'Bob',
       });
       expect(view?.editedAt).not.toBeNull();
@@ -126,16 +127,19 @@ export function publishTargetsContract(
       await repo.create(lake('finance'), null);
       await repo.update('finance', { secretKeyEnc: 'v1:new' }, null);
       expect((await repo.get('finance'))?.secretKeyEnc).toBe('v1:new');
-      const view = await repo.update(
+      await repo.update(
         'finance',
         { accessKeyId: null, secretKeyEnc: null, accessKeyEnv: 'K', secretKeyEnv: 'S' },
         null,
       );
-      expect(view).toMatchObject({
+      expect(await repo.get('finance')).toMatchObject({
         accessKeyId: null,
-        secretSet: false,
-        keysFromEnv: { accessKey: 'K', secretKey: 'S' },
+        secretKeyEnc: null,
+        accessKeyEnv: 'K',
+        secretKeyEnv: 'S',
       });
+      await repo.update('finance', { connectionId: 'other' }, null);
+      expect(await repo.connectionOf('finance')).toBe('other');
     });
 
     it('never removes the default target', async () => {
@@ -278,12 +282,37 @@ export function publishTargetsContract(
         accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
         secretKeyEnv: 'TARGET_S3_SECRET_KEY',
       });
-      expect((await repo.list())[0]).toMatchObject({
-        kind: 'external',
+      expect((await repo.list())[0]).toMatchObject({ kind: 'external', connectionId: null });
+      expect(await repo.get('default')).toMatchObject({
         endpoint: 'https://s3.example.com',
-        secretSet: false,
-        keysFromEnv: { accessKey: 'TARGET_S3_ACCESS_KEY', secretKey: 'TARGET_S3_SECRET_KEY' },
+        secretKeyEnc: null,
+        accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
+        secretKeyEnv: 'TARGET_S3_SECRET_KEY',
       });
+    });
+
+    it('marks a target moved to the bridge: its connection kept, its ciphertext gone', async () => {
+      const { repo } = await make();
+      await repo.create(lake('finance'), 'Ann');
+      expect(await repo.connectionOf('finance')).toBeNull();
+      expect((await repo.get('finance'))?.movedToBridgeAt).toBeNull();
+      const before = await repo.version();
+      await repo.markMoved('finance', 'target-finance');
+      const moved = await repo.get('finance');
+      expect(moved?.secretKeyEnc).toBeNull();
+      expect(moved?.movedToBridgeAt).not.toBeNull();
+      expect(moved?.accessKeyId).toBe('AKIA');
+      expect(await repo.connectionOf('finance')).toBe('target-finance');
+      expect(await repo.version()).toBeGreaterThan(before);
+      expect(await repo.connectionOf('nope')).toBeNull();
+    });
+
+    it('keeps the connection across other edits', async () => {
+      const { repo } = await make();
+      await repo.create(lake('finance'), null);
+      await repo.markMoved('finance', 'target-finance');
+      await repo.update('finance', { label: 'Renamed' }, null);
+      expect(await repo.connectionOf('finance')).toBe('target-finance');
     });
   });
 }

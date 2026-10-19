@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import type {
+  JobDeliveryView,
   JobGraph,
   JobOutput,
   JobProgress,
@@ -37,6 +38,22 @@ function callout(job: JobSummary): { title: string; lines: string[]; tone: strin
 }
 
 /** "3 files: 2 CSV, 1 JSON": what the ZIP holds. */
+const DELIVERY: Record<JobDeliveryView['status'], string> = {
+  queued: 'queued',
+  running: 'delivering',
+  waiting: 'waiting for the target',
+  succeeded: 'delivered',
+  skipped: 'already delivered',
+  needs_user: 'needs attention',
+  failed: 'failed',
+};
+
+/** One target's delivery in words, with what went wrong when something did. */
+function deliveryText(d: JobDeliveryView): string {
+  const state = DELIVERY[d.status];
+  return `${d.label}: ${d.message ? `${state} (${d.message})` : state}`;
+}
+
 function filesText(outputs: readonly JobOutput[]): string {
   const byFormat = new Map<string, number>();
   for (const o of outputs) byFormat.set(o.format, (byFormat.get(o.format) ?? 0) + 1);
@@ -79,6 +96,7 @@ export function JobDetailPanel({
   const [outputs, setOutputs] = useState<JobOutput[] | null>(null);
   const [loadedTimes, setLoadedTimes] = useState<StageTimes | null>(null);
   const [graph, setGraph] = useState<JobGraph | null>(null);
+  const [deliveries, setDeliveries] = useState<JobDeliveryView[]>([]);
   const [runs, setRuns] = useState<StepRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,6 +110,7 @@ export function JobDetailPanel({
         setOutputs(d.outputs);
         setLoadedTimes(d.stageTimes ?? null);
         setGraph(d.graph ?? null);
+        setDeliveries(d.deliveries ?? []);
       },
       (err: Error) => {
         if (!cancelled) setError(err.message);
@@ -172,6 +191,19 @@ export function JobDetailPanel({
         <>
           <dt>Queued by</dt>
           <dd>{job.createdBy}</dd>
+        </>
+      )}
+      {deliveries.length > 0 && (
+        <>
+          <dt>Delivering to</dt>
+          <dd>
+            {deliveries.map((d) => (
+              <span key={d.targetId} className="delivery-line">
+                {deliveryText(d)}
+                <br />
+              </span>
+            ))}
+          </dd>
         </>
       )}
       {graph && (

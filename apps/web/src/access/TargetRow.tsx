@@ -9,6 +9,7 @@ import {
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
+import { ConnectionPicker, connectionStatus } from './ConnectionPicker.js';
 
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
@@ -39,8 +40,9 @@ export function TestOutcome({ result }: { result: TargetTestResult | null }) {
 }
 
 /**
- * One publishing target: a row that opens on its settings. Bucket, prefix, endpoint and region
- * are read-only while anything uses the target; keys, label and encryption always change.
+ * One publishing target: a row that opens on its settings. Bucket and prefix are read-only while
+ * anything uses the target; label, connection and encryption always change. Credentials live on
+ * the delivery bridge's connections page, never here.
  */
 export function TargetRow({
   api,
@@ -55,13 +57,10 @@ export function TargetRow({
   const [label, setLabel] = useState(t.label);
   const [bucket, setBucket] = useState(t.bucket);
   const [prefix, setPrefix] = useState(t.prefix);
-  const [endpoint, setEndpoint] = useState(t.endpoint ?? '');
-  const [region, setRegion] = useState(t.region ?? '');
-  const [pathStyle, setPathStyle] = useState(t.forcePathStyle);
+  const [connectionId, setConnectionId] = useState(t.connectionId ?? '');
   const [sse, setSse] = useState<string>(t.sse);
   const [kms, setKms] = useState(t.kmsKeyId ?? '');
   const [storageClass, setStorageClass] = useState(t.storageClass ?? '');
-  const [keys, setKeys] = useState<{ id: string; secret: string } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,9 +71,8 @@ export function TargetRow({
   const usedByText = usedBy(t.usage);
 
   /**
-   * Only what differs from the stored target (keys always as a pair); an emptied endpoint, KMS
-   * key or storage class is `null`, which clears it, and so is the KMS key once encryption
-   * leaves KMS.
+   * Only what differs from the stored target; an emptied KMS key or storage class is `null`,
+   * which clears it, and so is the KMS key once encryption leaves KMS.
    */
   const changes = (): TargetPatchBody => {
     const c: TargetPatchBody = {};
@@ -84,27 +82,18 @@ export function TargetRow({
       if (prefix.trim() !== t.prefix) c.prefix = prefix.trim();
     }
     if (external) {
-      if (!locked) {
-        if (endpoint.trim() !== (t.endpoint ?? '')) c.endpoint = endpoint.trim() || null;
-        if (region.trim() && region.trim() !== (t.region ?? '')) c.region = region.trim();
-      }
-      if (pathStyle !== t.forcePathStyle) c.forcePathStyle = pathStyle;
+      if (connectionId && connectionId !== (t.connectionId ?? '')) c.connectionId = connectionId;
       if (sse !== t.sse) c.sse = sse as TargetPatchBody['sse'];
       const kmsKey = sse === 'aws:kms' ? kms.trim() : '';
       if (kmsKey !== (t.kmsKeyId ?? '')) c.kmsKeyId = kmsKey || null;
       if (storageClass !== (t.storageClass ?? '')) {
         c.storageClass = (storageClass || null) as TargetPatchBody['storageClass'];
       }
-      if (keys) {
-        c.accessKeyId = keys.id.trim();
-        c.secretAccessKey = keys.secret.trim();
-      }
     }
     return c;
   };
   const patch = changes();
   const dirty = Object.keys(patch).length > 0;
-  const keysIncomplete = keys !== null && (!keys.id.trim() || !keys.secret.trim());
 
   const act = async (action: () => Promise<unknown>, reload = true) => {
     setError(null);
@@ -123,7 +112,7 @@ export function TargetRow({
 
   const test = async () => {
     setResult(null);
-    await act(async () => setResult(await api.testPublishTarget({ id: t.id, ...patch })), false);
+    await act(async () => setResult(await api.testPublishTarget({ id: t.id })), false);
   };
 
   return (
@@ -154,11 +143,9 @@ export function TargetRow({
           className="endpoint-body dialog-form"
           onSubmit={(ev) => {
             ev.preventDefault();
-            if (dirty && !keysIncomplete) {
+            if (dirty) {
               void act(() => api.updatePublishTarget(t.id, patch)).then((ok) => {
-                if (!ok) return;
-                setKeys(null);
-                setResult(null);
+                if (ok) setResult(null);
               });
             }
           }}
@@ -182,31 +169,19 @@ export function TargetRow({
           </label>
           {external && (
             <>
-              <label>
-                Endpoint
-                <input
-                  value={endpoint}
-                  readOnly={locked}
-                  placeholder="AWS S3"
-                  onChange={(ev) => setEndpoint(ev.target.value)}
-                />
-              </label>
-              <label>
-                Region
-                <input
-                  value={region}
-                  readOnly={locked}
-                  onChange={(ev) => setRegion(ev.target.value)}
-                />
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={pathStyle}
-                  onChange={(ev) => setPathStyle(ev.target.checked)}
-                />
-                Path-style addressing
-              </label>
+              <ConnectionPicker
+                api={api}
+                value={connectionId}
+                current={t.connection}
+                onChange={setConnectionId}
+              />
+              <p className="muted">
+                {t.connection
+                  ? connectionStatus(t.connection)
+                  : t.connectionId
+                    ? `Connection ${t.connectionId}: its status is not known now`
+                    : 'No connection: choose one, or add it under Manage connections'}
+              </p>
               <label>
                 Server-side encryption
                 <select value={sse} onChange={(ev) => setSse(ev.target.value)}>
@@ -234,60 +209,18 @@ export function TargetRow({
                   ))}
                 </select>
               </label>
-              <div className="field">
-                <span className="field-label">Credentials</span>
-                {keys === null ? (
-                  <span>
-                    <span>
-                      {t.keysFromEnv
-                        ? `Keys from .env (${t.keysFromEnv.accessKey}, ${t.keysFromEnv.secretKey})`
-                        : t.secretSet
-                          ? 'Secret stored (encrypted)'
-                          : 'No secret'}
-                    </span>{' '}
-                    <button type="button" onClick={() => setKeys({ id: '', secret: '' })}>
-                      Set secret
-                    </button>
-                  </span>
-                ) : (
-                  <span className="inline-edit">
-                    <input
-                      aria-label="New access key id"
-                      autoComplete="off"
-                      value={keys.id}
-                      onChange={(ev) => setKeys({ ...keys, id: ev.target.value })}
-                    />
-                    <input
-                      type="password"
-                      aria-label="New secret access key"
-                      autoComplete="off"
-                      value={keys.secret}
-                      onChange={(ev) => setKeys({ ...keys, secret: ev.target.value })}
-                    />
-                    <button type="button" onClick={() => setKeys(null)}>
-                      Cancel
-                    </button>
-                  </span>
-                )}
-              </div>
             </>
           )}
           {locked && (
-            <small className="muted">
-              In use: add a new target to move bucket, prefix, endpoint or region.
-            </small>
+            <small className="muted">In use: add a new target to move bucket or prefix.</small>
           )}
           {error && <p role="alert">{error}</p>}
           <TestOutcome result={result} />
           <div className="endpoint-actions">
-            <button
-              type="submit"
-              className="primary"
-              disabled={busy || !dirty || keysIncomplete || !label.trim()}
-            >
+            <button type="submit" className="primary" disabled={busy || !dirty || !label.trim()}>
               Save
             </button>
-            <button type="button" disabled={busy || keysIncomplete} onClick={() => void test()}>
+            <button type="button" disabled={busy} onClick={() => void test()}>
               Test connection
             </button>
             {t.id !== 'default' && !confirmRemove && (

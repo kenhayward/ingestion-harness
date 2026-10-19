@@ -23,7 +23,8 @@ export function latestJob(jobs: readonly JobSummary[], me: Creator): JobSummary 
   return newest(jobs.filter((j) => isMine(j, me))) ?? newest(jobs);
 }
 
-const isActive = (j: JobSummary) => j.status === 'queued' || j.status === 'running';
+const isActive = (j: JobSummary) =>
+  j.status === 'queued' || j.status === 'running' || j.status === 'delivering';
 
 /**
  * Follow one job closely while it is queued or running: its live stream pushes every change

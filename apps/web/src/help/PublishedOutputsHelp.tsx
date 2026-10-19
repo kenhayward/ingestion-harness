@@ -11,9 +11,19 @@ export function PublishedOutputsHelp() {
       <p>
         An <strong>Internal</strong> target is a bucket on this deployment&apos;s own S3 storage;
         the bucket is created when you add it, and no keys are needed. An <strong>External</strong>{' '}
-        target is an S3 bucket elsewhere, reached with its own access key and secret, which are
-        stored encrypted and never shown again. Use <em>Test connection</em> to write, read and
-        delete a small file before relying on it.
+        target is an S3 bucket elsewhere, reached with a <strong>connection</strong>: its endpoint,
+        region and keys. Connections live on the delivery bridge, not in CT Studio: open{' '}
+        <em>Manage connections</em> to add one, rotate its keys or see why it needs attention, then
+        pick it here. CT Studio never sees a secret. Use <em>Test connection</em> to write, read and
+        delete a small file before relying on a target.
+      </p>
+
+      <h3>Where credentials went</h3>
+      <p>
+        After the upgrade that added the delivery bridge, the keys each external target held were
+        moved to a connection named after the target, and keys read from <code>.env</code> became a
+        connection that reads the same variables on the bridge. Nothing to do: deliveries carry on
+        to the same buckets and keys.
       </p>
 
       <h3>The default target</h3>
@@ -39,9 +49,9 @@ export function PublishedOutputsHelp() {
       <h3>Locked once in use</h3>
       <p>
         While a published recipe version, a delivered output or an S3 key consumer uses a target,
-        its bucket, prefix, endpoint and region are locked: add a new target and publish a new
-        version of the recipe instead. The label, keys and encryption settings can always change, so
-        a rotated key needs no new version. A target that is in use cannot be removed.
+        its bucket and prefix are locked: add a new target and publish a new version of the recipe
+        instead. The label, connection and encryption settings can always change, so rotated keys
+        need no new version. A target that is in use cannot be removed.
       </p>
 
       <h3>S3 keys for the data lake</h3>

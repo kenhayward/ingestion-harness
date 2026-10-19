@@ -26,7 +26,11 @@ describe('bridge OpenAPI document', () => {
     );
     const registered = app
       .registeredRoutes()
-      .filter((r) => !r.startsWith('GET /docs') && !r.startsWith('HEAD '));
+      // The connections page is HTML for browsers, not part of the API.
+      .filter(
+        (r) =>
+          !r.startsWith('GET /docs') && !r.startsWith('HEAD ') && !/^\w+ \/connections/.test(r),
+      );
     expect(registered.sort()).toEqual(documented.sort());
   });
 

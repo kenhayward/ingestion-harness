@@ -26,6 +26,7 @@ from typing import Any, Literal
 import psycopg
 from rdflib import Graph
 
+from .bridge.package import deliver_document
 from .extract import ExtractionResult
 from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
 from .graph_store import GraphStore
@@ -43,7 +44,6 @@ from .pipeline import (
     Target,
     page_images,
     prepare_document,
-    publish_outputs,
     resolve_models,
     run_check_with_event,
     run_nodes,
@@ -226,7 +226,9 @@ def process_template_job(
         if done.graph is not None and "rdf" in formats
         else None
     )
-    return ProcessResult(done.outputs, done.reasons, formats, graph)
+    return ProcessResult(
+        done.outputs, done.reasons, formats, graph, document=done.document, template=template
+    )
 
 
 def publish_template_job(
@@ -236,7 +238,7 @@ def publish_template_job(
     loaded: LoadedTemplate,
     *,
     deliver: bool = True,
-    on_published: Callable[[list[RenderedOutput], Target], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target, str], None] | None = None,
 ) -> list[RenderedOutput]:
     """Apply the reviewer's edits to the draft (never modified), keep the reviewed document in
     the runs bucket and, when `deliver`, publish it to the publishing target of the job's recipe
@@ -281,10 +283,20 @@ def publish_template_job(
     formats = template.delivery_formats()
     published: list[RenderedOutput] = []
     if target is not None:  # None: no publishing targets, nothing is delivered
-        published = publish_outputs(deps, [o for o in rendered if o.format in formats], target)
+        reviewer = queue.reviewer(job.id)
+        published, delivery_id = deliver_document(
+            deps,
+            job,
+            template=template,
+            document=document,
+            outputs=[o for o in rendered if o.format in formats],
+            target=target,
+            acting=reviewer or queue.uploader(job.id),
+            approver=reviewer,
+        )
         if on_published is not None:
             # Recorded before the graph: a store failure keeps the record.
-            on_published(published, target)
+            on_published(published, target, delivery_id)
         if graph is not None and "rdf" in formats:
             publish_graph(job, deps, queue, template, document, graph, target)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
@@ -322,10 +334,15 @@ def publish_graph(
     )
     published_at = datetime.now(UTC).isoformat()
 
+    bridge = deps.bridge
+    if bridge is None:
+        raise RuntimeError("no delivery bridge is configured: the graph cannot be copied")
+
     def write(version: int) -> None:
         body = to_turtle(with_version(rendered.graph, version, published_at))
         key = target.prefix + graph_version_key(sha, template.id, version)
-        target.store.put(target.bucket, key, body, "text/turtle")
+        # Synchronous, inside the graph's lock, as the copy was written before the bridge.
+        bridge.put_object(target.id, target.bucket, key, body, "text/turtle")
         if store is not None:
             load_tbox(deps, store, registry, template, rendered.base)
             store.put(record.graph_iri, body, "text/turtle")

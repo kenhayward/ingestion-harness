@@ -397,6 +397,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listS3Keys: vi.fn(async () => ({ endpoint: null, internalTargets: [], consumers: [] })),
     listLlmEndpoints: vi.fn(async () => []),
     listPublishTargets: vi.fn(async () => []),
+    openConnections: vi.fn(async () => undefined),
+    listSharedConnections: vi.fn(async () => [
+      { id: 'finance-account', name: 'Finance account', status: 'ok' as const, statusReason: null },
+    ]),
     listPublishTargetChoices: vi.fn(async () => []),
     createPublishTarget: vi.fn(async () => {
       throw new Error('createPublishTarget not stubbed');

@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 
 from ingest_worker.main import TASKS
-from ingest_worker.outcomes import AwaitReview, Complete, Deliver, apply_outcome
+from ingest_worker.outcomes import AwaitReview, Complete, Deliver, Delivering, apply_outcome
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.pipeline import Buckets, JobCancelled, PipelineDeps, Target
 from ingest_worker.storage import MemoryObjectStore
 
-from .fakes import FakeQueue
+from .fakes import FakeBridge, FakeQueue
 from .test_template_pipeline import JOB
 
 MIGRATIONS = Path(__file__).resolve().parents[2] / "db" / "migrations"
@@ -22,13 +22,14 @@ CSV = RenderedOutput("fields", "csv", "demo/v1/fields/doc-1.csv", b"a\n", 1)
 JSON = RenderedOutput("document", "json", "demo/v1/document/doc-1.json", b"{}", None)
 
 
-def deps() -> PipelineDeps:
+def deps(bridge: FakeBridge | None = None) -> PipelineDeps:
     return PipelineDeps(
         store=MemoryObjectStore(),
         specs=None,  # type: ignore[arg-type]
         models=None,  # type: ignore[arg-type]
         extract_text=lambda _pdf: [],
         buckets=Buckets("inbox", "outputs", "runs"),
+        bridge=bridge,
     )
 
 
@@ -75,19 +76,28 @@ def test_a_refused_publish_goes_back_to_review_without_drafts() -> None:
     assert not queue.drafts and queue.awaiting == [("job-1", [], ["SHACL: x"])]
 
 
-def test_deliver_publishes_to_the_target_then_completes() -> None:
-    queue, store = FakeQueue(), MemoryObjectStore()
-    target = Target(store=store, bucket="published", prefix="pvp/", id="lake")
-    apply_outcome(JOB, Deliver([CSV, JSON], [CSV], target), queue, deps())
+def test_deliver_hands_the_package_to_the_bridge_then_the_job_is_delivering() -> None:
+    queue, bridge = FakeQueue(), FakeBridge({"lake": ("published", "pvp/")})
+    target = Target("lake", "published", "pvp/")
+    apply_outcome(JOB, Deliver([CSV, JSON], [CSV], target), queue, deps(bridge))
     assert queue.drafts == [("job-1", [CSV, JSON])]
-    assert list(store.objects) == [("published", "pvp/demo/v1/fields/doc-1.csv")]
+    # The bridge's S3 sink writes at the target's prefix + today's key.
+    assert list(bridge.objects) == [("published", "pvp/demo/v1/fields/doc-1.csv")]
     [(job_id, published, target_id)] = queue.published
     assert (job_id, [o.key for o in published], target_id) == (
         "job-1",
         ["pvp/demo/v1/fields/doc-1.csv"],
         "lake",
     )
-    assert queue.completed == [("job-1", [CSV, JSON])]
+    [(_, _, delivery_id)] = queue.published_deliveries
+    assert queue.handed_over == [("job-1", [CSV, JSON], [("lake", delivery_id)])]
+    assert not queue.completed
+
+
+def test_delivering_waits_for_the_bridge() -> None:
+    queue = FakeQueue()
+    apply_outcome(JOB, Delivering([], [("lake", "d-1")]), queue, deps())
+    assert queue.handed_over == [("job-1", [], [("lake", "d-1")])] and not queue.completed
 
 
 def test_deliver_without_a_target_only_completes() -> None:
@@ -97,13 +107,13 @@ def test_deliver_without_a_target_only_completes() -> None:
 
 
 def test_deliver_with_nothing_to_deliver_records_no_publication() -> None:
-    queue, store = FakeQueue(), MemoryObjectStore()
-    apply_outcome(JOB, Deliver([JSON], [], Target(store=store, bucket="b")), queue, deps())
-    assert not queue.published and not store.objects and queue.completed
+    queue, bridge = FakeQueue(), FakeBridge()
+    apply_outcome(JOB, Deliver([JSON], [], Target("b", "b", "")), queue, deps(bridge))
+    assert not queue.published and not bridge.requests and queue.completed
 
 
 def test_a_cancel_before_delivery_delivers_nothing() -> None:
-    queue, store = FakeQueue(cancel_when=lambda: True), MemoryObjectStore()
+    queue, bridge = FakeQueue(cancel_when=lambda: True), FakeBridge()
     with pytest.raises(JobCancelled):
-        apply_outcome(JOB, Deliver([CSV], [CSV], Target(store=store, bucket="b")), queue, deps())
-    assert not store.objects and not queue.published and not queue.completed
+        apply_outcome(JOB, Deliver([CSV], [CSV], Target("b", "b", "")), queue, deps(bridge))
+    assert not bridge.requests and not queue.published and not queue.handed_over

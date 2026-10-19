@@ -1,0 +1,220 @@
+import type { SinkDescribe } from '@ih/bridge-contract';
+import type { Connection } from '../connections/repo.js';
+
+/** Server-rendered templates of the connections page: no client script, no inline style. */
+
+export const esc = (s: string): string =>
+  s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+export interface Shell {
+  /** The page's path prefix under BRIDGE_PUBLIC_URL (`''` or e.g. `/bridge`). */
+  base: string;
+  user?: { name: string };
+}
+
+export function layout(shell: Shell, title: string, body: string): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)} · CT Studio bridge</title>
+<link rel="stylesheet" href="${esc(shell.base)}/connections/page.css">
+</head>
+<body>
+<header><strong>Connections</strong>${shell.user ? `<span>${esc(shell.user.name)}</span>` : ''}</header>
+<main>
+<h1>${esc(title)}</h1>
+${body}
+</main>
+</body>
+</html>`;
+}
+
+export const PAGE_CSS = `
+:root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fff; --muted: #6b6b73; --line: #d9d9de;
+  --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; font-family: system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { :root { --fg: #ececf1; --bg: #16161a; --muted: #a0a0ab;
+  --line: #34343c; --ok: #3fb950; --warn: #d29922; --bad: #f85149; } }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+header { display: flex; justify-content: space-between; padding: 12px 16px;
+  border-bottom: 1px solid var(--line); }
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td form { display: inline; }
+.muted { color: var(--muted); }
+.ok { color: var(--ok); } .needs_attention { color: var(--warn); } .untested { color: var(--muted); }
+.notice { padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
+.error { border-color: var(--bad); color: var(--bad); }
+fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; }
+label { display: block; margin: 8px 0; }
+label span { display: block; font-size: 0.9em; color: var(--muted); }
+input[type=text], input[type=password], select { width: 100%; max-width: 420px; padding: 6px; }
+button { padding: 6px 12px; margin-right: 8px; }
+`;
+
+export function message(shell: Shell, title: string, text: string): string {
+  return layout(shell, title, `<p>${esc(text)}</p>`);
+}
+
+const STATUS: Record<Connection['status'], string> = {
+  ok: 'OK',
+  needs_attention: 'Needs attention',
+  untested: 'Untested',
+};
+
+function secretNote(c: Connection): string {
+  if (c.secretEnv) return `Keys from ${esc(c.secretEnv)}`;
+  if (c.secretSet) return 'Secret stored';
+  return '<span class="muted">No secret</span>';
+}
+
+const hidden = (csrf: string) => `<input type="hidden" name="csrf" value="${esc(csrf)}">`;
+
+function row(base: string, c: Connection, csrf: string, builtIn: boolean): string {
+  const status = `<span class="${c.status}">${STATUS[c.status]}</span>${
+    c.statusReason ? `<br><span class="muted">${esc(c.statusReason)}</span>` : ''
+  }`;
+  const actions = builtIn
+    ? '<span class="muted">Built in</span>'
+    : `<a href="${esc(base)}/connections/${esc(c.id)}">Edit</a>
+       <form method="post" action="${esc(base)}/connections/${esc(c.id)}/test">${hidden(csrf)}<button>Test</button></form>
+       <form method="post" action="${esc(base)}/connections/${esc(c.id)}/delete">${hidden(csrf)}<button>Delete</button></form>`;
+  return `<tr>
+<td>${esc(c.name)}<br><span class="muted">${esc(c.id)}</span></td>
+<td>${esc(c.sinkId)}</td>
+<td>${builtIn ? 'This deployment’s storage' : esc(c.fields.endpoint ?? '')}</td>
+<td>${status}</td>
+<td>${c.lastUsedAt ? esc(c.lastUsedAt.toISOString().slice(0, 16).replace('T', ' ')) : '<span class="muted">Never</span>'}</td>
+<td>${builtIn ? '' : secretNote(c)}</td>
+<td>${actions}</td>
+</tr>`;
+}
+
+export interface FormValues {
+  id: string;
+  name: string;
+  sinkId: string;
+  fields: Record<string, string>;
+}
+
+/** The fields of a connection form: id and name, then the sink's credential fields. */
+function connectionFields(
+  sinks: Record<string, SinkDescribe>,
+  values: FormValues,
+  editing: boolean,
+): string {
+  const sink = sinks[values.sinkId];
+  const sinkChoice = editing
+    ? `<input type="hidden" name="sinkId" value="${esc(values.sinkId)}">`
+    : `<label><span>Kind</span><select name="sinkId">${Object.entries(sinks)
+        .map(
+          ([id, d]) =>
+            `<option value="${esc(id)}"${id === values.sinkId ? ' selected' : ''}>${esc(d.name)}</option>`,
+        )
+        .join('')}</select></label>`;
+  const credentials = (sink?.credentialFields ?? [])
+    .map((f) => {
+      if (f.secret) {
+        const hint = editing ? 'Leave blank to keep the stored secret' : '';
+        return `<label><span>${esc(f.label)}</span><input type="password" name="${esc(f.id)}" autocomplete="new-password" placeholder="${esc(hint)}"></label>`;
+      }
+      return `<label><span>${esc(f.label)}</span><input type="text" name="${esc(f.id)}" value="${esc(values.fields[f.id] ?? '')}"></label>`;
+    })
+    .join('\n');
+  return `${sinkChoice}
+<label><span>Name</span><input type="text" name="name" value="${esc(values.name)}" required></label>
+${editing ? '' : `<label><span>Id (a-z, 0-9, - and _)</span><input type="text" name="id" value="${esc(values.id)}" required></label>`}
+${credentials}
+<label><input type="checkbox" name="saveUntested"> Save even if the test fails</label>`;
+}
+
+export function listPage(
+  shell: Shell,
+  opts: {
+    connections: Connection[];
+    csrf: string;
+    sinks: Record<string, SinkDescribe>;
+    builtIn: string;
+    notice?: { text: string; error: boolean };
+    draft?: FormValues;
+  },
+): string {
+  const { base } = shell;
+  const notice = opts.notice
+    ? `<p class="notice${opts.notice.error ? ' error' : ''}">${esc(opts.notice.text)}</p>`
+    : '';
+  const rows = opts.connections
+    .map((c) => row(base, c, opts.csrf, c.id === opts.builtIn))
+    .join('\n');
+  const draft = opts.draft ?? {
+    id: '',
+    name: '',
+    sinkId: Object.keys(opts.sinks)[0] ?? '',
+    fields: {},
+  };
+  return layout(
+    shell,
+    'Shared connections',
+    `${notice}
+<p class="muted">Credentials that publishing targets deliver with. Secrets are encrypted here and never shown again.</p>
+<table>
+<thead><tr><th>Name</th><th>Kind</th><th>Endpoint</th><th>Status</th><th>Last used</th><th>Keys</th><th></th></tr></thead>
+<tbody>${rows}</tbody>
+</table>
+<form method="post" action="${esc(base)}/connections">
+<fieldset><legend>Add a connection</legend>
+${hidden(opts.csrf)}
+${connectionFields(opts.sinks, draft, false)}
+<button>Test and save</button>
+</fieldset>
+</form>`,
+  );
+}
+
+export function editPage(
+  shell: Shell,
+  opts: {
+    connection: Connection;
+    csrf: string;
+    sinks: Record<string, SinkDescribe>;
+    notice?: { text: string; error: boolean };
+    draft?: FormValues;
+  },
+): string {
+  const c = opts.connection;
+  const values = opts.draft ?? { id: c.id, name: c.name, sinkId: c.sinkId, fields: c.fields };
+  const notice = opts.notice
+    ? `<p class="notice${opts.notice.error ? ' error' : ''}">${esc(opts.notice.text)}</p>`
+    : '';
+  const envNote = c.secretEnv
+    ? `<p class="muted">Keys are read from ${esc(c.secretEnv)}. Entering a secret stores it here instead.</p>`
+    : '';
+  return layout(
+    shell,
+    `Edit ${c.name}`,
+    `${notice}${envNote}
+<form method="post" action="${esc(shell.base)}/connections/${esc(c.id)}">
+<fieldset>
+${hidden(opts.csrf)}
+${connectionFields(opts.sinks, values, true)}
+<button>Test and save</button>
+<a href="${esc(shell.base)}/connections">Cancel</a>
+</fieldset>
+</form>`,
+  );
+}
+
+export function laterPage(shell: Shell): string {
+  return layout(
+    shell,
+    'Connections',
+    '<p>Personal connections arrive later. Shared connections are managed by administrators.</p>',
+  );
+}

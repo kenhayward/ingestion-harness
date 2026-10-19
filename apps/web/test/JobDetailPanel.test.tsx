@@ -1,5 +1,5 @@
 import type { JobOutput, JobSummary, StepRun } from '@ih/shared';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { JobDetailPanel } from '../src/jobs/JobDetailPanel.js';
 import { fakeApi, job, MODEL_CHOICES } from './fake-api.js';
@@ -338,5 +338,57 @@ describe('JobDetailPanel graph (ADR 0011 step 6)', () => {
     render(<JobDetailPanel api={detail(null)} job={published} {...defaults} />);
     await within(panel()).findByText('Document type');
     expect(within(panel()).queryByText('Graph')).toBeNull();
+  });
+});
+
+describe('JobDetailPanel deliveries (delivery bridge)', () => {
+  const delivering = job({ id: 'j10', status: 'delivering' });
+  const detail = (deliveries: unknown) =>
+    fakeApi({
+      getJob: vi.fn(async () => ({ ...delivering, outputs: [], deliveries }) as never),
+      getStepRuns: vi.fn(async () => []),
+    });
+
+  it("shows each target's delivery and its status", async () => {
+    render(
+      <JobDetailPanel
+        api={detail([
+          { targetId: 'default', label: 'Default', status: 'succeeded', message: null },
+          {
+            targetId: 'finance-lake',
+            label: 'Finance lake',
+            status: 'waiting',
+            message: null,
+          },
+        ])}
+        job={delivering}
+        {...defaults}
+      />,
+    );
+    expect(await within(panel()).findByText('Delivering to')).toBeInTheDocument();
+    expect(panel()).toHaveTextContent('Default: delivered');
+    expect(panel()).toHaveTextContent('Finance lake: waiting for the target');
+  });
+
+  it("names a delivery's problem, and shows nothing without deliveries", async () => {
+    const { unmount } = render(
+      <JobDetailPanel
+        api={detail([
+          {
+            targetId: 'finance-lake',
+            label: 'Finance lake',
+            status: 'needs_user',
+            message: 'access denied',
+          },
+        ])}
+        job={delivering}
+        {...defaults}
+      />,
+    );
+    expect(await within(panel()).findByText('Delivering to')).toBeInTheDocument();
+    expect(panel()).toHaveTextContent('Finance lake: needs attention (access denied)');
+    unmount();
+    render(<JobDetailPanel api={detail([])} job={delivering} {...defaults} />);
+    await waitFor(() => expect(within(panel()).queryByText('Delivering to')).toBeNull());
   });
 });

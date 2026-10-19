@@ -196,3 +196,15 @@ PR: let `read_pages` always use the Workbench reader.
 | 3 `finalise` | done: `document_of`, `finalise`, `write_drafts` (`tests/test_finalise.py`); process, re-run and publish use them |
 | 4 outcomes and `TASKS` | done: `outcomes.py`, `GraphDelivery`, `main.TASKS` (`tests/test_outcomes.py`) |
 | 5 `NodeSpec`, `JobModels`, `run_nodes` | done: `JobModels`, `run_nodes`, `nodes.py` (`tests/test_nodes.py`) |
+
+### After the refactor: delivery through the bridge
+
+The delivery bridge ([ADR 0017](../adr/0017-delivery-bridge.md), phase 2) changed behaviour on
+purpose, so two golden files were rewritten with it (`template-review-rerun-publish`,
+`template-delivered`). Their traces now end in `delivering` (with the bridge's delivery ids)
+instead of `completed`. Every object written, at the store and at the target, is unchanged: the
+bridge writes the same keys. In `outcomes.py`, `Deliver` hands one package to the bridge
+(`deliver_document`) instead of writing the target itself. A new outcome, `Delivering`, is
+returned by publish and republish once the bridge has accepted something. Both leave the job
+`delivering` until the bridge's events finish it.
+

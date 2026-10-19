@@ -8,6 +8,7 @@ import {
   DeliveryViewSchema,
   PackageSchema,
   SinkDescribeSchema,
+  TargetTestResultSchema,
 } from '../src/index.js';
 
 const fixture = (name: string) => new URL(`./fixtures/${name}`, import.meta.url);
@@ -22,6 +23,7 @@ describe('contract fixtures', () => {
     ['delivery-view.json', DeliveryViewSchema],
     ['event.json', BridgeEventSchema],
     ['error.json', BridgeErrorSchema],
+    ['target-test-result.json', TargetTestResultSchema],
   ])('%s parses unchanged', (file, schema) => {
     const json: unknown = JSON.parse(readFileSync(fixture(file), 'utf8'));
     expect(schema.parse(json)).toEqual(json);

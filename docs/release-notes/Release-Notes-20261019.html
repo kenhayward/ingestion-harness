@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 19 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">Monday 19 October 2026: publishing through the delivery bridge.</p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Major changes</h4>
+        <ul>
+          <li>
+            <a href="#delivery-bridge">Publishing through the delivery bridge</a>
+            <span>— a new service delivers every publication and keeps target credentials</span>
+          </li>
+          <li>
+            <a href="#connections">Connections</a>
+            <span>— external S3 credentials move to the bridge's connections page</span>
+          </li>
+        </ul>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#delivering">The Delivering status</a>
+            <span>— jobs wait for their deliveries, and show each target's outcome</span>
+          </li>
+        </ul>
+        <h4><a href="#other">Other updates</a></h4>
+      </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            Two new settings are required: <code>BRIDGE_CLIENT_KEY</code> and
+            <code>BRIDGE_SECRETS_KEY</code>. Keep <code>BRIDGE_SECRETS_KEY</code> with
+            <code>LLM_SECRETS_KEY</code>: a restore needs both.
+          </li>
+          <li>
+            The publishing-targets API no longer accepts credentials. A request with
+            <code>accessKeyId</code> or <code>secretAccessKey</code> gets a 400; name a connection
+            with <code>connectionId</code> instead.
+          </li>
+          <li>
+            Jobs have a new status, <code>delivering</code>. API clients that list statuses need
+            updating.
+          </li>
+        </ul>
+      </div>
+
+      <h2 id="major">Major changes</h2>
+
+      <h3 id="delivery-bridge">Publishing through the delivery bridge</h3>
+      <p>
+        A new service, the delivery bridge, now does all publishing. The worker still renders the
+        outputs, then hands the bridge one package per document. The bridge writes the files to the
+        recipe's publishing target, retries what can be retried, and reports each delivery back to
+        CT Studio. Objects land at the same keys as before, so data lakes reading the publish bucket
+        see no change.
+      </p>
+      <p>
+        Results, downloads, withdraw on delete, republish and RDF rebuilds also go through the
+        bridge, including for outputs published before this release. See
+        <a href="../adr/0017-delivery-bridge.md">ADR 0017</a> and the deploy guide's Delivery bridge
+        section.
+      </p>
+
+      <h3 id="connections">Connections</h3>
+      <p>
+        Credentials for external publishing targets now live on the bridge, not in CT Studio. On
+        Administration &gt; Published outputs, <strong>Manage connections</strong> opens the
+        bridge's connections page, where admins add, test and rotate S3 credentials. An external
+        target picks one of these connections; internal targets use the deployment's own storage.
+      </p>
+      <p>
+        On upgrade, each external target's keys move to a connection named after the target, and CT
+        Studio's copy is cleared. Nothing to re-enter: test the target after upgrading to confirm.
+      </p>
+
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="delivering">The Delivering status</h3>
+      <p>
+        Once the bridge accepts a job's package, the job shows <strong>Delivering</strong> until
+        every delivery finishes. It then succeeds, fails, or goes back to review with the target and
+        the reason (for example, rejected credentials). The job panel lists each target's delivery.
+        A delivering job can't be cancelled.
+      </p>
+
+      <h2 id="other">Other updates</h2>
+      <p>
+        Backups include the bridge's connections, still encrypted, and a restore re-registers the
+        publishing targets with the bridge. The post-deploy smoke test now publishes a job through
+        the bridge, reads it back and withdraws it.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>

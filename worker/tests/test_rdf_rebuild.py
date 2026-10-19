@@ -16,7 +16,13 @@ from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, ontology_normalized_key
 from ingest_worker.template import Template
 
-from .fakes import FakeGraphStore, FakeQueue, FakeTargets, MemoryLinkedDataSettings
+from .fakes import (
+    FakeBridge,
+    FakeGraphStore,
+    FakeQueue,
+    FakeTargets,
+    MemoryLinkedDataSettings,
+)
 
 BASE = "https://data.acme.example/"
 NEW_BASE = "https://data.acme.com/ct/"
@@ -70,7 +76,8 @@ def setup(tmp_path: Path, *jobs: DeliveredJob) -> tuple[PipelineDeps, MemoryRebu
         models=ModelRegistry({}, {}, {}),
         extract_text=lambda _pdf: [],
         buckets=Buckets("inbox", "outputs", "runs"),
-        targets=FakeTargets({"default": Target(store=target, bucket="published", prefix="pvp/")}),
+        targets=FakeTargets({"default": Target("default", "published", "pvp/")}),
+        bridge=FakeBridge({"default": ("published", "pvp/")}, stores={"default": target}),
         linked_data=MemoryLinkedDataSettings(BASE),
         graph_registry=MemoryGraphRegistry(),
         graph_store=FakeGraphStore(),
@@ -231,16 +238,17 @@ def to_finance(deps: PipelineDeps, source: MemoryRebuildSource) -> MemoryObjectS
     """v1 (the jobs' version) names finance-lake (prefix fin/); its store."""
     assert isinstance(deps.targets, FakeTargets)
     finance = MemoryObjectStore()
-    deps.targets.targets["finance-lake"] = Target(finance, "finance", "fin/", "finance-lake")
+    deps.targets.targets["finance-lake"] = Target("finance-lake", "finance", "fin/")
+    assert isinstance(deps.bridge, FakeBridge)
+    deps.bridge.targets["finance-lake"] = ("finance", "fin/")
+    deps.bridge.stores["finance-lake"] = finance
     source.templates[1] = {**TEMPLATE, "delivery": {"publishTo": "finance-lake"}}
     return finance
 
 
 def default_store(deps: PipelineDeps) -> MemoryObjectStore:
-    assert isinstance(deps.targets, FakeTargets)
-    store = deps.targets.targets["default"].store
-    assert isinstance(store, MemoryObjectStore)
-    return store
+    assert isinstance(deps.bridge, FakeBridge)
+    return deps.bridge.stores["default"]
 
 
 def test_backfill_publishes_to_the_target_of_the_jobs_version(tmp_path: Path) -> None:
