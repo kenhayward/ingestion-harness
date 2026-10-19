@@ -218,6 +218,10 @@ admin turns it off per endpoint (*Tool calls*); production extraction never uses
 drafting run writes a model log (`{job}/draft-log.json`), shown as the proposal's *Model log*.
 See [ADR 0016](adr/0016-tools-in-drafting.md).
 
+## Worker nodes
+
+The worker's work is split into **nodes**: functions that take and return typed values and never edit shared state (reading pages, selecting the copy, segmenting, one recipe step, normalising its reply, finalising the document). Each is described in `ingest_worker/nodes.py` (what it returns, whether it writes only caches or results, whether it reaches a model). `JobModels` is the only way to a model and checks the data policy; `run_nodes` gives every node a cancellation safe point; a task's handler returns an outcome that `apply_outcome` alone writes. Equivalence traces (`worker/tests/test_equivalence.py`) pin everything a job does to golden files. With `WORKER_STEP_GRAPH=langgraph` (a trial, off by default) a recipe's steps run as a LangGraph graph checkpointed in Postgres schema `langgraph`, so a job whose worker stopped resumes at its step. See [ADR 0018](adr/0018-capabilities-as-nodes.md).
+
 ## Failure handling
 
 | Failure | Classification | Outcome |
