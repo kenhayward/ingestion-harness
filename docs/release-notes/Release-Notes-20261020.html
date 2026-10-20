@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 20 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">
+        Tuesday 20 October 2026: publishing through the delivery bridge, recipe plugins and model
+        logs. PRs #248 to #275, merged between Sunday 18 October 2026, 15:27 and Tuesday 20 October
+        2026, 15:56 (UTC).
+      </p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Major changes</h4>
+        <ul>
+          <li>
+            <a href="#delivery-bridge">Publishing through the delivery bridge</a>
+            <span>— a new service delivers every publication and keeps target credentials</span>
+          </li>
+          <li>
+            <a href="#connections">Connections</a>
+            <span>— external S3 credentials move to the bridge's connections page</span>
+          </li>
+          <li>
+            <a href="#triple-store">The triple store through the bridge</a>
+            <span>— graphs are delivered by the bridge, to a Triple store target</span>
+          </li>
+          <li>
+            <a href="#plugins">Recipe plugins</a>
+            <span>— steps that run code instead of a model call</span>
+          </li>
+          <li>
+            <a href="#checks">Output limits and check plugins</a>
+            <span>— flag values outside a range or pattern, and check them against a list</span>
+          </li>
+          <li>
+            <a href="#model-logs">Model logs</a>
+            <span>— see what the model was sent and what it answered, attempt by attempt</span>
+          </li>
+          <li>
+            <a href="#mapping-memory">Mapping memory</a>
+            <span>— mappings designers accepted are reused by later mappings</span>
+          </li>
+          <li>
+            <a href="#worker-graph">The worker as a graph of nodes, and a LangGraph trial</a>
+            <span>— the groundwork for plugins and agents; LangGraph is off by default</span>
+          </li>
+        </ul>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#delivering">The Delivering status</a>
+            <span>— jobs wait for their deliveries, and show each target's outcome</span>
+          </li>
+          <li>
+            <a href="#graph-views">Graph views</a>
+            <span>— cards and a diagram wherever a document's graph is shown</span>
+          </li>
+          <li>
+            <a href="#results">Results</a>
+            <span>— a grouped list with a preview, and a result as an outline</span>
+          </li>
+          <li>
+            <a href="#about">About and release notes</a>
+            <span>— the build's version and these notes, from the account menu</span>
+          </li>
+          <li>
+            <a href="#symbols">Symbol characters in Word documents</a>
+            <span>— degree signs and other symbols are read as what they show</span>
+          </li>
+        </ul>
+        <h4><a href="#other">Other updates</a></h4>
+      </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            Two new settings are required: <code>BRIDGE_CLIENT_KEY</code> and
+            <code>BRIDGE_SECRETS_KEY</code>. Keep <code>BRIDGE_SECRETS_KEY</code> with
+            <code>LLM_SECRETS_KEY</code>: a restore needs both.
+          </li>
+          <li>
+            The publishing-targets API no longer accepts credentials. A request with
+            <code>accessKeyId</code> or <code>secretAccessKey</code> gets a 400; name a connection
+            with <code>connectionId</code> instead.
+          </li>
+          <li>
+            Jobs have a new status, <code>delivering</code>. API clients that list statuses need
+            updating.
+          </li>
+          <li>
+            Re-running an unknown step now answers <code>no extract or plugin step "…"</code> (it
+            was <code>no extract step "…"</code>). API clients that match the message need updating.
+            Rows of <code>GET /api/plugins</code> now carry <code>kind</code>.
+          </li>
+          <li>
+            Seven new migrations run with the deploy: <code>202610181509_mapping_memory</code>,
+            <code>202610191612_plugin_catalogue</code>,
+            <code>202610191642_plugin_preview_task</code>, <code>202610201100_job_deliveries</code>,
+            <code>202610201123_plugin_catalogue_kind</code>,
+            <code>202610201200_targets_moved</code> and <code>202610201300_rdf_targets</code>.
+          </li>
+        </ul>
+      </div>
+
+      <h2 id="major">Major changes</h2>
+
+      <h3 id="delivery-bridge">Publishing through the delivery bridge</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/253">#253</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/256">#256</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/260">#260</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/265">#265</a>
+      </p>
+      <p>
+        A new service, the delivery bridge, now does all publishing. The worker still renders the
+        outputs, then hands the bridge one package per document. The bridge writes the files to the
+        recipe's publishing target, retries what can be retried, and reports each delivery back to
+        CT Studio. Objects land at the same keys as before, so data lakes reading the publish bucket
+        see no change.
+      </p>
+      <p>
+        Results, downloads, withdraw on delete, republish and RDF rebuilds also go through the
+        bridge, including for outputs published before this release. See
+        <a href="../adr/0017-delivery-bridge.md">ADR 0017</a> and the deploy guide's Delivery bridge
+        section.
+      </p>
+
+      <h3 id="connections">Connections</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/260">#260</a>
+      </p>
+      <p>
+        Credentials for external publishing targets now live on the bridge, not in CT Studio. On
+        Administration &gt; Published outputs, <strong>Manage connections</strong> opens the
+        bridge's connections page, where admins add, test and rotate S3 credentials. An external
+        target picks one of these connections; internal targets use the deployment's own storage.
+      </p>
+      <p>
+        On upgrade, each external target's keys move to a connection named after the target, and CT
+        Studio's copy is cleared. Nothing to re-enter: test the target after upgrading to confirm.
+      </p>
+
+      <h3 id="triple-store">The triple store through the bridge</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/264">#264</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/269">#269</a>
+      </p>
+      <p>
+        Graphs now reach the triple store through the delivery bridge too. When the deployment has
+        one (<code>RDF_ENDPOINT</code>), it appears under Administration &gt; Published outputs as
+        <strong>Triple store</strong>, and its connection under <strong>Manage connections</strong>.
+        A recipe that delivers RDF sends one package: its outputs and its graph's versioned copy go
+        to its own target, and its graph to the triple store. Graph names, copy keys and the loaded
+        Turtle are unchanged, and an older version never replaces a newer one when retries arrive
+        out of order.
+      </p>
+      <p>
+        The worker no longer connects to Fuseki: the bridge holds the writer's password
+        (<code>RDF_WRITER_PASSWORD</code>). Ontology loads, rebuilds and re-mints go through the
+        bridge as well; a rebuild job now waits in <em>Delivering</em> until its graphs are loaded.
+      </p>
+
+      <h3 id="plugins">Recipe plugins</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/262">#262</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/266">#266</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/267">#267</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/268">#268</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/270">#270</a>
+      </p>
+      <p>
+        A recipe step can now run a <strong>plugin</strong> instead of asking a model. A plugin is
+        code installed with CT Studio. The first one, <code>text.pattern@1</code>, fills fields or a
+        table by matching patterns in the step's sections: fast and free for values the document
+        always labels the same way. Add one with <em>Add plugin step</em> on the Pipeline tab. Its
+        settings form is laid out from what the plugin asks for, and the Workbench can preview it on
+        the dev samples before any test run.
+      </p>
+      <p>
+        Publishing checks that the deployment's workers have each plugin and that its settings fit,
+        so a recipe never fails at run time for a missing plugin. Administrators can add plugins as
+        Python packages, installed in the worker image with the
+        <code>WORKER_PLUGINS</code> build argument. The
+        <a href="../plugins/writing-plugins.md">plugin author's guide</a> explains how to write one.
+      </p>
+      <p>Plugin steps can also:</p>
+      <ul>
+        <li>ask the step's model, under the project's data policy, when the plugin needs one;</li>
+        <li>read a repeating section, once per occurrence, as an extract step does;</li>
+        <li>be re-run from the Review page, with guidance for the plugin;</li>
+        <li>
+          <strong>enrich an earlier table</strong>: fill only some columns of the rows another step
+          found, for example a batch's expiry date printed elsewhere in the document. Extract steps
+          can do this too. Each column is still filled by exactly one step, and re-running the step
+          that finds the rows re-runs the steps that enrich them.
+        </li>
+      </ul>
+
+      <h3 id="checks">Output limits and check plugins</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/271">#271</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/272">#272</a>
+      </p>
+      <p>
+        On the Outputs tab, the <strong>Allowed values</strong> column sets limits for each field or
+        column: a minimum and maximum for numbers, and a pattern and maximum length for text. A
+        value outside its limits is kept exactly as the document has it and flagged for review, from
+        a step's answer and from a reviewer's correction alike. The model is never told the limits,
+        so it reports what the document says.
+      </p>
+      <p>
+        A check step can now name a <strong>check plugin</strong> instead of comparing two outputs.
+        The built-in <code>list.lookup@1</code> checks values against a list kept in the step, such
+        as approved product names, with the same near-match rules as today's checks. Values it can't
+        match send the job for review, and a plugin's notes show on the Review and Results pages.
+      </p>
+
+      <h3 id="model-logs">Model logs</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/273">#273</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/275">#275</a>
+      </p>
+      <p>
+        You can now see what the model was asked and what it answered wherever a model runs. Every
+        model log opens in the same two-panel view: the attempts on the left, marked accepted or
+        sent back, and the attempt you pick on the right. It shows the errors that sent the answer
+        back first, then the prompt, any tool calls and the reply.
+      </p>
+      <ul>
+        <li>
+          <strong>Pipeline steps:</strong> a step that "Needs a retry on many runs" now has
+          <em>See the model log</em>, listing the recent runs that needed a retry.
+        </li>
+        <li>
+          <strong>Review page:</strong> the Steps tab has a <em>Model log</em> for each step that
+          called a model in that job.
+        </li>
+        <li>
+          <strong>Workbench drafting:</strong> the existing <em>Model log</em> of Survey, Outputs,
+          Sections, Pipeline, Mapping and Revise proposals uses the same view, for accepted,
+          rejected and failed runs.
+        </li>
+      </ul>
+
+      <h3 id="mapping-memory">Mapping memory</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/248">#248</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/250">#250</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/251">#251</a>
+      </p>
+      <p>
+        CT Studio now remembers the ontology mappings designers accept, from saves, accepted
+        proposals and publishing. The mapping stage uses that memory before it asks the model.
+        Mappings confirmed across recipes are proposed straight away, and answers designers refused
+        are no longer offered. Mappings are never learned from sample data, and wording from a
+        local-only project never reaches an external model.
+      </p>
+      <p>
+        The Ontologies page has a <strong>Remembered mappings</strong> tab to confirm, edit or
+        reject what was learned. Mapped terms now show what they mean wherever they appear: their
+        other names, their definition and a link to the term in the Ontologies page.
+      </p>
+
+      <h3 id="worker-graph">The worker as a graph of nodes, and a LangGraph trial</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/257">#257</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/258">#258</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/259">#259</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/261">#261</a>
+      </p>
+      <p>
+        This is the first step of moving the worker to an agent-graph architecture, so that CT
+        Studio can grow by plugging in capabilities (plugins, other OCR engines and, later, remote
+        agents over A2A) instead of changing the pipeline each time. The research and the decisions
+        are in
+        <a href="../design/agent-graph-architecture.md">the agent graph research</a> and
+        <a href="../adr/0018-capabilities-as-nodes.md">ADR 0018</a>.
+      </p>
+      <p>
+        <strong>Capabilities are nodes.</strong> The worker's job graphs are now explicit, with no
+        change in behaviour. Each capability (reading pages, selecting a copy, segmenting, running a
+        step, normalising its answer, finishing the document) is a node that takes and returns typed
+        values and never edits shared state. Each node is described with its effects (pure,
+        cacheable or effectful) and whether it sends data out (none, to a model, or remote).
+      </p>
+      <p>
+        Every chat, vision or OCR model call goes through one gate, which checks the project's data
+        policy; a test fails if anything reaches a model around it. Handlers return their outcome
+        (complete, await review, deliver) and one place writes the job's status. Golden files pin
+        everything a job does, so later changes to the graph can't quietly change results. Recipe
+        plugins are the first capability built on this contract.
+      </p>
+      <p>
+        <strong>LangGraph trial, off by default.</strong> With
+        <code>WORKER_STEP_GRAPH=langgraph</code>, a recipe's steps run as a LangGraph graph,
+        checkpointed in Postgres (schema <code>langgraph</code>) after every step. A job whose
+        worker stopped then resumes at the step it reached, instead of calling the model again for
+        the steps already done. CT Studio's own queue still claims, retries and cancels jobs. The
+        LangGraph library runs inside that queue, not the LangGraph Agent Server. Checkpoint threads
+        are deleted once no retry will resume them, and pruned at worker start and hourly. LangSmith
+        tracing is always forced off, so no document text leaves through it. Every golden scenario
+        runs both ways and gives the same results.
+      </p>
+
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="delivering">The Delivering status</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/260">#260</a>
+      </p>
+      <p>
+        Once the bridge accepts a job's package, the job shows <strong>Delivering</strong> until
+        every delivery finishes. It then succeeds, fails, or goes back to review with the target and
+        the reason (for example, rejected credentials). The job panel lists each target's delivery.
+        A delivering job can't be cancelled.
+      </p>
+
+      <h3 id="graph-views">Graph views</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/254">#254</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/255">#255</a>
+      </p>
+      <p>
+        A document's graph no longer shows only as Turtle. The Review page's Graph tab, the Mapping
+        preview and a published result offer <strong>Cards</strong> (one card per entity, with each
+        value's evidence and any shape problems on the row they are about), a
+        <strong>Diagram</strong>, and Turtle.
+      </p>
+
+      <h3 id="results">Results</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/252">#252</a>
+      </p>
+      <p>
+        The Results list groups results by publish day beside a preview panel. A new
+        <em>Show</em> filter picks reviewed, auto-approved or with-issues results. A result opens as
+        an outline (fields, each table, checks, issues and files) beside the item you pick.
+      </p>
+
+      <h3 id="about">About and release notes</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/249">#249</a>
+      </p>
+      <p>
+        <strong>About</strong> in the account menu, or the version at the bottom of the nav, shows
+        this build's version, a link to it on GitHub, and these release notes by date.
+      </p>
+
+      <h3 id="symbols">Symbol characters in Word documents</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/274">#274</a>
+      </p>
+      <p>
+        Word documents store characters from the Symbol and Wingdings fonts, such as the degree sign
+        in <code>25 °C</code>, in a way that read as nothing in the text the model received. The
+        model wrote <code>25 C</code>. They are now read as the characters they show.
+      </p>
+
+      <h2 id="other">Other updates</h2>
+      <p>
+        Backups include the bridge's connections, still encrypted, and a restore re-registers the
+        publishing targets with the bridge. The post-deploy smoke test now publishes a job through
+        the bridge, reads it back and withdraws it.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>
