@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import psycopg
 from rdflib import Graph
 
+from . import normalize
 from .bridge.client import BridgeRefused
 from .bridge.models import ActingUser, BridgePackage
 from .bridge.package import (
@@ -38,7 +39,7 @@ from .bridge.package import (
 from .extract import ExtractionResult
 from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
 from .llm.base import LLMProvider
-from .normalize import normalize_value
+from .normalize import check_value, pattern_matcher, pattern_pairs
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell, content_type, encode_csv
 from .pipeline import (
     DocumentError,
@@ -1015,13 +1016,16 @@ def normalise_step(
     order = template.document.date_order
     issues: list[dict[str, Any]] = []
     if step.fields:
+        defs = [template.field(f) for f in step.fields]
+        matches = pattern_matcher(
+            pattern_pairs([((data.get(d.id) or {}).get("value"), d) for d in defs], order),
+            normalize.PATTERN_TIMEOUT_S,
+        )
         fields: dict[str, dict[str, Any]] = {}
         for field_id in step.fields:
             definition = template.field(field_id)
             entry = data.get(field_id) or {}
-            value, issue = normalize_value(
-                entry.get("value"), definition.type, options=definition.enum, date_order=order
-            )
+            value, issue = check_value(entry.get("value"), definition, order, matches)
             fields[field_id] = {
                 "value": value,
                 "evidence": entry.get("evidence"),
@@ -1043,6 +1047,11 @@ def normalise_step(
     assert step.table is not None
     table = template.table(step.table)
     own = template.columns_of(step)  # the creating step leaves enriched columns None
+    checked = [c for c in table.columns if c.id in own]
+    matches = pattern_matcher(
+        pattern_pairs([(r.get(c.id), c) for r in data.get("rows", []) for c in checked], order),
+        normalize.PATTERN_TIMEOUT_S,
+    )
     rows: list[dict[str, Any]] = []
     for n, raw_row in enumerate(data.get("rows", []), start=1):
         row: dict[str, Any] = {}
@@ -1051,9 +1060,7 @@ def normalise_step(
                 if step.columns is None:
                     row[column.id] = None  # an enriching step's, filled when it runs
                 continue
-            value, issue = normalize_value(
-                raw_row.get(column.id), column.type, options=column.enum, date_order=order
-            )
+            value, issue = check_value(raw_row.get(column.id), column, order, matches)
             row[column.id] = value
             if issue:
                 issues.append(

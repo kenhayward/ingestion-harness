@@ -30,6 +30,44 @@ def _drop(items: list[dict[str, Any]], item_id: Any) -> list[dict[str, Any]]:
     return [x for x in items if x.get("id") != item_id]
 
 
+#: An output's constraints (docs/design/output-roles.md §1), set by hand and never drafted.
+CONSTRAINT_KEYS = ("range", "pattern", "length")
+
+
+def _takes(output_type: Any, key: str) -> bool:
+    if key == "range":
+        return output_type in ("decimal", "integer")
+    return (output_type or "text") == "text"
+
+
+def _keep_constraints(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
+    """A drafted field or column keeps the constraints it had, where its new type still takes
+    them (keepConstraints in TS)."""
+    if old is None:
+        return new
+    out = dict(new)
+    for key in CONSTRAINT_KEYS:
+        if key not in out and key in old and _takes(out.get("type"), key):
+            out[key] = old[key]
+    return out
+
+
+def _keep_table_constraints(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
+    if old is None:
+        return new
+    before = {c.get("id"): c for c in _list(old.get("columns"))}
+    return {
+        **new,
+        "columns": [
+            _keep_constraints(before.get(c.get("id")), c) for c in _list(new.get("columns"))
+        ],
+    }
+
+
+def _by_id(items: list[dict[str, Any]], item_id: Any) -> dict[str, Any] | None:
+    return next((x for x in items if x.get("id") == item_id), None)
+
+
 def _empty_semantics() -> dict[str, Any]:
     """A new mapping with no document class yet (validation then asks for one)."""
     return {
@@ -102,10 +140,12 @@ def apply_changes(definition: Definition, changes: list[dict[str, Any]]) -> Defi
                 semantics = _empty_semantics()
             _apply_mapping(semantics, change)
         elif op == "putField":
-            fields = _put(fields, change["field"])
+            field = change["field"]
+            fields = _put(fields, _keep_constraints(_by_id(fields, field["id"]), field))
             tables = _drop(tables, change["field"]["id"])
         elif op == "putTable":
-            tables = _put(tables, change["table"])
+            table = change["table"]
+            tables = _put(tables, _keep_table_constraints(_by_id(tables, table["id"]), table))
             fields = _drop(fields, change["table"]["id"])
         elif op == "removeOutput":
             fields, tables = _drop(fields, change["id"]), _drop(tables, change["id"])

@@ -3085,5 +3085,73 @@
         }
       }
     }
+  },
+  {
+    "name": "putField and putTable keep the constraints an output had, where its type still takes them",
+    "definition": {
+      "id": "assay",
+      "version": 2,
+      "name": "Assay",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": {
+        "fields": [
+          { "id": "assay", "type": "decimal", "range": { "min": 90, "max": 110 } },
+          { "id": "batch", "type": "text", "pattern": "^[A-Z]{2}\\d{4}$" }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [{ "id": "code", "type": "text", "length": { "max": 8 } }]
+          }
+        ]
+      },
+      "pipeline": []
+    },
+    "changes": [
+      {
+        "op": "putField",
+        "field": { "id": "assay", "type": "decimal", "description": "Assay %" },
+        "reason": "say what the assay is"
+      },
+      { "op": "putField", "field": { "id": "batch", "type": "integer" }, "reason": "a number" },
+      {
+        "op": "putTable",
+        "table": {
+          "id": "lines",
+          "columns": [
+            { "id": "code", "type": "text" },
+            { "id": "qty", "type": "integer" }
+          ]
+        },
+        "reason": "add the quantity"
+      }
+    ],
+    "expected": {
+      "id": "assay",
+      "version": 2,
+      "name": "Assay",
+      "document": { "sections": [{ "id": "all", "anchor": "\\A" }] },
+      "outputs": {
+        "fields": [
+          {
+            "id": "assay",
+            "type": "decimal",
+            "description": "Assay %",
+            "range": { "min": 90, "max": 110 }
+          },
+          { "id": "batch", "type": "integer" }
+        ],
+        "tables": [
+          {
+            "id": "lines",
+            "columns": [
+              { "id": "code", "type": "text", "length": { "max": 8 } },
+              { "id": "qty", "type": "integer" }
+            ]
+          }
+        ]
+      },
+      "pipeline": []
+    }
   }
 ]

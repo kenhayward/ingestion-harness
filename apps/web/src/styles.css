@@ -934,6 +934,16 @@ fieldset.choice label.inline:has(input:checked) {
 }
 
 /* Sections, fields, table columns: one item per row under column headings. */
+/* Paired inputs in one cell (an output's min and max, its pattern and max length). */
+.row-bounds {
+  display: flex;
+  gap: 4px;
+}
+.row-bounds > * {
+  flex: 1;
+  min-width: 0;
+}
+
 .row-table table {
   width: 100%;
   table-layout: fixed;

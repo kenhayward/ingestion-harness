@@ -957,7 +957,7 @@ describe('TemplateEditor', () => {
       within(grid)
         .getAllByRole('columnheader')
         .map((h) => h.textContent),
-    ).toEqual(['#', 'Field ID', 'Name', 'Type', 'Enum values', 'Description', '']);
+    ).toEqual(['#', 'Field ID', 'Name', 'Type', 'Allowed values', 'Description', '']);
     expect(within(grid).getByLabelText('Field 1 id')).toBeInTheDocument();
   });
 
@@ -2141,5 +2141,83 @@ describe('plugin steps in the recipe editors', () => {
     const add = await screen.findByRole('combobox', { name: 'Add plugin step' });
     expect(add).toBeDisabled();
     expect(add).toHaveAttribute('title', 'No plugins yet: no worker has published any');
+  });
+});
+
+describe('output constraints', () => {
+  const withAssay = () => {
+    const d = validDefinition();
+    return {
+      ...d,
+      version: 1,
+      outputs: {
+        ...d.outputs,
+        fields: [
+          { id: 'sender', type: 'text' },
+          { id: 'assay', type: 'decimal' },
+        ],
+      },
+      pipeline: [
+        { type: 'extract', id: 'head', fields: ['sender', 'assay'], sections: ['all'] },
+        d.pipeline[1]!,
+      ],
+    };
+  };
+  const savedFields = (api: Api) =>
+    (
+      vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as {
+        outputs: { fields: Record<string, unknown>[] };
+      }
+    ).outputs.fields;
+
+  it('sets a range on a decimal field and clears it when emptied', async () => {
+    const { api } = setup(view(withAssay()));
+    await userEvent.click(await tab(/Outputs/));
+    await userEvent.type(screen.getByLabelText('Field 2 min'), '90');
+    await userEvent.type(screen.getByLabelText('Field 2 max'), '110.5');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(savedFields(api)[1]).toMatchObject({ range: { min: 90, max: 110.5 } });
+    await userEvent.clear(screen.getByLabelText('Field 2 min'));
+    await userEvent.clear(screen.getByLabelText('Field 2 max'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(savedFields(api)[1]!.range).toBeUndefined();
+  });
+
+  it("drops the limits a field's new type does not take", async () => {
+    const d = withAssay();
+    d.outputs.fields[1] = { id: 'assay', type: 'decimal', range: { min: 90 } } as never;
+    const { api } = setup(view(d));
+    await userEvent.click(await tab(/Outputs/));
+    await userEvent.selectOptions(screen.getByLabelText('Field 2 type'), 'text');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(savedFields(api)[1]).toEqual({ id: 'assay', type: 'text' });
+  });
+
+  it('keeps a negative bound while it is typed', async () => {
+    const d = withAssay();
+    d.outputs.fields[1] = { id: 'assay', type: 'decimal', range: { min: -5 } } as never;
+    const { api } = setup(view(d));
+    await userEvent.click(await tab(/Outputs/));
+    const min = screen.getByLabelText('Field 2 min');
+    await userEvent.type(min, '{backspace}8');
+    expect(min).toHaveValue('-8');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(savedFields(api)[1]).toMatchObject({ range: { min: -8 } });
+  });
+
+  it('offers a pattern and a max length only for text', async () => {
+    const { api } = setup(view(withAssay()));
+    await userEvent.click(await tab(/Outputs/));
+    expect(screen.queryByLabelText('Field 2 pattern')).toBeNull();
+    expect(screen.queryByLabelText('Field 1 min')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Field 1 pattern'), {
+      target: { value: '^[A-Z]{2}\\d{4}$' },
+    });
+    await userEvent.type(screen.getByLabelText('Field 1 max length'), '12');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(savedFields(api)[0]).toMatchObject({
+      pattern: '^[A-Z]{2}\\d{4}$',
+      length: { max: 12 },
+    });
   });
 });

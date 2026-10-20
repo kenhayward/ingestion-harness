@@ -313,6 +313,35 @@ const put = (items: Def[], item: Def) => {
 };
 const drop = (items: Def[], id: unknown) => items.filter((x) => x.id !== id);
 
+/** An output's constraints (docs/design/output-roles.md §1), set by hand and never drafted. */
+const CONSTRAINT_KEYS = ['range', 'pattern', 'length'] as const;
+const takesConstraint = (type: unknown, key: (typeof CONSTRAINT_KEYS)[number]) =>
+  key === 'range' ? type === 'decimal' || type === 'integer' : (type ?? 'text') === 'text';
+/** A drafted field or column keeps the constraints it had, where its new type still takes them. */
+const keepConstraints = (old: Def | undefined, next: Def): Def => {
+  if (!old) return next;
+  const out: Def = { ...next };
+  for (const key of CONSTRAINT_KEYS) {
+    if (out[key] === undefined && old[key] !== undefined && takesConstraint(out.type, key)) {
+      out[key] = old[key];
+    }
+  }
+  return out;
+};
+const keepTableConstraints = (old: Def | undefined, next: Def): Def => {
+  if (!old) return next;
+  const before = list(old.columns);
+  return {
+    ...next,
+    columns: list(next.columns).map((c) =>
+      keepConstraints(
+        before.find((b) => b.id === c.id),
+        c,
+      ),
+    ),
+  };
+};
+
 /** The part of a definition a change touches (conflict detection). */
 export function changeTarget(c: DraftChange): string {
   switch (c.op) {
@@ -467,11 +496,23 @@ export function applyChanges(definition: Def, changes: DraftChange[]): Def {
         break;
       }
       case 'putField':
-        fields = put(fields, c.field as Def);
+        fields = put(
+          fields,
+          keepConstraints(
+            fields.find((f) => f.id === c.field.id),
+            c.field as Def,
+          ),
+        );
         tables = drop(tables, c.field.id);
         break;
       case 'putTable':
-        tables = put(tables, c.table as Def);
+        tables = put(
+          tables,
+          keepTableConstraints(
+            tables.find((t) => t.id === c.table.id),
+            c.table as Def,
+          ),
+        );
         fields = drop(fields, c.table.id);
         break;
       case 'removeOutput':
