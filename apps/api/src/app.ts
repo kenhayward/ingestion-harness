@@ -45,6 +45,7 @@ import { workbenchGraphRoutes } from './routes/workbench-graph.js';
 import { workbenchPluginPreviewRoutes } from './routes/workbench-plugin-preview.js';
 import { workbenchSuggestionRoutes } from './routes/workbench-suggestions.js';
 import { workbenchPinsRoutes } from './routes/workbench-pins.js';
+import { stepAttemptRoutes } from './routes/step-attempts.js';
 import { s3KeyRoutes } from './routes/s3-keys.js';
 import { llmRoutes } from './routes/llm.js';
 import { ontologyRoutes } from './routes/ontologies.js';
@@ -198,6 +199,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(workbenchPluginPreviewRoutes, { prefix: '/api' });
   await app.register(workbenchSuggestionRoutes, { prefix: '/api' });
   await app.register(workbenchPinsRoutes, { prefix: '/api' });
+  await app.register(stepAttemptRoutes, { prefix: '/api' });
   await app.register(s3KeyRoutes, { prefix: '/api' });
   await app.register(llmRoutes, { prefix: '/api' });
   await app.register(ontologyRoutes, { prefix: '/api' });

@@ -1,4 +1,6 @@
 import type {
+  RetriedRuns,
+  StepAttempts,
   BackupView,
   QueueControlView,
   RestoreStartBody,
@@ -598,6 +600,10 @@ export interface Api {
   /** Every published output of a result as one ZIP download. */
   archiveUrl(jobId: string): string;
   getStepRuns(jobId: string): Promise<StepRun[]>;
+  /** A step's runs that needed a retry, newest first (the step's model log). */
+  listRetriedStepRuns(templateId: string, stepId: string): Promise<RetriedRuns>;
+  /** One run's saved attempts of a step: prompts, replies and the errors that sent them back. */
+  getStepAttempts(jobId: string, stepId: string): Promise<StepAttempts>;
   rerunStep(jobId: string, stepId: string, body: RerunRequest): Promise<JobSummary>;
   getMetrics(templateId: string): Promise<TemplateMetrics>;
   listReferences(templateId: string, version?: number): Promise<Reference[]>;
@@ -1601,6 +1607,14 @@ export function createHttpApi(base = '/api'): Api {
     documentUrl: (jobId) => `${base}/jobs/${jobId}/document`,
     archiveUrl: (jobId) => `${base}/results/${jobId}/archive`,
     getStepRuns: (jobId) => apiFetch(`${base}/jobs/${jobId}/steps`).then(json<StepRun[]>),
+    listRetriedStepRuns: (templateId, stepId) =>
+      apiFetch(
+        `${base}/templates/${encodeURIComponent(templateId)}/steps/${encodeURIComponent(stepId)}/retried-runs`,
+      ).then(json<RetriedRuns>),
+    getStepAttempts: (jobId, stepId) =>
+      apiFetch(`${base}/jobs/${jobId}/steps/${encodeURIComponent(stepId)}/attempts`).then(
+        json<StepAttempts>,
+      ),
     rerunStep: (jobId, stepId, body) =>
       post<JobSummary>(`${base}/jobs/${jobId}/steps/${stepId}/rerun`, body),
     getMetrics: (templateId) =>

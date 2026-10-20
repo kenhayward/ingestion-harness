@@ -174,6 +174,16 @@ describe('Steps tab', () => {
     expect(screen.getByText('Outputs: 3 fields')).toBeInTheDocument();
   });
 
+  it("opens a retrying step's model log from its warning", async () => {
+    const api = stepsPanel();
+    const totals = await screen.findByRole('listitem', { name: 'Step 2: totals' });
+    await userEvent.click(within(totals).getByRole('button', { name: 'See the model log' }));
+    expect(await screen.findByRole('dialog', { name: 'Model log: totals' })).toBeInTheDocument();
+    expect(api.listRetriedStepRuns).toHaveBeenCalledWith('letter', 'totals');
+    const header = screen.getByRole('listitem', { name: 'Step 1: header' });
+    expect(within(header).queryByRole('button', { name: 'See the model log' })).toBeNull();
+  });
+
   it('links to the Recipe tab, where steps are edited by hand', async () => {
     stepsPanel();
     const pipeline = await screen.findByRole('region', { name: 'Pipeline in draft v4' });

@@ -1165,3 +1165,17 @@ describe('http api: publishing targets', () => {
     expect(open).toHaveBeenCalledWith(url, '_blank', 'noopener');
   });
 });
+
+describe("http api: a step's model log", () => {
+  it("asks for the retried runs of a step and one run's attempts", async () => {
+    const api = createHttpApi('/api');
+    const fetch = vi.fn(async () => respond(200, { runs: [], calls: [] }));
+    vi.stubGlobal('fetch', fetch);
+    await api.listRetriedStepRuns('letter', 'data');
+    await api.getStepAttempts('11111111-1111-4111-8111-111111111111', 'data');
+    expect(fetch.mock.calls.map((c) => String((c as unknown[])[0]))).toEqual([
+      '/api/templates/letter/steps/data/retried-runs',
+      '/api/jobs/11111111-1111-4111-8111-111111111111/steps/data/attempts',
+    ]);
+  });
+});

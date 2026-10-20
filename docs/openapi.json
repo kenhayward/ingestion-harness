@@ -58414,6 +58414,465 @@
         }
       }
     },
+    "/api/templates/{id}/steps/{step}/retried-runs": {
+      "get": {
+        "operationId": "listRetriedStepRuns",
+        "summary": "List a step's runs that needed a retry",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "The newest runs (at most 10) of one step of a document type that took\nmore than one attempt: the model's first answer failed the step's checks and was sent\nback. One per job (its newest run of the step); steps served from the Workbench step\ncache are left out. Each one's attempts are at `GET /api/jobs/{id}/steps/{step}/attempts`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The document type (recipe) id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "step",
+            "required": true,
+            "description": "The step id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The retried runs, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "jobId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "fileName": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer"
+                          },
+                          "startedAt": {
+                            "type": "string"
+                          },
+                          "attempts": {
+                            "type": "integer"
+                          },
+                          "model": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "succeeded",
+                              "failed"
+                            ]
+                          },
+                          "trigger": {
+                            "type": "string",
+                            "enum": [
+                              "process",
+                              "rerun"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "jobId",
+                          "fileName",
+                          "version",
+                          "startedAt",
+                          "attempts",
+                          "model",
+                          "status",
+                          "trigger"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "runs"
+                  ],
+                  "description": "The retried runs, newest first."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{id}/steps/{step}/attempts": {
+      "get": {
+        "operationId": "getStepAttempts",
+        "summary": "Get a step's saved attempts in one job",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "Every attempt the worker saved for one step of a job: the prompt it sent, the model's\nraw reply, and the errors that sent the reply back (empty for the accepted one), with\ntoken counts. A step makes one model call, or one per chunk of pages, occurrence of a\nrepeating section or question a plugin asks; each is a `call` (`step` first, then\n`step.chunk-1`, `step.occ-2`, `step.ask-1`…). A re-run of the step replaces the\nattempts of the calls it makes again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "step",
+            "required": true,
+            "description": "The step id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The calls and their attempts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "attempts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "n": {
+                                  "type": "integer"
+                                },
+                                "prompt": {
+                                  "type": "string"
+                                },
+                                "response": {
+                                  "type": "string"
+                                },
+                                "errors": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "inputTokens": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
+                                },
+                                "outputTokens": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "n",
+                                "prompt",
+                                "response",
+                                "errors",
+                                "inputTokens",
+                                "outputTokens"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "attempts"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "calls"
+                  ],
+                  "description": "The calls and their attempts."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found` (a malformed job id), or `no saved attempts for step {step} of this job`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`not found` (a malformed job id), or `no saved attempts for step {step} of this job`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/access/s3-keys": {
       "get": {
         "operationId": "listS3Keys",

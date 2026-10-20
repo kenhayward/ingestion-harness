@@ -581,6 +581,8 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     archiveUrl: (jobId) => `/api/results/${jobId}/archive`,
     listTemplates: vi.fn(async () => []),
     getStepRuns: vi.fn(async () => []),
+    listRetriedStepRuns: vi.fn(async () => ({ runs: [] })),
+    getStepAttempts: vi.fn(async () => ({ calls: [] })),
     listReferences: vi.fn(async () => []),
     getMetrics: vi.fn(async (templateId: string) => ({
       templateId,

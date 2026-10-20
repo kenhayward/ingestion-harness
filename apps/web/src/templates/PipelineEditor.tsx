@@ -61,6 +61,7 @@ export function PipelineEditor({
   metrics,
   plugins = [],
   pluginPreview,
+  onShowStepLog,
   resetKey = 0,
 }: {
   pipeline: Definition[];
@@ -78,6 +79,8 @@ export function PipelineEditor({
   paths: string[];
   /** Figures from the type's runs, by step id. */
   metrics: ReadonlyMap<string, StepMetric>;
+  /** Opens a step's model log from its retry warning. */
+  onShowStepLog?: (stepId: string) => void;
   /** The plugins a plugin step can run (recipe plugins 3b). */
   plugins?: readonly PluginInfo[];
   /** The Workbench's preview of a plugin step, under its form (none elsewhere). */
@@ -152,6 +155,11 @@ export function PipelineEditor({
           metric={typeof current.id === 'string' ? metrics.get(current.id) : undefined}
           plugins={plugins}
           pluginPreview={pluginPreview}
+          onShowLog={
+            onShowStepLog && typeof current.id === 'string'
+              ? () => onShowStepLog(current.id as string)
+              : undefined
+          }
           onSet={(key, value) => onChange(setIn(pipeline, [selected, key], value))}
           onReplace={(step) => onChange(setIn(pipeline, [selected], step))}
           onMove={(delta) => {
@@ -189,6 +197,7 @@ function StepDetail({
   metric,
   plugins,
   pluginPreview,
+  onShowLog,
   onSet,
   onReplace,
   onMove,
@@ -211,6 +220,7 @@ function StepDetail({
   metric: StepMetric | undefined;
   plugins: readonly PluginInfo[];
   pluginPreview?: ((step: Definition) => ReactNode) | undefined;
+  onShowLog?: (() => void) | undefined;
   onSet: (key: string, value: unknown) => void;
   onReplace: (step: Definition) => void;
   onMove: (delta: -1 | 1) => void;
@@ -291,7 +301,7 @@ function StepDetail({
       {step.type !== 'check' && (
         <div className="step-detail-figures">
           <span className="muted">Last runs</span>
-          <StepFigures metric={metric} here />
+          <StepFigures metric={metric} here onShowLog={onShowLog} />
         </div>
       )}
     </section>

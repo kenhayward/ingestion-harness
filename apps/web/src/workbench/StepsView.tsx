@@ -19,9 +19,12 @@ import { SectionChip } from './tags.js';
 export function StepFigures({
   metric,
   here = false,
+  onShowLog,
 }: {
   metric: StepMetric | undefined;
   here?: boolean;
+  /** Opens the step's model log (its retried runs' attempts) from the retry warning. */
+  onShowLog?: () => void;
 }) {
   const f = stepFigures(metric);
   if (!f) return <p className="muted step-none">No runs yet.</p>;
@@ -46,7 +49,19 @@ export function StepFigures({
           <dd>{f.avgTime}</dd>
         </div>
       </dl>
-      {warning && <p className="step-warning">{warning}</p>}
+      {warning && (
+        <p className="step-warning">
+          {warning}
+          {onShowLog && (
+            <>
+              {' '}
+              <button type="button" className="link" onClick={onShowLog}>
+                See the model log
+              </button>
+            </>
+          )}
+        </p>
+      )}
     </>
   );
 }
@@ -58,9 +73,11 @@ function Step({
   justAdded,
   models,
   repeat,
+  onShowLog,
 }: {
   models: readonly ModelChoice[];
   card: StepCard;
+  onShowLog?: (() => void) | undefined;
   /** "Once per appearance · batch from its key" for a step reading a repeating section. */
   repeat: string | null;
   sections: string[];
@@ -117,7 +134,7 @@ function Step({
               {repeat && <p className="muted step-repeat">{repeat}</p>}
             </dd>
           </dl>
-          <StepFigures metric={metric} />
+          <StepFigures metric={metric} onShowLog={onShowLog} />
         </>
       ) : (
         <>
@@ -146,9 +163,12 @@ export function StepsView({
   justAdded,
   card,
   models,
+  onShowStepLog,
 }: {
   models: readonly ModelChoice[];
   projectId: string;
+  /** Opens a step's model log from its retry warning. */
+  onShowStepLog?: (stepId: string) => void;
   draftVersion: number;
   definition: Record<string, unknown>;
   /** The draft with the selected changes applied, while a proposal is open. */
@@ -224,6 +244,7 @@ export function StepsView({
             {cards.map((c) => (
               <Step
                 key={c.id}
+                onShowLog={onShowStepLog ? () => onShowStepLog(c.id) : undefined}
                 card={c}
                 sections={sections}
                 metric={byStep.get(c.id)}

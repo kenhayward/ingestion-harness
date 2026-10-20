@@ -3829,3 +3829,102 @@ label.inline.list-select {
   text-align: left;
   padding: 2px 8px;
 }
+
+/* A step's model log (the Pipeline's retry warning): runs and attempts left, one attempt right. */
+.dialog.step-log-dialog {
+  width: min(1180px, calc(100vw - 32px));
+}
+.step-log {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+.step-log-nav {
+  border-right: 1px solid var(--ih-border);
+  padding-right: 12px;
+  max-height: 70vh;
+  overflow: auto;
+}
+.step-log-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.step-log-run {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: none;
+  border: 1px solid transparent;
+}
+.step-log-run[aria-expanded='true'] {
+  border-color: var(--ih-border);
+  background: var(--ih-surface2);
+}
+.step-log-file {
+  font-weight: 600;
+  word-break: break-all;
+}
+.step-log-attempts {
+  margin: 4px 0 8px 10px !important;
+}
+.step-log-call {
+  display: block;
+  margin: 6px 0 2px;
+  font-size: 0.8em;
+  color: var(--ih-muted);
+}
+.step-log-attempts button {
+  width: 100%;
+  text-align: left;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: none;
+  border: 1px solid transparent;
+}
+.step-log-attempts button[aria-pressed='true'] {
+  border-color: var(--ih-accent);
+}
+.step-log-attempts button[data-tone='warn'] span {
+  color: var(--ih-warn-fg);
+}
+.step-log-attempts button[data-tone='ok'] span {
+  color: var(--ih-ok-fg);
+}
+.step-log-detail {
+  min-width: 0;
+  max-height: 70vh;
+  overflow: auto;
+}
+.step-log-attempt h3 {
+  margin: 0 0 8px;
+}
+.step-log-attempt .model-log-entry {
+  margin-top: 8px;
+}
+.step-log-errors h4 {
+  margin: 0 0 4px;
+}
+.step-log-errors ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.step-log-accepted {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .step-log {
+    grid-template-columns: 1fr;
+  }
+  .step-log-nav {
+    border-right: none;
+    border-bottom: 1px solid var(--ih-border);
+    padding: 0 0 8px;
+    max-height: 30vh;
+  }
+}

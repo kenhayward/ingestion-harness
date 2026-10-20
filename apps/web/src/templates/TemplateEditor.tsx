@@ -49,6 +49,7 @@ import { ModelPicker, useModelChoices } from '../ui/ModelPicker.js';
 import { Area, opt, Select, Text } from './fields.js';
 import { MappingEditor } from './MappingEditor.js';
 import { CheckStep, defaultLabel, ExtractStep } from './StepForms.js';
+import { StepAttemptsDialog } from './StepAttemptsDialog.js';
 import { AddPluginStep, PluginPreview, PluginStepForm, usePlugins } from './PluginForms.js';
 
 type Path = (string | number)[];
@@ -142,6 +143,8 @@ export function TemplateEditor({
   /** Unsaved edits of this draft, kept in this browser (ui/keptDraft.ts). */
   const draftKey = `ih.recipeDraft.${templateId}.${version}`;
   const [def, setDef] = useState<Definition>({});
+  /** The step whose model log is open (from its retry warning on the Pipeline tab). */
+  const [logStep, setLogStep] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
   const [tab, setTab] = useState<Tab>(embedded ? 'pipeline' : 'general');
   const [outputsTab, setOutputsTab] = useState<'fields' | 'tables'>('fields');
@@ -987,6 +990,7 @@ export function TemplateEditor({
               }
               paths={paths}
               metrics={metrics}
+              onShowStepLog={setLogStep}
               plugins={plugins}
               pluginPreview={
                 embedded
@@ -1001,6 +1005,14 @@ export function TemplateEditor({
                   : undefined
               }
               resetKey={replaced}
+            />
+          )}
+          {logStep && (
+            <StepAttemptsDialog
+              api={api}
+              templateId={templateId}
+              stepId={logStep}
+              onClose={() => setLogStep(null)}
             />
           )}
           {tab === 'pipeline' && !embedded && (
