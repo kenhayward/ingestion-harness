@@ -93,7 +93,10 @@ lake ([ADR 0008](adr/0008-s3-read-keys.md)) are granted per internal target.
 3. **Extract text**: a Word (`.docx`) source is first converted to PDF by the `converter`
    service and cached at `runs/converted/{sourceSha256}/{converterFingerprint}.pdf` (ADR 0009);
    a rejected document goes to `needs_review`, a converter outage is retried. Then the `pypdf`
-   text layer, one string per page. Page count checked against `spec.document.pages`.
+   text layer, one string per page. Symbol and Wingdings characters, which Word writes as
+   private-use code points (U+F0B0 for a degree sign) and PDFs keep in the font's ToUnicode
+   map, are translated to the characters they show (`symbol_fonts.py`), only for codes the
+   page's fonts of one of those families produce. Page count checked against `spec.document.pages`.
    **OCR** (`document.ocr: auto` by default): pages with fewer than `ocr.minChars` non-space
    characters are rendered with pypdfium2 (longest side 1288px) and transcribed by the OCR
    vision model (default `local/olmocr-2-7b-1025`; on its own server/key when `OCR_BASE_URL`/`OCR_API_KEY` are set)
