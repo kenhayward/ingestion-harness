@@ -9,6 +9,7 @@ import {
   rowProgress,
   rowStatus,
   runsSummary,
+  runsTitle,
   tracker,
   trackerLabel,
   unverifiedCount,
@@ -233,5 +234,47 @@ describe('run progress', () => {
     ];
     expect(runsSummary(rows)).toEqual({ running: 1, queued: 2, finished: 2, total: 5 });
     expect(runsSummary([referenceRow({ run: run('awaiting_review') }), saved()])).toBeNull();
+  });
+});
+
+describe('the header while reference runs are going', () => {
+  const step = { step: 'lines', index: 2, of: 6, attempt: 1, chunk: null, occurrence: null };
+  const going = run('running', { kind: 'step', ...step });
+  it.each<[string, ReferenceRow[], string | null]>([
+    ['nothing active', [referenceRow({ run: run('awaiting_review') })], null],
+    [
+      'one running, the first of five',
+      [
+        referenceRow({ run: going }),
+        ...Array.from({ length: 4 }, () => referenceRow({ run: run('queued') })),
+      ],
+      'Running document 1 of 5 · Step 2 of 6 · lines',
+    ],
+    [
+      'one running after two finished',
+      [
+        referenceRow({ run: run('awaiting_review') }),
+        referenceRow({ run: run('needs_review') }),
+        referenceRow({ run: run('running') }),
+      ],
+      'Running document 3 of 3 · Starting…',
+    ],
+    [
+      'two running at once',
+      [
+        referenceRow({ run: going }),
+        referenceRow({ run: run('running') }),
+        referenceRow({ run: run('awaiting_review') }),
+        referenceRow({ run: run('queued') }),
+      ],
+      'Running documents 2 and 3 of 4 · 1 finished',
+    ],
+    [
+      'only waiting',
+      [referenceRow({ run: run('queued') }), referenceRow({ run: run('awaiting_review') })],
+      'Waiting for a worker · 1 of 2 finished',
+    ],
+  ])('%s', (_name, rows, text) => {
+    expect(runsTitle(rows)).toBe(text);
   });
 });

@@ -79,6 +79,25 @@ export function runsSummary(
   return { running, queued, finished: runs.length - running - queued, total: runs.length };
 }
 
+/**
+ * The tab header's status while reference runs are going: which documents of the round are
+ * running and, for a single one, where it is ("Running document 2 of 5 · Step 2 of 6 · lines");
+ * null when none is queued or running (the overview's status stands).
+ */
+export function runsTitle(rows: readonly ReferenceRow[]): string | null {
+  const summary = runsSummary(rows);
+  if (!summary) return null;
+  const { running, finished, total } = summary;
+  if (running === 0) return `Waiting for a worker · ${finished} of ${total} finished`;
+  if (running === 1) {
+    const row = rows.find((r) => !verified(r) && r.run?.status === 'running')!;
+    return `Running document ${finished + 1} of ${total} · ${rowProgress(row)}`;
+  }
+  const numbers = Array.from({ length: running }, (_, i) => String(finished + 1 + i));
+  const list = `${numbers.slice(0, -1).join(', ')} and ${numbers.at(-1)}`;
+  return `Running documents ${list} of ${total} · ${finished} finished`;
+}
+
 /** "11 Oct 16:55" in the viewer's time zone. */
 export const shortDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-GB', {

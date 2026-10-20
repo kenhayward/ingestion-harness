@@ -27,6 +27,7 @@ import {
   rowProgress,
   rowStatus,
   runsSummary,
+  runsTitle,
   shortDateTime,
   tracker,
   trackerLabel,
@@ -179,12 +180,15 @@ export function ReferencesTab({
   const needs = useMemo(() => outputNeeds(dev, draftDef), [dev, draftDef]);
   const current = selected ?? [...dev, ...holdout].find((r) => r.reference)?.sampleId ?? null;
   const progress = runsSummary([...dev, ...holdout]);
+  const title = runsTitle([...dev, ...holdout]);
+  // While runs are going the header says where they are, not only the stage's "Running".
+  const headerItem = item && title ? { ...item, status: title } : item;
 
   return (
     <div className="references-tab">
       <TabHeader
         title="References"
-        item={item}
+        item={headerItem}
         description={DESCRIPTION}
         note={POLICY_NOTE[dataPolicy]}
         actions={

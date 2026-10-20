@@ -458,6 +458,8 @@ describe('ReferencesTab samples list', () => {
     const strip = screen.getByRole('region', { name: 'Reference runs' });
     expect(strip).toHaveTextContent('1 of 4 finished · 2 running · 1 waiting for a worker');
     expect(within(strip).getByRole('img', { name: 'Reference runs finished: 25%' })).toBeVisible();
+    const header = screen.getByRole('heading', { level: 2, name: 'References' }).closest('header')!;
+    expect(within(header).getByText('Running documents 2 and 3 of 4 · 1 finished')).toBeVisible();
   });
 
   it('ignores a slow response that arrives after a newer one', async () => {
