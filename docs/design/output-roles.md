@@ -221,6 +221,8 @@ writes it into the output itself, it has become a transform (section 3).
   Review flags an unmatched value with the plugin's message (`<check id>: <message>`, else
   `unmatched`) and the Results check view adds a *Note* column when any row has a message. Not
   built: a Workbench preview of a check (it needs a test run's output).
+- **Not built: drafting.** The Steps drafting schema has no `uses`/`with`, so accepting a drafted
+  `putStep` for the id of an existing plugin check replaces it with a reference check.
 
 ---
 

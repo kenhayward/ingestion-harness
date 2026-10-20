@@ -62,6 +62,25 @@ describe('changeParts', () => {
     ],
     [
       {
+        op: 'putStep',
+        reason: 'r',
+        step: {
+          type: 'check',
+          id: 'known-units',
+          values: 'line_items.unit',
+          uses: 'list.lookup@1',
+          with: {},
+        },
+      },
+      {
+        kind: 'CHECK',
+        tone: 'neutral',
+        id: 'known-units',
+        text: 'line_items.unit with list.lookup@1',
+      },
+    ],
+    [
+      {
         op: 'putField',
         reason: 'r',
         field: { id: 'currency', type: 'enum', enum: ['EUR', 'USD'] },

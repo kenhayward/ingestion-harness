@@ -76,6 +76,7 @@ describe('stepCards', () => {
   it.each([
     [{ values: 'a.b', reference: 'c' }, 'a.b = c'],
     [{ values: 'a.b' }, 'a.b'],
+    [{ values: 'a.b', uses: 'list.lookup@1' }, 'a.b with list.lookup@1'],
     [{ reference: 'c' }, 'c'],
     [{}, null],
   ])('describes a check step without undefined (%j)', (rest, compares) => {

@@ -69,6 +69,11 @@ def check_plugin(name: str) -> Plugin:
     )
 
 
+def enrich_run(ctx: PluginContext, _s: NoSettings) -> dict[str, Any]:
+    assert ctx.rows is not None
+    return {"rows": [{"qty": f"q-{r['sku']}"} for r in ctx.rows]}
+
+
 def step_plugin(name: str) -> Plugin:
     return Plugin(
         spec=NodeSpec(name, 1, rows_run, dict, "pure", "none", False, name),
@@ -86,6 +91,12 @@ def registry(monkeypatch: pytest.MonkeyPatch) -> None:
         **BUILTINS,
         "acme.rows@1": step_plugin("acme.rows"),
         "acme.judge@1": check_plugin("acme.judge"),
+        "acme.enrich@1": Plugin(
+            spec=NodeSpec("acme.enrich", 1, enrich_run, dict, "pure", "none", False, "enrich"),
+            settings=NoSettings,
+            check=lambda *_: [],
+            run_settings=enrich_run,
+        ),
     }
     monkeypatch.setattr(plugins_module, "plugins", lambda: registered)
 
@@ -106,7 +117,9 @@ def recipe(check_uses: str = "acme.judge@1", values: str = "lines.sku") -> dict[
 
 
 def run(
-    tmp_path: Path, definition: dict[str, Any] | None = None
+    tmp_path: Path,
+    definition: dict[str, Any] | None = None,
+    responses: list[Any] | None = None,
 ) -> tuple[FakeQueue, PipelineDeps, FakeProvider]:
     directory = tmp_path / "demo" / "v1"
     directory.mkdir(parents=True)
@@ -115,7 +128,7 @@ def run(
     )
     store = MemoryObjectStore()
     store.put("inbox", JOB.object_key, b"%PDF", "application/pdf")
-    provider = FakeProvider("local", responses=[])
+    provider = FakeProvider("local", responses=responses or [])
     deps = PipelineDeps(
         store=store,
         specs=load_specs(tmp_path),
@@ -294,3 +307,81 @@ def test_a_rerun_with_a_missing_check_plugin_stops_before_the_step_runs(
     run_once(queue, deps, "w1")
     assert queue.reviewed[-1][1] == "check 'names': no plugin acme.judge@1 on this worker"
     assert len(queue.step_runs) == runs and provider.calls == []
+
+
+def enriched_recipe() -> dict[str, Any]:
+    definition = recipe()
+    definition["outputs"]["tables"][0]["columns"].append({"id": "qty", "type": "text"})
+    definition["pipeline"].insert(
+        1,
+        {
+            "type": "plugin",
+            "id": "qty",
+            "uses": "acme.enrich@1",
+            "table": "lines",
+            "columns": ["qty"],
+        },
+    )
+    return definition
+
+
+def test_the_plugin_gets_the_whole_table_when_a_later_step_enriched_it(tmp_path: Path) -> None:
+    queue, _, _ = run(tmp_path, enriched_recipe())
+    [ctx] = seen
+    assert ctx.rows is not None
+    assert [r["qty"] for r in ctx.rows] == ["q-A1", "q-A1", "q-B9"]
+    seen.clear()
+    template = Template.model_validate(enriched_recipe())
+    apply_edits(
+        template, document(queue), [{"table": "lines", "row": 3, "column": "sku", "value": "C3"}]
+    )
+    [after] = seen
+    assert after.rows is not None
+    assert [r["qty"] for r in after.rows] == ["q-A1", "q-A1", "q-B9"]
+    assert [r["sku"] for r in after.rows] == ["A1", "A1", "C3"]
+
+
+@pytest.mark.parametrize("answer", ["match", {"value": "A1"}, [None], ["A1"]])
+def test_a_judge_that_does_not_answer_a_list_of_verdicts_is_a_document_error(
+    tmp_path: Path, answer: Any
+) -> None:
+    ANSWER[0] = answer
+    queue, _, _ = run(tmp_path)
+    [(_, reason)] = queue.reviewed
+    assert reason == "check 'names': acme.judge@1 answered something other than a list of verdicts"
+
+
+def extract_recipe(check_uses: str) -> dict[str, Any]:
+    definition = recipe(check_uses)
+    definition["pipeline"][0] = {
+        "type": "extract",
+        "id": "rows",
+        "table": "lines",
+        "sections": ["head"],
+    }
+    return definition
+
+
+ROWS_REPLY = {"rows": [{"sku": "A1"}]}
+
+
+def test_a_missing_check_plugin_stops_an_extract_recipe_before_any_model_call(
+    tmp_path: Path,
+) -> None:
+    queue, _, provider = run(tmp_path, extract_recipe("acme.gone@1"), [ROWS_REPLY])
+    [(_, reason)] = queue.reviewed
+    assert reason == "check 'names': no plugin acme.gone@1 on this worker"
+    assert provider.calls == []
+
+
+def test_a_rerun_with_a_missing_check_plugin_makes_no_model_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queue, deps, provider = run(tmp_path, extract_recipe("acme.judge@1"), [ROWS_REPLY, ROWS_REPLY])
+    assert len(provider.calls) == 1, queue.failed or queue.reviewed
+    without = {k: v for k, v in plugins_module.plugins().items() if k != "acme.judge@1"}
+    monkeypatch.setattr(plugins_module, "plugins", lambda: without)
+    queue.jobs = [replace(JOB, task="rerun", rerun={"step": "rows"})]
+    run_once(queue, deps, "w1")
+    assert queue.reviewed[-1][1] == "check 'names': no plugin acme.judge@1 on this worker"
+    assert len(provider.calls) == 1

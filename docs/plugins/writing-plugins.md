@@ -193,18 +193,27 @@ A check names `reference` (with optional `aliases`, `maxDistance`) **or** `uses`
 `with`), never both. The editor's check step has a *Compares with* choice, A reference or A plugin,
 and offers only check plugins.
 
-Build one as a `Plugin` with `kind="check"`, and a `judge` in place of what a step plugin does with
-`run_settings` (a check plugin is refused in a plugin step, and a step plugin in a check):
+Build one as a `Plugin` with `kind="check"` and a `judge` (a check plugin is refused in a plugin
+step, and a step plugin in a check). `run_settings` stays a required field of `Plugin`, so give a
+stub that refuses (an author who leaves it out gets a `TypeError` at import, and the plugin is
+silently left out); the built-in `list.lookup@1` does the same:
 
 ```python
 def judge(ctx: CheckContext, settings: MySettings) -> list[dict[str, Any]]: ...
+
+def not_a_step(ctx: PluginContext, settings: MySettings) -> StepData:
+    raise ValueError("acme.judge@1 is a check plugin: use it in a check step")
+
+PLUGIN = Plugin(spec=..., settings=MySettings, check=lambda *_: [],
+                run_settings=not_a_step, kind="check", judge=judge)
 ```
 
 `CheckContext` (frozen) holds:
 - `job`, `template`, `step`: the job, the recipe and the check step;
 - `values`: the values the step's `values` path names, as text. Each **distinct** value appears
   once (compared ignoring case and spaces), in the order first seen;
-- `rows`: for a table column, the table's rows those values come from; `None` for a field.
+- `rows`: for a table column, the table's full rows (every filling step's columns, enriched ones
+  included, the same while processing and in review); `None` for a field.
 
 `judge` returns one verdict per value, a dict with:
 - `value`: the value as given;

@@ -48,7 +48,7 @@ def run_checks(
         if not isinstance(step, CheckStep):
             continue
         if step.id in plugged:
-            ctx = check_context(job or stand_in_job(template), template, step, results)
+            ctx = check_context(job or stand_in_job(template), template, step, results, tables)
             result = run_check_plugin(plugged[step.id], ctx)
         else:
             result = run_check(template.compile_check(step), results)

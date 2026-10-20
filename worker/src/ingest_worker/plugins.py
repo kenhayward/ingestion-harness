@@ -332,17 +332,22 @@ CHECK_STATUSES = ("match", "alias", "near", "unmatched")
 
 
 def check_context(
-    job: ClaimedJob, template: Template, step: CheckStep, results: Mapping[str, Any]
+    job: ClaimedJob,
+    template: Template,
+    step: CheckStep,
+    results: Mapping[str, Any],
+    tables: Mapping[str, Any],
 ) -> CheckContext:
     """The context for a plugin check: every value the step's `values` path names, in order,
     repeats included (`run_check_plugin` counts and de-duplicates them), and, for a table
-    column, the table's rows."""
+    column, the table's full rows (`tables`: every filling step's columns merged, the same whether
+    the document is processing or being reviewed)."""
     resolved = template.resolve_path(step.values)
     assert resolved is not None  # validated
     table, _, column = step.values.partition(".")
     rows = None
     if column:
-        got = results.get(template.filler_of_column(table, column).id, {}).get("rows")
+        got = tables.get(table)
         rows = [dict(r) for r in got] if isinstance(got, list) else []
     return CheckContext(job, template, step, select_values(dict(results), resolved[0]), rows)
 
@@ -366,6 +371,8 @@ def run_check_plugin(
         counts[key] = (shown, count + 1)
     distinct = [shown for shown, _ in counts.values()]
     verdicts = judge(replace(ctx, values=distinct), resolved.settings)
+    if not isinstance(verdicts, list) or not all(isinstance(v, dict) for v in verdicts):
+        raise DocumentError(f"{where} answered something other than a list of verdicts")
     by_key: dict[str, dict[str, Any]] = {}
     for verdict in verdicts:
         given = verdict.get("value")

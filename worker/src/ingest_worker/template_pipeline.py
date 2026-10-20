@@ -206,7 +206,7 @@ def process_template_job(
 
             def run_check(state: DocState) -> DocState:
                 if check.id in check_plugins:
-                    ctx = check_context(job, template, check, state.step_results)
+                    ctx = check_context(job, template, check, state.step_results, state.tables)
                     plugged = run_check_plugin(check_plugins[check.id], ctx)
                     unmatched = [r["value"] for r in plugged["rows"] if r["status"] == "unmatched"]
                     if unmatched:
