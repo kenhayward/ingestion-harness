@@ -236,23 +236,42 @@ async function pluginIssues(
   template: Template,
 ): Promise<TemplateIssue[]> {
   const steps = template.pipeline.flatMap((step, i) =>
-    step.type === 'plugin' ? [{ step, i }] : [],
+    step.type === 'plugin' || (step.type === 'check' && step.uses !== undefined)
+      ? [{ step, i }]
+      : [],
   );
   if (!catalogue || steps.length === 0) return [];
   const byRef = new Map((await catalogue.list()).map((p) => [p.ref, p]));
   return steps.flatMap(({ step, i }) => {
+    if (step.uses === undefined) return [];
+    const label = step.type === 'check' ? 'check' : 'step';
     const plugin = byRef.get(step.uses);
     if (!plugin) {
       return [
         {
           path: `pipeline.${i}.uses`,
-          message: `step "${step.id}": no plugin ${step.uses} on this deployment's workers`,
+          message: `${label} "${step.id}": no plugin ${step.uses} on this deployment's workers`,
+        },
+      ];
+    }
+    const wanted = step.type === 'check' ? 'check' : 'step';
+    if (plugin.kind !== wanted) {
+      return [
+        {
+          path: `pipeline.${i}.uses`,
+          message:
+            step.type === 'check'
+              ? `check "${step.id}": ${step.uses} is not a check plugin`
+              : `step "${step.id}": ${step.uses} is a check plugin: use it in a check step`,
         },
       ];
     }
     const problems = settingsProblems(plugin, step.with);
     const unused =
-      step.model !== undefined && step.model !== 'default' && plugin.egress !== 'model'
+      step.type === 'plugin' &&
+      step.model !== undefined &&
+      step.model !== 'default' &&
+      plugin.egress !== 'model'
         ? [
             {
               path: `pipeline.${i}.model`,
@@ -266,7 +285,7 @@ async function pluginIssues(
         ? [
             {
               path: `pipeline.${i}.with`,
-              message: `step "${step.id}": ${step.uses} settings: ${problems.join('; ')}`,
+              message: `${label} "${step.id}": ${step.uses} settings: ${problems.join('; ')}`,
             },
           ]
         : []),
