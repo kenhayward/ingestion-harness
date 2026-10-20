@@ -4,7 +4,7 @@ instead of a model call.
 A plugin is a node (ADR 0018) with settings: its `settings` model checks the step's `with`, and
 `run` returns what an extract step's model would (`{field: {value, evidence, page}}`, or
 `{rows: [...]}` for a table), which `normalise_step` then types. A plugin reads only what
-`PluginContext` gives it, and reaches a model only through `JobModels` (none does yet).
+`PluginContext` gives it, and reaches a model only through `ctx.model` (`JobModels`, egress `model`).
 Plugins run in the worker process with its privileges: only the built-ins (`BUILTINS`) and plugins
 of packages installed in the worker's environment (entry point group `ct_studio.plugins`, slice
 3d) run, and a third party's capability belongs behind A2A instead (ADR 0018).
@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cache
 from importlib.metadata import entry_points
 from types import MappingProxyType
@@ -34,7 +34,7 @@ from .llm.base import (
     model_unavailable_reason,
 )
 from .nodes import NodeSpec
-from .pipeline import JobModels
+from .pipeline import JobModels, RepeatPlan
 from .queue import ClaimedJob
 from .template import PLUGIN_REF, PluginStep, Template
 
@@ -122,6 +122,18 @@ class PluginModel:
 
 
 @dataclass(frozen=True)
+class PluginOccurrence:
+    """The occurrence of a repeating section a plugin step is reading (1-based), as an extract
+    step's prompt is told: its index, how many there are, its key (None: none found) and the
+    section's id. The section's text in `PluginContext.sections` is this occurrence's alone."""
+
+    index: int
+    count: int
+    key: str | None
+    section: str
+
+
+@dataclass(frozen=True)
 class PluginContext:
     """Everything a plugin may read: the job, the recipe and its step, the text of the step's
     sections (page markers included), the step's `context` values as a prompt would show them,
@@ -137,6 +149,8 @@ class PluginContext:
     event: Callable[[str, dict[str, Any]], None]
     #: The step's model (egress "model" only; None for every other plugin).
     model: PluginModel | None = None
+    #: The occurrence being read, for a step reading a repeating section (None otherwise).
+    occurrence: PluginOccurrence | None = None
 
     def text(self) -> str:
         """The step's sections in its own order, one after the other."""
@@ -184,6 +198,38 @@ class Plugin:
 
     def run(self, ctx: PluginContext, settings: Any) -> StepData:
         return self.run_settings(ctx, settings)
+
+
+def run_plugin(
+    plugin: Plugin, settings: Any, ctx: PluginContext, repeat: RepeatPlan | None
+) -> StepData:
+    """Run a plugin step: once, or, for a step reading a repeating section (`repeat`), once per
+    occurrence with that occurrence's text as the section and `ctx.occurrence` set, the rows
+    concatenated and `repeat.key_column` set on each from the occurrence's key (whatever the
+    plugin put there), as an extract step does. No occurrence: no call and no rows. A reply
+    without a `rows` list is a ValueError naming the occurrence."""
+    if repeat is None:
+        return plugin.run(ctx, settings)
+    rows: list[Any] = []
+    for each in repeat.occurrences:
+        own = replace(
+            ctx,
+            sections={**ctx.sections, repeat.section_id: each.text},
+            occurrence=PluginOccurrence(each.index, each.count, each.key, repeat.section_id),
+        )
+        data = plugin.run(own, settings)
+        got = data.get("rows") if isinstance(data, dict) else None
+        if not isinstance(got, list):
+            key = f" ({each.key})" if each.key is not None else ""
+            raise ValueError(
+                f"occurrence {each.index} of {each.count}{key} of {repeat.section_id}: "
+                "the reply has no rows list"
+            )
+        for row in got:
+            if repeat.key_column and isinstance(row, dict):
+                row = {**row, repeat.key_column: each.key}
+            rows.append(row)
+    return {"rows": rows}
 
 
 @dataclass(frozen=True)

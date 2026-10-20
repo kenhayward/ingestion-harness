@@ -3,10 +3,10 @@ import type { ModelChoice, PluginInfo, PluginPreviewView } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { ModelPicker } from '../ui/ModelPicker.js';
 import { Text } from './fields.js';
-import type { SectionLike } from './editor-derive.js';
+import { repeatNote, type SectionLike } from './editor-derive.js';
 import type { Definition } from './model.js';
 import { setSetting, settingsFields, type SettingField } from './settings-schema.js';
-import { ContextEditor } from './StepForms.js';
+import { ContextEditor, RepeatKeyColumn } from './StepForms.js';
 
 /** The plugins recipe steps can run (recipe plugins 3b); [] until loaded or when none. */
 export function usePlugins(api: Api): PluginInfo[] {
@@ -71,6 +71,7 @@ export function PluginStepForm({
   sectionDefs,
   fields,
   tables,
+  tableColumns = {},
   models = [],
   typeModelLabel = 'Default choice',
   set,
@@ -81,6 +82,8 @@ export function PluginStepForm({
   sectionDefs: readonly SectionLike[];
   fields: string[];
   tables: string[];
+  /** Each table's column ids, for the key column of a step reading a repeating section. */
+  tableColumns?: Record<string, string[]>;
   /** The model choices, for a plugin that calls a model. */
   models?: readonly ModelChoice[];
   /** The model picker's empty option: what a step naming no model inherits. */
@@ -93,6 +96,7 @@ export function PluginStepForm({
   const table = typeof step.table === 'string' ? step.table : '';
   const filled = idsOf(step.fields);
   const reads = idsOf(step.sections);
+  const { disabled } = repeatNote(step, sectionDefs);
   const settings = (step.with ?? {}) as Record<string, unknown>;
   const setSettings = (next: Record<string, unknown>) =>
     set('with', Object.keys(next).length > 0 ? next : undefined);
@@ -194,14 +198,11 @@ export function PluginStepForm({
           <ul className="section-check-list">
             {sectionDefs.map((s) => (
               <li key={s.id}>
-                <label
-                  className="section-check"
-                  title={s.repeat ? 'A plugin step cannot read a repeating section yet' : undefined}
-                >
+                <label className="section-check" title={disabled[s.id]}>
                   <input
                     type="checkbox"
                     checked={reads.includes(s.id)}
-                    disabled={!!s.repeat && !reads.includes(s.id)}
+                    disabled={disabled[s.id] !== undefined && !reads.includes(s.id)}
                     onChange={(e) =>
                       set(
                         'sections',
@@ -216,6 +217,12 @@ export function PluginStepForm({
           </ul>
         )}
         <small className="muted">None: the plugin reads only earlier values (its context).</small>
+        <RepeatKeyColumn
+          step={step}
+          sectionDefs={sectionDefs}
+          columns={tableColumns[table] ?? []}
+          set={set}
+        />
       </fieldset>
       <ContextEditor
         value={(step.context ?? {}) as Record<string, string>}

@@ -99,8 +99,18 @@ with a message for the reviewer; the job then goes to review instead of being re
 | `ctx.job` | the job, read-only (`ctx.job.filename` is the uploaded file's name) |
 | `ctx.event(message, data)` | an advisory job event, shown on the job's timeline |
 | `ctx.model` | the step's model, for a plugin whose egress is `"model"` (None otherwise) |
+| `ctx.occurrence` | for a table step reading a repeating section, the occurrence being read: `index` and `count` (1-based), `key` (None when none was found) and `section` (None for any other step) |
 
-Read only these. A plugin gets no bucket, database or queue, and must not write anywhere: the
+Read only these.
+
+**Repeating sections.** A table step may read one repeating section, as an extract step does.
+The worker then runs the plugin once per occurrence: `ctx.sections` holds that occurrence's text
+alone under the section's id, and `ctx.occurrence` says which one it is. Each run answers
+`{rows: [...]}` for its occurrence only; the worker joins the rows in order, and, when the step
+names a `keyColumn`, sets that column on every row to the occurrence's key (whatever the plugin
+put there; a row without a key is an issue for the reviewer). No occurrence: the plugin is not
+run and the table is empty. A reply without a `rows` list is an error naming the occurrence.
+The Workbench preview runs the same way. A plugin gets no bucket, database or queue, and must not write anywhere: the
 worker records the step's run and delivers the outputs.
 
 ### Asking a model

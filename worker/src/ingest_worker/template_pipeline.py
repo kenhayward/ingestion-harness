@@ -508,7 +508,7 @@ def context_values(
     return out
 
 
-def repeat_plan(template: Template, step: ExtractStep, doc: Prepared) -> RepeatPlan | None:
+def repeat_plan(template: Template, step: FillingStep, doc: Prepared) -> RepeatPlan | None:
     """The occurrences a step reading a repeating section runs over (None: a plain step)."""
     section = template.repeating_section(step)
     if section is None:
@@ -535,8 +535,6 @@ def key_column_issues(
     template: Template, step: FillingStep, rows: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """A row whose occurrence had no key: the worker could not fill the step's keyColumn."""
-    if not isinstance(step, ExtractStep):
-        return []  # only extract steps read repeating sections
     section = template.repeating_section(step)
     column = step.key_column
     if section is None or column is None or step.table is None:
@@ -663,7 +661,7 @@ def run_plugin_step(
     """Run one plugin step on the text of its sections and the values before it; record it in
     step_runs (its model, attempts and tokens when it asked one; else no model) and as the
     event `ran <step>`. Returns the reply and the model it asked, if any."""
-    from .plugins import PluginContext, PluginModel
+    from .plugins import PluginContext, PluginModel, run_plugin
 
     model = (
         PluginModel(
@@ -705,7 +703,7 @@ def run_plugin_step(
         )
 
     try:
-        data = resolved.plugin.run(ctx, resolved.settings)
+        data = run_plugin(resolved.plugin, resolved.settings, ctx, repeat_plan(template, step, doc))
     except Exception as exc:
         record("failed", str(exc)[:2000])
         raise

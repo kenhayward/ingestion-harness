@@ -116,6 +116,8 @@ export const PluginStepSchema = z
      * older recipes parse and hash as before), the document type's model.
      */
     model: z.string().min(1).optional(),
+    /** The table column the worker fills with each occurrence's key (repeating sections). */
+    keyColumn: Id.optional(),
   })
   .strict();
 
@@ -428,20 +430,6 @@ export const TemplateSchema = z
       if (step.table !== undefined && !tables.has(step.table)) {
         issue(`step "${step.id}": unknown table "${step.table}"`);
       }
-      if (step.type === 'plugin') {
-        const repeating = step.sections.find((s) => sectionById.get(s)?.repeat);
-        if (repeating) {
-          issue(`step "${step.id}": a plugin step cannot read a repeating section (${repeating})`);
-        }
-      }
-    }
-    for (const step of extracts) {
-      if (step.chunkPages !== undefined && step.table === undefined) {
-        issue(`step "${step.id}": only table steps can be chunked`);
-      }
-      if (step.chunkPages !== undefined && step.sections.length !== 1) {
-        issue(`step "${step.id}": chunked steps need exactly one section`);
-      }
       const repeating = step.sections.filter((s) => sectionById.get(s)?.repeat);
       if (step.fields.length > 0 && repeating.length > 0) {
         issue(
@@ -467,6 +455,14 @@ export const TemplateSchema = z
             );
           }
         }
+      }
+    }
+    for (const step of extracts) {
+      if (step.chunkPages !== undefined && step.table === undefined) {
+        issue(`step "${step.id}": only table steps can be chunked`);
+      }
+      if (step.chunkPages !== undefined && step.sections.length !== 1) {
+        issue(`step "${step.id}": chunked steps need exactly one section`);
       }
     }
     for (const o of outputCoverage(t).outputs) {

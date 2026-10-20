@@ -66,7 +66,9 @@ export function PipelineHelp() {
         A plugin step runs a capability installed with CT Studio instead of asking a model, such as{' '}
         <code>text.pattern@1</code>, which fills fields or a table by matching patterns in the
         step's sections, or one your administrator added as a package. It fills outputs like an
-        extract step and can read earlier values, but it calls no model and costs nothing to run.
+        extract step and can read earlier values; most call no model and cost nothing to run. A
+        plugin table step reading a repeating section runs once per occurrence, as an extract step
+        does, and its <strong>Key column</strong> is filled with each occurrence's key.
       </p>
       <p>
         Add one with <em>Add plugin step</em>, which lists the plugins this deployment's workers can

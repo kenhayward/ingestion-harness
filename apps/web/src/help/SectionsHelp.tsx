@@ -31,7 +31,10 @@ export function SectionsHelp() {
         occurrence runs to the next section's start.
       </p>
       <ul>
-        <li>A table step reading a repeating section runs once per occurrence, told which one.</li>
+        <li>
+          A table step (extract or plugin) reading a repeating section runs once per occurrence,
+          told which one.
+        </li>
         <li>
           A field step cannot read a repeating section (a field holds one value per document).
         </li>

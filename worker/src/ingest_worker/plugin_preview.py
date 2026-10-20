@@ -24,10 +24,11 @@ from .pipeline import (
     DocumentError,
     JobCancelled,
     PipelineDeps,
+    RepeatPlan,
     check_cancelled,
     mark_pages,
 )
-from .plugins import PluginContext, plugins
+from .plugins import PluginContext, plugins, run_plugin
 from .queue import ClaimedJob, JobQueue
 from .segment import MissingSectionsError, segment_occurrences, select_copy
 from .storage import plugin_preview_key
@@ -99,6 +100,12 @@ def preview_samples(
             missing = ", ".join(exc.missing)
             out.append(_failed(sample_id, name, f"missing required sections: {missing}"))
             continue
+        section = template.repeating_section(step)
+        repeat = (
+            RepeatPlan(section.id, segmented.occurrences.get(section.id, []), step.key_column)
+            if section is not None
+            else None
+        )
         job = ClaimedJob(
             job_id, "", template.id, template.version, "", "", None, 1, 1,
             task="plugin", test=True, filename=name,
@@ -112,7 +119,7 @@ def preview_samples(
             lambda *_: None,
         )
         try:
-            data = plugin.run(ctx, settings)
+            data = run_plugin(plugin, settings, ctx, repeat)
         except Exception as exc:  # the plugin's own failure, shown on its sample
             out.append(_failed(sample_id, name, f"the plugin failed: {exc}"))
             continue

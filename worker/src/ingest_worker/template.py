@@ -121,6 +121,8 @@ class PluginStep(_Model):
     #: A model choice, for a plugin that calls a model (egress "model"); absent, the document
     #: type's model (absent rather than "default", so older recipes read and hash as before).
     model: str | None = None
+    #: The table column the worker fills with each occurrence's key (repeating sections).
+    key_column: Id | None = Field(default=None, alias="keyColumn")
 
     @model_validator(mode="after")
     def _fills(self) -> PluginStep:
@@ -313,7 +315,7 @@ class Template(_Model):
     def table(self, table_id: str) -> TableDef:
         return next(t for t in self.outputs.tables if t.id == table_id)
 
-    def repeating_section(self, step: ExtractStep) -> Section | None:
+    def repeating_section(self, step: FillingStep) -> Section | None:
         """The repeating section a step reads (validation allows at most one), or None."""
         by_id = {s.id: s for s in self.document.sections}
         return next((by_id[i] for i in step.sections if i in by_id and by_id[i].repeat), None)
@@ -446,7 +448,7 @@ class Template(_Model):
                     errors.append(f"semantics: table {tid!r}: unknown column {cid!r}")
         return errors
 
-    def _repeat_errors(self, step: ExtractStep) -> list[str]:
+    def _repeat_errors(self, step: FillingStep) -> list[str]:
         by_id = {s.id: s for s in self.document.sections}
         repeating = [i for i in step.sections if i in by_id and by_id[i].repeat]
         errors = []
@@ -509,14 +511,7 @@ class Template(_Model):
                 if step.table not in table_ids:
                     errors.append(f"step {step.id!r}: unknown table {step.table!r}")
                 fills[step.table] = fills.get(step.table, 0) + 1
-            if isinstance(step, ExtractStep):
-                errors += self._repeat_errors(step)
-            else:
-                repeating = [i for i in step.sections if i in sections and sections[i].repeat]
-                errors += [
-                    f"step {step.id!r}: a plugin step cannot read a repeating section ({i})"
-                    for i in repeating[:1]
-                ]
+            errors += self._repeat_errors(step)
         for output_id in field_ids + table_ids:
             count = fills.get(output_id, 0)
             kind = "field" if output_id in field_ids else "table"

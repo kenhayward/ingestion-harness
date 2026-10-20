@@ -9953,6 +9953,10 @@
                                       "model": {
                                         "type": "string",
                                         "minLength": 1
+                                      },
+                                      "keyColumn": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_-]*$"
                                       }
                                     },
                                     "required": [
@@ -16223,6 +16227,10 @@
                                   "model": {
                                     "type": "string",
                                     "minLength": 1
+                                  },
+                                  "keyColumn": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                   }
                                 },
                                 "required": [
@@ -38428,6 +38436,10 @@
                                                   "model": {
                                                     "type": "string",
                                                     "minLength": 1
+                                                  },
+                                                  "keyColumn": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                                   }
                                                 },
                                                 "required": [
@@ -43389,6 +43401,10 @@
                                                     "model": {
                                                       "type": "string",
                                                       "minLength": 1
+                                                    },
+                                                    "keyColumn": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
                                                     }
                                                   },
                                                   "required": [
@@ -46081,6 +46097,10 @@
                                                   "model": {
                                                     "type": "string",
                                                     "minLength": 1
+                                                  },
+                                                  "keyColumn": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                                   }
                                                 },
                                                 "required": [
@@ -48438,6 +48458,10 @@
                                                   "model": {
                                                     "type": "string",
                                                     "minLength": 1
+                                                  },
+                                                  "keyColumn": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_-]*$"
                                                   }
                                                 },
                                                 "required": [

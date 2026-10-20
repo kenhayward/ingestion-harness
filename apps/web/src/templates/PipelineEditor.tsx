@@ -262,6 +262,7 @@ function StepDetail({
             sectionDefs={sectionDefs}
             fields={fields}
             tables={tables}
+            tableColumns={tableColumns}
             models={models}
             typeModelLabel={typeModelLabel}
             set={onSet}
