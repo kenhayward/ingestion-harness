@@ -113,6 +113,161 @@
         { "id": "assay", "type": "decimal" },
         { "id": "batch", "type": "text", "length": { "min": -1 } }
       ]
+    },
+    {
+      "name": "Python and JavaScript both take ^[A-Z]{2}\\-\\d{4}$",
+      "valid": true,
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "^[A-Z]{2}\\-\\d{4}$" }
+      ]
+    },
+    {
+      "name": "Python and JavaScript both take AB\\ 12",
+      "valid": true,
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "AB\\ 12" }
+      ]
+    },
+    {
+      "name": "Python and JavaScript both take \\#\\d+",
+      "valid": true,
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "\\#\\d+" }
+      ]
+    },
+    {
+      "name": "Python and JavaScript both take \\A\\d+\\Z",
+      "valid": true,
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "\\A\\d+\\Z" }
+      ]
+    },
+    {
+      "name": "Python and JavaScript both take (?P<y>\\d{4})-(?P=y)",
+      "valid": true,
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "(?P<y>\\d{4})-(?P=y)" }
+      ]
+    },
+    {
+      "name": "Python and JavaScript both take (?<=AB)\\d+",
+      "valid": true,
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "(?<=AB)\\d+" }
+      ]
+    },
+    {
+      "name": "Python and JavaScript both take (\\d)\\1",
+      "valid": true,
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "(\\d)\\1" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: \\p{Lu}+",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "\\p{Lu}+" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: (?<code>[A-Z]{2})\\d+",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "(?<code>[A-Z]{2})\\d+" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: \\k<n>",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "\\k<n>" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: \\u{41}",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "\\u{41}" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: \\x4",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "\\x4" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: \\cJ",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "\\cJ" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: (?<=\\d+)x",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "(?<=\\d+)x" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: (?<!a|bc)x",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "(?<!a|bc)x" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: [^]",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "[^]" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: []",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "[]" }
+      ]
+    },
+    {
+      "name": "a pattern Python refuses: (a)\\2",
+      "valid": false,
+      "error": "is not a valid pattern",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "pattern": "(a)\\2" }
+      ]
     }
   ]
 }

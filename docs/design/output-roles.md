@@ -98,8 +98,11 @@ document really states. The point is to capture the true value and flag it.
 - `ValueDef.range` (`{min?, max?}`, decimal and integer), `pattern` (text, the whole value,
   Python `re` syntax), `length` (`{min?, max?}` in characters, text), on both sides
   (`ValueDefSchema.superRefine`, `ValueDef._constraints`). TS checks a pattern with
-  `patternCompiles`, which translates `(?P<` and a leading `(?ims)` flag group; other
-  Python-only syntax is refused by TS. Shared fixture `packages/shared/test/fixtures/value-constraints.json`.
+  `patternCompiles` (`python-pattern.ts`): compiled without the `u` flag, whose lax parsing takes
+  what Python takes, after refusing what JavaScript takes and Python does not (unknown letter
+  escapes, short hex escapes, `(?<name>`, backreferences to groups not yet opened, `[]`, `[^]`,
+  lookbehinds of no fixed width), with `(?P<`, `(?P=` and a leading `(?ims)` translated. When in
+  doubt it refuses, so a pattern that saves always runs. Shared fixture `packages/shared/test/fixtures/value-constraints.json`.
 - `normalize.check_value(raw, definition, date_order)`: the type first, then the first constraint
   broken (`87.5 is below 90`, `87.5 is above 110`, `'ab12' does not match …`,
   `'ab' is shorter than 3 characters`, `'abcd' is longer than 3 characters`); none when the type

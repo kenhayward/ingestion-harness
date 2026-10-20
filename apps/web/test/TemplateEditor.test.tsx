@@ -2183,6 +2183,28 @@ describe('output constraints', () => {
     expect(savedFields(api)[1]!.range).toBeUndefined();
   });
 
+  it("drops the limits a field's new type does not take", async () => {
+    const d = withAssay();
+    d.outputs.fields[1] = { id: 'assay', type: 'decimal', range: { min: 90 } } as never;
+    const { api } = setup(view(d));
+    await userEvent.click(await tab(/Outputs/));
+    await userEvent.selectOptions(screen.getByLabelText('Field 2 type'), 'text');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(savedFields(api)[1]).toEqual({ id: 'assay', type: 'text' });
+  });
+
+  it('keeps a negative bound while it is typed', async () => {
+    const d = withAssay();
+    d.outputs.fields[1] = { id: 'assay', type: 'decimal', range: { min: -5 } } as never;
+    const { api } = setup(view(d));
+    await userEvent.click(await tab(/Outputs/));
+    const min = screen.getByLabelText('Field 2 min');
+    await userEvent.type(min, '{backspace}8');
+    expect(min).toHaveValue('-8');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(savedFields(api)[1]).toMatchObject({ range: { min: -8 } });
+  });
+
   it('offers a pattern and a max length only for text', async () => {
     const { api } = setup(view(withAssay()));
     await userEvent.click(await tab(/Outputs/));

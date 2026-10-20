@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TargetIdSchema } from './publish-targets.js';
+import { pythonPatternCompiles } from './python-pattern.js';
 import {
   CopySelectionSchema,
   ID_PATTERN,
@@ -34,18 +35,11 @@ export const RESERVED_OUTPUT_IDS = new Set(['fields', 'document', 'issues', 'gra
 const BoundSchema = z.object({ min: z.number().optional(), max: z.number().optional() }).strict();
 
 /**
- * Whether a constraint pattern (Python `re` syntax, as section anchors) compiles: named groups
- * `(?P<…>` and a leading inline flag group such as `(?i)` are translated for JavaScript.
+ * Whether a constraint pattern (Python `re` syntax, as section anchors) is one the worker
+ * accepts (`pythonPatternCompiles`).
  */
 export function patternCompiles(pattern: string): boolean {
-  const flags = /^\(\?([ims]+)\)/.exec(pattern);
-  const body = (flags ? pattern.slice(flags[0].length) : pattern).replace(/\(\?P</g, '(?<');
-  try {
-    new RegExp(body, `u${flags?.[1] ?? ''}`);
-    return true;
-  } catch {
-    return false;
-  }
+  return pythonPatternCompiles(pattern);
 }
 
 export const ValueDefSchema = z

@@ -1155,7 +1155,9 @@ function BoundInput({
 }) {
   const [text, setText] = useState(value === undefined ? '' : String(value));
   useEffect(() => {
-    const shown = text.trim() === '' ? undefined : Number(text);
+    const n = Number(text);
+    // Read the text as withBound does: "-" or "1e" on the way to a number is no number yet.
+    const shown = text.trim() === '' || !Number.isFinite(n) ? undefined : n;
     if (shown !== value) setText(value === undefined ? '' : String(value));
     // Only an outside change of the value (a reload, a discard) resets the text.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1173,6 +1175,18 @@ function BoundInput({
     />
   );
 }
+/** An output with a new type, without the limits that type does not take (they would make the
+ * recipe invalid with no control left to clear them). */
+const withType = (item: Definition, type: string): Definition => {
+  const next: Definition = { ...item, type };
+  if (type !== 'decimal' && type !== 'integer') delete next.range;
+  if (type !== 'text') {
+    delete next.pattern;
+    delete next.length;
+  }
+  return next;
+};
+
 /** A constraint's bounds with one end set from an input (empty: cleared); none left: absent. */
 const withBound = (b: unknown, end: 'min' | 'max', text: string): Bounds => {
   const next: { min?: number; max?: number } = { ...(b as Bounds) };
@@ -1239,7 +1253,7 @@ function ValueList({
             label={`${n} type`}
             value={item.type ?? 'text'}
             options={[...VALUE_TYPES]}
-            onChange={(v) => update(i, 'type', v)}
+            onChange={(v) => onChange(items.map((it, j) => (j === i ? withType(it, v) : it)))}
           />,
           item.type === 'enum' ? (
             <Text
