@@ -74,6 +74,11 @@ export const ExtractStepSchema = z
     context: z.record(Id, z.string().min(1)).default({}),
     /** The table column the worker fills with each occurrence's key (repeating sections). */
     keyColumn: Id.optional(),
+    /**
+     * A table step that enriches an earlier step's rows (P4): the columns it fills, the rest
+     * being the creating step's. Absent: the step creates the table's rows.
+     */
+    columns: z.array(Id).min(1).optional(),
   })
   .strict();
 
@@ -118,6 +123,11 @@ export const PluginStepSchema = z
     model: z.string().min(1).optional(),
     /** The table column the worker fills with each occurrence's key (repeating sections). */
     keyColumn: Id.optional(),
+    /**
+     * A table step that enriches an earlier step's rows (P4): the columns it fills, the rest
+     * being the creating step's. Absent: the step creates the table's rows.
+     */
+    columns: z.array(Id).min(1).optional(),
   })
   .strict();
 
@@ -134,8 +144,16 @@ export const FILLING_STEP_TYPES: ReadonlySet<string> = new Set(['extract', 'plug
 export interface OutputFill {
   id: string;
   kind: 'field' | 'table';
-  /** Ids of the steps that fill it, in pipeline order (listed twice: appears twice). */
+  /**
+   * Ids of the steps that fill it, in pipeline order (listed twice: appears twice); for a table,
+   * the steps creating its rows (not those enriching it).
+   */
   steps: string[];
+  /**
+   * A table some step enriches (P4): the step filling each column (its enriching step, else the
+   * creating steps). Absent: the creating step fills every column.
+   */
+  columns?: { id: string; steps: string[] }[];
 }
 
 export interface OutputCoverage {
@@ -143,7 +161,7 @@ export interface OutputCoverage {
   outputs: OutputFill[];
   /** Outputs no step fills. */
   uncovered: string[];
-  /** Outputs more than one step fills. */
+  /** Outputs more than one step fills, and `table.column`s two enriching steps fill. */
   multiple: string[];
 }
 
@@ -163,25 +181,57 @@ export function outputCoverage(definition: unknown): OutputCoverage {
   const def = looseObj(definition);
   const outputs = looseObj(def.outputs);
   const fieldIds = looseIds(looseList(outputs.fields).map((f) => f.id));
-  const tableIds = [...new Set(looseIds(looseList(outputs.tables).map((t) => t.id)))];
+  const tables = looseList(outputs.tables);
+  const tableIds = [...new Set(looseIds(tables.map((t) => t.id)))];
   const fillers = looseList(def.pipeline).filter(
     (s): s is Loose & { id: string } =>
       FILLING_STEP_TYPES.has(String(s.type)) && typeof s.id === 'string',
   );
-  const rows: OutputFill[] = [...fieldIds, ...tableIds].map((id) => ({
-    id,
-    kind: fieldIds.includes(id) ? 'field' : 'table',
-    steps: fillers.flatMap((s) => [
-      ...looseIds(s.fields)
-        .filter((f) => f === id)
-        .map(() => s.id),
-      ...(s.table === id ? [s.id] : []),
-    ]),
-  }));
+  const enriches = (s: Loose) => looseIds(s.columns).length > 0;
+  const rows: OutputFill[] = [...fieldIds, ...tableIds].map((id) => {
+    if (fieldIds.includes(id)) {
+      const steps = fillers.flatMap((s) =>
+        looseIds(s.fields)
+          .filter((f) => f === id)
+          .map(() => s.id),
+      );
+      return { id, kind: 'field', steps };
+    }
+    const creators = fillers.filter((s) => s.table === id && !enriches(s)).map((s) => s.id);
+    const enrichers = fillers.filter((s) => s.table === id && enriches(s));
+    if (enrichers.length === 0) return { id, kind: 'table', steps: creators };
+    const columnIds = looseIds(
+      looseList(tables.find((t) => t.id === id)?.columns).map((c) => c.id),
+    );
+    const columns = columnIds.map((c) => {
+      const own = enrichers.filter((s) => looseIds(s.columns).includes(c)).map((s) => s.id);
+      return { id: c, steps: own.length > 0 ? own : creators };
+    });
+    return { id, kind: 'table', steps: creators, columns };
+  });
   return {
     outputs: rows,
     uncovered: rows.filter((r) => r.steps.length === 0).map((r) => r.id),
-    multiple: rows.filter((r) => r.steps.length > 1).map((r) => r.id),
+    multiple: [
+      ...rows.filter((r) => r.steps.length > 1).map((r) => r.id),
+      ...rows.flatMap((r) =>
+        (r.columns ?? [])
+          .filter((c) => c.steps.length > 1 && !r.steps.includes(c.steps[0]!))
+          .map((c) => `${r.id}.${c.id}`),
+      ),
+    ],
+  };
+}
+
+/** The steps creating and enriching one table of a parsed recipe (P4). */
+function tableSteps<S extends { id: string; table?: string; columns?: string[] }>(
+  fillers: readonly S[],
+  table: string,
+): { creators: S[]; enrichers: S[] } {
+  const on = fillers.filter((s) => s.table === table);
+  return {
+    creators: on.filter((s) => s.columns === undefined),
+    enrichers: on.filter((s) => s.columns !== undefined),
   };
 }
 
@@ -430,6 +480,27 @@ export const TemplateSchema = z
       if (step.table !== undefined && !tables.has(step.table)) {
         issue(`step "${step.id}": unknown table "${step.table}"`);
       }
+      if (step.columns !== undefined) {
+        const table = step.table === undefined ? undefined : tables.get(step.table);
+        if (step.table === undefined) issue(`step "${step.id}": columns needs a table`);
+        for (const c of step.columns) {
+          if (table && !table.columns.some((col) => col.id === c)) {
+            issue(`step "${step.id}": unknown column "${c}" of ${step.table}`);
+          }
+        }
+        if (step.type === 'extract') {
+          issue(`step "${step.id}": an extract step cannot enrich a table yet`);
+          if (step.chunkPages !== undefined) {
+            issue(`step "${step.id}": an enriching step cannot be chunked`);
+          }
+        }
+        if (step.sections.some((s) => sectionById.get(s)?.repeat)) {
+          issue(`step "${step.id}": an enriching step cannot read a repeating section`);
+        }
+        if (step.keyColumn !== undefined) {
+          issue(`step "${step.id}": keyColumn is for the step creating the rows`);
+        }
+      }
       const repeating = step.sections.filter((s) => sectionById.get(s)?.repeat);
       if (step.fields.length > 0 && repeating.length > 0) {
         issue(
@@ -465,10 +536,33 @@ export const TemplateSchema = z
         issue(`step "${step.id}": chunked steps need exactly one section`);
       }
     }
-    for (const o of outputCoverage(t).outputs) {
-      if (o.steps.length === 0) issue(`${o.kind} "${o.id}" is not filled by any step`);
+    const order = new Map(t.pipeline.map((s, i) => [s.id, i]));
+    const coverage = outputCoverage(t);
+    for (const o of coverage.outputs) {
+      const { creators, enrichers } =
+        o.kind === 'table' ? tableSteps(fillers, o.id) : { creators: [], enrichers: [] };
+      if (o.steps.length === 0) {
+        issue(
+          enrichers.length > 0
+            ? `table "${o.id}" has no step creating its rows`
+            : `${o.kind} "${o.id}" is not filled by any step`,
+        );
+      }
       if (o.steps.length > 1) issue(`${o.kind} "${o.id}" is filled by more than one step`);
+      const creator = creators.length === 1 ? creators[0]! : undefined;
+      if (!creator || enrichers.length === 0) continue;
+      if ((o.columns ?? []).every((c) => !c.steps.includes(creator.id))) {
+        issue(`step "${creator.id}" creates the rows of ${o.id} but fills none of its columns`);
+      }
+      for (const e of enrichers) {
+        if (order.get(e.id)! < order.get(creator.id)!) {
+          issue(`step "${e.id}" enriches ${o.id} before step "${creator.id}" creates its rows`);
+        }
+      }
     }
+    coverage.multiple
+      .filter((id) => id.includes('.'))
+      .forEach((id) => issue(`column "${id}" is filled by more than one step`));
 
     const resolves = (path: string) => {
       const [head, column] = path.split('.', 2) as [string, string | undefined];
@@ -482,10 +576,11 @@ export const TemplateSchema = z
       const columns = table.columns.map((c) => `${path}.${c.id}`).join(', ');
       return `unknown field or column "${path}": "${path}" is a table, so name one of its columns: ${columns}`;
     };
-    const order = new Map(t.pipeline.map((s, i) => [s.id, i]));
     const fillerOf = (path: string) => {
       const [head, column] = path.split('.', 2) as [string, string | undefined];
-      return fillers.find((s) => (column ? s.table === head : s.fields.includes(head)));
+      if (column === undefined) return fillers.find((s) => s.fields.includes(head));
+      const { creators, enrichers } = tableSteps(fillers, head);
+      return enrichers.find((s) => s.columns!.includes(column)) ?? creators[0];
     };
     for (const step of fillers) {
       for (const [name, path] of Object.entries(step.context)) {

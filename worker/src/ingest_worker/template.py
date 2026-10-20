@@ -73,6 +73,9 @@ class ExtractStep(_Model):
     context: dict[Id, str] = Field(default_factory=dict)
     #: The table column the worker fills with each occurrence's key (repeating sections).
     key_column: Id | None = Field(default=None, alias="keyColumn")
+    #: A table step enriching an earlier step's rows (P4): the columns it fills, the rest being
+    #: the creating step's. None: the step creates the table's rows.
+    columns: list[Id] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _fills(self) -> ExtractStep:
@@ -123,6 +126,9 @@ class PluginStep(_Model):
     model: str | None = None
     #: The table column the worker fills with each occurrence's key (repeating sections).
     key_column: Id | None = Field(default=None, alias="keyColumn")
+    #: A table step enriching an earlier step's rows (P4): the columns it fills, the rest being
+    #: the creating step's. None: the step creates the table's rows.
+    columns: list[Id] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _fills(self) -> PluginStep:
@@ -352,7 +358,20 @@ class Template(_Model):
         return next(s for s in self.filling_steps() if field_id in s.fields)
 
     def filler_of_table(self, table_id: str) -> FillingStep:
-        return next(s for s in self.filling_steps() if s.table == table_id)
+        """The step creating the table's rows (not one enriching it)."""
+        return next(s for s in self.filling_steps() if s.table == table_id and s.columns is None)
+
+    def enriching_steps(self, table_id: str) -> list[FillingStep]:
+        """The steps filling some columns of the table's rows, in pipeline order (P4)."""
+        return [s for s in self.filling_steps() if s.table == table_id and s.columns is not None]
+
+    def filler_of_column(self, table_id: str, column_id: str) -> FillingStep:
+        """The step filling one column: the step enriching the table with it, else the step
+        creating the rows."""
+        return next(
+            (s for s in self.enriching_steps(table_id) if column_id in (s.columns or [])),
+            None,
+        ) or self.filler_of_table(table_id)
 
     def _resolve(self, path: str) -> tuple[str, ValueDef] | None:
         """`<field>` or `<table>.<column>` -> (engine path, definition)."""
@@ -363,7 +382,7 @@ class Template(_Model):
             if table is None or col is None:
                 return None
             suffix = "[*]" if col.type == "list" else ""
-            return f"{self.filler_of_table(head).id}.rows[*].{column}{suffix}", col
+            return f"{self.filler_of_column(head, column).id}.rows[*].{column}{suffix}", col
         fld = next((f for f in self.outputs.fields if f.id == head), None)
         if fld is None:
             return None
@@ -480,6 +499,54 @@ class Template(_Model):
                     )
         return errors
 
+    def _enrich_errors(self, step: FillingStep) -> list[str]:
+        """An enriching step's own rules (P4; TemplateSchema.superRefine in TS)."""
+        if step.columns is None:
+            return []
+        errors: list[str] = []
+        if step.table is None:
+            errors.append(f"step {step.id!r}: columns needs a table")
+        table = next((t for t in self.outputs.tables if t.id == step.table), None)
+        if table is not None:
+            known = {c.id for c in table.columns}
+            errors += [
+                f"step {step.id!r}: unknown column {c!r} of {step.table}"
+                for c in step.columns
+                if c not in known
+            ]
+        if isinstance(step, ExtractStep):
+            errors.append(f"step {step.id!r}: an extract step cannot enrich a table yet")
+            if step.chunk_pages is not None:
+                errors.append(f"step {step.id!r}: an enriching step cannot be chunked")
+        if self.repeating_section(step) is not None:
+            errors.append(f"step {step.id!r}: an enriching step cannot read a repeating section")
+        if step.key_column is not None:
+            errors.append(f"step {step.id!r}: keyColumn is for the step creating the rows")
+        return errors
+
+    def _column_errors(self, table_id: str) -> list[str]:
+        """A table with one creating step and some enriching ones: every column is filled by
+        exactly one step, and the rows exist before a step enriches them."""
+        creator = self.filler_of_table(table_id)
+        enrichers = self.enriching_steps(table_id)
+        errors: list[str] = []
+        named = [c for s in enrichers for c in (s.columns or [])]
+        errors += [
+            f"column '{table_id}.{c}' is filled by more than one step"
+            for c in sorted({c for c in named if named.count(c) > 1})
+        ]
+        if all(c.id in named for c in self.table(table_id).columns):
+            errors.append(
+                f"step {creator.id!r} creates the rows of {table_id} but fills none of its columns"
+            )
+        order = {s.id: i for i, s in enumerate(self.pipeline)}
+        errors += [
+            f"step {e.id!r} enriches {table_id} before step {creator.id!r} creates its rows"
+            for e in enrichers
+            if order[e.id] < order[creator.id]
+        ]
+        return errors
+
     @model_validator(mode="after")
     def _consistency(self) -> Template:
         errors: list[str] = []
@@ -510,15 +577,22 @@ class Template(_Model):
             if step.table is not None:
                 if step.table not in table_ids:
                     errors.append(f"step {step.id!r}: unknown table {step.table!r}")
-                fills[step.table] = fills.get(step.table, 0) + 1
+                if step.columns is None:
+                    fills[step.table] = fills.get(step.table, 0) + 1
             errors += self._repeat_errors(step)
+            errors += self._enrich_errors(step)
         for output_id in field_ids + table_ids:
             count = fills.get(output_id, 0)
             kind = "field" if output_id in field_ids else "table"
-            if count == 0:
+            enriched = kind == "table" and bool(self.enriching_steps(output_id))
+            if count == 0 and enriched:
+                errors.append(f"table {output_id!r} has no step creating its rows")
+            elif count == 0:
                 errors.append(f"{kind} {output_id!r} is not filled by any step")
             elif count > 1:
                 errors.append(f"{kind} {output_id!r} is filled by more than one step")
+            elif enriched:
+                errors += self._column_errors(output_id)
 
         if not errors:  # context must come from steps that have already run
             order = {s.id: i for i, s in enumerate(self.pipeline)}
@@ -530,7 +604,11 @@ class Template(_Model):
                         )
                         continue
                     head, _, column = path.partition(".")
-                    filler = self.filler_of_table(head) if column else self.filler_of_field(head)
+                    filler = (
+                        self.filler_of_column(head, column)
+                        if column
+                        else self.filler_of_field(head)
+                    )
                     if order[filler.id] >= order[step.id]:
                         errors.append(
                             f"step {step.id!r}: context {name!r} refers to {path!r}, which is "

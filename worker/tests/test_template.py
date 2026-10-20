@@ -366,3 +366,35 @@ def test_a_plugin_filled_output_resolves_to_its_step() -> None:
     assert [s.id for s in t.extract_steps()] == ["head"]
     check = t.compile_check(next(s for s in t.pipeline if s.type == "check"))
     assert check.values == "rows.rows[*].sku"
+
+
+ENRICH_FIXTURE = json.loads(
+    (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "enrich-steps.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    "case", ENRICH_FIXTURE["cases"], ids=[c["name"] for c in ENRICH_FIXTURE["cases"]]
+)
+def test_enriching_steps_match_the_shared_fixture(case: dict[str, Any]) -> None:
+    definition = {**ENRICH_FIXTURE["base"], "pipeline": case["pipeline"]}
+    if case["valid"]:
+        Template.model_validate(definition)
+    else:
+        with pytest.raises(ValidationError, match=re.escape(case["error"])):
+            Template.model_validate(definition)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [c for c in ENRICH_FIXTURE["cases"] if "columns" in c],
+    ids=[c["name"] for c in ENRICH_FIXTURE["cases"] if "columns" in c],
+)
+def test_each_column_resolves_to_the_step_filling_it(case: dict[str, Any]) -> None:
+    t = Template.model_validate({**ENRICH_FIXTURE["base"], "pipeline": case["pipeline"]})
+    assert {c: [t.filler_of_column("lines", c).id] for c in case["columns"]} == case["columns"]
+    assert t.filler_of_table("lines").id == "rows"
+    step = next(s for s in t.filling_steps() if s.id == case["columns"]["expiry"][0])
+    assert t._resolve("lines.expiry") == (f"{step.id}.rows[*].expiry", t.table("lines").columns[2])

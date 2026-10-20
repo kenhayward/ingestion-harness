@@ -678,6 +678,13 @@ def run_plugin_step(
         if resolved.model is not None
         else None
     )
+    rows = None
+    if step.columns is not None and step.table is not None:  # it enriches the rows so far
+        own = set(step.columns)
+        rows = [
+            {k: v for k, v in row.items() if k not in own}
+            for row in state.tables.get(step.table, [])
+        ]
     ctx = PluginContext(
         job,
         template,
@@ -687,6 +694,7 @@ def run_plugin_step(
         lambda message, data: advisory_event(job, queue, message, data),
         model,
         instructions=instructions,
+        rows=rows,
     )
     started = datetime.now(UTC).isoformat()
 
@@ -710,6 +718,15 @@ def run_plugin_step(
 
     try:
         data = run_plugin(resolved.plugin, resolved.settings, ctx, repeat_plan(template, step, doc))
+        if rows is not None:
+            got = data.get("rows") if isinstance(data, dict) else None
+            count = len(got) if isinstance(got, list) else 0
+            if count != len(rows):
+                raise DocumentError(
+                    f"step {step.id!r}: {step.uses} answered {count} rows for the {len(rows)} "
+                    f"rows of {step.table}: a step enriching a table answers the same rows, "
+                    "in order"
+                )
     except Exception as exc:
         record("failed", str(exc)[:2000])
         raise
@@ -739,11 +756,11 @@ def rerun_template_job(
             f"no extract or plugin step {params.get('step')!r} in {template.id} v{template.version}"
         )
     instructions = params.get("instructions")
-    if isinstance(step, PluginStep):
-        from .plugins import resolve_plugins
+    from .plugins import resolve_plugins
 
+    if isinstance(step, PluginStep):
         resolved = resolve_plugins(
-            template, JobModels(job, deps.models), only=step.id, model=params.get("model")
+            template, JobModels(job, deps.models), only={step.id}, model=params.get("model")
         )[step.id]
     else:
         ex = compile_step(template, step)
@@ -751,6 +768,16 @@ def rerun_template_job(
             ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
         ref = params.get("model") or job.model_override or ex.model
         model = JobModels(job, deps.models).resolve(ref, what=f"re-run of {step.id!r}")
+    # A step creating a table's rows takes its enrichers with it (P4): new rows would otherwise
+    # sit beside values enriched for the old ones. They run as they did, with their own models.
+    enrichers = (
+        template.enriching_steps(step.table)
+        if step.table is not None and step.columns is None
+        else []
+    )
+    enriching = resolve_plugins(
+        template, JobModels(job, deps.models), only={e.id for e in enrichers}
+    )
 
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
@@ -786,8 +813,23 @@ def rerun_template_job(
         )
         data, model_ref = result.data, result.model_ref
     # The step's issues are replaced; the SHACL ones are the previous graph's, validated below.
-    kept = tuple(i for i in stored.issues if i.get("step") not in (step.id, "shacl"))
+    replaced = {step.id, "shacl", *(e.id for e in enrichers)}
+    kept = tuple(i for i in stored.issues if i.get("step") not in replaced)
     state = replace(stored, issues=kept).apply(normalise_step(template, step, data, model_ref))
+    for enricher in enrichers:
+        assert isinstance(enricher, PluginStep)  # extract steps cannot enrich a table yet
+        enriched, enriched_model = run_plugin_step(
+            job,
+            deps,
+            queue,
+            template,
+            enricher,
+            enriching[enricher.id],
+            doc,
+            state,
+            trigger="rerun",
+        )
+        state = state.apply(normalise_step(template, enricher, enriched, enriched_model))
     fields, tables, issues = state.fields, state.tables, list(state.issues)
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
@@ -843,6 +885,9 @@ class StepOutcome:
     issues: tuple[dict[str, Any], ...]
     #: The model the step ran on (None: not recorded).
     model: str | None = None
+    #: A step enriching a table (P4): the columns its rows hold, merged into the table's rows
+    #: by position (None: the outcome's tables replace the state's).
+    columns: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -864,12 +909,22 @@ class DocState:
         models = self.models
         if outcome.model is not None:
             models = {**models, outcome.step_id: outcome.model}
+        tables, result = outcome.tables, outcome.result
+        if outcome.columns is not None:  # an enriching step: its columns into the rows so far
+            tables = {
+                table_id: [
+                    {**old, **new}
+                    for old, new in zip(self.tables.get(table_id, []), rows, strict=True)
+                ]
+                for table_id, rows in outcome.tables.items()
+            }
+            result = {"rows": next(iter(tables.values()), [])}
         return DocState(
             fields={**self.fields, **outcome.fields},
-            tables={**self.tables, **outcome.tables},
+            tables={**self.tables, **tables},
             checks=self.checks,
             issues=(*self.issues, *outcome.issues),
-            step_results={**self.step_results, outcome.step_id: outcome.result},
+            step_results={**self.step_results, outcome.step_id: result},
             models=models,
         )
 
@@ -896,12 +951,15 @@ def step_inputs(template: Template, step: FillingStep) -> list[str]:
     """The steps (extract or plugin) whose values `step` reads through its `context`, in pipeline order: the
     step's dependencies. (A valid recipe fills each output with one step, and a context names
     only outputs filled by earlier steps.)"""
-    writer = {
-        output: s.id
-        for s in template.filling_steps()
-        for output in [*s.fields, *([s.table] if s.table else [])]
-    }
-    wanted = {writer[path.partition(".")[0]] for path in step.context.values()}
+    wanted = set()
+    for path in step.context.values():
+        head, _, column = path.partition(".")
+        filler = (
+            template.filler_of_column(head, column) if column else template.filler_of_field(head)
+        )
+        wanted.add(filler.id)
+    if step.columns is not None and step.table is not None:  # it reads the rows it enriches
+        wanted.add(template.filler_of_table(step.table).id)
     return [s.id for s in template.filling_steps() if s.id in wanted]
 
 
@@ -939,10 +997,20 @@ def normalise_step(
 
     assert step.table is not None
     table = template.table(step.table)
+    if step.columns is not None:  # an enriching step: only its columns
+        own = set(step.columns)
+    else:  # the creating step: every column no enriching step fills
+        own = {c.id for c in table.columns} - {
+            c for s in template.enriching_steps(table.id) for c in (s.columns or [])
+        }
     rows: list[dict[str, Any]] = []
     for n, raw_row in enumerate(data.get("rows", []), start=1):
         row: dict[str, Any] = {}
         for column in table.columns:
+            if column.id not in own:
+                if step.columns is None:
+                    row[column.id] = None  # an enriching step's, filled when it runs
+                continue
             value, issue = normalize_value(
                 raw_row.get(column.id), column.type, options=column.enum, date_order=order
             )
@@ -960,7 +1028,8 @@ def normalise_step(
                 )
         rows.append(row)
     issues += key_column_issues(template, step, rows)
-    return StepOutcome(step.id, {"rows": rows}, {}, {table.id: rows}, tuple(issues), model)
+    columns = tuple(step.columns) if step.columns is not None else None
+    return StepOutcome(step.id, {"rows": rows}, {}, {table.id: rows}, tuple(issues), model, columns)
 
 
 def _review_reasons(

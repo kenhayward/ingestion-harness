@@ -9845,6 +9845,14 @@
                                       "keyColumn": {
                                         "type": "string",
                                         "pattern": "^[a-z][a-z0-9_-]*$"
+                                      },
+                                      "columns": {
+                                        "minItems": 1,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_-]*$"
+                                        }
                                       }
                                     },
                                     "required": [
@@ -9957,6 +9965,14 @@
                                       "keyColumn": {
                                         "type": "string",
                                         "pattern": "^[a-z][a-z0-9_-]*$"
+                                      },
+                                      "columns": {
+                                        "minItems": 1,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_-]*$"
+                                        }
                                       }
                                     },
                                     "required": [
@@ -16119,6 +16135,14 @@
                                   "keyColumn": {
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "columns": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    }
                                   }
                                 },
                                 "required": [
@@ -16231,6 +16255,14 @@
                                   "keyColumn": {
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "columns": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                    }
                                   }
                                 },
                                 "required": [
@@ -18338,7 +18370,7 @@
         "tags": [
           "Review & steps"
         ],
-        "description": "Queues one extract or plugin step of a job awaiting review again, optionally with\nanother model, extra instructions, or pages sent as images so a vision model reads\nthem directly (e.g. handwriting). The worker reuses the document's text and OCR and\nre-runs the checks; the job returns to `awaiting_review` with the step's new values.\n\nA plugin step takes `instructions` (the plugin reads them as `ctx.instructions`),\na `model` only when its plugin asks one (egress `model` in `GET /api/plugins`),\nand no `pageImages`.\n\nRefused while the step's outputs have reviewer edits, since a re-run would discard\nthem. `model` must be offered (`GET /api/models`) or an alias resolving to one.",
+        "description": "Queues one extract or plugin step of a job awaiting review again, optionally with\nanother model, extra instructions, or pages sent as images so a vision model reads\nthem directly (e.g. handwriting). The worker reuses the document's text and OCR and\nre-runs the checks; the job returns to `awaiting_review` with the step's new values.\n\nA plugin step takes `instructions` (the plugin reads them as `ctx.instructions`),\na `model` only when its plugin asks one (egress `model` in `GET /api/plugins`),\nand no `pageImages`.\n\nRefused while the step's outputs have reviewer edits, since a re-run would discard\nthem: for a step enriching a table, edits of its own columns; for the step creating a\ntable's rows, any edit of the table, since its enriching steps re-run with it. `model` must be offered (`GET /api/models`) or an alias resolving to one.",
         "requestBody": {
           "required": true,
           "content": {
@@ -38328,6 +38360,14 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "columns": {
+                                                    "minItems": 1,
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
                                                   }
                                                 },
                                                 "required": [
@@ -38440,6 +38480,14 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "columns": {
+                                                    "minItems": 1,
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
                                                   }
                                                 },
                                                 "required": [
@@ -43293,6 +43341,14 @@
                                                     "keyColumn": {
                                                       "type": "string",
                                                       "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "columns": {
+                                                      "minItems": 1,
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      }
                                                     }
                                                   },
                                                   "required": [
@@ -43405,6 +43461,14 @@
                                                     "keyColumn": {
                                                       "type": "string",
                                                       "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "columns": {
+                                                      "minItems": 1,
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string",
+                                                        "pattern": "^[a-z][a-z0-9_-]*$"
+                                                      }
                                                     }
                                                   },
                                                   "required": [
@@ -45989,6 +46053,14 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "columns": {
+                                                    "minItems": 1,
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
                                                   }
                                                 },
                                                 "required": [
@@ -46101,6 +46173,14 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "columns": {
+                                                    "minItems": 1,
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
                                                   }
                                                 },
                                                 "required": [
@@ -48350,6 +48430,14 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "columns": {
+                                                    "minItems": 1,
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
                                                   }
                                                 },
                                                 "required": [
@@ -48462,6 +48550,14 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "columns": {
+                                                    "minItems": 1,
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    }
                                                   }
                                                 },
                                                 "required": [

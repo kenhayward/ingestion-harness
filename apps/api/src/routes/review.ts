@@ -314,7 +314,8 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
           and no \`pageImages\`.
 
           Refused while the step's outputs have reviewer edits, since a re-run would discard
-          them. \`model\` must be offered (\`GET /api/models\`) or an alias resolving to one.
+          them: for a step enriching a table, edits of its own columns; for the step creating a
+          table's rows, any edit of the table, since its enriching steps re-run with it. \`model\` must be offered (\`GET /api/models\`) or an alias resolving to one.
         `,
         params: z.object({
           id: z.string().uuid().describe('The job id.'),
@@ -382,8 +383,14 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
           }
         }
       }
+      // A step enriching a table (P4) replaces only its columns; a step creating the rows
+      // replaces every cell (its enrichers re-run with it).
+      const columns = step.columns;
       const edited = (await app.deps.repo.listEdits(job.id)).filter((e) =>
-        e.field ? step.fields.includes(e.field) : e.table === step.table,
+        e.field
+          ? step.fields.includes(e.field)
+          : e.table === step.table &&
+            (columns === undefined || (e.column !== null && columns.includes(e.column))),
       );
       if (edited.length) {
         return reply.code(409).send({

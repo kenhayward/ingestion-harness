@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from functools import cache
 from importlib.metadata import entry_points
@@ -153,6 +153,10 @@ class PluginContext:
     occurrence: PluginOccurrence | None = None
     #: The reviewer's guidance, when the step is re-run from review with some (None otherwise).
     instructions: str | None = None
+    #: For a step enriching a table (P4), the table's rows so far without the step's own
+    #: columns; the plugin answers the same rows, in order, with only its columns (None
+    #: otherwise).
+    rows: list[dict[str, Any]] | None = None
 
     def text(self) -> str:
         """The step's sections in its own order, one after the other."""
@@ -246,17 +250,17 @@ def resolve_plugins(
     template: Template,
     job_models: JobModels | None = None,
     *,
-    only: str | None = None,
+    only: Collection[str] | None = None,
     model: str | None = None,
 ) -> dict[str, ResolvedPlugin]:
     """Every plugin step's plugin and settings, by step id, before the job calls any model: a
     plugin this worker lacks or bad settings is a DocumentError (needs review). A plugin that
     calls a model gets `model` (a re-run's choice), else the job's override, else the step's
     model, else the document type's, resolved and checked against the data policy here, as an
-    extract step's is. `only` resolves that one step (a re-run)."""
+    extract step's is. `only` resolves those steps alone (a re-run)."""
     resolved: dict[str, ResolvedPlugin] = {}
     for step in template.plugin_steps():
-        if only is not None and step.id != only:
+        if only is not None and step.id not in only:
             continue
         plugin = plugins().get(step.uses)
         if plugin is None:

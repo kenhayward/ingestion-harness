@@ -100,6 +100,7 @@ with a message for the reviewer; the job then goes to review instead of being re
 | `ctx.event(message, data)` | an advisory job event, shown on the job's timeline |
 | `ctx.model` | the step's model, for a plugin whose egress is `"model"` (None otherwise) |
 | `ctx.instructions` | the reviewer's guidance, when the step is re-run from review with some (None otherwise) |
+| `ctx.rows` | for a step enriching a table, the table's rows so far without the step's own columns (None for any other step) |
 | `ctx.occurrence` | for a table step reading a repeating section, the occurrence being read: `index` and `count` (1-based), `key` (None when none was found) and `section` (None for any other step) |
 
 Read only these.
@@ -112,6 +113,20 @@ names a `keyColumn`, sets that column on every row to the occurrence's key (what
 put there; a row without a key is an issue for the reviewer). No occurrence: the plugin is not
 run and the table is empty. A reply without a `rows` list is an error naming the occurrence.
 The Workbench preview runs the same way.
+
+**Enriching a table.** A table step that names `columns` enriches the rows an earlier step
+created: say one step finds the batches and a plugin looks up each batch's expiry date. The
+plugin gets the rows so far as `ctx.rows` and answers `{rows: [...]}` with **the same number of
+rows, in the same order**, each holding only its columns (anything else in a row is ignored).
+Another number of rows is an error naming the step, and the job goes to review. Re-running the
+step that creates the rows runs the enriching steps again too. The Workbench preview cannot run
+an enriching step on its own (it has no rows); try it in a test run.
+
+```python
+def run(ctx: PluginContext, settings: Settings) -> dict[str, Any]:
+    assert ctx.rows is not None
+    return {"rows": [{"expiry": lookup(row["batch"])} for row in ctx.rows]}
+```
 
 **Re-runs from review.** A reviewer may re-run a plugin step from the Review page's Steps tab, as
 an extract step: only that step runs again, on the same text and the values before it, and its

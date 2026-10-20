@@ -1920,6 +1920,36 @@ describe('plugin steps in the recipe editors', () => {
     },
   );
 
+  it("lets a plugin table step fill only some columns of an earlier step's rows", async () => {
+    const { api } = setup(
+      view({
+        ...repeatingPlugin({ table: 'appearance_results', sections: ['front'] }),
+        pipeline: [
+          { type: 'extract', id: 'header', fields: ['study'], sections: ['front'] },
+          { type: 'extract', id: 'rows', table: 'appearance_results', sections: ['appearance'] },
+          {
+            type: 'plugin',
+            id: 'enrich',
+            uses: 'text.pattern@1',
+            table: 'appearance_results',
+            sections: ['front'],
+          },
+        ],
+      }),
+      plugins,
+    );
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^3 PLUGIN enrich/ }));
+    const step = screen.getByRole('group', { name: 'Step 3' });
+    const only = within(step).getByRole('group', { name: 'Enriches only these columns' });
+    await userEvent.click(within(only).getByRole('checkbox', { name: 'result' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+    expect(saved(api).pipeline[2]).toMatchObject({ columns: ['result'] });
+    await userEvent.click(within(only).getByRole('checkbox', { name: 'result' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+    expect(saved(api).pipeline[2]!.columns).toBeUndefined();
+  });
+
   it('keeps a plugin field step off repeating sections', async () => {
     setup(view(repeatingPlugin({ fields: ['study'], sections: ['front'] })), plugins);
     await userEvent.click(await tab(/Pipeline/));

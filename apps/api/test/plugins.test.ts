@@ -240,3 +240,62 @@ describe('re-running a plugin step from review', () => {
     expect(res.json().error).toContain('reviewer edits');
   });
 });
+
+describe('re-running a step of an enriched table (P4)', () => {
+  const enrich = JSON.parse(
+    readFileSync(
+      new URL('../../../packages/shared/test/fixtures/enrich-steps.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { base: Record<string, unknown>; cases: { pipeline: Record<string, unknown>[] }[] };
+
+  async function seed() {
+    const c = await testApp({ plugins: new MemoryPluginCatalogue(catalogue.plugins) });
+    await c.templates.create(
+      'stability',
+      1,
+      { ...enrich.base, pipeline: enrich.cases[0]!.pipeline },
+      'published',
+    );
+    const documentId = randomUUID();
+    const job = await c.repo.createDocumentAndJob(
+      {
+        id: documentId,
+        filename: 'report.pdf',
+        sha256: 'x',
+        sizeBytes: 1,
+        specId: 'stability',
+        specVersion: 1,
+        bucket: 'inbox',
+        objectKey: `stability/v1/${documentId}.pdf`,
+      },
+      null,
+    );
+    c.repo.jobs.set(job.id, { ...c.repo.jobs.get(job.id)!, status: 'awaiting_review' });
+    await c.repo.addEdit(job.id, {
+      field: null,
+      table: 'lines',
+      row: 1,
+      column: 'qty',
+      oldValue: 1,
+      newValue: 2,
+      editor: null,
+      reason: null,
+    });
+    const rerun = (step: string) =>
+      c.app.inject({ method: 'POST', url: `/api/jobs/${job.id}/steps/${step}/rerun`, payload: {} });
+    return { ...c, rerun };
+  }
+
+  it('refuses the creating step while any cell of its table was edited', async () => {
+    const { rerun } = await seed();
+    const res = await rerun('rows');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('reviewer edits');
+  });
+
+  it('lets an enriching step run while only other columns were edited', async () => {
+    const { rerun } = await seed();
+    expect((await rerun('expiry')).statusCode).toBe(200);
+  });
+});

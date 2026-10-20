@@ -513,7 +513,8 @@ export type PublishGateView = z.infer<typeof PublishGateViewSchema>;
  * What lowers the deciding holdout run's score (EV1): its fields and `table.column`s below the
  * threshold, worst first (a missing step before a low accuracy on a tie, then by key), at most
  * `MAX_GATE_HINTS`. `no_step` when no extract step of `definition` fills the output (a column
- * takes its table's coverage; a key the definition does not define is not filled either).
+ * takes its table's coverage, or its own on a table some step enriches; a key the definition
+ * does not define is not filled either).
  */
 export function gateHints({
   threshold,
@@ -524,11 +525,14 @@ export function gateHints({
   scorecard: Pick<Scorecard, 'fields' | 'columns'>;
   definition: unknown;
 }): GateHint[] {
-  const filled = new Set(
-    outputCoverage(definition)
-      .outputs.filter((o) => o.steps.length > 0)
-      .map((o) => o.id),
-  );
+  const coverage = outputCoverage(definition).outputs;
+  const filled = new Set([
+    ...coverage.filter((o) => o.steps.length > 0).map((o) => o.id),
+    // An enriched table's columns: each its own filler (P4).
+    ...coverage.flatMap((o) =>
+      (o.columns ?? []).filter((c) => c.steps.length > 0).map((c) => `${o.id}.${c.id}`),
+    ),
+  ]);
   const hint = (a: Accuracy, output: string): GateHint =>
     filled.has(output)
       ? { key: a.id, accuracy: a.accuracy, cause: 'low_accuracy', stage: 'revise' }
@@ -540,7 +544,10 @@ export function gateHints({
   const rank = (h: GateHint) => (h.cause === 'no_step' ? 0 : 1);
   return [
     ...scorecard.fields.map((a) => hint(a, a.id)),
-    ...scorecard.columns.map((a) => hint(a, tableOf(a.id))),
+    ...scorecard.columns.map((a) => {
+      const table = coverage.find((o) => o.id === tableOf(a.id));
+      return hint(a, table?.columns ? a.id : tableOf(a.id));
+    }),
   ]
     .filter((h) => h.accuracy < threshold)
     .sort((a, b) => a.accuracy - b.accuracy || rank(a) - rank(b) || a.key.localeCompare(b.key))

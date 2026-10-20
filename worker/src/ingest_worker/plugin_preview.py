@@ -69,6 +69,18 @@ def _failed(sample_id: str, name: str, error: str) -> dict[str, Any]:
     }
 
 
+def preview_problem(template: Template, step: PluginStep) -> str | None:
+    """Why a step cannot be previewed on its own, whatever its plugin (None: it can). A preview
+    runs no other step, so a step enriching a table (P4) has no rows to enrich."""
+    if step.columns is not None and step.table is not None:
+        creator = template.filler_of_table(step.table)
+        return (
+            f"step {step.id} fills columns of {step.table}, whose rows step {creator.id} "
+            "creates: try it in a test run"
+        )
+    return None
+
+
 def preview_samples(
     definition: dict[str, Any],
     step_id: str,
@@ -170,6 +182,8 @@ def run_plugin_preview(
     )
     if step is None:
         return problem(f"no plugin step {params.step_id} in the recipe")
+    if reason := preview_problem(template, step):
+        return problem(reason, step.uses)
     plugin = plugins().get(step.uses)
     if plugin is None:
         return problem(f"no plugin {step.uses} on this worker", step.uses)

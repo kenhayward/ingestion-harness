@@ -97,6 +97,7 @@ export function PluginStepForm({
   const table = typeof step.table === 'string' ? step.table : '';
   const filled = idsOf(step.fields);
   const reads = idsOf(step.sections);
+  const enriched = idsOf(step.columns);
   const { disabled } = repeatNote(step, sectionDefs);
   const settings = (step.with ?? {}) as Record<string, unknown>;
   const setSettings = (next: Record<string, unknown>) =>
@@ -178,6 +179,7 @@ export function PluginStepForm({
                 const next: Definition = { ...step, fields: [] };
                 if (e.target.value) next.table = e.target.value;
                 else delete next.table;
+                delete next.columns; // columns belong to a table
                 replace(next);
               }}
             >
@@ -189,6 +191,34 @@ export function PluginStepForm({
               ))}
             </select>
           </label>
+        )}
+        {table !== '' && (tableColumns[table] ?? []).length > 0 && (
+          <fieldset className="section-checks">
+            <legend>Enriches only these columns</legend>
+            <ul className="section-check-list">
+              {(tableColumns[table] ?? []).map((c) => (
+                <li key={c}>
+                  <label className="section-check">
+                    <input
+                      type="checkbox"
+                      checked={enriched.includes(c)}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...enriched, c]
+                          : enriched.filter((x) => x !== c);
+                        set('columns', next.length > 0 ? next : undefined);
+                      }}
+                    />
+                    <code>{c}</code>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <small className="muted">
+              None ticked: this step creates the table&apos;s rows. Ticked: it fills only those
+              columns of the rows an earlier step created.
+            </small>
+          </fieldset>
         )}
       </fieldset>
       <fieldset className="section-checks">
