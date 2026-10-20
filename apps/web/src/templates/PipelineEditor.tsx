@@ -13,7 +13,7 @@ import {
   type SectionLike,
 } from './editor-derive.js';
 import { Area, intList, opt, optInt, Text } from './fields.js';
-import { CheckStep, ContextEditor, RepeatKeyColumn } from './StepForms.js';
+import { CheckStep, ContextEditor, EnrichColumns, RepeatKeyColumn } from './StepForms.js';
 import { AddPluginStep, PluginStepForm } from './PluginForms.js';
 import { moveItem, removeAt, setIn, type Definition } from './model.js';
 
@@ -352,6 +352,7 @@ function ExtractDetail({
     const rest = { ...step };
     delete rest.table;
     delete rest.chunkPages;
+    delete rest.columns;
     replace({ ...rest, fields: [] });
   };
   return (
@@ -430,6 +431,7 @@ function ExtractDetail({
         columns={tableColumns[step.table as string] ?? []}
         set={set}
       />
+      <EnrichColumns step={step} columns={tableColumns[step.table as string] ?? []} set={set} />
       <fieldset className="fill-chips">
         <legend>Fills outputs</legend>
         {filled.map((id) => (

@@ -488,11 +488,8 @@ export const TemplateSchema = z
             issue(`step "${step.id}": unknown column "${c}" of ${step.table}`);
           }
         }
-        if (step.type === 'extract') {
-          issue(`step "${step.id}": an extract step cannot enrich a table yet`);
-          if (step.chunkPages !== undefined) {
-            issue(`step "${step.id}": an enriching step cannot be chunked`);
-          }
+        if (step.type === 'extract' && step.chunkPages !== undefined) {
+          issue(`step "${step.id}": an enriching step cannot be chunked`);
         }
         if (step.sections.some((s) => sectionById.get(s)?.repeat)) {
           issue(`step "${step.id}": an enriching step cannot read a repeating section`);

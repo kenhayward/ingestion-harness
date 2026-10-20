@@ -365,6 +365,16 @@ class Template(_Model):
         """The steps filling some columns of the table's rows, in pipeline order (P4)."""
         return [s for s in self.filling_steps() if s.table == table_id and s.columns is not None]
 
+    def columns_of(self, step: FillingStep) -> set[str]:
+        """The columns a table step fills: an enriching step's own, else (the creating step)
+        every column no enriching step fills."""
+        if step.table is None:
+            return set()
+        if step.columns is not None:
+            return set(step.columns)
+        enriched = {c for s in self.enriching_steps(step.table) for c in (s.columns or [])}
+        return {c.id for c in self.table(step.table).columns} - enriched
+
     def filler_of_column(self, table_id: str, column_id: str) -> FillingStep:
         """The step filling one column: the step enriching the table with it, else the step
         creating the rows."""
@@ -514,10 +524,8 @@ class Template(_Model):
                 for c in step.columns
                 if c not in known
             ]
-        if isinstance(step, ExtractStep):
-            errors.append(f"step {step.id!r}: an extract step cannot enrich a table yet")
-            if step.chunk_pages is not None:
-                errors.append(f"step {step.id!r}: an enriching step cannot be chunked")
+        if isinstance(step, ExtractStep) and step.chunk_pages is not None:
+            errors.append(f"step {step.id!r}: an enriching step cannot be chunked")
         if self.repeating_section(step) is not None:
             errors.append(f"step {step.id!r}: an enriching step cannot read a repeating section")
         if step.key_column is not None:
@@ -717,11 +725,13 @@ def compile_step(template: Template, step: ExtractStep) -> Extraction:
     else:
         assert step.table is not None
         table = template.table(step.table)
+        own = template.columns_of(step)
+        columns = [c for c in table.columns if c.id in own]
         row = {
             "type": "object",
             "additionalProperties": False,
-            "required": [c.id for c in table.columns],
-            "properties": {c.id: value_schema(c) for c in table.columns},
+            "required": [c.id for c in columns],
+            "properties": {c.id: value_schema(c) for c in columns},
         }
         schema = {
             "type": "object",
@@ -733,9 +743,11 @@ def compile_step(template: Template, step: ExtractStep) -> Extraction:
             "fields": None,
             "table": {
                 **table.model_dump(exclude={"columns"}),
-                "columns": [_definition(c) for c in table.columns],
+                "columns": [_definition(c) for c in columns],
             },
         }
+        if step.columns is not None:  # enriching the table (P4): its rows, filled at run time
+            context["enrich"] = {"count": 0, "rows": []}
     context.update(
         preamble=template.preamble,
         instructions=step.instructions,

@@ -6,7 +6,7 @@ import { Text } from './fields.js';
 import { repeatNote, type SectionLike } from './editor-derive.js';
 import type { Definition } from './model.js';
 import { setSetting, settingsFields, type SettingField } from './settings-schema.js';
-import { ContextEditor, RepeatKeyColumn } from './StepForms.js';
+import { ContextEditor, EnrichColumns, RepeatKeyColumn } from './StepForms.js';
 
 /** The plugins recipe steps can run (recipe plugins 3b); [] until loaded or when none. */
 export function usePlugins(api: Api, enabled = true): PluginInfo[] {
@@ -97,7 +97,6 @@ export function PluginStepForm({
   const table = typeof step.table === 'string' ? step.table : '';
   const filled = idsOf(step.fields);
   const reads = idsOf(step.sections);
-  const enriched = idsOf(step.columns);
   const { disabled } = repeatNote(step, sectionDefs);
   const settings = (step.with ?? {}) as Record<string, unknown>;
   const setSettings = (next: Record<string, unknown>) =>
@@ -192,34 +191,7 @@ export function PluginStepForm({
             </select>
           </label>
         )}
-        {table !== '' && (tableColumns[table] ?? []).length > 0 && (
-          <fieldset className="section-checks">
-            <legend>Enriches only these columns</legend>
-            <ul className="section-check-list">
-              {(tableColumns[table] ?? []).map((c) => (
-                <li key={c}>
-                  <label className="section-check">
-                    <input
-                      type="checkbox"
-                      checked={enriched.includes(c)}
-                      onChange={(e) => {
-                        const next = e.target.checked
-                          ? [...enriched, c]
-                          : enriched.filter((x) => x !== c);
-                        set('columns', next.length > 0 ? next : undefined);
-                      }}
-                    />
-                    <code>{c}</code>
-                  </label>
-                </li>
-              ))}
-            </ul>
-            <small className="muted">
-              None ticked: this step creates the table&apos;s rows. Ticked: it fills only those
-              columns of the rows an earlier step created.
-            </small>
-          </fieldset>
-        )}
+        <EnrichColumns step={step} columns={tableColumns[table] ?? []} set={set} />
       </fieldset>
       <fieldset className="section-checks">
         <legend>Reads sections</legend>

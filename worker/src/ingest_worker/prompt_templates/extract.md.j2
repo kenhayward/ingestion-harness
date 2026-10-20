@@ -11,7 +11,15 @@ Task: extract these fields. For each field return:
 
 Fields:
 {% for f in fields %}- {{ f.id }}{% if f.name %} ({{ f.name }}){% endif %} [{{ f.type }}{% if f.enum %}: one of {{ f.enum | join(", ") }}{% endif %}]{% if f.description %}: {{ f.description }}{% endif %}
-{% endfor %}{% endif %}{% if table %}
+{% endfor %}{% endif %}{% if table and enrich is defined and enrich %}
+Task: fill columns of the table "{{ table.name or table.id }}"{% if table.description %} ({{ table.description }}){% endif %} for each of the {{ enrich.count }} rows an earlier step found, listed below in order.
+Return exactly {{ enrich.count }} entries in `rows`, one per row and in the same order, with these columns:
+{% for c in table.columns %}- {{ c.id }}{% if c.name %} ({{ c.name }}){% endif %} [{{ c.type }}{% if c.enum %}: one of {{ c.enum | join(", ") }}{% endif %}]{% if c.description %}: {{ c.description }}{% endif %}
+{% endfor %}Use null for cells the document does not state.
+
+Rows found so far:
+{% for r in enrich.rows %}{{ loop.index }}. {{ r }}
+{% endfor %}{% elif table %}
 Task: extract the table "{{ table.name or table.id }}"{% if table.description %} ({{ table.description }}){% endif %}.
 Return one entry in `rows` per row of data, in document order, with these columns:
 {% for c in table.columns %}- {{ c.id }}{% if c.name %} ({{ c.name }}){% endif %} [{{ c.type }}{% if c.enum %}: one of {{ c.enum | join(", ") }}{% endif %}]{% if c.description %}: {{ c.description }}{% endif %}

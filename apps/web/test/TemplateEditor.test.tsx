@@ -1743,6 +1743,33 @@ describe('repeating sections in the step form', () => {
     expect(saved.pipeline[1]).toMatchObject({ keyColumn: 'batch' });
   });
 
+  it.each([
+    ['Document types page', undefined, /^3 EXTRACT expiry/, 'group'],
+    ['Workbench pipeline', { onChanged: vi.fn() }, /^3 expiry/, 'region'],
+  ] as const)(
+    "lets an extract table step fill only some columns of an earlier step's rows (%s)",
+    async (_, embedded, button, role) => {
+      const recipe = repeatRecipe();
+      recipe.pipeline.push({
+        type: 'extract',
+        id: 'expiry',
+        table: 'appearance_results',
+        sections: ['front'],
+      });
+      const { api } = setup(view(recipe), {}, embedded);
+      if (!embedded) await userEvent.click(await screen.findByRole('tab', { name: /Pipeline/ }));
+      await userEvent.click(await screen.findByRole('button', { name: button }));
+      const step = screen.getByRole(role, { name: 'Step 3' });
+      const only = within(step).getByRole('group', { name: 'Enriches only these columns' });
+      await userEvent.click(within(only).getByRole('checkbox', { name: 'result' }));
+      await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+      const saved = vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as {
+        pipeline: Record<string, unknown>[];
+      };
+      expect(saved.pipeline[2]).toMatchObject({ columns: ['result'] });
+    },
+  );
+
   it('keeps a field step off repeating sections', async () => {
     setup(view(repeatRecipe()), {}, { onChanged: vi.fn() });
     await userEvent.click(await screen.findByRole('button', { name: /^1 header/ }));

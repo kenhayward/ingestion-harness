@@ -57,6 +57,52 @@ export function RepeatKeyColumn({
   );
 }
 
+/** A table step's columns when it enriches the rows an earlier step created (P4): none ticked,
+ * the step creates the rows; ticked, it fills only those columns. */
+export function EnrichColumns({
+  step,
+  columns,
+  set,
+}: {
+  step: Definition;
+  /** The step's table's columns. */
+  columns: string[];
+  set: (key: string, value: unknown) => void;
+}) {
+  if (typeof step.table !== 'string' || columns.length === 0) return null;
+  const enriched = Array.isArray(step.columns)
+    ? step.columns.filter((c): c is string => typeof c === 'string')
+    : [];
+  return (
+    <fieldset className="section-checks">
+      <legend>Enriches only these columns</legend>
+      <ul className="section-check-list">
+        {columns.map((c) => (
+          <li key={c}>
+            <label className="section-check">
+              <input
+                type="checkbox"
+                checked={enriched.includes(c)}
+                onChange={(e) => {
+                  const next = e.target.checked
+                    ? [...enriched, c]
+                    : enriched.filter((x) => x !== c);
+                  set('columns', next.length > 0 ? next : undefined);
+                }}
+              />
+              <code>{c}</code>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <small className="muted">
+        None ticked: this step creates the table&apos;s rows. Ticked: it fills only those columns of
+        the rows an earlier step created.
+      </small>
+    </fieldset>
+  );
+}
+
 export function ExtractStep({
   step,
   fields,
@@ -106,6 +152,7 @@ export function ExtractStep({
                 const rest = { ...step };
                 delete rest.table;
                 delete rest.chunkPages;
+                delete rest.columns;
                 replace({ ...rest, fields: [] });
               }
             }}
@@ -147,6 +194,7 @@ export function ExtractStep({
           columns={tableColumns[step.table as string] ?? []}
           set={set}
         />
+        <EnrichColumns step={step} columns={tableColumns[step.table as string] ?? []} set={set} />
         <div className="field">
           <span className="field-label">Model</span>
           <ModelPicker

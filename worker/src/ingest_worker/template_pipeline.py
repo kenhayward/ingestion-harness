@@ -578,6 +578,21 @@ def run_step(
         guidance = f"Reviewer guidance for this re-run: {extra_instructions}"
         base = context.get("instructions")
         context["instructions"] = f"{base}\n\n{guidance}" if base else guidance
+    check = None
+    if step.columns is not None and step.table is not None:  # it enriches the rows so far
+        own = set(step.columns)
+        rows = state.tables.get(step.table, [])
+        context["enrich"] = {
+            "count": len(rows),
+            "rows": [
+                " · ".join(
+                    f"{k}: {v}" for k, v in row.items() if k not in own and v not in (None, "")
+                )
+                or "(no values)"
+                for row in rows
+            ],
+        }
+        check = _row_count_check(len(rows))
     ex = ex.model_copy(update={"prompt_context": context})
     images = page_images(job, deps, queue, doc.pdf, ex.page_images, doc.total_pages)
     run: dict[str, Any] = {
@@ -602,6 +617,7 @@ def run_step(
             cache=cache,
             progress=progress,
             repeat=repeat_plan(loaded.template, step, doc),
+            check=check,
         )
     except Exception as exc:
         attempts = getattr(exc.__cause__, "attempts", [])
@@ -646,6 +662,18 @@ def run_step(
         {"model": result.model_ref, "attempts": len(result.attempts)},
     )
     return result
+
+
+def _row_count_check(count: int) -> Callable[[dict[str, Any]], list[str]]:
+    """A step enriching a table answers one entry per row it was given, in order (P4)."""
+
+    def check(data: dict[str, Any]) -> list[str]:
+        got = len(data.get("rows", []))
+        if got == count:
+            return []
+        return [f"rows: return exactly {count} rows, one per row listed and in order (got {got})"]
+
+    return check
 
 
 def run_plugin_step(
@@ -778,6 +806,16 @@ def rerun_template_job(
     enriching = resolve_plugins(
         template, JobModels(job, deps.models), only={e.id for e in enrichers}
     )
+    enriching_extracts = {
+        e.id: (
+            compiled := compile_step(template, e),
+            JobModels(job, deps.models).resolve(
+                job.model_override or compiled.model, what=f"re-run of {e.id!r}"
+            ),
+        )
+        for e in enrichers
+        if isinstance(e, ExtractStep)
+    }
 
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
@@ -817,18 +855,25 @@ def rerun_template_job(
     kept = tuple(i for i in stored.issues if i.get("step") not in replaced)
     state = replace(stored, issues=kept).apply(normalise_step(template, step, data, model_ref))
     for enricher in enrichers:
-        assert isinstance(enricher, PluginStep)  # extract steps cannot enrich a table yet
-        enriched, enriched_model = run_plugin_step(
-            job,
-            deps,
-            queue,
-            template,
-            enricher,
-            enriching[enricher.id],
-            doc,
-            state,
-            trigger="rerun",
-        )
+        if isinstance(enricher, PluginStep):
+            enriched, enriched_model = run_plugin_step(
+                job,
+                deps,
+                queue,
+                template,
+                enricher,
+                enriching[enricher.id],
+                doc,
+                state,
+                trigger="rerun",
+            )
+        else:
+            compiled, enricher_model = enriching_extracts[enricher.id]
+            again = run_step(
+                job, deps, queue, loaded, enricher, compiled, enricher_model, doc, state,
+                trigger="rerun",
+            )  # fmt: skip
+            enriched, enriched_model = again.data, again.model_ref
         state = state.apply(normalise_step(template, enricher, enriched, enriched_model))
     fields, tables, issues = state.fields, state.tables, list(state.issues)
     checks = run_checks(template, fields, tables)
@@ -997,12 +1042,7 @@ def normalise_step(
 
     assert step.table is not None
     table = template.table(step.table)
-    if step.columns is not None:  # an enriching step: only its columns
-        own = set(step.columns)
-    else:  # the creating step: every column no enriching step fills
-        own = {c.id for c in table.columns} - {
-            c for s in template.enriching_steps(table.id) for c in (s.columns or [])
-        }
+    own = template.columns_of(step)  # the creating step leaves enriched columns None
     rows: list[dict[str, Any]] = []
     for n, raw_row in enumerate(data.get("rows", []), start=1):
         row: dict[str, Any] = {}

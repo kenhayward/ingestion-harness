@@ -734,6 +734,7 @@ def run_step_extraction(
     cache: StepCache | None = None,
     progress: StepProgress | None = None,
     repeat: RepeatPlan | None = None,
+    check: Callable[[dict[str, Any]], list[str]] | None = None,
 ) -> ExtractionResult:
     """Run one extraction, or one call per chunk of pages with `merge_path` arrays concatenated
     (keeps each call's output well inside the model's output token limit). With `repeat`, one
@@ -741,7 +742,8 @@ def run_step_extraction(
     reads; its `key_column` is left out of the schema sent and set on every row from the
     occurrence's key. No occurrence: no call and no rows.
     `progress(attempt, chunk, occurrence)` is called before each model call (never for a cache
-    hit).
+    hit). `check` adds rules beyond the schema, fed back like schema errors (a step enriching a
+    table: the number of rows).
 
     With a `cache`, an unchanged step input (every rendered prompt, schema, images, step id,
     model and provider fingerprint) returns the stored output without calling the model, if it
@@ -826,6 +828,7 @@ def run_step_extraction(
                 images=images,
                 max_tokens=ex.max_tokens,
                 on_attempt=_attempt_reporter(progress, chunk, occurrence),
+                check=check,
             )
         except ExtractionFailedError as exc:
             _audit(deps, job.id, audit_id, exc.attempts)

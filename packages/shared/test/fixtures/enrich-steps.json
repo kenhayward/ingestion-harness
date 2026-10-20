@@ -90,8 +90,8 @@
     },
     {
       "name": "an extract step enriches a table",
-      "valid": false,
-      "error": "an extract step cannot enrich a table yet",
+      "valid": true,
+      "columns": { "sku": ["rows"], "qty": ["rows"], "expiry": ["expiry"] },
       "pipeline": [
         { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
         { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
@@ -101,6 +101,23 @@
           "table": "lines",
           "columns": ["expiry"],
           "sections": ["head"]
+        }
+      ]
+    },
+    {
+      "name": "an enriching extract step is chunked",
+      "valid": false,
+      "error": "an enriching step cannot be chunked",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "extract",
+          "id": "expiry",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["head"],
+          "chunkPages": 2
         }
       ]
     },

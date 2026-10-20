@@ -71,11 +71,12 @@ export function PipelineHelp() {
         does, and its <strong>Key column</strong> is filled with each occurrence's key.
       </p>
       <p>
-        A plugin table step can also <strong>enrich</strong> a table an earlier step created: tick
-        the columns it fills under <em>Enriches only these columns</em>. It receives the rows found
-        so far and fills only those columns on each, for example an expiry date printed elsewhere in
-        the document. Every column is filled by exactly one step: the step creating the rows fills
-        the rest. Re-running the step that creates the rows re-runs the enriching steps too.
+        A table step (extract or plugin) can also <strong>enrich</strong> a table an earlier step
+        created: tick the columns it fills under <em>Enriches only these columns</em>. It receives
+        the rows found so far and fills only those columns on each, for example an expiry date
+        printed elsewhere in the document. Every column is filled by exactly one step: the step
+        creating the rows fills the rest. Re-running the step that creates the rows re-runs the
+        enriching steps too.
       </p>
       <p>
         Add one with <em>Add plugin step</em>, which lists the plugins this deployment's workers can
