@@ -79,7 +79,9 @@ export function PipelineHelp() {
       <p>
         Some plugins ask a model, for example to find a value the text does not label. Their step
         has a <strong>Model</strong> picker like an extract step's (empty uses the document type's
-        model), and the project's data policy applies as for any model call.
+        model), and the project's data policy applies as for any model call. A reviewer can re-run a
+        plugin step from the Review page's Steps tab, with guidance for the plugin and, for one that
+        asks a model, another model.
       </p>
       <p>
         In the Workbench, <em>Preview on dev samples</em> runs the saved step on each prepared dev

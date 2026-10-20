@@ -83,12 +83,15 @@ describe('step runs and re-runs', () => {
     expect(bad.statusCode).toBe(400);
   });
 
-  it.each([['nope', 400, 'no extract step']])('rejects step %s', async (step, code, message) => {
-    const { app, job } = await seed();
-    const res = await app.inject(post(`/api/jobs/${job.id}/steps/${step}/rerun`, {}));
-    expect(res.statusCode).toBe(code);
-    expect(res.json().error).toContain(message);
-  });
+  it.each([['nope', 400, 'no extract or plugin step']])(
+    'rejects step %s',
+    async (step, code, message) => {
+      const { app, job } = await seed();
+      const res = await app.inject(post(`/api/jobs/${job.id}/steps/${step}/rerun`, {}));
+      expect(res.statusCode).toBe(code);
+      expect(res.json().error).toContain(message);
+    },
+  );
 
   it('only re-runs steps of documents in review', async () => {
     const { app, job } = await seed('queued');

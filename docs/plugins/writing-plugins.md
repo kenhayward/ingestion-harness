@@ -99,6 +99,7 @@ with a message for the reviewer; the job then goes to review instead of being re
 | `ctx.job` | the job, read-only (`ctx.job.filename` is the uploaded file's name) |
 | `ctx.event(message, data)` | an advisory job event, shown on the job's timeline |
 | `ctx.model` | the step's model, for a plugin whose egress is `"model"` (None otherwise) |
+| `ctx.instructions` | the reviewer's guidance, when the step is re-run from review with some (None otherwise) |
 | `ctx.occurrence` | for a table step reading a repeating section, the occurrence being read: `index` and `count` (1-based), `key` (None when none was found) and `section` (None for any other step) |
 
 Read only these.
@@ -110,7 +111,13 @@ alone under the section's id, and `ctx.occurrence` says which one it is. Each ru
 names a `keyColumn`, sets that column on every row to the occurrence's key (whatever the plugin
 put there; a row without a key is an issue for the reviewer). No occurrence: the plugin is not
 run and the table is empty. A reply without a `rows` list is an error naming the occurrence.
-The Workbench preview runs the same way. A plugin gets no bucket, database or queue, and must not write anywhere: the
+The Workbench preview runs the same way.
+
+**Re-runs from review.** A reviewer may re-run a plugin step from the Review page's Steps tab, as
+an extract step: only that step runs again, on the same text and the values before it, and its
+outputs and issues are replaced. Guidance arrives as `ctx.instructions` (a plugin may ignore it);
+a plugin whose egress is `"model"` gets the model the reviewer picked as `ctx.model`, else the
+step's as usual. Page images are for extract steps only. A plugin gets no bucket, database or queue, and must not write anywhere: the
 worker records the step's run and delivers the outputs.
 
 ### Asking a model

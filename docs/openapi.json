@@ -18334,11 +18334,11 @@
     "/api/jobs/{id}/steps/{step}/rerun": {
       "post": {
         "operationId": "rerunStep",
-        "summary": "Re-run one extract step",
+        "summary": "Re-run one extract or plugin step",
         "tags": [
           "Review & steps"
         ],
-        "description": "Queues one extract step of a job awaiting review again, optionally with another\nmodel, extra instructions, or pages sent as images so a vision model reads them\ndirectly (e.g. handwriting). The worker reuses the document's text and OCR and re-runs\nthe checks; the job returns to `awaiting_review` with the step's new values.\n\nRefused while the step's outputs have reviewer edits, since a re-run would discard\nthem. `model` must be offered (`GET /api/models`) or an alias resolving to one.",
+        "description": "Queues one extract or plugin step of a job awaiting review again, optionally with\nanother model, extra instructions, or pages sent as images so a vision model reads\nthem directly (e.g. handwriting). The worker reuses the document's text and OCR and\nre-runs the checks; the job returns to `awaiting_review` with the step's new values.\n\nA plugin step takes `instructions` (the plugin reads them as `ctx.instructions`),\na `model` only when its plugin asks one (egress `model` in `GET /api/plugins`),\nand no `pageImages`.\n\nRefused while the step's outputs have reviewer edits, since a re-run would discard\nthem. `model` must be offered (`GET /api/models`) or an alias resolving to one.",
         "requestBody": {
           "required": true,
           "content": {
@@ -18387,7 +18387,7 @@
             "in": "path",
             "name": "step",
             "required": true,
-            "description": "The extract step id."
+            "description": "The extract or plugin step id."
           }
         ],
         "responses": {
@@ -18583,7 +18583,7 @@
             }
           },
           "400": {
-            "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).",
+            "description": "Zod issues for an invalid body, `no extract or plugin step \"{step}\"`, for a plugin step `page images are for extract steps; …`, `{plugin} calls no model: …` or `step \"{step}\": no plugin {plugin} on this deployment's workers`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).",
             "content": {
               "application/json": {
                 "schema": {
@@ -18608,7 +18608,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "Zod issues for an invalid body, `no extract step \"{step}\"`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010)."
+                  "description": "Zod issues for an invalid body, `no extract or plugin step \"{step}\"`, for a plugin step `page images are for extract steps; …`, `{plugin} calls no model: …` or `step \"{step}\": no plugin {plugin} on this deployment's workers`, or a `model` that may not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010)."
                 }
               }
             }

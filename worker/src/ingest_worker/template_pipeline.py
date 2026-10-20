@@ -657,10 +657,15 @@ def run_plugin_step(
     resolved: ResolvedPlugin,
     doc: Prepared,
     state: DocState,
+    *,
+    trigger: str = "process",
+    instructions: str | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     """Run one plugin step on the text of its sections and the values before it; record it in
-    step_runs (its model, attempts and tokens when it asked one; else no model) and as the
-    event `ran <step>`. Returns the reply and the model it asked, if any."""
+    step_runs (its model, attempts and tokens when it asked one; else no model; `trigger`
+    `rerun` for a re-run from review, whose guidance the plugin reads as `ctx.instructions`)
+    and as the event `ran <step>` (`re-ran <step>`). Returns the reply and the model it asked,
+    if any."""
     from .plugins import PluginContext, PluginModel, run_plugin
 
     model = (
@@ -681,6 +686,7 @@ def run_plugin_step(
         context_values(template, step, state.fields, state.tables),
         lambda message, data: advisory_event(job, queue, message, data),
         model,
+        instructions=instructions,
     )
     started = datetime.now(UTC).isoformat()
 
@@ -690,7 +696,7 @@ def run_plugin_step(
             job.id,
             {
                 "step_id": step.id,
-                "trigger": "process",
+                "trigger": trigger,
                 "model": model.ref if asked and model is not None else None,
                 "attempts": len(model.attempts) if asked and model is not None else 1,
                 "input_tokens": model.tokens("input_tokens") if model is not None else None,
@@ -712,7 +718,7 @@ def run_plugin_step(
     queue.event(
         job.id,
         "info",
-        f"ran {step.id}",
+        f"ran {step.id}" if trigger == "process" else f"re-ran {step.id}",
         {"plugin": step.uses, **({"model": model_ref} if model_ref else {})},
     )
     return data, model_ref
@@ -721,45 +727,67 @@ def run_plugin_step(
 def rerun_template_job(
     job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, loaded: LoadedTemplate
 ) -> ProcessResult:
-    """Re-run one extract step of a document in review: OCR text is reused from the runs
-    bucket, only that step calls the model, its outputs are replaced, checks re-run, and the
-    draft goes back to review."""
+    """Re-run one extract or plugin step of a document in review: OCR text is reused from the
+    runs bucket, only that step runs (an extract step's model call, or the plugin with the
+    reviewer's guidance as `ctx.instructions` and `params.model` for one that asks a model), its
+    outputs are replaced, checks re-run, and the draft goes back to review."""
     template = loaded.template
     params = job.rerun or {}
-    step = next((s for s in template.extract_steps() if s.id == params.get("step")), None)
+    step = next((s for s in template.filling_steps() if s.id == params.get("step")), None)
     if step is None:
         raise DocumentError(
-            f"no extract step {params.get('step')!r} in {template.id} v{template.version}"
+            f"no extract or plugin step {params.get('step')!r} in {template.id} v{template.version}"
         )
-    ex = compile_step(template, step)
-    if params.get("pageImages"):  # reviewer shows the model the page(s) to read directly
-        ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
-    ref = params.get("model") or job.model_override or ex.model
-    model = JobModels(job, deps.models).resolve(ref, what=f"re-run of {step.id!r}")
+    instructions = params.get("instructions")
+    if isinstance(step, PluginStep):
+        from .plugins import resolve_plugins
+
+        resolved = resolve_plugins(
+            template, JobModels(job, deps.models), only=step.id, model=params.get("model")
+        )[step.id]
+    else:
+        ex = compile_step(template, step)
+        if params.get("pageImages"):  # reviewer shows the model the page(s) to read directly
+            ex = ex.model_copy(update={"page_images": [int(n) for n in params["pageImages"]]})
+        ref = params.get("model") or job.model_override or ex.model
+        model = JobModels(job, deps.models).resolve(ref, what=f"re-run of {step.id!r}")
 
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     document = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
     stored = DocState.from_document(document)
     doc = prepare_document(job, deps, queue, template.document)
 
-    result = run_step(
-        job,
-        deps,
-        queue,
-        loaded,
-        step,
-        ex,
-        model,
-        doc,
-        stored,
-        trigger="rerun",
-        extra_instructions=params.get("instructions"),
-    )
+    if isinstance(step, PluginStep):
+        data, model_ref = run_plugin_step(
+            job,
+            deps,
+            queue,
+            template,
+            step,
+            resolved,
+            doc,
+            stored,
+            trigger="rerun",
+            instructions=instructions,
+        )
+    else:
+        result = run_step(
+            job,
+            deps,
+            queue,
+            loaded,
+            step,
+            ex,
+            model,
+            doc,
+            stored,
+            trigger="rerun",
+            extra_instructions=instructions,
+        )
+        data, model_ref = result.data, result.model_ref
     # The step's issues are replaced; the SHACL ones are the previous graph's, validated below.
     kept = tuple(i for i in stored.issues if i.get("step") not in (step.id, "shacl"))
-    state = replace(stored, issues=kept).apply(
-        normalise_step(template, step, result.data, result.model_ref)
-    )
+    state = replace(stored, issues=kept).apply(normalise_step(template, step, data, model_ref))
     fields, tables, issues = state.fields, state.tables, list(state.issues)
     checks = run_checks(template, fields, tables)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
@@ -776,8 +804,8 @@ def rerun_template_job(
             *document.get("reruns", []),
             {
                 "step": step.id,
-                "model": result.model_ref,
-                "instructions": params.get("instructions"),
+                "model": model_ref,
+                "instructions": instructions,
                 "page_images": params.get("pageImages"),
                 "at": datetime.now(UTC).isoformat(),
             },

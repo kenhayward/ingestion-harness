@@ -155,7 +155,7 @@ def test_rerun_of_an_unknown_step_goes_to_operator_review(tmp_path: Path) -> Non
     queue.jobs = [replace(JOB, task="rerun", rerun={"step": "nope"})]
     run_once(queue, deps, "w1")
     [(_, reason)] = queue.reviewed
-    assert "no extract step 'nope'" in reason
+    assert "no extract or plugin step 'nope'" in reason
 
 
 def test_rerun_can_show_the_model_page_images(tmp_path: Path) -> None:

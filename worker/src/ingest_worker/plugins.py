@@ -151,6 +151,8 @@ class PluginContext:
     model: PluginModel | None = None
     #: The occurrence being read, for a step reading a repeating section (None otherwise).
     occurrence: PluginOccurrence | None = None
+    #: The reviewer's guidance, when the step is re-run from review with some (None otherwise).
+    instructions: str | None = None
 
     def text(self) -> str:
         """The step's sections in its own order, one after the other."""
@@ -241,14 +243,21 @@ class ResolvedPlugin:
 
 
 def resolve_plugins(
-    template: Template, job_models: JobModels | None = None
+    template: Template,
+    job_models: JobModels | None = None,
+    *,
+    only: str | None = None,
+    model: str | None = None,
 ) -> dict[str, ResolvedPlugin]:
     """Every plugin step's plugin and settings, by step id, before the job calls any model: a
     plugin this worker lacks or bad settings is a DocumentError (needs review). A plugin that
-    calls a model gets the job's override, else the step's model, else the document type's,
-    resolved and checked against the data policy here, as an extract step's is."""
+    calls a model gets `model` (a re-run's choice), else the job's override, else the step's
+    model, else the document type's, resolved and checked against the data policy here, as an
+    extract step's is. `only` resolves that one step (a re-run)."""
     resolved: dict[str, ResolvedPlugin] = {}
     for step in template.plugin_steps():
+        if only is not None and step.id != only:
+            continue
         plugin = plugins().get(step.uses)
         if plugin is None:
             raise DocumentError(f"step {step.id!r}: no plugin {step.uses} on this worker")
@@ -256,13 +265,13 @@ def resolve_plugins(
             settings = plugin.settings_for(template, step)
         except ValueError as exc:
             raise DocumentError(f"step {step.id!r}: {step.uses}: {exc}") from exc
-        model = None
+        resolved_model = None
         if plugin.spec.egress == "model":
             if job_models is None:
                 raise DocumentError(f"step {step.id!r}: {step.uses} calls a model: none here")
-            ref = job_models.job.model_override or template.step_model(step)
-            model = job_models.resolve(ref, what=f"plugin step {step.id!r}")
-        resolved[step.id] = ResolvedPlugin(plugin, settings, model)
+            ref = model or job_models.job.model_override or template.step_model(step)
+            resolved_model = job_models.resolve(ref, what=f"plugin step {step.id!r}")
+        resolved[step.id] = ResolvedPlugin(plugin, settings, resolved_model)
     return resolved
 
 

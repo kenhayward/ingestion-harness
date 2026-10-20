@@ -9,9 +9,10 @@ import { setSetting, settingsFields, type SettingField } from './settings-schema
 import { ContextEditor, RepeatKeyColumn } from './StepForms.js';
 
 /** The plugins recipe steps can run (recipe plugins 3b); [] until loaded or when none. */
-export function usePlugins(api: Api): PluginInfo[] {
+export function usePlugins(api: Api, enabled = true): PluginInfo[] {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     api.listPlugins().then(
       (list) => live && setPlugins(list),
@@ -20,7 +21,7 @@ export function usePlugins(api: Api): PluginInfo[] {
     return () => {
       live = false;
     };
-  }, [api]);
+  }, [api, enabled]);
   return plugins;
 }
 
