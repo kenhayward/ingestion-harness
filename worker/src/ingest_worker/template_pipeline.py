@@ -38,7 +38,7 @@ from .bridge.package import (
 from .extract import ExtractionResult
 from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
 from .llm.base import LLMProvider
-from .normalize import normalize_value
+from .normalize import check_value
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell, content_type, encode_csv
 from .pipeline import (
     DocumentError,
@@ -1019,9 +1019,7 @@ def normalise_step(
         for field_id in step.fields:
             definition = template.field(field_id)
             entry = data.get(field_id) or {}
-            value, issue = normalize_value(
-                entry.get("value"), definition.type, options=definition.enum, date_order=order
-            )
+            value, issue = check_value(entry.get("value"), definition, order)
             fields[field_id] = {
                 "value": value,
                 "evidence": entry.get("evidence"),
@@ -1051,9 +1049,7 @@ def normalise_step(
                 if step.columns is None:
                     row[column.id] = None  # an enriching step's, filled when it runs
                 continue
-            value, issue = normalize_value(
-                raw_row.get(column.id), column.type, options=column.enum, date_order=order
-            )
+            value, issue = check_value(raw_row.get(column.id), column, order)
             row[column.id] = value
             if issue:
                 issues.append(

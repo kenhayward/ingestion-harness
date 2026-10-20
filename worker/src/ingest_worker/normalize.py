@@ -2,14 +2,18 @@
 
 normalize_value returns (value, issue). On success issue is None. When a value cannot be
 converted, the raw value is kept (nothing is silently dropped) and issue explains why; issues
-are written to issues.csv and make a document require review.
+are written to issues.csv and make a document require review. check_value adds a field's or
+column's constraints (range, pattern, length; docs/design/output-roles.md §1).
 """
 
 from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from .template import ValueDef
 
 ValueType = Literal["text", "integer", "decimal", "date", "boolean", "enum", "list"]
 DateOrder = Literal["DMY", "MDY"]
@@ -109,3 +113,34 @@ def normalize_value(
     except (ValueError, KeyError):
         pass
     return raw, f"{raw!r} is not a valid {kind}"
+
+
+def check_value(raw: Any, definition: ValueDef, date_order: DateOrder) -> tuple[Any, str | None]:
+    """`normalize_value` for a field or column, then its constraints: the value is kept as
+    captured and the first constraint it breaks is the issue (none when the type already failed
+    or the value is empty)."""
+    value, issue = normalize_value(
+        raw, definition.type, options=definition.enum, date_order=date_order
+    )
+    if issue is not None or value is None:
+        return value, issue
+    return value, _constraint_issue(value, definition)
+
+
+def _constraint_issue(value: Any, definition: ValueDef) -> str | None:
+    if definition.range is not None and isinstance(value, int | float):
+        low, high = definition.range.min, definition.range.max
+        if low is not None and value < low:
+            return f"{value:g} is below {low:g}"
+        if high is not None and value > high:
+            return f"{value:g} is above {high:g}"
+    if isinstance(value, str):
+        if definition.pattern is not None and re.fullmatch(definition.pattern, value) is None:
+            return f"{value!r} does not match {definition.pattern}"
+        if definition.length is not None:
+            low, high = definition.length.min, definition.length.max
+            if low is not None and len(value) < low:
+                return f"{value!r} is shorter than {low:g} characters"
+            if high is not None and len(value) > high:
+                return f"{value!r} is longer than {high:g} characters"
+    return None

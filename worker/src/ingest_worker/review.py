@@ -12,7 +12,7 @@ import copy
 from typing import Any
 
 from .checks import run_check
-from .normalize import normalize_value
+from .normalize import check_value
 from .template import CheckStep, Template
 
 
@@ -62,9 +62,7 @@ def apply_edits(
             definition = next((f for f in template.outputs.fields if f.id == field_id), None)
             if definition is None:
                 raise ValueError(f"edit targets unknown field {field_id!r}")
-            value, issue = normalize_value(
-                edit["value"], definition.type, options=definition.enum, date_order=order
-            )
+            value, issue = check_value(edit["value"], definition, order)
             entry = fields.setdefault(field_id, {"value": None, "evidence": None, "page": None})
             entry.update(value=value, edited=True)
             drop_issues(field_id, None, None)
@@ -89,9 +87,7 @@ def apply_edits(
         rows = tables.setdefault(table.id, [])
         if not isinstance(row, int) or not 1 <= row <= len(rows):
             raise ValueError(f"edit targets row {row} of {table.id!r}, which has {len(rows)} rows")
-        value, issue = normalize_value(
-            edit["value"], column.type, options=column.enum, date_order=order
-        )
+        value, issue = check_value(edit["value"], column, order)
         rows[row - 1][column.id] = value
         drop_issues(table.id, row, column.id)
         if issue:
