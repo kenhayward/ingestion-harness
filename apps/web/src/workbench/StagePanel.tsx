@@ -24,6 +24,7 @@ import { stepCards, type StepMetric } from './steps.js';
 import { TabHeader } from './TabHeader.js';
 import { DraftRunProgress } from './DraftRunProgress.js';
 import { useDefinitions } from './useDefinitions.js';
+import { StepAttemptsDialog } from '../templates/StepAttemptsDialog.js';
 
 /** Handoff §0.4 / SC1: what Keep is called and what the banner asks, per stage. */
 const KEEP: Record<ChangeStage, { label: string; text: string }> = {
@@ -190,6 +191,8 @@ export function StagePanel({
   const [busy, setBusy] = useState(false);
   const [metrics, setMetrics] = useState<StepMetric[] | null>(null);
   const [justAdded, setJustAdded] = useState<ReadonlySet<string>>(new Set());
+  /** The step whose model log is open (from its retry warning). */
+  const [logStep, setLogStep] = useState<string | null>(null);
 
   const models = useModelChoices(api);
   const showsDefinition = (stage === 'outputs' || stage === 'steps') && typeof draft === 'number';
@@ -548,16 +551,27 @@ export function StagePanel({
           {proposal?.status !== 'ready' && card}
         </>
       ) : stage === 'steps' && draftDef && typeof draft === 'number' ? (
-        <StepsView
-          models={models}
-          projectId={projectId}
-          draftVersion={draft}
-          definition={draftDef}
-          after={after}
-          metrics={metrics}
-          justAdded={justAdded}
-          card={card}
-        />
+        <>
+          <StepsView
+            models={models}
+            projectId={projectId}
+            draftVersion={draft}
+            definition={draftDef}
+            after={after}
+            metrics={metrics}
+            justAdded={justAdded}
+            card={card}
+            onShowStepLog={setLogStep}
+          />
+          {logStep && (
+            <StepAttemptsDialog
+              api={api}
+              templateId={projectId}
+              stepId={logStep}
+              onClose={() => setLogStep(null)}
+            />
+          )}
+        </>
       ) : review ? (
         proposal?.status === 'ready' && body && body.changes.length > 0 ? (
           review({

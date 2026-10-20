@@ -1422,6 +1422,32 @@ describe('TemplateEditor embedded Pipeline (handoff §10)', () => {
     expect(within(step).getByText('18')).toBeInTheDocument();
   });
 
+  it("opens a retrying step's model log from its warning", async () => {
+    const { api } = open({
+      getMetrics: vi.fn(async () => ({
+        templateId: 'letter',
+        versions: [],
+        topEdited: [],
+        steps: [
+          {
+            stepId: 'totals',
+            runs: 18,
+            reruns: 0,
+            failures: 0,
+            avgAttempts: 3,
+            avgOutputTokens: null,
+            avgSeconds: 5,
+          },
+        ],
+      })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /^3 totals/ }));
+    const step = screen.getByRole('region', { name: 'Step 3' });
+    await userEvent.click(await within(step).findByRole('button', { name: 'See the model log' }));
+    expect(await screen.findByRole('dialog', { name: 'Model log: totals' })).toBeInTheDocument();
+    expect(api.listRetriedStepRuns).toHaveBeenCalledWith('letter', 'totals');
+  });
+
   it("removing a middle step shows the next step's context; editing it changes that step only", async () => {
     const def = invoice();
     def.pipeline[1] = { ...def.pipeline[1], context: { a: 'supplier_name' } } as never;

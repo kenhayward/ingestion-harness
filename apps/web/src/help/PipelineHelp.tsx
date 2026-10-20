@@ -35,7 +35,10 @@ export function PipelineHelp() {
         </li>
         <li>
           <strong>Max attempts</strong>: how often the step is retried when the reply does not fit
-          the outputs; each retry tells the model what was wrong.
+          the outputs; each retry tells the model what was wrong. When a step needs retries on many
+          runs, its warning has <em>See the model log</em>: the recent runs that needed a retry,
+          each attempt's prompt and reply, and the errors that sent it back, so you can see what the
+          model got wrong and change the step.
         </li>
         <li>
           <strong>Context</strong>: values filled by earlier steps, shown in this step's prompt (a
