@@ -7,7 +7,7 @@
     "document": {
       "sections": [
         { "id": "head", "anchor": "\\A" },
-        { "id": "items", "anchor": "^ITEM", "repeat": true }
+        { "id": "items", "anchor": "^ITEM", "repeat": true, "key": "^ITEM (\\S+)" }
       ]
     },
     "outputs": {
@@ -170,9 +170,8 @@
       ]
     },
     {
-      "name": "a plugin step cannot read a repeating section yet",
-      "valid": false,
-      "error": "a plugin step cannot read a repeating section",
+      "name": "a plugin table step reads a repeating section",
+      "valid": true,
       "pipeline": [
         {
           "type": "extract",
@@ -186,6 +185,83 @@
           "uses": "text.pattern@1",
           "table": "lines",
           "sections": ["items"]
+        }
+      ]
+    },
+    {
+      "name": "a plugin step fills a key column with each occurrence's key",
+      "valid": true,
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "plugin",
+          "id": "rows",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "sections": ["items"],
+          "keyColumn": "sku"
+        }
+      ]
+    },
+    {
+      "name": "a plugin field step cannot read a repeating section",
+      "valid": false,
+      "error": "a field step cannot read a repeating section",
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "refs",
+          "uses": "text.pattern@1",
+          "fields": ["sender", "reference"],
+          "sections": ["items"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "a plugin step's keyColumn needs a repeating section",
+      "valid": false,
+      "error": "keyColumn needs a repeating section with a key or keyFrom",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "plugin",
+          "id": "rows",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "sections": ["head"],
+          "keyColumn": "sku"
+        }
+      ]
+    },
+    {
+      "name": "a plugin step's keyColumn must be a column of its table",
+      "valid": false,
+      "error": "is not a column of lines",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "plugin",
+          "id": "rows",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "sections": ["items"],
+          "keyColumn": "nope"
         }
       ]
     },
@@ -257,8 +333,8 @@
       ]
     },
     {
-      "name": "a plugin step names no model",
-      "valid": false,
+      "name": "a plugin step may name a model choice (for a plugin that calls a model)",
+      "valid": true,
       "pipeline": [
         {
           "type": "plugin",

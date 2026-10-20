@@ -295,32 +295,40 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 
-  /** Re-run one extract step of a document in review (worker reuses OCR; checks re-run). */
+  /** Re-run one extract or plugin step of a document in review (worker reuses OCR; checks re-run). */
   app.post<{ Params: { id: string; step: string } }>(
     '/jobs/:id/steps/:step/rerun',
     {
       schema: {
         tags: ['Review & steps'],
         operationId: 'rerunStep',
-        summary: 'Re-run one extract step',
+        summary: 'Re-run one extract or plugin step',
         description: md`
-          Queues one extract step of a job awaiting review again, optionally with another
-          model, extra instructions, or pages sent as images so a vision model reads them
-          directly (e.g. handwriting). The worker reuses the document's text and OCR and re-runs
-          the checks; the job returns to \`awaiting_review\` with the step's new values.
+          Queues one extract or plugin step of a job awaiting review again, optionally with
+          another model, extra instructions, or pages sent as images so a vision model reads
+          them directly (e.g. handwriting). The worker reuses the document's text and OCR and
+          re-runs the checks; the job returns to \`awaiting_review\` with the step's new values.
+
+          A plugin step takes \`instructions\` (the plugin reads them as \`ctx.instructions\`),
+          a \`model\` only when its plugin asks one (egress \`model\` in \`GET /api/plugins\`),
+          and no \`pageImages\`.
 
           Refused while the step's outputs have reviewer edits, since a re-run would discard
-          them. \`model\` must be offered (\`GET /api/models\`) or an alias resolving to one.
+          them: for a step enriching a table, edits of its own columns; for the step creating a
+          table's rows, any edit of the table, since its enriching steps re-run with it. \`model\` must be offered (\`GET /api/models\`) or an alias resolving to one.
         `,
         params: z.object({
           id: z.string().uuid().describe('The job id.'),
-          step: z.string().describe('The extract step id.'),
+          step: z.string().describe('The extract or plugin step id.'),
         }),
         body: RerunRequestSchema,
         response: {
           200: res('The job, queued to re-run the step.', JobSummarySchema),
           400: error(
-            'Zod issues for an invalid body, `no extract step "{step}"`, or a `model` that may ' +
+            'Zod issues for an invalid body, `no extract or plugin step "{step}"`, for a plugin ' +
+              'step `page images are for extract steps; …`, `{plugin} calls no model: …` or ' +
+              '`step "{step}": no plugin {plugin} on this deployment\'s workers`, or a `model` ' +
+              'that may ' +
               'not run: `model {ref} is not offered: add it under Administration > Models`, `alias {name} ' +
               'uses {ref}, which is not offered: …` or `unknown model alias {name}` (ADR 0010).',
           ),
@@ -349,13 +357,40 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(404).send({ error: 'job did not run a recipe' });
       }
       const step = def.template.pipeline.find(
-        (s) => s.type === 'extract' && s.id === req.params.step,
+        (s) => (s.type === 'extract' || s.type === 'plugin') && s.id === req.params.step,
       );
-      if (!step || step.type !== 'extract') {
-        return reply.code(400).send({ error: `no extract step "${req.params.step}"` });
+      if (!step || (step.type !== 'extract' && step.type !== 'plugin')) {
+        return reply.code(400).send({ error: `no extract or plugin step "${req.params.step}"` });
       }
+      if (step.type === 'plugin') {
+        if (body.data.pageImages) {
+          return reply.code(400).send({
+            error: `page images are for extract steps; "${step.id}" is a plugin step`,
+          });
+        }
+        if (body.data.model && app.deps.plugins) {
+          // A model only reaches a plugin that asks one (egress `model`).
+          const plugin = (await app.deps.plugins.list()).find((p) => p.ref === step.uses);
+          if (!plugin) {
+            return reply.code(400).send({
+              error: `step "${step.id}": no plugin ${step.uses} on this deployment's workers`,
+            });
+          }
+          if (plugin.egress !== 'model') {
+            return reply.code(400).send({
+              error: `${step.uses} calls no model: a re-run of step "${step.id}" can't use one`,
+            });
+          }
+        }
+      }
+      // A step enriching a table (P4) replaces only its columns; a step creating the rows
+      // replaces every cell (its enrichers re-run with it).
+      const columns = step.columns;
       const edited = (await app.deps.repo.listEdits(job.id)).filter((e) =>
-        e.field ? step.fields.includes(e.field) : e.table === step.table,
+        e.field
+          ? step.fields.includes(e.field)
+          : e.table === step.table &&
+            (columns === undefined || (e.column !== null && columns.includes(e.column))),
       );
       if (edited.length) {
         return reply.code(409).send({

@@ -484,6 +484,25 @@ describe('gateHints (EV1)', () => {
       [['line_items.qty', 'low_accuracy']],
     ],
     [
+      'an enriched column takes its own coverage (P4), the others its table',
+      0.9,
+      {
+        fields: [],
+        columns: [acc('line_items.qty', 0, 2), acc('line_items.lot', 0, 2)],
+      },
+      {
+        outputs: {
+          fields: [{ id: 'sender' }],
+          tables: [{ id: 'line_items', columns: [{ id: 'qty' }, { id: 'lot' }] }],
+        },
+        pipeline: [{ type: 'plugin', id: 'lots', table: 'line_items', columns: ['lot'] }],
+      },
+      [
+        ['line_items.qty', 'no_step'],
+        ['line_items.lot', 'low_accuracy'],
+      ],
+    ],
+    [
       'a column of an undefined table',
       0.9,
       { fields: [], columns: [acc('lines.qty', 0, 4)] },

@@ -1,0 +1,296 @@
+{
+  "description": "Steps that enrich an earlier table (docs/design/recipe-plugins.md, P4): one step creates a table's rows, a later one names `columns` and fills only those. Read by packages/shared/test/template.test.ts (TemplateSchema, outputCoverage) and worker/tests/test_template.py (Template): every case's pipeline replaces the base's; `error` is a substring both sides' messages contain; `columns` is what outputCoverage says fills each column of lines.",
+  "base": {
+    "id": "stability",
+    "version": 1,
+    "name": "Stability report",
+    "document": {
+      "sections": [
+        { "id": "head", "anchor": "\\A" },
+        { "id": "items", "anchor": "^ITEM", "repeat": true, "key": "^ITEM (\\S+)" }
+      ]
+    },
+    "outputs": {
+      "fields": [{ "id": "sender", "type": "text" }],
+      "tables": [
+        {
+          "id": "lines",
+          "columns": [
+            { "id": "sku", "type": "text" },
+            { "id": "qty", "type": "integer" },
+            { "id": "expiry", "type": "date" }
+          ]
+        }
+      ]
+    },
+    "pipeline": []
+  },
+  "cases": [
+    {
+      "name": "a plugin step fills a column of an extract step's rows",
+      "valid": true,
+      "columns": { "sku": ["rows"], "qty": ["rows"], "expiry": ["expiry"] },
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["head"]
+        }
+      ]
+    },
+    {
+      "name": "a plugin step enriches two columns of a plugin step's rows",
+      "valid": true,
+      "columns": { "sku": ["rows"], "qty": ["more"], "expiry": ["more"] },
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "rows",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "sections": ["items"],
+          "keyColumn": "sku"
+        },
+        {
+          "type": "plugin",
+          "id": "more",
+          "uses": "acme.lookup@1",
+          "table": "lines",
+          "columns": ["qty", "expiry"]
+        },
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] }
+      ]
+    },
+    {
+      "name": "a later step reads an enriched column",
+      "valid": true,
+      "pipeline": [
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["head"]
+        },
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["head"],
+          "context": { "dates": "lines.expiry" }
+        }
+      ]
+    },
+    {
+      "name": "an extract step enriches a table",
+      "valid": true,
+      "columns": { "sku": ["rows"], "qty": ["rows"], "expiry": ["expiry"] },
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "extract",
+          "id": "expiry",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["head"]
+        }
+      ]
+    },
+    {
+      "name": "an enriching extract step is chunked",
+      "valid": false,
+      "error": "an enriching step cannot be chunked",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "extract",
+          "id": "expiry",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["head"],
+          "chunkPages": 2
+        }
+      ]
+    },
+    {
+      "name": "a step filling fields names columns",
+      "valid": false,
+      "error": "columns needs a table",
+      "pipeline": [
+        {
+          "type": "plugin",
+          "id": "head",
+          "uses": "text.pattern@1",
+          "fields": ["sender"],
+          "columns": ["expiry"],
+          "sections": ["head"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "an enriching step names an unknown column",
+      "valid": false,
+      "error": "unknown column",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["nope"],
+          "sections": ["head"]
+        }
+      ]
+    },
+    {
+      "name": "a table only enriched",
+      "valid": false,
+      "error": "has no step creating its rows",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["head"]
+        }
+      ]
+    },
+    {
+      "name": "two steps create the rows",
+      "valid": false,
+      "error": "is filled by more than one step",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        { "type": "plugin", "id": "again", "uses": "text.pattern@1", "table": "lines" }
+      ]
+    },
+    {
+      "name": "two enriching steps fill one column",
+      "valid": false,
+      "error": "is filled by more than one step",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"]
+        },
+        {
+          "type": "plugin",
+          "id": "dates",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["qty", "expiry"]
+        }
+      ]
+    },
+    {
+      "name": "the creating step is left no column",
+      "valid": false,
+      "error": "but fills none of its columns",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "plugin",
+          "id": "all",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["sku", "qty", "expiry"]
+        }
+      ]
+    },
+    {
+      "name": "an enriching step before the creating step",
+      "valid": false,
+      "error": "creates its rows",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"]
+        },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
+      ]
+    },
+    {
+      "name": "an enriching step reads a repeating section",
+      "valid": false,
+      "error": "an enriching step cannot read a repeating section",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["items"]
+        }
+      ]
+    },
+    {
+      "name": "an enriching step names a key column",
+      "valid": false,
+      "error": "keyColumn is for the step creating the rows",
+      "pipeline": [
+        { "type": "extract", "id": "head", "fields": ["sender"], "sections": ["head"] },
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"],
+          "keyColumn": "expiry"
+        }
+      ]
+    },
+    {
+      "name": "a step reads an enriched column before it is filled",
+      "valid": false,
+      "error": "which is not filled by an earlier step",
+      "pipeline": [
+        { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] },
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender"],
+          "sections": ["head"],
+          "context": { "dates": "lines.expiry" }
+        },
+        {
+          "type": "plugin",
+          "id": "expiry",
+          "uses": "text.pattern@1",
+          "table": "lines",
+          "columns": ["expiry"],
+          "sections": ["head"]
+        }
+      ]
+    }
+  ]
+}

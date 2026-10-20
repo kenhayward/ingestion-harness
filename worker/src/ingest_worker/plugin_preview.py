@@ -24,10 +24,11 @@ from .pipeline import (
     DocumentError,
     JobCancelled,
     PipelineDeps,
+    RepeatPlan,
     check_cancelled,
     mark_pages,
 )
-from .plugins import PluginContext, plugins
+from .plugins import PluginContext, plugins, run_plugin
 from .queue import ClaimedJob, JobQueue
 from .segment import MissingSectionsError, segment_occurrences, select_copy
 from .storage import plugin_preview_key
@@ -68,6 +69,18 @@ def _failed(sample_id: str, name: str, error: str) -> dict[str, Any]:
     }
 
 
+def preview_problem(template: Template, step: PluginStep) -> str | None:
+    """Why a step cannot be previewed on its own, whatever its plugin (None: it can). A preview
+    runs no other step, so a step enriching a table (P4) has no rows to enrich."""
+    if step.columns is not None and step.table is not None:
+        creator = template.filler_of_table(step.table)
+        return (
+            f"step {step.id} fills columns of {step.table}, whose rows step {creator.id} "
+            "creates: try it in a test run"
+        )
+    return None
+
+
 def preview_samples(
     definition: dict[str, Any],
     step_id: str,
@@ -99,6 +112,12 @@ def preview_samples(
             missing = ", ".join(exc.missing)
             out.append(_failed(sample_id, name, f"missing required sections: {missing}"))
             continue
+        section = template.repeating_section(step)
+        repeat = (
+            RepeatPlan(section.id, segmented.occurrences.get(section.id, []), step.key_column)
+            if section is not None
+            else None
+        )
         job = ClaimedJob(
             job_id, "", template.id, template.version, "", "", None, 1, 1,
             task="plugin", test=True, filename=name,
@@ -112,7 +131,7 @@ def preview_samples(
             lambda *_: None,
         )
         try:
-            data = plugin.run(ctx, settings)
+            data = run_plugin(plugin, settings, ctx, repeat)
         except Exception as exc:  # the plugin's own failure, shown on its sample
             out.append(_failed(sample_id, name, f"the plugin failed: {exc}"))
             continue
@@ -163,6 +182,8 @@ def run_plugin_preview(
     )
     if step is None:
         return problem(f"no plugin step {params.step_id} in the recipe")
+    if reason := preview_problem(template, step):
+        return problem(reason, step.uses)
     plugin = plugins().get(step.uses)
     if plugin is None:
         return problem(f"no plugin {step.uses} on this worker", step.uses)

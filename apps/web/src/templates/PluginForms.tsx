@@ -1,16 +1,18 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import type { PluginInfo, PluginPreviewView } from '@ih/shared';
+import type { ModelChoice, PluginInfo, PluginPreviewView } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { ModelPicker } from '../ui/ModelPicker.js';
 import { Text } from './fields.js';
-import type { SectionLike } from './editor-derive.js';
+import { repeatNote, type SectionLike } from './editor-derive.js';
 import type { Definition } from './model.js';
 import { setSetting, settingsFields, type SettingField } from './settings-schema.js';
-import { ContextEditor } from './StepForms.js';
+import { ContextEditor, EnrichColumns, RepeatKeyColumn } from './StepForms.js';
 
 /** The plugins recipe steps can run (recipe plugins 3b); [] until loaded or when none. */
-export function usePlugins(api: Api): PluginInfo[] {
+export function usePlugins(api: Api, enabled = true): PluginInfo[] {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     api.listPlugins().then(
       (list) => live && setPlugins(list),
@@ -19,7 +21,7 @@ export function usePlugins(api: Api): PluginInfo[] {
     return () => {
       live = false;
     };
-  }, [api]);
+  }, [api, enabled]);
   return plugins;
 }
 
@@ -70,6 +72,9 @@ export function PluginStepForm({
   sectionDefs,
   fields,
   tables,
+  tableColumns = {},
+  models = [],
+  typeModelLabel = 'Default choice',
   set,
   replace,
 }: {
@@ -78,6 +83,12 @@ export function PluginStepForm({
   sectionDefs: readonly SectionLike[];
   fields: string[];
   tables: string[];
+  /** Each table's column ids, for the key column of a step reading a repeating section. */
+  tableColumns?: Record<string, string[]>;
+  /** The model choices, for a plugin that calls a model. */
+  models?: readonly ModelChoice[];
+  /** The model picker's empty option: what a step naming no model inherits. */
+  typeModelLabel?: string;
   set: (key: string, value: unknown) => void;
   replace: (step: Definition) => void;
 }) {
@@ -86,6 +97,7 @@ export function PluginStepForm({
   const table = typeof step.table === 'string' ? step.table : '';
   const filled = idsOf(step.fields);
   const reads = idsOf(step.sections);
+  const { disabled } = repeatNote(step, sectionDefs);
   const settings = (step.with ?? {}) as Record<string, unknown>;
   const setSettings = (next: Record<string, unknown>) =>
     set('with', Object.keys(next).length > 0 ? next : undefined);
@@ -99,9 +111,12 @@ export function PluginStepForm({
             aria-label="Plugin"
             value={uses}
             onChange={(e) => {
-              // Settings belong to a plugin: another plugin starts without them.
+              // Settings belong to a plugin: another plugin starts without them, and
+              // without a model unless it calls one.
               const next: Definition = { ...step, uses: e.target.value };
               delete next.with;
+              const chosen = plugins.find((p) => p.ref === e.target.value);
+              if (chosen?.egress !== 'model') delete next.model;
               replace(next);
             }}
           >
@@ -118,6 +133,21 @@ export function PluginStepForm({
           </select>
           {plugin && <small className="muted">{plugin.summary}</small>}
         </label>
+        {(plugin?.egress === 'model' || step.model !== undefined) && (
+          <div className="field">
+            <span className="field-label">Model</span>
+            <ModelPicker
+              label="Model"
+              choices={models}
+              value={step.model === 'default' ? '' : (step.model ?? '')}
+              emptyLabel={typeModelLabel}
+              onChange={(id) => set('model', id || undefined)}
+            />
+            {plugin?.egress === 'model' && (
+              <small className="muted">This plugin asks a model.</small>
+            )}
+          </div>
+        )}
       </div>
       <fieldset className="section-checks">
         <legend>Fills</legend>
@@ -148,6 +178,7 @@ export function PluginStepForm({
                 const next: Definition = { ...step, fields: [] };
                 if (e.target.value) next.table = e.target.value;
                 else delete next.table;
+                delete next.columns; // columns belong to a table
                 replace(next);
               }}
             >
@@ -160,6 +191,7 @@ export function PluginStepForm({
             </select>
           </label>
         )}
+        <EnrichColumns step={step} columns={tableColumns[table] ?? []} set={set} />
       </fieldset>
       <fieldset className="section-checks">
         <legend>Reads sections</legend>
@@ -169,14 +201,11 @@ export function PluginStepForm({
           <ul className="section-check-list">
             {sectionDefs.map((s) => (
               <li key={s.id}>
-                <label
-                  className="section-check"
-                  title={s.repeat ? 'A plugin step cannot read a repeating section yet' : undefined}
-                >
+                <label className="section-check" title={disabled[s.id]}>
                   <input
                     type="checkbox"
                     checked={reads.includes(s.id)}
-                    disabled={!!s.repeat && !reads.includes(s.id)}
+                    disabled={disabled[s.id] !== undefined && !reads.includes(s.id)}
                     onChange={(e) =>
                       set(
                         'sections',
@@ -191,6 +220,12 @@ export function PluginStepForm({
           </ul>
         )}
         <small className="muted">None: the plugin reads only earlier values (its context).</small>
+        <RepeatKeyColumn
+          step={step}
+          sectionDefs={sectionDefs}
+          columns={tableColumns[table] ?? []}
+          set={set}
+        />
       </fieldset>
       <ContextEditor
         value={(step.context ?? {}) as Record<string, string>}

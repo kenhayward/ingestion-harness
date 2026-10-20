@@ -448,9 +448,10 @@ export function ReviewHelp() {
           <strong>Fields</strong> and each table: the values to check.
         </li>
         <li>
-          <strong>Steps</strong>: how each extraction step ran. <strong>Re-run</strong> a step with
-          extra guidance, other pages shown as images, or another model, when a whole step got it
-          wrong.
+          <strong>Steps</strong>: how each extraction and plugin step ran. <strong>Re-run</strong> a
+          step with extra guidance, other pages shown as images, or another model, when a whole step
+          got it wrong. A plugin step takes guidance (the plugin reads it), a model only when its
+          plugin asks one, and no page images.
         </li>
         <li>
           <strong>Graph</strong> (linked data): the graph and any rules it breaks, as cards, a

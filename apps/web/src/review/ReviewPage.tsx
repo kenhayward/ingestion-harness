@@ -13,6 +13,7 @@ import { flaggedTargets, targetKey } from './queue.js';
 import { ReviewHeader } from './ReviewHeader.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
+import { usePlugins } from '../templates/PluginForms.js';
 
 const REVIEWER_KEY = 'ih.reviewer';
 
@@ -73,8 +74,12 @@ export function ReviewPage({
   /** The model choices a re-run may use (ADR 0010). */
   const models = useModelChoices(api);
   const stepModel = (ref: string | null) => (ref ? modelDisplayName(ref, models) : '?');
+  /** The plugins the workers run: whether a plugin step's re-run may take a model. */
+  const plugins = usePlugins(api, role !== 'operator');
   const [rerun, setRerun] = useState<{
     step: string;
+    /** A plugin step: no page images, and a model only for a plugin that asks one. */
+    plugin: boolean;
     instructions: string;
     pages: string;
   } | null>(null);
@@ -129,7 +134,13 @@ export function ReviewPage({
     reviewer.trim() ? { ...body, editor: reviewer.trim() } : body;
 
   const fieldsFlagged = template.outputs.fields.some((f) => view.fields[f.id]?.flags.length);
-  const extractSteps = template.pipeline.filter((p) => p.type === 'extract').length;
+  const extractSteps = template.pipeline.filter(
+    (p) => p.type === 'extract' || p.type === 'plugin',
+  ).length;
+  const rerunStep = rerun ? template.pipeline.find((p) => p.id === rerun.step) : undefined;
+  const asksModel =
+    rerunStep?.type !== 'plugin' ||
+    plugins.find((p) => p.ref === rerunStep.uses)?.egress === 'model';
   const hasGraph = job.outputs.some((o) => o.stage === 'draft' && o.format === 'rdf');
   const shaclReasons = (job.reviewReasons ?? []).filter((r) => r.startsWith('SHACL:')).length;
   /** A SHACL result's output: a field, a table or `table.column`; path IRIs open nothing. */
@@ -324,7 +335,7 @@ export function ReviewPage({
                 </thead>
                 <tbody>
                   {template.pipeline.map((step) => {
-                    if (step.type !== 'extract') return null;
+                    if (step.type !== 'extract' && step.type !== 'plugin') return null;
                     const last = stepRuns.filter((r) => r.stepId === step.id).at(-1);
                     return (
                       <tr key={step.id}>
@@ -333,13 +344,18 @@ export function ReviewPage({
                         </td>
                         <td>{step.table ?? step.fields.join(', ')}</td>
                         <td>
-                          {last?.cached
-                            ? `${stepModel(last.model)} · cached · ${last.status}`
-                            : last
-                              ? `${stepModel(last.model)} · ${last.attempts} attempt(s) · ${last.status}` +
-                                (last.outputTokens ? ` · ${last.outputTokens} output tokens` : '') +
-                                (last.trigger === 'rerun' ? ' · re-run' : '')
-                              : '—'}
+                          {last && step.type === 'plugin' && !last.model
+                            ? `${step.uses} · ${last.status}` +
+                              (last.trigger === 'rerun' ? ' · re-run' : '')
+                            : last?.cached
+                              ? `${stepModel(last.model)} · cached · ${last.status}`
+                              : last
+                                ? `${stepModel(last.model)} · ${last.attempts} attempt(s) · ${last.status}` +
+                                  (last.outputTokens
+                                    ? ` · ${last.outputTokens} output tokens`
+                                    : '') +
+                                  (last.trigger === 'rerun' ? ' · re-run' : '')
+                                : '—'}
                         </td>
                         <td>
                           {editable && role !== 'operator' && (
@@ -349,6 +365,7 @@ export function ReviewPage({
                               onClick={() =>
                                 setRerun({
                                   step: step.id,
+                                  plugin: step.type === 'plugin',
                                   instructions: '',
                                   pages: String(page),
                                 })
@@ -369,11 +386,19 @@ export function ReviewPage({
                   confirmLabel="Queue re-run"
                   choices={models}
                   emptyLabel="Step default"
+                  noModel={!asksModel}
                   summary={
-                    <p>
-                      Only <code>{rerun.step}</code> calls the model again (OCR is reused); its
-                      values are replaced and the checks re-run.
-                    </p>
+                    rerun.plugin ? (
+                      <p>
+                        Only <code>{rerun.step}</code> runs again (OCR is reused); its values are
+                        replaced and the checks re-run. The plugin reads your guidance.
+                      </p>
+                    ) : (
+                      <p>
+                        Only <code>{rerun.step}</code> calls the model again (OCR is reused); its
+                        values are replaced and the checks re-run.
+                      </p>
+                    )
                   }
                   onConfirm={async (model) => {
                     await api.rerunStep(jobId, rerun.step, {
@@ -381,7 +406,7 @@ export function ReviewPage({
                       ...(rerun.instructions.trim()
                         ? { instructions: rerun.instructions.trim() }
                         : {}),
-                      ...(pageList(rerun.pages).length
+                      ...(!rerun.plugin && pageList(rerun.pages).length
                         ? { pageImages: pageList(rerun.pages) }
                         : {}),
                     });
@@ -397,13 +422,15 @@ export function ReviewPage({
                       onChange={(e) => setRerun({ ...rerun, instructions: e.target.value })}
                     />
                   </label>
-                  <label title="Sent as images so a vision model reads the pages directly (e.g. handwriting the OCR misread). Leave empty for text only.">
-                    Pages to show the model
-                    <input
-                      value={rerun.pages}
-                      onChange={(e) => setRerun({ ...rerun, pages: e.target.value })}
-                    />
-                  </label>
+                  {!rerun.plugin && (
+                    <label title="Sent as images so a vision model reads the pages directly (e.g. handwriting the OCR misread). Leave empty for text only.">
+                      Pages to show the model
+                      <input
+                        value={rerun.pages}
+                        onChange={(e) => setRerun({ ...rerun, pages: e.target.value })}
+                      />
+                    </label>
+                  )}
                 </ReprocessDialog>
               )}
             </div>

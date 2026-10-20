@@ -66,13 +66,30 @@ export function PipelineHelp() {
         A plugin step runs a capability installed with CT Studio instead of asking a model, such as{' '}
         <code>text.pattern@1</code>, which fills fields or a table by matching patterns in the
         step's sections, or one your administrator added as a package. It fills outputs like an
-        extract step and can read earlier values, but it calls no model and costs nothing to run.
+        extract step and can read earlier values; most call no model and cost nothing to run. A
+        plugin table step reading a repeating section runs once per occurrence, as an extract step
+        does, and its <strong>Key column</strong> is filled with each occurrence's key.
+      </p>
+      <p>
+        A table step (extract or plugin) can also <strong>enrich</strong> a table an earlier step
+        created: tick the columns it fills under <em>Enriches only these columns</em>. It receives
+        the rows found so far and fills only those columns on each, for example an expiry date
+        printed elsewhere in the document. Every column is filled by exactly one step: the step
+        creating the rows fills the rest. Re-running the step that creates the rows re-runs the
+        enriching steps too.
       </p>
       <p>
         Add one with <em>Add plugin step</em>, which lists the plugins this deployment's workers can
         run. Its form sets what it fills and reads, and its settings, laid out from what the plugin
         asks for. A plugin no worker has any more keeps its settings as JSON, and the recipe cannot
         be published until a worker has the plugin again or the step is changed.
+      </p>
+      <p>
+        Some plugins ask a model, for example to find a value the text does not label. Their step
+        has a <strong>Model</strong> picker like an extract step's (empty uses the document type's
+        model), and the project's data policy applies as for any model call. A reviewer can re-run a
+        plugin step from the Review page's Steps tab, with guidance for the plugin and, for one that
+        asks a model, another model.
       </p>
       <p>
         In the Workbench, <em>Preview on dev samples</em> runs the saved step on each prepared dev

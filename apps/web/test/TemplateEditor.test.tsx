@@ -1743,6 +1743,33 @@ describe('repeating sections in the step form', () => {
     expect(saved.pipeline[1]).toMatchObject({ keyColumn: 'batch' });
   });
 
+  it.each([
+    ['Document types page', undefined, /^3 EXTRACT expiry/, 'group'],
+    ['Workbench pipeline', { onChanged: vi.fn() }, /^3 expiry/, 'region'],
+  ] as const)(
+    "lets an extract table step fill only some columns of an earlier step's rows (%s)",
+    async (_, embedded, button, role) => {
+      const recipe = repeatRecipe();
+      recipe.pipeline.push({
+        type: 'extract',
+        id: 'expiry',
+        table: 'appearance_results',
+        sections: ['front'],
+      });
+      const { api } = setup(view(recipe), {}, embedded);
+      if (!embedded) await userEvent.click(await screen.findByRole('tab', { name: /Pipeline/ }));
+      await userEvent.click(await screen.findByRole('button', { name: button }));
+      const step = screen.getByRole(role, { name: 'Step 3' });
+      const only = within(step).getByRole('group', { name: 'Enriches only these columns' });
+      await userEvent.click(within(only).getByRole('checkbox', { name: 'result' }));
+      await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+      const saved = vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as {
+        pipeline: Record<string, unknown>[];
+      };
+      expect(saved.pipeline[2]).toMatchObject({ columns: ['result'] });
+    },
+  );
+
   it('keeps a field step off repeating sections', async () => {
     setup(view(repeatRecipe()), {}, { onChanged: vi.fn() });
     await userEvent.click(await screen.findByRole('button', { name: /^1 header/ }));
@@ -1836,6 +1863,132 @@ describe('plugin steps in the recipe editors', () => {
       sections: ['all'],
       with: { patterns: { sender: 'Sender: (?P<value>.+)' }, ignoreCase: true },
     });
+  });
+
+  it("offers a model only for a plugin that calls one, saved as the step's model", async () => {
+    const asking: PluginInfo = {
+      ...catalogue.plugins[0]!,
+      ref: 'acme.ask@1',
+      id: 'acme.ask',
+      egress: 'model',
+      summary: 'Ask a model.',
+      settingsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    };
+    const both = { listPlugins: vi.fn(async () => [...catalogue.plugins, asking]) };
+    const { api } = setup(view(withPlugin('acme.ask@1')), both);
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^1 PLUGIN head/ }));
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    const model = await within(step).findByRole('combobox', { name: 'Model' });
+    await userEvent.selectOptions(model, 'cloud');
+    await userEvent.selectOptions(
+      within(step).getByRole('combobox', { name: 'Plugin' }),
+      'text.pattern@1',
+    );
+    expect(within(step).queryByRole('combobox', { name: 'Model' })).toBeNull();
+    await userEvent.selectOptions(
+      within(step).getByRole('combobox', { name: 'Plugin' }),
+      'acme.ask@1',
+    );
+    // A plugin that calls no model dropped the model with its settings.
+    expect(within(step).getByRole('combobox', { name: 'Model' })).toHaveValue('');
+    await userEvent.selectOptions(within(step).getByRole('combobox', { name: 'Model' }), 'cloud');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(saved(api).pipeline[0]).toMatchObject({ uses: 'acme.ask@1', model: 'cloud' });
+  });
+
+  const repeatingPlugin = (step: Record<string, unknown>) => ({
+    id: 'covalidation',
+    version: 1,
+    name: 'Covalidation',
+    document: { ocr: 'auto', sections: REPEAT_SECTIONS },
+    outputs: {
+      fields: [{ id: 'study', type: 'text' }],
+      tables: [
+        {
+          id: 'appearance_results',
+          columns: [
+            { id: 'batch', type: 'text' },
+            { id: 'result', type: 'text' },
+          ],
+        },
+      ],
+    },
+    pipeline: [
+      { type: 'extract', id: 'header', fields: ['study'], sections: ['front'] },
+      { type: 'plugin', id: 'rows', uses: 'text.pattern@1', ...step },
+    ],
+  });
+
+  it.each([
+    ['Document types page', undefined, /^2 PLUGIN rows/, 'group'],
+    ['Workbench pipeline', { onChanged: vi.fn() }, /^2 rows/, 'region'],
+  ] as const)(
+    'runs a plugin table step once per occurrence and sets its key column (%s)',
+    async (_, embedded, button, role) => {
+      const { api } = setup(
+        view(repeatingPlugin({ table: 'appearance_results', sections: ['appearance'] })),
+        plugins,
+        embedded,
+      );
+      if (!embedded) await userEvent.click(await tab(/Pipeline/));
+      await userEvent.click(await screen.findByRole('button', { name: button }));
+      const step = screen.getByRole(role, { name: 'Step 2' });
+      expect(within(step).getByText('Runs once per occurrence of appearance')).toBeInTheDocument();
+      const column = within(step).getByRole('combobox', { name: 'Key column' });
+      expect(
+        within(column)
+          .getAllByRole('option')
+          .map((o) => o.textContent),
+      ).toEqual(['None', 'batch', 'result']);
+      await userEvent.selectOptions(column, 'batch');
+      await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+      expect(saved(api).pipeline[1]).toMatchObject({ keyColumn: 'batch' });
+    },
+  );
+
+  it("lets a plugin table step fill only some columns of an earlier step's rows", async () => {
+    const { api } = setup(
+      view({
+        ...repeatingPlugin({ table: 'appearance_results', sections: ['front'] }),
+        pipeline: [
+          { type: 'extract', id: 'header', fields: ['study'], sections: ['front'] },
+          { type: 'extract', id: 'rows', table: 'appearance_results', sections: ['appearance'] },
+          {
+            type: 'plugin',
+            id: 'enrich',
+            uses: 'text.pattern@1',
+            table: 'appearance_results',
+            sections: ['front'],
+          },
+        ],
+      }),
+      plugins,
+    );
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^3 PLUGIN enrich/ }));
+    const step = screen.getByRole('group', { name: 'Step 3' });
+    const only = within(step).getByRole('group', { name: 'Enriches only these columns' });
+    await userEvent.click(within(only).getByRole('checkbox', { name: 'result' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+    expect(saved(api).pipeline[2]).toMatchObject({ columns: ['result'] });
+    await userEvent.click(within(only).getByRole('checkbox', { name: 'result' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+    expect(saved(api).pipeline[2]!.columns).toBeUndefined();
+  });
+
+  it('keeps a plugin field step off repeating sections', async () => {
+    setup(view(repeatingPlugin({ fields: ['study'], sections: ['front'] })), plugins);
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^2 PLUGIN rows/ }));
+    const step = screen.getByRole('group', { name: 'Step 2' });
+    const batch = within(step).getByRole('checkbox', { name: 'batch' });
+    expect(batch).toBeDisabled();
+    expect(batch.closest('label')).toHaveAttribute(
+      'title',
+      "a field step can't read a repeating section",
+    );
+    expect(within(step).queryByRole('combobox', { name: 'Key column' })).toBeNull();
   });
 
   it('adds a pattern for another field and removes one', async () => {

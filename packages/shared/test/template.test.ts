@@ -6,6 +6,7 @@ import {
   deliveryFormats,
   deliveryTargets,
   linkOf,
+  outputCoverage,
   resolveNode,
   SemanticsSchema,
   setDeliveryTarget,
@@ -169,6 +170,31 @@ describe('stepModel (steps inherit the document type model)', () => {
     const t = TemplateSchema.parse(raw);
     const step0 = t.pipeline[0]!;
     if (step0.type !== 'extract') throw new Error('expected an extract step');
+    expect(stepModel(t, step0)).toBe(runs);
+  });
+
+  // Same table as worker/tests/test_template.py::test_plugin_steps_inherit_the_document_types_model.
+  it.each<[string | undefined, string | undefined, string]>([
+    [undefined, undefined, 'default'],
+    ['fast', undefined, 'fast'],
+    ['fast', 'default', 'fast'],
+    ['fast', 'main', 'main'],
+  ])('a plugin step: template %s, step %s -> %s', (templateModel, step, runs) => {
+    const plugin = {
+      type: 'plugin',
+      id: 'ask',
+      uses: 'acme.ask@1',
+      fields: valid.pipeline[0]!.fields,
+      sections: valid.pipeline[0]!.sections,
+      ...(step ? { model: step } : {}),
+    };
+    const t = TemplateSchema.parse({
+      ...valid,
+      ...(templateModel ? { model: templateModel } : {}),
+      pipeline: [plugin, ...valid.pipeline.slice(1)],
+    });
+    const step0 = t.pipeline[0]!;
+    if (step0.type !== 'plugin') throw new Error('expected a plugin step');
     expect(stepModel(t, step0)).toBe(runs);
   });
 
@@ -407,5 +433,51 @@ describe('plugin steps (shared with the worker)', () => {
       context: {},
       with: (pluginFixture.cases[0]!.pipeline[0] as { with: unknown }).with,
     });
+  });
+});
+
+describe('steps that enrich an earlier table (shared with the worker)', () => {
+  const enrichFixture = JSON.parse(
+    readFileSync(new URL('./fixtures/enrich-steps.json', import.meta.url), 'utf8'),
+  ) as {
+    base: Record<string, unknown>;
+    cases: {
+      name: string;
+      valid: boolean;
+      error?: string;
+      columns?: Record<string, string[]>;
+      pipeline: unknown[];
+    }[];
+  };
+  const definition = (pipeline: unknown[]) => ({ ...enrichFixture.base, pipeline });
+
+  it.each(enrichFixture.cases.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    const result = TemplateSchema.safeParse(definition(c.pipeline));
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
+    if (c.error) {
+      const messages = (result.error?.issues ?? []).map((i) => i.message).join('\n');
+      expect(messages).toContain(c.error);
+    }
+  });
+
+  it.each(enrichFixture.cases.filter((c) => c.columns).map((c) => [c.name, c] as const))(
+    'says which step fills each column: %s',
+    (_, c) => {
+      const lines = outputCoverage(definition(c.pipeline)).outputs.find((o) => o.id === 'lines')!;
+      expect(Object.fromEntries(lines.columns!.map((col) => [col.id, col.steps]))).toEqual(
+        c.columns,
+      );
+      expect(lines.steps).toEqual(['rows']);
+    },
+  );
+
+  it('lists a column two enriching steps fill as filled more than once', () => {
+    const c = enrichFixture.cases.find((x) => x.name === 'two enriching steps fill one column')!;
+    expect(outputCoverage(definition(c.pipeline)).multiple).toEqual(['lines.expiry']);
+  });
+
+  it('lists a table only enriched as not filled', () => {
+    const c = enrichFixture.cases.find((x) => x.name === 'a table only enriched')!;
+    expect(outputCoverage(definition(c.pipeline)).uncovered).toEqual(['lines']);
   });
 });

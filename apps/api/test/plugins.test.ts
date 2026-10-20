@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { PluginInfo } from '@ih/shared';
 import { MemoryPluginCatalogue } from '../src/plugins/catalogue.js';
 import { settingsProblems } from '../src/plugins/settings.js';
-import { testApp } from './helpers.js';
+import { seedModelChoices, testApp } from './helpers.js';
 
 /** The catalogue the worker publishes and the settings cases (shared with the worker). */
 const catalogue = JSON.parse(
@@ -104,9 +105,197 @@ describe('a recipe naming a plugin', () => {
     ]);
   });
 
+  /** A plugin that calls a model, published next to the fixture's. */
+  const asking: PluginInfo = {
+    ...catalogue.plugins[0]!,
+    ref: 'acme.ask@1',
+    id: 'acme.ask',
+    egress: 'model',
+    settingsSchema: { type: 'object', additionalProperties: false },
+  };
+  const askStep = { uses: 'acme.ask@1', with: {} };
+
+  it("checks a plugin step's model like an extract step's", async () => {
+    const c = await testApp({ plugins: new MemoryPluginCatalogue([asking]) });
+    seedModelChoices(c);
+    await c.templates.create('letter', 1, recipe({ ...askStep, model: 'fast' }), 'draft');
+    expect(await issuesOf(c.app)).toEqual([]);
+    await c.templates.create('letter', 2, recipe({ ...askStep, model: 'local/qwen' }), 'draft');
+    expect((await c.app.inject('/api/templates/letter/versions/2')).json().issues).toEqual([
+      {
+        path: 'pipeline.0.model',
+        message: 'step "refs": pick a model choice instead of the model local/qwen',
+      },
+    ]);
+  });
+
+  it('warns when a step names a model for a plugin that calls none', async () => {
+    const c = await testApp({ plugins: new MemoryPluginCatalogue(catalogue.plugins) });
+    seedModelChoices(c);
+    await c.templates.create('letter', 1, recipe({ model: 'fast' }), 'draft');
+    expect(await issuesOf(c.app)).toEqual([
+      {
+        path: 'pipeline.0.model',
+        message: 'step "refs": text.pattern@1 calls no model, so the step\'s model is not used',
+        severity: 'warning',
+      },
+    ]);
+  });
+
   it('is not checked without a catalogue (unit tests of other routes)', async () => {
     const c = await testApp({ plugins: null });
     await c.templates.create('letter', 1, recipe({ uses: 'acme.magic@3' }), 'draft');
     expect(await issuesOf(c.app)).toEqual([]);
+  });
+});
+
+describe('re-running a plugin step from review', () => {
+  const asking: PluginInfo = {
+    ...catalogue.plugins[0]!,
+    ref: 'acme.ask@1',
+    id: 'acme.ask',
+    egress: 'model',
+    settingsSchema: { type: 'object', additionalProperties: false },
+  };
+
+  async function seed(plugin: Record<string, unknown> = {}, plugins = catalogue.plugins) {
+    const c = await testApp({ plugins: new MemoryPluginCatalogue([...plugins, asking]) });
+    seedModelChoices(c);
+    await c.templates.create('letter', 1, recipe(plugin), 'published');
+    const documentId = randomUUID();
+    const job = await c.repo.createDocumentAndJob(
+      {
+        id: documentId,
+        filename: 'letter.pdf',
+        sha256: 'x',
+        sizeBytes: 1,
+        specId: 'letter',
+        specVersion: 1,
+        bucket: 'inbox',
+        objectKey: `letter/v1/${documentId}.pdf`,
+      },
+      null,
+    );
+    c.repo.jobs.set(job.id, { ...c.repo.jobs.get(job.id)!, status: 'awaiting_review' });
+    const rerun = (payload: object) =>
+      c.app.inject({ method: 'POST', url: `/api/jobs/${job.id}/steps/refs/rerun`, payload });
+    return { ...c, job, rerun };
+  }
+
+  it('queues a plugin step again, with guidance for the plugin', async () => {
+    const { repo, job, rerun } = await seed();
+    const res = await rerun({ instructions: 'The reference starts with INV.' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'queued', task: 'rerun' });
+    expect(repo.reruns.get(job.id)).toEqual({
+      step: 'refs',
+      instructions: 'The reference starts with INV.',
+    });
+  });
+
+  it('takes a model for a plugin that calls one', async () => {
+    const { repo, job, rerun } = await seed({ uses: 'acme.ask@1', with: {} });
+    expect((await rerun({ model: 'fast' })).statusCode).toBe(200);
+    expect(repo.reruns.get(job.id)).toEqual({ step: 'refs', model: 'fast' });
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'awaiting_review' });
+    const bad = await rerun({ model: 'nope' });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error).toBe('unknown model choice nope');
+  });
+
+  it.each([
+    [
+      {},
+      { model: 'fast' },
+      'text.pattern@1 calls no model: a re-run of step "refs" can\'t use one',
+    ],
+    [
+      { uses: 'acme.magic@3' },
+      { model: 'fast' },
+      'step "refs": no plugin acme.magic@3 on this deployment\'s workers',
+    ],
+    [{}, { pageImages: [1] }, 'page images are for extract steps; "refs" is a plugin step'],
+  ])('refuses %j with %j', async (plugin, payload, error) => {
+    const { repo, job, rerun } = await seed(plugin);
+    const res = await rerun(payload);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe(error);
+    expect(repo.jobs.get(job.id)!.status).toBe('awaiting_review');
+  });
+
+  it("refuses while the plugin step's outputs have reviewer edits", async () => {
+    const { repo, job, rerun } = await seed();
+    await repo.addEdit(job.id, {
+      field: 'reference',
+      table: null,
+      row: null,
+      column: null,
+      oldValue: 'a',
+      newValue: 'b',
+      editor: null,
+      reason: null,
+    });
+    const res = await rerun({});
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('reviewer edits');
+  });
+});
+
+describe('re-running a step of an enriched table (P4)', () => {
+  const enrich = JSON.parse(
+    readFileSync(
+      new URL('../../../packages/shared/test/fixtures/enrich-steps.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { base: Record<string, unknown>; cases: { pipeline: Record<string, unknown>[] }[] };
+
+  async function seed() {
+    const c = await testApp({ plugins: new MemoryPluginCatalogue(catalogue.plugins) });
+    await c.templates.create(
+      'stability',
+      1,
+      { ...enrich.base, pipeline: enrich.cases[0]!.pipeline },
+      'published',
+    );
+    const documentId = randomUUID();
+    const job = await c.repo.createDocumentAndJob(
+      {
+        id: documentId,
+        filename: 'report.pdf',
+        sha256: 'x',
+        sizeBytes: 1,
+        specId: 'stability',
+        specVersion: 1,
+        bucket: 'inbox',
+        objectKey: `stability/v1/${documentId}.pdf`,
+      },
+      null,
+    );
+    c.repo.jobs.set(job.id, { ...c.repo.jobs.get(job.id)!, status: 'awaiting_review' });
+    await c.repo.addEdit(job.id, {
+      field: null,
+      table: 'lines',
+      row: 1,
+      column: 'qty',
+      oldValue: 1,
+      newValue: 2,
+      editor: null,
+      reason: null,
+    });
+    const rerun = (step: string) =>
+      c.app.inject({ method: 'POST', url: `/api/jobs/${job.id}/steps/${step}/rerun`, payload: {} });
+    return { ...c, rerun };
+  }
+
+  it('refuses the creating step while any cell of its table was edited', async () => {
+    const { rerun } = await seed();
+    const res = await rerun('rows');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain('reviewer edits');
+  });
+
+  it('lets an enriching step run while only other columns were edited', async () => {
+    const { rerun } = await seed();
+    expect((await rerun('expiry')).statusCode).toBe(200);
   });
 });

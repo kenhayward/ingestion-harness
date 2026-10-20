@@ -1,4 +1,4 @@
-import type { JobSummary } from '@ih/shared';
+import type { JobSummary, PluginInfo } from '@ih/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -316,6 +316,63 @@ describe('ReviewPage', () => {
       pageImages: [3, 2],
     });
     expect(onDone).toHaveBeenCalled();
+  });
+
+  describe('re-running a plugin step', () => {
+    const plugin = (ref: string, egress: 'none' | 'model'): PluginInfo => ({
+      ref,
+      id: ref.split('@')[0]!,
+      major: 1,
+      summary: 'A plugin.',
+      egress,
+      settingsSchema: { type: 'object' },
+    });
+    const withPlugin = (uses: string) => {
+      const data = reviewData();
+      const head = data.template.pipeline[0] as { fields: string[] };
+      data.template.pipeline[0] = {
+        type: 'plugin',
+        id: 'head',
+        uses,
+        fields: head.fields,
+        sections: ['all'],
+        context: {},
+        with: {},
+      } as (typeof data.template.pipeline)[number];
+      return data;
+    };
+    const open = async (uses: string, egress: 'none' | 'model') => {
+      const ctx = setup({
+        getReview: vi.fn(async () => withPlugin(uses)),
+        listPlugins: vi.fn(async () => [plugin(uses, egress)]),
+      });
+      await userEvent.click(await screen.findByRole('tab', { name: 'Steps 2' }));
+      const row = await screen.findByRole('row', { name: /head/ });
+      await userEvent.click(within(row).getByRole('button', { name: 'Re-run head' }));
+      return { ...ctx, dialog: screen.getByRole('dialog', { name: 'Re-run head' }) };
+    };
+
+    it('runs a plugin that calls no model again with guidance only', async () => {
+      const { api, dialog } = await open('text.pattern@1', 'none');
+      expect(dialog).toHaveTextContent('Only head runs again (OCR is reused)');
+      await waitFor(() =>
+        expect(within(dialog).queryByRole('combobox', { name: 'Model' })).toBeNull(),
+      );
+      expect(within(dialog).queryByLabelText('Pages to show the model')).toBeNull();
+      await userEvent.type(within(dialog).getByLabelText('Guidance for re-run'), 'Ref: first.');
+      await userEvent.click(screen.getByRole('button', { name: 'Queue re-run' }));
+      expect(api.rerunStep).toHaveBeenCalledWith(JOB_ID, 'head', { instructions: 'Ref: first.' });
+    });
+
+    it('offers a model for a plugin that asks one, and no page images', async () => {
+      const { api, dialog } = await open('acme.ask@1', 'model');
+      const model = await within(dialog).findByRole('combobox', { name: 'Model' });
+      await within(model).findByRole('option', { name: 'New for testing only' });
+      await userEvent.selectOptions(model, 'New for testing only');
+      expect(within(dialog).queryByLabelText('Pages to show the model')).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Queue re-run' }));
+      expect(api.rerunStep).toHaveBeenCalledWith(JOB_ID, 'head', { model: 'test' });
+    });
   });
 
   it('shows a step served from the step cache as cached', async () => {
