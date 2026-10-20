@@ -57,23 +57,35 @@ function open(getProposalLog = vi.fn(async () => LOG)) {
 }
 
 describe('ModelLogButton', () => {
-  it('opens the model log of a proposal: rounds, tool calls, rejections and the error', async () => {
+  it('opens the model log of a proposal: rounds and attempts on the left, one attempt on the right', async () => {
     const { getProposalLog } = open();
     await userEvent.click(screen.getByRole('button', { name: 'Model log' }));
     const dialog = await screen.findByRole('dialog', { name: 'Model log' });
     expect(getProposalLog).toHaveBeenCalledWith('letter', 'p1');
     expect(await within(dialog).findByText('2 replies · 1 tool call')).toBeInTheDocument();
-    const first = within(dialog).getByRole('region', { name: 'Proposal' });
-    expect(within(first).getByText('Testing 1 anchor on 2 dev samples')).toBeInTheDocument();
-    expect(within(first).getByText('Answer submitted')).toBeInTheDocument();
-    expect(within(first).getByText("<root>: 'changes' is a required property")).toBeInTheDocument();
-    expect(within(first).getByText('drafting model refused: no')).toBeInTheDocument();
+    const nav = within(dialog).getByRole('navigation', { name: 'Rounds and attempts' });
+    expect(within(nav).getByText('Proposal')).toBeInTheDocument();
+    expect(within(nav).getByText('Anchor round')).toBeInTheDocument();
+    const first = within(nav).getByRole('button', { name: 'Proposal, attempt 1 refused' });
+    expect(first).toHaveAttribute('aria-pressed', 'true');
+    // The first attempt: its tool calls, the answer, and the errors that sent it back.
+    const shown = within(dialog).getByRole('region', { name: 'Proposal, attempt 1' });
+    expect(within(shown).getByText('Errors that sent it back')).toBeInTheDocument();
+    expect(within(shown).getByText("<root>: 'changes' is a required property")).toBeInTheDocument();
+    expect(within(shown).getByText('Testing 1 anchor on 2 dev samples')).toBeInTheDocument();
+    expect(within(shown).getByText('Answer submitted')).toBeInTheDocument();
     // The prompt is folded away until asked for.
-    const prompt = within(first).getByText(/Prompt sent/);
-    expect(within(first).getByText('<harness>the whole context</harness>')).not.toBeVisible();
+    const prompt = within(shown).getByText(/Prompt sent/);
+    expect(within(shown).getByText('<harness>the whole context</harness>')).not.toBeVisible();
     await userEvent.click(prompt);
-    expect(within(first).getByText('<harness>the whole context</harness>')).toBeVisible();
-    expect(within(dialog).getByRole('region', { name: 'Anchor round' })).toBeInTheDocument();
+    expect(within(shown).getByText('<harness>the whole context</harness>')).toBeVisible();
+    // The next attempt was stopped by an error.
+    await userEvent.click(within(nav).getByRole('button', { name: 'Proposal, attempt 2 stopped' }));
+    const stopped = within(dialog).getByRole('region', { name: 'Proposal, attempt 2' });
+    expect(within(stopped).getByText('drafting model refused: no')).toBeInTheDocument();
+    expect(
+      within(nav).getByRole('button', { name: 'Anchor round, attempt 1 no answer' }),
+    ).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Help: Reading a model log' })).toBeVisible();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();

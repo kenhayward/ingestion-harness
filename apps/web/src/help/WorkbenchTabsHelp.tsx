@@ -332,12 +332,18 @@ export function DraftModelLogHelp() {
         A proposal's <strong>Model log</strong> shows what the drafting model was sent and what it
         did while it made the proposal: useful when a proposal looks wrong, or a stage failed.
       </p>
-      <h3>Rounds</h3>
+      <h3>Rounds and attempts</h3>
       <p>
         Each round is one go at the proposal. The Sections stage has a second, the{' '}
         <strong>anchor round</strong>, when anchors it proposed missed on the dev samples.
       </p>
-      <h3>What a round holds</h3>
+      <p>
+        The left of the log lists each round's <strong>attempts</strong>: an attempt ends when the
+        model's answer is accepted (✓), rejected and sent back with the reasons (✗), or the run
+        stops (!). Pick one to see it on the right: first the errors that sent it back, then what
+        the model was sent, did and answered.
+      </p>
+      <h3>What an attempt holds</h3>
       <ul>
         <li>
           <strong>Prompt sent</strong>: everything the model read, the brief, the draft and the dev
@@ -451,7 +457,8 @@ export function ReviewHelp() {
           <strong>Steps</strong>: how each extraction and plugin step ran. <strong>Re-run</strong> a
           step with extra guidance, other pages shown as images, or another model, when a whole step
           got it wrong. A plugin step takes guidance (the plugin reads it), a model only when its
-          plugin asks one, and no page images.
+          plugin asks one, and no page images. <strong>Model log</strong> shows each attempt of a
+          step in this job: the prompt, the model's reply and the errors that sent a reply back.
         </li>
         <li>
           <strong>Graph</strong> (linked data): the graph and any rules it breaks, as cards, a

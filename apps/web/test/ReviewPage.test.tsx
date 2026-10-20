@@ -391,6 +391,53 @@ describe('ReviewPage', () => {
     });
   });
 
+  it("opens a step's model log for this job from the Steps tab", async () => {
+    const { api } = setup({
+      getStepRuns: vi.fn(async () => [
+        {
+          id: 1,
+          stepId: 'data',
+          trigger: 'process',
+          model: 'local/qwen',
+          attempts: 2,
+          inputTokens: 900,
+          outputTokens: 300,
+          status: 'succeeded',
+          cached: false,
+          error: null,
+          startedAt: '2026-10-09T10:00:00Z',
+          finishedAt: '2026-10-09T10:01:00Z',
+        },
+      ]),
+      getStepAttempts: vi.fn(async () => ({
+        calls: [
+          {
+            label: 'data',
+            attempts: [
+              {
+                n: 1,
+                prompt: 'p',
+                response: 'r',
+                errors: ['bad'],
+                inputTokens: null,
+                outputTokens: null,
+              },
+            ],
+          },
+        ],
+      })),
+    });
+    await userEvent.click(await screen.findByRole('tab', { name: /Steps/ }));
+    const row = await screen.findByRole('row', { name: /data/ });
+    await userEvent.click(await within(row).findByRole('button', { name: 'Model log of data' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Model log: data' });
+    expect(api.getStepAttempts).toHaveBeenCalledWith(JOB_ID, 'data');
+    expect(api.listRetriedStepRuns).not.toHaveBeenCalled();
+    expect(await within(dialog).findByText('bad')).toBeInTheDocument();
+    const head = screen.getByRole('row', { name: /head/ });
+    expect(within(head).queryByRole('button', { name: 'Model log of head' })).toBeNull();
+  });
+
   it('shows a step served from the step cache as cached', async () => {
     setup({
       getStepRuns: vi.fn(async () => [
