@@ -433,6 +433,33 @@ describe('ReferencesTab samples list', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
   });
 
+  it('shows where each running reference run is, and a strip counting the runs', async () => {
+    const step = { step: 'head', index: 1, of: 2, attempt: 1, chunk: null, occurrence: null };
+    tab({
+      dev: [
+        referenceRow({
+          filename: 'ocr.pdf',
+          run: {
+            ...run('running', 'j1'),
+            progress: { kind: 'prepare', stage: 'ocr', page: 3, of: 7, pages: 7 },
+          },
+        }),
+        referenceRow({
+          filename: 'step.pdf',
+          run: { ...run('running', 'j2'), progress: { kind: 'step', ...step } },
+        }),
+        referenceRow({ filename: 'wait.pdf', run: run('queued', 'j3') }),
+        referenceRow({ filename: 'done.pdf', run: run('awaiting_review', 'j4') }),
+      ],
+    });
+    expect(await screen.findByText('OCR page 3 of 7')).toBeInTheDocument();
+    expect(screen.getByText('Step 1 of 2 · head')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for a worker')).toBeInTheDocument();
+    const strip = screen.getByRole('region', { name: 'Reference runs' });
+    expect(strip).toHaveTextContent('1 of 4 finished · 2 running · 1 waiting for a worker');
+    expect(within(strip).getByRole('img', { name: 'Reference runs finished: 25%' })).toBeVisible();
+  });
+
   it('ignores a slow response that arrives after a newer one', async () => {
     let n = 0;
     let release: (rows: ReferenceRow[]) => void = () => {};

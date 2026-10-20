@@ -6,24 +6,29 @@ import {
   readyBanner,
   reviewHref,
   rowLine,
+  rowProgress,
   rowStatus,
+  runsSummary,
   tracker,
   trackerLabel,
   unverifiedCount,
 } from '../src/workbench/references.js';
 import { referenceInfo, referenceRow } from './fake-api.js';
 
-const run = (status: NonNullable<ReferenceRow['run']>['status']) => ({
+type Run = NonNullable<ReferenceRow['run']>;
+const run = (status: Run['status'], progress: Run['progress'] = null): Run => ({
   jobId: 'j1',
   status,
   error: null,
   modelOverride: 'draft',
+  progress,
 });
 const saved = (o = {}) => referenceRow({ reference: referenceInfo(o) });
 
 describe('tracker and status', () => {
   it.each<[string, ReferenceRow, [boolean, boolean, boolean], string]>([
     ['not run', referenceRow(), [false, false, false], 'Not run'],
+    ['queued', referenceRow({ run: run('queued') }), [false, false, false], 'Waiting for a worker'],
     ['running', referenceRow({ run: run('running') }), [false, false, false], 'Running'],
     [
       'awaiting review',
@@ -171,5 +176,62 @@ describe('filters, counts and the ready banner', () => {
     expect(rowStatus(saved({ outdated: ['field:vat', 'table:lines'] }))).toBe(
       'Re-verify: vat, lines changed',
     );
+  });
+});
+
+describe('run progress', () => {
+  const step = { step: 'lines', index: 2, of: 3, attempt: 1, chunk: null, occurrence: null };
+  it.each<[string, ReferenceRow, string | null]>([
+    ['no run', referenceRow(), null],
+    ['queued', referenceRow({ run: run('queued') }), null],
+    ['running, nothing reported', referenceRow({ run: run('running') }), 'Starting…'],
+    [
+      'reading the text layer',
+      referenceRow({
+        run: run('running', { kind: 'prepare', stage: 'text', page: 0, of: 4, pages: 4 }),
+      }),
+      'Reading 4 pages',
+    ],
+    [
+      'OCR',
+      referenceRow({
+        run: run('running', { kind: 'prepare', stage: 'ocr', page: 2, of: 5, pages: 5 }),
+      }),
+      'OCR page 2 of 5',
+    ],
+    [
+      'segmented',
+      referenceRow({ run: run('running', { kind: 'segmented' }) }),
+      'Found the sections',
+    ],
+    [
+      'a step',
+      referenceRow({ run: run('running', { kind: 'step', ...step }) }),
+      'Step 2 of 3 · lines',
+    ],
+    [
+      'a retried chunk',
+      referenceRow({
+        run: run('running', { kind: 'step', ...step, attempt: 2, chunk: { n: 1, of: 2 } }),
+      }),
+      'Step 2 of 3 · lines · chunk 1 of 2 · attempt 2',
+    ],
+    ['awaiting review', referenceRow({ run: run('awaiting_review') }), null],
+  ])('%s', (_name, row, text) => {
+    expect(rowProgress(row)).toBe(text);
+  });
+
+  it('counts the unverified samples whose runs are going or done', () => {
+    const rows = [
+      referenceRow({ run: run('running') }),
+      referenceRow({ run: run('queued') }),
+      referenceRow({ run: run('queued') }),
+      referenceRow({ run: run('awaiting_review') }),
+      referenceRow({ run: run('needs_review') }),
+      referenceRow(),
+      saved(),
+    ];
+    expect(runsSummary(rows)).toEqual({ running: 1, queued: 2, finished: 2, total: 5 });
+    expect(runsSummary([referenceRow({ run: run('awaiting_review') }), saved()])).toBeNull();
   });
 });

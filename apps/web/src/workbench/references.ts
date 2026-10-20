@@ -1,4 +1,5 @@
 import { correctionOutput, type JobStatus, type ReferenceRow } from '@ih/shared';
+import { progressText } from './runs.js';
 
 /** Pure helpers of the References tab (handoff §7). */
 
@@ -38,10 +39,44 @@ export function rowStatus(row: ReferenceRow): string {
   }
   const status = row.run?.status ?? null;
   if (status === null) return 'Not run';
-  if (isActive(status)) return 'Running';
+  if (status === 'queued') return 'Waiting for a worker';
+  if (status === 'running') return 'Running';
   if (status === 'awaiting_review') return 'Awaiting review';
   if (status === 'succeeded') return 'Reviewed — save it as the reference';
   return 'Run needs attention';
+}
+
+/**
+ * Where a running reference run is, from its latest progress event: reading or OCR'ing the
+ * sample, the sections found, or the step being extracted; null when the run is not running.
+ */
+export function rowProgress(row: ReferenceRow): string | null {
+  const run = row.run;
+  if (run?.status !== 'running') return null;
+  const p = run.progress ?? null;
+  if (p === null) return 'Starting…';
+  if (p.kind === 'prepare') {
+    return p.stage === 'ocr'
+      ? `OCR page ${p.page} of ${p.of}`
+      : `Reading ${p.of} ${p.of === 1 ? 'page' : 'pages'}`;
+  }
+  if (p.kind === 'segmented') return 'Found the sections';
+  return progressText(p);
+}
+
+/**
+ * The reference runs still to verify while any of them is queued or running: how many run, wait
+ * and finished (awaiting review or needing attention) out of the unverified samples with a run;
+ * null when none is active.
+ */
+export function runsSummary(
+  rows: readonly ReferenceRow[],
+): { running: number; queued: number; finished: number; total: number } | null {
+  const runs = rows.flatMap((r) => (!verified(r) && r.run ? [r.run.status] : []));
+  const running = runs.filter((s) => s === 'running').length;
+  const queued = runs.filter((s) => s === 'queued').length;
+  if (running + queued === 0) return null;
+  return { running, queued, finished: runs.length - running - queued, total: runs.length };
 }
 
 /** "11 Oct 16:55" in the viewer's time zone. */
