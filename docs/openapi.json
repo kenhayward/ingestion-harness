@@ -9950,13 +9950,20 @@
                                         "default": 2,
                                         "type": "integer",
                                         "minimum": 0
+                                      },
+                                      "uses": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                      },
+                                      "with": {
+                                        "type": "object",
+                                        "additionalProperties": {}
                                       }
                                     },
                                     "required": [
                                       "type",
                                       "id",
-                                      "values",
-                                      "reference"
+                                      "values"
                                     ],
                                     "additionalProperties": false
                                   },
@@ -16296,13 +16303,20 @@
                                     "default": 2,
                                     "type": "integer",
                                     "minimum": 0
+                                  },
+                                  "uses": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                  },
+                                  "with": {
+                                    "type": "object",
+                                    "additionalProperties": {}
                                   }
                                 },
                                 "required": [
                                   "type",
                                   "id",
-                                  "values",
-                                  "reference"
+                                  "values"
                                 ],
                                 "additionalProperties": false
                               },
@@ -38633,13 +38647,20 @@
                                                     "default": 2,
                                                     "type": "integer",
                                                     "minimum": 0
+                                                  },
+                                                  "uses": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                  },
+                                                  "with": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
                                                   }
                                                 },
                                                 "required": [
                                                   "type",
                                                   "id",
-                                                  "values",
-                                                  "reference"
+                                                  "values"
                                                 ],
                                                 "additionalProperties": false
                                               },
@@ -43670,13 +43691,20 @@
                                                       "default": 2,
                                                       "type": "integer",
                                                       "minimum": 0
+                                                    },
+                                                    "uses": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                    },
+                                                    "with": {
+                                                      "type": "object",
+                                                      "additionalProperties": {}
                                                     }
                                                   },
                                                   "required": [
                                                     "type",
                                                     "id",
-                                                    "values",
-                                                    "reference"
+                                                    "values"
                                                   ],
                                                   "additionalProperties": false
                                                 },
@@ -46438,13 +46466,20 @@
                                                     "default": 2,
                                                     "type": "integer",
                                                     "minimum": 0
+                                                  },
+                                                  "uses": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                  },
+                                                  "with": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
                                                   }
                                                 },
                                                 "required": [
                                                   "type",
                                                   "id",
-                                                  "values",
-                                                  "reference"
+                                                  "values"
                                                 ],
                                                 "additionalProperties": false
                                               },
@@ -48871,13 +48906,20 @@
                                                     "default": 2,
                                                     "type": "integer",
                                                     "minimum": 0
+                                                  },
+                                                  "uses": {
+                                                    "type": "string",
+                                                    "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+                                                  },
+                                                  "with": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
                                                   }
                                                 },
                                                 "required": [
                                                   "type",
                                                   "id",
-                                                  "values",
-                                                  "reference"
+                                                  "values"
                                                 ],
                                                 "additionalProperties": false
                                               },
@@ -77178,6 +77220,13 @@
                       "summary": {
                         "type": "string"
                       },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "step",
+                          "check"
+                        ]
+                      },
                       "egress": {
                         "type": "string",
                         "enum": [
@@ -77196,6 +77245,7 @@
                       "id",
                       "major",
                       "summary",
+                      "kind",
                       "egress",
                       "settingsSchema"
                     ]

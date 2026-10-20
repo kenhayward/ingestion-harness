@@ -325,6 +325,7 @@ describe('ReviewPage', () => {
       major: 1,
       summary: 'A plugin.',
       egress,
+      kind: 'step',
       settingsSchema: { type: 'object' },
     });
     const withPlugin = (uses: string) => {

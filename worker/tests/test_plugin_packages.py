@@ -49,6 +49,8 @@ def plugin(
     version: int = 1,
     settings: type[BaseModel] = Settings,
     egress: Any = "none",
+    kind: Any = "step",
+    judge: Any = None,
 ) -> Plugin:
     def run(_ctx: Any, _settings: Any) -> dict[str, Any]:
         return {}
@@ -58,6 +60,8 @@ def plugin(
         settings=settings,
         check=lambda *_: [],
         run_settings=run,
+        kind=kind,
+        judge=judge,
     )
 
 
@@ -119,6 +123,26 @@ def test_a_plugin_that_breaks_the_contract_is_left_out_with_the_reason(
     assert len(problems) == 1
     assert problems[0].startswith("words = acme_words:PLUGIN: ")
     assert problem in problems[0]
+
+
+def _judge(_ctx: Any, _settings: Any) -> list[dict[str, Any]]:
+    return []
+
+
+@pytest.mark.parametrize(
+    ("candidate", "problems"),
+    [
+        (plugin(kind="check", judge=_judge), []),
+        (plugin(kind="check"), ["acme.words@1: a check plugin needs judge"]),
+        (
+            plugin(kind="check", judge=_judge, egress="model"),
+            ["acme.words@1: a check plugin sends no data out (egress none)"],
+        ),
+        (plugin(judge=_judge), ["acme.words@1: a step plugin has no judge"]),
+    ],
+)
+def test_check_plugin_rules(candidate: Plugin, problems: list[str]) -> None:
+    assert check_plugin(candidate) == problems
 
 
 def test_a_package_that_does_not_load_is_left_out_and_the_rest_still_load() -> None:

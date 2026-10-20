@@ -53,12 +53,12 @@ def test_pg_catalogue_replaces_and_keeps_the_schema_as_json() -> None:
         catalogue.publish([stale, *FIXTURE["plugins"]], "old")
         catalogue.publish(FIXTURE["plugins"], "2026.10.19.1")
         rows = conn.execute(
-            "SELECT ref, plugin_id, major, summary, egress, settings_schema, worker_version "
+            "SELECT ref, plugin_id, major, summary, egress, kind, settings_schema, worker_version "
             "FROM plugin_catalogue ORDER BY ref"
         ).fetchall()
-    [(ref, plugin_id, major, summary, egress, schema, version)] = rows
+    [(ref, plugin_id, major, summary, egress, kind, schema, version)] = rows
     expected = FIXTURE["plugins"][0]
-    assert (ref, plugin_id, major, summary, egress) == (
-        expected["ref"], expected["id"], expected["major"], expected["summary"], expected["egress"],
+    assert (ref, plugin_id, major, summary, egress, kind) == (
+        expected["ref"], expected["id"], expected["major"], expected["summary"], expected["egress"], expected["kind"],
     )  # fmt: skip
     assert schema == expected["settingsSchema"] and version == "2026.10.19.1"

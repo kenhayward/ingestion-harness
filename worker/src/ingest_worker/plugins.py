@@ -19,7 +19,7 @@ from dataclasses import dataclass, field, replace
 from functools import cache
 from importlib.metadata import entry_points
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -36,7 +36,7 @@ from .llm.base import (
 from .nodes import NodeSpec
 from .pipeline import JobModels, RepeatPlan
 from .queue import ClaimedJob
-from .template import PLUGIN_REF, PluginStep, Template
+from .template import PLUGIN_REF, CheckStep, PluginStep, Template
 
 log = logging.getLogger(__name__)
 
@@ -179,6 +179,19 @@ def plugin_context(
 
 
 @dataclass(frozen=True)
+class CheckContext:
+    """Everything a check plugin may read: the job, the recipe and its check step, the values
+    the step's `values` path names (as text, in order) and, for a table column, the rows they
+    come from (None for a field)."""
+
+    job: ClaimedJob
+    template: Template
+    step: CheckStep
+    values: list[str]
+    rows: list[dict[str, Any]] | None
+
+
+@dataclass(frozen=True)
 class Plugin:
     spec: NodeSpec
     #: The model of a step's `with` (extra keys refused); its JSON Schema is what the catalogue
@@ -187,6 +200,10 @@ class Plugin:
     #: Rules beyond the schema, against the recipe and the step (messages; empty: fine).
     check: Callable[[Template, PluginStep, Any], list[str]]
     run_settings: Callable[[PluginContext, Any], StepData]
+    #: What a recipe uses it as: a pipeline `step` (a plugin step) or a `check` (a check step).
+    kind: Literal["step", "check"] = "step"
+    #: A check plugin's verdicts (one dict per finding; none: the values pass). Check plugins only.
+    judge: Callable[[CheckContext, Any], list[dict[str, Any]]] | None = None
 
     def settings_for(self, template: Template, step: PluginStep) -> Any:
         """The step's `with` as this plugin's settings; ValueError says what is wrong."""
@@ -433,6 +450,13 @@ def check_plugin(plugin: Plugin) -> list[str]:
         problems.append(f"{ref}: its settings have no JSON Schema ({exc})")
     if plugin.spec.egress == "remote":
         problems.append(f"{ref}: egress remote belongs behind A2A, not in the worker (ADR 0018)")
+    if plugin.kind == "check":
+        if plugin.judge is None:
+            problems.append(f"{ref}: a check plugin needs judge")
+        if plugin.spec.egress != "none":
+            problems.append(f"{ref}: a check plugin sends no data out (egress none)")
+    elif plugin.judge is not None:
+        problems.append(f"{ref}: a step plugin has no judge")
     return problems
 
 

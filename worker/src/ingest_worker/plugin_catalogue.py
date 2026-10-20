@@ -24,6 +24,7 @@ def catalogue_rows(plugins: Mapping[str, Plugin]) -> list[dict[str, Any]]:
             "major": p.spec.version,
             "summary": p.spec.summary,
             "egress": p.spec.egress,
+            "kind": p.kind,
             "settingsSchema": p.settings.model_json_schema(by_alias=True),
         }
         for ref, p in sorted(plugins.items())
@@ -60,12 +61,13 @@ class PgPluginCatalogue:
             )
             for r in rows:
                 self.conn.execute(
-                    """INSERT INTO plugin_catalogue (ref, plugin_id, major, summary, egress,
+                    """INSERT INTO plugin_catalogue (ref, plugin_id, major, summary, egress, kind,
                                                      settings_schema, worker_version)
-                       VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s)
                        ON CONFLICT (ref) DO UPDATE SET
                          plugin_id = EXCLUDED.plugin_id, major = EXCLUDED.major,
                          summary = EXCLUDED.summary, egress = EXCLUDED.egress,
+                         kind = EXCLUDED.kind,
                          settings_schema = EXCLUDED.settings_schema,
                          worker_version = EXCLUDED.worker_version, published_at = now()""",
                     (
@@ -74,6 +76,7 @@ class PgPluginCatalogue:
                         r["major"],
                         r["summary"],
                         r["egress"],
+                        r["kind"],
                         json.dumps(r["settingsSchema"]),
                         worker_version,
                     ),

@@ -129,21 +129,41 @@ export const ExtractStepSchema = z
   })
   .strict();
 
-/** Paths are `<field>` or `<table>.<column>`. */
+/** A plugin's id and the major version a recipe runs: `text.pattern@1` (worker `PLUGIN_REF`). */
+export const PLUGIN_REF = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$/;
+
+/**
+ * Paths are `<field>` or `<table>.<column>`. A check compares `values` with a `reference`, or
+ * runs a check plugin (`uses`, with its own settings in `with`); exactly one of the two.
+ */
 export const CheckStepSchema = z
   .object({
     type: z.literal('check'),
     id: Id,
     description: z.string().optional(),
     values: z.string().min(1),
-    reference: z.string().min(1),
+    reference: z.string().min(1).optional(),
     aliases: z.string().min(1).optional(),
     maxDistance: z.number().int().min(0).default(2),
+    /** A check plugin and its major version (instead of a reference). */
+    uses: z
+      .string()
+      .regex(PLUGIN_REF, 'name a plugin and its major version, e.g. list.lookup@1')
+      .optional(),
+    /** The check plugin's own settings. */
+    with: z.record(z.string(), z.unknown()).optional(),
   })
-  .strict();
-
-/** A plugin's id and the major version a recipe runs: `text.pattern@1` (worker `PLUGIN_REF`). */
-export const PLUGIN_REF = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$/;
+  .strict()
+  .superRefine((c, ctx) => {
+    if (c.uses !== undefined && c.reference !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'a check runs a plugin or compares with a reference, not both',
+      });
+    } else if (c.uses === undefined && c.reference === undefined) {
+      ctx.addIssue({ code: 'custom', message: 'a check needs a reference or a plugin' });
+    }
+  });
 
 /**
  * A step that runs a registered worker plugin instead of a model call (docs/design/recipe-plugins.md).
@@ -706,6 +726,7 @@ export const TemplateSchema = z
     }
     for (const step of t.pipeline) {
       if (step.type !== 'check') continue;
+      // A plugin check resolves only its values; `reference` and `aliases` belong to the other kind.
       [step.values, step.reference, step.aliases]
         .filter((p): p is string => p !== undefined && !resolves(p))
         .forEach((p) => issue(`check "${step.id}": ${unknownPath(p)}`));

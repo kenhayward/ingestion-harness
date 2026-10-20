@@ -28,9 +28,10 @@ export class PgPluginCatalogue implements PluginCatalogue {
       major: number;
       summary: string;
       egress: PluginInfo['egress'];
+      kind: PluginInfo['kind'];
       settings_schema: Record<string, unknown>;
     }>(
-      `SELECT ref, plugin_id, major, summary, egress, settings_schema
+      `SELECT ref, plugin_id, major, summary, egress, kind, settings_schema
          FROM plugin_catalogue ORDER BY ref`,
     );
     return rows.map((r) => ({
@@ -39,6 +40,7 @@ export class PgPluginCatalogue implements PluginCatalogue {
       major: r.major,
       summary: r.summary,
       egress: r.egress,
+      kind: r.kind,
       settingsSchema: r.settings_schema,
     }));
   }
