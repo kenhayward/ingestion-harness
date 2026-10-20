@@ -13,6 +13,7 @@ field/column definitions, so the schema and the CSV layout can never disagree.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
@@ -25,6 +26,13 @@ RESERVED_OUTPUT_IDS = {"fields", "document", "issues", "graph"}
 BUILTIN_PROMPT = "builtin/extract.md.j2"
 
 
+class Bound(_Model):
+    """A constraint's bounds (docs/design/output-roles.md §1): either may be left out."""
+
+    min: float | None = None
+    max: float | None = None
+
+
 class ValueDef(_Model):
     """A field (atom) or table column."""
 
@@ -33,11 +41,49 @@ class ValueDef(_Model):
     type: ValueType = "text"
     description: str | None = None
     enum: list[str] | None = None
+    #: Numbers outside it are review issues (decimal and integer).
+    range: Bound | None = None
+    #: The whole value must match it (text; Python `re`, as section anchors).
+    pattern: str | None = Field(default=None, min_length=1)
+    #: Its length in characters (text).
+    length: Bound | None = None
 
     @model_validator(mode="after")
     def _enum_values(self) -> ValueDef:
         if self.type == "enum" and not self.enum:
             raise ValueError(f"{self.id!r}: enum values are required for type enum")
+        return self
+
+    @model_validator(mode="after")
+    def _constraints(self) -> ValueDef:
+        """The constraints' own rules (ValueDefSchema.superRefine in TS)."""
+        errors: list[str] = []
+
+        def bounds(name: str, b: Bound) -> None:
+            if b.min is None and b.max is None:
+                errors.append(f"{self.id!r}: {name} needs min or max")
+            if b.min is not None and b.max is not None and b.min > b.max:
+                errors.append(f"{self.id!r}: {name} min is above max")
+
+        if self.range is not None:
+            if self.type not in ("decimal", "integer"):
+                errors.append(f"{self.id!r}: range needs a decimal or integer")
+            bounds("range", self.range)
+        if self.pattern is not None:
+            if self.type != "text":
+                errors.append(f"{self.id!r}: pattern needs a text")
+            try:
+                re.compile(self.pattern)
+            except re.error:
+                errors.append(f"{self.id!r}: {self.pattern!r} is not a valid pattern")
+        if self.length is not None:
+            if self.type != "text":
+                errors.append(f"{self.id!r}: length needs a text")
+            if (self.length.min or 0) < 0 or (self.length.max or 0) < 0:
+                errors.append(f"{self.id!r}: length cannot be negative")
+            bounds("length", self.length)
+        if errors:
+            raise ValueError("; ".join(errors))
         return self
 
 

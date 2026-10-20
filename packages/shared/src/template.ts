@@ -30,6 +30,24 @@ export type ValueType = z.infer<typeof ValueTypeSchema>;
 export const RESERVED_OUTPUT_IDS = new Set(['fields', 'document', 'issues', 'graph']);
 
 /** A field (atom, one value per document) or a table column. */
+/** A constraint's bounds (docs/design/output-roles.md §1): either may be left out. */
+const BoundSchema = z.object({ min: z.number().optional(), max: z.number().optional() }).strict();
+
+/**
+ * Whether a constraint pattern (Python `re` syntax, as section anchors) compiles: named groups
+ * `(?P<…>` and a leading inline flag group such as `(?i)` are translated for JavaScript.
+ */
+export function patternCompiles(pattern: string): boolean {
+  const flags = /^\(\?([ims]+)\)/.exec(pattern);
+  const body = (flags ? pattern.slice(flags[0].length) : pattern).replace(/\(\?P</g, '(?<');
+  try {
+    new RegExp(body, `u${flags?.[1] ?? ''}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const ValueDefSchema = z
   .object({
     id: Id,
@@ -37,10 +55,42 @@ export const ValueDefSchema = z
     type: ValueTypeSchema.default('text'),
     description: z.string().optional(),
     enum: z.array(z.string()).min(1).optional(),
+    /** Numbers outside it are review issues (decimal and integer). */
+    range: BoundSchema.optional(),
+    /** The whole value must match it (text; Python `re` syntax). */
+    pattern: z.string().min(1).optional(),
+    /** Its length in characters (text). */
+    length: BoundSchema.optional(),
   })
   .strict()
-  .refine((v) => v.type !== 'enum' || (v.enum?.length ?? 0) > 0, {
-    message: 'enum values are required for type enum',
+  .superRefine((v, ctx) => {
+    const issue = (message: string) => ctx.addIssue({ code: 'custom', message });
+    if (v.type === 'enum' && (v.enum?.length ?? 0) === 0) {
+      issue('enum values are required for type enum');
+    }
+    const bounds = (name: string, b: z.infer<typeof BoundSchema>) => {
+      if (b.min === undefined && b.max === undefined) issue(`"${v.id}": ${name} needs min or max`);
+      if (b.min !== undefined && b.max !== undefined && b.min > b.max) {
+        issue(`"${v.id}": ${name} min is above max`);
+      }
+    };
+    if (v.range) {
+      if (v.type !== 'decimal' && v.type !== 'integer') {
+        issue(`"${v.id}": range needs a decimal or integer`);
+      }
+      bounds('range', v.range);
+    }
+    if (v.pattern !== undefined) {
+      if (v.type !== 'text') issue(`"${v.id}": pattern needs a text`);
+      if (!patternCompiles(v.pattern)) issue(`"${v.id}": "${v.pattern}" is not a valid pattern`);
+    }
+    if (v.length) {
+      if (v.type !== 'text') issue(`"${v.id}": length needs a text`);
+      if ((v.length.min ?? 0) < 0 || (v.length.max ?? 0) < 0) {
+        issue(`"${v.id}": length cannot be negative`);
+      }
+      bounds('length', v.length);
+    }
   });
 export type ValueDef = z.infer<typeof ValueDefSchema>;
 

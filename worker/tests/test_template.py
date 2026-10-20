@@ -398,3 +398,23 @@ def test_each_column_resolves_to_the_step_filling_it(case: dict[str, Any]) -> No
     assert t.filler_of_table("lines").id == "rows"
     step = next(s for s in t.filling_steps() if s.id == case["columns"]["expiry"][0])
     assert t._resolve("lines.expiry") == (f"{step.id}.rows[*].expiry", t.table("lines").columns[2])
+
+
+CONSTRAINT_FIXTURE = json.loads(
+    (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "value-constraints.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    "case", CONSTRAINT_FIXTURE["cases"], ids=[c["name"] for c in CONSTRAINT_FIXTURE["cases"]]
+)
+def test_output_constraints_match_the_shared_fixture(case: dict[str, Any]) -> None:
+    base = CONSTRAINT_FIXTURE["base"]
+    definition = {**base, "outputs": {**base["outputs"], "fields": case["fields"]}}
+    if case["valid"]:
+        Template.model_validate(definition)
+    else:
+        with pytest.raises(ValidationError, match=re.escape(case["error"])):
+            Template.model_validate(definition)

@@ -9680,6 +9680,34 @@
                                         "items": {
                                           "type": "string"
                                         }
+                                      },
+                                      "range": {
+                                        "type": "object",
+                                        "properties": {
+                                          "min": {
+                                            "type": "number"
+                                          },
+                                          "max": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      "pattern": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "length": {
+                                        "type": "object",
+                                        "properties": {
+                                          "min": {
+                                            "type": "number"
+                                          },
+                                          "max": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "additionalProperties": false
                                       }
                                     },
                                     "required": [
@@ -9739,6 +9767,34 @@
                                               "items": {
                                                 "type": "string"
                                               }
+                                            },
+                                            "range": {
+                                              "type": "object",
+                                              "properties": {
+                                                "min": {
+                                                  "type": "number"
+                                                },
+                                                "max": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "additionalProperties": false
+                                            },
+                                            "pattern": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "length": {
+                                              "type": "object",
+                                              "properties": {
+                                                "min": {
+                                                  "type": "number"
+                                                },
+                                                "max": {
+                                                  "type": "number"
+                                                }
+                                              },
+                                              "additionalProperties": false
                                             }
                                           },
                                           "required": [
@@ -15970,6 +16026,34 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "range": {
+                                    "type": "object",
+                                    "properties": {
+                                      "min": {
+                                        "type": "number"
+                                      },
+                                      "max": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "length": {
+                                    "type": "object",
+                                    "properties": {
+                                      "min": {
+                                        "type": "number"
+                                      },
+                                      "max": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "additionalProperties": false
                                   }
                                 },
                                 "required": [
@@ -16029,6 +16113,34 @@
                                           "items": {
                                             "type": "string"
                                           }
+                                        },
+                                        "range": {
+                                          "type": "object",
+                                          "properties": {
+                                            "min": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number"
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        },
+                                        "pattern": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "length": {
+                                          "type": "object",
+                                          "properties": {
+                                            "min": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number"
+                                            }
+                                          },
+                                          "additionalProperties": false
                                         }
                                       },
                                       "required": [
@@ -26512,6 +26624,34 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "range": {
+                                    "type": "object",
+                                    "properties": {
+                                      "min": {
+                                        "type": "number"
+                                      },
+                                      "max": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  "pattern": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "length": {
+                                    "type": "object",
+                                    "properties": {
+                                      "min": {
+                                        "type": "number"
+                                      },
+                                      "max": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "additionalProperties": false
                                   }
                                 },
                                 "required": [
@@ -26570,6 +26710,34 @@
                                           "items": {
                                             "type": "string"
                                           }
+                                        },
+                                        "range": {
+                                          "type": "object",
+                                          "properties": {
+                                            "min": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number"
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        },
+                                        "pattern": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "length": {
+                                          "type": "object",
+                                          "properties": {
+                                            "min": {
+                                              "type": "number"
+                                            },
+                                            "max": {
+                                              "type": "number"
+                                            }
+                                          },
+                                          "additionalProperties": false
                                         }
                                       },
                                       "required": [
@@ -37974,6 +38142,34 @@
                                                 "items": {
                                                   "type": "string"
                                                 }
+                                              },
+                                              "range": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "min": {
+                                                    "type": "number"
+                                                  },
+                                                  "max": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "additionalProperties": false
+                                              },
+                                              "pattern": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "length": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "min": {
+                                                    "type": "number"
+                                                  },
+                                                  "max": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "additionalProperties": false
                                               }
                                             },
                                             "required": [
@@ -38056,6 +38252,34 @@
                                                       "items": {
                                                         "type": "string"
                                                       }
+                                                    },
+                                                    "range": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "min": {
+                                                          "type": "number"
+                                                        },
+                                                        "max": {
+                                                          "type": "number"
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
+                                                    },
+                                                    "pattern": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "length": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "min": {
+                                                          "type": "number"
+                                                        },
+                                                        "max": {
+                                                          "type": "number"
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
                                                     }
                                                   },
                                                   "required": [
@@ -42955,6 +43179,34 @@
                                                   "items": {
                                                     "type": "string"
                                                   }
+                                                },
+                                                "range": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "min": {
+                                                      "type": "number"
+                                                    },
+                                                    "max": {
+                                                      "type": "number"
+                                                    }
+                                                  },
+                                                  "additionalProperties": false
+                                                },
+                                                "pattern": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "length": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "min": {
+                                                      "type": "number"
+                                                    },
+                                                    "max": {
+                                                      "type": "number"
+                                                    }
+                                                  },
+                                                  "additionalProperties": false
                                                 }
                                               },
                                               "required": [
@@ -43037,6 +43289,34 @@
                                                         "items": {
                                                           "type": "string"
                                                         }
+                                                      },
+                                                      "range": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "min": {
+                                                            "type": "number"
+                                                          },
+                                                          "max": {
+                                                            "type": "number"
+                                                          }
+                                                        },
+                                                        "additionalProperties": false
+                                                      },
+                                                      "pattern": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      },
+                                                      "length": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "min": {
+                                                            "type": "number"
+                                                          },
+                                                          "max": {
+                                                            "type": "number"
+                                                          }
+                                                        },
+                                                        "additionalProperties": false
                                                       }
                                                     },
                                                     "required": [
@@ -45667,6 +45947,34 @@
                                                 "items": {
                                                   "type": "string"
                                                 }
+                                              },
+                                              "range": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "min": {
+                                                    "type": "number"
+                                                  },
+                                                  "max": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "additionalProperties": false
+                                              },
+                                              "pattern": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "length": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "min": {
+                                                    "type": "number"
+                                                  },
+                                                  "max": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "additionalProperties": false
                                               }
                                             },
                                             "required": [
@@ -45749,6 +46057,34 @@
                                                       "items": {
                                                         "type": "string"
                                                       }
+                                                    },
+                                                    "range": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "min": {
+                                                          "type": "number"
+                                                        },
+                                                        "max": {
+                                                          "type": "number"
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
+                                                    },
+                                                    "pattern": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "length": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "min": {
+                                                          "type": "number"
+                                                        },
+                                                        "max": {
+                                                          "type": "number"
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
                                                     }
                                                   },
                                                   "required": [
@@ -48044,6 +48380,34 @@
                                                 "items": {
                                                   "type": "string"
                                                 }
+                                              },
+                                              "range": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "min": {
+                                                    "type": "number"
+                                                  },
+                                                  "max": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "additionalProperties": false
+                                              },
+                                              "pattern": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "length": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "min": {
+                                                    "type": "number"
+                                                  },
+                                                  "max": {
+                                                    "type": "number"
+                                                  }
+                                                },
+                                                "additionalProperties": false
                                               }
                                             },
                                             "required": [
@@ -48126,6 +48490,34 @@
                                                       "items": {
                                                         "type": "string"
                                                       }
+                                                    },
+                                                    "range": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "min": {
+                                                          "type": "number"
+                                                        },
+                                                        "max": {
+                                                          "type": "number"
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
+                                                    },
+                                                    "pattern": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    },
+                                                    "length": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "min": {
+                                                          "type": "number"
+                                                        },
+                                                        "max": {
+                                                          "type": "number"
+                                                        }
+                                                      },
+                                                      "additionalProperties": false
                                                     }
                                                   },
                                                   "required": [

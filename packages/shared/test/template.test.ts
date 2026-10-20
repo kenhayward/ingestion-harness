@@ -481,3 +481,24 @@ describe('steps that enrich an earlier table (shared with the worker)', () => {
     expect(outputCoverage(definition(c.pipeline)).uncovered).toEqual(['lines']);
   });
 });
+
+describe('output constraints (shared with the worker)', () => {
+  const constraintFixture = JSON.parse(
+    readFileSync(new URL('./fixtures/value-constraints.json', import.meta.url), 'utf8'),
+  ) as {
+    base: { outputs: Record<string, unknown> } & Record<string, unknown>;
+    cases: { name: string; valid: boolean; error?: string; fields: unknown[] }[];
+  };
+
+  it.each(constraintFixture.cases.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    const result = TemplateSchema.safeParse({
+      ...constraintFixture.base,
+      outputs: { ...constraintFixture.base.outputs, fields: c.fields },
+    });
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
+    if (c.error) {
+      const messages = (result.error?.issues ?? []).map((i) => i.message).join('\n');
+      expect(messages).toContain(c.error);
+    }
+  });
+});
