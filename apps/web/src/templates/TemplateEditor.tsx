@@ -1138,7 +1138,52 @@ export function TemplateEditor({
   );
 }
 
-/** Fields or table columns, one per row: id, name, type, enum values, description. */
+type Bounds = { min?: number; max?: number } | undefined;
+const bound = (b: unknown, end: 'min' | 'max') => (b as Bounds)?.[end];
+
+/** A number input that keeps what is typed (`110.` on the way to `110.5`) and reports it. */
+function BoundInput({
+  label,
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  value: number | undefined;
+  onChange: (text: string) => void;
+}) {
+  const [text, setText] = useState(value === undefined ? '' : String(value));
+  useEffect(() => {
+    const shown = text.trim() === '' ? undefined : Number(text);
+    if (shown !== value) setText(value === undefined ? '' : String(value));
+    // Only an outside change of the value (a reload, a discard) resets the text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <Text
+      bare
+      label={label}
+      placeholder={placeholder}
+      value={text}
+      onChange={(v) => {
+        setText(v);
+        onChange(v);
+      }}
+    />
+  );
+}
+/** A constraint's bounds with one end set from an input (empty: cleared); none left: absent. */
+const withBound = (b: unknown, end: 'min' | 'max', text: string): Bounds => {
+  const next: { min?: number; max?: number } = { ...(b as Bounds) };
+  const n = Number(text);
+  if (text.trim() === '' || !Number.isFinite(n)) delete next[end];
+  else next[end] = n;
+  return next.min === undefined && next.max === undefined ? undefined : next;
+};
+
+/** Fields or table columns, one per row: id, name, type, allowed values (enum values or
+ * constraints, by type), description. */
 function ValueList({
   label,
   heading,
@@ -1165,7 +1210,7 @@ function ValueList({
         [`${heading} ID`, '12rem'],
         ['Name', '12rem'],
         ['Type', '7rem'],
-        ['Enum values', '10rem'],
+        ['Allowed values', '10rem'],
         ['Description', undefined],
       ]}
       items={items}
@@ -1214,6 +1259,35 @@ function ValueList({
                 )
               }
             />
+          ) : item.type === 'decimal' || item.type === 'integer' ? (
+            <div key="range" className="row-bounds">
+              {(['min', 'max'] as const).map((end) => (
+                <BoundInput
+                  key={end}
+                  label={`${n} ${end}`}
+                  placeholder={end}
+                  value={bound(item.range, end)}
+                  onChange={(v) => update(i, 'range', withBound(item.range, end, v))}
+                />
+              ))}
+            </div>
+          ) : item.type === 'text' ? (
+            <div key="text" className="row-bounds">
+              <Text
+                bare
+                label={`${n} pattern`}
+                placeholder="pattern"
+                hint="The whole value must match (a regular expression)"
+                value={item.pattern}
+                onChange={(v) => update(i, 'pattern', opt(v))}
+              />
+              <BoundInput
+                label={`${n} max length`}
+                placeholder="max length"
+                value={bound(item.length, 'max')}
+                onChange={(v) => update(i, 'length', withBound(item.length, 'max', v))}
+              />
+            </div>
           ) : null,
           <Text
             key="description"

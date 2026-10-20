@@ -1,6 +1,7 @@
 # Output roles: constraints, check plugins and transforms
 
-Status: **brainstorm**, 2026-10-20. Nothing here is built. It follows
+Status: **§1 built** (column constraints), 2026-10-20; §2 and §3 are still a brainstorm. Plan:
+[2026-10-20-output-roles.md](../superpowers/plans/2026-10-20-output-roles.md). It follows
 [recipe-plugins.md](recipe-plugins.md), whose P4 made table ownership per column: each column has
 exactly one step filling it.
 
@@ -92,7 +93,22 @@ Do **not** compile a range into the JSON Schema sent to the model (`minimum`/`ma
 would be retried until it produced an in-range number, which invites it to bend a value the
 document really states. The point is to capture the true value and flag it.
 
-### Questions
+### Built
+
+- `ValueDef.range` (`{min?, max?}`, decimal and integer), `pattern` (text, the whole value,
+  Python `re` syntax), `length` (`{min?, max?}` in characters, text), on both sides
+  (`ValueDefSchema.superRefine`, `ValueDef._constraints`). TS checks a pattern with
+  `patternCompiles`, which translates `(?P<` and a leading `(?ims)` flag group; other
+  Python-only syntax is refused by TS. Shared fixture `packages/shared/test/fixtures/value-constraints.json`.
+- `normalize.check_value(raw, definition, date_order)`: the type first, then the first constraint
+  broken (`87.5 is below 90`, `87.5 is above 110`, `'ab12' does not match …`,
+  `'ab' is shorter than 3 characters`, `'abcd' is longer than 3 characters`); none when the type
+  failed or the value is empty. Used by `normalise_step` and `review.apply_edits` (step `review`).
+- Every constraint issue is a review reason (no warning level), nothing goes into the model's
+  schema or into SHACL shapes. Editor: the Outputs tab's *Allowed values* column (min and max;
+  pattern and max length).
+
+### Questions (open)
 
 - **Severity.** Is every constraint a review reason, or can a recipe mark one as a warning (shown,
   not blocking auto-delivery)? Normalisation issues are all review reasons today.

@@ -34,8 +34,31 @@ export function OutputsHelp() {
         its type is kept as written and listed as an issue, which sends the job for review.
       </p>
 
-      <h3>Enum values</h3>
-      <p>The allowed values of an enum, one per line; the model must pick one of them.</p>
+      <h3>Allowed values</h3>
+      <p>
+        What a value may be, by type. An <strong>enum</strong> lists its values, comma-separated;
+        the model must pick one of them.
+      </p>
+      <ul>
+        <li>
+          A <strong>decimal</strong> or <strong>integer</strong> can have a <em>min</em> and a{' '}
+          <em>max</em> (either may be left empty), for example an assay between 90 and 110.
+        </li>
+        <li>
+          A <strong>text</strong> can have a <em>pattern</em> the whole value must match (a regular
+          expression, written as for section anchors, such as{' '}
+          <code>
+            ^[A-Z]{'{2}'}\d{'{4}'}$
+          </code>{' '}
+          for two letters and four digits) and a <em>max length</em> in characters.
+        </li>
+      </ul>
+      <p>
+        A value outside its limits is kept exactly as found and listed as an issue, which sends the
+        job for review, so nothing the document really says is changed or hidden. The model is not
+        told the limits: it reports what the document states, and the check happens afterwards. A
+        reviewer's correction is checked the same way.
+      </p>
 
       <h3>Description</h3>
       <p>
