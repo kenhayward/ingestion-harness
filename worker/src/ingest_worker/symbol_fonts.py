@@ -13,7 +13,7 @@ all belong to one family whose table has it; anything else is left as it was.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Literal
 
 Family = Literal["symbol", "wingdings"]
@@ -69,10 +69,10 @@ _FAMILIES: Mapping[str, Family] = {
 _IDENTITY = re.compile(r"identity[hv]$")
 
 FIRST, LAST = 0xF000, 0xF0FF
+#: Larger ToUnicode streams are not read: a Symbol font's map is a few hundred bytes.
+MAX_CMAP_BYTES = 1 << 20
 
 _HEX = r"<([0-9A-Fa-f]+)>"
-_BFCHAR = re.compile(rb"beginbfchar(.*?)endbfchar", re.S)
-_BFRANGE = re.compile(rb"beginbfrange(.*?)endbfrange", re.S)
 _PAIR = re.compile(rf"{_HEX}\s*{_HEX}".encode())
 _RANGE = re.compile(rf"{_HEX}\s*{_HEX}\s*(?:{_HEX}|\[([^\]]*)\])".encode())
 _ANY_HEX = re.compile(_HEX.encode())
@@ -93,19 +93,36 @@ def _code(hex_digits: bytes) -> int | None:
     return value if FIRST <= value <= LAST else None
 
 
+def _blocks(cmap: bytes, name: bytes) -> Iterator[bytes]:
+    """The bodies of a CMap's `begin<name>` … `end<name>` sections, in one pass (an uploaded
+    PDF's stream: a lazy regex would rescan from every unmatched begin)."""
+    begin, end = b"begin" + name, b"end" + name
+    at = 0
+    while (start := cmap.find(begin, at)) != -1:
+        stop = cmap.find(end, start + len(begin))
+        if stop == -1:
+            return
+        yield cmap[start + len(begin) : stop]
+        at = stop + len(end)
+
+
 def private_use_codes(cmap: bytes) -> set[int]:
-    """The code points U+F000-U+F0FF a ToUnicode CMap maps its glyphs to."""
+    """The code points U+F000-U+F0FF a ToUnicode CMap maps its glyphs to (none for a stream
+    over `MAX_CMAP_BYTES`)."""
     codes: set[int] = set()
-    for block in _BFCHAR.findall(cmap):
+    if len(cmap) > MAX_CMAP_BYTES:
+        return codes
+    for block in _blocks(cmap, b"bfchar"):
         for _src, dst in _PAIR.findall(block):
             if (code := _code(dst)) is not None:
                 codes.add(code)
-    for block in _BFRANGE.findall(cmap):
+    for block in _blocks(cmap, b"bfrange"):
         for lo, hi, start, array in _RANGE.findall(block):
             if start:
-                if (code := _code(start)) is not None:
-                    span = int(hi, 16) - int(lo, 16)
-                    codes.update(c for c in range(code, code + span + 1) if c <= LAST)
+                span = int(hi, 16) - int(lo, 16)
+                if (code := _code(start)) is not None and span >= 0:
+                    # Clamped first: a crafted range may span far more codes than the font has.
+                    codes.update(range(code, min(code + span, LAST) + 1))
             else:
                 codes.update(c for d in _ANY_HEX.findall(array) if (c := _code(d)) is not None)
     return codes

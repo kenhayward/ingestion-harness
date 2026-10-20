@@ -16,24 +16,33 @@ def extract_pages(pdf: bytes) -> list[str]:
     """Text layer extraction. Scanned (image-only) PDFs yield empty pages — see docs/architecture.md.
     Symbol and Wingdings characters come out as the characters they show (`symbol_fonts`)."""
     reader = PdfReader(io.BytesIO(pdf))
-    return [_page_text(page) for page in reader.pages]
+    cmaps: dict[int, set[int]] = {}
+    return [_page_text(page, cmaps) for page in reader.pages]
 
 
-def _page_text(page: PageObject) -> str:
+def _page_text(page: PageObject, cmaps: dict[int, set[int]]) -> str:
+    """One page's text; `cmaps` holds the codes of each ToUnicode stream already read, by object
+    number, so a map every page shares is decoded and read once."""
     text = page.extract_text(extraction_mode="layout") or ""
     if not any(0xF000 <= ord(c) <= 0xF0FF for c in text):
         return text
     families: dict[Family | None, set[int]] = {}
     for font in _fonts(page.get("/Resources"), set()):
-        cmap = font.get("/ToUnicode")
+        ref = font.get("/ToUnicode")
         base = font.get("/BaseFont")
-        if cmap is None or base is None:
+        if ref is None or base is None:
             continue
-        cmap = cmap.get_object()
-        if isinstance(cmap, StreamObject):
-            families.setdefault(font_family(str(base)), set()).update(
-                private_use_codes(cmap.get_data())
-            )
+        number = ref.idnum if isinstance(ref, IndirectObject) else None
+        if number is not None and number in cmaps:
+            codes = cmaps[number]
+        else:
+            cmap = ref.get_object()
+            if not isinstance(cmap, StreamObject):
+                continue
+            codes = private_use_codes(cmap.get_data())
+            if number is not None:
+                cmaps[number] = codes
+        families.setdefault(font_family(str(base)), set()).update(codes)
     return text.translate(translation(families))
 
 

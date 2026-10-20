@@ -9,13 +9,20 @@ Wingdings.
 from __future__ import annotations
 
 import io
+import time
 
 import pytest
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
+from ingest_worker import pdf as pdf_module
 from ingest_worker.pdf import extract_pages
-from ingest_worker.symbol_fonts import font_family, private_use_codes, translation
+from ingest_worker.symbol_fonts import (
+    MAX_CMAP_BYTES,
+    font_family,
+    private_use_codes,
+    translation,
+)
 
 
 def _cmap(pairs: str) -> str:
@@ -182,3 +189,63 @@ def test_translation_leaves_codes_without_a_character() -> None:
 def test_translation_leaves_a_code_two_families_use() -> None:
     assert translation({"symbol": {0xF0B7, 0xF0B0}, "wingdings": {0xF0B7}}) == {0xF0B0: "°"}
     assert translation({"symbol": {0xF0B0}, None: {0xF0B0}}) == {}
+
+
+def test_a_huge_range_is_clamped_to_the_font_range() -> None:
+    # A crafted range must not count through 2^40 codes to find the 16 in U+F0F0-U+F0FF.
+    cmap = _cmap("1 beginbfrange\n<00> <FFFFFFFFFF> <F0F0>\nendbfrange")
+    assert private_use_codes(cmap.encode()) == set(range(0xF0F0, 0xF100))
+
+
+def test_a_reversed_range_has_no_codes() -> None:
+    assert (
+        private_use_codes(_cmap("1 beginbfrange\n<05> <01> <F0B0>\nendbfrange").encode()) == set()
+    )
+
+
+def test_unterminated_blocks_are_read_in_linear_time() -> None:
+    # A lazy `begin(.*?)end` scan restarts at every unmatched begin: quadratic in the stream.
+    cmap = b"beginbfchar <01> <F0B0> " * 50_000
+    started = time.perf_counter()
+    assert private_use_codes(cmap) == set()
+    assert time.perf_counter() - started < 2
+
+
+def test_an_oversized_cmap_is_not_read() -> None:
+    pairs = "<01> <F0B0>\n" * (MAX_CMAP_BYTES // 12 + 1)
+    assert private_use_codes(_cmap(f"beginbfchar\n{pairs}endbfchar").encode()) == set()
+
+
+def test_a_cmap_shared_by_pages_is_read_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    writer = PdfWriter()
+    stream = DecodedStreamObject()
+    stream.set_data(SYMBOL_CMAP.encode())
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/SymbolMT"),
+            NameObject("/ToUnicode"): writer._add_object(stream),
+        }
+    )
+    ref = writer._add_object(font)
+    for _ in range(3):
+        page = writer.add_blank_page(612, 792)
+        page[NameObject("/Resources")] = DictionaryObject(
+            {NameObject("/Font"): DictionaryObject({NameObject("/F1"): ref})}
+        )
+        content = DecodedStreamObject()
+        content.set_data(b"BT /F1 12 Tf 72 720 Td (\001) Tj ET")
+        page[NameObject("/Contents")] = writer._add_object(content)
+    out = io.BytesIO()
+    writer.write(out)
+    calls: list[bytes] = []
+    real = pdf_module.private_use_codes
+
+    def counting(cmap: bytes) -> set[int]:
+        calls.append(cmap)
+        return real(cmap)
+
+    monkeypatch.setattr(pdf_module, "private_use_codes", counting)
+    assert extract_pages(out.getvalue()) == ["°", "°", "°"]
+    assert len(calls) == 1
