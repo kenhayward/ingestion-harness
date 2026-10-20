@@ -111,6 +111,11 @@ export const PluginStepSchema = z
     context: z.record(Id, z.string().min(1)).default({}),
     /** The plugin's own settings. */
     with: z.record(z.string(), z.unknown()).default({}),
+    /**
+     * A model choice, for a plugin that calls a model (egress `model`); absent (no default, so
+     * older recipes parse and hash as before), the document type's model.
+     */
+    model: z.string().min(1).optional(),
   })
   .strict();
 
@@ -580,9 +585,11 @@ export type Template = z.infer<typeof TemplateSchema>;
  */
 export function stepModel(
   template: Pick<Template, 'model'>,
-  step: Pick<z.infer<typeof ExtractStepSchema>, 'model'>,
+  step: { model?: string | undefined },
 ): string {
-  return step.model !== 'default' ? step.model : (template.model ?? 'default');
+  return step.model !== undefined && step.model !== 'default'
+    ? step.model
+    : (template.model ?? 'default');
 }
 
 /** What publishing delivers. Held in step with `Template.delivery_formats` in the worker. */

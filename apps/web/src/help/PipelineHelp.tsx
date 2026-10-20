@@ -75,6 +75,11 @@ export function PipelineHelp() {
         be published until a worker has the plugin again or the step is changed.
       </p>
       <p>
+        Some plugins ask a model, for example to find a value the text does not label. Their step
+        has a <strong>Model</strong> picker like an extract step's (empty uses the document type's
+        model), and the project's data policy applies as for any model call.
+      </p>
+      <p>
         In the Workbench, <em>Preview on dev samples</em> runs the saved step on each prepared dev
         sample, cut into sections as a run would, and shows what it found, what could not be read as
         its type, and why a sample failed. It runs only this step (no earlier values) and stops

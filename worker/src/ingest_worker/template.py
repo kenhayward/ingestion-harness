@@ -118,6 +118,9 @@ class PluginStep(_Model):
     context: dict[Id, str] = Field(default_factory=dict)
     #: The plugin's own settings.
     with_: dict[str, Any] = Field(default_factory=dict, alias="with")
+    #: A model choice, for a plugin that calls a model (egress "model"); absent, the document
+    #: type's model (absent rather than "default", so older recipes read and hash as before).
+    model: str | None = None
 
     @model_validator(mode="after")
     def _fills(self) -> PluginStep:
@@ -325,9 +328,9 @@ class Template(_Model):
         """The steps that fill outputs (extract and plugin), in pipeline order."""
         return [s for s in self.pipeline if isinstance(s, ExtractStep | PluginStep)]
 
-    def step_model(self, step: ExtractStep) -> str:
+    def step_model(self, step: ExtractStep | PluginStep) -> str:
         """The model a step runs: its own, else the template's, else the default choice."""
-        if step.model != "default":
+        if step.model is not None and step.model != "default":
             return step.model
         return self.model or "default"
 

@@ -186,6 +186,36 @@ def test_steps_inherit_the_document_types_model(
     assert compile_step(t, t.extract_steps()[0]).model == runs
 
 
+@pytest.mark.parametrize(
+    ("template_model", "step_model", "runs"),
+    [
+        (None, None, "default"),
+        ("fast", None, "fast"),
+        ("fast", "default", "fast"),
+        ("fast", "main", "main"),
+    ],
+)
+def test_plugin_steps_inherit_the_document_types_model(
+    template_model: str | None, step_model: str | None, runs: str
+) -> None:
+    raw = template()
+    first = raw["pipeline"][0]
+    plugin: dict[str, Any] = {
+        "type": "plugin",
+        "id": "ask",
+        "uses": "acme.ask@1",
+        "fields": first["fields"],
+        "sections": first["sections"],
+    }
+    if template_model is not None:
+        raw["model"] = template_model
+    if step_model is not None:
+        plugin["model"] = step_model
+    raw["pipeline"] = [plugin, *raw["pipeline"][1:]]
+    t = Template.model_validate(raw)
+    assert t.step_model(t.plugin_steps()[0]) == runs
+
+
 SEMANTICS_FIXTURE = json.loads(
     (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "template-semantics.json").read_text(
         encoding="utf-8"

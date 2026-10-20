@@ -115,7 +115,7 @@ export async function templateIssues(
   const typeModel = parsed.data.model;
   const typeProblem = typeModel === undefined ? null : problemOf(typeModel);
   const modelIssues = parsed.data.pipeline.flatMap((step, i) => {
-    if (step.type !== 'extract' || step.model === 'default') return [];
+    if (step.type === 'check' || step.model === undefined || step.model === 'default') return [];
     const problem = problemOf(step.model);
     return problem
       ? [{ path: `pipeline.${i}.model`, message: `step "${step.id}": ${problem}` }]
@@ -251,13 +251,26 @@ async function pluginIssues(
       ];
     }
     const problems = settingsProblems(plugin, step.with);
-    return problems.length > 0
-      ? [
-          {
-            path: `pipeline.${i}.with`,
-            message: `step "${step.id}": ${step.uses} settings: ${problems.join('; ')}`,
-          },
-        ]
-      : [];
+    const unused =
+      step.model !== undefined && step.model !== 'default' && plugin.egress !== 'model'
+        ? [
+            {
+              path: `pipeline.${i}.model`,
+              message: `step "${step.id}": ${step.uses} calls no model, so the step's model is not used`,
+              severity: 'warning' as const,
+            },
+          ]
+        : [];
+    return [
+      ...(problems.length > 0
+        ? [
+            {
+              path: `pipeline.${i}.with`,
+              message: `step "${step.id}": ${step.uses} settings: ${problems.join('; ')}`,
+            },
+          ]
+        : []),
+      ...unused,
+    ];
   });
 }

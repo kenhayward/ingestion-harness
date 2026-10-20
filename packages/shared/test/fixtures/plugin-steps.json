@@ -257,8 +257,8 @@
       ]
     },
     {
-      "name": "a plugin step names no model",
-      "valid": false,
+      "name": "a plugin step may name a model choice (for a plugin that calls a model)",
+      "valid": true,
       "pipeline": [
         {
           "type": "plugin",

@@ -58,7 +58,7 @@ LABEL_VALUE = Plugin(
         fn=run,
         output=StepData,
         effects="pure",             # "pure", "cacheable" or "effectful"
-        egress="none",              # what leaves the worker: only "none" for now
+        egress="none",              # "none", or "model" for a plugin that asks one
         cancels_inside=False,
         summary="Fill fields from labelled lines (Label: value); no model call.",
     ),
@@ -98,9 +98,38 @@ with a message for the reviewer; the job then goes to review instead of being re
 | `ctx.context` | the step's `context` values: `{name, path, text}` each, as a prompt shows them |
 | `ctx.job` | the job, read-only (`ctx.job.filename` is the uploaded file's name) |
 | `ctx.event(message, data)` | an advisory job event, shown on the job's timeline |
+| `ctx.model` | the step's model, for a plugin whose egress is `"model"` (None otherwise) |
 
 Read only these. A plugin gets no bucket, database or queue, and must not write anywhere: the
 worker records the step's run and delivers the outputs.
+
+### Asking a model
+
+A plugin whose `egress` is `"model"` gets the step's model as `ctx.model`, and asks it with
+`ask`:
+
+```python
+reply = ctx.model.ask(
+    f"Which batch number is printed on this label?\n\n{ctx.text()}",
+    {"type": "object", "properties": {"batch": {"type": "string"}}, "required": ["batch"]},
+)
+```
+
+- **The reply** is a dict valid against the JSON Schema you pass. A reply that does not fit is
+  sent back with the errors, as for an extract step (`max_attempts`, 2 by default; `check` adds
+  rules beyond the schema). `system` replaces the default system prompt and `max_tokens` (16,000)
+  is the output budget.
+- **The model** is the job's override, else the step's `model` (a model choice the recipe editor
+  offers for such a plugin), else the document type's model. It is resolved before the job calls
+  any model, and a local-only project never sends a plugin's prompt to an external model.
+- **Failures.** A reply that never fits, a refusal, a model its server does not have, or a prompt
+  too long for it sends the job to review naming the step. Other failures, such as a server that
+  does not answer, retry the job.
+- **The audit trail.** Every attempt is kept in the runs bucket as
+  `{job}/{step}.ask-{n}/attempt-{k}.json`. The step run records the model, the attempts and the
+  tokens, so model costs and per-step statistics count it like an extract step.
+- **The Workbench preview** runs only plugins whose egress is `none`, so a model plugin is tried
+  with a dev test run instead.
 
 ### `check`: rules the schema cannot say
 
@@ -131,8 +160,7 @@ has it.
   so a mistyped setting is refused when the recipe is published instead of being ignored.
 - **Its settings model must have a JSON Schema**, which the catalogue publishes to the API and
   the editor. Plain types, lists, dicts of strings, literals and nested models all have one.
-- **Its `egress` must be `"none"`.** `"model"` is not offered to plugins yet, and `"remote"`
-  belongs behind A2A.
+- **Its `egress` must be `"none"` or `"model"`.** `"remote"` belongs behind A2A.
 
 The worker also leaves out a plugin whose id is a built-in one (no package can replace or extend
 `text.pattern`). When two packages provide one ref, the first entry point by name keeps it. Each

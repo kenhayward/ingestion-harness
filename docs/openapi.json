@@ -9949,6 +9949,10 @@
                                         "default": {},
                                         "type": "object",
                                         "additionalProperties": {}
+                                      },
+                                      "model": {
+                                        "type": "string",
+                                        "minLength": 1
                                       }
                                     },
                                     "required": [
@@ -16215,6 +16219,10 @@
                                     "default": {},
                                     "type": "object",
                                     "additionalProperties": {}
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1
                                   }
                                 },
                                 "required": [
@@ -38416,6 +38424,10 @@
                                                     "default": {},
                                                     "type": "object",
                                                     "additionalProperties": {}
+                                                  },
+                                                  "model": {
+                                                    "type": "string",
+                                                    "minLength": 1
                                                   }
                                                 },
                                                 "required": [
@@ -43373,6 +43385,10 @@
                                                       "default": {},
                                                       "type": "object",
                                                       "additionalProperties": {}
+                                                    },
+                                                    "model": {
+                                                      "type": "string",
+                                                      "minLength": 1
                                                     }
                                                   },
                                                   "required": [
@@ -46061,6 +46077,10 @@
                                                     "default": {},
                                                     "type": "object",
                                                     "additionalProperties": {}
+                                                  },
+                                                  "model": {
+                                                    "type": "string",
+                                                    "minLength": 1
                                                   }
                                                 },
                                                 "required": [
@@ -48414,6 +48434,10 @@
                                                     "default": {},
                                                     "type": "object",
                                                     "additionalProperties": {}
+                                                  },
+                                                  "model": {
+                                                    "type": "string",
+                                                    "minLength": 1
                                                   }
                                                 },
                                                 "required": [

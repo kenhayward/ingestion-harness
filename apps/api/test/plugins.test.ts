@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PluginInfo } from '@ih/shared';
 import { MemoryPluginCatalogue } from '../src/plugins/catalogue.js';
 import { settingsProblems } from '../src/plugins/settings.js';
-import { testApp } from './helpers.js';
+import { seedModelChoices, testApp } from './helpers.js';
 
 /** The catalogue the worker publishes and the settings cases (shared with the worker). */
 const catalogue = JSON.parse(
@@ -100,6 +100,43 @@ describe('a recipe naming a plugin', () => {
         path: 'pipeline.0.with',
         message:
           'step "refs": text.pattern@1 settings: must NOT have additional properties (pattern)',
+      },
+    ]);
+  });
+
+  /** A plugin that calls a model, published next to the fixture's. */
+  const asking: PluginInfo = {
+    ...catalogue.plugins[0]!,
+    ref: 'acme.ask@1',
+    id: 'acme.ask',
+    egress: 'model',
+    settingsSchema: { type: 'object', additionalProperties: false },
+  };
+  const askStep = { uses: 'acme.ask@1', with: {} };
+
+  it("checks a plugin step's model like an extract step's", async () => {
+    const c = await testApp({ plugins: new MemoryPluginCatalogue([asking]) });
+    seedModelChoices(c);
+    await c.templates.create('letter', 1, recipe({ ...askStep, model: 'fast' }), 'draft');
+    expect(await issuesOf(c.app)).toEqual([]);
+    await c.templates.create('letter', 2, recipe({ ...askStep, model: 'local/qwen' }), 'draft');
+    expect((await c.app.inject('/api/templates/letter/versions/2')).json().issues).toEqual([
+      {
+        path: 'pipeline.0.model',
+        message: 'step "refs": pick a model choice instead of the model local/qwen',
+      },
+    ]);
+  });
+
+  it('warns when a step names a model for a plugin that calls none', async () => {
+    const c = await testApp({ plugins: new MemoryPluginCatalogue(catalogue.plugins) });
+    seedModelChoices(c);
+    await c.templates.create('letter', 1, recipe({ model: 'fast' }), 'draft');
+    expect(await issuesOf(c.app)).toEqual([
+      {
+        path: 'pipeline.0.model',
+        message: 'step "refs": text.pattern@1 calls no model, so the step\'s model is not used',
+        severity: 'warning',
       },
     ]);
   });

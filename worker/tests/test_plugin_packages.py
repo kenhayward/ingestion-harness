@@ -108,7 +108,6 @@ def test_a_package_may_provide_several_plugins_or_majors() -> None:
         (plugin(plugin_id="words"), "words@1 is not <id>@<major>"),
         (plugin(plugin_id="text.pattern", version=2), "text.pattern is built in"),
         (plugin(settings=Loose), "acme.words@1: its settings must refuse unknown keys"),
-        (plugin(egress="model"), "acme.words@1: egress model is not offered to plugins yet"),
         (plugin(egress="remote"), "acme.words@1: egress remote belongs behind A2A"),
     ],
 )
@@ -241,3 +240,10 @@ def test_a_preview_job_finds_an_installed_plugin_in_its_child_process(tmp_path: 
     result = stored(deps)
     assert result["problem"] is None
     assert result["samples"][0]["fields"]["reference"]["value"] == "INV-4021"
+
+
+def test_an_installed_plugin_may_call_a_model() -> None:
+    asking = plugin(egress="model")
+    loaded, problems = load_installed([entry("words", asking)])
+    assert loaded == {"acme.words@1": asking}
+    assert problems == []

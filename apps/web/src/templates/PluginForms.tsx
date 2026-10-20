@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import type { PluginInfo, PluginPreviewView } from '@ih/shared';
+import type { ModelChoice, PluginInfo, PluginPreviewView } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { ModelPicker } from '../ui/ModelPicker.js';
 import { Text } from './fields.js';
 import type { SectionLike } from './editor-derive.js';
 import type { Definition } from './model.js';
@@ -70,6 +71,8 @@ export function PluginStepForm({
   sectionDefs,
   fields,
   tables,
+  models = [],
+  typeModelLabel = 'Default choice',
   set,
   replace,
 }: {
@@ -78,6 +81,10 @@ export function PluginStepForm({
   sectionDefs: readonly SectionLike[];
   fields: string[];
   tables: string[];
+  /** The model choices, for a plugin that calls a model. */
+  models?: readonly ModelChoice[];
+  /** The model picker's empty option: what a step naming no model inherits. */
+  typeModelLabel?: string;
   set: (key: string, value: unknown) => void;
   replace: (step: Definition) => void;
 }) {
@@ -99,9 +106,12 @@ export function PluginStepForm({
             aria-label="Plugin"
             value={uses}
             onChange={(e) => {
-              // Settings belong to a plugin: another plugin starts without them.
+              // Settings belong to a plugin: another plugin starts without them, and
+              // without a model unless it calls one.
               const next: Definition = { ...step, uses: e.target.value };
               delete next.with;
+              const chosen = plugins.find((p) => p.ref === e.target.value);
+              if (chosen?.egress !== 'model') delete next.model;
               replace(next);
             }}
           >
@@ -118,6 +128,21 @@ export function PluginStepForm({
           </select>
           {plugin && <small className="muted">{plugin.summary}</small>}
         </label>
+        {(plugin?.egress === 'model' || step.model !== undefined) && (
+          <div className="field">
+            <span className="field-label">Model</span>
+            <ModelPicker
+              label="Model"
+              choices={models}
+              value={step.model === 'default' ? '' : (step.model ?? '')}
+              emptyLabel={typeModelLabel}
+              onChange={(id) => set('model', id || undefined)}
+            />
+            {plugin?.egress === 'model' && (
+              <small className="muted">This plugin asks a model.</small>
+            )}
+          </div>
+        )}
       </div>
       <fieldset className="section-checks">
         <legend>Fills</legend>

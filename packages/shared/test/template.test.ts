@@ -172,6 +172,31 @@ describe('stepModel (steps inherit the document type model)', () => {
     expect(stepModel(t, step0)).toBe(runs);
   });
 
+  // Same table as worker/tests/test_template.py::test_plugin_steps_inherit_the_document_types_model.
+  it.each<[string | undefined, string | undefined, string]>([
+    [undefined, undefined, 'default'],
+    ['fast', undefined, 'fast'],
+    ['fast', 'default', 'fast'],
+    ['fast', 'main', 'main'],
+  ])('a plugin step: template %s, step %s -> %s', (templateModel, step, runs) => {
+    const plugin = {
+      type: 'plugin',
+      id: 'ask',
+      uses: 'acme.ask@1',
+      fields: valid.pipeline[0]!.fields,
+      sections: valid.pipeline[0]!.sections,
+      ...(step ? { model: step } : {}),
+    };
+    const t = TemplateSchema.parse({
+      ...valid,
+      ...(templateModel ? { model: templateModel } : {}),
+      pipeline: [plugin, ...valid.pipeline.slice(1)],
+    });
+    const step0 = t.pipeline[0]!;
+    if (step0.type !== 'plugin') throw new Error('expected a plugin step');
+    expect(stepModel(t, step0)).toBe(runs);
+  });
+
   it('refuses an empty document type model', () => {
     expect(TemplateSchema.safeParse({ ...valid, model: '' }).success).toBe(false);
   });

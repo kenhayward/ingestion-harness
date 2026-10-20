@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from importlib.metadata import entry_points
 from types import MappingProxyType
@@ -24,6 +24,15 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .errors import DocumentError
+from .extract import SYSTEM_PROMPT, Attempt, ExtractionFailedError, run_extraction
+from .llm.base import (
+    ContextExceededError,
+    LLMProvider,
+    ModelUnavailableError,
+    RefusalError,
+    context_exceeded_reason,
+    model_unavailable_reason,
+)
 from .nodes import NodeSpec
 from .pipeline import JobModels
 from .queue import ClaimedJob
@@ -35,11 +44,88 @@ log = logging.getLogger(__name__)
 StepData = dict[str, Any]
 
 
+@dataclass
+class PluginModel:
+    """The model a plugin asks (egress "model" only): the step's model, resolved and allowed by
+    the job's data policy before the job called any model. Each `ask` validates the reply
+    against `schema` and asks again with the errors (as an extract step does); every attempt is
+    audited in the runs bucket as `{job}/{step}.ask-{n}/attempt-{k}.json`, and the step run
+    records the model, the attempts and the tokens."""
+
+    step_id: str
+    provider: LLMProvider
+    model_id: str
+    #: Persists one call's attempts (audit id, attempts).
+    audit: Callable[[str, list[Attempt]], None]
+    attempts: list[Attempt] = field(default_factory=list)
+    calls: int = 0
+
+    @property
+    def ref(self) -> str:
+        return f"{self.provider.name}/{self.model_id}"
+
+    def ask(
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+        *,
+        system: str | None = None,
+        max_attempts: int = 2,
+        max_tokens: int = 16000,
+        check: Callable[[dict[str, Any]], list[str]] | None = None,
+    ) -> dict[str, Any]:
+        """The model's reply to `prompt`, valid against the JSON Schema `schema` (and `check`'s
+        rules). A reply that never fits, a refusal, a model its server lacks or a prompt too
+        long for it is a DocumentError naming the step (review); other failures are retried
+        with the job."""
+        self.calls += 1
+        audit_id = f"{self.step_id}.ask-{self.calls}"
+        where = f"plugin step {self.step_id!r}"
+        try:
+            result = run_extraction(
+                extraction_id=audit_id,
+                provider=self.provider,
+                model_id=self.model_id,
+                prompt=prompt,
+                schema=schema,
+                max_attempts=max_attempts,
+                max_tokens=max_tokens,
+                check=check,
+                system=SYSTEM_PROMPT if system is None else system,
+            )
+        except ExtractionFailedError as exc:
+            self.attempts += exc.attempts
+            self.audit(audit_id, exc.attempts)
+            raise DocumentError(f"{where}: {exc}") from exc
+        except RefusalError as exc:
+            raise DocumentError(f"{where}: {exc}") from exc
+        except ModelUnavailableError as exc:  # a retry would repeat it
+            raise DocumentError(model_unavailable_reason(where, self.ref, exc)) from exc
+        except ContextExceededError as exc:  # a retry would repeat it
+            raise DocumentError(
+                context_exceeded_reason(
+                    where,
+                    self.ref,
+                    "raise the model's context length on its server (e.g. LM Studio) or send "
+                    "the plugin less text",
+                    exc,
+                )
+            ) from exc
+        self.attempts += result.attempts
+        self.audit(audit_id, result.attempts)
+        return result.data
+
+    def tokens(self, key: str) -> int | None:
+        """The attempts' total `input_tokens` or `output_tokens` (None: none reported)."""
+        values = [getattr(a, key) for a in self.attempts if getattr(a, key) is not None]
+        return sum(values) if values else None
+
+
 @dataclass(frozen=True)
 class PluginContext:
     """Everything a plugin may read: the job, the recipe and its step, the text of the step's
     sections (page markers included), the step's `context` values as a prompt would show them,
-    an advisory job event, and models through the data-policy gate (egress "model" only)."""
+    an advisory job event, and, for a plugin whose egress is "model", the step's model."""
 
     job: ClaimedJob
     template: Template
@@ -49,7 +135,8 @@ class PluginContext:
     #: `context_values`: `{name, path, text}` for each of the step's `context` entries.
     context: list[dict[str, str]]
     event: Callable[[str, dict[str, Any]], None]
-    models: JobModels | None = None
+    #: The step's model (egress "model" only; None for every other plugin).
+    model: PluginModel | None = None
 
     def text(self) -> str:
         """The step's sections in its own order, one after the other."""
@@ -103,20 +190,33 @@ class Plugin:
 class ResolvedPlugin:
     plugin: Plugin
     settings: Any
+    #: The step's model, for a plugin that calls one (egress "model").
+    model: tuple[LLMProvider, str] | None = None
 
 
-def resolve_plugins(template: Template) -> dict[str, ResolvedPlugin]:
+def resolve_plugins(
+    template: Template, job_models: JobModels | None = None
+) -> dict[str, ResolvedPlugin]:
     """Every plugin step's plugin and settings, by step id, before the job calls any model: a
-    plugin this worker lacks or bad settings is a DocumentError (needs review)."""
+    plugin this worker lacks or bad settings is a DocumentError (needs review). A plugin that
+    calls a model gets the job's override, else the step's model, else the document type's,
+    resolved and checked against the data policy here, as an extract step's is."""
     resolved: dict[str, ResolvedPlugin] = {}
     for step in template.plugin_steps():
         plugin = plugins().get(step.uses)
         if plugin is None:
             raise DocumentError(f"step {step.id!r}: no plugin {step.uses} on this worker")
         try:
-            resolved[step.id] = ResolvedPlugin(plugin, plugin.settings_for(template, step))
+            settings = plugin.settings_for(template, step)
         except ValueError as exc:
             raise DocumentError(f"step {step.id!r}: {step.uses}: {exc}") from exc
+        model = None
+        if plugin.spec.egress == "model":
+            if job_models is None:
+                raise DocumentError(f"step {step.id!r}: {step.uses} calls a model: none here")
+            ref = job_models.job.model_override or template.step_model(step)
+            model = job_models.resolve(ref, what=f"plugin step {step.id!r}")
+        resolved[step.id] = ResolvedPlugin(plugin, settings, model)
     return resolved
 
 
@@ -261,7 +361,7 @@ class EntryPointLike(Protocol):
 def check_plugin(plugin: Plugin) -> list[str]:
     """What keeps a plugin out of the registry (empty: fine): its id and major must make a recipe
     `uses` ref, its settings must refuse unknown keys and have a JSON Schema (the catalogue
-    publishes it), and it may reach no model or remote service (egress "none")."""
+    publishes it), and it may reach no remote service (egress "none" or "model")."""
     ref = _ref(plugin)
     if not re.match(PLUGIN_REF, ref):
         return [f"{ref} is not <id>@<major> (lower-case dotted id, major from 1)"]
@@ -272,9 +372,7 @@ def check_plugin(plugin: Plugin) -> list[str]:
         plugin.settings.model_json_schema(by_alias=True)
     except Exception as exc:  # pydantic raises several kinds for a type without a schema
         problems.append(f"{ref}: its settings have no JSON Schema ({exc})")
-    if plugin.spec.egress == "model":
-        problems.append(f"{ref}: egress model is not offered to plugins yet")
-    elif plugin.spec.egress == "remote":
+    if plugin.spec.egress == "remote":
         problems.append(f"{ref}: egress remote belongs behind A2A, not in the worker (ADR 0018)")
     return problems
 

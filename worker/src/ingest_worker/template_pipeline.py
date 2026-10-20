@@ -49,6 +49,7 @@ from .pipeline import (
     RepeatPlan,
     StepProgress,
     Target,
+    _audit,
     advisory_event,
     page_images,
     prepare_document,
@@ -180,7 +181,8 @@ def process_template_job(
     resolved = resolve_models(job, deps, list(compiled.values()))
     from .plugins import resolve_plugins
 
-    plugins = resolve_plugins(template)  # like models: before the first model call
+    # Like models: before the first model call (a plugin's own model included).
+    plugins = resolve_plugins(template, JobModels(job, deps.models))
     doc = prepare_document(job, deps, queue, template.document)
     cache = workbench_step_cache(job, deps)
     _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
@@ -191,10 +193,10 @@ def process_template_job(
             plugin_step = step
 
             def run_plugin(state: DocState) -> DocState:
-                data = run_plugin_step(
-                    job, queue, template, plugin_step, plugins[plugin_step.id], doc, state
+                data, model_ref = run_plugin_step(
+                    job, deps, queue, template, plugin_step, plugins[plugin_step.id], doc, state
                 )
-                return state.apply(normalise_step(template, plugin_step, data))
+                return state.apply(normalise_step(template, plugin_step, data, model_ref))
 
             return run_plugin
         if isinstance(step, CheckStep):
@@ -650,17 +652,29 @@ def run_step(
 
 def run_plugin_step(
     job: ClaimedJob,
+    deps: PipelineDeps,
     queue: JobQueue,
     template: Template,
     step: PluginStep,
     resolved: ResolvedPlugin,
     doc: Prepared,
     state: DocState,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str | None]:
     """Run one plugin step on the text of its sections and the values before it; record it in
-    step_runs (no model) and as the event `ran <step>`."""
-    from .plugins import PluginContext
+    step_runs (its model, attempts and tokens when it asked one; else no model) and as the
+    event `ran <step>`. Returns the reply and the model it asked, if any."""
+    from .plugins import PluginContext, PluginModel
 
+    model = (
+        PluginModel(
+            step.id,
+            resolved.model[0],
+            resolved.model[1],
+            lambda audit_id, attempts: _audit(deps, job.id, audit_id, attempts),
+        )
+        if resolved.model is not None
+        else None
+    )
     ctx = PluginContext(
         job,
         template,
@@ -668,34 +682,42 @@ def run_plugin_step(
         {i: doc.sections.get(i, "") for i in step.sections},
         context_values(template, step, state.fields, state.tables),
         lambda message, data: advisory_event(job, queue, message, data),
+        model,
     )
-    run: dict[str, Any] = {
-        "step_id": step.id,
-        "trigger": "process",
-        "model": None,
-        "attempts": 1,
-        "input_tokens": None,
-        "output_tokens": None,
-        "started_at": datetime.now(UTC).isoformat(),
-    }
-    try:
-        data = resolved.plugin.run(ctx, resolved.settings)
-    except Exception as exc:
+    started = datetime.now(UTC).isoformat()
+
+    def record(status: str, error: str | None = None) -> None:
+        asked = model is not None and model.calls > 0
         queue.record_step_run(
             job.id,
             {
-                **run,
-                "status": "failed",
-                "error": str(exc)[:2000],
+                "step_id": step.id,
+                "trigger": "process",
+                "model": model.ref if asked and model is not None else None,
+                "attempts": len(model.attempts) if asked and model is not None else 1,
+                "input_tokens": model.tokens("input_tokens") if model is not None else None,
+                "output_tokens": model.tokens("output_tokens") if model is not None else None,
+                "started_at": started,
+                "status": status,
+                **({"error": error} if error is not None else {}),
                 "finished_at": datetime.now(UTC).isoformat(),
             },
         )
+
+    try:
+        data = resolved.plugin.run(ctx, resolved.settings)
+    except Exception as exc:
+        record("failed", str(exc)[:2000])
         raise
-    queue.record_step_run(
-        job.id, {**run, "status": "succeeded", "finished_at": datetime.now(UTC).isoformat()}
+    record("succeeded")
+    model_ref = model.ref if model is not None and model.calls > 0 else None
+    queue.event(
+        job.id,
+        "info",
+        f"ran {step.id}",
+        {"plugin": step.uses, **({"model": model_ref} if model_ref else {})},
     )
-    queue.event(job.id, "info", f"ran {step.id}", {"plugin": step.uses})
-    return data
+    return data, model_ref
 
 
 def rerun_template_job(

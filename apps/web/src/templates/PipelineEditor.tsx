@@ -262,6 +262,8 @@ function StepDetail({
             sectionDefs={sectionDefs}
             fields={fields}
             tables={tables}
+            models={models}
+            typeModelLabel={typeModelLabel}
             set={onSet}
             replace={onReplace}
           />

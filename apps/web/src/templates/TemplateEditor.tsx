@@ -1035,6 +1035,12 @@ export function TemplateEditor({
                       sectionDefs={sections}
                       fields={fields.map((f) => f.id)}
                       tables={tables.map((t) => t.id)}
+                      models={models}
+                      typeModelLabel={
+                        typeModel
+                          ? `Document type's model (${modelName(typeModel)})`
+                          : `Default choice${defaultLabel(models)}`
+                      }
                       set={(key, v) => update(['pipeline', i, key], v)}
                       replace={(next) => update(['pipeline', i], next)}
                     />

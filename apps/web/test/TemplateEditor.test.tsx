@@ -1838,6 +1838,38 @@ describe('plugin steps in the recipe editors', () => {
     });
   });
 
+  it("offers a model only for a plugin that calls one, saved as the step's model", async () => {
+    const asking: PluginInfo = {
+      ...catalogue.plugins[0]!,
+      ref: 'acme.ask@1',
+      id: 'acme.ask',
+      egress: 'model',
+      summary: 'Ask a model.',
+      settingsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    };
+    const both = { listPlugins: vi.fn(async () => [...catalogue.plugins, asking]) };
+    const { api } = setup(view(withPlugin('acme.ask@1')), both);
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^1 PLUGIN head/ }));
+    const step = screen.getByRole('group', { name: 'Step 1' });
+    const model = await within(step).findByRole('combobox', { name: 'Model' });
+    await userEvent.selectOptions(model, 'cloud');
+    await userEvent.selectOptions(
+      within(step).getByRole('combobox', { name: 'Plugin' }),
+      'text.pattern@1',
+    );
+    expect(within(step).queryByRole('combobox', { name: 'Model' })).toBeNull();
+    await userEvent.selectOptions(
+      within(step).getByRole('combobox', { name: 'Plugin' }),
+      'acme.ask@1',
+    );
+    // A plugin that calls no model dropped the model with its settings.
+    expect(within(step).getByRole('combobox', { name: 'Model' })).toHaveValue('');
+    await userEvent.selectOptions(within(step).getByRole('combobox', { name: 'Model' }), 'cloud');
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(saved(api).pipeline[0]).toMatchObject({ uses: 'acme.ask@1', model: 'cloud' });
+  });
+
   it('adds a pattern for another field and removes one', async () => {
     const { api } = setup(view(withPlugin()), plugins);
     await userEvent.click(await tab(/Pipeline/));
