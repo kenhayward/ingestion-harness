@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
@@ -138,3 +139,38 @@ def test_a_reviewer_edit_outside_the_constraints_is_an_issue() -> None:
     [_, issue] = doc["issues"]
     assert (issue["step"], issue["row"], issue["column"]) == ("review", 1, "batch")
     assert issue["message"] == r"'zz' does not match ^[A-Z]{2}\d{4}$"
+
+
+SLOW = r"^(a+)+$"
+STUCK = "a" * 40 + "b"
+
+
+def _slow_template() -> Template:
+    recipe = json.loads(json.dumps(RECIPE))
+    recipe["outputs"]["tables"][0]["columns"][0]["pattern"] = SLOW
+    return Template.model_validate(recipe)
+
+
+def test_a_steps_slow_pattern_is_an_issue_not_a_hang(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ingest_worker import normalize
+    from ingest_worker.template_pipeline import normalise_step
+
+    monkeypatch.setattr(normalize, "PATTERN_TIMEOUT_S", 0.5)
+    template = _slow_template()
+    step = template.filling_steps()[1]
+    outcome = normalise_step(template, step, {"rows": [{"batch": STUCK}, {"batch": "aaa"}]})
+    assert [r["batch"] for r in outcome.tables["lines"]] == [STUCK, "aaa"]
+    assert [i["row"] for i in outcome.issues] == [1, 2]  # the whole step's checks ran out
+    assert "took longer than 0.5s" in outcome.issues[0]["message"]
+
+
+def test_a_reviewers_slow_pattern_is_an_issue_not_a_hang(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ingest_worker import normalize
+
+    monkeypatch.setattr(normalize, "PATTERN_TIMEOUT_S", 0.5)
+    draft = {"fields": {}, "tables": {"lines": [{"batch": "AB1234"}]}, "checks": {}, "issues": []}
+    doc = apply_edits(
+        _slow_template(), draft, [{"table": "lines", "row": 1, "column": "batch", "value": STUCK}]
+    )
+    [issue] = doc["issues"]
+    assert issue["step"] == "review" and "took longer than 0.5s" in issue["message"]

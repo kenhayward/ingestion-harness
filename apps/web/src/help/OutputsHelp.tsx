@@ -57,7 +57,9 @@ export function OutputsHelp() {
         A value outside its limits is kept exactly as found and listed as an issue, which sends the
         job for review, so nothing the document really says is changed or hidden. The model is not
         told the limits: it reports what the document states, and the check happens afterwards. A
-        reviewer's correction is checked the same way.
+        reviewer's correction is checked the same way. A pattern that takes too long to check (some
+        patterns can take minutes on a short value) is reported as an issue instead, so rewrite it
+        more simply.
       </p>
 
       <h3>Description</h3>

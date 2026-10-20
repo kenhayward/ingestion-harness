@@ -106,6 +106,15 @@
       ]
     },
     {
+      "name": "a length that is not a whole number",
+      "valid": false,
+      "error": "length must be whole numbers",
+      "fields": [
+        { "id": "assay", "type": "decimal" },
+        { "id": "batch", "type": "text", "length": { "max": 2.5 } }
+      ]
+    },
+    {
       "name": "a negative length",
       "valid": false,
       "error": "length cannot be negative",

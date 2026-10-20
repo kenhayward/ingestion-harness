@@ -8,9 +8,14 @@ column's constraints (range, pattern, length; docs/design/output-roles.md §1).
 
 from __future__ import annotations
 
+import math
+import multiprocessing
 import re
+from collections.abc import Callable, Iterable
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
+
+from .capped import CallFailed, CallTimedOut, capped_call
 
 if TYPE_CHECKING:
     from .template import ValueDef
@@ -115,32 +120,105 @@ def normalize_value(
     return raw, f"{raw!r} is not a valid {kind}"
 
 
-def check_value(raw: Any, definition: ValueDef, date_order: DateOrder) -> tuple[Any, str | None]:
+#: Whether a value matches a pattern: True or False, None when it could not be told in time.
+Matcher = Callable[[str, str], bool | None]
+
+#: How long one step's (or one review's) pattern checks may take, all together.
+PATTERN_TIMEOUT_S = 5.0
+
+
+def full_match(pattern: str, value: str) -> bool | None:
+    return re.fullmatch(pattern, value) is not None
+
+
+def _match_all(pairs: list[tuple[str, str]]) -> list[bool]:
+    """Run in the capped child: a pattern may backtrack catastrophically."""
+    return [re.fullmatch(p, v) is not None for p, v in pairs]
+
+
+def pattern_matcher(
+    pairs: Iterable[tuple[str, str]], timeout_s: float = PATTERN_TIMEOUT_S
+) -> Matcher:
+    """The answers for (pattern, value) pairs, all checked in one child process with a time
+    limit, so a pattern that backtracks catastrophically cannot stall the worker. No pairs: no
+    child. Past the limit (or if the child fails) every pair is undecided."""
+    unique = list(dict.fromkeys(pairs))
+    if not unique or multiprocessing.current_process().daemon:
+        # Nothing to check, or already in a capped child (a preview), which caps this too and
+        # may not start a child of its own.
+        return full_match
+    try:
+        verdicts = dict(zip(unique, capped_call(_match_all, (unique,), timeout_s), strict=True))
+    except (CallTimedOut, CallFailed):
+        verdicts = {}
+    timeout = timeout_s
+
+    def matches(pattern: str, value: str) -> bool | None:
+        return verdicts.get((pattern, value))
+
+    matches.timeout_s = timeout  # type: ignore[attr-defined]
+    return matches
+
+
+def pattern_pairs(
+    items: Iterable[tuple[Any, ValueDef]], date_order: DateOrder
+) -> list[tuple[str, str]]:
+    """The (pattern, value) pairs `check_value` would match for (raw value, definition)s."""
+    pairs: list[tuple[str, str]] = []
+    for raw, definition in items:
+        if definition.pattern is None:
+            continue
+        value, issue = normalize_value(
+            raw, definition.type, options=definition.enum, date_order=date_order
+        )
+        if issue is None and isinstance(value, str):
+            pairs.append((definition.pattern, value))
+    return pairs
+
+
+def check_value(
+    raw: Any, definition: ValueDef, date_order: DateOrder, matches: Matcher = full_match
+) -> tuple[Any, str | None]:
     """`normalize_value` for a field or column, then its constraints: the value is kept as
     captured and the first constraint it breaks is the issue (none when the type already failed
-    or the value is empty)."""
+    or the value is empty). `matches` decides patterns (a `pattern_matcher`, time-capped)."""
     value, issue = normalize_value(
         raw, definition.type, options=definition.enum, date_order=date_order
     )
     if issue is not None or value is None:
         return value, issue
-    return value, _constraint_issue(value, definition)
+    return value, _constraint_issue(value, definition, matches)
 
 
-def _constraint_issue(value: Any, definition: ValueDef) -> str | None:
+def _number(x: float) -> str:
+    """A number as a reviewer would write it: 110, 110.0000001, 1234567 (never 1.23457e+06)."""
+    return str(int(x)) if float(x).is_integer() and abs(x) < 1e16 else repr(float(x))
+
+
+def _constraint_issue(value: Any, definition: ValueDef, matches: Matcher) -> str | None:
     if definition.range is not None and isinstance(value, int | float):
         low, high = definition.range.min, definition.range.max
+        if isinstance(value, float) and math.isnan(value):
+            return "NaN is outside the range"
         if low is not None and value < low:
-            return f"{value:g} is below {low:g}"
+            return f"{_number(value)} is below {_number(low)}"
         if high is not None and value > high:
-            return f"{value:g} is above {high:g}"
+            return f"{_number(value)} is above {_number(high)}"
     if isinstance(value, str):
-        if definition.pattern is not None and re.fullmatch(definition.pattern, value) is None:
-            return f"{value!r} does not match {definition.pattern}"
+        if definition.pattern is not None:
+            verdict = matches(definition.pattern, value)
+            if verdict is None:
+                limit = getattr(matches, "timeout_s", PATTERN_TIMEOUT_S)
+                return (
+                    f"{value!r} could not be checked against {definition.pattern}: it took "
+                    f"longer than {limit:g}s (the pattern may backtrack catastrophically)"
+                )
+            if not verdict:
+                return f"{value!r} does not match {definition.pattern}"
         if definition.length is not None:
             low, high = definition.length.min, definition.length.max
             if low is not None and len(value) < low:
-                return f"{value!r} is shorter than {low:g} characters"
+                return f"{value!r} is shorter than {_number(low)} characters"
             if high is not None and len(value) > high:
-                return f"{value!r} is longer than {high:g} characters"
+                return f"{value!r} is longer than {_number(high)} characters"
     return None

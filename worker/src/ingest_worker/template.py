@@ -81,6 +81,8 @@ class ValueDef(_Model):
                 errors.append(f"{self.id!r}: length needs a text")
             if (self.length.min or 0) < 0 or (self.length.max or 0) < 0:
                 errors.append(f"{self.id!r}: length cannot be negative")
+            if not all(float(b or 0).is_integer() for b in (self.length.min, self.length.max)):
+                errors.append(f"{self.id!r}: length must be whole numbers")
             bounds("length", self.length)
         if errors:
             raise ValueError("; ".join(errors))

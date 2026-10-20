@@ -11,9 +11,10 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from . import normalize
 from .checks import run_check
-from .normalize import check_value
-from .template import CheckStep, Template
+from .normalize import check_value, pattern_matcher, pattern_pairs
+from .template import CheckStep, Template, ValueDef
 
 
 def step_results(
@@ -56,13 +57,29 @@ def apply_edits(
             if not (i["target"] == target and i.get("row") == row and i.get("column") == column)
         ]
 
+    def definition_of(edit: dict[str, Any]) -> ValueDef | None:
+        if edit.get("field"):
+            return next((f for f in template.outputs.fields if f.id == edit["field"]), None)
+        table = next((t for t in template.outputs.tables if t.id == edit.get("table")), None)
+        return (
+            next((c for c in table.columns if c.id == edit.get("column")), None) if table else None
+        )
+
+    # Every edit's pattern checks in one time-capped child (a pattern may backtrack).
+    matches = pattern_matcher(
+        pattern_pairs(
+            [(e["value"], d) for e in edits if (d := definition_of(e)) is not None], order
+        ),
+        normalize.PATTERN_TIMEOUT_S,
+    )
+
     for edit in edits:
         if edit.get("field"):
             field_id = edit["field"]
             definition = next((f for f in template.outputs.fields if f.id == field_id), None)
             if definition is None:
                 raise ValueError(f"edit targets unknown field {field_id!r}")
-            value, issue = check_value(edit["value"], definition, order)
+            value, issue = check_value(edit["value"], definition, order, matches)
             entry = fields.setdefault(field_id, {"value": None, "evidence": None, "page": None})
             entry.update(value=value, edited=True)
             drop_issues(field_id, None, None)
@@ -87,7 +104,7 @@ def apply_edits(
         rows = tables.setdefault(table.id, [])
         if not isinstance(row, int) or not 1 <= row <= len(rows):
             raise ValueError(f"edit targets row {row} of {table.id!r}, which has {len(rows)} rows")
-        value, issue = check_value(edit["value"], column, order)
+        value, issue = check_value(edit["value"], column, order, matches)
         rows[row - 1][column.id] = value
         drop_issues(table.id, row, column.id)
         if issue:

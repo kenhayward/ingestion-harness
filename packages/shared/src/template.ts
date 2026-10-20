@@ -83,6 +83,9 @@ export const ValueDefSchema = z
       if ((v.length.min ?? 0) < 0 || (v.length.max ?? 0) < 0) {
         issue(`"${v.id}": length cannot be negative`);
       }
+      if (![v.length.min ?? 0, v.length.max ?? 0].every(Number.isInteger)) {
+        issue(`"${v.id}": length must be whole numbers`);
+      }
       bounds('length', v.length);
     }
   });

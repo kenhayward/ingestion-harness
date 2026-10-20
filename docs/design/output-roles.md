@@ -106,7 +106,14 @@ document really states. The point is to capture the true value and flag it.
 - `normalize.check_value(raw, definition, date_order)`: the type first, then the first constraint
   broken (`87.5 is below 90`, `87.5 is above 110`, `'ab12' does not match …`,
   `'ab' is shorter than 3 characters`, `'abcd' is longer than 3 characters`); none when the type
-  failed or the value is empty. Used by `normalise_step` and `review.apply_edits` (step `review`).
+  failed or the value is empty. Used by `normalise_step` and `review.apply_edits` (step `review`). Numbers in messages read
+  as written (`110.0000001 is above 110`, `1234567 is above 1000000`), `NaN` is outside any range,
+  and `length` bounds are whole numbers (`length must be whole numbers`, both sides).
+- Patterns are matched in one time-capped child process per step or review
+  (`normalize.pattern_matcher`, `PATTERN_TIMEOUT_S` 5 s, over `capped.capped_call`; no child when
+  nothing has a pattern, and in place inside a capped child such as a preview). Past the limit,
+  every value the step checks gets the issue `… could not be checked against …: it took longer
+  than 5s (the pattern may backtrack catastrophically)`, so a pattern cannot stall the worker.
 - Every constraint issue is a review reason (no warning level), nothing goes into the model's
   schema or into SHACL shapes. Editor: the Outputs tab's *Allowed values* column (min and max;
   pattern and max length).
