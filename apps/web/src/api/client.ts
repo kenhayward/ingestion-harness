@@ -129,6 +129,8 @@ export interface ReviewDocument {
         matched: string | null;
         distance: number | null;
         count: number;
+        /** A check plugin's own words on this value, when it gave any. */
+        message?: string | null;
       }[];
     }
   >;

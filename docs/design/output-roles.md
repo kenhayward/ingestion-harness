@@ -1,6 +1,6 @@
 # Output roles: constraints, check plugins and transforms
 
-Status: **§1 built** (column constraints), 2026-10-20; §2 and §3 are still a brainstorm. Plan:
+Status: **§1 built** (column constraints) and **§2 built** (check plugins), 2026-10-20; §3 is still a brainstorm. Plan:
 [2026-10-20-output-roles.md](../superpowers/plans/2026-10-20-output-roles.md). It follows
 [recipe-plugins.md](recipe-plugins.md), whose P4 made table ownership per column: each column has
 exactly one step filling it.
@@ -192,6 +192,35 @@ writes it into the output itself, it has become a transform (section 3).
 - **Built-ins.** Worth shipping two with CT Studio: `list.lookup@1` (values against a list in
   `with`, with aliases and edit distance, the same matching as today's check) and `rule.compare@1`
   (column against column or constant).
+
+### Built
+
+- **Recipe format.** A check step names `reference` (with `aliases`, `maxDistance`) or `uses`
+  (`<id>@<major>`, `PLUGIN_REF`) with `with` its settings, never both (`CheckStepSchema`, the
+  worker's `CheckStep`, shared fixture cases). A recipe without `uses` parses and hashes as
+  before.
+- **Contract (the first question).** A plugin has a `kind`, `step` or `check` (`Plugin.kind`,
+  `PluginInfo.kind`, catalogue column `kind`, migration `202610201123_plugin_catalogue_kind`). A
+  check step may name only a `check` plugin and a plugin step only a `step` one, in the API
+  (`templateIssues`, `pipeline.N.uses` and `.with`, blocking) and in the worker (`resolve_checks`).
+  A check plugin supplies `judge(CheckContext, settings)`: `CheckContext` is the job, recipe, step,
+  the distinct values and, for a table column, its rows. It returns a verdict per value: `status`
+  (`match`, `alias`, `near`, `unmatched`), `matched` and an optional `message`.
+- **Data policy (the second question): egress `none` only.** `check_plugin` leaves out a check
+  plugin with any other egress, so a check stays deterministic and the same in a regression run.
+- **One verdict per value.** `run_check_plugin` shows the plugin each distinct value once
+  (compared ignoring case and spaces) and builds the rows `{value, status, matched, distance,
+  count}` plus `message` when the plugin gave one. A value left out, judged twice, given an
+  unknown status or not given is a `DocumentError` (review), and `resolve_checks` fails an
+  unknown plugin, a non-check plugin or bad settings before any model call. Checks still re-run
+  after every step re-run.
+- **Built-in `list.lookup@1`.** Settings `values`, `aliases`, `maxDistance`: the matching of a
+  reference check, against a list in the recipe. `rule.compare@1` is not built.
+- **Screens.** The check step form's *Compares with* choice (A reference, A plugin, a check
+  plugin picker and the plugin's settings form); *Add plugin step* offers only step plugins.
+  Review flags an unmatched value with the plugin's message (`<check id>: <message>`, else
+  `unmatched`) and the Results check view adds a *Note* column when any row has a message. Not
+  built: a Workbench preview of a check (it needs a test run's output).
 
 ---
 

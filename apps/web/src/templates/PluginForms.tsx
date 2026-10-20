@@ -40,8 +40,8 @@ export function AddPluginStep({
       className="add"
       aria-label="Add plugin step"
       value=""
-      disabled={plugins.length === 0}
-      title={plugins.length === 0 ? NO_PLUGINS : undefined}
+      disabled={!plugins.some((p) => p.kind === 'step')}
+      title={plugins.some((p) => p.kind === 'step') ? undefined : NO_PLUGINS}
       onChange={(e) => {
         if (e.target.value) {
           onAdd({ type: 'plugin', id: '', uses: e.target.value, fields: [], sections: [] });
@@ -49,11 +49,13 @@ export function AddPluginStep({
       }}
     >
       <option value="">+ Add plugin step…</option>
-      {plugins.map((p) => (
-        <option key={p.ref} value={p.ref} title={p.summary}>
-          {p.ref}
-        </option>
-      ))}
+      {plugins
+        .filter((p) => p.kind === 'step')
+        .map((p) => (
+          <option key={p.ref} value={p.ref} title={p.summary}>
+            {p.ref}
+          </option>
+        ))}
     </select>
   );
 }
@@ -125,11 +127,13 @@ export function PluginStepForm({
                 value={uses}
               >{`${uses || '(none)'} (not on this deployment's workers)`}</option>
             )}
-            {plugins.map((p) => (
-              <option key={p.ref} value={p.ref}>
-                {p.ref}
-              </option>
-            ))}
+            {plugins
+              .filter((p) => p.kind === 'step')
+              .map((p) => (
+                <option key={p.ref} value={p.ref}>
+                  {p.ref}
+                </option>
+              ))}
           </select>
           {plugin && <small className="muted">{plugin.summary}</small>}
         </label>
@@ -456,7 +460,7 @@ function MapInput({
 }
 
 /** Settings edited as JSON: kept as typed until it parses. */
-function JsonSettings({
+export function JsonSettings({
   value,
   label,
   onChange,

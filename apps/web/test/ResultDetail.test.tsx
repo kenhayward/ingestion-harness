@@ -163,6 +163,34 @@ describe('ResultDetailView', () => {
     );
   });
 
+  it("shows a check plugin's message in the check view", async () => {
+    const detail = resultDetail();
+    detail.document!.checks = {
+      batch_numbers: {
+        rows: [
+          { value: '4586783', status: 'match', matched: '4586783', distance: 0, count: 1 },
+          {
+            value: 'ZZ9',
+            status: 'unmatched',
+            matched: null,
+            distance: null,
+            count: 1,
+            message: 'ZZ9 is not a released batch',
+          },
+        ],
+      },
+    };
+    show(detail);
+    await open('batch_numbers');
+    const table = screen.getByRole('table', { name: 'batch_numbers' });
+    expect(within(table).getAllByRole('row')[2]).toHaveTextContent('ZZ9 is not a released batch');
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toContain('Note');
+  });
+
   it('renders tables with template headings and marks edited cells', async () => {
     show();
     await open('Test results');

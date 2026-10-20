@@ -60,6 +60,15 @@ export function PipelineHelp() {
         job for review. Aliases list other accepted spellings. One check compares one path: to check
         several tables, add one check per table.
       </p>
+      <p>
+        A check can compare with a plugin instead of a reference: pick <strong>A plugin</strong>{' '}
+        under <em>Compares with</em>, choose the check plugin and fill in its settings. For example{' '}
+        <code>list.lookup@1</code> checks each value against a list of accepted values you type in,
+        with aliases and a tolerance for misreads. A check plugin judges every value as matched, an
+        alias, near or unmatched, and may add a short note saying why; the note shows beside the
+        value on the Review page and in the check on the Results page. A check never changes an
+        output.
+      </p>
 
       <h3>Plugin steps</h3>
       <p>

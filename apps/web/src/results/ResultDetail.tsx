@@ -667,6 +667,8 @@ function CheckView({ id, rows }: { id: string; rows: Row[] }) {
     );
   }
   const count = (status: string) => rows.filter((r) => r.status === status).length;
+  // A check plugin may say why it judged a value as it did.
+  const noted = rows.some((r) => r.message != null);
   return (
     <>
       <div className="result-view-head">
@@ -682,6 +684,7 @@ function CheckView({ id, rows }: { id: string; rows: Row[] }) {
               <th>Matched to</th>
               <th className="num">Edit distance</th>
               <th className="num">Times seen</th>
+              {noted && <th>Note</th>}
             </tr>
           </thead>
           <tbody>
@@ -699,6 +702,7 @@ function CheckView({ id, rows }: { id: string; rows: Row[] }) {
                   <td className={r.matched == null ? 'mono nil' : 'mono'}>{format(r.matched)}</td>
                   <td className={r.distance == null ? 'num nil' : 'num'}>{format(r.distance)}</td>
                   <td className="num">{format(r.count)}</td>
+                  {noted && <td>{r.message == null ? '' : format(r.message)}</td>}
                 </tr>
               );
             })}

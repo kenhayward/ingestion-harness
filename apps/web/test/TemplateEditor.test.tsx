@@ -2144,6 +2144,82 @@ describe('plugin steps in the recipe editors', () => {
   });
 });
 
+describe('check plugins in the recipe editors', () => {
+  const catalogue = JSON.parse(
+    readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../../packages/shared/test/fixtures/plugin-catalogue.json',
+      ),
+      'utf8',
+    ),
+  ) as { plugins: PluginInfo[] };
+  const plugins = { listPlugins: vi.fn(async () => catalogue.plugins) };
+  const withCheck = (check: Record<string, unknown>) => {
+    const d = validDefinition();
+    return { ...d, version: 1, pipeline: [...d.pipeline, check] };
+  };
+  const referenceCheck = { type: 'check', id: 'sender-ok', values: 'sender', reference: 'sender' };
+  const saved = (api: Api) =>
+    vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as { pipeline: Record<string, unknown>[] };
+
+  it('switches a check to a plugin and back', async () => {
+    const { api } = setup(view(withCheck(referenceCheck)), plugins);
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^3 CHECK sender-ok/ }));
+    const step = screen.getByRole('group', { name: 'Step 3' });
+    const compares = within(step).getByRole('group', { name: 'Compares with' });
+    await userEvent.click(within(compares).getByRole('button', { name: 'A plugin' }));
+    await waitFor(() =>
+      expect(within(step).getByRole('combobox', { name: 'Check plugin' })).toHaveValue(
+        'list.lookup@1',
+      ),
+    );
+    fireEvent.change(within(step).getByLabelText(/^Accepted values/), {
+      target: { value: 'A\nB' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const asPlugin = saved(api).pipeline[2]!;
+    expect(asPlugin).toMatchObject({ uses: 'list.lookup@1', with: { values: ['A', 'B'] } });
+    expect(asPlugin.reference).toBeUndefined();
+    expect(asPlugin.aliases).toBeUndefined();
+    await userEvent.click(within(compares).getByRole('button', { name: 'A reference' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    const back = saved(api).pipeline[2]!;
+    expect(back).toMatchObject({ reference: 'sender' });
+    expect(back.uses).toBeUndefined();
+    expect(back.with).toBeUndefined();
+  });
+
+  it('offers only check plugins to a check step', async () => {
+    setup(
+      view(withCheck({ ...referenceCheck, reference: undefined, uses: 'list.lookup@1' })),
+      plugins,
+    );
+    await userEvent.click(await tab(/Pipeline/));
+    await userEvent.click(screen.getByRole('button', { name: /^3 CHECK sender-ok/ }));
+    const step = screen.getByRole('group', { name: 'Step 3' });
+    const picker = await within(step).findByRole('combobox', { name: 'Check plugin' });
+    expect(
+      within(picker)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['list.lookup@1']);
+  });
+
+  it('offers only step plugins in Add plugin step', async () => {
+    setup(view({ ...validDefinition(), version: 1 }), plugins);
+    await userEvent.click(await tab(/Pipeline/));
+    const add = await screen.findByRole('combobox', { name: 'Add plugin step' });
+    await waitFor(() => expect(add).toBeEnabled());
+    expect(
+      within(add)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['+ Add plugin step…', 'text.pattern@1']);
+  });
+});
+
 describe('output constraints', () => {
   const withAssay = () => {
     const d = validDefinition();
