@@ -6,6 +6,7 @@ verdicts, counts the values and records them as any check's rows."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -262,3 +263,34 @@ def test_list_lookup_matches_like_a_check(value: str, status: str, matched: str 
         status,
         matched,
     )
+
+
+def test_a_value_the_plugin_leaves_out_is_a_document_error(tmp_path: Path) -> None:
+    ANSWER[0] = [{"value": "A1", "status": "match", "matched": "A1"}]
+    queue, _, _ = run(tmp_path)
+    [(_, reason)] = queue.reviewed
+    assert "check 'names': acme.judge@1 did not judge 'B9'" in reason
+
+
+def test_a_value_judged_twice_is_a_document_error(tmp_path: Path) -> None:
+    ANSWER[0] = [
+        {"value": "A1", "status": "match", "matched": "A1"},
+        {"value": " a1", "status": "unmatched"},
+        {"value": "B9", "status": "match", "matched": "B9"},
+    ]
+    queue, _, _ = run(tmp_path)
+    [(_, reason)] = queue.reviewed
+    assert "check 'names': acme.judge@1 judged 'A1' twice" in reason
+
+
+def test_a_rerun_with_a_missing_check_plugin_stops_before_the_step_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    queue, deps, provider = run(tmp_path)
+    runs = len(queue.step_runs)
+    without = {k: v for k, v in plugins_module.plugins().items() if k != "acme.judge@1"}
+    monkeypatch.setattr(plugins_module, "plugins", lambda: without)
+    queue.jobs = [replace(JOB, task="rerun", rerun={"step": "rows"})]
+    run_once(queue, deps, "w1")
+    assert queue.reviewed[-1][1] == "check 'names': no plugin acme.judge@1 on this worker"
+    assert len(queue.step_runs) == runs and provider.calls == []

@@ -798,8 +798,9 @@ def rerun_template_job(
             f"no extract or plugin step {params.get('step')!r} in {template.id} v{template.version}"
         )
     instructions = params.get("instructions")
-    from .plugins import resolve_plugins
+    from .plugins import resolve_checks, resolve_plugins
 
+    resolve_checks(template)  # before any model call, like the step's own plugin
     if isinstance(step, PluginStep):
         resolved = resolve_plugins(
             template, JobModels(job, deps.models), only={step.id}, model=params.get("model")

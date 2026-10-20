@@ -353,8 +353,8 @@ def run_check_plugin(
     """Judge a check's values with its plugin: `ctx.values` are all the values collected, the
     plugin sees each distinct one (compared as a check does: ignoring case and spaces) once, and
     its verdicts become the check's rows, `{value, status, matched, distance, count[, message]}`
-    with `count` from the collected values. A value the plugin leaves out passes without a
-    row. A status outside `CHECK_STATUSES` or a value it was not given is a DocumentError."""
+    with `count` from the collected values. A value it leaves out or judges twice, a status outside
+    `CHECK_STATUSES` and a value it was not given are DocumentErrors."""
     judge = resolved.plugin.judge
     if judge is None:
         raise DocumentError(f"check {ctx.step.id!r}: {ctx.step.uses} is not a check plugin")
@@ -375,12 +375,14 @@ def run_check_plugin(
         status = verdict.get("status")
         if status not in CHECK_STATUSES:
             raise DocumentError(f"{where} answered status {status!r} for {given!r}")
+        if answered in by_key:
+            raise DocumentError(f"{where} judged {counts[answered][0]!r} twice")
         by_key[answered] = verdict
     rows: list[dict[str, Any]] = []
     for key in counts:
         judged = by_key.get(key)
         if judged is None:
-            continue
+            raise DocumentError(f"{where} did not judge {counts[key][0]!r}")
         status = judged["status"]
         matched = judged.get("matched")
         row: dict[str, Any] = {
