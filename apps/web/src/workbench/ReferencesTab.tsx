@@ -24,7 +24,9 @@ import {
   readyBanner,
   reviewHref,
   rowLine,
+  rowProgress,
   rowStatus,
+  runsSummary,
   shortDateTime,
   tracker,
   trackerLabel,
@@ -176,6 +178,7 @@ export function ReferencesTab({
   const right = useMemo(() => rightFirstTime(dev, draftDef), [dev, draftDef]);
   const needs = useMemo(() => outputNeeds(dev, draftDef), [dev, draftDef]);
   const current = selected ?? [...dev, ...holdout].find((r) => r.reference)?.sampleId ?? null;
+  const progress = runsSummary([...dev, ...holdout]);
 
   return (
     <div className="references-tab">
@@ -206,6 +209,7 @@ export function ReferencesTab({
       />
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
+      {progress && <RunsProgress {...progress} />}
       {banner.ready && (
         <section className="card refs-ready" aria-label="Ready to evaluate">
           <p>
@@ -371,6 +375,34 @@ export function ReferencesTab({
   );
 }
 
+/** While reference runs are queued or running: how far the round is (the Samples tab's strip). */
+function RunsProgress({
+  running,
+  queued,
+  finished,
+  total,
+}: {
+  running: number;
+  queued: number;
+  finished: number;
+  total: number;
+}) {
+  const text = [
+    `${finished} of ${total} finished`,
+    ...(running ? [`${running} running`] : []),
+    ...(queued ? [`${queued} waiting for a worker`] : []),
+  ].join(' · ');
+  return (
+    <section className="card batch-progress" aria-label="Reference runs">
+      <div className="batch-progress-head">
+        <h3>Reference runs</h3>
+        <span className="muted">{text}</span>
+      </div>
+      <Meter label="Reference runs finished" value={finished / total} tone="accent" />
+    </section>
+  );
+}
+
 function RefCard({
   title,
   n,
@@ -509,7 +541,10 @@ function SampleGroup({
                       />
                     ))}
                   </span>
-                  <span className="refs-row-status">{rowStatus(r)}</span>
+                  <span className="refs-row-status">
+                    {rowStatus(r)}
+                    {rowProgress(r) && <small className="muted">{rowProgress(r)}</small>}
+                  </span>
                   <span className="refs-row-corrections">{correctionSummary(r)}</span>
                 </button>
                 {href && <a href={href}>Review</a>}

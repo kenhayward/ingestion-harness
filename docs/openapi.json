@@ -40777,6 +40777,157 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "progress": {
+                                "anyOf": [
+                                  {
+                                    "oneOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "stage": {
+                                            "type": "string",
+                                            "enum": [
+                                              "text",
+                                              "ocr"
+                                            ]
+                                          },
+                                          "page": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "of": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "pages": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "prepare"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "stage",
+                                          "page",
+                                          "of",
+                                          "kind"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "segmented"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ]
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "step": {
+                                            "type": "string"
+                                          },
+                                          "index": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          "of": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          "attempt": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          },
+                                          "chunk": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "n": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "of": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  }
+                                                },
+                                                "required": [
+                                                  "n",
+                                                  "of"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "occurrence": {
+                                            "default": null,
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "n": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "of": {
+                                                    "type": "integer",
+                                                    "exclusiveMinimum": 0
+                                                  },
+                                                  "key": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "n",
+                                                  "of",
+                                                  "key"
+                                                ]
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "step"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "step",
+                                          "index",
+                                          "of",
+                                          "attempt",
+                                          "chunk",
+                                          "kind"
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [

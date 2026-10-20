@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CorrectionSchema, PROVENANCES } from './corrections.js';
-import { JobStatusSchema, type JobStatus } from './jobs.js';
+import { JobProgressSchema, JobStatusSchema, type JobStatus } from './jobs.js';
 import { outputCoverage } from './template.js';
 import { SampleRoleSchema } from './workbench.js';
 import { PublishLabelSchema } from './version-labels.js';
@@ -232,6 +232,11 @@ export const ReferenceRowSchema = z.object({
       status: JobStatusSchema,
       error: z.string().nullable(),
       modelOverride: z.string().nullable(),
+      /**
+       * A running run's progress in this attempt (reading, OCR, step), as on Home; null when
+       * queued, finished or nothing is reported yet. Optional for API callers built before it.
+       */
+      progress: JobProgressSchema.nullable().optional(),
     })
     .nullable(),
 });

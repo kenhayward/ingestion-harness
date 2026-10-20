@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  PREPARE_PROGRESS_EVENT,
+  STEP_PROGRESS_EVENT,
   preparedTriageKey,
   type ReferenceDetail,
   type ReferenceRow,
@@ -120,9 +122,36 @@ describe('references stage', () => {
         filename: 's1.pdf',
         sha256: dev.sha256,
         reference: null,
-        run: { jobId: job!.id, status: 'queued', error: null, modelOverride: 'draft' },
+        run: {
+          jobId: job!.id,
+          status: 'queued',
+          error: null,
+          modelOverride: 'draft',
+          progress: null,
+        },
       },
     ]);
+  });
+
+  it("shows a running reference run's progress of this attempt", async () => {
+    const { add, skipAll, propose, repo, rows } = await project();
+    await add(1);
+    await skipAll();
+    const [job] = (await propose()).json().jobs as { id: string }[];
+    const id = job!.id;
+    const ocr = { stage: 'ocr', page: 2, of: 5, pages: 5 };
+    repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, ocr);
+    // Queued: an earlier attempt's events never show.
+    expect((await rows())[0]!.run!.progress).toBeNull();
+    repo.jobs.set(id, { ...repo.jobs.get(id)!, status: 'running', startedAt: repo.now() });
+    expect((await rows())[0]!.run!.progress).toBeNull();
+    repo.addEvent(id, 'info', PREPARE_PROGRESS_EVENT, ocr);
+    expect((await rows())[0]!.run!.progress).toEqual({ kind: 'prepare', ...ocr });
+    const step = { step: 'letter', index: 1, of: 2, attempt: 1, chunk: null, occurrence: null };
+    repo.addEvent(id, 'info', STEP_PROGRESS_EVENT, step);
+    expect((await rows())[0]!.run!.progress).toEqual({ kind: 'step', ...step });
+    repo.jobs.set(id, { ...repo.jobs.get(id)!, status: 'awaiting_review' });
+    expect((await rows())[0]!.run!.progress).toBeNull();
   });
 
   it('is accepted once every dev sample has a reference, and refuses to propose again', async () => {

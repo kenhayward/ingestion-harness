@@ -2427,6 +2427,10 @@ label.inline.list-select {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.refs-row-status {
+  display: flex;
+  flex-direction: column;
+}
 .refs-tracker {
   display: inline-flex;
   gap: 4px;

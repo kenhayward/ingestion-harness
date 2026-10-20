@@ -137,6 +137,7 @@ import { pushAfterPublish } from '../github-sync/auto.js';
 import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
+import { PROGRESS_EVENTS, jobProgress } from '../jobs/progress.js';
 import { mappingInputs, mappingView, type MappingParams } from '../workbench/mapping.js';
 import { ontologyLibrary } from '../workbench/suggestions.js';
 import { listProjectsPage } from '../workbench/list.js';
@@ -865,9 +866,13 @@ async function referenceEntries(
     ...referenceCorrections((r.sourceJobId && reviews.get(r.sourceJobId)) || null, r.createdAt),
     reverified: r.reverified,
   });
+  const latest = samples.map((s) => runs.find((r) => r.sha256 === s.sha256)?.job ?? null);
+  // Progress events only for running extractions: one query, none while nothing runs.
+  const running = latest.flatMap((j) => (j?.status === 'running' ? [j.id] : []));
+  const events = running.length ? await app.deps.repo.latestEvents(running, PROGRESS_EVENTS) : [];
   const entries = samples.map((s, i) => {
     const reference = picked[i]!;
-    const run = runs.find((r) => r.sha256 === s.sha256)?.job ?? null;
+    const run = latest[i]!;
     const draftRun =
       runs.find((r) => r.sha256 === s.sha256 && r.job.modelOverride === 'draft')?.job ?? null;
     return {
@@ -883,6 +888,7 @@ async function referenceEntries(
           status: run.status,
           error: run.error,
           modelOverride: run.modelOverride,
+          progress: jobProgress(run, events),
         },
       },
     };
