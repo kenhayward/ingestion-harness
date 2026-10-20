@@ -180,10 +180,11 @@ def process_template_job(
     compiled = {s.id: compile_step(template, s) for s in template.extract_steps()}
     extract_ids = [s.id for s in template.extract_steps()]
     resolved = resolve_models(job, deps, list(compiled.values()))
-    from .plugins import resolve_plugins
+    from .plugins import check_context, resolve_checks, resolve_plugins, run_check_plugin
 
     # Like models: before the first model call (a plugin's own model included).
     plugins = resolve_plugins(template, JobModels(job, deps.models))
+    check_plugins = resolve_checks(template)
     doc = prepare_document(job, deps, queue, template.document)
     cache = workbench_step_cache(job, deps)
     _save_previews(job, deps, queue, doc.pdf, doc.total_pages)
@@ -204,6 +205,18 @@ def process_template_job(
             check = step
 
             def run_check(state: DocState) -> DocState:
+                if check.id in check_plugins:
+                    ctx = check_context(job, template, check, state.step_results)
+                    plugged = run_check_plugin(check_plugins[check.id], ctx)
+                    unmatched = [r["value"] for r in plugged["rows"] if r["status"] == "unmatched"]
+                    if unmatched:
+                        queue.event(
+                            job.id,
+                            "warn",
+                            f"check {check.id}: {len(unmatched)} unmatched",
+                            {"values": unmatched},
+                        )
+                    return state.with_check(check.id, plugged)
                 compiled_check = template.compile_check(check)
                 result = run_check_with_event(job, queue, compiled_check, state.step_results)
                 return state.with_check(check.id, result)
@@ -279,7 +292,7 @@ def publish_template_job(
     edits = queue.review_edits(job.id)
     decision = queue.review_decision(job.id) or {}
     try:
-        document = apply_edits(template, draft, edits)
+        document = apply_edits(template, draft, edits, job)
     except ValueError as exc:
         raise DocumentError(f"cannot apply review edits: {exc}") from exc
     document["review"] = {
@@ -877,7 +890,7 @@ def rerun_template_job(
             enriched, enriched_model = again.data, again.model_ref
         state = state.apply(normalise_step(template, enricher, enriched, enriched_model))
     fields, tables, issues = state.fields, state.tables, list(state.issues)
-    checks = run_checks(template, fields, tables)
+    checks = run_checks(template, fields, tables, job)
     reasons = [f"re-run of step {step.id}", *_review_reasons(template, checks, issues)]
     document.update(
         source_sha256=doc.sha256,

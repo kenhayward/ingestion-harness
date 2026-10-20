@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 def catalogue_rows(plugins: Mapping[str, Plugin]) -> list[dict[str, Any]]:
-    """One `PluginInfo` per plugin, by ref."""
+    """One `PluginInfo` per plugin, in registry order (the built-ins, then installed packages by entry point name)."""
     return [
         {
             "ref": ref,
@@ -27,7 +27,7 @@ def catalogue_rows(plugins: Mapping[str, Plugin]) -> list[dict[str, Any]]:
             "kind": p.kind,
             "settingsSchema": p.settings.model_json_schema(by_alias=True),
         }
-        for ref, p in sorted(plugins.items())
+        for ref, p in plugins.items()
     ]
 
 

@@ -14,6 +14,7 @@ from typing import Any
 from . import normalize
 from .checks import run_check
 from .normalize import check_value, pattern_matcher, pattern_pairs
+from .queue import ClaimedJob
 from .template import CheckStep, Template, ValueDef
 
 
@@ -31,18 +32,35 @@ def step_results(
 
 
 def run_checks(
-    template: Template, fields: dict[str, Any], tables: dict[str, Any]
+    template: Template,
+    fields: dict[str, Any],
+    tables: dict[str, Any],
+    job: ClaimedJob | None = None,
 ) -> dict[str, Any]:
+    """Every check on the values, reference checks and check plugins alike. A check plugin
+    needs the job (`CheckContext.job`); without one a stand-in test job is used."""
+    from .plugins import check_context, resolve_checks, run_check_plugin, stand_in_job
+
     results = step_results(template, fields, tables)
+    plugged = resolve_checks(template)
     checks: dict[str, Any] = {}
     for step in template.pipeline:
-        if isinstance(step, CheckStep):
-            checks[step.id] = results[step.id] = run_check(template.compile_check(step), results)
+        if not isinstance(step, CheckStep):
+            continue
+        if step.id in plugged:
+            ctx = check_context(job or stand_in_job(template), template, step, results)
+            result = run_check_plugin(plugged[step.id], ctx)
+        else:
+            result = run_check(template.compile_check(step), results)
+        checks[step.id] = results[step.id] = result
     return checks
 
 
 def apply_edits(
-    template: Template, draft: dict[str, Any], edits: list[dict[str, Any]]
+    template: Template,
+    draft: dict[str, Any],
+    edits: list[dict[str, Any]],
+    job: ClaimedJob | None = None,
 ) -> dict[str, Any]:
     doc = copy.deepcopy(draft)
     fields: dict[str, Any] = doc["fields"]
@@ -120,5 +138,5 @@ def apply_edits(
             )
 
     doc["issues"] = issues
-    doc["checks"] = run_checks(template, fields, tables)
+    doc["checks"] = run_checks(template, fields, tables, job)
     return doc

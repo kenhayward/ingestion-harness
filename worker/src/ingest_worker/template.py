@@ -462,6 +462,10 @@ class Template(_Model):
         suffix = "[*]" if fld.type == "list" else ""
         return f"{self.filler_of_field(head).id}.{head}.value{suffix}", fld
 
+    def resolve_path(self, path: str) -> tuple[str, ValueDef] | None:
+        """`<field>` or `<table>.<column>` -> (engine path, definition), None when unknown."""
+        return self._resolve(path)
+
     def _unknown_path(self, path: str) -> str:
         """Why `path` does not resolve, saying how to fix a bare table id (TS `unknownPath`)."""
         table = next((t for t in self.outputs.tables if t.id == path), None)

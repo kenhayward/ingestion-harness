@@ -52,8 +52,12 @@ describe('GET /api/plugins', () => {
     });
     const res = await app.inject('/api/plugins');
     expect(res.statusCode).toBe(200);
-    expect(res.json().map((p: PluginInfo) => p.ref)).toEqual(['acme.lines@2', 'text.pattern@1']);
-    expect(res.json()[1]).toEqual(catalogue.plugins[0]);
+    expect(res.json().map((p: PluginInfo) => p.ref)).toEqual([
+      'acme.lines@2',
+      'list.lookup@1',
+      'text.pattern@1',
+    ]);
+    expect(res.json()[2]).toEqual(catalogue.plugins[0]);
   });
 
   it('is empty before any worker has started', async () => {
