@@ -197,6 +197,10 @@
             <a href="#mapping-memory">Mapping memory</a>
             <span>— mappings designers accepted are reused by later mappings</span>
           </li>
+          <li>
+            <a href="#worker-graph">The worker as a graph of nodes, and a LangGraph trial</a>
+            <span>— the groundwork for plugins and agents; LangGraph is off by default</span>
+          </li>
         </ul>
         <h4>Minor changes</h4>
         <ul>
@@ -415,6 +419,47 @@
         other names, their definition and a link to the term in the Ontologies page.
       </p>
 
+      <h3 id="worker-graph">The worker as a graph of nodes, and a LangGraph trial</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/257">#257</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/258">#258</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/259">#259</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/261">#261</a>
+      </p>
+      <p>
+        This is the first step of moving the worker to an agent-graph architecture, so that CT
+        Studio can grow by plugging in capabilities (plugins, other OCR engines and, later, remote
+        agents over A2A) instead of changing the pipeline each time. The research and the decisions
+        are in
+        <a href="../design/agent-graph-architecture.md">the agent graph research</a> and
+        <a href="../adr/0018-capabilities-as-nodes.md">ADR 0018</a>.
+      </p>
+      <p>
+        <strong>Capabilities are nodes.</strong> The worker's job graphs are now explicit, with no
+        change in behaviour. Each capability (reading pages, selecting a copy, segmenting, running a
+        step, normalising its answer, finishing the document) is a node that takes and returns typed
+        values and never edits shared state. Each node is described with its effects (pure,
+        cacheable or effectful) and whether it sends data out (none, to a model, or remote).
+      </p>
+      <p>
+        Every chat, vision or OCR model call goes through one gate, which checks the project's data
+        policy; a test fails if anything reaches a model around it. Handlers return their outcome
+        (complete, await review, deliver) and one place writes the job's status. Golden files pin
+        everything a job does, so later changes to the graph can't quietly change results. Recipe
+        plugins are the first capability built on this contract.
+      </p>
+      <p>
+        <strong>LangGraph trial, off by default.</strong> With
+        <code>WORKER_STEP_GRAPH=langgraph</code>, a recipe's steps run as a LangGraph graph,
+        checkpointed in Postgres (schema <code>langgraph</code>) after every step. A job whose
+        worker stopped then resumes at the step it reached, instead of calling the model again for
+        the steps already done. CT Studio's own queue still claims, retries and cancels jobs. The
+        LangGraph library runs inside that queue, not the LangGraph Agent Server. Checkpoint threads
+        are deleted once no retry will resume them, and pruned at worker start and hourly. LangSmith
+        tracing is always forced off, so no document text leaves through it. Every golden scenario
+        runs both ways and gives the same results.
+      </p>
+
       <h2 id="minor">Minor changes</h2>
 
       <h3 id="delivering">The Delivering status</h3>
@@ -474,11 +519,6 @@
         Backups include the bridge's connections, still encrypted, and a restore re-registers the
         publishing targets with the bridge. The post-deploy smoke test now publishes a job through
         the bridge, reads it back and withdraws it.
-      </p>
-      <p>
-        The worker was reorganised into self-contained steps with one gate for model calls and the
-        data policy (#257, #258, #259), with no change in behaviour. A trial of running a recipe's
-        steps with LangGraph is included but off by default (#261).
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
