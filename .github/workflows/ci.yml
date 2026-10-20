@@ -187,6 +187,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
+          # Writes the user-level .npmrc (scope registry + token from NODE_AUTH_TOKEN). npm ignores
+          # an .npmrc inside a workspace folder, so the auth must live here, not in the package.
+          registry-url: https://npm.pkg.github.com
+          scope: '@${{ github.repository_owner }}'
       - name: Contract package on GitHub Packages
         # External sinks install the contract as @<owner>/bridge-contract. A version publishes
         # once: bump packages/bridge-contract/package.json's version when the contract changes.
@@ -199,8 +203,6 @@ jobs:
           cd packages/bridge-contract
           node scripts/prepare-publish.mjs "${OWNER}"
           cp ../../LICENSE .
-          echo "@${OWNER}:registry=https://npm.pkg.github.com" > .npmrc
-          echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> .npmrc
           version=$(node -p "require('./package.json').version")
           if npm view "@${OWNER}/bridge-contract@${version}" version >/dev/null 2>&1; then
             echo "@${OWNER}/bridge-contract@${version} is already published"
