@@ -46,6 +46,26 @@ DATABASE_URL=postgres://... BRIDGE_CLIENT_KEY=$(openssl rand -hex 32) npm run de
 Tests: `npx vitest run --project bridge`; Postgres tests run with `IH_TEST_DATABASE_URL` set to a
 throwaway database (`npm run test:integration`).
 
+## The contract package (for external sinks)
+
+Each tagged build publishes `packages/bridge-contract` to GitHub Packages as
+`@<owner>/bridge-contract`, once per version. The package's `version` is bumped whenever the
+contract changes. An external sink pins it and imports the schemas, the request signing and the
+conformance suite from it, rather than copying them:
+
+```bash
+# .npmrc in the sink's repo; the token needs read:packages
+@<owner>:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+```bash
+npm install @<owner>/bridge-contract@<version> --save-exact
+```
+
+`conformanceSuite(options)` takes a `fetchImpl`, so a sink can also run the suite in its own tests
+against an in-process server.
+
 ## The conformance suite (for external sinks)
 
 Each tagged build publishes `ghcr.io/<owner>/ct-bridge-conformance:<version>` and attaches this
