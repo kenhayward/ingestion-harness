@@ -75,23 +75,30 @@ function AttemptView({ attempt }: { attempt: StepAttempt }) {
 export function StepAttemptsDialog({
   api,
   templateId,
+  jobId,
   stepId,
   onClose,
 }: {
   api: Api;
-  templateId: string;
   stepId: string;
   onClose: () => void;
-}) {
+} & (
+  | {
+      /** The step's recent retried runs, from its retry warning. */ templateId: string;
+      jobId?: undefined;
+    }
+  | { /** One job's run of the step (the Review page). */ jobId: string; templateId?: undefined }
+)) {
   const [runs, setRuns] = useState<RetriedRun[] | null>(null);
   const [runsError, setRunsError] = useState<string | null>(null);
-  const [openRun, setOpenRun] = useState<string | null>(null);
+  const [openRun, setOpenRun] = useState<string | null>(jobId ?? null);
   const [log, setLog] = useState<StepAttempts | null>(null);
   const [logError, setLogError] = useState<string | null>(null);
   /** [call index, attempt index] within the open run's log. */
   const [picked, setPicked] = useState<[number, number]>([0, 0]);
 
   useEffect(() => {
+    if (templateId === undefined) return;
     let live = true;
     api.listRetriedStepRuns(templateId, stepId).then(
       (r) => {
@@ -122,6 +129,36 @@ export function StepAttemptsDialog({
   }, [api, openRun, stepId]);
 
   const shown = log?.calls[picked[0]]?.attempts[picked[1]];
+  /** The open run's calls and attempts, each attempt a button showing it on the right. */
+  const attemptList = (l: StepAttempts) => (
+    <ul className="step-log-attempts">
+      {l.calls.map((call, ci) => (
+        <li key={call.label}>
+          {callName(stepId, call.label) && (
+            <span className="step-log-call">{callName(stepId, call.label)}</span>
+          )}
+          <ul>
+            {call.attempts.map((a, ai) => {
+              const ok = a.errors.length === 0;
+              return (
+                <li key={a.n}>
+                  <button
+                    type="button"
+                    aria-pressed={picked[0] === ci && picked[1] === ai}
+                    aria-label={`Attempt ${a.n} ${ok ? 'accepted' : 'refused'}`}
+                    data-tone={ok ? 'ok' : 'warn'}
+                    onClick={() => setPicked([ci, ai])}
+                  >
+                    Attempt {a.n} <span aria-hidden="true">{ok ? '✓' : '✗'}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </li>
+      ))}
+    </ul>
+  );
   return (
     <Dialog
       title={`Model log: ${stepId}`}
@@ -130,11 +167,24 @@ export function StepAttemptsDialog({
       className="model-log-dialog step-log-dialog"
     >
       <p className="muted">
-        The recent runs of this step whose first answer failed its checks. Pick an attempt to see
-        what the model was sent, what it answered, and why the answer was sent back.
+        {jobId
+          ? "This job's attempts of the step. Pick an attempt to see what the model was sent, what it answered, and why an answer was sent back."
+          : 'The recent runs of this step whose first answer failed its checks. Pick an attempt to see what the model was sent, what it answered, and why the answer was sent back.'}
       </p>
+      {jobId && (
+        <div className="step-log">
+          <nav className="step-log-nav" aria-label="Attempts">
+            {log && attemptList(log)}
+          </nav>
+          <div className="step-log-detail">
+            {logError && <p role="alert">{logError}</p>}
+            {!log && !logError && <p className="muted">Loading the attempts…</p>}
+            {shown && <AttemptView attempt={shown} />}
+          </div>
+        </div>
+      )}
       {runsError && <p role="alert">{runsError}</p>}
-      {runs === null && !runsError && <p className="muted">Loading the runs…</p>}
+      {!jobId && runs === null && !runsError && <p className="muted">Loading the runs…</p>}
       {runs?.length === 0 && <p className="muted">No run of this step has needed a retry yet.</p>}
       {runs && runs.length > 0 && (
         <div className="step-log">
@@ -155,36 +205,7 @@ export function StepAttemptsDialog({
                       {r.status === 'failed' ? ' · failed' : ''}
                     </small>
                   </button>
-                  {openRun === r.jobId && log && (
-                    <ul className="step-log-attempts">
-                      {log.calls.map((call, ci) => (
-                        <li key={call.label}>
-                          {callName(stepId, call.label) && (
-                            <span className="step-log-call">{callName(stepId, call.label)}</span>
-                          )}
-                          <ul>
-                            {call.attempts.map((a, ai) => {
-                              const ok = a.errors.length === 0;
-                              const on = picked[0] === ci && picked[1] === ai;
-                              return (
-                                <li key={a.n}>
-                                  <button
-                                    type="button"
-                                    aria-pressed={on}
-                                    aria-label={`Attempt ${a.n} ${ok ? 'accepted' : 'refused'}`}
-                                    data-tone={ok ? 'ok' : 'warn'}
-                                    onClick={() => setPicked([ci, ai])}
-                                  >
-                                    Attempt {a.n} <span aria-hidden="true">{ok ? '✓' : '✗'}</span>
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {openRun === r.jobId && log && attemptList(log)}
                 </li>
               ))}
             </ul>

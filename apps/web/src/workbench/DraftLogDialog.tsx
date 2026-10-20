@@ -4,12 +4,20 @@ import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
+import { draftAttempts, type AttemptStatus, type LogAttempt } from './draft-log.js';
 
-/** What a proposal round is called: the first is the proposal, then the sections anchor round. */
-function roundName(label: string, index: number): string {
-  if (index === 0) return 'Proposal';
-  return label.endsWith('-anchors') ? 'Anchor round' : `Round ${index + 1}`;
-}
+const STATUS_WORD: Record<AttemptStatus, string> = {
+  accepted: 'accepted',
+  refused: 'refused',
+  stopped: 'stopped',
+  unanswered: 'no answer',
+};
+const STATUS_MARK: Record<AttemptStatus, string> = {
+  accepted: '✓',
+  refused: '✗',
+  stopped: '!',
+  unanswered: '…',
+};
 
 function tokens(n: number | null): string {
   return n === null ? '' : ` · ${n.toLocaleString('en-GB')} tokens`;
@@ -89,7 +97,90 @@ function summaryOf(log: DraftLog): string {
   return parts.join(' · ');
 }
 
-/** A drafting proposal's model log: what the model was sent, said and did, round by round. */
+/** One attempt: how it ended, then what the model was sent, did and answered. */
+function AttemptDetail({ name, attempt }: { name: string; attempt: LogAttempt }) {
+  const heading = `${name}, attempt ${attempt.n}`;
+  return (
+    <section className="step-log-attempt" aria-label={heading}>
+      <h3>
+        {heading}
+        {attempt.outputTokens !== null && (
+          <span className="muted">
+            {' '}
+            · {attempt.outputTokens.toLocaleString('en-GB')} output tokens
+          </span>
+        )}
+      </h3>
+      {attempt.status === 'refused' && (
+        <div className="step-log-errors">
+          <h4>Errors that sent it back</h4>
+          <ul>
+            {attempt.errors.map((e, i) => (
+              <li key={`${i}:${e}`}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {attempt.status === 'accepted' && (
+        <p className="step-log-accepted">Accepted: this answer passed the checks.</p>
+      )}
+      {attempt.status === 'unanswered' && (
+        <p className="muted">No answer was recorded for this attempt.</p>
+      )}
+      <ol className="model-log">
+        {attempt.entries
+          .filter((e) => e.kind !== 'rejected')
+          .map((entry, j) => (
+            <li key={j}>
+              <Entry entry={entry} />
+            </li>
+          ))}
+      </ol>
+    </section>
+  );
+}
+
+/** Rounds and attempts on the left, the attempt picked on the right (as a step's model log). */
+function LogPanes({ log }: { log: DraftLog }) {
+  const rounds = draftAttempts(log);
+  const [picked, setPicked] = useState<[number, number]>([0, 0]);
+  if (rounds.length === 0) return <p className="muted">The log has no entries yet.</p>;
+  const round = rounds[picked[0]];
+  const shown = round?.attempts[picked[1]];
+  return (
+    <div className="step-log">
+      <nav className="step-log-nav" aria-label="Rounds and attempts">
+        <ul>
+          {rounds.map((r, ri) => (
+            <li key={`${ri}:${r.label}`}>
+              <span className="step-log-file">{r.name}</span>
+              <ul className="step-log-attempts">
+                {r.attempts.map((a, ai) => (
+                  <li key={a.n}>
+                    <button
+                      type="button"
+                      aria-pressed={picked[0] === ri && picked[1] === ai}
+                      aria-label={`${r.name}, attempt ${a.n} ${STATUS_WORD[a.status]}`}
+                      data-tone={a.status === 'accepted' ? 'ok' : 'warn'}
+                      onClick={() => setPicked([ri, ai])}
+                    >
+                      Attempt {a.n} <span aria-hidden="true">{STATUS_MARK[a.status]}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <div className="step-log-detail">
+        {round && shown && <AttemptDetail name={round.name} attempt={shown} />}
+      </div>
+    </div>
+  );
+}
+
+/** A drafting proposal's model log: its rounds and attempts, one attempt at a time. */
 export function DraftLogDialog({
   api,
   projectId,
@@ -115,7 +206,12 @@ export function DraftLogDialog({
   }, [api, projectId, proposalId]);
 
   return (
-    <Dialog title="Model log" onClose={onClose} closeLabel="Close" className="model-log-dialog">
+    <Dialog
+      title="Model log"
+      onClose={onClose}
+      closeLabel="Close"
+      className="model-log-dialog step-log-dialog"
+    >
       <div className="model-log-head">
         <p className="muted">
           {log ? summaryOf(log) : error ? 'No log to show.' : 'Loading the model log…'}
@@ -128,22 +224,7 @@ export function DraftLogDialog({
           This run is from before the full model log: prompts, replies and rejections only.
         </p>
       )}
-      {log?.rounds.map((round, i) => (
-        <section
-          key={`${i}:${round.label}`}
-          className="model-log-round"
-          aria-label={roundName(round.label, i)}
-        >
-          <h3>{roundName(round.label, i)}</h3>
-          <ol className="model-log">
-            {round.entries.map((entry, j) => (
-              <li key={j}>
-                <Entry entry={entry} />
-              </li>
-            ))}
-          </ol>
-        </section>
-      ))}
+      {log && <LogPanes log={log} />}
     </Dialog>
   );
 }

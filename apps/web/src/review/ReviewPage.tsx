@@ -14,6 +14,7 @@ import { ReviewHeader } from './ReviewHeader.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
 import { usePlugins } from '../templates/PluginForms.js';
+import { StepAttemptsDialog } from '../templates/StepAttemptsDialog.js';
 
 const REVIEWER_KEY = 'ih.reviewer';
 
@@ -76,6 +77,8 @@ export function ReviewPage({
   const stepModel = (ref: string | null) => (ref ? modelDisplayName(ref, models) : '?');
   /** The plugins the workers run: whether a plugin step's re-run may take a model. */
   const plugins = usePlugins(api, role !== 'operator');
+  /** The step whose model log (this job's attempts) is open. */
+  const [logStep, setLogStep] = useState<string | null>(null);
   const [rerun, setRerun] = useState<{
     step: string;
     /** A plugin step: no page images, and a model only for a plugin that asks one. */
@@ -358,6 +361,16 @@ export function ReviewPage({
                                 : '—'}
                         </td>
                         <td>
+                          {role !== 'operator' && last && last.model !== null && !last.cached && (
+                            <button
+                              type="button"
+                              className="link"
+                              aria-label={`Model log of ${step.id}`}
+                              onClick={() => setLogStep(step.id)}
+                            >
+                              Model log
+                            </button>
+                          )}{' '}
                           {editable && role !== 'operator' && (
                             <button
                               type="button"
@@ -380,6 +393,14 @@ export function ReviewPage({
                   })}
                 </tbody>
               </table>
+              {logStep && (
+                <StepAttemptsDialog
+                  api={api}
+                  jobId={jobId}
+                  stepId={logStep}
+                  onClose={() => setLogStep(null)}
+                />
+              )}
               {rerun && (
                 <ReprocessDialog
                   title={`Re-run ${rerun.step}`}
