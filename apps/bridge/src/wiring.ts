@@ -9,8 +9,10 @@ import { PgDeliveryRepo } from './deliveries/pg.js';
 import type { RunnerDeps } from './deliveries/runner.js';
 import { S3PackageStore } from './packages/s3.js';
 import { HttpProducerClient } from './producer/client.js';
+import { HttpGraphStore } from './rdf/store.js';
 import { S3ObjectStore, type ObjectStorePort } from './s3/store.js';
 import { MapSinkRegistry } from './sinks/port.js';
+import { RDF_SINK_ID, RdfSink } from './sinks/rdf.js';
 import { S3_SINK_ID, S3Sink } from './sinks/s3.js';
 import { PgTargetRepo } from './targets/pg.js';
 
@@ -23,7 +25,7 @@ export interface Built {
 
 /**
  * The bridge on Postgres, with what its loops need: packages staged in the deployment's own S3
- * (`BRIDGE_STAGING_BUCKET`), and the built-in `s3` sink.
+ * (`BRIDGE_STAGING_BUCKET`), and the built-in `s3` and `rdf` sinks.
  */
 export async function buildFromConfig(
   config: BridgeConfig,
@@ -53,6 +55,9 @@ export async function buildFromConfig(
   const packages = new S3PackageStore(internalStore, config.BRIDGE_STAGING_BUCKET);
   const sinks = new MapSinkRegistry({
     [S3_SINK_ID]: new S3Sink({ internal, reservedBuckets: [config.BRIDGE_STAGING_BUCKET] }),
+    [RDF_SINK_ID]: new RdfSink({
+      store: (credential, dataset) => new HttpGraphStore({ ...credential, dataset }),
+    }),
   });
   const app = await buildBridge({
     config,

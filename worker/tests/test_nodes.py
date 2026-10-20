@@ -162,4 +162,4 @@ def test_the_nodes_that_reach_a_model_are_the_ones_that_say_so() -> None:
 
 def test_effectful_nodes_are_the_ones_that_write_results() -> None:
     effectful = {key for key, spec in NODES.items() if spec.effects == "effectful"}
-    assert effectful == {"document.write_drafts", "job.apply_outcome", "graph.deliver"}
+    assert effectful == {"document.write_drafts", "job.apply_outcome", "publication.deliver"}

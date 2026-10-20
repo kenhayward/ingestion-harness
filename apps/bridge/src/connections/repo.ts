@@ -53,6 +53,8 @@ export const CREDENTIAL_ENV_NAMES: ReadonlySet<string> = new Set([
   'TARGET_S3_SECRET_KEY',
   'S3_ACCESS_KEY',
   'S3_SECRET_KEY',
+  // The triple store writer's password (the seeded rdf-default connection).
+  'RDF_PASSWORD',
 ]);
 
 const ID = CONNECTION_ID;

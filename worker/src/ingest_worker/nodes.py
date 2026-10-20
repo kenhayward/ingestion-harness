@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .bridge.package import Delivered
 from .extract import ExtractionResult
 from .outcomes import apply_outcome
 from .pipeline import (
@@ -27,8 +28,8 @@ from .pipeline import (
 from .segment import Segmented
 from .template_pipeline import (
     Finalised,
-    GraphDelivery,
     StepOutcome,
+    deliver_publication,
     finalise,
     normalise_step,
     run_step,
@@ -105,8 +106,9 @@ NODES: dict[str, NodeSpec] = {
             "Write the job's status; deliver an extraction that needs no review.",
         ),
         NodeSpec(
-            "graph.deliver", 1, GraphDelivery.deliver, _NONE, "effectful", "none", False,
-            "Publish a document's graph: its versioned copy to the target, then the store.",
+            "publication.deliver", 1, deliver_publication, Delivered, "effectful", "none", False,
+            "Hand a publication to the bridge: the graph's next version first, the ontologies "
+            "not loaded yet, then one package to the target and the triple store.",
         ),
     ]
 }  # fmt: skip

@@ -26,8 +26,10 @@ _T = TypeVar("_T")
 
 DEFAULT_TARGET_ID = "default"
 DEFAULT_BUCKET = "ingest-published"
+#: The triple store target, seeded from `RDF_ENDPOINT` (TRIPLE_STORE_TARGET_ID in TS).
+TRIPLE_STORE_TARGET_ID = "rdf-default"
 
-TargetKind = Literal["internal", "external"]
+TargetKind = Literal["internal", "external", "rdf"]
 SeedOutcome = Literal["seeded", "kept", "differs"]
 
 
@@ -79,6 +81,37 @@ def default_seed(env: Mapping[str, str]) -> DefaultSeed:
         secret_key_env="TARGET_S3_SECRET_KEY" if t_secret else "S3_SECRET_KEY",
         force_path_style=True,
     )
+
+
+@dataclass(frozen=True)
+class RdfSeed:
+    """The triple store target as `.env` describes it (RdfSeed in TS)."""
+
+    endpoint: str
+    dataset: str
+    user: str
+
+
+def rdf_seed(env: Mapping[str, str]) -> RdfSeed | None:
+    """`RDF_ENDPOINT` as the triple store target (rdfSeed in TS); None when it is blank."""
+    endpoint = env.get("RDF_ENDPOINT") or None
+    if endpoint is None:
+        return None
+    return RdfSeed(
+        endpoint=endpoint,
+        dataset=env.get("RDF_DATASET") or "ct",
+        user=env.get("RDF_USER") or "ct-writer",
+    )
+
+
+def rdf_seed_differences(stored: TargetRow, seed: RdfSeed) -> list[str]:
+    """What the stored triple store target and `.env` now disagree on."""
+    pairs = [
+        ("endpoint", stored.endpoint, seed.endpoint),
+        ("dataset", stored.bucket, seed.dataset),
+        ("user", stored.access_key_id, seed.user),
+    ]
+    return [name for name, have, want in pairs if have != want]
 
 
 @dataclass(frozen=True)
@@ -134,6 +167,10 @@ class PublishTargetStore(Protocol):
 
     def seed_default(self, seed: DefaultSeed) -> SeedOutcome:
         """Write `.env` into the default row, once: 'seeded', else 'kept' or 'differs'."""
+        ...
+
+    def seed_rdf(self, seed: RdfSeed) -> SeedOutcome:
+        """Insert the triple store target from `.env`, once: 'seeded', else 'kept' or 'differs'."""
         ...
 
 
@@ -235,6 +272,47 @@ class PgPublishTargetStore:
             )
             return "seeded"
 
+    def seed_rdf(self, seed: RdfSeed) -> SeedOutcome:
+        def work(conn: psycopg.Connection[Any]) -> SeedOutcome:
+            # The API seeds the same row (seedRdf): whichever starts first writes it.
+            inserted = conn.execute(
+                """INSERT INTO publish_targets (id, label, kind, bucket, prefix, endpoint,
+                       access_key_id, connection_id, source, seeded_at)
+                   VALUES (%s, 'Triple store', 'rdf', %s, '', %s, %s, %s, 'env', now())
+                   ON CONFLICT (id) DO NOTHING""",
+                (
+                    TRIPLE_STORE_TARGET_ID,
+                    seed.dataset,
+                    seed.endpoint,
+                    seed.user,
+                    TRIPLE_STORE_TARGET_ID,
+                ),
+            )
+            if inserted.rowcount:
+                return "seeded"
+            row = conn.execute(
+                f"SELECT {_COLUMNS} FROM publish_targets WHERE id = %s",
+                (TRIPLE_STORE_TARGET_ID,),
+            ).fetchone()
+            return "differs" if row and rdf_seed_differences(TargetRow(*row), seed) else "kept"
+
+        return self._run(work)
+
+
+def seed_rdf_target(store: PublishTargetStore, env: Mapping[str, str]) -> list[str]:
+    """Seed the triple store target from `RDF_ENDPOINT` (first start only; nothing when it is
+    blank). Afterwards the database wins: what `.env` now disagrees on is logged and returned."""
+    seed = rdf_seed(env)
+    if seed is None or store.seed_rdf(seed) != "differs":
+        return []
+    stored = next(r for r in store.load() if r.id == TRIPLE_STORE_TARGET_ID)
+    fields = rdf_seed_differences(stored, seed)
+    log.warning(
+        "the triple store target differs from .env (RDF_*) in %s: the stored target is used",
+        ", ".join(fields),
+    )
+    return fields
+
 
 def seed_default_target(store: PublishTargetStore, env: Mapping[str, str]) -> list[str]:
     """Seed the default target from `.env` (first start only). Afterwards the database wins: the
@@ -283,3 +361,11 @@ class LiveTargets:
         if row is None:
             raise TargetMissing(target_id)
         return Target(row.id, row.bucket, row.prefix)
+
+    def rdf(self) -> Target | None:
+        """The triple store target (its dataset as the bucket), or None without RDF_ENDPOINT."""
+        self.refresh()
+        row = self._rows.get(TRIPLE_STORE_TARGET_ID)
+        if row is None or row.kind != "rdf":
+            return None
+        return Target(row.id, row.bucket, "")

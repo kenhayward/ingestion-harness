@@ -1,6 +1,6 @@
 # Delivery bridge: design
 
-Status: phases 1 and 2 built, 2026-10-19 (see Phase 2 as built). Replaces the worker's direct S3 and Fuseki
+Status: phases 1, 2 and 3 built, 2026-10-19 (see Phase 2 as built, Phase 3 as built). Replaces the worker's direct S3 and Fuseki
 publishing (`worker/src/ingest_worker/pipeline.py` `publish_outputs`,
 `template_pipeline.py` `publish_graph`) with delivery through a separate **bridge** service to
 pluggable **sinks**. It builds on, and in part supersedes,
@@ -532,6 +532,32 @@ Phase 2 (S3 behind the bridge) made these calls, recorded in
   connection `target-<id>`, re-encrypted under `BRIDGE_SECRETS_KEY`, and nulls CT Studio's copy.
   The built-in connection `internal` (the bridge's own SeaweedFS keys) serves internal targets
   only.
+
+## Phase 3 as built
+
+Phase 3 (RDF behind the bridge) made these calls
+([plan](../plans/2026-10-19-delivery-bridge-3-rdf-behind-bridge.md)):
+
+- **`rdf-default` is a `publish_targets` row of kind `rdf`**: its dataset in `bucket`, Fuseki's
+  URL in `endpoint`, the writer's user in `access_key_id`. It is seeded from `RDF_ENDPOINT` by the
+  API and the worker and mirrored like the S3 targets. Only its label changes; it is never a
+  recipe's `publishTo` and never a choice.
+- **The endpoint and user sit in the shared connection `rdf-default`**, as S3's endpoint does,
+  and the destination is `{ dataset }` (not a dataset URL), so the connections page can test the
+  connection. The password is read from the bridge's allowlisted `RDF_PASSWORD`.
+- **One package per publication.** The version is committed first; the package carries the
+  outputs, the versioned copy as the file `graph-version` (written by the S3 sink at today's key)
+  and the graph as `rdf`, to the recipe's S3 target and `rdf-default`. Sinks accept every part
+  they may ignore (`files`, `data`, `rdf` for both).
+- **The `rdf` sink never replaces a newer version**: it reads the graph's `ct:graphVersion` first,
+  and an equal or newer one makes the delivery succeed without writing.
+- **Ontology loads are graph packages**, recorded with their delivery
+  (`published_ontology_graphs.delivery_id`); a load whose delivery failed is loaded again.
+  `rebuild` sends graph packages from the published copies; backfill and remint go through the
+  same hand-off as a publish, with no outputs.
+- **Graph drops use the target object route** (`objects:delete` with the dataset and the graph
+  IRI): withdraw and remint. No RDF-specific route was added.
+- **The worker no longer reaches Fuseki.** The API keeps its direct access for backup and restore.
 
 ## Left to the builder
 

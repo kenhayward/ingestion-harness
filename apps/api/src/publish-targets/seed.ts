@@ -58,8 +58,21 @@ const COMPARED = ['kind', 'endpoint', 'bucket', 'prefix'] as const;
 
 /** The fields of the stored default that differ from what `.env` now says (it is never overwritten). */
 export function seedDifferences(
-  stored: Pick<DefaultSeed, (typeof COMPARED)[number]>,
+  stored: Pick<DefaultSeed, Exclude<(typeof COMPARED)[number], 'kind'>> & { kind: string },
   seed: DefaultSeed,
 ): string[] {
   return COMPARED.filter((k) => stored[k] !== seed[k]);
+}
+
+/** The triple store target as `.env` describes it (held in step with the worker by a fixture). */
+export interface RdfSeed {
+  endpoint: string;
+  dataset: string;
+  user: string;
+}
+
+/** `RDF_ENDPOINT` as the triple store target; null (no target) when it is blank. */
+export function rdfSeed(c: Config): RdfSeed | null {
+  if (!c.RDF_ENDPOINT) return null;
+  return { endpoint: c.RDF_ENDPOINT, dataset: c.RDF_DATASET, user: c.RDF_USER };
 }

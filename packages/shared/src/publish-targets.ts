@@ -3,6 +3,12 @@ import { z } from 'zod';
 /** The seeded target every recipe without `delivery.publishTo` delivers to. */
 export const DEFAULT_TARGET_ID = 'default';
 
+/**
+ * The triple store target, seeded from `RDF_ENDPOINT` (delivery bridge phase 3): recipes that
+ * deliver `rdf` load their graphs into it as well as delivering to their S3 target.
+ */
+export const TRIPLE_STORE_TARGET_ID = 'rdf-default';
+
 /** A publishing target's id, as a recipe's `delivery.publishTo` names it. */
 export const TARGET_ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const TargetIdSchema = z.string().regex(TARGET_ID, 'a publishing target id');
@@ -19,8 +25,12 @@ export function publishTargetIdFrom(label: string): string {
   return slug && slug !== DEFAULT_TARGET_ID ? slug : 'target';
 }
 
+/** What an admin can create: S3 targets. */
 export const TARGET_KINDS = ['internal', 'external'] as const;
 export type TargetKind = (typeof TARGET_KINDS)[number];
+/** Every kind a stored target has: S3, or the triple store seeded from `RDF_ENDPOINT`. */
+export const PUBLISH_TARGET_KINDS = ['internal', 'external', 'rdf'] as const;
+export type PublishTargetKind = (typeof PUBLISH_TARGET_KINDS)[number];
 export const SSE_MODES = ['none', 'AES256', 'aws:kms'] as const;
 export const STORAGE_CLASSES = [
   'STANDARD',
@@ -71,9 +81,12 @@ export type TargetConnection = z.infer<typeof TargetConnectionSchema>;
 export const PublishTargetViewSchema = z.object({
   id: TargetIdSchema,
   label: z.string(),
-  kind: z.enum(TARGET_KINDS),
+  kind: z.enum(PUBLISH_TARGET_KINDS),
+  /** S3: the bucket. The triple store: its dataset. */
   bucket: z.string(),
   prefix: z.string(),
+  /** The triple store's URL (S3 targets: null; their endpoint is the connection's). */
+  endpoint: z.string().nullable(),
   /** The bridge connection an external target delivers with (internal targets: null). */
   connectionId: z.string().nullable(),
   /** That connection as the bridge describes it now; null when there is none, or it is unknown. */
@@ -109,7 +122,9 @@ const EXTERNAL_ONLY = ['connectionId', 'sse', 'kmsKeyId', 'storageClass'] as con
 const TARGET_FIELDS = {
   id: TargetIdSchema.optional(),
   label: z.string().trim().min(1).max(80),
-  kind: z.enum(TARGET_KINDS),
+  kind: z.enum(TARGET_KINDS, {
+    error: 'kind is internal or external: triple store targets come from RDF_ENDPOINT',
+  }),
   bucket: BucketSchema,
   prefix: PrefixSchema,
   /** External targets: the bridge connection holding the credentials. */

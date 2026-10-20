@@ -11,7 +11,6 @@ import yaml
 
 from ingest_worker.bridge.models import ActingUser
 from ingest_worker.graph_registry import MemoryGraphRegistry
-from ingest_worker.graph_store import GraphStoreUnavailable
 from ingest_worker.llm.registry import ModelRegistry
 from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, PipelineDeps, Target
@@ -20,7 +19,7 @@ from ingest_worker.rdf_rebuild import DeliveredJob, MemoryRebuildSource
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore, graph_version_key
 
-from .fakes import FakeBridge, FakeGraphStore, FakeQueue, FakeTargets, MemoryLinkedDataSettings
+from .fakes import FakeBridge, FakeQueue, FakeTargets, MemoryLinkedDataSettings
 
 BASE = "https://data.acme.example/"
 SHA = "ab" * 32
@@ -62,11 +61,15 @@ def setup(tmp_path: Path) -> tuple[PipelineDeps, MemoryObjectStore]:
         models=ModelRegistry({}, {}, {}),
         extract_text=lambda _pdf: [],
         buckets=Buckets("inbox", "outputs", "runs"),
-        targets=FakeTargets({"default": Target("default", "published", "pvp/")}),
-        bridge=FakeBridge({"default": ("published", "pvp/")}, stores={"default": target}),
+        targets=FakeTargets(
+            {"default": Target("default", "published", "pvp/")},
+            rdf=Target("rdf-default", "ct", ""),
+        ),
+        bridge=FakeBridge(
+            {"default": ("published", "pvp/")}, stores={"default": target}, rdf={"rdf-default"}
+        ),
         linked_data=MemoryLinkedDataSettings(BASE),
         graph_registry=MemoryGraphRegistry(),
-        graph_store=FakeGraphStore(),
         delivered_jobs=MemoryRebuildSource(withdrawn=[DELIVERED]),
     )
     reviewed = {
@@ -94,9 +97,10 @@ def background(task: str, params: dict[str, Any]) -> ClaimedJob:
     )  # fmt: skip
 
 
-def store_of(deps: PipelineDeps) -> FakeGraphStore:
-    assert isinstance(deps.graph_store, FakeGraphStore)
-    return deps.graph_store
+def store_of(deps: PipelineDeps) -> FakeBridge:
+    """The bridge, whose `graphs` are the triple store target's (rdf-default)."""
+    assert isinstance(deps.bridge, FakeBridge)
+    return deps.bridge
 
 
 WITHDRAW = {
@@ -147,12 +151,33 @@ def test_a_version_only_withdrawal_keeps_the_graph(tmp_path: Path) -> None:
     assert queue.completed and GRAPH in store_of(deps).graphs
 
 
-def test_a_store_outage_retries_the_withdrawal(tmp_path: Path) -> None:
-    deps, _ = setup(tmp_path)
-    store_of(deps).fail = GraphStoreUnavailable("graph store answered 503")
+def test_a_graph_drop_the_bridge_cannot_take_yet_is_retried(tmp_path: Path) -> None:
+    """The bridge lags (rdf-default not mirrored yet after an upgrade or a restore): the drop
+    raises BridgeUnavailable, the job retries, and the copies already deleted are no error then."""
+    from ingest_worker.bridge.client import BridgeUnavailable
+
+    deps, target = setup(tmp_path)
+    target.put("published", "pvp/" + graph_version_key(SHA, "letter", 1), b"x", "text/turtle")
+    bridge = store_of(deps)
+    bridge.graphs[GRAPH] = "<a> <b> <c> ."
+    delete = bridge.delete_objects
+    lagging = [True]
+
+    def drop(target_id: str, objects: list[tuple[str, str]]) -> int:
+        if target_id == "rdf-default" and lagging[0]:
+            lagging[0] = False
+            raise BridgeUnavailable("the bridge answered 404 to an object delete: no target")
+        return delete(target_id, objects)
+
+    bridge.delete_objects = drop  # type: ignore[method-assign]
     queue = FakeQueue(jobs=[background("withdraw", WITHDRAW)])
     run_once(queue, deps, "w1")
     assert queue.failed and not queue.completed
+    assert GRAPH in bridge.graphs and not target.objects  # the copy went, the graph waits
+    queue.jobs = [background("withdraw", WITHDRAW)]
+    run_once(queue, deps, "w1")
+    assert queue.completed and GRAPH not in bridge.graphs
+    assert ("rdf-default", [("ct", GRAPH)]) in bridge.deletes
 
 
 def test_invalid_params_go_to_review(tmp_path: Path) -> None:
@@ -175,15 +200,17 @@ def test_republish_delivers_the_withdrawn_jobs_again(tmp_path: Path) -> None:
     assert waiting == republish.id and not queue.completed
     [(job_id, published, target_id)] = queue.published
     assert job_id == DELIVERED.job_id and target_id == "default"
-    assert deliveries == [("default", queue.published_deliveries[0][2])]
+    assert deliveries[0] == ("default", queue.published_deliveries[0][2])
+    assert [t for t, _ in deliveries] == ["default", "rdf-default"]
     assert isinstance(deps.bridge, FakeBridge)
     [request] = deps.bridge.requests
+    assert request.targets == ["default", "rdf-default"]
     assert request.acting_user == pressed  # who pressed Republish
     assert {o.format for o in published} == {"csv", "rdf"}
     assert all(target.get_optional("published", o.key) for o in published)
     current = registry.current(SHA, "letter")
     assert current is not None and current.job_id == DELIVERED.job_id
-    assert GRAPH in store_of(deps).graphs
+    assert GRAPH in deps.bridge.graphs
     [data] = [d for _, _, m, d in queue.event_details if m == "republished"]
     assert data == {"jobs": 1}
 
@@ -250,9 +277,12 @@ def test_republish_does_nothing_for_a_type_retired_again(tmp_path: Path) -> None
     assert any(m == "republish skipped: retired" for _, _, m in queue.events)
 
 
-def test_a_republish_whose_graph_fails_stays_withdrawn_for_the_retry(tmp_path: Path) -> None:
+def test_a_republish_the_bridge_cannot_take_stays_withdrawn_for_the_retry(tmp_path: Path) -> None:
+    from ingest_worker.bridge.client import BridgeUnavailable
+
     deps, _ = setup(tmp_path)
-    store_of(deps).fail = GraphStoreUnavailable("graph store answered 503")
+    assert isinstance(deps.bridge, FakeBridge)
+    deps.bridge.refusals = [BridgeUnavailable("the bridge could not be reached")]
     queue = FakeQueue(jobs=[background("republish", {"templateId": "letter"})])
     run_once(queue, deps, "w1")
     assert queue.failed and not queue.published  # not recorded: the retry finds it again

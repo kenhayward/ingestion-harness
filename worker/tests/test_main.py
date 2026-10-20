@@ -41,7 +41,9 @@ def rebuild_job(params: dict[str, Any]) -> ClaimedJob:
 def test_rebuild_task_runs_remint(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[JobQueue, RebuildSource]] = []
 
-    def remint(_deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[str]:
+    def remint(
+        _deps: PipelineDeps, queue: JobQueue, source: RebuildSource, _deliveries: Any = None
+    ) -> list[str]:
         calls.append((queue, source))
         return ["remint under https://staging.example/: 2 re-minted, 0 already there, 0 failed"]
 
@@ -55,7 +57,7 @@ def test_rebuild_task_runs_remint(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_rebuild_task_reloads_the_store(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[PipelineDeps] = []
 
-    def rebuild(d: PipelineDeps) -> list[str]:
+    def rebuild(d: PipelineDeps, _deliveries: Any = None) -> list[str]:
         calls.append(d)
         return ["rebuild: 1 ontology graphs, 3 document graphs, 0 missing"]
 
@@ -72,11 +74,13 @@ def test_rebuild_remint_reloads_then_remints_in_one_job(monkeypatch: pytest.Monk
     every graph is re-minted under this server's base, in one job (two replicas never interleave)."""
     calls: list[str] = []
 
-    def rebuild(_d: PipelineDeps) -> list[str]:
+    def rebuild(_d: PipelineDeps, _deliveries: Any = None) -> list[str]:
         calls.append("rebuild")
         return ["rebuild: 0 ontology graphs, 2 document graphs, 0 missing"]
 
-    def remint(_deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[str]:
+    def remint(
+        _deps: PipelineDeps, queue: JobQueue, source: RebuildSource, _deliveries: Any = None
+    ) -> list[str]:
         calls.append("remint")
         assert source is SOURCE
         return ["remint under https://staging.example/: 2 re-minted, 0 already there, 0 failed"]
@@ -93,6 +97,22 @@ def test_rebuild_remint_reloads_then_remints_in_one_job(monkeypatch: pytest.Monk
         "summary": "rebuild: 0 ontology graphs, 2 document graphs, 0 missing; "
         "remint under https://staging.example/: 2 re-minted, 0 already there, 0 failed",
     }
+
+
+def test_a_rebuild_that_handed_graphs_to_the_bridge_waits_for_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def rebuild(_d: PipelineDeps, deliveries: list[tuple[str, str]]) -> list[str]:
+        deliveries.append(("rdf-default", "d-1"))
+        return ["rebuild: 0 ontology graphs, 1 document graphs, 0 missing"]
+
+    monkeypatch.setattr(rdf_rebuild, "rebuild", rebuild)
+    queue = FakeQueue(jobs=[rebuild_job({"mode": "rebuild"})])
+    assert run_once(queue, deps(), "w1")
+    assert not queue.completed
+    assert queue.handed_over == [
+        ("44444444-4444-4444-8444-444444444444", [], [("rdf-default", "d-1")])
+    ]
 
 
 @pytest.mark.parametrize("params", [{}, {"mode": "backfill"}, {"mode": "remint", "extra": 1}])

@@ -67,6 +67,8 @@ export function TargetRow({
   const [result, setResult] = useState<TargetTestResult | null>(null);
   const bodyId = useId();
   const external = t.kind === 'external';
+  // The triple store (seeded from RDF_ENDPOINT): only its label changes here.
+  const tripleStore = t.kind === 'rdf';
   const locked = targetInUse(t.usage);
   const usedByText = usedBy(t.usage);
 
@@ -77,6 +79,7 @@ export function TargetRow({
   const changes = (): TargetPatchBody => {
     const c: TargetPatchBody = {};
     if (label.trim() !== t.label) c.label = label.trim();
+    if (tripleStore) return c;
     if (!locked) {
       if (bucket.trim() !== t.bucket) c.bucket = bucket.trim();
       if (prefix.trim() !== t.prefix) c.prefix = prefix.trim();
@@ -130,9 +133,11 @@ export function TargetRow({
         <Icon name="chevronDown" />
         <span>{t.label}</span>
         <span className="mono endpoint-name">{t.id}</span>
-        <span className="tag tone-neutral">{external ? 'External' : 'Internal'}</span>
+        <span className="tag tone-neutral">
+          {tripleStore ? 'Triple store' : external ? 'External' : 'Internal'}
+        </span>
         <span className="mono muted">
-          {t.bucket}/{t.prefix}
+          {tripleStore ? `${t.endpoint ?? ''} · dataset ${t.bucket}` : `${t.bucket}/${t.prefix}`}
         </span>
         <span className="endpoint-count">{usedByText}</span>
         <span className="muted endpoint-where">{whereFrom(t)}</span>
@@ -154,19 +159,36 @@ export function TargetRow({
             Label
             <input value={label} onChange={(ev) => setLabel(ev.target.value)} />
           </label>
-          <label>
-            Bucket
-            <input value={bucket} readOnly={locked} onChange={(ev) => setBucket(ev.target.value)} />
-          </label>
-          <label>
-            Prefix
-            <input
-              value={prefix}
-              readOnly={locked}
-              placeholder="none"
-              onChange={(ev) => setPrefix(ev.target.value)}
-            />
-          </label>
+          {tripleStore ? (
+            <p className="muted">
+              From RDF_ENDPOINT: recipes that deliver RDF load their graphs into dataset{' '}
+              <span className="mono">{t.bucket}</span> at <span className="mono">{t.endpoint}</span>
+              .{' '}
+              {t.connection
+                ? connectionStatus(t.connection)
+                : 'Its connection is not known now: see Manage connections'}
+            </p>
+          ) : (
+            <>
+              <label>
+                Bucket
+                <input
+                  value={bucket}
+                  readOnly={locked}
+                  onChange={(ev) => setBucket(ev.target.value)}
+                />
+              </label>
+              <label>
+                Prefix
+                <input
+                  value={prefix}
+                  readOnly={locked}
+                  placeholder="none"
+                  onChange={(ev) => setPrefix(ev.target.value)}
+                />
+              </label>
+            </>
+          )}
           {external && (
             <>
               <ConnectionPicker
@@ -211,7 +233,7 @@ export function TargetRow({
               </label>
             </>
           )}
-          {locked && (
+          {locked && !tripleStore && (
             <small className="muted">In use: add a new target to move bucket or prefix.</small>
           )}
           {error && <p role="alert">{error}</p>}
@@ -223,7 +245,7 @@ export function TargetRow({
             <button type="button" disabled={busy} onClick={() => void test()}>
               Test connection
             </button>
-            {t.id !== 'default' && !confirmRemove && (
+            {t.id !== 'default' && !tripleStore && !confirmRemove && (
               <button
                 type="button"
                 className="danger"
@@ -235,7 +257,9 @@ export function TargetRow({
                 Remove
               </button>
             )}
-            {t.id !== 'default' && locked && <small className="muted">{REMOVE_BLOCKED}</small>}
+            {t.id !== 'default' && !tripleStore && locked && (
+              <small className="muted">{REMOVE_BLOCKED}</small>
+            )}
           </div>
           {confirmRemove && (
             <p className="confirm-text">

@@ -38,8 +38,9 @@ describe('bridge secrets', () => {
 
   // The variables CT Studio's targets read their keys from before the bridge (the seeded
   // default's), so an env-keyed target moved here keeps working, and nothing else is readable.
-  it('allows exactly the credential variables targets used before the bridge', () => {
+  it('allows exactly the credential variables targets used before the bridge, and the triple store password', () => {
     expect([...CREDENTIAL_ENV_NAMES].sort()).toEqual([
+      'RDF_PASSWORD',
       'S3_ACCESS_KEY',
       'S3_SECRET_KEY',
       'TARGET_S3_ACCESS_KEY',

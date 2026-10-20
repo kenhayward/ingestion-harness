@@ -28,7 +28,8 @@ from typing import Any, Literal, Protocol
 import psycopg
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from .graph_store import GraphStoreUnavailable
+from .bridge.client import BridgeUnavailable
+from .bridge.package import build_graph_package, deliver_graph_package
 from .pipeline import DocumentError, PipelineDeps, Target
 from .publish_targets import DEFAULT_TARGET_ID
 from .queue import ClaimedJob, JobQueue
@@ -39,7 +40,7 @@ from .storage import (
     reviewed_document_key,
 )
 from .template import Template
-from .template_pipeline import build_graph, publish_graph
+from .template_pipeline import build_graph, deliver_publication
 
 
 @dataclass(frozen=True)
@@ -215,9 +216,12 @@ def _publish(
     source: RebuildSource,
     job: DeliveredJob,
     template: Template,
+    deliveries: list[tuple[str, str]] | None = None,
 ) -> int | None:
-    """Render a delivered job's reviewed document with `template` and publish its graph, its
-    copy to the target of the job's own recipe version."""
+    """Render a delivered job's reviewed document with `template` and publish its graph: its
+    next version, handed to the bridge with no outputs (the package carries the graph and its
+    copy to the target of the job's own recipe version, and the triple store). The deliveries
+    are added to `deliveries`; the version is returned."""
     document = delivered_document(deps, job)
     if document is None:
         return None
@@ -226,14 +230,42 @@ def _publish(
     graph = build_graph(run, deps, queue, template, document)
     if graph is None:
         return None
-    return publish_graph(run, deps, queue, template, document, graph, target)
+    # A system re-delivery acts as whoever last delivered the job (spec, acting users).
+    acting = queue.reviewer(job.job_id) or queue.uploader(job.job_id)
+    delivered = deliver_publication(
+        run,
+        deps,
+        queue,
+        template=template,
+        document=document,
+        outputs=[],
+        graph=graph,
+        target=target,
+        acting=acting,
+        approver=queue.reviewer(job.job_id),
+    )
+    if deliveries is not None:
+        deliveries.extend(delivered.deliveries)
+    current = deps.graph_registry.current(job.sha256, template.id) if deps.graph_registry else None
+    return current.version if current is not None else None
 
 
-def rebuild(deps: PipelineDeps) -> list[str]:
-    store, registry, targets = deps.graph_store, deps.graph_registry, deps.targets
-    bridge = deps.bridge
-    if store is None or registry is None or targets is None or bridge is None:
+def rebuild(deps: PipelineDeps, deliveries: list[tuple[str, str]] | None = None) -> list[str]:
+    """Reload the triple store: every ontology graph loaded, and every current graph from its
+    published copy (nothing re-rendered), each as a graph package to rdf-default. The deliveries
+    are added to `deliveries`."""
+    registry, targets, bridge = deps.graph_registry, deps.targets, deps.bridge
+    triples = targets.rdf() if targets is not None else None
+    if triples is None or registry is None or targets is None or bridge is None:
         return ["rebuild needs RDF_ENDPOINT, the database, the publishing targets and the bridge"]
+    sent = deliveries if deliveries is not None else []
+
+    def load(graph_iri: str, version: int, body: bytes) -> None:
+        package = build_graph_package(
+            graph_iri, version, body.decode("utf-8"), deployment=deps.deployment
+        )
+        sent.append((triples.id, deliver_graph_package(deps, package, triples, None)))
+
     lines: list[str] = []
     ontologies = graphs = missing = 0
     for ontology_id, version, _base, graph_iri in registry.all_ontologies():
@@ -244,7 +276,7 @@ def rebuild(deps: PipelineDeps) -> list[str]:
             missing += 1
             lines.append(f"missing {ontology_id} v{version}: import it again in the library")
             continue
-        store.put(graph_iri, data, "application/n-triples")
+        load(graph_iri, version, data)
         ontologies += 1
         lines.append(f"loaded {graph_iri}")
     for g in registry.all_current():
@@ -260,7 +292,7 @@ def rebuild(deps: PipelineDeps) -> list[str]:
             missing += 1
             lines.append(f"missing {key}")
             continue
-        store.put(g.graph_iri, body, "text/turtle")
+        load(g.graph_iri, g.version, body)
         graphs += 1
         lines.append(f"loaded {g.graph_iri} v{g.version}")
     lines.append(
@@ -280,7 +312,11 @@ def _mapped(definition: dict[str, Any]) -> Template | None:
 
 
 def backfill(
-    deps: PipelineDeps, queue: JobQueue, source: RebuildSource, template_id: str
+    deps: PipelineDeps,
+    queue: JobQueue,
+    source: RebuildSource,
+    template_id: str,
+    deliveries: list[tuple[str, str]] | None = None,
 ) -> list[str]:
     published = source.published_templates(template_id)
     mapped = [t for v in sorted(published, reverse=True) if (t := _mapped(published[v]))]
@@ -297,7 +333,7 @@ def backfill(
             continue
         seen.add(job.sha256)
         try:
-            version = _publish(deps, queue, source, job, template)
+            version = _publish(deps, queue, source, job, template, deliveries)
         except DocumentError as exc:
             version = None
             lines.append(f"skipped {job.job_id}: {exc}")
@@ -310,10 +346,17 @@ def backfill(
     return lines
 
 
-def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[str]:
-    """The graph under the old base is dropped first: a failure after that leaves the version
-    under the old base, so the next run picks the graph up again (never two copies)."""
-    registry, store = deps.graph_registry, deps.graph_store
+def remint(
+    deps: PipelineDeps,
+    queue: JobQueue,
+    source: RebuildSource,
+    deliveries: list[tuple[str, str]] | None = None,
+) -> list[str]:
+    """The graph under the old base is dropped first (through the triple store target): a
+    failure after that leaves the version under the old base, so the next run picks the graph up
+    again (never two copies)."""
+    registry, bridge = deps.graph_registry, deps.bridge
+    triples = deps.targets.rdf() if deps.targets is not None else None
     base = deps.linked_data.effective_base() if deps.linked_data else None
     if registry is None or base is None:
         return ["remint needs the database and a Linked data base"]
@@ -332,10 +375,10 @@ def remint(deps: PipelineDeps, queue: JobQueue, source: RebuildSource) -> list[s
             continue
         try:
             job_target(deps, source, job)  # a missing target fails before the drop
-            if store is not None:
-                store.delete(g.graph_iri)
-            version = _publish(deps, queue, source, job, template)
-        except (DocumentError, GraphStoreUnavailable) as exc:
+            if triples is not None and bridge is not None:
+                bridge.delete_objects(triples.id, [(triples.bucket, g.graph_iri)])
+            version = _publish(deps, queue, source, job, template, deliveries)
+        except (DocumentError, BridgeUnavailable) as exc:
             failed += 1
             lines.append(f"failed {g.graph_iri}: {exc} (run --remint again)")
             continue
@@ -366,10 +409,13 @@ class RebuildParams(BaseModel):
 REBUILT = "rebuilt"
 
 
-def run_rebuild_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[str]:
+def run_rebuild_job(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue
+) -> tuple[list[str], list[tuple[str, str]]]:
     """The `rebuild` task: the operator command as a job, so a copy restore can re-mint the
     graphs under this server's base once an admin resumes the worker. Per-graph failures are
-    lines of the summary, as for the command (run it again); nothing is output."""
+    lines of the summary, as for the command (run it again); nothing is output. Returns the
+    lines and the bridge's deliveries, which finish the job."""
     try:
         params = RebuildParams.model_validate(job.params or {})
     except ValidationError as exc:
@@ -379,24 +425,24 @@ def run_rebuild_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> lis
         raise DocumentError("re-minting needs the database")
     summary: list[str] = []
     lines: list[str] = []
+    deliveries: list[tuple[str, str]] = []
     if params.mode in ("rebuild", "rebuild-remint"):
-        reloaded = rebuild(deps)
+        reloaded = rebuild(deps, deliveries)
         lines += reloaded
         summary.append(reloaded[-1])
     if params.mode in ("remint", "rebuild-remint"):
         assert source is not None
-        reminted = remint(deps, queue, source)
+        reminted = remint(deps, queue, source, deliveries)
         lines += reminted
         summary.append(reminted[-1])
     queue.event(job.id, "info", REBUILT, {"mode": params.mode, "summary": "; ".join(summary)})
-    return lines
+    return lines, deliveries
 
 
 def main(argv: list[str] = sys.argv[1:]) -> int:
     from .bridge.client import HttpBridgeClient
     from .config import Settings
     from .graph_registry import PgGraphRegistry
-    from .graph_store import graph_store_from_env
     from .linked_data import PgLinkedDataSettings
     from .llm.registry import ModelRegistry
     from .ontology import PgOntologyStore
@@ -413,8 +459,6 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
     group.add_argument("--remint", action="store_true", help="re-mint under the current base")
     args = parser.parse_args(argv)
 
-    import os
-
     settings = Settings.from_env()
     library = psycopg.connect(settings.database_url, autocommit=True)
     deps = PipelineDeps(
@@ -430,7 +474,6 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         ontologies=PgOntologyStore(library),
         linked_data=PgLinkedDataSettings(library),
         graph_registry=PgGraphRegistry(psycopg.connect(settings.database_url, autocommit=True)),
-        graph_store=graph_store_from_env(os.environ),
     )
     queue = PgJobQueue(settings.database_url)
     source = PgRebuildSource(library)

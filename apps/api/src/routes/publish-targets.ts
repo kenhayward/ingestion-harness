@@ -13,6 +13,7 @@ import {
   targetInUse,
   type PublishTargetView,
   type TargetConnection,
+  type TargetPatchBody,
   type TargetUsage,
 } from '@ih/shared';
 import { z } from 'zod';
@@ -213,7 +214,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const listed = await bridge.listConnections('shared');
       return new Map(
         listed
-          .filter((c) => c.sinkId === 's3')
+          // S3 connections, and the triple store's (the rdf-default target shows its status too).
+          .filter((c) => c.sinkId === 's3' || c.sinkId === 'rdf')
           .map((c) => [
             c.id,
             { id: c.id, name: c.name, status: c.status, statusReason: c.statusReason },
@@ -349,7 +351,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const input: NewTarget = {
         id,
         label: record.label,
-        kind: record.kind,
+        kind: b.kind,
         bucket: record.bucket,
         prefix: record.prefix,
         endpoint: null,
@@ -379,6 +381,28 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send((await withConnections([created]))[0]);
     },
   );
+
+  /** The triple store target (seeded from RDF_ENDPOINT): its label alone changes. */
+  const patchTripleStore = async (
+    stored: TargetRecord,
+    patch: TargetPatchBody,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    if (Object.keys(patch).some((k) => k !== 'label') || patch.label === undefined) {
+      return reply.code(400).send({ error: 'the triple store target takes a label only' });
+    }
+    const updated = await repo.update(stored.id, { label: patch.label }, by(req));
+    if (!updated) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
+    try {
+      await bridge.putTarget(stored.id, mirrorOf((await repo.get(stored.id))!));
+    } catch (err) {
+      await repo.update(stored.id, { label: stored.label }, stored.updatedBy);
+      return bridgeFailure(reply, err);
+    }
+    req.log.info({ target: stored.id }, 'triple store target renamed');
+    return (await withConnections([updated]))[0];
+  };
 
   app.patch<{ Params: { id: string } }>(
     '/publish-targets/:id',
@@ -421,6 +445,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const patch = body.data;
       const stored = await repo.get(req.params.id);
       if (!stored) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
+      if (stored.kind === 'rdf') return patchTripleStore(stored, patch, req, reply);
 
       const merged = TargetCreateBodySchema.safeParse(overlay(stored, patch));
       if (!merged.success) return reply.code(400).send({ error: issuesOf(merged.error) });
@@ -506,6 +531,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       }
       const target = await repo.get(id);
       if (!target) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
+      if (target.kind === 'rdf') {
+        return reply.code(409).send({ error: `${target.label} comes from RDF_ENDPOINT` });
+      }
       const usage = await repo.usage(id);
       if (targetInUse(usage)) {
         return reply.code(409).send({ error: `${target.label} is used by ${usageText(usage)}` });

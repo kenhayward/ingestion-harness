@@ -123,15 +123,25 @@ export async function templateIssues(
   });
   // A recipe from another deployment keeps its target id; until one exists here it cannot publish.
   const publishTo = parsed.data.delivery?.publishTo;
+  const named = publishTo === undefined ? null : await deps.targets.get(publishTo);
   const targetIssues =
-    publishTo !== undefined && !(await deps.targets.get(publishTo))
-      ? [
-          {
-            path: 'delivery.publishTo',
-            message: `no publishing target ${publishTo} on this deployment`,
-          },
-        ]
-      : [];
+    publishTo === undefined
+      ? []
+      : !named
+        ? [
+            {
+              path: 'delivery.publishTo',
+              message: `no publishing target ${publishTo} on this deployment`,
+            },
+          ]
+        : named.kind === 'rdf'
+          ? [
+              {
+                path: 'delivery.publishTo',
+                message: `${publishTo} is a triple store: name an S3 target`,
+              },
+            ]
+          : [];
   return [
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),

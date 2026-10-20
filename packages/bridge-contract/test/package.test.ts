@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { idempotencyKey, PackageSchema, partsOf } from '../src/index.js';
+import { graphIdempotencyKey, idempotencyKey, PackageSchema, partsOf } from '../src/index.js';
 import { docPackage, file } from './builders.js';
 
 describe('idempotency key', () => {
@@ -48,5 +48,24 @@ describe('the shared idempotency fixture (the worker computes the same key)', ()
       readFileSync(new URL('./fixtures/idempotency.json', import.meta.url), 'utf8'),
     ) as { sourceSha256: string; recipeId: string; recipeVersion: number; key: string };
     expect(idempotencyKey(f.sourceSha256, f.recipeId, f.recipeVersion)).toBe(f.key);
+  });
+});
+
+describe('graph packages', () => {
+  const fixture = (name: string): unknown =>
+    JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
+
+  it('graph keys match the fixture', () => {
+    const f = fixture('idempotency.json') as {
+      graph: { graphName: string; version: number; key: string };
+    };
+    expect(graphIdempotencyKey(f.graph.graphName, f.graph.version)).toBe(f.graph.key);
+    expect(graphIdempotencyKey(f.graph.graphName, f.graph.version + 1)).not.toBe(f.graph.key);
+  });
+
+  it('a document package with an rdf part parses and lists the parts files, data, rdf', () => {
+    const pkg = PackageSchema.parse(fixture('package-document-rdf.json'));
+    expect(partsOf(pkg)).toEqual(['files', 'data', 'rdf']);
+    expect(pkg.files.map((f) => f.output)).toContain('graph-version');
   });
 });

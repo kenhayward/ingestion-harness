@@ -12,10 +12,10 @@ import {
 } from '@ih/bridge-contract';
 import { z } from 'zod';
 
-/** A target as CT Studio mirrors it to the bridge (phase 2: S3 only). */
+/** A target as CT Studio mirrors it to the bridge: an S3 target, or the triple store. */
 export interface TargetMirror {
   label: string;
-  sinkId: 's3';
+  sinkId: 's3' | 'rdf';
   instanceId: null;
   /** Null: no connection yet; deliveries to the target then fail visibly. */
   connectionId: string | null;
@@ -26,6 +26,8 @@ export interface TargetMirror {
 export interface SharedConnection {
   id: string;
   name: string;
+  /** The sink it is for; `s3` when left out. */
+  sinkId?: string;
   fields: Record<string, string>;
   secret: string | null;
   secretEnv: string | null;
@@ -133,7 +135,7 @@ export class HttpBridgeApi implements BridgeApi {
     await this.expect(
       await this.call('PUT', `/v1/connections/${encodeURIComponent(id)}`, {
         ...body,
-        sinkId: 's3',
+        sinkId: body.sinkId ?? 's3',
       }),
       [204],
       `connection ${id}`,

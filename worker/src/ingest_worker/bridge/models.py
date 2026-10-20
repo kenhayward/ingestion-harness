@@ -219,3 +219,9 @@ def idempotency_key(source_sha256: str, recipe_id: str, recipe_version: int) -> 
     """What a delivery is about: one source document under one recipe version (as TypeScript's
     idempotencyKey), so a sink can replace what it wrote before."""
     return hashlib.sha256(f"{source_sha256}\n{recipe_id}\n{recipe_version}".encode()).hexdigest()
+
+
+def graph_idempotency_key(graph_name: str, version: int) -> str:
+    """What a graph package is about: one graph name at one version (as TypeScript's
+    graphIdempotencyKey)."""
+    return hashlib.sha256(f"graph\n{graph_name}\n{version}".encode()).hexdigest()

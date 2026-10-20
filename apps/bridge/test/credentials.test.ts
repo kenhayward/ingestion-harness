@@ -3,6 +3,7 @@ import { Credentials } from '../src/connections/credential.js';
 import { MemoryConnectionRepo } from '../src/connections/repo.js';
 import { encryptSecret } from '../src/secrets.js';
 import { SinkError } from '../src/sinks/port.js';
+import { RdfSink } from '../src/sinks/rdf.js';
 import { INTERNAL_CREDENTIAL, S3Sink } from '../src/sinks/s3.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { connection } from './connections-contract.js';
@@ -70,6 +71,27 @@ describe('Credentials', () => {
       endpoint: 'https://s3.example.com',
       accessKeyId: 'AKIAENV',
       secretAccessKey: 'env-secret',
+    });
+  });
+
+  it('an env-keyed triple store connection reads RDF_PASSWORD', async () => {
+    const { connections, credentials } = await setup({ RDF_PASSWORD: 'writer-pw' });
+    await connections.put(
+      connection('rdf-default', {
+        sinkId: 'rdf',
+        fields: { endpoint: 'http://fuseki:3030', user: 'ct-writer' },
+        secretEnv: 'RDF_PASSWORD',
+      }),
+    );
+    const rdf = await new RdfSink({
+      store: () => {
+        throw new Error('unused');
+      },
+    }).describe();
+    expect(await credentials.resolve('rdf-default', rdf)).toEqual({
+      endpoint: 'http://fuseki:3030',
+      user: 'ct-writer',
+      password: 'writer-pw',
     });
   });
 

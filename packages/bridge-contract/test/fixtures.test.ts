@@ -19,6 +19,7 @@ describe('contract fixtures', () => {
     ['describe.json', SinkDescribeSchema],
     ['package-document.json', PackageSchema],
     ['package-graph.json', PackageSchema],
+    ['package-document-rdf.json', PackageSchema],
     ['delivery-request.json', CreateDeliveriesRequestSchema],
     ['delivery-view.json', DeliveryViewSchema],
     ['event.json', BridgeEventSchema],

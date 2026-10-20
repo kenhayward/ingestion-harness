@@ -1,12 +1,13 @@
 import {
   DEFAULT_TARGET_ID,
+  TRIPLE_STORE_TARGET_ID,
   deliveryPublishTo,
   targetInUse,
   type PublishTargetView,
   type TargetChoice,
   type TargetUsage,
 } from '@ih/shared';
-import { seedDifferences, type DefaultSeed } from './seed.js';
+import { seedDifferences, type DefaultSeed, type RdfSeed } from './seed.js';
 
 /**
  * A stored target: the view's fields plus what is never sent out. The credential columns are
@@ -14,8 +15,10 @@ import { seedDifferences, type DefaultSeed } from './seed.js';
  * move, and the ciphertext is then dropped); new targets name a bridge connection instead.
  */
 export interface TargetRecord extends Omit<PublishTargetView, 'usage' | 'connection'> {
+  /** S3: an endpoint from before the bridge. The triple store: its URL. */
   endpoint: string | null;
   region: string | null;
+  /** S3: a key id from before the bridge. The triple store: its writer's user name (not secret). */
   accessKeyId: string | null;
   forcePathStyle: boolean;
   secretKeyEnc: string | null;
@@ -57,7 +60,8 @@ export interface PublishTargetRepo {
   get(id: string): Promise<TargetRecord | null>;
   create(input: NewTarget, by: string | null): Promise<PublishTargetView | 'exists'>;
   update(id: string, patch: TargetPatch, by: string | null): Promise<PublishTargetView | null>;
-  remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'in_use'>;
+  /** `seeded`: the triple store target, which comes from `.env` and is never removed. */
+  remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'>;
   usage(id: string): Promise<TargetUsage>;
   /** What a recipe's picker offers: the default first, then by label. */
   choices(): Promise<TargetChoice[]>;
@@ -65,6 +69,8 @@ export interface PublishTargetRepo {
   version(): Promise<number>;
   /** Writes the default from `.env` once (while `seeded_at` is null); never overwrites after. */
   seedDefault(seed: DefaultSeed): Promise<SeedOutcome>;
+  /** Writes the triple store target from `.env` once; never overwrites after. */
+  seedRdf(seed: RdfSeed): Promise<SeedOutcome>;
   /** Its keys are now the bridge's connection `connectionId`: the ciphertext is dropped. */
   markMoved(id: string, connectionId: string): Promise<void>;
   /** The bridge connection a target delivers with (null: none, or no such target). */
@@ -87,6 +93,7 @@ export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
     kind: r.kind,
     bucket: r.bucket,
     prefix: r.prefix,
+    endpoint: r.kind === 'rdf' ? r.endpoint : null,
     connectionId: r.connectionId,
     connection: null,
     sse: r.sse,
@@ -144,6 +151,39 @@ export function seeded(r: TargetRecord, seed: DefaultSeed, now: Date): TargetRec
     secretKeyEnc: null,
     accessKeyId: null,
   };
+}
+
+/** The triple store target as `.env` describes it. */
+export function rdfRecord(seed: RdfSeed, now: Date): TargetRecord {
+  return {
+    id: TRIPLE_STORE_TARGET_ID,
+    label: 'Triple store',
+    kind: 'rdf',
+    bucket: seed.dataset,
+    prefix: '',
+    endpoint: seed.endpoint,
+    region: null,
+    accessKeyId: seed.user,
+    secretKeyEnc: null,
+    accessKeyEnv: null,
+    secretKeyEnv: null,
+    forcePathStyle: false,
+    sse: 'none',
+    kmsKeyId: null,
+    storageClass: null,
+    source: 'env',
+    seededAt: now.toISOString(),
+    editedAt: null,
+    updatedBy: null,
+    createdAt: now.toISOString(),
+    connectionId: TRIPLE_STORE_TARGET_ID,
+    movedToBridgeAt: null,
+  };
+}
+
+/** Whether the stored triple store target still matches `.env` (it is never overwritten). */
+export function rdfSeedDiffers(r: TargetRecord, seed: RdfSeed): boolean {
+  return r.endpoint !== seed.endpoint || r.bucket !== seed.dataset || r.accessKeyId !== seed.user;
 }
 
 /** The unseeded default row the migration inserts. */
@@ -252,9 +292,11 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     return toView(next, await this.usage(id));
   }
 
-  async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'in_use'> {
+  async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'> {
     if (id === DEFAULT_TARGET_ID) return 'default';
-    if (!(await this.get(id))) return 'missing';
+    const r = await this.get(id);
+    if (!r) return 'missing';
+    if (r.kind === 'rdf') return 'seeded';
     if (targetInUse(await this.usage(id))) return 'in_use';
     this.targets.delete(id);
     this.counter += 1;
@@ -276,7 +318,9 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
 
   async choices(): Promise<TargetChoice[]> {
     return this.live()
-      .map(({ id, label, kind, bucket }) => ({ id, label, kind, bucket }))
+      .flatMap(({ id, label, kind, bucket }) =>
+        kind === 'rdf' ? [] : [{ id, label, kind, bucket }],
+      )
       .sort(byDefaultThenLabel);
   }
 
@@ -292,6 +336,16 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
       return 'seeded';
     }
     return seedDifferences(r, seed).length > 0 ? 'differs' : 'kept';
+  }
+
+  async seedRdf(seed: RdfSeed): Promise<SeedOutcome> {
+    const r = this.targets.get(TRIPLE_STORE_TARGET_ID);
+    if (!r) {
+      this.targets.set(TRIPLE_STORE_TARGET_ID, rdfRecord(seed, new Date()));
+      this.counter += 1;
+      return 'seeded';
+    }
+    return rdfSeedDiffers(r, seed) ? 'differs' : 'kept';
   }
 
   async markMoved(id: string, connectionId: string): Promise<void> {

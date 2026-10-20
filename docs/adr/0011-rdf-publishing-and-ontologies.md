@@ -212,3 +212,13 @@ accepts each change. Mapping should work the same way.
 - **Out of scope:** resolving entities across documents or against reference data, reasoning
   (OWL inference in Fuseki), and very large terminologies such as SNOMED CT (the library caps
   the size of an import).
+
+## Addendum (2026-10-19): the triple store behind the delivery bridge
+
+Fuseki is now written only by the delivery bridge ([ADR 0017](0017-delivery-bridge.md), phase
+3), as the publishing target `rdf-default` seeded from `RDF_ENDPOINT`. "Only the worker holds
+write credentials" becomes: only the bridge does (`RDF_WRITER_PASSWORD` in its container); the API
+keeps them for backup and restore. The registry, versions, entities, graph names and copy keys
+are unchanged; the bytes loaded equal the copy's. A version is committed before its package is
+handed over, and the bridge never replaces a graph with an older version, so retries that arrive
+out of order keep the newest one.

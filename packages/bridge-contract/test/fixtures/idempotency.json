@@ -1,7 +1,12 @@
 {
-  "note": "idempotencyKey(sourceSha256, recipeId, recipeVersion) = sha256 hex of the three joined by newlines; TS (packages/bridge-contract) and the worker (ingest_worker.bridge.models.idempotency_key) both reproduce key.",
+  "note": "idempotencyKey(sourceSha256, recipeId, recipeVersion) = sha256 hex of the three joined by newlines; TS (packages/bridge-contract) and the worker (ingest_worker.bridge.models.idempotency_key) both reproduce key. graph: graphIdempotencyKey(graphName, version) = sha256 hex of 'graph', graphName and version joined by newlines (ingest_worker.bridge.models.graph_idempotency_key).",
   "sourceSha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "recipeId": "invoice",
   "recipeVersion": 3,
-  "key": "7026c7cda4ec23c6734dc13317020f46a554eff73dcc530ae871d01bb3e2fc3e"
+  "key": "7026c7cda4ec23c6734dc13317020f46a554eff73dcc530ae871d01bb3e2fc3e",
+  "graph": {
+    "graphName": "https://data.example/ct/graph/source/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08/invoice",
+    "version": 2,
+    "key": "763a204c3593fa7c8a71d7078920a8bd93fc36b38442b86bb037b254c41f0c02"
+  }
 }

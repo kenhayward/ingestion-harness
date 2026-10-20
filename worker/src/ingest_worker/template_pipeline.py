@@ -26,10 +26,17 @@ from typing import TYPE_CHECKING, Any, Literal
 import psycopg
 from rdflib import Graph
 
-from .bridge.package import deliver_document
+from .bridge.client import BridgeRefused
+from .bridge.models import ActingUser, BridgePackage
+from .bridge.package import (
+    Delivered,
+    GraphVersion,
+    build_graph_package,
+    deliver_document,
+    deliver_graph_package,
+)
 from .extract import ExtractionResult
 from .graph_registry import EntityRecord, GraphPublish, GraphRegistry
-from .graph_store import GraphStore
 from .llm.base import LLMProvider
 from .normalize import normalize_value
 from .outputs import DOCUMENT_ID_COLUMN, RenderedOutput, _cell, content_type, encode_csv
@@ -117,15 +124,12 @@ class RenderedGraph:
 
 @dataclass(frozen=True)
 class GraphDelivery:
-    """A drafted graph to publish once the document's outputs are delivered without review: its
-    copy to the target, then the triple store (`publish_graph`)."""
+    """A drafted graph to publish with the document's outputs when they are delivered without
+    review (deliver_publication)."""
 
     template: Template
     document: dict[str, Any]
     graph: RenderedGraph
-
-    def deliver(self, job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, target: Target) -> None:
-        publish_graph(job, deps, queue, self.template, self.document, self.graph, target)
 
 
 Progress = StepProgress
@@ -259,7 +263,7 @@ def publish_template_job(
     loaded: LoadedTemplate,
     *,
     deliver: bool = True,
-    on_published: Callable[[list[RenderedOutput], Target, str], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target, Delivered], None] | None = None,
 ) -> list[RenderedOutput]:
     """Apply the reviewer's edits to the draft (never modified), keep the reviewed document in
     the runs bucket and, when `deliver`, publish it to the publishing target of the job's recipe
@@ -305,26 +309,85 @@ def publish_template_job(
     published: list[RenderedOutput] = []
     if target is not None:  # None: no publishing targets, nothing is delivered
         reviewer = queue.reviewer(job.id)
-        published, delivery_id = deliver_document(
-            deps,
+        delivered = deliver_publication(
             job,
+            deps,
+            queue,
             template=template,
             document=document,
             outputs=[o for o in rendered if o.format in formats],
+            graph=graph if "rdf" in formats else None,
             target=target,
             acting=reviewer or queue.uploader(job.id),
             approver=reviewer,
         )
+        published = delivered.outputs
         if on_published is not None:
-            # Recorded before the graph: a store failure keeps the record.
-            on_published(published, target, delivery_id)
-        if graph is not None and "rdf" in formats:
-            publish_graph(job, deps, queue, template, document, graph, target)
+            on_published(published, target, delivered)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
 
 
-def publish_graph(
+def deliver_publication(
+    job: ClaimedJob,
+    deps: PipelineDeps,
+    queue: JobQueue,
+    *,
+    template: Template | None,
+    document: dict[str, Any] | None,
+    outputs: list[RenderedOutput],
+    graph: RenderedGraph | None,
+    target: Target,
+    acting: ActingUser | None,
+    approver: ActingUser | None,
+) -> Delivered:
+    """Hand one publication to the bridge. With a graph (a recipe delivering `rdf`): the pinned
+    ontologies not loaded yet under its base go to the triple store first, as graph packages (a
+    refused one goes to review before any version is spent); then the graph's next version is
+    committed (prepare_graph); then one package carries the outputs, the graph and its versioned
+    copy to `target` and, when there is one, the triple store (`rdf-default`). The returned
+    deliveries include the ontology loads."""
+    publishes_graph = (
+        graph is not None
+        and template is not None
+        and document is not None
+        and deps.graph_registry is not None
+    )
+    triples = deps.targets.rdf() if deps.targets is not None else None
+    loads: list[tuple[str, str]] = []
+    if publishes_graph and triples is not None and graph is not None:
+        registry = deps.graph_registry
+        assert registry is not None
+        for load in tbox_packages(deps, registry, template, graph.base):  # type: ignore[arg-type]
+            try:
+                delivery_id = deliver_graph_package(deps, load.package, triples, acting)
+            except BridgeRefused as refused:
+                raise DocumentError(f"{load.ontology_id} v{load.version}: {refused}") from refused
+            registry.record_ontology(
+                load.ontology_id, load.version, graph.base, load.graph_iri, delivery_id
+            )
+            loads.append((triples.id, delivery_id))
+    version = (
+        prepare_graph(job, deps, queue, template, document, graph, target)  # type: ignore[arg-type]
+        if publishes_graph and graph is not None
+        else None
+    )
+    targets = [target] + ([triples] if version is not None and triples is not None else [])
+    delivered = deliver_document(
+        deps,
+        job,
+        template=template,
+        document=document,
+        outputs=outputs,
+        targets=targets,
+        acting=acting,
+        approver=approver,
+        graph=version,
+    )
+    return replace(delivered, deliveries=delivered.deliveries + loads)
+
+
+def prepare_graph(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
@@ -332,12 +395,12 @@ def publish_graph(
     document: dict[str, Any],
     rendered: RenderedGraph,
     target: Target,
-) -> int | None:
-    """Publish a delivered graph as the next version of its (file, document type) graph: the
-    versioned copy in `target` (recorded with it), the pinned ontologies' TBox graphs not loaded
-    yet under this base, and the store's PUT, then the version and its entities (one
-    transaction, holding the graph's lock). None when nothing is recorded (no registry)."""
-    registry, store = deps.graph_registry, deps.graph_store
+) -> GraphVersion | None:
+    """The next version of a delivered graph's (file, document type) graph, committed with its
+    entities under the graph's lock before anything is handed to the bridge (spec, RDF in
+    detail): its Turtle and the key of its versioned copy on `target`. None when nothing is
+    recorded (no registry)."""
+    registry = deps.graph_registry
     if registry is None:
         return None
     sha = str(document["source_sha256"])
@@ -354,19 +417,11 @@ def publish_graph(
         target_id=target.id,
     )
     published_at = datetime.now(UTC).isoformat()
-
-    bridge = deps.bridge
-    if bridge is None:
-        raise RuntimeError("no delivery bridge is configured: the graph cannot be copied")
+    bodies: dict[int, bytes] = {}
 
     def write(version: int) -> None:
-        body = to_turtle(with_version(rendered.graph, version, published_at))
-        key = target.prefix + graph_version_key(sha, template.id, version)
-        # Synchronous, inside the graph's lock, as the copy was written before the bridge.
-        bridge.put_object(target.id, target.bucket, key, body, "text/turtle")
-        if store is not None:
-            load_tbox(deps, store, registry, template, rendered.base)
-            store.put(record.graph_iri, body, "text/turtle")
+        # No I/O: the bytes travel in the package, after the version is committed.
+        bodies[version] = to_turtle(with_version(rendered.graph, version, published_at))
 
     version = registry.publish(record, write)
     queue.event(
@@ -377,25 +432,37 @@ def publish_graph(
             "graph": record.graph_iri,
             "version": version,
             "triples": record.triples,
-            "endpoint": store is not None,
+            "endpoint": deps.targets is not None and deps.targets.rdf() is not None,
         },
     )
-    return version
+    return GraphVersion(
+        graph_name=record.graph_iri,
+        version=version,
+        turtle=bodies[version],
+        copy_key=graph_version_key(sha, template.id, version),
+    )
 
 
-def load_tbox(
-    deps: PipelineDeps,
-    store: GraphStore,
-    registry: GraphRegistry,
-    template: Template,
-    base: str,
-) -> None:
-    """Load each pinned ontology and shapes version not yet in the store under this base, as
-    its own graph `{base}graph/ontology/{id}/{version}`."""
+@dataclass(frozen=True)
+class TboxLoad:
+    """A pinned ontology (or shapes) version to load into the triple store under one base."""
+
+    ontology_id: str
+    version: int
+    graph_iri: str
+    package: BridgePackage
+
+
+def tbox_packages(
+    deps: PipelineDeps, registry: GraphRegistry, template: Template, base: str
+) -> list[TboxLoad]:
+    """A graph package for each pinned ontology and shapes version not loaded yet under this
+    base (`{base}graph/ontology/{id}/{version}`), read from the library's normalised copy."""
     semantics = template.semantics
     if semantics is None:
-        return
-    for pin in {(p.id, p.version) for p in [*semantics.ontologies, *semantics.shapes]}:
+        return []
+    loads: list[TboxLoad] = []
+    for pin in sorted({(p.id, p.version) for p in [*semantics.ontologies, *semantics.shapes]}):
         if registry.ontology_loaded(pin[0], pin[1], base):
             continue
         data = deps.store.get_optional(deps.buckets.runs, ontology_normalized_key(*pin))
@@ -404,8 +471,12 @@ def load_tbox(
                 f"{pin[0]} v{pin[1]} is not available: import it again in the library"
             )
         graph_iri = f"{base}graph/ontology/{pin[0]}/{pin[1]}"
-        store.put(graph_iri, data, "application/n-triples")
-        registry.record_ontology(pin[0], pin[1], base, graph_iri)
+        # N-Triples is Turtle: the graph package carries it as it is.
+        package = build_graph_package(
+            graph_iri, pin[1], data.decode("utf-8"), deployment=deps.deployment
+        )
+        loads.append(TboxLoad(pin[0], pin[1], graph_iri, package))
+    return loads
 
 
 def context_values(

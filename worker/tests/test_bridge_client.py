@@ -81,6 +81,23 @@ def test_a_needs_user_422_raises_bridge_refused_carrying_the_error() -> None:
     assert raised.value.error.code == "connection_missing"
 
 
+def test_a_package_too_large_for_the_bridge_needs_review_not_retries() -> None:
+    # What the bridge's HTTP layer answers for a body over BRIDGE_MAX_PACKAGE_MB today (no
+    # contract body), and the contract error it may send: both are the document's, not an outage.
+    fastify = {
+        "statusCode": 413,
+        "code": "FST_ERR_CTP_BODY_TOO_LARGE",
+        "error": "Payload Too Large",
+        "message": "Request body is too large",
+    }
+    contract = error("needs_user", "content_rejected", "the package is larger than 50 MB")
+    for body in (fastify, contract):
+        with pytest.raises(BridgeRefused) as raised:
+            client(lambda _r, b=body: httpx.Response(413, json=b)).deliver(REQUEST)
+        assert raised.value.error.code == "content_rejected"
+        assert "larger" in str(raised.value)
+
+
 def test_an_over_size_package_goes_to_review() -> None:
     body = error("needs_user", "content_rejected", "the package is larger than this bridge takes")
     with pytest.raises(BridgeRefused) as raised:

@@ -15,6 +15,7 @@ import httpx
 import psycopg
 
 from .bridge.client import HttpBridgeClient
+from .bridge.package import Delivered
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
@@ -22,7 +23,6 @@ from .drafting import run_draft
 from .embeddings import run_embed
 from .graph_preview import run_graph_preview
 from .graph_registry import PgGraphRegistry
-from .graph_store import graph_store_from_env
 from .heartbeat import HEARTBEAT_S, JobHeartbeat, PgJobHeartbeat, beating
 from .linked_data import PgLinkedDataSettings
 from .llm.endpoints import LiveModels, PgLlmConfigStore, seed_from_config
@@ -56,7 +56,12 @@ from .pipeline import (
 from .plugin_catalogue import PgPluginCatalogue, catalogue_rows
 from .plugin_preview import run_plugin_preview
 from .plugins import plugins
-from .publish_targets import LiveTargets, PgPublishTargetStore, seed_default_target
+from .publish_targets import (
+    LiveTargets,
+    PgPublishTargetStore,
+    seed_default_target,
+    seed_rdf_target,
+)
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
 from .specs import LoadedTemplate, SpecRegistry, load_specs
@@ -152,10 +157,10 @@ def handle_publish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outc
     check_cancelled(job, queue)
     deliveries: list[tuple[str, str]] = []
 
-    def record(outputs: list[RenderedOutput], target: Target, delivery_id: str) -> None:
+    def record(outputs: list[RenderedOutput], target: Target, delivered: Delivered) -> None:
         # Test runs never get here.
-        queue.record_published(job, outputs, target, delivery_id)
-        deliveries.append((target.id, delivery_id))
+        queue.record_published(job, outputs, target, delivered.s3[1])
+        deliveries.extend(delivered.deliveries)
 
     try:
         published = publish_job(job, deps, queue, record)
@@ -183,7 +188,15 @@ def handle_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Ou
     deliveries = run_republish(job, deps, queue)
     if not deliveries:
         return Complete(note="re-delivered 0 jobs")
-    return Delivering([], deliveries, note=f"re-delivered {len(deliveries)} jobs")
+    return Delivering([], deliveries, note=f"handed {len(deliveries)} deliveries to the bridge")
+
+
+def handle_rebuild(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """Rebuild, backfill or re-mint the triple store; the bridge's events finish the job."""
+    lines, deliveries = run_rebuild_job(job, deps, queue)
+    if not deliveries:
+        return Complete(note=lines[-1])
+    return Delivering([], deliveries, note=lines[-1])
 
 
 def _completes[R](
@@ -212,7 +225,7 @@ TASKS: dict[str, TaskHandler] = {
     "embed": _completes(run_embed, lambda n: f"embedded {n} terms"),
     "withdraw": _completes(run_withdraw, lambda w: "withdrew {} objects, {} graphs".format(*w)),
     "republish": handle_republish,
-    "rebuild": _completes(run_rebuild_job, lambda lines: lines[-1]),
+    "rebuild": handle_rebuild,
     "ontology": _completes(run_ontology_import, lambda p: f"indexed {len(p.terms)} ontology terms"),
 }
 
@@ -250,7 +263,7 @@ def publish_job(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
-    on_published: Callable[[list[RenderedOutput], Target, str], None] | None = None,
+    on_published: Callable[[list[RenderedOutput], Target, Delivered], None] | None = None,
 ) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
     reference) keeps the reviewed document but is never delivered to a target."""
@@ -370,6 +383,7 @@ class _Worker:
         # connection, re-opened when lost; refreshed with the LLM config).
         self.target_store = PgPublishTargetStore.connect(settings.database_url)
         seed_default_target(self.target_store, os.environ)
+        seed_rdf_target(self.target_store, os.environ)
         self.targets = LiveTargets(self.target_store)
         # The ontology library and the Linked data settings share one autocommit connection.
         self.library = psycopg.connect(settings.database_url, autocommit=True)
@@ -425,7 +439,6 @@ class _Worker:
             mapping_memory=PgMappingMemoryStore(self.library),
             embedding_model=self.live.embedding_model,
             graph_registry=PgGraphRegistry(self.graph_conn),
-            graph_store=graph_store_from_env(os.environ),
             delivered_jobs=PgRebuildSource(self.library),
             step_checkpointer=self.step_checkpointer,
             ontology_max_triples=settings.ontology_max_triples,

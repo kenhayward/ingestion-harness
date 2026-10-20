@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import base64
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -21,8 +21,10 @@ from .models import (
     DataTable,
     PackageData,
     PackageFile,
+    PackageRdf,
     Producer,
     Provenance,
+    graph_idempotency_key,
     idempotency_key,
 )
 
@@ -33,6 +35,31 @@ if TYPE_CHECKING:
     from ..template import Template
 
 PRODUCER = "ct-studio"
+
+#: The output id of a graph's versioned Turtle copy in a package's files.
+GRAPH_VERSION_OUTPUT = "graph-version"
+
+
+@dataclass(frozen=True)
+class GraphVersion:
+    """A published graph at its version, ready to deliver: the bytes loaded into the triple store
+    and copied (at `copy_key`, today's unprefixed `graph_version_key`) to the files target."""
+
+    graph_name: str
+    version: int
+    turtle: bytes
+    copy_key: str
+
+
+@dataclass(frozen=True)
+class Delivered:
+    """What one package's hand-off gave: the files target's outputs, keyed as it writes them
+    (its prefix + their key; never the graph's copy), that target's delivery, and every delivery
+    (the files target first)."""
+
+    outputs: list[RenderedOutput]
+    s3: tuple[str, str]
+    deliveries: list[tuple[str, str]]
 
 
 class ActingUsers(Protocol):
@@ -92,9 +119,11 @@ def build_package(
     outputs: list[RenderedOutput],
     approver: ActingUser | None,
     deployment: str,
+    graph: GraphVersion | None = None,
 ) -> BridgePackage:
     """The `document` package of a job's delivered outputs. A recipe's package carries its
-    fields and tables as data too; a legacy spec's carries its files only."""
+    fields and tables as data too; a legacy spec's carries its files only. With `graph`, it
+    carries the graph (`rdf`) and its versioned copy (the file `graph-version`)."""
     doc = document or {}
     recipe_id = template.id if template else job.spec_id
     recipe_version = template.version if template else job.spec_version
@@ -126,9 +155,28 @@ def build_package(
                 content=base64.b64encode(o.body).decode("ascii"),
             )
             for o in outputs
-        ],
+        ]
+        + (
+            [
+                PackageFile(
+                    output=GRAPH_VERSION_OUTPUT,
+                    format="ttl",
+                    content_type="text/turtle",
+                    name=graph.copy_key,
+                    content=base64.b64encode(graph.turtle).decode("ascii"),
+                )
+            ]
+            if graph is not None
+            else []
+        ),
         data=_data(template, doc) if template is not None and document is not None else None,
-        rdf=None,
+        rdf=(
+            PackageRdf(
+                graph_name=graph.graph_name, version=graph.version, turtle=graph.turtle.decode()
+            )
+            if graph is not None
+            else None
+        ),
         narrative=None,
         images=None,
     )
@@ -139,6 +187,26 @@ def acting_user_for(job: ClaimedJob, users: ActingUsers) -> ActingUser | None:
     return users.reviewer(job.id) or users.uploader(job.id)
 
 
+def build_graph_package(
+    graph_name: str, version: int, turtle: str, *, deployment: str
+) -> BridgePackage:
+    """A `graph` package: one graph and no document (an ontology version, a rebuilt or reminted
+    graph), keyed by its name and version."""
+    return BridgePackage(
+        kind="graph",
+        contract_version=1,
+        producer=Producer(name=PRODUCER, deployment=deployment),
+        idempotency_key=graph_idempotency_key(graph_name, version),
+        provenance=None,
+        naming={},
+        files=[],
+        data=None,
+        rdf=PackageRdf(graph_name=graph_name, version=version, turtle=turtle),
+        narrative=None,
+        images=None,
+    )
+
+
 def deliver_document(
     deps: PipelineDeps,
     job: ClaimedJob,
@@ -146,11 +214,13 @@ def deliver_document(
     template: Template | None,
     document: dict[str, Any] | None,
     outputs: list[RenderedOutput],
-    target: Target,
+    targets: list[Target],
     acting: ActingUser | None,
     approver: ActingUser | None,
-) -> tuple[list[RenderedOutput], str]:
-    """Build the job's package from `outputs` and deliver it to `target` (deliver_outputs)."""
+    graph: GraphVersion | None = None,
+) -> Delivered:
+    """Build the job's package from `outputs` (and `graph`) and deliver it to every target, the
+    files target first (deliver_outputs)."""
     package = build_package(
         job=job,
         template=template,
@@ -158,26 +228,47 @@ def deliver_document(
         outputs=outputs,
         approver=approver,
         deployment=deps.deployment,
+        graph=graph,
     )
-    return deliver_outputs(deps, job, package, target, acting, outputs)
+    return deliver_outputs(deps, job, package, targets, acting, outputs)
 
 
 def deliver_outputs(
     deps: PipelineDeps,
     job: ClaimedJob,
     package: BridgePackage,
-    target: Target,
+    targets: list[Target],
     acting: ActingUser | None,
     outputs: list[RenderedOutput],
-) -> tuple[list[RenderedOutput], str]:
-    """Submit the package to `target` through the bridge. Returns the outputs keyed as the
-    target writes them (its prefix + their key) and the delivery's id. A refusal for a person
-    (BridgeRefused, a DocumentError) and an unreachable bridge (BridgeUnavailable, retried)
-    propagate; nothing is recorded by this function."""
+) -> Delivered:
+    """Submit the package to `targets` through the bridge, in one request. Returns the outputs
+    keyed as the first (files) target writes them (its prefix + their key) and the deliveries. A
+    refusal for a person (BridgeRefused, a DocumentError) and an unreachable bridge
+    (BridgeUnavailable, retried) propagate; nothing is recorded by this function."""
+    if deps.bridge is None:
+        raise RuntimeError("no delivery bridge is configured: nothing can be delivered")
+    result = deps.bridge.deliver(
+        CreateDeliveriesRequest(
+            targets=[t.id for t in targets], acting_user=acting, package=package
+        )
+    )
+    by_target = {d.target_id: d.delivery_id for d in result.deliveries}
+    deliveries = [(t.id, by_target[t.id]) for t in targets]
+    files = targets[0]
+    return Delivered(
+        outputs=[replace(o, key=f"{files.prefix}{o.key}") for o in outputs],
+        s3=deliveries[0],
+        deliveries=deliveries,
+    )
+
+
+def deliver_graph_package(
+    deps: PipelineDeps, package: BridgePackage, target: Target, acting: ActingUser | None
+) -> str:
+    """Submit a `graph` package to the triple store target; returns its delivery's id."""
     if deps.bridge is None:
         raise RuntimeError("no delivery bridge is configured: nothing can be delivered")
     result = deps.bridge.deliver(
         CreateDeliveriesRequest(targets=[target.id], acting_user=acting, package=package)
     )
-    delivery_id = next(d.delivery_id for d in result.deliveries if d.target_id == target.id)
-    return [replace(o, key=f"{target.prefix}{o.key}") for o in outputs], delivery_id
+    return next(d.delivery_id for d in result.deliveries if d.target_id == target.id)

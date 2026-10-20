@@ -111,7 +111,8 @@ const PRODUCTION = `
   INSERT INTO publish_targets (id, label, kind, bucket, endpoint, region, access_key_id, secret_key_enc)
        VALUES ('prod-ext', 'Production lake', 'external', 'prod-lake', 'https://s3.prod.example', 'eu-west-1', 'AKPROD', 'v1:prod-secret'),
               ('shared', 'Production shared', 'external', 'prod-shared', 'https://s3.shared.example', NULL, 'AKSHARED', 'v1:shared-secret'),
-              ('prod-int', 'Production archive', 'internal', 'prod-archive', NULL, NULL, NULL, NULL);
+              ('prod-int', 'Production archive', 'internal', 'prod-archive', NULL, NULL, NULL, NULL),
+              ('rdf-default', 'Triple store', 'rdf', 'ct', 'http://fuseki.prod:3030', NULL, 'ct-writer', NULL);
   INSERT INTO s3_consumers (id, label, user_name) VALUES ('${CONSUMER_PROD}', 'Production lake', 'lake-prod');
   INSERT INTO s3_access_keys (consumer_id, access_key_id) VALUES ('${CONSUMER_PROD}', 'AKLAKEPROD');
   INSERT INTO s3_consumer_targets (consumer_id, target_id) VALUES ('${CONSUMER_PROD}', 'default'), ('${CONSUMER_PROD}', 'prod-int'), ('${CONSUMER_PROD}', 'prod-ext');
@@ -284,7 +285,15 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
       secret_key_env: null,
       inert: true,
     });
-    expect(result.droppedTargets).toEqual(['prod-ext']);
+    expect(result.droppedTargets).toEqual(['prod-ext', 'rdf-default']);
+    // Production's triple store (this server has none): inert, its endpoint and user gone, so
+    // nothing here delivers to production's Fuseki.
+    expect(
+      await side(
+        `SELECT kind, endpoint, access_key_id, inert_at IS NOT NULL AS inert
+           FROM publish_targets WHERE id = 'rdf-default'`,
+      ),
+    ).toEqual([{ kind: 'rdf', endpoint: null, access_key_id: null, inert: true }]);
     // prod-ext (dropped) and shared (production external, staging internal): withdrawn;
     // default and prod-int (internal on both or production's only): still live; drafts untouched.
     expect(

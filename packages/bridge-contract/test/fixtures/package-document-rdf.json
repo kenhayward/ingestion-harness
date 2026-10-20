@@ -1,0 +1,99 @@
+{
+  "kind": "document",
+  "contractVersion": 1,
+  "producer": {
+    "name": "ct-studio",
+    "deployment": "default"
+  },
+  "idempotencyKey": "4b4c6a1d1b1f0e2b9f3f5d0d6c1a7e2f8b3c9d4e5f6a7b8c9d0e1f2a3b4c5d6e",
+  "provenance": {
+    "sourceSha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "sourceFilename": "invoice-001.pdf",
+    "jobId": "8a6f1c2e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+    "recipeId": "invoice",
+    "recipeVersion": 3,
+    "approver": {
+      "id": "6f1e2d3c-4b5a-4968-8776-655443322110",
+      "name": "Pat Reviewer",
+      "email": "pat@example.com"
+    },
+    "extractedAt": "2026-10-19T10:00:00.000Z",
+    "publishedAt": "2026-10-19T11:00:00.000Z"
+  },
+  "naming": {
+    "field:title": "Invoice 001",
+    "source.stem": "invoice-001"
+  },
+  "files": [
+    {
+      "output": "fields",
+      "format": "csv",
+      "contentType": "text/csv; charset=utf-8",
+      "name": "invoice/v3/fields/doc1.csv",
+      "content": "ZG9jdW1lbnRfaWQsdG90YWwKZG9jMSwxMgo="
+    },
+    {
+      "output": "lines",
+      "format": "csv",
+      "contentType": "text/csv; charset=utf-8",
+      "name": "invoice/v3/lines/doc1.csv",
+      "content": "ZG9jdW1lbnRfaWQsbGluZSxhbW91bnQKZG9jMSwxLDEyCg=="
+    },
+    {
+      "output": "document",
+      "format": "json",
+      "contentType": "application/json",
+      "name": "invoice/v3/document/doc1.json",
+      "content": "eyJkb2N1bWVudF9pZCI6ImRvYzEifQ=="
+    },
+    {
+      "output": "graph-version",
+      "format": "ttl",
+      "contentType": "text/turtle",
+      "name": "graphs/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08/invoice/v2.ttl",
+      "content": "PGh0dHBzOi8vZGF0YS5leGFtcGxlL2N0L2dyYXBoL3NvdXJjZS85Zjg2ZDA4MTg4NGM3ZDY1OWEyZmVhYTBjNTVhZDAxNWEzYmY0ZjFiMmIwYjgyMmNkMTVkNmMxNWIwZjAwYTA4L2ludm9pY2U+IDxodHRwczovL2lkLnN0b2Nrcy1oYXl3YXJkLmNvbS9ucy9jdCNncmFwaFZlcnNpb24+IDIgLgo8aHR0cHM6Ly9kYXRhLmV4YW1wbGUvY3QvZG9jLzlmODY+IGEgPGh0dHBzOi8vZGF0YS5leGFtcGxlL2N0L2RlZi9pbnZvaWNlL0ludm9pY2U+IC4K"
+    }
+  ],
+  "data": {
+    "fields": [
+      {
+        "id": "total",
+        "title": "Total",
+        "type": "number",
+        "value": 12,
+        "unit": "GBP"
+      }
+    ],
+    "tables": [
+      {
+        "id": "lines",
+        "title": "Invoice lines",
+        "columns": [
+          {
+            "id": "line",
+            "title": "Line",
+            "type": "integer"
+          },
+          {
+            "id": "amount",
+            "title": "Amount",
+            "type": "number"
+          }
+        ],
+        "rows": [
+          {
+            "line": 1,
+            "amount": 12
+          }
+        ]
+      }
+    ]
+  },
+  "rdf": {
+    "graphName": "https://data.example/ct/graph/source/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08/invoice",
+    "version": 2,
+    "turtle": "<https://data.example/ct/graph/source/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08/invoice> <https://id.stocks-hayward.com/ns/ct#graphVersion> 2 .\n<https://data.example/ct/doc/9f86> a <https://data.example/ct/def/invoice/Invoice> .\n"
+  },
+  "narrative": null,
+  "images": null
+}

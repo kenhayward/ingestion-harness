@@ -169,8 +169,8 @@ services:
 
   bridge:
     # The delivery bridge (docs/adr/0017-delivery-bridge.md): delivers packages to their targets'
-    # sinks (S3 built in), keeps shared connections encrypted under BRIDGE_SECRETS_KEY, and serves
-    # the connections page. No host port: the API and the worker reach it on the compose network,
+    # sinks (S3 and the triple store built in), keeps shared connections encrypted under
+    # BRIDGE_SECRETS_KEY, and serves the connections page. No host port: the API and the worker reach it on the compose network,
     # browsers reach only its connections page, through the app's nginx (/bridge/connections) or
     # the page's own origin.
     image: ${IMAGE_PREFIX:-ingestion-harness}/bridge:${IMAGE_TAG:-dev}
@@ -192,9 +192,14 @@ services:
       BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:${APP_PORT:-8081}/bridge}
       BRIDGE_COOKIE_SECURE: ${BRIDGE_COOKIE_SECURE:-true}
       BRIDGE_STAGING_BUCKET: ${BRIDGE_STAGING_BUCKET:-ingest-bridge}
+      # The triple store's writer password, read by the rdf-default connection (only the bridge
+      # writes graphs; RDF_ENDPOINT and the user come from the API's mirror of the target).
+      RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
+    networks: [default, rdf]
     depends_on:
       migrate-bridge: { condition: service_completed_successfully }
       init-buckets: { condition: service_completed_successfully }
+      fuseki: { condition: service_healthy, required: false }
     healthcheck:
       test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3100/readyz || exit 1']
       interval: 10s
@@ -298,15 +303,14 @@ services:
       ONTOLOGY_MAX_TRIPLES: ${ONTOLOGY_MAX_TRIPLES:-2000000}
       ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
       ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
-      # The triple store (ADR 0011 step 6); empty: delivered graphs go to S3 only.
+      # The triple store (ADR 0011 step 6), only to seed the rdf-default target: the bridge
+      # writes the graphs. Empty: delivered graphs go to S3 only.
       RDF_ENDPOINT: ${RDF_ENDPOINT:-}
       RDF_DATASET: ${RDF_DATASET:-ct}
       # The LangGraph trial (docs/design/langgraph-trial.md): `langgraph` checkpoints a recipe's
       # steps so a stopped job resumes where it stopped; empty: the steps run as before.
       WORKER_STEP_GRAPH: ${WORKER_STEP_GRAPH:-}
-      RDF_USER: ct-writer
-      RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
-    networks: [default, converter, rdf]
+    networks: [default, converter]
     extra_hosts:
       - host.docker.internal:host-gateway # reach a local LLM server on the docker host
     depends_on:
@@ -314,7 +318,6 @@ services:
       init-buckets: { condition: service_completed_successfully }
       bridge: { condition: service_healthy }
       converter: { condition: service_healthy }
-      fuseki: { condition: service_healthy, required: false }
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
     stop_grace_period: 2m # let an in-flight extraction finish

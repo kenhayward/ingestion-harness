@@ -29,6 +29,7 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     kind: 'internal',
     bucket: 'ingest-published',
     prefix: '',
+    endpoint: null,
     connectionId: null,
     connection: null,
     sse: 'none',
@@ -59,6 +60,20 @@ const external = (over: Partial<PublishTargetView> = {}) =>
     },
     source: 'ui',
     updatedBy: 'Sam',
+    usage: NO_USE,
+    ...over,
+  });
+
+const tripleStore = (over: Partial<PublishTargetView> = {}) =>
+  target({
+    id: 'rdf-default',
+    label: 'Triple store',
+    kind: 'rdf',
+    bucket: 'ct',
+    prefix: '',
+    endpoint: 'http://fuseki:3030',
+    connectionId: 'rdf-default',
+    connection: { id: 'rdf-default', name: 'Triple store', status: 'ok', statusReason: null },
     usage: NO_USE,
     ...over,
   });
@@ -482,5 +497,28 @@ describe('AdminDialog Published outputs tab', () => {
       await within(dialog.querySelector('header')!).findByRole('button', { name: 'Add target' }),
     ).toBeInTheDocument();
     localStorage.removeItem('ih.adminTab');
+  });
+
+  it('shows the triple store with its endpoint and dataset, offering Rename and Test only', async () => {
+    const api = page([target(), tripleStore()]);
+    const store = await row('Triple store');
+    expect(store).toHaveTextContent('Triple store');
+    expect(store).toHaveTextContent('http://fuseki:3030');
+    expect(store).toHaveTextContent('dataset ct');
+    const opened = await open('Triple store');
+    expect(within(opened).getByLabelText('Label')).toHaveValue('Triple store');
+    for (const field of ['Bucket', 'Prefix', 'Connection', 'Server-side encryption']) {
+      expect(within(opened).queryByLabelText(field)).toBeNull();
+    }
+    expect(within(opened).queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(opened).toHaveTextContent('From RDF_ENDPOINT');
+    expect(within(opened).getByRole('button', { name: 'Test connection' })).toBeEnabled();
+    const label = within(opened).getByLabelText('Label');
+    await userEvent.clear(label);
+    await userEvent.type(label, 'Knowledge graph');
+    await userEvent.click(within(opened).getByRole('button', { name: 'Save' }));
+    expect(api.updatePublishTarget).toHaveBeenCalledWith('rdf-default', {
+      label: 'Knowledge graph',
+    });
   });
 });

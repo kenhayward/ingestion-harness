@@ -33,12 +33,12 @@ import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { HttpBridgeApi } from './bridge/client.js';
 import { HandoffCodes } from './bridge/handoff.js';
-import { syncTargetsWithBridge } from './bridge/mirror.js';
+import { resyncAfterRestore, syncTargetsWithBridge } from './bridge/mirror.js';
 import { reconcileOnce } from './bridge/reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
 import { PgPluginCatalogue } from './plugins/catalogue.js';
-import { defaultSeed, seedDifferences } from './publish-targets/seed.js';
+import { defaultSeed, rdfSeed, seedDifferences } from './publish-targets/seed.js';
 import { TargetStores } from './publish-targets/stores.js';
 import { PgRepo } from './repositories/pg.js';
 import { PgS3KeyRepo } from './s3keys/pg.js';
@@ -86,6 +86,9 @@ const targets = new PgPublishTargetRepo(makePool(2));
 const plugins = new PgPluginCatalogue(makePool(1));
 const seed = defaultSeed(config);
 const seedOutcome = await targets.seedDefault(seed);
+// The triple store target (delivery bridge phase 3): seeded once from RDF_ENDPOINT, when set.
+const tripleStoreSeed = rdfSeed(config);
+const rdfSeedOutcome = tripleStoreSeed ? await targets.seedRdf(tripleStoreSeed) : null;
 // Internal targets' buckets are created on this deployment's SeaweedFS when they are saved.
 const targetStores = new TargetStores({ internal: s3 });
 // The delivery bridge publishes; targets are mirrored to it and their keys moved there once.
@@ -233,12 +236,17 @@ backup?.enableRestore({
   live: new PgLiveDatabase(makePool(2)),
   openSide: (url) => PgSideDatabase.open(url),
   lakeIssuer: new SeaweedIamIssuer(s3),
-  // The restored targets are mirrored to the bridge again (and a restored target's keys from
-  // before the bridge are moved there), so its registry matches the database now in place.
+  // The triple store target is seeded again (a backup from before it lacks it), and the
+  // restored targets are mirrored to the bridge again (a restored target's keys from before the
+  // bridge are moved there), so its registry matches the database now in place.
   onSwapped: () =>
-    void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).catch(
-      (err: unknown) => app.log.error({ err }, 'restored targets could not be mirrored'),
-    ),
+    void resyncAfterRestore({
+      targets,
+      bridge,
+      secrets: llmSecrets,
+      log: app.log,
+      rdfSeed: tripleStoreSeed,
+    }).catch((err: unknown) => app.log.error({ err }, 'restored targets could not be mirrored')),
 });
 
 let stopReconciler = () => {};
@@ -254,6 +262,12 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 if (seeded.length) app.log.info({ seeded }, 'imported template files into the database');
 if (seedOutcome === 'seeded') app.log.info('publishing target default seeded from .env');
+if (rdfSeedOutcome === 'seeded') app.log.info('triple store target seeded from RDF_ENDPOINT');
+if (rdfSeedOutcome === 'differs') {
+  app.log.warn(
+    'the triple store target differs from RDF_ENDPOINT/RDF_DATASET/RDF_USER: .env is ignored now',
+  );
+}
 if (seedOutcome === 'differs') {
   const stored = await targets.get('default');
   const fields = stored ? seedDifferences(stored, seed).join(', ') : '';

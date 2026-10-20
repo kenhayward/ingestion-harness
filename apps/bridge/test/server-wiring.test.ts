@@ -43,7 +43,7 @@ describe('buildFromConfig', () => {
 
   it('registers the built-in s3 sink and stages packages in S3', async () => {
     const built = await buildFromConfig(config, { pool: pool(async () => ({ rows: [] })) });
-    expect(built.app.deps.sinks.ids()).toEqual(['s3']);
+    expect(built.app.deps.sinks.ids()).toEqual(['s3', 'rdf']);
     expect(built.app.deps.packages).toBeInstanceOf(S3PackageStore);
   });
 });

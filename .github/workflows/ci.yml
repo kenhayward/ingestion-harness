@@ -106,16 +106,25 @@ jobs:
         run: |
           compose() { docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml "$@"; }
           test -n "$COMPOSE_FUSEKI" || { echo "fuseki did not start (COMPOSE_PROFILES=rdf)"; exit 1; }
-          # The worker reaches Fuseki on the internal network as ct-writer: PUT, then DELETE.
-          compose exec -T worker python - <<'EOF'
-          import os
-          from ingest_worker.graph_store import graph_store_from_env
-          store = graph_store_from_env(os.environ)
-          assert store is not None, "RDF_ENDPOINT is not set"
-          graph = "https://smoke.example/graph"
-          store.put(graph, b"<https://smoke.example/s> <https://smoke.example/p> 1 .", "text/turtle")
-          assert store.delete(graph)
-          print("ok   triple store: PUT and DELETE as ct-writer")
+          # Only the bridge writes graphs (delivery bridge phase 3): it reaches Fuseki on the
+          # internal network as ct-writer, with its own RDF_PASSWORD. PUT, then DELETE.
+          endpoint="$(sed -n 's/^RDF_ENDPOINT=//p' deploy/.env.ci)"
+          dataset="$(sed -n 's/^RDF_DATASET=//p' deploy/.env.ci)"
+          compose exec -T -e SMOKE_RDF_ENDPOINT="$endpoint" -e SMOKE_RDF_DATASET="${dataset:-ct}" \
+            bridge node --input-type=module - <<'EOF'
+          import { HttpGraphStore } from '/app/apps/bridge/dist/rdf/store.js';
+          const endpoint = process.env.SMOKE_RDF_ENDPOINT;
+          if (!endpoint) throw new Error('RDF_ENDPOINT is not set');
+          const store = new HttpGraphStore({
+            endpoint,
+            dataset: process.env.SMOKE_RDF_DATASET,
+            user: 'ct-writer',
+            password: process.env.RDF_PASSWORD ?? null,
+          });
+          const graph = 'https://smoke.example/graph';
+          await store.put(graph, '<https://smoke.example/s> <https://smoke.example/p> 1 .', 'text/turtle');
+          if (!(await store.delete(graph))) throw new Error('the graph was not deleted');
+          console.log('ok   triple store: PUT and DELETE as ct-writer, from the bridge');
           EOF
           compose exec -T fuseki /opt/fuseki/admin.sh backup
       - name: Logs on failure

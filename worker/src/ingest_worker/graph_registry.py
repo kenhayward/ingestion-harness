@@ -81,10 +81,17 @@ class GraphRegistry(Protocol):
 
     def entity_sources(self, iri: str) -> list[tuple[str, str]]: ...
 
-    def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool: ...
+    def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool:
+        """Loaded under this base, by a delivery that has not failed (or before the bridge)."""
+        ...
 
     def record_ontology(
-        self, ontology_id: str, version: int, base_iri: str, graph_iri: str
+        self,
+        ontology_id: str,
+        version: int,
+        base_iri: str,
+        graph_iri: str,
+        delivery_id: str | None = None,
     ) -> None: ...
 
     def all_ontologies(self) -> list[tuple[str, int, str, str]]: ...
@@ -92,6 +99,19 @@ class GraphRegistry(Protocol):
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _reusable(
+    current: PublishedGraph, record: GraphPublish, handed_over: Callable[[str], bool]
+) -> bool:
+    """The current version was committed by this same job, for the same graph, and the job
+    handed nothing to the bridge since (its hand-off failed): a retry reuses that version
+    rather than spend another number on a version that was never delivered."""
+    return (
+        current.job_id == record.job_id
+        and current.graph_iri == record.graph_iri
+        and not handed_over(record.job_id)
+    )
 
 
 class MemoryGraphRegistry:
@@ -103,15 +123,33 @@ class MemoryGraphRegistry:
         self.entities: dict[str, tuple[str, list[str]]] = {}
         self.sources: dict[str, set[tuple[str, str]]] = {}
         self.ontologies: dict[tuple[str, int, str], str] = {}
+        #: The delivery that loaded each ontology graph (None: loaded before the bridge).
+        self.ontology_deliveries: dict[tuple[str, int, str], str | None] = {}
+        #: A delivery's status as job_deliveries records it (None: no job recorded it). Tests
+        #: point it at their queue; by default every delivery is on its way.
+        self.delivery_status: Callable[[str], str | None] = lambda _id: "queued"
+        #: Whether a job handed anything to the bridge (job_deliveries has a row of it) or has
+        #: live published outputs. By default yes, so every publish is a new version.
+        self.job_handed_over: Callable[[str], bool] = lambda _job: True
         self._lock = threading.Lock()
 
     def publish(self, record: GraphPublish, write: Callable[[int], None]) -> int:
         with self._lock:
             key = (record.sha256, record.template_id)
-            # Version rows outlive a retirement's forgotten current row: numbers never repeat.
-            version = 1 + max(
-                (v.version for v in self.versions if (v.sha256, v.template_id) == key), default=0
-            )
+            current = self.graphs.get(key)
+            if current is not None and _reusable(current, record, self.job_handed_over):
+                version = current.version
+                self.versions = [
+                    v
+                    for v in self.versions
+                    if (v.sha256, v.template_id, v.version) != (*key, version)
+                ]
+            else:
+                # Version rows outlive a retirement's forgotten current row: numbers never repeat.
+                version = 1 + max(
+                    (v.version for v in self.versions if (v.sha256, v.template_id) == key),
+                    default=0,
+                )
             write(version)
             graph = PublishedGraph(
                 record.sha256,
@@ -159,12 +197,25 @@ class MemoryGraphRegistry:
         return sorted(self.sources.get(iri, set()))
 
     def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool:
-        return (ontology_id, version, base_iri) in self.ontologies
+        key = (ontology_id, version, base_iri)
+        if key not in self.ontologies:
+            return False
+        delivery = self.ontology_deliveries.get(key)
+        if delivery is None:
+            return True
+        status = self.delivery_status(delivery)
+        return status is not None and status not in ("failed", "needs_user")
 
     def record_ontology(
-        self, ontology_id: str, version: int, base_iri: str, graph_iri: str
+        self,
+        ontology_id: str,
+        version: int,
+        base_iri: str,
+        graph_iri: str,
+        delivery_id: str | None = None,
     ) -> None:
         self.ontologies[(ontology_id, version, base_iri)] = graph_iri
+        self.ontology_deliveries[(ontology_id, version, base_iri)] = delivery_id
 
     def all_ontologies(self) -> list[tuple[str, int, str, str]]:
         return sorted((i, v, b, g) for (i, v, b), g in self.ontologies.items())
@@ -205,13 +256,29 @@ class PgGraphRegistry:
             self._conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtext('graph:' || %s || ':' || %s))", key
             )
-            # Version rows outlive a retirement's forgotten current row: numbers never repeat.
-            row = self._conn.execute(
-                """SELECT coalesce(max(version), 0) FROM published_graph_versions
-                    WHERE sha256 = %s AND template_id = %s""",
-                key,
+            # A retry of a job whose hand-off never happened reuses the version it committed:
+            # same job, same graph, and the job neither handed anything to the bridge
+            # (job_deliveries) nor has live published outputs (a publish from before the bridge).
+            reused = self._conn.execute(
+                """SELECT version FROM published_graphs
+                    WHERE sha256 = %s AND template_id = %s AND job_id = %s AND graph_iri = %s
+                      AND NOT EXISTS (SELECT 1 FROM job_deliveries WHERE job_id = %s)
+                      AND NOT EXISTS (SELECT 1 FROM job_outputs
+                                       WHERE job_id = %s AND stage = 'published'
+                                         AND withdrawn_at IS NULL)""",
+                (*key, record.job_id, record.graph_iri, record.job_id, record.job_id),
             ).fetchone()
-            version = (row[0] if row else 0) + 1
+            if reused is not None:
+                version = int(reused[0])
+            else:
+                # Version rows outlive a retirement's forgotten current row: numbers never
+                # repeat.
+                row = self._conn.execute(
+                    """SELECT coalesce(max(version), 0) FROM published_graph_versions
+                        WHERE sha256 = %s AND template_id = %s""",
+                    key,
+                ).fetchone()
+                version = (row[0] if row else 0) + 1
             write(version)
             values = (
                 record.sha256,
@@ -240,7 +307,13 @@ class PgGraphRegistry:
             self._conn.execute(
                 """INSERT INTO published_graph_versions (sha256, template_id, graph_iri, version,
                        job_id, document_id, template_version, base_iri, triples, target_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (sha256, template_id, version) DO UPDATE SET
+                     graph_iri = EXCLUDED.graph_iri, job_id = EXCLUDED.job_id,
+                     document_id = EXCLUDED.document_id,
+                     template_version = EXCLUDED.template_version,
+                     base_iri = EXCLUDED.base_iri, triples = EXCLUDED.triples,
+                     target_id = EXCLUDED.target_id, published_at = now()""",
                 values,
             )
             self._conn.execute(
@@ -305,21 +378,36 @@ class PgGraphRegistry:
         return [(r[0], r[1]) for r in rows]
 
     def ontology_loaded(self, ontology_id: str, version: int, base_iri: str) -> bool:
+        # A row from before the bridge has no delivery; otherwise a job must have recorded the
+        # delivery, and it must not have failed (or need a person). A load no job recorded (the
+        # job failed after the bridge took it, or was deleted) is loaded again by the next
+        # publish.
         row = self._conn.execute(
-            """SELECT 1 FROM published_ontology_graphs
-                WHERE ontology_id = %s AND version = %s AND base_iri = %s""",
+            """SELECT 1 FROM published_ontology_graphs o
+                WHERE o.ontology_id = %s AND o.version = %s AND o.base_iri = %s
+                  AND (o.delivery_id IS NULL
+                       OR EXISTS (SELECT 1 FROM job_deliveries d
+                                   WHERE d.delivery_id = o.delivery_id
+                                     AND d.status NOT IN ('failed', 'needs_user')))""",
             (ontology_id, version, base_iri),
         ).fetchone()
         return row is not None
 
     def record_ontology(
-        self, ontology_id: str, version: int, base_iri: str, graph_iri: str
+        self,
+        ontology_id: str,
+        version: int,
+        base_iri: str,
+        graph_iri: str,
+        delivery_id: str | None = None,
     ) -> None:
         self._conn.execute(
-            """INSERT INTO published_ontology_graphs (ontology_id, version, base_iri, graph_iri)
-               VALUES (%s, %s, %s, %s)
-               ON CONFLICT (ontology_id, version, base_iri) DO UPDATE SET loaded_at = now()""",
-            (ontology_id, version, base_iri, graph_iri),
+            """INSERT INTO published_ontology_graphs
+                   (ontology_id, version, base_iri, graph_iri, delivery_id)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (ontology_id, version, base_iri)
+               DO UPDATE SET loaded_at = now(), delivery_id = EXCLUDED.delivery_id""",
+            (ontology_id, version, base_iri, graph_iri, delivery_id),
         )
 
     def all_ontologies(self) -> list[tuple[str, int, str, str]]:

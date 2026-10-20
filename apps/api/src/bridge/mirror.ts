@@ -1,6 +1,8 @@
+import { TRIPLE_STORE_TARGET_ID } from '@ih/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { decryptSecret, type SecretsKeys } from '../llm/secrets.js';
 import type { PublishTargetRepo, TargetRecord } from '../publish-targets/repo.js';
+import type { RdfSeed } from '../publish-targets/seed.js';
 import { BridgeApiError, type BridgeApi, type TargetMirror } from './client.js';
 
 /**
@@ -29,6 +31,17 @@ export function connectionIdOf(t: TargetRecord): string | null {
 }
 
 export function mirrorOf(t: TargetRecord): TargetMirror {
+  if (t.kind === 'rdf') {
+    // The triple store: its dataset, written with its own connection (the endpoint and the
+    // writer's user; the password from the bridge's RDF_PASSWORD, or one an admin stored).
+    return {
+      label: t.label,
+      sinkId: 'rdf',
+      instanceId: null,
+      connectionId: TRIPLE_STORE_TARGET_ID,
+      destination: { dataset: t.bucket },
+    };
+  }
   return {
     label: t.label,
     sinkId: 's3',
@@ -36,6 +49,24 @@ export function mirrorOf(t: TargetRecord): TargetMirror {
     connectionId: connectionIdOf(t),
     destination: destinationOf(t),
   };
+}
+
+/**
+ * The triple store's connection, made from `.env` when the bridge has none yet: the endpoint and
+ * the writer's user, its password read from the bridge's own RDF_PASSWORD. One the bridge already
+ * has is left alone, so a password an admin stored on the connections page stays.
+ */
+async function ensureRdfConnection(bridge: BridgeApi, t: TargetRecord): Promise<void> {
+  const existing = await bridge.listConnections('shared');
+  if (existing.some((c) => c.id === TRIPLE_STORE_TARGET_ID)) return;
+  await bridge.putSharedConnection({
+    id: TRIPLE_STORE_TARGET_ID,
+    name: 'Triple store',
+    sinkId: 'rdf',
+    fields: { endpoint: t.endpoint ?? '', user: t.accessKeyId ?? '' },
+    secret: null,
+    secretEnv: 'RDF_PASSWORD',
+  });
 }
 
 /**
@@ -61,6 +92,7 @@ export async function mirrorTargets(deps: {
   for (const view of await deps.targets.list()) {
     const record = await deps.targets.get(view.id);
     if (!record) continue;
+    if (record.kind === 'rdf') await ensureRdfConnection(deps.bridge, record);
     const mirror = mirrorOf(record);
     try {
       try {
@@ -184,4 +216,18 @@ export async function syncTargetsWithBridge(
       await sleep(retryMs);
     }
   }
+}
+
+/**
+ * After a restore swapped the database in: the triple store target is seeded again from
+ * RDF_ENDPOINT (a backup from before it has none, and the worker would otherwise load nothing
+ * into Fuseki and drop no graph on withdraw), then every target is mirrored again (and a
+ * restored target's keys from before the bridge are moved there).
+ */
+export async function resyncAfterRestore(
+  deps: Parameters<typeof moveTargetsToBridge>[0] & { rdfSeed: RdfSeed | null },
+  opts: Parameters<typeof syncTargetsWithBridge>[1] = {},
+): Promise<{ moved: string[]; skipped: string[] }> {
+  if (deps.rdfSeed) await deps.targets.seedRdf(deps.rdfSeed);
+  return syncTargetsWithBridge(deps, opts);
 }
