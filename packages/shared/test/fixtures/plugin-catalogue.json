@@ -7,6 +7,7 @@
       "major": 1,
       "summary": "Fill fields or a table from the step's sections with regular expressions; no model call.",
       "egress": "none",
+      "kind": "step",
       "settingsSchema": {
         "additionalProperties": false,
         "description": "Fill a field step's fields, or a table step's rows, by matching regular expressions in the step's sections.",
@@ -47,6 +48,50 @@
           }
         },
         "title": "Pattern settings",
+        "type": "object"
+      }
+    },
+    {
+      "ref": "list.lookup@1",
+      "id": "list.lookup",
+      "major": 1,
+      "summary": "Check values against a list of accepted values, with aliases and a tolerance for misreads.",
+      "egress": "none",
+      "kind": "check",
+      "settingsSchema": {
+        "additionalProperties": false,
+        "description": "Check each value against a list of accepted values, with the spellings that also count and a tolerance for misreads.",
+        "properties": {
+          "values": {
+            "description": "The values a found value should equal.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Accepted values",
+            "type": "array"
+          },
+          "aliases": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Accepted value to the other spellings that count as it.",
+            "title": "Aliases",
+            "type": "object"
+          },
+          "maxDistance": {
+            "default": 2,
+            "description": "Edits a value may differ by from an accepted value and still be near.",
+            "minimum": 0,
+            "title": "Largest difference",
+            "type": "integer"
+          }
+        },
+        "required": ["values"],
+        "title": "List lookup settings",
         "type": "object"
       }
     }

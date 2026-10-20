@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import type { ModelChoice } from '@ih/shared';
+import type { ModelChoice, PluginInfo } from '@ih/shared';
 import { ModelPicker } from '../ui/ModelPicker.js';
 import { Segmented } from '../ui/Segmented.js';
 import { Area, Checklist, intList, opt, optInt, Select, Text } from './fields.js';
 import type { Definition } from './model.js';
 import { repeatNote, type SectionLike } from './editor-derive.js';
+import { JsonSettings, SettingsForm } from './PluginForms.js';
 
 const FILLS = [
   { value: 'fields', label: 'Fields' },
@@ -277,15 +278,37 @@ export function ContextEditor({
   );
 }
 
+const COMPARES = [
+  { value: 'reference', label: 'A reference' },
+  { value: 'plugin', label: 'A plugin' },
+] as const;
+
+/**
+ * A check step: the values it judges, and what it compares them with: a reference (another
+ * output's values) or a check plugin with its settings.
+ */
 export function CheckStep({
   step,
   paths,
+  plugins = [],
   set,
+  replace,
 }: {
   step: Definition;
   paths: string[];
+  /** The plugin catalogue; a check offers its check plugins. */
+  plugins?: readonly PluginInfo[];
   set: (key: string, value: unknown) => void;
+  replace: (step: Definition) => void;
 }) {
+  const checkPlugins = plugins.filter((p) => p.kind === 'check');
+  const byPlugin = typeof step.uses === 'string';
+  const uses = byPlugin ? String(step.uses) : '';
+  const plugin = checkPlugins.find((p) => p.ref === uses);
+  const settings = (step.with ?? {}) as Record<string, unknown>;
+  const setSettings = (next: Record<string, unknown>) =>
+    set('with', Object.keys(next).length > 0 ? next : undefined);
+  const noPlugins = !byPlugin && checkPlugins.length === 0;
   return (
     <div className="grid">
       <Text label="Check id" value={step.id} onChange={(v) => set('id', v)} />
@@ -295,23 +318,102 @@ export function CheckStep({
         options={paths}
         onChange={(v) => set('values', v)}
       />
-      <Select
-        label="Reference"
-        value={step.reference}
-        options={paths}
-        onChange={(v) => set('reference', v)}
-      />
-      <Select
-        label="Aliases"
-        value={step.aliases ?? ''}
-        options={['', ...paths]}
-        onChange={(v) => set('aliases', opt(v))}
-      />
-      <Text
-        label="Max distance"
-        value={step.maxDistance === undefined ? '' : String(step.maxDistance)}
-        onChange={(v) => set('maxDistance', optInt(v))}
-      />
+      <div className="field">
+        <span className="field-label">Compares with</span>
+        <Segmented
+          label="Compares with"
+          options={COMPARES}
+          value={byPlugin ? 'plugin' : 'reference'}
+          disabled={noPlugins}
+          title={noPlugins ? 'No check plugins yet: no worker has published any' : undefined}
+          onChange={(v) => {
+            if (v === (byPlugin ? 'plugin' : 'reference')) return;
+            // The two ways exclude each other: leaving one drops its keys.
+            const next: Definition = { ...step };
+            if (v === 'plugin') {
+              delete next.reference;
+              delete next.aliases;
+              delete next.maxDistance;
+              next.uses = checkPlugins[0]?.ref ?? '';
+            } else {
+              delete next.uses;
+              delete next.with;
+              next.reference = paths[0] ?? '';
+            }
+            replace(next);
+          }}
+        />
+      </div>
+      {byPlugin ? (
+        <>
+          <label>
+            Check plugin
+            <select
+              aria-label="Check plugin"
+              value={uses}
+              onChange={(e) => {
+                const next: Definition = { ...step, uses: e.target.value };
+                delete next.with; // settings belong to a plugin
+                replace(next);
+              }}
+            >
+              {!plugin && (
+                <option
+                  value={uses}
+                >{`${uses || '(none)'} (not on this deployment's workers)`}</option>
+              )}
+              {checkPlugins.map((p) => (
+                <option key={p.ref} value={p.ref}>
+                  {p.ref}
+                </option>
+              ))}
+            </select>
+            {plugin && <small className="muted">{plugin.summary}</small>}
+          </label>
+          <fieldset className="plugin-settings">
+            <legend>Settings</legend>
+            {plugin ? (
+              <SettingsForm
+                schema={plugin.settingsSchema}
+                value={settings}
+                onChange={setSettings}
+              />
+            ) : (
+              <JsonSettings
+                value={step.with}
+                label="Settings (JSON)"
+                onChange={(v) =>
+                  setSettings(
+                    v && typeof v === 'object' && !Array.isArray(v)
+                      ? (v as Record<string, unknown>)
+                      : {},
+                  )
+                }
+              />
+            )}
+          </fieldset>
+        </>
+      ) : (
+        <>
+          <Select
+            label="Reference"
+            value={step.reference}
+            options={paths}
+            onChange={(v) => set('reference', v)}
+          />
+          <Select
+            label="Aliases"
+            value={step.aliases ?? ''}
+            options={['', ...paths]}
+            onChange={(v) => set('aliases', opt(v))}
+          />
+          <Text
+            label="Max distance"
+            value={step.maxDistance === undefined ? '' : String(step.maxDistance)}
+            onChange={(v) => set('maxDistance', optInt(v))}
+          />
+        </>
+      )}
     </div>
   );
 }

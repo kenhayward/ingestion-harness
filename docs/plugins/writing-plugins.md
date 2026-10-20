@@ -174,6 +174,67 @@ Use it for anything that depends on the step or the recipe, for example:
 The worker runs `check` before the job calls any model. A message stops the job as a document
 problem (needs review) naming the step, and the Workbench preview shows the same message.
 
+### Check plugins
+
+A **check plugin** judges values another step collected instead of filling outputs. A recipe uses
+it in a check step, in place of a reference:
+
+```yaml
+pipeline:
+  - type: check
+    id: product_names
+    values: products.name           # what to judge: a field or table.column
+    uses: list.lookup@1             # instead of `reference`
+    with:
+      values: [Paracetamol, Ibuprofen]
+```
+
+A check names `reference` (with optional `aliases`, `maxDistance`) **or** `uses` (with optional
+`with`), never both. The editor's check step has a *Compares with* choice, A reference or A plugin,
+and offers only check plugins.
+
+Build one as a `Plugin` with `kind="check"` and a `judge` (a check plugin is refused in a plugin
+step, and a step plugin in a check). `run_settings` stays a required field of `Plugin`, so give a
+stub that refuses (an author who leaves it out gets a `TypeError` at import, and the plugin is
+silently left out); the built-in `list.lookup@1` does the same:
+
+```python
+def judge(ctx: CheckContext, settings: MySettings) -> list[dict[str, Any]]: ...
+
+def not_a_step(ctx: PluginContext, settings: MySettings) -> StepData:
+    raise ValueError("acme.judge@1 is a check plugin: use it in a check step")
+
+PLUGIN = Plugin(spec=..., settings=MySettings, check=lambda *_: [],
+                run_settings=not_a_step, kind="check", judge=judge)
+```
+
+`CheckContext` (frozen) holds:
+- `job`, `template`, `step`: the job, the recipe and the check step;
+- `values`: the values the step's `values` path names, as text. Each **distinct** value appears
+  once (compared ignoring case and spaces), in the order first seen;
+- `rows`: for a table column, the table's full rows (every filling step's columns, enriched ones
+  included, the same while processing and in review); `None` for a field.
+
+`judge` returns one verdict per value, a dict with:
+- `value`: the value as given;
+- `status`: one of `match`, `alias`, `near` or `unmatched`;
+- `matched`: what it matched (only kept when the status is not `unmatched`), for a reviewer to
+  apply;
+- `message` (optional): a short reason, shown on the Review page and in the Results check view.
+
+The worker turns the verdicts into the check's rows,
+`{value, status, matched, distance, count, message?}` (`count` is how often the value was
+collected), the same rows a reference check gives, so review reasons, the Review and Results
+views and later checks all work unchanged. **Every collected value must get exactly one
+verdict.** A value left out, judged twice, given a status outside the four, or a value that was
+not given makes the job go to review (`DocumentError`, naming the check and the plugin).
+
+A check plugin sends no data out: its egress must be `"none"` (`check_plugin` leaves one out
+otherwise), so a check is deterministic, cacheable and gives the same answer in a regression run
+months later. It never writes outputs. The built-in `list.lookup@1` is a worked example
+(`LIST_LOOKUP` in `worker/src/ingest_worker/plugins.py`): `values`, `aliases` and `maxDistance`, with the
+same matching as a reference check.
+
 ### Versions
 
 `uses` pins a **major** version, and a published recipe runs that major for as long as a worker

@@ -114,7 +114,9 @@ export function changeParts(c: DraftChange): {
             kind: 'CHECK',
             tone: 'neutral',
             id: c.step.id,
-            text: `${c.step.values} against ${c.step.reference}`,
+            text: c.step.uses
+              ? `${c.step.values} with ${c.step.uses}`
+              : `${c.step.values} against ${c.step.reference}`,
           };
     case 'removeStep':
       return { kind: 'REMOVE', tone: 'danger', id: c.id, text: 'remove this step' };

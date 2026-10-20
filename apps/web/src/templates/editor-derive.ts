@@ -65,6 +65,8 @@ export function stepSummary(
   if (step.type === 'check') {
     const values = text(step.values).trim();
     const reference = text(step.reference).trim();
+    const uses = text(step.uses).trim();
+    if (values && uses) return `${values} · ${uses}`;
     return values && reference ? `${values} vs ${reference}` : 'not set up yet';
   }
   if (step.type === 'plugin') {
@@ -109,6 +111,8 @@ export function stepListSummary(step: Record<string, unknown>): string {
   if (step.type === 'check') {
     const values = text(step.values).trim();
     const reference = text(step.reference).trim();
+    const uses = text(step.uses).trim();
+    if (values && uses) return `Checks ${values} with ${uses}`;
     return values && reference ? `Checks ${values} against ${reference}` : 'Check not set up yet';
   }
   const fills = typeof step.table === 'string' ? 1 : list(step.fields).length;

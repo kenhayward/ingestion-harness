@@ -63,7 +63,7 @@ def edit_distance(a: str, b: str) -> int:
     return previous[-1]
 
 
-def _norm(value: str) -> str:
+def norm(value: str) -> str:
     return "".join(value.split()).upper()
 
 
@@ -75,44 +75,54 @@ def run_check(check: Check, results: dict[str, Any]) -> dict[str, list[dict[str,
     references: list[tuple[str, set[str]]] = []  # (reference value, normalised aliases)
     for item in _select(results, prefix):
         for ref in (str(v) for v in _select(item, ref_rest) if v is not None) if ref_rest else []:
-            aliases = {_norm(a) for a in select_values(item, alias_rest)} if alias_rest else set()
-            if all(_norm(ref) != _norm(r) for r, _ in references):
+            aliases = {norm(a) for a in select_values(item, alias_rest)} if alias_rest else set()
+            if all(norm(ref) != norm(r) for r, _ in references):
                 references.append((ref, aliases))
 
-    counts: dict[str, int] = {}
-    shown: dict[str, str] = {}
+    counts: dict[str, tuple[str, int]] = {}
     for value in select_values(results, check.values):
-        key = _norm(value)
-        counts[key] = counts.get(key, 0) + 1
-        shown.setdefault(key, value.strip())
+        key = norm(value)
+        shown, count = counts.get(key, (value.strip(), 0))
+        counts[key] = (shown, count + 1)
+    return {"rows": classify(counts, references, check.max_distance)}
 
+
+def classify(
+    values: dict[str, tuple[str, int]],
+    references: list[tuple[str, set[str]]],
+    max_distance: int,
+) -> list[dict[str, Any]]:
+    """One row per value (normalised key -> (value as shown, count)) saying whether it equals a
+    reference (`match`), one of a reference's normalised aliases (`alias`), is within
+    `max_distance` edits of one (`near`) or none (`unmatched`), then an `unused` row for each
+    reference no value matched."""
     rows: list[dict[str, Any]] = []
     used: set[str] = set()
-    for key, count in counts.items():
+    for key, (shown, count) in values.items():
         row: dict[str, Any] = {
-            "value": shown[key],
+            "value": shown,
             "status": "unmatched",
             "matched": None,
             "distance": None,
             "count": count,
         }
-        exact = next((r for r, _ in references if _norm(r) == key), None)
+        exact = next((r for r, _ in references if norm(r) == key), None)
         alias = next((r for r, aliases in references if key in aliases), None)
         if exact is not None:
             row.update(status="match", matched=exact, distance=0)
         elif alias is not None:
             row.update(status="alias", matched=alias, distance=0)
         elif references:
-            distance, nearest = min((edit_distance(key, _norm(r)), r) for r, _ in references)
-            if distance <= check.max_distance:
+            distance, nearest = min((edit_distance(key, norm(r)), r) for r, _ in references)
+            if distance <= max_distance:
                 row.update(status="near", matched=nearest, distance=distance)
         if row["matched"] is not None:
-            used.add(_norm(row["matched"]))
+            used.add(norm(row["matched"]))
         rows.append(row)
 
     rows += [
         {"value": r, "status": "unused", "matched": None, "distance": None, "count": 0}
         for r, _ in references
-        if _norm(r) not in used
+        if norm(r) not in used
     ]
-    return {"rows": rows}
+    return rows

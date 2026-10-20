@@ -473,7 +473,8 @@ describe('RestoreDialog', () => {
     render(<RestoreDialog api={api} onClose={vi.fn()} pollMs={5} />);
     await chooseAndCheck();
     await screen.findByRole('heading', { name: 'Restored' });
-    expect(localStorage.getItem(UPLOAD_KEY)).toBeNull();
+    // Forgotten by an effect after the render that shows "Restored": wait for it.
+    await waitFor(() => expect(localStorage.getItem(UPLOAD_KEY)).toBeNull());
     expect(sessionStorage.getItem(RESTORE_KEY)).toBeNull();
   });
 

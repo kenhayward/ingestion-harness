@@ -269,7 +269,7 @@ function StepDetail({
             replace={onReplace}
           />
         ) : kind === 'CHECK' ? (
-          <CheckStep step={step} paths={paths} set={onSet} />
+          <CheckStep step={step} paths={paths} plugins={plugins} set={onSet} replace={onReplace} />
         ) : (
           <ExtractDetail
             step={step}

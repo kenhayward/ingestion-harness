@@ -19,10 +19,11 @@ from dataclasses import dataclass, field, replace
 from functools import cache
 from importlib.metadata import entry_points
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .checks import classify, norm, select_values
 from .errors import DocumentError
 from .extract import SYSTEM_PROMPT, Attempt, ExtractionFailedError, run_extraction
 from .llm.base import (
@@ -36,7 +37,7 @@ from .llm.base import (
 from .nodes import NodeSpec
 from .pipeline import JobModels, RepeatPlan
 from .queue import ClaimedJob
-from .template import PLUGIN_REF, PluginStep, Template
+from .template import PLUGIN_REF, CheckStep, PluginStep, Template
 
 log = logging.getLogger(__name__)
 
@@ -163,6 +164,14 @@ class PluginContext:
         return "\n".join(self.sections.get(i, "") for i in self.step.sections)
 
 
+def stand_in_job(template: Template) -> ClaimedJob:
+    """A test run of the recipe that is no real job: for code run outside one."""
+    return ClaimedJob(
+        "plugin-test", "", template.id, template.version, "", "", None, 1, 1,
+        task="process", test=True, filename="sample.pdf",
+    )  # fmt: skip
+
+
 def plugin_context(
     template: Template,
     step: PluginStep,
@@ -171,11 +180,22 @@ def plugin_context(
 ) -> PluginContext:
     """A context for running a plugin outside a job: a plugin author's tests (and the guide's).
     The job is a stand-in test run of the recipe; events go nowhere."""
-    job = ClaimedJob(
-        "plugin-test", "", template.id, template.version, "", "", None, 1, 1,
-        task="process", test=True, filename="sample.pdf",
-    )  # fmt: skip
-    return PluginContext(job, template, step, sections, context or [], lambda *_: None)
+    return PluginContext(
+        stand_in_job(template), template, step, sections, context or [], lambda *_: None
+    )
+
+
+@dataclass(frozen=True)
+class CheckContext:
+    """Everything a check plugin may read: the job, the recipe and its check step, the values
+    the step's `values` path names (as text, in order) and, for a table column, the rows they
+    come from (None for a field)."""
+
+    job: ClaimedJob
+    template: Template
+    step: CheckStep
+    values: list[str]
+    rows: list[dict[str, Any]] | None
 
 
 @dataclass(frozen=True)
@@ -185,13 +205,17 @@ class Plugin:
     #: publishes (slice 3b).
     settings: type[BaseModel]
     #: Rules beyond the schema, against the recipe and the step (messages; empty: fine).
-    check: Callable[[Template, PluginStep, Any], list[str]]
+    check: Callable[[Template, Any, Any], list[str]]
     run_settings: Callable[[PluginContext, Any], StepData]
+    #: What a recipe uses it as: a pipeline `step` (a plugin step) or a `check` (a check step).
+    kind: Literal["step", "check"] = "step"
+    #: A check plugin's verdicts (one dict per finding; none: the values pass). Check plugins only.
+    judge: Callable[[CheckContext, Any], list[dict[str, Any]]] | None = None
 
-    def settings_for(self, template: Template, step: PluginStep) -> Any:
+    def settings_for(self, template: Template, step: PluginStep | CheckStep) -> Any:
         """The step's `with` as this plugin's settings; ValueError says what is wrong."""
         try:
-            settings = self.settings.model_validate(step.with_)
+            settings = self.settings.model_validate(step.with_ or {})
         except ValidationError as exc:
             raise ValueError(
                 "; ".join(
@@ -265,6 +289,10 @@ def resolve_plugins(
         plugin = plugins().get(step.uses)
         if plugin is None:
             raise DocumentError(f"step {step.id!r}: no plugin {step.uses} on this worker")
+        if plugin.kind == "check":
+            raise DocumentError(
+                f"step {step.id!r}: {step.uses} is a check plugin: use it in a check step"
+            )
         try:
             settings = plugin.settings_for(template, step)
         except ValueError as exc:
@@ -277,6 +305,104 @@ def resolve_plugins(
             resolved_model = job_models.resolve(ref, what=f"plugin step {step.id!r}")
         resolved[step.id] = ResolvedPlugin(plugin, settings, resolved_model)
     return resolved
+
+
+def resolve_checks(template: Template) -> dict[str, ResolvedPlugin]:
+    """Every plugin check's plugin and settings, by step id, before the job calls any model: a
+    plugin this worker lacks, one that is not a check plugin or bad settings is a DocumentError
+    (needs review)."""
+    resolved: dict[str, ResolvedPlugin] = {}
+    for step in template.pipeline:
+        if not isinstance(step, CheckStep) or step.uses is None:
+            continue
+        plugin = plugins().get(step.uses)
+        if plugin is None:
+            raise DocumentError(f"check {step.id!r}: no plugin {step.uses} on this worker")
+        if plugin.kind != "check":
+            raise DocumentError(f"check {step.id!r}: {step.uses} is not a check plugin")
+        try:
+            settings = plugin.settings_for(template, step)
+        except ValueError as exc:
+            raise DocumentError(f"check {step.id!r}: {step.uses}: {exc}") from exc
+        resolved[step.id] = ResolvedPlugin(plugin, settings)
+    return resolved
+
+
+CHECK_STATUSES = ("match", "alias", "near", "unmatched")
+
+
+def check_context(
+    job: ClaimedJob,
+    template: Template,
+    step: CheckStep,
+    results: Mapping[str, Any],
+    tables: Mapping[str, Any],
+) -> CheckContext:
+    """The context for a plugin check: every value the step's `values` path names, in order,
+    repeats included (`run_check_plugin` counts and de-duplicates them), and, for a table
+    column, the table's full rows (`tables`: every filling step's columns merged, the same whether
+    the document is processing or being reviewed)."""
+    resolved = template.resolve_path(step.values)
+    assert resolved is not None  # validated
+    table, _, column = step.values.partition(".")
+    rows = None
+    if column:
+        got = tables.get(table)
+        rows = [dict(r) for r in got] if isinstance(got, list) else []
+    return CheckContext(job, template, step, select_values(dict(results), resolved[0]), rows)
+
+
+def run_check_plugin(
+    resolved: ResolvedPlugin, ctx: CheckContext
+) -> dict[str, list[dict[str, Any]]]:
+    """Judge a check's values with its plugin: `ctx.values` are all the values collected, the
+    plugin sees each distinct one (compared as a check does: ignoring case and spaces) once, and
+    its verdicts become the check's rows, `{value, status, matched, distance, count[, message]}`
+    with `count` from the collected values. A value it leaves out or judges twice, a status outside
+    `CHECK_STATUSES` and a value it was not given are DocumentErrors."""
+    judge = resolved.plugin.judge
+    if judge is None:
+        raise DocumentError(f"check {ctx.step.id!r}: {ctx.step.uses} is not a check plugin")
+    where = f"check {ctx.step.id!r}: {ctx.step.uses}"
+    counts: dict[str, tuple[str, int]] = {}
+    for value in ctx.values:
+        key = norm(value)
+        shown, count = counts.get(key, (value.strip(), 0))
+        counts[key] = (shown, count + 1)
+    distinct = [shown for shown, _ in counts.values()]
+    verdicts = judge(replace(ctx, values=distinct), resolved.settings)
+    if not isinstance(verdicts, list) or not all(isinstance(v, dict) for v in verdicts):
+        raise DocumentError(f"{where} answered something other than a list of verdicts")
+    by_key: dict[str, dict[str, Any]] = {}
+    for verdict in verdicts:
+        given = verdict.get("value")
+        answered = norm(given) if isinstance(given, str) else None
+        if answered is None or answered not in counts:
+            raise DocumentError(f"{where} answered a value it was not given: {given!r}")
+        status = verdict.get("status")
+        if status not in CHECK_STATUSES:
+            raise DocumentError(f"{where} answered status {status!r} for {given!r}")
+        if answered in by_key:
+            raise DocumentError(f"{where} judged {counts[answered][0]!r} twice")
+        by_key[answered] = verdict
+    rows: list[dict[str, Any]] = []
+    for key in counts:
+        judged = by_key.get(key)
+        if judged is None:
+            raise DocumentError(f"{where} did not judge {counts[key][0]!r}")
+        status = judged["status"]
+        matched = judged.get("matched")
+        row: dict[str, Any] = {
+            "value": counts[key][0],
+            "status": status,
+            "matched": matched if status != "unmatched" and isinstance(matched, str) else None,
+            "distance": None,
+            "count": counts[key][1],
+        }
+        if isinstance(judged.get("message"), str):
+            row["message"] = judged["message"]
+        rows.append(row)
+    return {"rows": rows}
 
 
 # --- text.pattern@1 ----------------------------------------------------------------------------
@@ -392,12 +518,82 @@ TEXT_PATTERN = Plugin(
 )  # fmt: skip
 
 
+# --- list.lookup@1 -----------------------------------------------------------------------------
+
+
+class LookupSettings(BaseModel):
+    """`list.lookup@1`: a check that compares each value with a list, as a reference check does:
+    equal (ignoring case and spaces) is a match, an alias of a listed value an alias, within
+    `maxDistance` edits (OCR misreads) near, else unmatched."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+        title="List lookup settings",
+        json_schema_extra={
+            "description": "Check each value against a list of accepted values, with the "
+            "spellings that also count and a tolerance for misreads."
+        },
+    )
+
+    values: list[str] = Field(
+        min_length=1,
+        title="Accepted values",
+        description="The values a found value should equal.",
+    )
+    aliases: dict[str, list[str]] = Field(
+        default_factory=dict,
+        title="Aliases",
+        description="Accepted value to the other spellings that count as it.",
+    )
+    max_distance: int = Field(
+        default=2,
+        ge=0,
+        alias="maxDistance",
+        title="Largest difference",
+        description="Edits a value may differ by from an accepted value and still be near.",
+    )
+
+
+def _judge_lookup(ctx: CheckContext, s: LookupSettings) -> list[dict[str, Any]]:
+    references = [(v, {norm(a) for a in s.aliases.get(v, [])}) for v in s.values]
+    values = {norm(v): (v.strip(), 1) for v in ctx.values}
+    return [
+        {"value": r["value"], "status": r["status"], "matched": r["matched"]}
+        for r in classify(values, references, s.max_distance)
+        if r["status"] != "unused"
+    ]
+
+
+def _lookup_rules(_template: Template, _step: Any, s: LookupSettings) -> list[str]:
+    return [
+        f"aliases: {k!r} is not one of the accepted values" for k in s.aliases if k not in s.values
+    ]
+
+
+def _lookup_is_not_a_step(_ctx: PluginContext, _s: LookupSettings) -> StepData:
+    raise ValueError("list.lookup@1 is a check plugin: use it in a check step")
+
+
+LIST_LOOKUP = Plugin(
+    spec=NodeSpec(
+        "list.lookup", 1, _judge_lookup, list, "pure", "none", False,
+        "Check values against a list of accepted values, with aliases and a tolerance for misreads.",
+    ),
+    settings=LookupSettings,
+    check=_lookup_rules,
+    run_settings=_lookup_is_not_a_step,
+    kind="check",
+    judge=_judge_lookup,
+)  # fmt: skip
+
+
 def _ref(plugin: Plugin) -> str:
     return f"{plugin.spec.id}@{plugin.spec.version}"
 
 
 #: The plugins built into the worker, by `<id>@<major>` (a recipe step's `uses`).
-BUILTINS: dict[str, Plugin] = {_ref(p): p for p in [TEXT_PATTERN]}
+BUILTINS: dict[str, Plugin] = {_ref(p): p for p in [TEXT_PATTERN, LIST_LOOKUP]}
 
 
 # --- plugins from installed packages (slice 3d) ------------------------------------------------
@@ -433,6 +629,13 @@ def check_plugin(plugin: Plugin) -> list[str]:
         problems.append(f"{ref}: its settings have no JSON Schema ({exc})")
     if plugin.spec.egress == "remote":
         problems.append(f"{ref}: egress remote belongs behind A2A, not in the worker (ADR 0018)")
+    if plugin.kind == "check":
+        if plugin.judge is None:
+            problems.append(f"{ref}: a check plugin needs judge")
+        if plugin.spec.egress != "none":
+            problems.append(f"{ref}: a check plugin sends no data out (egress none)")
+    elif plugin.judge is not None:
+        problems.append(f"{ref}: a step plugin has no judge")
     return problems
 
 

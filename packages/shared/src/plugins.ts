@@ -13,6 +13,8 @@ export const PluginInfoSchema = z.object({
   id: z.string().min(1),
   major: z.number().int().positive(),
   summary: z.string(),
+  /** What a recipe uses it as: a pipeline `step` (plugin step) or a `check` (check step). */
+  kind: z.enum(['step', 'check']),
   /** Whether it sends data out: `none`, or to a `model` (through the data-policy gate). */
   egress: z.enum(['none', 'model', 'remote']),
   /** The JSON Schema of the step's `with` (draft 2020-12, as Pydantic writes it). */

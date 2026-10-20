@@ -61,6 +61,10 @@ describe('stepSummary', () => {
       'lines.batch vs header.batches',
     ],
     [{ type: 'check', values: '', reference: '' }, 'not set up yet'],
+    [
+      { type: 'check', values: 'lines.batch', uses: 'list.lookup@1' },
+      'lines.batch · list.lookup@1',
+    ],
     [{ type: 'other' }, ''],
   ])('%j', (step, text) => expect(stepSummary(step)).toBe(text));
 });
@@ -102,6 +106,10 @@ describe('stepListSummary', () => {
       'Checks total against subtotal',
     ],
     [{ type: 'check', id: 'c' }, 'Check not set up yet'],
+    [
+      { type: 'check', id: 'c', values: 'total', uses: 'list.lookup@1' },
+      'Checks total with list.lookup@1',
+    ],
   ])('%j', (step, text) => expect(stepListSummary(step)).toBe(text));
 });
 

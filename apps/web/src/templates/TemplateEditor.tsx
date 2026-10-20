@@ -1069,7 +1069,9 @@ export function TemplateEditor({
                     <CheckStep
                       step={step}
                       paths={paths}
+                      plugins={plugins}
                       set={(key, v) => update(['pipeline', i, key], v)}
+                      replace={(next) => update(['pipeline', i], next)}
                     />
                   )}
                 </StepCard>

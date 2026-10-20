@@ -136,20 +136,35 @@ class ExtractStep(_Model):
         return self
 
 
+#: A plugin's id and the major version a recipe runs: `text.pattern@1` (TS `PLUGIN_REF`).
+PLUGIN_REF = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+
+
 class CheckStep(_Model):
-    """Paths are `<field>` or `<table>.<column>`."""
+    """Paths are `<field>` or `<table>.<column>`. A check compares `values` with a `reference`, or
+    runs a check plugin (`uses`, its settings in `with`); exactly one of the two."""
 
     type: Literal["check"]
     id: Id
     description: str | None = None
     values: str
-    reference: str
+    reference: str | None = None
     aliases: str | None = None
     max_distance: int = Field(default=2, ge=0, alias="maxDistance")
+    #: A check plugin and its major version (instead of a reference).
+    uses: str | None = Field(default=None, pattern=PLUGIN_REF)
+    #: The check plugin's own settings (None: absent, so older recipes hash as before).
+    with_: dict[str, Any] | None = Field(default=None, alias="with")
 
-
-#: A plugin's id and the major version a recipe runs: `text.pattern@1` (TS `PLUGIN_REF`).
-PLUGIN_REF = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+@[1-9][0-9]*$"
+    @model_validator(mode="after")
+    def _either(self) -> CheckStep:
+        if self.uses is not None and self.reference is not None:
+            raise ValueError(
+                f"check {self.id!r}: a check runs a plugin or compares with a reference, not both"
+            )
+        if self.uses is None and self.reference is None:
+            raise ValueError(f"check {self.id!r}: a check needs a reference or a plugin")
+        return self
 
 
 class PluginStep(_Model):
@@ -447,6 +462,10 @@ class Template(_Model):
         suffix = "[*]" if fld.type == "list" else ""
         return f"{self.filler_of_field(head).id}.{head}.value{suffix}", fld
 
+    def resolve_path(self, path: str) -> tuple[str, ValueDef] | None:
+        """`<field>` or `<table>.<column>` -> (engine path, definition), None when unknown."""
+        return self._resolve(path)
+
     def _unknown_path(self, path: str) -> str:
         """Why `path` does not resolve, saying how to fix a bare table id (TS `unknownPath`)."""
         table = next((t for t in self.outputs.tables if t.id == path), None)
@@ -459,6 +478,9 @@ class Template(_Model):
         )
 
     def compile_check(self, step: CheckStep) -> Check:
+        if step.reference is None:
+            raise ValueError(f"check {step.id!r} runs a plugin: it has no reference to compare")
+
         def path(p: str) -> str:
             resolved = self._resolve(p)
             assert resolved is not None  # validated
@@ -674,7 +696,9 @@ class Template(_Model):
         if not errors:  # path resolution needs a consistent template
             for check in self.pipeline:
                 if isinstance(check, CheckStep):
-                    for p in filter(None, (check.values, check.reference, check.aliases)):
+                    # A plugin check resolves only its values.
+                    paths = (check.values, check.reference, check.aliases)
+                    for p in filter(None, paths if check.uses is None else paths[:1]):
                         if self._resolve(p) is None:
                             errors.append(f"check {check.id!r}: {self._unknown_path(p)}")
         errors += self._semantics_errors()

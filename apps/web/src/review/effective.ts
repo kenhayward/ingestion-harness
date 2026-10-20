@@ -58,7 +58,8 @@ export function effectiveView({ template, document, edits }: ReviewData): Effect
       (r) => r.status === 'unmatched',
     );
     const flags = checkFlags.get(`${table}|${column}`) ?? new Map<string, string>();
-    for (const r of unmatched) flags.set(normalise(r.value), `${step.id}: unmatched`);
+    for (const r of unmatched)
+      flags.set(normalise(r.value), `${step.id}: ${r.message ?? 'unmatched'}`);
     checkFlags.set(`${table}|${column}`, flags);
   }
 

@@ -52,8 +52,12 @@ describe('GET /api/plugins', () => {
     });
     const res = await app.inject('/api/plugins');
     expect(res.statusCode).toBe(200);
-    expect(res.json().map((p: PluginInfo) => p.ref)).toEqual(['acme.lines@2', 'text.pattern@1']);
-    expect(res.json()[1]).toEqual(catalogue.plugins[0]);
+    expect(res.json().map((p: PluginInfo) => p.ref)).toEqual([
+      'acme.lines@2',
+      'list.lookup@1',
+      'text.pattern@1',
+    ]);
+    expect(res.json()[2]).toEqual(catalogue.plugins[0]);
   });
 
   it('is empty before any worker has started', async () => {
@@ -146,6 +150,91 @@ describe('a recipe naming a plugin', () => {
     const c = await testApp({ plugins: null });
     await c.templates.create('letter', 1, recipe({ uses: 'acme.magic@3' }), 'draft');
     expect(await issuesOf(c.app)).toEqual([]);
+  });
+
+  describe('check plugin', () => {
+    /** A check plugin with a strict settings schema, published next to the fixture's. */
+    const lookup: PluginInfo = {
+      ...catalogue.plugins[0]!,
+      ref: 'acme.lookup@1',
+      id: 'acme.lookup',
+      kind: 'check',
+      settingsSchema: { type: 'object', additionalProperties: false },
+    };
+    /** The fixture recipe with a check step after its plugin step. */
+    const withCheck = (check: Record<string, unknown>) => {
+      const r = recipe();
+      return {
+        ...r,
+        pipeline: [
+          ...(r.pipeline as unknown[]),
+          { type: 'check', id: 'x', values: 'reference', ...check },
+        ],
+      };
+    };
+    const checkAt = recipe().pipeline.length;
+    const seed = async (
+      check: Record<string, unknown>,
+      plugins = [...catalogue.plugins, lookup],
+    ) => {
+      const c = await testApp({ plugins: new MemoryPluginCatalogue(plugins) });
+      await c.templates.create('letter', 1, withCheck(check), 'draft');
+      return c;
+    };
+
+    it('is fine when a worker has the check plugin and the settings fit', async () => {
+      const c = await seed({ uses: 'acme.lookup@1', with: {} });
+      expect(await issuesOf(c.app)).toEqual([]);
+    });
+
+    it('is a publishing issue when no worker has the plugin', async () => {
+      const c = await seed({ uses: 'acme.gone@1' });
+      expect(await issuesOf(c.app)).toEqual([
+        {
+          path: `pipeline.${checkAt}.uses`,
+          message: 'check "x": no plugin acme.gone@1 on this deployment\'s workers',
+        },
+      ]);
+    });
+
+    it('is a publishing issue when the plugin is a step plugin', async () => {
+      const c = await seed({ uses: 'text.pattern@1' });
+      expect(await issuesOf(c.app)).toEqual([
+        {
+          path: `pipeline.${checkAt}.uses`,
+          message: 'check "x": text.pattern@1 is not a check plugin',
+        },
+      ]);
+    });
+
+    it('is a publishing issue when the settings do not fit', async () => {
+      const c = await seed({ uses: 'acme.lookup@1', with: { list: 'x' } });
+      expect(await issuesOf(c.app)).toEqual([
+        {
+          path: `pipeline.${checkAt}.with`,
+          message: 'check "x": acme.lookup@1 settings: must NOT have additional properties (list)',
+        },
+      ]);
+    });
+
+    it('is a publishing issue when a plugin step names a check plugin', async () => {
+      const c = await testApp({
+        plugins: new MemoryPluginCatalogue([...catalogue.plugins, lookup]),
+      });
+      await c.templates.create('letter', 1, recipe({ uses: 'acme.lookup@1', with: {} }), 'draft');
+      expect(await issuesOf(c.app)).toEqual([
+        {
+          path: 'pipeline.0.uses',
+          message: 'step "refs": acme.lookup@1 is a check plugin: use it in a check step',
+        },
+      ]);
+    });
+
+    it('is not checked without a catalogue', async () => {
+      const c = await testApp({ plugins: null });
+      await c.templates.create('letter', 1, withCheck({ uses: 'acme.gone@1' }), 'draft');
+      expect(await issuesOf(c.app)).toEqual([]);
+    });
   });
 });
 

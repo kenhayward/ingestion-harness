@@ -56,9 +56,12 @@ export function stepCards(definition: Def): StepCard[] {
               reads: [],
               chunkPages: null,
               compares:
-                [s.values, s.reference]
-                  .filter((x): x is string => typeof x === 'string' && x !== '')
-                  .join(' = ') || null,
+                (typeof s.uses === 'string' && s.uses !== ''
+                  ? [s.values, s.uses].filter((x): x is string => typeof x === 'string' && x !== '')
+                  : [s.values, s.reference].filter(
+                      (x): x is string => typeof x === 'string' && x !== '',
+                    )
+                ).join(typeof s.uses === 'string' && s.uses !== '' ? ' with ' : ' = ') || null,
             }
           : {
               number: i + 1,

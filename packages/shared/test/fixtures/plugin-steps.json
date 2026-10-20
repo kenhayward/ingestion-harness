@@ -346,6 +346,97 @@
         },
         { "type": "extract", "id": "rows", "table": "lines", "sections": ["items"] }
       ]
+    },
+    {
+      "name": "a check may name a plugin instead of a reference",
+      "valid": true,
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["items"]
+        },
+        {
+          "type": "check",
+          "id": "names",
+          "uses": "list.lookup@1",
+          "values": "lines.sku",
+          "with": { "values": ["A1"] }
+        }
+      ]
+    },
+    {
+      "name": "a check runs a plugin or compares with a reference, not both",
+      "valid": false,
+      "error": "a check runs a plugin or compares with a reference, not both",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["items"]
+        },
+        {
+          "type": "check",
+          "id": "names",
+          "uses": "list.lookup@1",
+          "values": "lines.sku",
+          "reference": "lines.sku"
+        }
+      ]
+    },
+    {
+      "name": "a check needs a reference or a plugin",
+      "valid": false,
+      "error": "a check needs a reference or a plugin",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["items"]
+        },
+        { "type": "check", "id": "names", "values": "lines.sku" }
+      ]
+    },
+    {
+      "name": "a plugin check still resolves its values",
+      "valid": false,
+      "error": "unknown field or column",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "head",
+          "fields": ["sender", "reference"],
+          "sections": ["head"]
+        },
+        {
+          "type": "extract",
+          "id": "rows",
+          "table": "lines",
+          "sections": ["items"]
+        },
+        { "type": "check", "id": "names", "uses": "list.lookup@1", "values": "lines.nope" }
+      ]
     }
   ]
 }

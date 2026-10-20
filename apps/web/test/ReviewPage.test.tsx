@@ -99,6 +99,21 @@ describe('ReviewPage extracted data', () => {
     expect(fieldRow(/kind/)).toHaveFocus();
   });
 
+  it("shows a check plugin's message on a flagged value", async () => {
+    const data = reviewData();
+    data.document.checks.batch_check!.rows[1] = {
+      value: 'GX',
+      status: 'unmatched',
+      matched: null,
+      distance: null,
+      count: 1,
+      message: 'GX is not a released batch',
+    };
+    setup({ getReview: vi.fn(async () => data) });
+    await userEvent.click(await screen.findByRole('tab', { name: /^results/ }));
+    expect(await screen.findByTitle('batch_check: GX is not a released batch')).toBeInTheDocument();
+  });
+
   it('hides Next flagged when nothing is flagged', async () => {
     const data = reviewData();
     data.document.issues = [];
@@ -325,6 +340,7 @@ describe('ReviewPage', () => {
       major: 1,
       summary: 'A plugin.',
       egress,
+      kind: 'step',
       settingsSchema: { type: 'object' },
     });
     const withPlugin = (uses: string) => {
