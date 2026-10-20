@@ -17,6 +17,11 @@ export default tseslint.config(
     },
   },
   {
+    // Plain ESM scripts run by node, such as the contract package's publish step.
+    files: ['packages/*/scripts/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     files: ['apps/web/**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { 'react-hooks': reactHooks },

@@ -164,7 +164,8 @@ jobs:
 
   bridge-release:
     # What external sinks build against (delivery bridge design, "How private sinks get it"): the
-    # conformance suite as an image, and the bridge's OpenAPI document on the tag's release.
+    # conformance suite as an image, the contract package on GitHub Packages, and the bridge's
+    # OpenAPI document on the tag's release.
     name: Bridge contract release assets
     needs: [tag]
     if: needs.tag.outputs.tag != ''
@@ -183,6 +184,29 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker build -f deploy/docker/bridge-conformance.Dockerfile -t "${image}" .
           docker push "${image}"
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Contract package on GitHub Packages
+        # External sinks install the contract as @<owner>/bridge-contract. A version publishes
+        # once: bump packages/bridge-contract/package.json's version when the contract changes.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          npm ci --ignore-scripts
+          npm run build -w @ih/bridge-contract
+          cd packages/bridge-contract
+          node scripts/prepare-publish.mjs "${OWNER}"
+          cp ../../LICENSE .
+          echo "@${OWNER}:registry=https://npm.pkg.github.com" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> .npmrc
+          version=$(node -p "require('./package.json').version")
+          if npm view "@${OWNER}/bridge-contract@${version}" version >/dev/null 2>&1; then
+            echo "@${OWNER}/bridge-contract@${version} is already published"
+          else
+            npm publish
+          fi
       - name: OpenAPI document on the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
