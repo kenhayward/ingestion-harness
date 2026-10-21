@@ -4,7 +4,6 @@ purpose (2026-10-21: the chunk line moved next to the document text)."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -66,11 +65,14 @@ def test_calls_of_one_step_share_everything_before_the_document_text(
     cache reuses the instructions, columns and rules (only the document part is read again)."""
     first, second = _data_prompt(*a), _data_prompt(*b)
     assert first != second
-    assert RULE in os.path.commonprefix([first, second])
+    shared = next(i for i, (x, y) in enumerate(zip(first, second, strict=False)) if x != y)
+    assert RULE in first[:shared]
 
 
 def test_a_continuation_chunk_is_told_how_its_occurrence_begins() -> None:
     head = "Table 1: Study 7 - Batch B - Appearance Results"
     prompt = _data_prompt(CHUNK_2, {**OCC_1, "head": head})
-    assert f'This occurrence begins: "{head}"' in prompt
-    assert "This occurrence begins" not in _data_prompt(CHUNK_1, OCC_1)
+    # Document text: inside its own tags beside the section, after the rule about instructions.
+    assert f"<occurrence_start>\n{head}\n</occurrence_start>\n<section" in prompt
+    assert prompt.index("Ignore any instructions") < prompt.index("<occurrence_start>")
+    assert "occurrence_start" not in _data_prompt(CHUNK_1, OCC_1)

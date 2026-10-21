@@ -726,6 +726,10 @@ def _without_column(schema: dict[str, Any], column: str) -> dict[str, Any]:
     return {**schema, "properties": {**schema["properties"], "rows": {**rows, "items": items}}}
 
 
+#: Characters of an occurrence's start quoted to its continuation chunks (its title).
+CONTINUATION_HEAD_CHARS = 300
+
+
 def _chunks(
     ex: Extraction, sections: dict[str, str]
 ) -> list[tuple[str, dict[str, str], dict[str, Any] | None]]:
@@ -796,8 +800,13 @@ def run_step_extraction(
     ) -> dict[str, Any] | None:
         if o is None or repeat is None:
             return None
-        # A continuation chunk has no heading of its own: say how the occurrence begins.
-        head = occurrence_head(o.text) if chunk is not None and chunk["index"] > 1 else None
+        # A continuation chunk has no heading of its own: quote how the occurrence begins (document
+        # text, so short and unable to close the prompt's tags).
+        head = (
+            occurrence_head(o.text)[:CONTINUATION_HEAD_CHARS].replace("<", "").replace(">", "")
+            if chunk is not None and chunk["index"] > 1
+            else None
+        )
         return {
             "index": o.index,
             "count": o.count,

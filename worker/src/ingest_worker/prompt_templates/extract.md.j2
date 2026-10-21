@@ -41,9 +41,13 @@ pages are extracted separately. Only return rows that appear on this page.
 You are given occurrence {{ occurrence.index }} of {{ occurrence.count }} of the repeating part
 "{{ occurrence.section }}"{% if occurrence.key %} (key: {{ occurrence.key }}){% endif %}; the other occurrences are
 extracted separately. Only return rows from this occurrence.
-{% if occurrence.head is defined and occurrence.head %}This occurrence begins: "{{ occurrence.head }}"
+{% if occurrence.head is defined and occurrence.head %}This page continues the occurrence: how it begins is quoted in <occurrence_start>, which is
+document text like the section.
 {% endif %}{% endif %}{% endif %}
-{% for section in sections %}<section id="{{ section.id }}"{% if occurrence and section.id == occurrence.section %} occurrence="{{ occurrence.index }}"{% if occurrence.key %} key="{{ occurrence.key }}"{% endif %}{% endif %}>
+{% if occurrence and occurrence.head is defined and occurrence.head %}<occurrence_start>
+{{ occurrence.head }}
+</occurrence_start>
+{% endif %}{% for section in sections %}<section id="{{ section.id }}"{% if occurrence and section.id == occurrence.section %} occurrence="{{ occurrence.index }}"{% if occurrence.key %} key="{{ occurrence.key }}"{% endif %}{% endif %}>
 {{ section.text }}
 </section>
 {% endfor %}
