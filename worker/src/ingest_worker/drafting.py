@@ -901,7 +901,7 @@ def missed_key_feedback(
                 "If these are headings of the kind this section reads, widen the anchor: "
                 "headings may wrap over several lines, so look ahead across them (for example "
                 r"^\s*Table\s+\d+:(?=(?:(?!<first column header>)[\s\S]){0,400}?"
-                "<last word of the title>[ \t]*$)) rather than requiring the whole title on one "
+                r"<last word of the title>[ \t]*$)) rather than requiring the whole title on one "
                 "line, and keep contents entries out. If they are headings of a kind the recipe "
                 "does not read, make the key match only this kind's headings so they are not "
                 "counted."

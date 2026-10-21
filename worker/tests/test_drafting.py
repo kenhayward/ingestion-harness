@@ -820,6 +820,11 @@ def test_anchor_check_feeds_back_missed_keys() -> None:
     assert 'e.g. "Table 2: Study A - Assay and Purity (HDPE"' in miss
     assert "If these are headings of the kind this section reads, widen the anchor" in miss
     assert "look ahead across them" in miss
+    assert (
+        r"(for example ^\s*Table\s+\d+:(?=(?:(?!<first column header>)[\s\S]){0,400}?"
+        r"<last word of the title>[ \t]*$)) rather than requiring the whole title" in miss
+    )
+    assert "\t" not in miss
     assert "If they are headings of a kind the recipe does not read, make the key match" in miss
     assert _missed_key_check(r"^\s*Table\s+\d+:") == []
 
