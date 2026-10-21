@@ -110,9 +110,7 @@ export function SegmentationGrid({
                 ...new Set((row.missedKeys ?? []).flatMap((m) => m.sections)),
               ];
               const repeatedText = repeatedKeysText(row);
-              const repeatedSections = [
-                ...new Set((row.repeatedKeys ?? []).map((r) => r.section)),
-              ];
+              const repeatedSections = [...new Set((row.repeatedKeys ?? []).map((r) => r.section))];
               return (
                 <Fragment key={row.sampleId}>
                   <tr aria-label={name}>
