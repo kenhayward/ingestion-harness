@@ -125,6 +125,8 @@ import {
   MAX_FIELD_DIFFS,
   MAX_ROW_DIFFS,
   RevisePreviewSchema,
+  diagnosticsCount,
+  type RunDiagnostics,
   type RevisePreview,
   STEP_PROGRESS_EVENT,
   TestRunSchema,
@@ -137,6 +139,7 @@ import { pushAfterPublish } from '../github-sync/auto.js';
 import { removeJobFiles } from '../jobs/delete.js';
 import { refuseRetired, retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { stepProgress } from '../workbench/test-runs.js';
+import { draftDiagnostics } from '../workbench/diagnostics.js';
 import { PROGRESS_EVENTS, jobProgress } from '../jobs/progress.js';
 import { mappingInputs, mappingView, type MappingParams } from '../workbench/mapping.js';
 import { ontologyLibrary } from '../workbench/suggestions.js';
@@ -2490,13 +2493,16 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
    */
   async function reviseInputs(
     projectId: string,
-    dev: { sampleId: string; filename: string }[],
+    dev: { sampleId: string; filename: string; sha256: string }[],
+    draft: TemplateRecord | null,
   ): Promise<{
     params: {
       feedback: RevisionFeedback[];
       failures: FailureDiff[];
       failuresFrom?: { templateVersion: number; model: string | null };
       feedbackIds: string[];
+      /** What the newest dev runs of the open draft show (Part C); absent when nothing is flagged. */
+      diagnostics?: RunDiagnostics;
     };
     /** Failing dev samples before the cap. */
     failuresTotal: number;
@@ -2524,6 +2530,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       source = { iteration, compared };
       break;
     }
+    const diagnostics = draft ? await draftDiagnostics(app, projectId, draft, dev) : null;
     return {
       params: {
         feedback: open.map((f) => ({
@@ -2543,6 +2550,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             }
           : {}),
         feedbackIds: open.map((f) => f.id),
+        ...(diagnostics ? { diagnostics } : {}),
       },
       failuresTotal: all.length,
       source,
@@ -2697,8 +2705,14 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           (\`samples\`), and the drafting \`model\` setting (null when unset).
 
           \`notSent\` is what the holdout rule keeps out of every model call: the ready holdout
-          samples and the newest holdout iteration (its score is shown here, never sent). A
-          revision needs open feedback and an open draft; the preview is available without them.
+          samples and the newest holdout iteration (its score is shown here, never sent).
+
+          \`diagnostics\` is what the newest finished dev test run of each ready dev sample shows
+          about the open draft (steps whose repeating-section calls mostly came back empty,
+          columns the normaliser could not read, keys no anchor caught); null when nothing is
+          flagged. Runs from before the draft's last save, runs of other versions and holdout
+          runs are never read. A revision needs an open draft and either open feedback or
+          diagnostics; the preview is available without them.
         `,
         params: ProjectIdParams,
         response: {
@@ -2714,13 +2728,13 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       }
       const views = await sampleViews(app, projectId);
       const dev = devSamplesOf(views);
-      const [inputs, { draft }, settings, holdoutRun] = await Promise.all([
-        reviseInputs(projectId, dev),
+      const [{ draft }, settings, holdoutRun] = await Promise.all([
         versionsOf(templates, projectId),
         app.deps.llm.getSettings(),
         latestHoldoutRun(projectId),
       ]);
       const record = draft === null ? null : await templates.get(projectId, draft);
+      const inputs = await reviseInputs(projectId, dev, record);
       const { source } = inputs;
       return {
         feedback: inputs.params.feedback,
@@ -2736,6 +2750,7 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             }
           : null,
         model: settings.draftingModel,
+        diagnostics: inputs.params.diagnostics ?? null,
         draft: record ? { version: record.version, definition: record.definition } : null,
         samples: dev.slice(0, MAX_CONTEXT_SAMPLES).map((s) => s.filename),
         limits: {
@@ -2769,8 +2784,9 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
             typed changes to the open draft (fields and tables, sections and copies, steps).
             The \`sections\` stage checks its anchors on every dev sample and gets one round of
             feedback.
-          - \`revise\` (outside the order, cannot be skipped) answers the open feedback and the
-            latest dev evaluation's failures; it needs open feedback.
+          - \`revise\` (outside the order, cannot be skipped) answers the open feedback, the
+            latest dev evaluation's failures and what the newest dev test runs of the draft show
+            (\`diagnostics\`); it needs open feedback or diagnostics.
           - \`mapping\` (ADR 0011; outside the order, optional) proposes the recipe's ontology
             mapping from the brief's vocabulary ontologies, using the values the dev samples'
             latest runs produced; it needs the outputs stage complete and ready ontology versions.
@@ -2796,8 +2812,8 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
           404: PROJECT_NOT_FOUND,
           409: error(
             `${STAGE_ORDER_CONFLICT}, \`no open draft; start the next version on the Recipe ` +
-              'tab`, `the project has no recipe version`, `add feedback before asking for a ' +
-              'revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
+              'tab`, `the project has no recipe version`, `add feedback or run the dev samples before ' +
+              'asking for a revision`, `no prepared dev samples`, or for references `no prepared dev samples ' +
               'to run`, `every dev sample already has a reference` or `reference runs are ' +
               'already running`, for mapping `pin a vocabulary ontology on the Survey tab first`, `complete the ' +
               'outputs stage first` or `ontology {id} v{n} is not ready`, or ' +
@@ -2834,9 +2850,15 @@ export const workbenchRoutes: FastifyPluginAsync = async (app) => {
       if (!record) return reply.code(409).send({ error: 'the project has no recipe version' });
       // Holdout rule (ADR 0007): only dev samples ever reach a drafting model.
       const samples = devSamplesOf(await sampleViews(app, projectId));
-      const revision = stage === 'revise' ? await reviseInputs(projectId, samples) : null;
-      if (revision && !revision.params.feedback.length) {
-        return reply.code(409).send({ error: 'add feedback before asking for a revision' });
+      const revision = stage === 'revise' ? await reviseInputs(projectId, samples, record) : null;
+      if (
+        revision &&
+        !revision.params.feedback.length &&
+        !(revision.params.diagnostics && diagnosticsCount(revision.params.diagnostics) > 0)
+      ) {
+        return reply
+          .code(409)
+          .send({ error: 'add feedback or run the dev samples before asking for a revision' });
       }
       const brief = await workbench.latestBrief(projectId);
       let mapping: MappingParams | null = null;

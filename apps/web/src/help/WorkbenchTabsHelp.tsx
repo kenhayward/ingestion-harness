@@ -316,6 +316,12 @@ export function WbReviseHelp() {
         dev run, and the draft. <strong>Not sent</strong> lists what stays back, such as anything
         from holdout samples.
       </p>
+      <h3>Run diagnostics</h3>
+      <p>
+        Revise also sends what the latest dev runs of this draft showed: steps whose calls mostly
+        returned no rows, values that did not fit their columns, and headings that matched no
+        anchor. You can ask for a revision from diagnostics alone, without writing feedback.
+      </p>
       <h3>After applying</h3>
       <p>
         Evaluate the new draft on dev to see whether it helped; the footer warns before Apply when

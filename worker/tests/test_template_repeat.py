@@ -181,3 +181,14 @@ def test_review_reasons_name_the_key_issues(tmp_path: Path) -> None:
     _, store, _ = run_covalidation(tmp_path, pages=pages, replies=responses(microbial=2))
     reasons = document(store)["review_reasons"]
     assert f"section key issue: microbial: no occurrence for batch {BATCHES[2]}" in reasons
+
+
+def test_extracted_event_counts_empty_occurrences(tmp_path: Path) -> None:
+    replies = [HEADER, *[BATCH_ROWS] * 3, {"rows": []}, TABLE_ROWS, {"rows": []}, *[TABLE_ROWS] * 3]
+    _, _, queue = run_covalidation(tmp_path, replies=replies)
+    by_step = {m: d for _, _, m, d in queue.event_details if m.startswith("extracted ")}
+    assert by_step["extracted appearance"]["calls"] == 3
+    assert by_step["extracted appearance"]["emptyCalls"] == 2
+    assert by_step["extracted batches"]["emptyCalls"] == 0
+    assert "calls" not in by_step["extracted header"]
+    assert "emptyCalls" not in by_step["extracted header"]

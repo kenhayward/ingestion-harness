@@ -171,18 +171,20 @@ worth building when one output per printed block is a real requirement.
 The recipe was drafted, so the cheapest guards are checks the drafting stages and the editor
 already have a place for:
 
-1. **Key gaps (sections stage and Sections tab).** When a repeating section's keys are numbers,
+1. **Key gaps (sections stage and Sections tab).** *Built (Part A): reported as missed headings.* When a repeating section's keys are numbers,
    report the gaps: "keys 4-8, 14-18, … found; 1-3, 9-13, … missing". Deterministic, cheap, and it
    would have caught this anchor at once. It fits next to `key_issues` and the anchor round's
    feedback (`drafting.repeated_blocks` already feeds back related problems).
-2. **Calls per document (Pipeline tab, `ChecksPanel`).** Show each step's calls per document
+2. **Calls per document (Pipeline tab, `ChecksPanel`).** *Built: the editor warnings (Part B) and run diagnostics (Part C).* Show each step's calls per document
    (occurrences × chunks on the newest sample), and warn when several table steps read the same
    repeating section: "60 steps read `result_tables` (30 occurrences): 1,800 model calls per
    document". The figure belongs beside each step in the step list too.
-3. **Mostly empty occurrences (after a run).** When a step's occurrence calls mostly return no
+3. **Mostly empty occurrences (after a run).** *Partly built (Part C): run diagnostics are sent to revise and shown on the Revise tab; the Review page's Steps tab and the Pipeline tab's last-run figures are not built.* When a step's occurrence calls mostly return no
    rows, say so on the Review page's Steps tab and the Pipeline tab's last-run figures: "returned
    rows for 7 of 30 occurrences". The audit files already hold the replies.
-4. **Outputs stage guidance.** Tell the outputs stage to make one table per *shape*, not per
+   A step served from the Workbench step cache reports no counts, so a problem still present is
+   not flagged until the step's input changes (follow-up: keep the counts in the cache entry).
+4. **Outputs stage guidance.** *Built (Part B).* Tell the outputs stage to make one table per *shape*, not per
    printed block, when blocks repeat with the same columns; the sections stage then has an
    obvious anchor per kind.
 

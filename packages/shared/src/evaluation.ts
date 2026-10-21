@@ -4,6 +4,7 @@ import { JobProgressSchema, JobStatusSchema, type JobStatus } from './jobs.js';
 import { outputCoverage } from './template.js';
 import { SampleRoleSchema } from './workbench.js';
 import { PublishLabelSchema } from './version-labels.js';
+import { RunDiagnosticsSchema } from './run-diagnostics.js';
 
 /** Workbench evaluation (ADR 0007, phase 4a): comparisons, scorecards, iterations. */
 
@@ -431,6 +432,8 @@ export const RevisePreviewSchema = z.object({
     .nullable(),
   /** The drafting model setting (`endpoint/model-id`); null when unset. */
   model: z.string().nullable(),
+  /** What the latest dev test runs of the open draft show; null when nothing is flagged. */
+  diagnostics: RunDiagnosticsSchema.nullable(),
   /** The open draft sent as `<current_draft>`; null without one (a revision needs one). */
   draft: z
     .object({ version: z.number().int(), definition: z.record(z.string(), z.unknown()) })

@@ -53,6 +53,7 @@ import {
   finishEvent,
   type JobDelivery,
   type JobFinish,
+  type EventFilter,
 } from './types.js';
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
@@ -526,6 +527,26 @@ export class MemoryRepo implements IngestionRepo {
         return event ? [{ jobId, message, data: event.data, at: event.at }] : [];
       }),
     );
+  }
+
+  async listEvents(
+    jobId: string,
+    opts: EventFilter = {},
+  ): Promise<{ message: string; data: unknown; at: string }[]> {
+    const since = opts.since === undefined ? null : Date.parse(opts.since);
+    const { messages } = opts;
+    const wanted = (message: string): boolean =>
+      messages === undefined ||
+      (messages.exact ?? []).includes(message) ||
+      (messages.prefixes ?? []).some((p) => message.startsWith(p));
+    const events = (this.events.get(jobId) ?? []).filter(
+      (e) => (since === null || Date.parse(e.at) >= since) && wanted(e.message),
+    );
+    return events.map((e) => ({
+      message: e.message,
+      data: e.data,
+      at: e.at,
+    }));
   }
 
   async firstEventAt(

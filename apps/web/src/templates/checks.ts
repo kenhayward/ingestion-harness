@@ -37,6 +37,69 @@ export function issueSubTab(issue: string): SubTab {
 export const issueText = (i: { path: string; message: string }) =>
   i.path ? `${i.path}: ${i.message}` : i.message;
 
+const asList = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const asRecord = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/** A table's column ids in order (non-id columns left out). */
+function columnIds(table: Record<string, unknown>): string[] {
+  return asList(table.columns)
+    .map((c) => asRecord(c).id)
+    .filter((id): id is string => typeof id === 'string');
+}
+
+/**
+ * Repeating sections that three or more table steps (extract or plugin) read, filling tables
+ * that all have the same column ids in the same order: each such step runs once per occurrence,
+ * so steps meant for one block each read them all. `steps` are those same-shape steps.
+ */
+export function sharedRepeatSteps(
+  definition: Record<string, unknown>,
+): { section: string; steps: string[] }[] {
+  const repeating = asList(asRecord(definition.document).sections)
+    .map(asRecord)
+    .filter((s) => s.repeat === true && typeof s.id === 'string')
+    .map((s) => s.id as string);
+  const shapes = new Map<unknown, string>();
+  for (const t of asList(asRecord(definition.outputs).tables).map(asRecord)) {
+    const cols = columnIds(t);
+    if (cols.length > 0) shapes.set(t.id, JSON.stringify(cols));
+  }
+  const steps = asList(definition.pipeline)
+    .map(asRecord)
+    .filter(
+      (s) =>
+        (s.type === 'extract' || s.type === 'plugin') &&
+        typeof s.table === 'string' &&
+        typeof s.id === 'string' &&
+        shapes.has(s.table),
+    );
+  const found: { section: string; steps: string[] }[] = [];
+  for (const section of repeating) {
+    const byShape = new Map<string, string[]>();
+    for (const s of steps) {
+      if (!asList(s.sections).includes(section)) continue;
+      const shape = shapes.get(s.table) as string;
+      byShape.set(shape, [...(byShape.get(shape) ?? []), s.id as string]);
+    }
+    for (const ids of byShape.values()) if (ids.length >= 3) found.push({ section, steps: ids });
+  }
+  return found;
+}
+
+/** Groups of three or more tables with the same column ids in the same order. */
+export function sameShapeTables(definition: Record<string, unknown>): string[][] {
+  const groups = new Map<string, string[]>();
+  for (const t of asList(asRecord(definition.outputs).tables).map(asRecord)) {
+    if (typeof t.id !== 'string') continue;
+    const cols = columnIds(t);
+    if (cols.length === 0) continue;
+    const key = JSON.stringify(cols);
+    groups.set(key, [...(groups.get(key) ?? []), t.id]);
+  }
+  return [...groups.entries()].filter(([, ids]) => ids.length >= 3).map(([, ids]) => ids);
+}
+
 /**
  * The Template tab's Checks (handoff §10): outputs no step fills (or several fill), validation
  * issues, or that all is valid; then stale stages. Every item links to where it is fixed.
@@ -68,6 +131,26 @@ export function templateChecks(input: {
       subTabs: ['pipeline'],
     })),
   ];
+  for (const g of sharedRepeatSteps(input.definition)) {
+    checks.push({
+      tone: 'warn',
+      text: `${g.steps.length} steps read the repeating section ${g.section} and fill tables of the same shape: each runs once per occurrence, so steps meant for one block each read them all. Give each kind of block its own repeating section.`,
+      link: { label: 'Open Sections', subTab: 'sections' },
+      subTabs: ['sections', 'pipeline'],
+    });
+  }
+  const tableShapes = new Map(
+    asList(asRecord(input.definition.outputs).tables).map((t) => [asRecord(t).id, asRecord(t)]),
+  );
+  for (const ids of sameShapeTables(input.definition)) {
+    const first = asList(tableShapes.get(ids[0])?.columns).map((c) => asRecord(c).id)[0];
+    checks.push({
+      tone: 'warn',
+      text: `${ids.length} tables have the same columns (${first}, \u2026): one table with columns telling them apart (study, batch) is usually better.`,
+      link: { label: 'Open Outputs', subTab: 'outputs' },
+      subTabs: ['outputs'],
+    });
+  }
   const issues = [...new Set([...input.issues, ...input.serverIssues])].filter(
     (i) => !COVERAGE.test(i),
   );

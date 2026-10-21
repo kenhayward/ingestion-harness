@@ -159,12 +159,25 @@
   <body>
     <main>
       <h1>CT Studio release notes</h1>
-      <p class="subtitle">Wednesday 21 October 2026: several publishing targets per recipe.</p>
+      <p class="subtitle">
+        Wednesday 21 October 2026: several publishing targets per recipe, missed headings and run
+        diagnostics for the revise stage. PRs #277 to #287, merged between Tuesday 20 October 2026,
+        17:00 and Wednesday 21 October 2026, 12:47 (UTC). #282 was closed unmerged; #285 and #286
+        are still open and are not in this release.
+      </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
         <h4>Major changes</h4>
         <ul>
+          <li>
+            <a href="#missed-headings">Missed headings</a>
+            <span>— see the headings a repeating section's anchor did not catch, and fix them</span>
+          </li>
+          <li>
+            <a href="#run-diagnostics">Run diagnostics for the revise stage</a>
+            <span>— what your dev test runs showed becomes something the model can fix</span>
+          </li>
           <li>
             <a href="#several-targets">Several targets per recipe</a>
             <span>— one approval delivers to every target the recipe names</span>
@@ -180,10 +193,205 @@
             <a href="#approving-again">Approving again after a delivery needed attention</a>
             <span>— the job is judged on the latest delivery to each target</span>
           </li>
+          <li>
+            <a href="#reference-progress">Reference run progress</a>
+            <span>— the References tab says where each reference run is</span>
+          </li>
         </ul>
+        <h4><a href="#other">Other updates</a></h4>
       </nav>
 
-      <h2 id="several-targets">Several targets per recipe</h2>
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            A recipe's <code>delivery.publishTo</code> can now be a list of target ids as well as
+            one id. API clients and YAML or GitHub tooling that read it as a string need updating. A
+            recipe with a single target is still stored as a string.
+          </li>
+          <li>
+            Asking for a revision without open feedback now answers
+            <code>add feedback or run the dev samples before asking for a revision</code> (it was
+            <code>add feedback before asking for a revision</code>), and only when the dev runs
+            flagged nothing either. API clients that match the message need updating. The revise
+            preview (<code>GET …/stages/revise/preview</code>) has a new
+            <code>diagnostics</code> field.
+          </li>
+          <li>
+            Every job's <code>segmented</code> event may carry <code>missedKeys</code> and
+            <code>missedKeysTotal</code>. They are information only: no job is sent to review
+            because of them.
+          </li>
+          <li>
+            One new migration runs with the deploy: <code>202610211000_several_targets</code>. The
+            bridge contract package is now at <strong>0.2.0</strong>.
+          </li>
+        </ul>
+      </div>
+
+      <h2 id="major">Major changes</h2>
+
+      <h3 id="missed-headings">Missed headings</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/284">#284</a>
+      </p>
+      <p>
+        A <strong>repeating section</strong> starts a new block at every match of its anchor, for
+        example one block per <em>Table N</em> of a stability report or one per batch. When the
+        anchor is too strict, some headings start no block: their text is added to the block before
+        them, and every step reading the section then sees two or more tables mixed together. This
+        is easy to miss. In one 102-page report, an anchor that expected the whole table title on
+        one line matched only 30 of the 60 titles, because most titles wrap onto a second line. The
+        recipe made 1,800 model calls per document, three quarters of the rows it extracted came
+        from the wrong table, and the run took four and a half hours. With the anchors fixed, the
+        same kind of document needed one call per table and ran in about 13 minutes.
+      </p>
+      <p>
+        CT Studio now spots this for you. For each repeating section with a <em>Key</em>, it looks
+        for every heading the key pattern finds in the text (every <code>Table 7:</code>, say) and
+        reports the ones where no block starts. Sections that share one key pattern are judged
+        together, so a recipe with one repeating section per kind of table only reports headings
+        that none of them caught.
+      </p>
+      <p><strong>Where you see it</strong></p>
+      <ul>
+        <li>
+          <strong>Workbench &gt; Sections tab:</strong> under a sample in the anchor grid, a
+          <strong>Missed headings</strong> note lists the keys (for example
+          <em>Missed headings: 1, 2, 3, 9 (+26)</em>), the sections they belong to, and the first
+          missed heading's line as it appears in the text.
+        </li>
+        <li>
+          <strong>Drafting:</strong> the Sections stage now tells the model about missed headings in
+          its anchor round, so a drafted anchor that misses wrapped titles is corrected before it
+          reaches you.
+        </li>
+        <li>
+          <strong>Every job:</strong> the headings a job's anchors missed are recorded with the job
+          and feed the <a href="#run-diagnostics">run diagnostics</a> below.
+        </li>
+      </ul>
+      <p><strong>How to fix a missed heading</strong></p>
+      <ul>
+        <li>
+          <strong>If the missed headings are the kind of block this section reads</strong>, widen
+          the anchor. Titles often wrap over two or three lines, so rather than asking for the whole
+          title on one line, match the start of the title and look ahead across the next lines for
+          the words that identify it. For example,
+          <code
+            >^\s*Table\s+\d+:(?=(?:(?!Parameter)[\s\S]){0,400}?Dissolution\b[^\f]{0,120}?Results[
+            \t]*$)</code
+          >
+          starts a block at every <em>Table N:</em> whose title, within its first lines and before
+          the table's <em>Parameter</em> header row, mentions <em>Dissolution</em> and ends in
+          <em>Results</em>. Requiring <code>Results</code> at the end of a line keeps the table of
+          contents out, because its entries end in dot leaders and a page number.
+        </li>
+        <li>
+          <strong>If they are a kind of block the recipe does not read</strong>, narrow the
+          section's key so it only matches this kind's headings. They then stop counting as missed.
+        </li>
+        <li>
+          A heading that only the table of contents lists, with no body in the document, is also
+          reported: the note cannot tell it from a heading the anchor missed.
+        </li>
+      </ul>
+      <p>
+        <strong>Tip:</strong> when a document repeats tables of the same shape (one per study, batch
+        or item), use one repeating section per <em>kind</em> of table and one output table per
+        kind, with columns that tell the blocks apart (study, batch, table number). Each step then
+        reads exactly the blocks it fills. The Sections tab help (<em>?</em> beside Anchors)
+        explains both fixes.
+      </p>
+
+      <h3 id="run-diagnostics">Run diagnostics for the revise stage</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/287">#287</a>
+      </p>
+      <p>
+        The Workbench <strong>Revise</strong> stage used to answer only your feedback and the
+        failures of the latest dev evaluation. It now also gets <strong>run diagnostics</strong>:
+        what your latest dev test runs of the draft showed, worked out without a model. The model
+        proposes changes for them as for anything else, and you accept or reject them on the usual
+        cards.
+      </p>
+      <p><strong>What is reported</strong></p>
+      <ul>
+        <li>
+          <strong>Steps whose calls mostly came back empty.</strong> A step reading a repeating
+          section calls the model once per block. When at least 4 calls were made and half or more
+          returned no rows, the step is reported, for example
+          <em>extract_table_8 on report.docx: 29 of 30 calls returned no rows (02:49)</em>. This
+          usually means the step only wants some of the blocks: give each kind of block its own
+          repeating section, or narrow the anchor.
+        </li>
+        <li>
+          <strong>Columns whose values did not fit.</strong> Values that could not be read as the
+          column's type, or broke its limits, are reported with an example, for example
+          <em>assay_purity_results.impurity_1_pct: 3 values did not fit (e.g. &lt;0.05)</em>. The
+          model is asked to fix the column's description or limits first, and to make a column text
+          only when its values really are not numbers or dates.
+        </li>
+        <li>
+          <strong>Headings no anchor matched</strong>, from the
+          <a href="#missed-headings">missed headings</a> check, for example
+          <em>report.docx: headings 1, 2, 3 (+27) matched no anchor</em>.
+        </li>
+      </ul>
+      <p><strong>How to use it</strong></p>
+      <ol>
+        <li>Save your draft on the Recipe tab.</li>
+        <li>
+          On the <strong>Test runs</strong> tab, choose <em>Run on n dev samples</em> and let the
+          runs finish. Runs awaiting review count, and so do runs you approved or whose steps you
+          re-ran.
+        </li>
+        <li>
+          Open the <strong>Revise</strong> tab. The <em>What the model will see</em> card now has a
+          <strong>Run diagnostics</strong> section listing exactly what will be sent. Without
+          finished runs of the current draft it says
+          <em>Run the dev samples to add what they show.</em>
+        </li>
+        <li>
+          Choose <strong>Ask the model for a revision</strong>. You no longer need to write feedback
+          first: diagnostics alone are enough. Each proposed change says which diagnostic it
+          answers.
+        </li>
+        <li>
+          Accept the changes you want, then run the dev samples again to check they helped. The
+          diagnostics refresh from the new runs.
+        </li>
+      </ol>
+      <p><strong>Good to know</strong></p>
+      <ul>
+        <li>
+          Only the newest finished run of each <strong>dev</strong> sample counts, and only runs
+          made after the draft was last saved, so diagnostics always describe the recipe you are
+          editing. A retried run counts only its latest attempt.
+        </li>
+        <li>
+          <strong>Holdout samples are never read</strong>, as for everything else revise sends.
+        </li>
+        <li>
+          Each list is capped at 20 rows, worst first. For a project allowed to use an external
+          model, every sample the diagnostics mention is listed in the job's
+          <em>external model call</em> event, like the samples whose text is sent.
+        </li>
+        <li>
+          A step served from the Workbench step cache made no calls in that run, so it is not
+          reported. A problem in a step you haven't changed since an earlier run can therefore drop
+          off the list until that step changes.
+        </li>
+        <li>
+          If a run's files can't be read, that run is left out of the diagnostics. Revise still
+          works with your feedback.
+        </li>
+      </ul>
+
+      <h3 id="several-targets">Several targets per recipe</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/283">#283</a>
+      </p>
       <p>
         The <em>Publish to</em> setting on a recipe&apos;s General tab is now a list: tick every
         target its published outputs should go to. One approval delivers the same publication to
@@ -196,24 +404,55 @@
         downloads and data-lake keys read from it. Use the arrows to change the order. A recipe that
         keeps a single target is stored exactly as before.
       </p>
-      <p class="top"><a href="#contents">Back to contents</a></p>
 
-      <h2 id="archives">Archive targets</h2>
+      <h3 id="archives">Archive targets</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/283">#283</a>
+      </p>
       <p>
         A publishing target now has a <strong>Layout</strong>. <em>Files</em> writes each output at
         its own key, as before. <em>Archive (whole package)</em> keeps each publication whole, in a
         folder of its own: every file, the fields and tables as <code>data.json</code>, the graph as
         <code>graph.ttl</code>, and <code>package.json</code> describing them. Publishing the same
         file under the same recipe version again replaces it, and deleting the job removes it. The
-        layout is locked while anything uses the target, like its bucket and prefix.
+        layout is locked while anything uses the target, like its bucket and prefix. A recipe can't
+        publish to archive targets only: it needs at least one Files target to be its primary.
       </p>
-      <p class="top"><a href="#contents">Back to contents</a></p>
 
-      <h2 id="approving-again">Approving again after a delivery needed attention</h2>
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="approving-again">Approving again after a delivery needed attention</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/283">#283</a>
+      </p>
       <p>
         When one target&apos;s delivery needed attention and the job was approved again, the old
         problem could send the job straight back to review, and the job page listed a target twice.
         Each target now counts only its latest delivery.
+      </p>
+
+      <h3 id="reference-progress">Reference run progress</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/277">#277</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/279">#279</a>
+      </p>
+      <p>
+        The Workbench <strong>References</strong> tab used to say only <em>Running</em> while
+        reference runs took minutes. Each sample's row now says where its run is (<em
+          >OCR page 3 of 7</em
+        >, <em>Found the sections</em>, <em>Step 2 of 3 · chunk 1 of 2</em>), and a queued run reads
+        <em>Waiting for a worker</em>. While runs are going, a <strong>Reference runs</strong>
+        strip counts them, and the tab's header names the document being run, for example
+        <em>Running document 2 of 5 · Step 2 of 6</em>.
+      </p>
+
+      <h2 id="other">Other updates</h2>
+      <p>
+        The delivery bridge's contract is now published as a package
+        (<code>@kenhayward/bridge-contract</code>, GitHub Packages), so an external sink can depend
+        on it and run its conformance suite instead of copying the contract. Each tagged release
+        publishes the package's version; this release adds the archive layout and moves it to 0.2.0.
+        The bridge's README explains how a sink installs and pins it.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

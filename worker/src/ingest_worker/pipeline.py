@@ -833,6 +833,7 @@ def run_step_extraction(
 
     schema = _without_column(ex.schema_, key_column) if key_column else ex.schema_
     merged: ExtractionResult | None = None
+    call_rows: list[int] = []
     for audit_id, prompt, chunk, occurrence in rendered:
         where = f" [chunk {chunk['index']}/{chunk['count']}]" if chunk else ""
         if occurrence is not None:
@@ -872,6 +873,8 @@ def run_step_extraction(
                 )
             ) from exc
         _audit(deps, job.id, audit_id, result.attempts)
+        if "rows" in result.data:
+            call_rows.append(len(result.data["rows"]))
         if key_column and occurrence is not None:
             for row in result.data["rows"]:
                 row[key_column] = occurrence.key
@@ -882,6 +885,7 @@ def run_step_extraction(
             merged.data[ex.merge_path].extend(result.data[ex.merge_path])
             merged.attempts.extend(result.attempts)
     assert merged is not None
+    merged.call_rows = tuple(call_rows)
     if cache is not None and key is not None:
         cache.put(
             key,

@@ -102,7 +102,7 @@ describe('ReviseTab', () => {
     [
       { getRevisePreview: vi.fn(async () => revisePreview({ feedback: [] })) },
       4,
-      'Add feedback first: a revision answers your feedback',
+      'Add feedback or run the dev samples first: a revision answers your feedback and what the runs showed.',
     ],
     [
       { getRevisePreview: vi.fn(async () => revisePreview({ draft: null })) },
@@ -487,6 +487,50 @@ describe('ReviseTab', () => {
       // Only the preamble ticked: no output changes, no warning.
       await userEvent.click(within(proposal).getAllByRole('checkbox')[0]!);
       expect(proposal).not.toHaveTextContent('Changes outputs');
+    });
+  });
+
+  describe('run diagnostics', () => {
+    const diagnostics = {
+      from: { draftVersion: 4, jobIds: ['j1'], at: '2026-10-12T09:00:00.000Z' },
+      steps: [
+        { step: 'extract_table_8', sample: 'a.pdf', calls: 30, emptyCalls: 29, seconds: 169 },
+      ],
+      columns: [
+        {
+          step: 's',
+          target: 'assay',
+          column: 'purity',
+          issues: 3,
+          examples: ['<0.05'],
+          message: 'not a number',
+          samples: ['a.pdf'],
+        },
+      ],
+      missedKeys: [{ sample: 'a.pdf', sections: ['s'], keys: ['1', '2'], total: 2 }],
+    };
+
+    it('lists what the diagnostics send and lets Ask run without feedback', async () => {
+      tab({ getRevisePreview: vi.fn(async () => revisePreview({ feedback: [], diagnostics })) });
+      const card = await screen.findByRole('region', { name: 'What the model will see' });
+      const section = within(card).getByRole('region', { name: 'Run diagnostics' });
+      const rows = within(section).getAllByRole('listitem');
+      expect(rows[0]).toHaveTextContent(
+        'extract_table_8 on a.pdf: 29 of 30 calls returned no rows (02:49)',
+      );
+      expect(rows[1]).toHaveTextContent('assay.purity: 3 values did not fit (e.g. <0.05)');
+      expect(rows[2]).toHaveTextContent('a.pdf: headings 1, 2 matched no anchor');
+      expect(
+        within(card).getByRole('button', { name: 'Ask the model for a revision' }),
+      ).toBeEnabled();
+    });
+
+    it('says to run the dev samples when there are none', async () => {
+      tab();
+      const card = await screen.findByRole('region', { name: 'What the model will see' });
+      expect(
+        within(card).getByText('Run the dev samples to add what they show.'),
+      ).toBeInTheDocument();
     });
   });
 });
