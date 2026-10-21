@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 import yaml
 
+from ingest_worker.call_slots import MemoryCallSlots
 from ingest_worker.llm.base import CompletionRequest, CompletionResult
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
@@ -111,12 +112,17 @@ class SlowProvider(FakeProvider):
         )
 
 
-def _job(tmp_path: Path, parallel: dict[str, int]) -> tuple[SlowProvider, dict[str, Any]]:
+def _job(
+    tmp_path: Path,
+    parallel: dict[str, int],
+    provider: SlowProvider | None = None,
+    slots: MemoryCallSlots | None = None,
+) -> tuple[SlowProvider, dict[str, Any]]:
     directory = tmp_path / "covalidation" / "v1"
     directory.mkdir(parents=True)
     # Both table steps read all six tables (no filters): six occurrence calls each.
     (directory / "template.yaml").write_text(yaml.safe_dump(_recipe(None, None)), encoding="utf-8")
-    provider = SlowProvider()
+    provider = provider or SlowProvider()
     store = MemoryObjectStore()
     store.put("inbox", JOB.object_key, b"%PDF", "application/pdf")
     from .covalidation import PAGES
@@ -136,6 +142,7 @@ def _job(tmp_path: Path, parallel: dict[str, int]) -> tuple[SlowProvider, dict[s
         extract_text=lambda _pdf: PAGES,
         buckets=Buckets("inbox", "outputs", "runs"),
         render_preview=lambda pdf, i: b"jpg",
+        call_slots=slots,
     )
     queue = FakeQueue(jobs=[JOB])
     run_once(queue, deps, "w1")
@@ -164,3 +171,19 @@ def test_parallel_calls_give_the_same_document_as_one_at_a_time(tmp_path: Path) 
     assert [r["batch"] for r in many["tables"]["appearance_results"]] == [
         b for b in BATCHES for _ in range(2)
     ]
+
+
+def test_two_workers_together_stay_within_the_models_limit(tmp_path: Path) -> None:
+    """The call slots are shared by every worker: two jobs at once, each allowed three calls,
+    still send the model at most three at once in all."""
+    provider, slots = SlowProvider(), MemoryCallSlots()
+    threads = [
+        threading.Thread(target=_job, args=(tmp_path / f"w{n}", {"qwen": 3}, provider, slots))
+        for n in (1, 2)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(provider.calls) == 2 * (1 + 3 + 6 + 6)
+    assert provider.most == 3
