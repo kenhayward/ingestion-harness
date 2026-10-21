@@ -2,9 +2,9 @@
  * Restore as a copy (production → staging): the rules that run inside the restored side
  * database before it is swapped in. What a copy drops from the backup it keeps from this server:
  * the LLM configuration, GitHub settings, linked-data settings, data-lake consumers and
- * publishing targets are staging's; production's external targets become inert, their delivery
- * records withdrawn; nothing from the backup that reaches production's outside world survives
- * (GitHub links and tokens, external targets' credentials, queued work).
+ * publishing targets are staging's; production's external and sink targets become inert, their
+ * delivery records withdrawn; nothing from the backup that reaches production's outside world
+ * survives (GitHub links and tokens, external targets' credentials, queued work).
  * Spec: docs/superpowers/specs/2026-10-17-backup-and-restore-design.md, "Restore as a copy".
  */
 import type pg from 'pg';
@@ -49,7 +49,7 @@ const CANCEL_REASON = 'restored as a copy';
 
 interface TargetRow {
   id: string;
-  kind: 'internal' | 'external' | 'rdf';
+  kind: 'internal' | 'external' | 'rdf' | 'sink';
 }
 
 const rowsOf = async (c: pg.ClientBase, sql: string, values: unknown[] = []) =>
@@ -161,7 +161,8 @@ async function apply(side: pg.ClientBase, kept: KeptState): Promise<CopyResult> 
 
 /**
  * Staging's targets replace production's on a shared id and are added otherwise; production's
- * external-only targets, and its triple store target when this server has none, become inert
+ * external-only and sink-only targets (a sink delivers to production's system just as an external
+ * S3 does), and its triple store target when this server has none, become inert
  * (no connection, and their keys from before the bridge are dropped with the rest of
  * production's), so nothing here delivers to production. The delivery records of every
  * target whose objects are not in this server's own SeaweedFS under that id (an inert one, or a
@@ -171,7 +172,8 @@ async function replaceTargets(side: pg.ClientBase, staging: TargetRow[]) {
   const backup = (await side.query<TargetRow>('SELECT id, kind FROM publish_targets')).rows;
   const stagingById = new Map(staging.map((t) => [t.id, t]));
   const dropped = backup.filter(
-    (t) => (t.kind === 'external' || t.kind === 'rdf') && !stagingById.has(t.id),
+    (t) =>
+      (t.kind === 'external' || t.kind === 'sink' || t.kind === 'rdf') && !stagingById.has(t.id),
   );
   const withdrawn = [
     ...dropped.map((t) => t.id),

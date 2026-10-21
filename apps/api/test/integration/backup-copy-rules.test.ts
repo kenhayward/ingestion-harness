@@ -127,7 +127,8 @@ const PRODUCTION = `
        VALUES ('prod-ext', 'Production lake', 'external', 's3', 'target-prod-ext', '{"bucket": "prod-lake"}', now()),
               ('shared', 'Production shared', 'external', 's3', 'staging-keys', '{"bucket": "prod-shared"}', now()),
               ('prod-int', 'Production archive', 'internal', 's3', 'internal', '{"bucket": "prod-archive"}', now()),
-              ('rdf-default', 'Triple store', 'rdf', 'rdf', 'rdf-default', '{"dataset": "ct"}', now());
+              ('rdf-default', 'Triple store', 'rdf', 'rdf', 'rdf-default', '{"dataset": "ct"}', now()),
+              ('prod-3ds', 'Production 3DEXPERIENCE', 'sink', '3dexperience', 'prod-3ds-keys', '{"space": "prod"}', now());
   -- Production's keys from before the bridge: none of them may survive a copy.
   INSERT INTO publish_target_legacy_keys (id, endpoint, region, access_key_id, secret_key_enc)
        VALUES ('prod-ext', 'https://s3.prod.example', 'eu-west-1', 'AKPROD', 'v1:prod-secret'),
@@ -193,9 +194,11 @@ const BRIDGE_PRODUCTION = `
   INSERT INTO bridge.connections (id, kind, sink_id, name, fields, secret_enc)
        VALUES ('internal', 'shared', 's3', 'This deployment', '{}', NULL),
               ('staging-keys', 'shared', 's3', 'Same id, production keys', '{}', 'v1:prod-same-id'),
-              ('target-prod-ext', 'shared', 's3', 'Production lake', '{"accessKeyId": "AKPROD"}', 'v1:prod-bridge-secret');
+              ('target-prod-ext', 'shared', 's3', 'Production lake', '{"accessKeyId": "AKPROD"}', 'v1:prod-bridge-secret'),
+              ('prod-3ds-keys', 'shared', '3dexperience', 'Production 3DEXPERIENCE', '{}', 'v1:prod-3ds-secret');
   INSERT INTO bridge.targets (id, label, sink_id, connection_id, destination)
        VALUES ('default', 'Default', 's3', 'internal', '{"bucket": "ingest-published"}'),
+              ('prod-3ds', 'Production 3DEXPERIENCE', '3dexperience', 'prod-3ds-keys', '{"space": "prod"}'),
               ('prod-ext', 'Production lake', 's3', 'target-prod-ext', '{"bucket": "prod-lake"}'),
               ('shared', 'Production shared', 's3', 'staging-keys', '{"bucket": "prod-shared"}');
   INSERT INTO bridge.packages (id, kind, idempotency_key, manifest, staged_key)
@@ -295,7 +298,7 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
         WHERE id = 'prod-ext'`,
     );
     expect(prodExt).toEqual({ kind: 'external', connection_id: null, inert: true });
-    expect(result.droppedTargets).toEqual(['prod-ext', 'rdf-default']);
+    expect(result.droppedTargets).toEqual(['prod-3ds', 'prod-ext', 'rdf-default']);
     // Production's triple store (this server has none): inert, no connection (its endpoint and
     // writer user were production's), so nothing here delivers to production's Fuseki.
     expect(
@@ -429,7 +432,7 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
   it('a copy restore writes the kept targets into bridge.targets and the cache', async () => {
     const bridgeTargets = await side(
       `SELECT id, label, sink_id, instance_id, connection_id, destination
-         FROM bridge.targets WHERE id <> 'prod-ext' ORDER BY id`,
+         FROM bridge.targets WHERE id NOT IN ('prod-ext', 'prod-3ds') ORDER BY id`,
     );
     expect(bridgeTargets).toEqual([
       {
@@ -490,6 +493,20 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
     expect(
       await side("SELECT inert_at IS NOT NULL AS inert FROM publish_targets WHERE id = 'prod-ext'"),
     ).toEqual([{ inert: true }]);
+  });
+
+  it("production's sink targets are dropped like its external ones", async () => {
+    // A sink target (phase 6) delivers to production's system: inert here, no connection, and
+    // its bridge row (which production's deliveries may name) stays without production's link.
+    expect(
+      await side(
+        `SELECT kind, connection_id, inert_at IS NOT NULL AS inert
+           FROM publish_targets WHERE id = 'prod-3ds'`,
+      ),
+    ).toEqual([{ kind: 'sink', connection_id: null, inert: true }]);
+    expect(
+      await side(`SELECT id, connection_id FROM bridge.targets WHERE id = 'prod-3ds'`),
+    ).toEqual([{ id: 'prod-3ds', connection_id: null }]);
   });
 
   it("never delivers production's unfinished deliveries nor sends its events here", async () => {

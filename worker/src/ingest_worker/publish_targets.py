@@ -174,12 +174,18 @@ class LiveTargets:
 
     def get(self, target_id: str) -> Target:
         """The S3 place of a target (s3PlaceOf in TS: a blank layout is `files`). TargetMissing
-        for an unknown or inert id and for a sink that is not S3 (those record receipts, not
-        keys); TargetNotSynced while the cache has not taken the row from the bridge."""
+        for an unknown or inert id and for the triple store (never listed by a recipe); a
+        DocumentError for another sink (phase 6: recipes cannot deliver to one yet, which the API
+        refuses on publishing too); TargetNotSynced while the cache has not taken the row from
+        the bridge."""
         self.refresh()
         row = self._rows.get(target_id)
-        if row is None or row.inert or row.sink_id != S3_SINK_ID:
+        if row is None or row.inert or row.kind == "rdf":
             raise TargetMissing(target_id)
+        if row.sink_id != S3_SINK_ID:
+            raise DocumentError(
+                f"{target_id} is a {row.sink_id} target: recipes can't deliver to it yet"
+            )
         if row.synced_at is None:
             raise TargetNotSynced(target_id)
         d = row.destination

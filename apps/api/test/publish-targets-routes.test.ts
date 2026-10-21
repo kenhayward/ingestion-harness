@@ -1034,6 +1034,28 @@ describe('a recipe naming several publishing targets', () => {
     ]);
   });
 
+  it('refuses a sink target until recipes can deliver to one', async () => {
+    const c = await setup();
+    await c.targets.cache(
+      {
+        id: 'plm',
+        label: 'PLM',
+        sinkId: '3dexperience',
+        instanceId: null,
+        connectionId: null,
+        destination: { space: 'prod' },
+      },
+      { source: 'ui' },
+    );
+    await c.templates.create('letter', 1, letter(1, ['default', 'plm']), 'draft');
+    expect(await issuesOf(c, 1)).toEqual([
+      {
+        path: 'delivery.publishTo',
+        message: "plm is a 3dexperience target: recipes can't deliver to it yet",
+      },
+    ]);
+  });
+
   it('asks for a files target when every listed target is an archive', async () => {
     const c = await setup();
     await cacheS3(c.targets, financeTarget({ layout: 'package' }));

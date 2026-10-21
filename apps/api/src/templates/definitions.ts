@@ -129,7 +129,11 @@ export async function templateIssues(
   const targetMessages = listed.flatMap((id, i) => {
     const t = named[i];
     if (!t) return [`no publishing target ${id} on this deployment`];
-    return t.kind === 'rdf' ? [`${id} is a triple store: name an S3 target`] : [];
+    if (t.kind === 'rdf') return [`${id} is a triple store: name an S3 target`];
+    // Delivering to another sink is phase 6: until then the worker refuses one the same way.
+    if (t.kind === 'sink')
+      return [`${id} is a ${t.sinkId} target: recipes can't deliver to it yet`];
+    return [];
   });
   // Results, the zip, read keys and the graph's copy read from one files-layout target.
   const known = named.flatMap((t) => (t ? [t] : []));
