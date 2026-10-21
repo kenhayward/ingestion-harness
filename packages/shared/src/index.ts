@@ -30,3 +30,4 @@ export * from './publish-targets.js';
 export * from './build-version.js';
 export * from './plugins.js';
 export * from './step-attempts.js';
+export * from './run-diagnostics.js';
