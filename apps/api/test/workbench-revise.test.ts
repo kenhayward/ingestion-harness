@@ -635,7 +635,14 @@ describe('revise diagnostics (Part C)', () => {
   async function run(
     ctx: Awaited<ReturnType<typeof project>>,
     s: SampleView,
-    opts: { version?: number; issues?: unknown[]; status?: 'awaiting_review' | 'succeeded' } = {},
+    opts: {
+      version?: number;
+      issues?: unknown[];
+      status?: 'awaiting_review' | 'succeeded';
+      task?: 'process' | 'rerun' | 'publish';
+      startedAt?: string;
+      events?: { message: string; data: unknown; at: string }[];
+    } = {},
   ) {
     const job = await ctx.repo.createWorkbenchJob(
       {
@@ -672,8 +679,15 @@ describe('revise diagnostics (Part C)', () => {
       ...ctx.repo.jobs.get(job.id)!,
       test: true,
       status: opts.status ?? 'awaiting_review',
+      task: opts.task ?? 'process',
+      ...(opts.startedAt ? { startedAt: opts.startedAt } : {}),
     });
-    ctx.repo.addEvent(job.id, 'info', 'extracted lines', EMPTY);
+    if (opts.events) {
+      ctx.repo.events.set(
+        job.id,
+        opts.events.map((e) => ({ level: 'info', ...e })),
+      );
+    } else ctx.repo.addEvent(job.id, 'info', 'extracted lines', EMPTY);
     ctx.repo.stepRuns.set(job.id, [
       {
         id: 1,
@@ -755,5 +769,75 @@ describe('revise diagnostics (Part C)', () => {
     expect(res.json().error).toBe(
       'add feedback or run the dev samples before asking for a revision',
     );
+  });
+
+  it('reads an approved run (task publish) and a re-run job back in review', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const b = await ctx.add(2);
+    const approved = await run(ctx, a, { task: 'publish', status: 'succeeded' });
+    const rerun = await run(ctx, b, { task: 'rerun' });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect([...shown.from.jobIds].sort()).toEqual([approved.id, rerun.id].sort());
+  });
+
+  it('takes the newest of two qualifying runs of one sample', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    const newer = await run(ctx, a, { task: 'publish', status: 'succeeded' });
+    expect((await preview(ctx)).diagnostics!.from.jobIds).toEqual([newer.id]);
+  });
+
+  it('reads only the events of the latest attempt of a retried run', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const seg = (key: string) => ({
+      missedKeys: [{ sections: ['kinds'], key, line: key }],
+      missedKeysTotal: 1,
+    });
+    await run(ctx, a, {
+      startedAt: '2026-10-21T10:05:00.000Z',
+      events: [
+        { message: 'segmented', data: seg('OLD-1'), at: '2026-10-21T10:01:00.000Z' },
+        { message: 'extracted lines', data: EMPTY, at: '2026-10-21T10:02:00.000Z' },
+        { message: 'segmented', data: seg('NEW-1'), at: '2026-10-21T10:06:00.000Z' },
+        {
+          message: 'extracted lines',
+          data: { calls: 6, emptyCalls: 0 },
+          at: '2026-10-21T10:07:00.000Z',
+        },
+      ],
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.missedKeys).toHaveLength(1);
+    expect(shown.missedKeys[0]!.keys).toEqual(['NEW-1']);
+    expect(shown.steps).toEqual([]);
+  });
+
+  it('leaves out shacl and segment issues and keeps numeric raw values as text', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a, {
+      issues: [
+        { step: 'shacl', target: 'items', column: 'qty', raw: 'x', message: 'w' },
+        { step: 'segment', target: 'items', raw: 'y', message: 'w' },
+        { step: 'lines', target: 'items', column: 'qty', raw: 12, message: 'range' },
+      ],
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.columns).toMatchObject([{ step: 'lines', column: 'qty', examples: ['12'] }]);
+    expect(shown.columns).toHaveLength(1);
+  });
+
+  it('stamps the diagnostics with the finish time of the run', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const job = await run(ctx, a);
+    ctx.repo.jobs.set(job.id, {
+      ...ctx.repo.jobs.get(job.id)!,
+      finishedAt: '2099-01-01T00:00:00.000Z',
+    });
+    expect((await preview(ctx)).diagnostics!.from.at).toBe('2099-01-01T00:00:00.000Z');
   });
 });
