@@ -267,7 +267,7 @@ export function ReviseTab({
       : running
         ? 'A revision is being drafted'
         : !preview.feedback.length && !preview.diagnostics
-          ? 'Add feedback first: a revision answers your feedback'
+          ? 'Add feedback or run the dev samples first: a revision answers your feedback and what the runs showed.'
           : preview.model === null
             ? 'Set the drafting model under Administration > Models first'
             : null);

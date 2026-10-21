@@ -102,7 +102,7 @@ describe('ReviseTab', () => {
     [
       { getRevisePreview: vi.fn(async () => revisePreview({ feedback: [] })) },
       4,
-      'Add feedback first: a revision answers your feedback',
+      'Add feedback or run the dev samples first: a revision answers your feedback and what the runs showed.',
     ],
     [
       { getRevisePreview: vi.fn(async () => revisePreview({ draft: null })) },

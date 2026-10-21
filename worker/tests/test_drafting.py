@@ -1001,7 +1001,7 @@ def test_revise_failures_header_names_the_iteration_they_came_from(
 
 DIAGNOSTICS: dict[str, Any] = {
     "from": {"draftVersion": 4, "jobIds": ["j1"], "at": "2026-10-21T10:00:00.000Z"},
-    "steps": [{"step": "head", "sample": "a.pdf", "calls": 5, "emptyCalls": 4, "seconds": 1.5}],
+    "steps": [{"step": "head", "sample": "a.pdf", "calls": 5, "emptyCalls": 4, "seconds": 2}],
     "columns": [],
     "missedKeys": [],
 }

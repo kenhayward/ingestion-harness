@@ -179,9 +179,11 @@ already have a place for:
    (occurrences × chunks on the newest sample), and warn when several table steps read the same
    repeating section: "60 steps read `result_tables` (30 occurrences): 1,800 model calls per
    document". The figure belongs beside each step in the step list too.
-3. **Mostly empty occurrences (after a run).** *Built (Part C): run diagnostics sent to revise and shown on the Revise tab.* When a step's occurrence calls mostly return no
+3. **Mostly empty occurrences (after a run).** *Partly built (Part C): run diagnostics are sent to revise and shown on the Revise tab; the Review page's Steps tab and the Pipeline tab's last-run figures are not built.* When a step's occurrence calls mostly return no
    rows, say so on the Review page's Steps tab and the Pipeline tab's last-run figures: "returned
    rows for 7 of 30 occurrences". The audit files already hold the replies.
+   A step served from the Workbench step cache reports no counts, so a problem still present is
+   not flagged until the step's input changes (follow-up: keep the counts in the cache entry).
 4. **Outputs stage guidance.** *Built (Part B).* Tell the outputs stage to make one table per *shape*, not per
    printed block, when blocks repeat with the same columns; the sections stage then has an
    obvious anchor per kind.
