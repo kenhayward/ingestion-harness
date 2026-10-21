@@ -882,14 +882,22 @@ describe('revise diagnostics (Part C)', () => {
     await run(ctx, b, { startedAt: '2026-10-21T10:00:00.000Z' });
     const real = ctx.repo.listEvents.bind(ctx.repo);
     const asked: unknown[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
     let release = (): void => {};
     const bothAsked = new Promise<void>((resolve) => (release = resolve));
     vi.spyOn(ctx.repo, 'listEvents').mockImplementation(async (jobId, opts) => {
       asked.push(opts);
-      if (asked.length === 2) release();
-      // Serial reads would never get the second call: give up after a while and say so.
-      await Promise.race([bothAsked, new Promise((r) => setTimeout(r, 500))]);
-      return real(jobId, opts);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        if (asked.length === 2) release();
+        // Serial reads never get the second call while the first waits: the timer stops a hang.
+        await Promise.race([bothAsked, new Promise((r) => setTimeout(r, 200))]);
+        return await real(jobId, opts);
+      } finally {
+        inFlight -= 1;
+      }
     });
     const shown = (await preview(ctx)).diagnostics!;
     expect(shown.from.jobIds).toHaveLength(2);
@@ -901,9 +909,7 @@ describe('revise diagnostics (Part C)', () => {
       expect.anything(),
     ]);
     expect(asked[1]).toEqual(asked[0]);
-    const started = Date.now();
-    await preview(ctx);
-    expect(Date.now() - started).toBeLessThan(450);
+    expect(maxInFlight).toBe(2);
   });
 
   it('are advisory: a store outage leaves them out and revise still starts', async () => {

@@ -301,13 +301,13 @@ export interface NewEdit {
   reason: string | null;
 }
 
-/** Persistence port. `PgRepo` in production, `MemoryRepo` in unit tests. */
 /** Which of a job's events `IngestionRepo.listEvents` reads. */
 export interface EventFilter {
   since?: string;
   messages?: { exact?: string[]; prefixes?: string[] };
 }
 
+/** Persistence port. `PgRepo` in production, `MemoryRepo` in unit tests. */
 export interface IngestionRepo {
   ping(): Promise<void>;
   createDocumentAndJob(
