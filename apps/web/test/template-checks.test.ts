@@ -272,4 +272,111 @@ describe('shared repeating sections and same-shape tables', () => {
   it('is quiet for two same-shape tables', () => {
     expect(sameShapeTables({ outputs: { tables: tables(2, 1) } })).toEqual([]);
   });
+
+  it('leaves out steps with an occurrence filter', () => {
+    const steps = tableSteps(4, 'r').map((s, i) =>
+      i < 2 ? { ...s, occurrences: { match: `Kind ${i}` } } : s,
+    );
+    expect(
+      sharedRepeatSteps({
+        document: { sections: sections(['r']) },
+        outputs: { tables: tables(4, 1) },
+        pipeline: steps,
+      }),
+    ).toEqual([]);
+    expect(
+      sharedRepeatSteps({
+        document: { sections: sections(['r']) },
+        outputs: { tables: tables(5, 1) },
+        pipeline: tableSteps(5, 'r').map((s, i) =>
+          i === 0 ? { ...s, occurrences: { match: 'x' } } : s,
+        ),
+      }),
+    ).toEqual([{ section: 'r', steps: ['s1', 's2', 's3', 's4'] }]);
+  });
+});
+
+describe('steps reading every occurrence', () => {
+  // Seven tables of different shapes, as the outputs stage drafts them: one per kind.
+  const kinds = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `t${i}`, columns: [{ id: `c${i}` }] }));
+  const steps = (n: number, section = 'data_tables') =>
+    Array.from({ length: n }, (_, i) => ({
+      type: i % 2 === 0 ? 'extract' : 'plugin',
+      id: `s${i}`,
+      table: `t${i}`,
+      sections: [section],
+    }));
+  const def = (pipeline: Record<string, unknown>[], n = 7) => ({
+    document: { sections: [{ id: 'front' }, { id: 'data_tables', repeat: true }] },
+    outputs: { fields: [], tables: kinds(n) },
+    pipeline,
+  });
+  const found = (definition: Record<string, unknown>) =>
+    run({ definition }).filter((c) => c.text.includes('every occurrence of'));
+  const unfiltered = (n: number, section = 'data_tables') =>
+    `${n} steps read every occurrence of ${section}: if each wants one kind of block, give it an occurrence filter (Pipeline).`;
+
+  it('warns when table steps filling different tables read every occurrence of one section', () => {
+    expect(found(def(steps(7)))).toEqual([
+      {
+        tone: 'warn',
+        text: unfiltered(7),
+        link: { label: 'Open Pipeline', subTab: 'pipeline' },
+        subTabs: ['pipeline'],
+      },
+    ]);
+  });
+
+  it('counts only the steps without a filter', () => {
+    const pipeline = steps(7).map((s, i) => (i < 4 ? { ...s, occurrences: { match: 'x' } } : s));
+    expect(found(def(pipeline)).map((c) => c.text)).toEqual([unfiltered(3)]);
+    const one = steps(2).map((s, i) => (i === 0 ? { ...s, occurrences: { match: 'x' } } : s));
+    expect(found(def(one, 2)).map((c) => c.text)).toEqual([
+      '1 step reads every occurrence of data_tables: if each wants one kind of block, give it an occurrence filter (Pipeline).',
+    ]);
+  });
+
+  it('is quiet when every step is filtered, for one step, and for steps filling one table', () => {
+    const all = steps(3).map((s) => ({ ...s, occurrences: { match: 'x' } }));
+    expect(found(def(all, 3))).toEqual([]);
+    expect(found(def(steps(1), 1))).toEqual([]);
+    // A step creating the rows and one enriching them fill the same table.
+    const same = [
+      { type: 'extract', id: 'rows', table: 't0', sections: ['data_tables'] },
+      { type: 'extract', id: 'more', table: 't0', sections: ['data_tables'], columns: ['c0'] },
+    ];
+    expect(found(def(same, 1))).toEqual([]);
+  });
+
+  it('ignores sections that do not repeat and steps filling fields', () => {
+    expect(found(def(steps(3, 'front'), 3))).toEqual([]);
+    const fields = [0, 1, 2].map((i) => ({
+      type: 'extract',
+      id: `f${i}`,
+      fields: [`f${i}`],
+      sections: ['data_tables'],
+    }));
+    expect(found(def(fields, 0))).toEqual([]);
+  });
+
+  it('says nothing more for a group the same-shape warning already names', () => {
+    const def60 = {
+      document: { sections: [{ id: 'result_tables', repeat: true }] },
+      outputs: {
+        tables: Array.from({ length: 4 }, (_, i) => ({ id: `t${i}`, columns: [{ id: 'a' }] })),
+      },
+      pipeline: Array.from({ length: 4 }, (_, i) => ({
+        type: 'extract',
+        id: `s${i}`,
+        table: `t${i}`,
+        sections: ['result_tables'],
+      })),
+    };
+    const checks = run({ definition: def60 });
+    expect(checks.filter((c) => c.text.includes('steps read the repeating section'))).toHaveLength(
+      1,
+    );
+    expect(found(def60)).toEqual([]);
+  });
 });

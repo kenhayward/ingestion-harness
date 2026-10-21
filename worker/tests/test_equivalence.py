@@ -40,6 +40,7 @@ from ingest_worker.pipeline import Buckets, PipelineDeps
 from ingest_worker.specs import CopySelection, load_specs
 from ingest_worker.storage import MemoryObjectStore, ontology_normalized_key
 
+from . import test_occurrence_filter as filtered
 from . import test_pipeline as legacy
 from . import test_template_pipeline as recipes
 from . import test_workbench as workbench
@@ -330,6 +331,23 @@ def test_template_missing_section(tmp_path: Path) -> None:
             "store": objects(deps.store),
             "queue": queue_trace(queue),
             "models": model_trace(provider_of(deps, "local")),
+        },
+    )
+
+
+def test_template_occurrence_filter(tmp_path: Path) -> None:
+    """Two steps filtering one repeating section by heading, one of them chunked."""
+    recipe = filtered._recipe("Appearance", "Microbial", chunkPages=1)
+    provider, deps, queue = filtered._run(tmp_path, recipe, filtered.responses())
+    assert len(provider.calls) == 10, queue.reviewed or queue.failed
+
+    assert isinstance(deps.store, MemoryObjectStore)
+    check(
+        "template-occurrence-filter",
+        {
+            "store": objects(deps.store),
+            "queue": queue_trace(queue),
+            "models": model_trace(provider),
         },
     )
 

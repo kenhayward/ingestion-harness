@@ -9902,6 +9902,19 @@
                                         "type": "string",
                                         "pattern": "^[a-z][a-z0-9_-]*$"
                                       },
+                                      "occurrences": {
+                                        "type": "object",
+                                        "properties": {
+                                          "match": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "match"
+                                        ],
+                                        "additionalProperties": false
+                                      },
                                       "columns": {
                                         "minItems": 1,
                                         "type": "array",
@@ -10028,6 +10041,19 @@
                                       "keyColumn": {
                                         "type": "string",
                                         "pattern": "^[a-z][a-z0-9_-]*$"
+                                      },
+                                      "occurrences": {
+                                        "type": "object",
+                                        "properties": {
+                                          "match": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "match"
+                                        ],
+                                        "additionalProperties": false
                                       },
                                       "columns": {
                                         "minItems": 1,
@@ -16268,6 +16294,19 @@
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_-]*$"
                                   },
+                                  "occurrences": {
+                                    "type": "object",
+                                    "properties": {
+                                      "match": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "match"
+                                    ],
+                                    "additionalProperties": false
+                                  },
                                   "columns": {
                                     "minItems": 1,
                                     "type": "array",
@@ -16394,6 +16433,19 @@
                                   "keyColumn": {
                                     "type": "string",
                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                  },
+                                  "occurrences": {
+                                    "type": "object",
+                                    "properties": {
+                                      "match": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "match"
+                                    ],
+                                    "additionalProperties": false
                                   },
                                   "columns": {
                                     "minItems": 1,
@@ -38893,6 +38945,19 @@
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
                                                   },
+                                                  "occurrences": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "match": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "match"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
                                                   "columns": {
                                                     "minItems": 1,
                                                     "type": "array",
@@ -39019,6 +39084,19 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "occurrences": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "match": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "match"
+                                                    ],
+                                                    "additionalProperties": false
                                                   },
                                                   "columns": {
                                                     "minItems": 1,
@@ -44147,6 +44225,19 @@
                                                       "type": "string",
                                                       "pattern": "^[a-z][a-z0-9_-]*$"
                                                     },
+                                                    "occurrences": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "match": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "match"
+                                                      ],
+                                                      "additionalProperties": false
+                                                    },
                                                     "columns": {
                                                       "minItems": 1,
                                                       "type": "array",
@@ -44273,6 +44364,19 @@
                                                     "keyColumn": {
                                                       "type": "string",
                                                       "pattern": "^[a-z][a-z0-9_-]*$"
+                                                    },
+                                                    "occurrences": {
+                                                      "type": "object",
+                                                      "properties": {
+                                                        "match": {
+                                                          "type": "string",
+                                                          "minLength": 1
+                                                        }
+                                                      },
+                                                      "required": [
+                                                        "match"
+                                                      ],
+                                                      "additionalProperties": false
                                                     },
                                                     "columns": {
                                                       "minItems": 1,
@@ -46981,6 +47085,19 @@
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
                                                   },
+                                                  "occurrences": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "match": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "match"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
                                                   "columns": {
                                                     "minItems": 1,
                                                     "type": "array",
@@ -47107,6 +47224,19 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "occurrences": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "match": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "match"
+                                                    ],
+                                                    "additionalProperties": false
                                                   },
                                                   "columns": {
                                                     "minItems": 1,
@@ -49480,6 +49610,19 @@
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
                                                   },
+                                                  "occurrences": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "match": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "match"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
                                                   "columns": {
                                                     "minItems": 1,
                                                     "type": "array",
@@ -49606,6 +49749,19 @@
                                                   "keyColumn": {
                                                     "type": "string",
                                                     "pattern": "^[a-z][a-z0-9_-]*$"
+                                                  },
+                                                  "occurrences": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "match": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "match"
+                                                    ],
+                                                    "additionalProperties": false
                                                   },
                                                   "columns": {
                                                     "minItems": 1,

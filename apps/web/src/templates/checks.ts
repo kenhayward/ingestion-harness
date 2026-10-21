@@ -48,32 +48,43 @@ function columnIds(table: Record<string, unknown>): string[] {
     .filter((id): id is string => typeof id === 'string');
 }
 
-/**
- * Repeating sections that three or more table steps (extract or plugin) read, filling tables
- * that all have the same column ids in the same order: each such step runs once per occurrence,
- * so steps meant for one block each read them all. `steps` are those same-shape steps.
- */
-export function sharedRepeatSteps(
-  definition: Record<string, unknown>,
-): { section: string; steps: string[] }[] {
-  const repeating = asList(asRecord(definition.document).sections)
+/** The ids of the definition's repeating sections. */
+const repeatingSections = (definition: Record<string, unknown>): string[] =>
+  asList(asRecord(definition.document).sections)
     .map(asRecord)
     .filter((s) => s.repeat === true && typeof s.id === 'string')
     .map((s) => s.id as string);
-  const shapes = new Map<unknown, string>();
-  for (const t of asList(asRecord(definition.outputs).tables).map(asRecord)) {
-    const cols = columnIds(t);
-    if (cols.length > 0) shapes.set(t.id, JSON.stringify(cols));
-  }
-  const steps = asList(definition.pipeline)
+
+/** Table steps (extract or plugin) with an id. */
+const tableSteps = (definition: Record<string, unknown>): Record<string, unknown>[] =>
+  asList(definition.pipeline)
     .map(asRecord)
     .filter(
       (s) =>
         (s.type === 'extract' || s.type === 'plugin') &&
         typeof s.table === 'string' &&
-        typeof s.id === 'string' &&
-        shapes.has(s.table),
+        typeof s.id === 'string',
     );
+
+/** A step running only on the occurrences whose heading matches (`occurrences: {match}`). */
+const filtered = (step: Record<string, unknown>) => step.occurrences !== undefined;
+
+/**
+ * Repeating sections that three or more table steps (extract or plugin) read, filling tables
+ * that all have the same column ids in the same order: each such step runs once per occurrence,
+ * so steps meant for one block each read them all. `steps` are those same-shape steps; a step
+ * with an occurrence filter reads only the occurrences it wants and is left out.
+ */
+export function sharedRepeatSteps(
+  definition: Record<string, unknown>,
+): { section: string; steps: string[] }[] {
+  const repeating = repeatingSections(definition);
+  const shapes = new Map<unknown, string>();
+  for (const t of asList(asRecord(definition.outputs).tables).map(asRecord)) {
+    const cols = columnIds(t);
+    if (cols.length > 0) shapes.set(t.id, JSON.stringify(cols));
+  }
+  const steps = tableSteps(definition).filter((s) => shapes.has(s.table) && !filtered(s));
   const found: { section: string; steps: string[] }[] = [];
   for (const section of repeating) {
     const byShape = new Map<string, string[]>();
@@ -83,6 +94,25 @@ export function sharedRepeatSteps(
       byShape.set(shape, [...(byShape.get(shape) ?? []), s.id as string]);
     }
     for (const ids of byShape.values()) if (ids.length >= 3) found.push({ section, steps: ids });
+  }
+  return found;
+}
+
+/**
+ * Repeating sections that table steps (extract or plugin) filling two or more different tables
+ * read, at least one of them without an occurrence filter: each such step runs on every
+ * occurrence, though each usually wants one kind of block. `unfiltered` are those steps.
+ */
+export function unfilteredRepeatSteps(
+  definition: Record<string, unknown>,
+): { section: string; unfiltered: string[] }[] {
+  const steps = tableSteps(definition);
+  const found: { section: string; unfiltered: string[] }[] = [];
+  for (const section of repeatingSections(definition)) {
+    const reading = steps.filter((s) => asList(s.sections).includes(section));
+    const tables = new Set(reading.map((s) => s.table));
+    const unfiltered = reading.filter((s) => !filtered(s)).map((s) => s.id as string);
+    if (tables.size >= 2 && unfiltered.length > 0) found.push({ section, unfiltered });
   }
   return found;
 }
@@ -131,12 +161,24 @@ export function templateChecks(input: {
       subTabs: ['pipeline'],
     })),
   ];
-  for (const g of sharedRepeatSteps(input.definition)) {
+  const shared = sharedRepeatSteps(input.definition);
+  for (const g of shared) {
     checks.push({
       tone: 'warn',
       text: `${g.steps.length} steps read the repeating section ${g.section} and fill tables of the same shape: each runs once per occurrence, so steps meant for one block each read them all. Give each kind of block its own repeating section.`,
       link: { label: 'Open Sections', subTab: 'sections' },
       subTabs: ['sections', 'pipeline'],
+    });
+  }
+  for (const g of unfilteredRepeatSteps(input.definition)) {
+    // One warning per problem: the same-shape warning already names this section's steps.
+    if (shared.some((s) => s.section === g.section)) continue;
+    const n = g.unfiltered.length;
+    checks.push({
+      tone: 'warn',
+      text: `${n} ${n === 1 ? 'step reads' : 'steps read'} every occurrence of ${g.section}: if each wants one kind of block, give it an occurrence filter (Pipeline).`,
+      link: { label: 'Open Pipeline', subTab: 'pipeline' },
+      subTabs: ['pipeline'],
     });
   }
   const tableShapes = new Map(

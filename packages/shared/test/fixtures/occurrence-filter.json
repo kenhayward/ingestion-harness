@@ -1,0 +1,114 @@
+{
+  "description": "A step's occurrence filter (docs/superpowers/plans/2026-10-21-occurrence-filter.md): `occurrences: {match}` on an extract or plugin step reading a repeating section runs it only on the occurrences whose head matches. Read by packages/shared/test/template.test.ts (TemplateSchema) and worker/tests/test_template.py (Template): every case's pipeline replaces the base's; `error` is a substring both sides' messages contain.",
+  "base": {
+    "id": "report",
+    "version": 1,
+    "name": "Stability report",
+    "document": {
+      "sections": [
+        { "id": "head", "anchor": "\\A" },
+        { "id": "tables", "anchor": "^Table \\d+:", "repeat": true, "key": "^Table (\\d+):" },
+        { "id": "notes", "anchor": "^NOTES", "required": false }
+      ]
+    },
+    "outputs": {
+      "fields": [{ "id": "title", "type": "text" }],
+      "tables": [
+        {
+          "id": "appearance",
+          "columns": [
+            { "id": "table_number", "type": "text" },
+            { "id": "result", "type": "text" }
+          ]
+        },
+        {
+          "id": "microbial",
+          "columns": [
+            { "id": "table_number", "type": "text" },
+            { "id": "result", "type": "text" }
+          ]
+        }
+      ]
+    },
+    "pipeline": []
+  },
+  "cases": [
+    {
+      "name": "two steps each read their own kind of occurrence",
+      "valid": true,
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["title"], "sections": ["head"] },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance",
+          "sections": ["tables"],
+          "keyColumn": "table_number",
+          "occurrences": { "match": "Appearance\\s+and\\s+Water" }
+        },
+        {
+          "type": "extract",
+          "id": "microbial",
+          "table": "microbial",
+          "sections": ["tables"],
+          "keyColumn": "table_number",
+          "occurrences": { "match": "Microbial Purity" }
+        }
+      ]
+    },
+    {
+      "name": "a plugin step reading a repeating section can filter too",
+      "valid": true,
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["title"], "sections": ["head"] },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance",
+          "sections": ["tables"],
+          "occurrences": { "match": "Appearance" }
+        },
+        {
+          "type": "plugin",
+          "id": "microbial",
+          "uses": "text.pattern@1",
+          "table": "microbial",
+          "sections": ["tables"],
+          "occurrences": { "match": "Microbial" }
+        }
+      ]
+    },
+    {
+      "name": "a filter on a step reading no repeating section",
+      "valid": false,
+      "error": "an occurrence filter needs a repeating section",
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "header",
+          "fields": ["title"],
+          "sections": ["head"],
+          "occurrences": { "match": "Title" }
+        },
+        { "type": "extract", "id": "appearance", "table": "appearance", "sections": ["tables"] },
+        { "type": "extract", "id": "microbial", "table": "microbial", "sections": ["notes"] }
+      ]
+    },
+    {
+      "name": "a filter that is not a valid pattern",
+      "valid": false,
+      "error": "the occurrence filter is not a valid pattern",
+      "pipeline": [
+        { "type": "extract", "id": "header", "fields": ["title"], "sections": ["head"] },
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance",
+          "sections": ["tables"],
+          "occurrences": { "match": "Appearance (and" }
+        },
+        { "type": "extract", "id": "microbial", "table": "microbial", "sections": ["tables"] }
+      ]
+    }
+  ]
+}

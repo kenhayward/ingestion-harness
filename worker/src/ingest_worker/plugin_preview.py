@@ -33,7 +33,7 @@ from .queue import ClaimedJob, JobQueue
 from .segment import MissingSectionsError, segment_occurrences, select_copy
 from .storage import plugin_preview_key
 from .template import PluginStep, Template
-from .template_pipeline import normalise_step
+from .template_pipeline import filtered_plan, normalise_step
 from .workbench import _prepared_pages
 
 #: The time limit of a whole preview (every sample), like the anchor preview's.
@@ -114,7 +114,10 @@ def preview_samples(
             continue
         section = template.repeating_section(step)
         repeat = (
-            RepeatPlan(section.id, segmented.occurrences.get(section.id, []), step.key_column)
+            filtered_plan(
+                RepeatPlan(section.id, segmented.occurrences.get(section.id, []), step.key_column),
+                step,
+            )
             if section is not None
             else None
         )

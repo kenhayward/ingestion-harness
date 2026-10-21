@@ -450,6 +450,7 @@ def test_steps_errors_are_fed_back_then_need_review(fixture_specs_dir: Path) -> 
                 "pageImages": None,
                 "chunkPages": None,
                 "keyColumn": None,
+                "occurrenceMatch": None,
                 "context": None,
                 "description": None,
                 "values": None,
@@ -491,6 +492,7 @@ def test_steps_with_an_unusable_key_column_complete_with_a_note(
         "pageImages": None,
         "chunkPages": None,
         "keyColumn": "batch",
+        "occurrenceMatch": None,
         "context": None,
         "description": None,
         "values": None,
@@ -520,6 +522,7 @@ def _step(op: str, id: str, sections: list[str] | None, fields: list[str] | None
         "pageImages": None,
         "chunkPages": None,
         "keyColumn": None,
+        "occurrenceMatch": None,
         "context": None,
         "description": None,
         "values": None,
@@ -1430,3 +1433,111 @@ def test_token_throttle(calls: list[tuple[float, int]], reported: list[int]) -> 
         now[0] = at
         throttle(tokens)
     assert seen == reported
+
+
+# --- the steps stage's occurrence check (plan 2026-10-21-occurrence-filter, C2) ----------------
+
+KINDS_TEXT = [
+    "STABILITY REPORT",
+    "Table 1: Study 7 - Batch 11 - Appearance and Water Content Results\nT0 Complies",
+    "Table 2: Study 7 - Batch 11 - Assay Results\nT0 99.1",
+    "Table 3: Study 7 - Batch 12 - Appearance and Water Content Results\nT0 Complies",
+    "Table 4: Study 7 - Batch 12 - Assay Results\nT0 98.7",
+]
+KINDS_DRAFT = {
+    **DRAFT,
+    "document": {
+        "sections": [
+            {"id": "all", "anchor": r"\A"},
+            {"id": "tables", "anchor": r"^Table \d+:", "repeat": True, "key": r"^Table (\d+):"},
+        ]
+    },
+    "outputs": {
+        "fields": [],
+        "tables": [
+            {"id": t, "columns": [{"id": "result", "type": "text"}]}
+            for t in ("appearance", "assay")
+        ],
+    },
+}
+
+
+def _table_step(table: str, match: str | None, chunk: int | None = None) -> dict[str, Any]:
+    return {
+        **_step("putStep", table, ["tables"], None),
+        "table": table,
+        "occurrenceMatch": match,
+        "chunkPages": chunk,
+    }
+
+
+def _kinds_deps(specs_dir: Path) -> tuple[FakeProvider, MemoryObjectStore, PipelineDeps]:
+    provider, store, deps = make(specs_dir)
+    text = {
+        "sha256": "sha-a",
+        "pages": [{"number": i + 1, "text": t, "ocr": False} for i, t in enumerate(KINDS_TEXT)],
+    }
+    store.put("runs", prepared_text_key("sha-a"), json.dumps(text).encode(), "application/json")
+    return provider, store, deps
+
+
+def test_steps_reading_every_occurrence_are_told_the_kinds_once(fixture_specs_dir: Path) -> None:
+    provider, store, deps = _kinds_deps(fixture_specs_dir)
+    provider.responses = [
+        {"notes": "", "changes": [_table_step("appearance", None), _table_step("assay", None)]},
+        {
+            "notes": "",
+            "changes": [
+                _table_step("appearance", "Appearance and Water"),
+                _table_step("assay", r"Assay\s+Results"),
+            ],
+        },
+    ]
+    queue = FakeQueue(jobs=[draft_job(stage="steps", draft=KINDS_DRAFT)])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 2, queue.reviewed
+    second = provider.calls[1][1].prompt
+    assert "<occurrence_check>" in second and "come in 2 kinds" in second
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert [c["step"].get("occurrences") for c in body["changes"]] == [
+        {"match": "Appearance and Water"},
+        {"match": r"Assay\s+Results"},
+    ]
+    rounds = json.loads(store.get("runs", draft_log_key("job-d")))["rounds"]
+    assert [r["label"] for r in rounds] == ["draft-steps", "draft-steps-occurrences"]
+    phases = [(d["phase"], d["round"]) for d in progress(queue)]
+    assert ("anchors", 1) in phases and ("anchors", 2) in phases
+
+
+def test_the_occurrence_round_happens_at_most_once(fixture_specs_dir: Path) -> None:
+    """A model that keeps a step reading every occurrence is not asked again."""
+    provider, _, deps = _kinds_deps(fixture_specs_dir)
+    unfiltered = {
+        "notes": "",
+        "changes": [_table_step("appearance", None), _table_step("assay", None)],
+    }
+    provider.responses = [unfiltered, unfiltered]
+    queue = FakeQueue(jobs=[draft_job(stage="steps", draft=KINDS_DRAFT)])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 2, queue.reviewed
+
+
+def test_filtered_steps_pass_and_lose_chunk_pages_their_occurrences_do_not_need(
+    fixture_specs_dir: Path,
+) -> None:
+    provider, store, deps = _kinds_deps(fixture_specs_dir)
+    provider.responses = [
+        {
+            "notes": "",
+            "changes": [
+                _table_step("appearance", "Appearance", chunk=1),
+                _table_step("assay", "Assay"),
+            ],
+        }
+    ]
+    queue = FakeQueue(jobs=[draft_job(stage="steps", draft=KINDS_DRAFT)])
+    run_once(queue, deps, "w1")
+    assert queue.completed and len(provider.calls) == 1, queue.reviewed
+    body = json.loads(store.get("runs", drafting_key("letter", "job-d")))["body"]
+    assert "chunkPages" not in body["changes"][0]["step"]
+    assert "Ignored chunkPages on 'appearance'" in body["notes"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -49,6 +50,7 @@ from .segment import (
     Occurrence,
     Segmented,
     missed_payload,
+    occurrence_head,
     segment_occurrences,
     select_copy,
 )
@@ -233,6 +235,8 @@ class RepeatPlan:
     section_id: str
     occurrences: list[Occurrence]
     key_column: str | None
+    #: With an occurrence filter, how many occurrences the section had before it (None: no filter).
+    of: int | None = None
 
 
 #: Matches the lines added by mark_pages.
@@ -716,16 +720,19 @@ def _attempt_reporter(
     progress: StepProgress | None,
     chunk: dict[str, int] | None,
     occurrence: Occurrence | None,
+    repeat: RepeatPlan | None = None,
 ) -> Callable[[int], None] | None:
-    """Bind a chunk and an occurrence to the step's progress callback (None: no reporting)."""
+    """Bind a chunk and an occurrence to the step's progress callback (None: no reporting). A
+    filtered step counts the occurrences it reads (n of the matched ones), as people read it."""
     if progress is None:
         return None
     report = progress
-    where = (
-        None
-        if occurrence is None
-        else {"n": occurrence.index, "of": occurrence.count, "key": occurrence.key}
-    )
+    where: dict[str, Any] | None = None
+    if occurrence is not None:
+        n, of = occurrence.index, occurrence.count
+        if repeat is not None and repeat.of is not None:
+            n, of = repeat.occurrences.index(occurrence) + 1, len(repeat.occurrences)
+        where = {"n": n, "of": of, "key": occurrence.key}
     return lambda attempt: report(attempt, chunk, where)
 
 
@@ -741,6 +748,20 @@ def _without_column(schema: dict[str, Any], column: str) -> dict[str, Any]:
     return {**schema, "properties": {**schema["properties"], "rows": {**rows, "items": items}}}
 
 
+#: Characters of an occurrence's start quoted to its continuation chunks (its title).
+CONTINUATION_HEAD_CHARS = 300
+
+
+def content_pages(text: str) -> list[str]:
+    """A section's (or occurrence's) pages as chunking reads them, each stripped. A page holding
+    only its marker (the next occurrence starts at its top) has nothing to read and is left out."""
+    return [
+        p.strip()
+        for p in text.split(PAGE_BREAK)
+        if p.strip() and not re.fullmatch(r"\[page \d+\]", p.strip())
+    ]
+
+
 def _chunks(
     ex: Extraction, sections: dict[str, str]
 ) -> list[tuple[str, dict[str, str], dict[str, Any] | None]]:
@@ -748,7 +769,7 @@ def _chunks(
     if ex.chunk_pages is None:
         return [("", sections, None)]
     section_id = ex.sections[0]
-    pages = [p.strip() for p in sections[section_id].split(PAGE_BREAK) if p.strip()]
+    pages = content_pages(sections[section_id])
     size = ex.chunk_pages
     groups = [PAGE_BREAK.join(pages[i : i + size]) for i in range(0, len(pages), size)] or [""]
     return [
@@ -806,10 +827,25 @@ def run_step_extraction(
         columns = [c for c in table.get("columns", []) if c.get("id") != key_column]
         prompt_context = {**prompt_context, "table": {**table, "columns": columns}}
 
-    def occurrence_context(o: Occurrence | None) -> dict[str, Any] | None:
+    def occurrence_context(
+        o: Occurrence | None, chunk: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
         if o is None or repeat is None:
             return None
-        return {"index": o.index, "count": o.count, "key": o.key, "section": repeat.section_id}
+        # A continuation chunk has no heading of its own: quote how the occurrence begins (document
+        # text, so short and unable to close the prompt's tags).
+        head = (
+            occurrence_head(o.text)[:CONTINUATION_HEAD_CHARS].replace("<", "").replace(">", "")
+            if chunk is not None and chunk["index"] > 1
+            else None
+        )
+        return {
+            "index": o.index,
+            "count": o.count,
+            "key": o.key,
+            "section": repeat.section_id,
+            "head": head,
+        }
 
     rendered = [
         (
@@ -821,7 +857,7 @@ def run_step_extraction(
                 ex.sections,
                 chunk,
                 prompt_context,
-                occurrence=occurrence_context(occurrence),
+                occurrence=occurrence_context(occurrence, chunk),
             ),
             chunk,
             occurrence,
@@ -864,7 +900,7 @@ def run_step_extraction(
                 max_attempts=ex.max_attempts,
                 images=images,
                 max_tokens=ex.max_tokens,
-                on_attempt=_attempt_reporter(progress, chunk, occurrence),
+                on_attempt=_attempt_reporter(progress, chunk, occurrence, repeat),
                 check=check,
             )
         except ExtractionFailedError as exc:

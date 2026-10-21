@@ -101,6 +101,14 @@ class OutputsDef(_Model):
     tables: list[TableDef] = Field(default_factory=list)
 
 
+class OccurrenceFilter(_Model):
+    """Which occurrences of its repeating section a step reads (TS `OccurrenceFilterSchema`):
+    `match` is searched, ignoring case, in each occurrence's head (`segment.occurrence_matches`);
+    the others are skipped without a model call."""
+
+    match: str = Field(min_length=1)
+
+
 class ExtractStep(_Model):
     type: Literal["extract"]
     id: Id
@@ -121,6 +129,8 @@ class ExtractStep(_Model):
     context: dict[Id, str] = Field(default_factory=dict)
     #: The table column the worker fills with each occurrence's key (repeating sections).
     key_column: Id | None = Field(default=None, alias="keyColumn")
+    #: Only the occurrences of its repeating section whose heading matches (None: all).
+    occurrences: OccurrenceFilter | None = None
     #: A table step enriching an earlier step's rows (P4): the columns it fills, the rest being
     #: the creating step's. None: the step creates the table's rows.
     columns: list[Id] | None = Field(default=None, min_length=1)
@@ -189,6 +199,8 @@ class PluginStep(_Model):
     model: str | None = None
     #: The table column the worker fills with each occurrence's key (repeating sections).
     key_column: Id | None = Field(default=None, alias="keyColumn")
+    #: Only the occurrences of its repeating section whose heading matches (None: all).
+    occurrences: OccurrenceFilter | None = None
     #: A table step enriching an earlier step's rows (P4): the columns it fills, the rest being
     #: the creating step's. None: the step creates the table's rows.
     columns: list[Id] | None = Field(default=None, min_length=1)
@@ -581,6 +593,17 @@ class Template(_Model):
             errors.append(
                 f"step {step.id!r}: reads more than one repeating section ({', '.join(repeating)})"
             )
+        if step.occurrences is not None:
+            if not repeating:
+                errors.append(f"step {step.id!r}: an occurrence filter needs a repeating section")
+            else:
+                try:
+                    re.compile(step.occurrences.match)
+                except re.error:
+                    errors.append(
+                        f"step {step.id!r}: the occurrence filter is not a valid pattern: "
+                        f"{step.occurrences.match}"
+                    )
         if step.key_column is not None:
             section = by_id[repeating[0]] if repeating else None
             if (

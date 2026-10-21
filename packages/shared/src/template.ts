@@ -100,6 +100,15 @@ export const TableDefSchema = z
   })
   .strict();
 
+/**
+ * Which occurrences of its repeating section a step reads: `match` is a regex (Python `re`
+ * syntax) the worker searches, ignoring case, in each occurrence's first 600 characters with
+ * line breaks and repeated spaces read as one (`segment.occurrence_matches`); the others are
+ * skipped without a model call.
+ */
+export const OccurrenceFilterSchema = z.object({ match: z.string().min(1) }).strict();
+export type OccurrenceFilter = z.infer<typeof OccurrenceFilterSchema>;
+
 export const ExtractStepSchema = z
   .object({
     type: z.literal('extract'),
@@ -121,6 +130,8 @@ export const ExtractStepSchema = z
     context: z.record(Id, z.string().min(1)).default({}),
     /** The table column the worker fills with each occurrence's key (repeating sections). */
     keyColumn: Id.optional(),
+    /** Only the occurrences of its repeating section whose heading matches (absent: all). */
+    occurrences: OccurrenceFilterSchema.optional(),
     /**
      * A table step that enriches an earlier step's rows (P4): the columns it fills, the rest
      * being the creating step's. Absent: the step creates the table's rows.
@@ -190,6 +201,8 @@ export const PluginStepSchema = z
     model: z.string().min(1).optional(),
     /** The table column the worker fills with each occurrence's key (repeating sections). */
     keyColumn: Id.optional(),
+    /** Only the occurrences of its repeating section whose heading matches (absent: all). */
+    occurrences: OccurrenceFilterSchema.optional(),
     /**
      * A table step that enriches an earlier step's rows (P4): the columns it fills, the rest
      * being the creating step's. Absent: the step creates the table's rows.
@@ -573,6 +586,15 @@ export const TemplateSchema = z
       }
       if (repeating.length > 1) {
         issue(`step "${step.id}": reads more than one repeating section (${repeating.join(', ')})`);
+      }
+      if (step.occurrences !== undefined) {
+        if (repeating.length === 0) {
+          issue(`step "${step.id}": an occurrence filter needs a repeating section`);
+        } else if (!patternCompiles(step.occurrences.match)) {
+          issue(
+            `step "${step.id}": the occurrence filter is not a valid pattern: ${step.occurrences.match}`,
+          );
+        }
       }
       if (step.keyColumn !== undefined) {
         const section = repeating.length > 0 ? sectionById.get(repeating[0]!) : undefined;
