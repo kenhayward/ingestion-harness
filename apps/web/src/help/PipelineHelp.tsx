@@ -49,6 +49,18 @@ export function PipelineHelp() {
           <strong>Key column</strong>: on a table step reading a repeating section, the column the
           worker fills with each occurrence's key (see the Sections help).
         </li>
+        <li>
+          <strong>Occurrences</strong>: on a table step reading a repeating section, <em>All</em>{' '}
+          runs the step on every occurrence; <em>Only those whose heading matches</em> runs it only
+          on the occurrences whose first lines match a pattern, and skips the others without a model
+          call. Use it when several table steps read one repeating section and each wants one kind
+          of block, for example one step for the appearance results tables and another for the assay
+          results: without a filter every step reads every occurrence, and most of those calls find
+          nothing. The pattern (a regular expression, such as <code>Appearance Results</code> or{' '}
+          <code>^Assay</code>) is searched in the first lines of each occurrence, ignoring case,
+          with line breaks and repeated spaces read as one space, so a heading split over two lines
+          still matches. A filtered step is tagged <em>filtered</em> in the step list.
+        </li>
       </ul>
       <p>
         Every prompt also states the document's file name and starts each page with "[page N]", so a
@@ -80,7 +92,9 @@ export function PipelineHelp() {
         step's sections, or one your administrator added as a package. It fills outputs like an
         extract step and can read earlier values; most call no model and cost nothing to run. A
         plugin table step reading a repeating section runs once per occurrence, as an extract step
-        does, and its <strong>Key column</strong> is filled with each occurrence's key.
+        does, and its <strong>Key column</strong> is filled with each occurrence's key. An
+        occurrence filter, set in YAML, limits it to the occurrences whose heading matches, as for
+        an extract step.
       </p>
       <p>
         A table step (extract or plugin) can also <strong>enrich</strong> a table an earlier step

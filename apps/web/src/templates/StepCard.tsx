@@ -43,6 +43,16 @@ export function StepCard({
           <span className="step-num">{n}</span>{' '}
           <span className={`kind-tag ${STEP_KIND_TONE[kind]}`}>{kind}</span>{' '}
           <span className="mono step-id">{id}</span>{' '}
+          {step.occurrences !== undefined && (
+            <>
+              <span
+                className="kind-tag tone-neutral"
+                title="Runs only on the occurrences whose heading matches"
+              >
+                filtered
+              </span>{' '}
+            </>
+          )}
           <span className="step-summary muted">{stepSummary(step, modelName, inheritedModel)}</span>
         </button>
         <fieldset className="step-tools" disabled={readOnly}>

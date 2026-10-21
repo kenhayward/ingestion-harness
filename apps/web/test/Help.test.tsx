@@ -78,7 +78,17 @@ describe('help topics for the recipe tabs', () => {
       ['Preamble', 'Review', 'OCR', 'Delivered formats', 'Publish to'],
     ],
     ['outputs', 'Outputs: fields and tables', ['Type', 'Description', 'exactly one step']],
-    ['pipeline', 'How the pipeline runs', ['Extract steps', 'Check steps', 'Pages per call']],
+    [
+      'pipeline',
+      'How the pipeline runs',
+      [
+        'Extract steps',
+        'Check steps',
+        'Pages per call',
+        'Occurrences',
+        'first lines of each occurrence',
+      ],
+    ],
     ['mapping', 'Mapping outputs to an ontology', ['literal', 'entity', 'concept', 'Shapes']],
     ['yaml', 'Editing the recipe as YAML', ['Apply YAML']],
     ['introduction', 'Introduction', ['About', 'release notes', 'version']],

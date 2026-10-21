@@ -58,6 +58,76 @@ export function RepeatKeyColumn({
   );
 }
 
+const OCCURRENCE_MODES = [
+  { value: 'all', label: 'All' },
+  { value: 'match', label: 'Only those whose heading matches' },
+] as const;
+
+/** The pattern of a step's occurrence filter (`occurrences: {match}`), or null without one. */
+export const occurrenceMatch = (step: Definition): string | null => {
+  const filter = step.occurrences as { match?: unknown } | undefined;
+  if (filter === undefined) return null;
+  return typeof filter?.match === 'string' ? filter.match : '';
+};
+
+/** A step reading a repeating section: every occurrence, or only those whose heading matches a
+ * pattern (`occurrences: {match}`). All drops the key; an empty pattern leaves it out too. */
+export function OccurrenceFilter({
+  step,
+  sectionDefs,
+  replace,
+}: {
+  step: Definition;
+  sectionDefs: readonly SectionLike[];
+  replace: (step: Definition) => void;
+}) {
+  const match = occurrenceMatch(step);
+  // Only, before a pattern is typed: nothing is stored yet, so the form remembers the choice.
+  const [only, setOnly] = useState(match !== null);
+  const { note } = repeatNote(step, sectionDefs);
+  // Shown while set too, so a filter left on a step that no longer repeats can be taken off.
+  if (!note && match === null) return null;
+  const mode = match !== null || only ? 'match' : 'all';
+  const setMatch = (value: string) => {
+    // Absent, never an empty pattern.
+    const next: Definition = { ...step };
+    if (value === '') delete next.occurrences;
+    else next.occurrences = { match: value };
+    replace(next);
+  };
+  return (
+    <div className="occurrence-filter">
+      <div className="field">
+        <span className="field-label">Occurrences</span>
+        <Segmented
+          label="Occurrences"
+          options={OCCURRENCE_MODES}
+          value={mode}
+          onChange={(v) => {
+            setOnly(v === 'match');
+            if (v === 'all' && match !== null) setMatch('');
+          }}
+        />
+      </div>
+      {mode === 'match' && (
+        <label className="field">
+          <span className="field-label">Heading pattern</span>
+          <input
+            aria-label="Heading pattern"
+            className="mono"
+            placeholder="e.g. Appearance"
+            value={match ?? ''}
+            onChange={(e) => setMatch(e.target.value)}
+          />
+          <small className="muted">
+            Searched in the first lines of each occurrence, ignoring case and line breaks.
+          </small>
+        </label>
+      )}
+    </div>
+  );
+}
+
 /** A table step's columns when it enriches the rows an earlier step created (P4): none ticked,
  * the step creates the rows; ticked, it fills only those columns. */
 export function EnrichColumns({
@@ -195,6 +265,7 @@ export function ExtractStep({
           columns={tableColumns[step.table as string] ?? []}
           set={set}
         />
+        <OccurrenceFilter step={step} sectionDefs={sectionDefs} replace={replace} />
         <EnrichColumns step={step} columns={tableColumns[step.table as string] ?? []} set={set} />
         <div className="field">
           <span className="field-label">Model</span>

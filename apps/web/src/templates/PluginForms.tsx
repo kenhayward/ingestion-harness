@@ -6,7 +6,7 @@ import { Text } from './fields.js';
 import { repeatNote, type SectionLike } from './editor-derive.js';
 import type { Definition } from './model.js';
 import { setSetting, settingsFields, type SettingField } from './settings-schema.js';
-import { ContextEditor, EnrichColumns, RepeatKeyColumn } from './StepForms.js';
+import { ContextEditor, EnrichColumns, occurrenceMatch, RepeatKeyColumn } from './StepForms.js';
 
 /** The plugins recipe steps can run (recipe plugins 3b); [] until loaded or when none. */
 export function usePlugins(api: Api, enabled = true): PluginInfo[] {
@@ -100,6 +100,7 @@ export function PluginStepForm({
   const filled = idsOf(step.fields);
   const reads = idsOf(step.sections);
   const { disabled } = repeatNote(step, sectionDefs);
+  const match = occurrenceMatch(step);
   const settings = (step.with ?? {}) as Record<string, unknown>;
   const setSettings = (next: Record<string, unknown>) =>
     set('with', Object.keys(next).length > 0 ? next : undefined);
@@ -230,6 +231,11 @@ export function PluginStepForm({
           columns={tableColumns[table] ?? []}
           set={set}
         />
+        {match !== null && (
+          <p className="muted">
+            Occurrences: only those whose heading matches <code>{match}</code> (set in YAML)
+          </p>
+        )}
       </fieldset>
       <ContextEditor
         value={(step.context ?? {}) as Record<string, string>}

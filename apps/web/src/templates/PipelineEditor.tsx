@@ -13,7 +13,13 @@ import {
   type SectionLike,
 } from './editor-derive.js';
 import { Area, intList, opt, optInt, Text } from './fields.js';
-import { CheckStep, ContextEditor, EnrichColumns, RepeatKeyColumn } from './StepForms.js';
+import {
+  CheckStep,
+  ContextEditor,
+  EnrichColumns,
+  OccurrenceFilter,
+  RepeatKeyColumn,
+} from './StepForms.js';
 import { AddPluginStep, PluginStepForm } from './PluginForms.js';
 import { moveItem, removeAt, setIn, type Definition } from './model.js';
 
@@ -111,6 +117,16 @@ export function PipelineEditor({
                 <span className="mono step-id">
                   {typeof step.id === 'string' && step.id ? step.id : '(no id)'}
                 </span>{' '}
+                {step.occurrences !== undefined && (
+                  <>
+                    <span
+                      className="kind-tag tone-neutral"
+                      title="Runs only on the occurrences whose heading matches"
+                    >
+                      filtered
+                    </span>{' '}
+                  </>
+                )}
                 <small className="muted">{stepListSummary(step)}</small>
               </button>
             </li>
@@ -441,6 +457,7 @@ function ExtractDetail({
         columns={tableColumns[step.table as string] ?? []}
         set={set}
       />
+      <OccurrenceFilter step={step} sectionDefs={sectionDefs} replace={replace} />
       <EnrichColumns step={step} columns={tableColumns[step.table as string] ?? []} set={set} />
       <fieldset className="fill-chips">
         <legend>Fills outputs</legend>

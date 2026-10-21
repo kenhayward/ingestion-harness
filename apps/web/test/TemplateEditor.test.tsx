@@ -1852,6 +1852,78 @@ describe('repeating sections in the step form', () => {
     expect(within(step).getByRole('checkbox', { name: 'batch repeats' })).toBeDisabled();
     expect(within(step).getByRole('checkbox', { name: 'front' })).toBeEnabled();
     expect(within(step).queryByRole('combobox', { name: 'Key column' })).not.toBeInTheDocument();
+    expect(within(step).queryByRole('group', { name: 'Occurrences' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['Document types page', undefined, /^2 EXTRACT appearance/, 'group'],
+    ['Workbench pipeline', { onChanged: vi.fn() }, /^2 appearance/, 'region'],
+  ] as const)(
+    'runs a table step only on the occurrences whose heading matches (%s)',
+    async (_, embedded, button, role) => {
+      const { api } = setup(view(repeatRecipe()), {}, embedded);
+      if (!embedded) await userEvent.click(await tab(/Pipeline/));
+      await userEvent.click(await screen.findByRole('button', { name: button }));
+      const step = screen.getByRole(role, { name: 'Step 2' });
+      const occurrences = within(step).getByRole('group', { name: 'Occurrences' });
+      expect(within(occurrences).getByRole('button', { name: 'All' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(
+        within(step).queryByRole('textbox', { name: 'Heading pattern' }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(
+        within(occurrences).getByRole('button', { name: 'Only those whose heading matches' }),
+      );
+      await userEvent.type(
+        within(step).getByRole('textbox', { name: 'Heading pattern' }),
+        'Appearance Results',
+      );
+      expect(
+        within(step).getByText(
+          'Searched in the first lines of each occurrence, ignoring case and line breaks.',
+        ),
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+      const saved = () =>
+        (
+          vi.mocked(api.saveTemplate).mock.calls.at(-1)![2] as {
+            pipeline: Record<string, unknown>[];
+          }
+        ).pipeline[1]!;
+      expect(saved()).toMatchObject({ occurrences: { match: 'Appearance Results' } });
+      expect(screen.getByRole('button', { name: button })).toHaveTextContent('filtered');
+
+      // Saving may draw the form again: find it afresh.
+      const again = within(screen.getByRole(role, { name: 'Step 2' })).getByRole('group', {
+        name: 'Occurrences',
+      });
+      await userEvent.click(within(again).getByRole('button', { name: 'All' }));
+      await userEvent.click(screen.getByRole('button', { name: /^Save draft/ }));
+      expect(saved()).not.toHaveProperty('occurrences');
+      expect(screen.getByRole('button', { name: button })).not.toHaveTextContent('filtered');
+    },
+  );
+
+  it('opens a filtered step with its pattern', async () => {
+    const base = repeatRecipe();
+    const recipe = {
+      ...base,
+      pipeline: [base.pipeline[0], { ...base.pipeline[1], occurrences: { match: '^Appearance' } }],
+    };
+    setup(view(recipe), {}, { onChanged: vi.fn() });
+    const item = await screen.findByRole('button', { name: /^2 appearance/ });
+    expect(item).toHaveTextContent('filtered');
+    expect(screen.getByRole('button', { name: /^1 header/ })).not.toHaveTextContent('filtered');
+    await userEvent.click(item);
+    const step = screen.getByRole('region', { name: 'Step 2' });
+    expect(
+      within(step).getByRole('button', { name: 'Only those whose heading matches' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(within(step).getByRole('textbox', { name: 'Heading pattern' })).toHaveValue(
+      '^Appearance',
+    );
   });
 });
 
@@ -2021,6 +2093,31 @@ describe('plugin steps in the recipe editors', () => {
       expect(saved(api).pipeline[1]).toMatchObject({ keyColumn: 'batch' });
     },
   );
+
+  it.each([
+    ['Document types page', undefined, /^2 PLUGIN rows/, 'group'],
+    ['Workbench pipeline', { onChanged: vi.fn() }, /^2 rows/, 'region'],
+  ] as const)("shows a plugin step's occurrence filter (%s)", async (_, embedded, button, role) => {
+    setup(
+      view(
+        repeatingPlugin({
+          table: 'appearance_results',
+          sections: ['appearance'],
+          occurrences: { match: 'Appearance Results' },
+        }),
+      ),
+      plugins,
+      embedded,
+    );
+    if (!embedded) await userEvent.click(await tab(/Pipeline/));
+    const item = await screen.findByRole('button', { name: button });
+    expect(item).toHaveTextContent('filtered');
+    await userEvent.click(item);
+    const step = screen.getByRole(role, { name: 'Step 2' });
+    expect(
+      within(step).getByText(/Occurrences: only those whose heading matches/),
+    ).toHaveTextContent('Occurrences: only those whose heading matches Appearance Results');
+  });
 
   it("lets a plugin table step fill only some columns of an earlier step's rows", async () => {
     const { api } = setup(
