@@ -1,5 +1,6 @@
 import { TemplateSchema, type JobOutput } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
+import type { StoredOutput } from '../src/repositories/memory.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { UnreachableStore, demoTemplate, fakePdf, multipart, testApp } from './helpers.js';
 
@@ -29,8 +30,17 @@ const out = (
   targetId: stage === 'published' ? 'default' : null,
 });
 
+/** The same output as an archive target records it: not the primary target. */
+const archived = (o: JobOutput): StoredOutput => ({
+  ...o,
+  bucket: 'keep',
+  key: `arch/packages/k/files/${o.key}`,
+  targetId: 'archive',
+  isPrimary: false,
+});
+
 /** Mark a job published at `at` with the given outputs. */
-function publish(ctx: Ctx, jobId: string, at: string, outputs: JobOutput[]) {
+function publish(ctx: Ctx, jobId: string, at: string, outputs: StoredOutput[]) {
   ctx.repo.outputs.set(jobId, outputs);
   ctx.repo.publishedAt.set(jobId, at);
 }
@@ -181,6 +191,22 @@ describe('GET /api/results', () => {
       { outputId: 'results', format: 'csv', name: 'doc.csv', rowCount: 3 },
     ]);
     expect(row.outputCount).toBe(2);
+  });
+
+  it('Results lists each output once, from the primary target', async () => {
+    const ctx = await testApp();
+    const job = await upload(ctx, 'tdemo', 'a.pdf');
+    const results = out('results', 'published', 3);
+    publish(ctx, job.id, '2026-10-01T00:00:00.000Z', [results, archived(results)]);
+    const [row] = (await ctx.app.inject('/api/results')).json();
+    expect(row.outputs).toEqual([
+      { outputId: 'results', format: 'csv', name: 'doc.csv', rowCount: 3 },
+    ]);
+    expect(row.outputCount).toBe(1);
+    const detail = (await ctx.app.inject(`/api/results/${job.id}`)).json();
+    expect(detail.outputs.map((o: JobOutput) => [o.outputId, o.targetId])).toEqual([
+      ['results', 'default'],
+    ]);
   });
 
   it('filters by file name, case-insensitively, with % and _ literal', async () => {
@@ -406,6 +432,17 @@ describe('GET /api/results/:jobId/archive', () => {
     await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
     const res = await ctx.app.inject(`/api/results/${job.id}/archive`);
     expect(res.headers['content-disposition']).toMatch(/^attachment; filename="Batch 8\.zip"/);
+  });
+
+  it('the zip holds each file once, read from the primary target', async () => {
+    const ctx = await testApp();
+    const job = await upload(ctx, 'tdemo', 'a.pdf');
+    const doc = out('document', 'published', null);
+    publish(ctx, job.id, '2026-10-02T00:00:00.000Z', [archived(doc), doc]);
+    await put(ctx.targetStore, 'published', 'pub/tdemo/v1/document/doc.json', { fields: {} });
+    const res = await ctx.app.inject(`/api/results/${job.id}/archive`);
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(await unzip(res.rawPayload))).toHaveLength(1);
   });
 
   it('zips every published output, one entry per output', async () => {

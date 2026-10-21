@@ -27,7 +27,7 @@ const NOT_FOUND_MESSAGE = 'publishing target not found';
 const NOT_FOUND = error(`\`${NOT_FOUND_MESSAGE}\`.`);
 const BRIDGE_DOWN = 'the delivery bridge could not be reached';
 const IdParams = z.object({ id: z.string().describe('The publishing target id.') });
-const LOCKED = ['bucket', 'prefix'] as const;
+const LOCKED = ['bucket', 'prefix', 'layout'] as const;
 const base = (operationId: string, summary: string, description: string) => ({
   tags: ['Published outputs'],
   'x-admin': true,
@@ -101,6 +101,7 @@ function createShape(t: TargetRecord): Record<string, unknown> {
     kind: t.kind,
     bucket: t.bucket,
     prefix: t.prefix,
+    layout: t.layout,
   };
   if (t.kind === 'internal') return shape;
   return {
@@ -139,6 +140,7 @@ function recordOf(
     sse: external ? b.sse : 'none',
     kmsKeyId: external ? (b.kmsKeyId ?? null) : null,
     storageClass: external ? (b.storageClass ?? null) : null,
+    layout: b.layout,
     source: stored?.source ?? 'ui',
     seededAt: stored?.seededAt ?? null,
     editedAt: stored?.editedAt ?? null,
@@ -364,6 +366,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         sse: record.sse,
         kmsKeyId: record.kmsKeyId,
         storageClass: record.storageClass,
+        layout: record.layout,
         connectionId: record.connectionId,
       };
       const created = await repo.create(input, by(req));
@@ -479,6 +482,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         update.kmsKeyId = next.kmsKeyId;
       }
       if (patch.storageClass !== undefined) update.storageClass = next.storageClass;
+      if (patch.layout !== undefined) update.layout = next.layout;
       const updated = await repo.update(stored.id, update, by(req));
       if (!updated) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
       try {

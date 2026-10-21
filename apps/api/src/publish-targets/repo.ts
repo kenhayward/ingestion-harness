@@ -1,10 +1,11 @@
 import {
   DEFAULT_TARGET_ID,
   TRIPLE_STORE_TARGET_ID,
-  deliveryPublishTo,
+  publishTargetsOf,
   targetInUse,
   type PublishTargetView,
   type TargetChoice,
+  type TargetLayout,
   type TargetUsage,
 } from '@ih/shared';
 import { seedDifferences, type DefaultSeed, type RdfSeed } from './seed.js';
@@ -46,6 +47,8 @@ export interface NewTarget {
   sse: 'none' | 'AES256' | 'aws:kms';
   kmsKeyId: string | null;
   storageClass: string | null;
+  /** `files` when left out. */
+  layout?: TargetLayout;
   /** The bridge connection an external target delivers with. */
   connectionId?: string | null;
 }
@@ -99,6 +102,7 @@ export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
     sse: r.sse,
     kmsKeyId: r.kmsKeyId,
     storageClass: r.storageClass,
+    layout: r.layout,
     source: r.source,
     editedAt: r.editedAt,
     updatedBy: r.updatedBy,
@@ -110,6 +114,7 @@ export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
 export function recordFrom(input: NewTarget, by: string | null, now: Date): TargetRecord {
   return {
     ...input,
+    layout: input.layout ?? 'files',
     source: 'ui',
     seededAt: null,
     connectionId: input.connectionId ?? null,
@@ -171,6 +176,7 @@ export function rdfRecord(seed: RdfSeed, now: Date): TargetRecord {
     sse: 'none',
     kmsKeyId: null,
     storageClass: null,
+    layout: 'files',
     source: 'env',
     seededAt: now.toISOString(),
     editedAt: null,
@@ -204,6 +210,7 @@ export function initialDefault(now: Date): TargetRecord {
     sse: 'none',
     kmsKeyId: null,
     storageClass: null,
+    layout: 'files',
     source: 'env',
     seededAt: null,
     editedAt: null,
@@ -218,10 +225,22 @@ export const byDefaultThenLabel = (a: TargetChoice, b: TargetChoice): number =>
   Number(b.id === DEFAULT_TARGET_ID) - Number(a.id === DEFAULT_TARGET_ID) ||
   a.label.localeCompare(b.label);
 
+/**
+ * The target a job reads back from (Results, the zip, read keys, the graph's copy): the first in
+ * the recipe's list whose layout is `files`. Undefined when there is none (validation refuses
+ * such a recipe).
+ */
+export function primaryTargetOf(
+  ids: readonly string[],
+  targets: readonly Pick<TargetRecord, 'id' | 'layout'>[],
+): string | undefined {
+  return ids.find((id) => targets.find((t) => t.id === id)?.layout === 'files');
+}
+
 export interface PublishedDefinition {
   id: string;
   version: number;
-  definition: { delivery?: { publishTo?: string } };
+  definition: { delivery?: { publishTo?: string | string[] } };
 }
 
 /** The facts the memory repo cannot see (tests stage them). */
@@ -304,8 +323,8 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
   }
 
   async usage(id: string): Promise<TargetUsage> {
-    const published = (await this.facts.publishedDefinitions()).filter(
-      (p) => deliveryPublishTo(p.definition) === id,
+    const published = (await this.facts.publishedDefinitions()).filter((p) =>
+      publishTargetsOf(p.definition).includes(id),
     );
     return {
       publishedVersions: published.length,
@@ -318,8 +337,8 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
 
   async choices(): Promise<TargetChoice[]> {
     return this.live()
-      .flatMap(({ id, label, kind, bucket }) =>
-        kind === 'rdf' ? [] : [{ id, label, kind, bucket }],
+      .flatMap(({ id, label, kind, bucket, prefix, layout }) =>
+        kind === 'rdf' ? [] : [{ id, label, kind, bucket, prefix, layout }],
       )
       .sort(byDefaultThenLabel);
   }

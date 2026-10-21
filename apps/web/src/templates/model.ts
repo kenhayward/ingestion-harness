@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any --
    These helpers edit template definitions as schemaless JSON (drafts may be incomplete or
    invalid while being authored); validation happens separately via TemplateSchema. */
-import { TemplateSchema } from '@ih/shared';
+import { DEFAULT_TARGET_ID, TemplateSchema } from '@ih/shared';
 
 /** A template definition as edited: plain JSON, possibly incomplete while being authored. */
 export type Definition = Record<string, any>;
@@ -58,4 +58,20 @@ export function validateDefinition(def: unknown): string[] {
         ]
       : [],
   );
+}
+
+/**
+ * A delivery that publishes to `ids`, in order: a string for one target, a list for two or more
+ * (so a recipe that keeps one target keeps its hash), and no `publishTo` for the default target
+ * alone or none. No `delivery` at all when nothing is left.
+ */
+export function withPublishTo(
+  delivery: object | undefined,
+  ids: readonly string[],
+): Record<string, unknown> | undefined {
+  const rest: Record<string, unknown> = { ...delivery };
+  delete rest.publishTo;
+  const onlyDefault = ids.length === 0 || (ids.length === 1 && ids[0] === DEFAULT_TARGET_ID);
+  const next = onlyDefault ? rest : { ...rest, publishTo: ids.length === 1 ? ids[0] : [...ids] };
+  return Object.keys(next).length === 0 ? undefined : next;
 }

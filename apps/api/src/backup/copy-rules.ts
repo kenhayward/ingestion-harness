@@ -299,10 +299,9 @@ async function recipesNeeding(side: pg.ClientBase, kept: KeptState) {
   const needingModel = new Set(models.rows.filter((r) => !runs(r.model)).map((r) => r.id));
 
   const needingTarget = await side.query<{ id: string }>(
-    `SELECT DISTINCT t.id FROM templates t
-      WHERE t.definition->'delivery'->>'publishTo' IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM publish_targets p
-                         WHERE p.id = t.definition->'delivery'->>'publishTo' AND p.inert_at IS NULL)
+    `SELECT DISTINCT t.id FROM templates t CROSS JOIN LATERAL publish_to_ids(t.definition) AS n(id)
+      WHERE t.definition->'delivery'->'publishTo' IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM publish_targets p WHERE p.id = n.id AND p.inert_at IS NULL)
       ORDER BY t.id`,
   );
   return {

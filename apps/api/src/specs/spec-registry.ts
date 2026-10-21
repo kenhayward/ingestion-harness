@@ -16,7 +16,9 @@ export type Definition =
   | { kind: 'template'; id: string; version: number; template: Template };
 
 export const DefinitionSummarySchema = SpecSummarySchema.extend({
-  kind: z.enum(['spec', 'template']).describe('`spec`: a legacy spec.yaml; `template`: a template.'),
+  kind: z
+    .enum(['spec', 'template'])
+    .describe('`spec`: a legacy spec.yaml; `template`: a template.'),
 });
 export type DefinitionSummary = z.infer<typeof DefinitionSummarySchema>;
 

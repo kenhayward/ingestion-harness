@@ -5,6 +5,7 @@ import {
   removeAt,
   setIn,
   validateDefinition,
+  withPublishTo,
 } from '../src/templates/model.js';
 import { validDefinition } from './template-fixture.js';
 
@@ -32,5 +33,31 @@ describe('template model helpers', () => {
     expect(validateDefinition({ ...validDefinition(), pipeline: [] }).join()).toContain('pipeline');
     const withPrompt = setIn(validDefinition(), ['pipeline', 0, 'prompt'], 'p.j2');
     expect(validateDefinition(withPrompt).join()).toContain('custom prompt files');
+  });
+});
+
+describe('withPublishTo (a recipe delivers to one target or a list)', () => {
+  it('writes a string for one target and a list for two', () => {
+    expect(withPublishTo({ formats: ['csv'] }, ['lake'])).toEqual({
+      formats: ['csv'],
+      publishTo: 'lake',
+    });
+    expect(withPublishTo(undefined, ['archive', 'default'])).toEqual({
+      publishTo: ['archive', 'default'],
+    });
+  });
+
+  it('removes the key for the default target alone, and no delivery is left when nothing is', () => {
+    expect(withPublishTo({ formats: ['json'], publishTo: 'lake' }, ['default'])).toEqual({
+      formats: ['json'],
+    });
+    expect(withPublishTo({ publishTo: ['a', 'b'] }, [])).toBeUndefined();
+  });
+
+  it("a one-target recipe keeps its definitionSha256 through the editor's round trip", () => {
+    // The hash is of the stored JSON: the same string in, the same bytes out.
+    const stored = { formats: ['csv', 'json', 'rdf'], publishTo: 'archive' };
+    const next = withPublishTo(stored, ['archive']);
+    expect(JSON.stringify(next)).toBe(JSON.stringify(stored));
   });
 });

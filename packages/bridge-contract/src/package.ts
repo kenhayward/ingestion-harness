@@ -130,3 +130,72 @@ export function partsOf(p: BridgePackage): PackagePart[] {
   if (p.images?.length) parts.push('images');
   return parts;
 }
+
+/**
+ * The package layout (an S3 target archiving whole packages): everything under
+ * `{prefix}packages/{idempotencyKey}/`. Each file's bytes at `files/<name>`, the `data` part at
+ * `data.json`, the graph's Turtle at `graph.ttl`, images at `images/<id>`, and `package.json` (the
+ * package with every byte taken out, pointing at those paths) last, so a reader that finds it
+ * finds every part. The same key delivered again overwrites the same objects.
+ */
+export const ARCHIVE_MANIFEST = 'package.json';
+
+const ArchivedFileSchema = PackageFileSchema.omit({ content: true }).extend({
+  path: z.string().min(1),
+});
+const ArchivedImageSchema = PackageImageSchema.omit({ content: true }).extend({
+  path: z.string().min(1),
+});
+
+/** `package.json` of an archive: the package without its bytes, each part by its path. */
+export const ArchivedPackageSchema = z.strictObject({
+  kind: z.enum(['document', 'graph']),
+  contractVersion: z.literal(1),
+  producer: z.strictObject({ name: z.string(), deployment: z.string() }),
+  idempotencyKey: SHA256,
+  provenance: ProvenanceSchema.nullable(),
+  naming: z.record(z.string(), z.string()),
+  files: z.array(ArchivedFileSchema),
+  data: z.strictObject({ path: z.string().min(1) }).nullable(),
+  rdf: PackageRdfSchema.omit({ turtle: true })
+    .extend({ path: z.string().min(1) })
+    .nullable(),
+  narrative: z.array(NarrativeBlockSchema).nullable(),
+  images: z.array(ArchivedImageSchema).nullable(),
+});
+export type ArchivedPackage = z.infer<typeof ArchivedPackageSchema>;
+
+const filePath = (f: { name: string }) => `files/${f.name}`;
+const imagePath = (i: { id: string }) => `images/${i.id}`;
+
+/** The archive's `package.json` for a package. */
+export function archivedPackageOf(p: BridgePackage): ArchivedPackage {
+  return {
+    ...p,
+    files: p.files.map(({ content: _content, ...f }) => ({ ...f, path: filePath(f) })),
+    data: p.data ? { path: 'data.json' } : null,
+    rdf: p.rdf ? { graphName: p.rdf.graphName, version: p.rdf.version, path: 'graph.ttl' } : null,
+    images: p.images
+      ? p.images.map(({ content: _content, ...i }) => ({ ...i, path: imagePath(i) }))
+      : null,
+  };
+}
+
+/**
+ * Every key a package-layout target writes for a package, in write order (`package.json` last),
+ * with the output id CT Studio records it under: a file's own output id, else `package:data`,
+ * `package:graph`, `package:image:<id>` and `package:manifest` (never a recipe's output id).
+ */
+export function packageArchiveKeys(
+  prefix: string,
+  p: BridgePackage,
+): { outputId: string; key: string }[] {
+  const at = (path: string) => `${prefix}packages/${p.idempotencyKey}/${path}`;
+  return [
+    ...p.files.map((f) => ({ outputId: f.output, key: at(filePath(f)) })),
+    ...(p.data ? [{ outputId: 'package:data', key: at('data.json') }] : []),
+    ...(p.rdf ? [{ outputId: 'package:graph', key: at('graph.ttl') }] : []),
+    ...(p.images ?? []).map((i) => ({ outputId: `package:image:${i.id}`, key: at(imagePath(i)) })),
+    { outputId: 'package:manifest', key: at(ARCHIVE_MANIFEST) },
+  ];
+}

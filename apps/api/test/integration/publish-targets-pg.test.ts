@@ -43,7 +43,7 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
     return {
       repo,
       facts: {
-        publish: async (id: string, version: number, publishTo: string | null) => {
+        publish: async (id: string, version: number, publishTo: string | string[] | null) => {
           const definition = publishTo === null ? {} : { delivery: { publishTo } };
           await p.query(
             `INSERT INTO templates (id, version, status, definition, published_at)

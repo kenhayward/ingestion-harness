@@ -19,6 +19,7 @@ from ingest_worker.bridge.models import (
     TargetTestResult,
     graph_idempotency_key,
     idempotency_key,
+    package_archive_keys,
 )
 
 FIXTURES = (
@@ -83,3 +84,11 @@ def test_idempotency_key_matches_the_typescript_one() -> None:
 def test_graph_idempotency_key_matches_the_fixture() -> None:
     g = fixture("idempotency.json")["graph"]
     assert graph_idempotency_key(g["graphName"], g["version"]) == g["key"]
+
+
+def test_package_archive_keys_match_the_fixture() -> None:
+    fx = fixture("archive-keys.json")
+    package = BridgePackage.model_validate(fixture(fx["package"]))
+    assert package_archive_keys(fx["prefix"], package) == [
+        (k["outputId"], k["key"]) for k in fx["keys"]
+    ]

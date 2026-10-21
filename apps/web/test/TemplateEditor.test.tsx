@@ -1649,73 +1649,122 @@ describe('delivered formats (ADR 0011)', () => {
 });
 
 describe('Publish to (publishing targets)', () => {
+  const choice = (
+    id: string,
+    label: string,
+    bucket: string,
+    layout: 'files' | 'package' = 'files',
+    prefix = '',
+  ) => ({ id, label, kind: 'internal' as const, bucket, prefix, layout });
   const CHOICES = [
-    { id: 'default', label: 'Main store', kind: 'internal' as const, bucket: 'ingest-published' },
-    { id: 'finance-lake', label: 'Finance lake', kind: 'internal' as const, bucket: 'fin' },
+    choice('default', 'Main store', 'ingest-published'),
+    choice('finance-lake', 'Finance lake', 'fin', 'files', 'ingest/'),
+    choice('archive', 'Archive', 'keep', 'package'),
   ];
   const withChoices = { listPublishTargetChoices: vi.fn(async () => CHOICES) };
   const saved = (api: ReturnType<typeof setup>['api']) =>
     vi.mocked(api.saveTemplate).mock.calls.at(-1)![2];
-
-  it('writes delivery.publishTo for the target picked', async () => {
-    const { api } = setup(view(validDefinition()), withChoices);
-    await userEvent.click(await tab(/General/));
-    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
-    expect(
-      within(pick).getByRole('option', {
-        name: 'Default (Main store · internal · ingest-published)',
-      }),
-    ).toBeTruthy();
-    expect(
-      within(pick).getByRole('option', { name: 'Finance lake · internal · fin' }),
-    ).toBeTruthy();
-    await userEvent.selectOptions(pick, 'finance-lake');
+  const group = async () => screen.findByRole('group', { name: 'Publish to' });
+  const box = async (name: string | RegExp) =>
+    within(await group()).findByRole('checkbox', {
+      name: typeof name === 'string' ? new RegExp(`^${name}`) : name,
+    });
+  const save = async (api: ReturnType<typeof setup>['api']) => {
     await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+  };
+
+  it('shows label, sink and bucket/prefix, with · archive for the package layout', async () => {
+    setup(view(validDefinition()), withChoices);
+    await userEvent.click(await tab(/General/));
+    expect(await box('Main store · internal · ingest-published')).toBeChecked();
+    expect(await box('Finance lake · internal · fin/ingest/')).not.toBeChecked();
+    expect(await box('Archive · internal · keep · archive')).not.toBeChecked();
+  });
+
+  it('picking a second target writes a list; unpicking back to one writes a string', async () => {
+    const { api } = setup(view(validDefinition()), withChoices);
+    await userEvent.click(await tab(/General/));
+    await userEvent.click(await box('Archive'));
+    await save(api);
+    expect(saved(api).delivery).toEqual({ publishTo: ['default', 'archive'] });
+    await userEvent.click(await box('Main store'));
+    await userEvent.click(await box('Finance lake'));
+    await userEvent.click(await box('Archive'));
+    await save(api);
     expect(saved(api).delivery).toEqual({ publishTo: 'finance-lake' });
   });
 
-  it('picking Default removes publishTo and keeps the formats', async () => {
+  it('back to the default alone removes publishTo and keeps the formats', async () => {
     const def = {
       ...validDefinition(),
       delivery: { formats: ['json'], publishTo: 'finance-lake' },
     };
     const { api } = setup(view(def), withChoices);
     await userEvent.click(await tab(/General/));
-    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
-    await waitFor(() => expect(pick).toHaveValue('finance-lake'));
-    await userEvent.selectOptions(pick, '');
-    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
-    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
+    await waitFor(async () => expect(await box('Finance lake')).toBeChecked());
+    await userEvent.click(await box('Main store'));
+    await userEvent.click(await box('Finance lake'));
+    await save(api);
     expect(saved(api).delivery).toEqual({ formats: ['json'] });
   });
 
-  it('keeps a stored id that is no choice, marked as not on this deployment', async () => {
-    const def = { ...validDefinition(), delivery: { publishTo: 'gone' } };
+  it('the last picked target cannot be unpicked', async () => {
+    setup(view(validDefinition()), withChoices);
+    await userEvent.click(await tab(/General/));
+    expect(await box('Main store')).toBeDisabled();
+  });
+
+  it('the first files-layout target is badged Primary; Move up changes it', async () => {
+    const def = {
+      ...validDefinition(),
+      delivery: { publishTo: ['archive', 'default', 'finance-lake'] },
+    };
+    const { api } = setup(view(def), withChoices);
+    await userEvent.click(await tab(/General/));
+    const primary = async () =>
+      within(await group())
+        .getByText('Primary')
+        .closest('li')!.textContent;
+    await waitFor(async () => expect(await primary()).toContain('Main store'));
+    await userEvent.click(screen.getByRole('button', { name: 'Move Finance lake up' }));
+    await waitFor(async () => expect(await primary()).toContain('Finance lake'));
+    await save(api);
+    expect(saved(api).delivery).toEqual({ publishTo: ['archive', 'finance-lake', 'default'] });
+  });
+
+  it('an archives-only pick says it needs a target with the files layout', async () => {
+    const def = { ...validDefinition(), delivery: { publishTo: 'archive' } };
     setup(view(def), withChoices);
     await userEvent.click(await tab(/General/));
-    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
     expect(
-      within(pick).getByRole('option', { name: 'gone (not on this deployment)' }),
+      await within(await group()).findByText(/needs a target with the files layout/),
     ).toBeTruthy();
-    expect(pick).toHaveValue('gone');
+  });
+
+  it('keeps a stored id that is no choice, marked as not on this deployment', async () => {
+    const def = { ...validDefinition(), delivery: { publishTo: ['default', 'gone'] } };
+    setup(view(def), withChoices);
+    await userEvent.click(await tab(/General/));
+    expect(await box(/^gone \(not on this deployment\)$/)).toBeChecked();
   });
 
   it('says Default when the choices have not loaded', async () => {
     setup(view(validDefinition()));
     await userEvent.click(await tab(/General/));
-    const pick = await screen.findByRole('combobox', { name: 'Publish to' });
-    expect(within(pick).getByRole('option', { name: 'Default (Default)' })).toBeTruthy();
+    expect(await box('Default')).toBeChecked();
   });
 
   it('keeps publishTo when a delivered format is ticked', async () => {
-    const def = { ...validDefinition(), delivery: { publishTo: 'finance-lake' } };
+    const def = { ...validDefinition(), delivery: { publishTo: ['finance-lake', 'archive'] } };
     const { api } = setup(view(def), withChoices);
     await userEvent.click(await tab(/General/));
     await userEvent.click(screen.getByRole('checkbox', { name: 'CSV' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
-    await waitFor(() => expect(api.saveTemplate).toHaveBeenCalled());
-    expect(saved(api).delivery).toEqual({ formats: ['json'], publishTo: 'finance-lake' });
+    await save(api);
+    expect(saved(api).delivery).toEqual({
+      formats: ['json'],
+      publishTo: ['finance-lake', 'archive'],
+    });
   });
 });
 

@@ -5,6 +5,7 @@ import {
   targetInUse,
   type PublishTargetView,
   type TargetChoice,
+  type TargetLayout,
   type TargetUsage,
 } from '@ih/shared';
 import {
@@ -40,6 +41,7 @@ interface Row {
   sse: 'none' | 'AES256' | 'aws:kms';
   kms_key_id: string | null;
   storage_class: string | null;
+  layout: TargetLayout;
   source: 'env' | 'ui';
   seeded_at: Date | null;
   edited_at: Date | null;
@@ -67,6 +69,7 @@ const toRecord = (r: Row): TargetRecord => ({
   sse: r.sse,
   kmsKeyId: r.kms_key_id,
   storageClass: r.storage_class,
+  layout: r.layout,
   source: r.source,
   seededAt: iso(r.seeded_at),
   editedAt: iso(r.edited_at),
@@ -77,8 +80,8 @@ const toRecord = (r: Row): TargetRecord => ({
 });
 
 const COLUMNS = `id, label, kind, bucket, prefix, endpoint, region, access_key_id, secret_key_enc,
-  access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, source,
-  seeded_at, edited_at, updated_by, created_at, connection_id, moved_to_bridge_at`;
+  access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, layout,
+  source, seeded_at, edited_at, updated_by, created_at, connection_id, moved_to_bridge_at`;
 
 /**
  * Rows a copy restore made inert (`inert_at`: a dropped external target its delivery records
@@ -101,6 +104,7 @@ const WRITE = [
   'sse',
   'kms_key_id',
   'storage_class',
+  'layout',
   'source',
   'seeded_at',
   'edited_at',
@@ -122,6 +126,7 @@ const values = (r: TargetRecord): unknown[] => [
   r.sse,
   r.kmsKeyId,
   r.storageClass,
+  r.layout,
   r.source,
   r.seededAt,
   r.editedAt,
@@ -241,7 +246,8 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
 
   async choices(): Promise<TargetChoice[]> {
     const { rows } = await this.pool.query<TargetChoice>(
-      `SELECT id, label, kind, bucket FROM publish_targets WHERE ${LIVE} AND kind <> 'rdf'`,
+      `SELECT id, label, kind, bucket, prefix, layout FROM publish_targets
+        WHERE ${LIVE} AND kind <> 'rdf'`,
     );
     return rows.sort(byDefaultThenLabel);
   }
@@ -330,12 +336,11 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
       return u;
     };
     const published = await db.query<{ target: string; template: string; versions: string }>(
-      `SELECT coalesce(definition->'delivery'->>'publishTo', $2) AS target, id AS template,
-              count(*) AS versions
-         FROM templates WHERE status = 'published'
-          AND ($1::text IS NULL OR coalesce(definition->'delivery'->>'publishTo', $2) = $1)
+      `SELECT p.target, t.id AS template, count(*) AS versions
+         FROM templates t CROSS JOIN LATERAL publish_to_ids(t.definition) AS p(target)
+        WHERE t.status = 'published' AND ($1::text IS NULL OR p.target = $1)
         GROUP BY 1, 2 ORDER BY 2`,
-      [id, DEFAULT_TARGET_ID],
+      [id],
     );
     for (const r of published.rows) {
       const u = at(r.target);

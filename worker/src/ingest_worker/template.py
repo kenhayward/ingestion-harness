@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import AfterValidator, Field, model_validator
 
 from .normalize import DateOrder, ValueType
 from .specs import Check, DocumentLayout, Extraction, Id, Section, _Model
@@ -341,13 +341,32 @@ DeliveryFormat = Literal["csv", "json", "rdf"]
 #: The id of a publishing target (TARGET_ID in TS); `default` is the seeded one.
 DEFAULT_PUBLISH_TARGET = "default"
 PublishTargetId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,39}$")]
+#: The most targets one recipe delivers to (MAX_PUBLISH_TARGETS in TS).
+MAX_PUBLISH_TARGETS = 8
+
+
+def _distinct(ids: list[str]) -> list[str]:
+    if len(set(ids)) != len(ids):
+        raise ValueError("a target is listed twice")
+    return ids
+
+
+#: One target id, or a list of 1 to MAX_PUBLISH_TARGETS distinct ids (PublishToSchema in TS).
+PublishTo = (
+    PublishTargetId
+    | Annotated[
+        list[PublishTargetId],
+        Field(min_length=1, max_length=MAX_PUBLISH_TARGETS),
+        AfterValidator(_distinct),
+    ]
+)
 
 
 class Delivery(_Model):
     #: What publishing delivers (absent: CSV and JSON).
     formats: list[DeliveryFormat] | None = Field(default=None, min_length=1)
-    #: The publishing target to deliver to (absent: the default target).
-    publish_to: PublishTargetId | None = Field(default=None, alias="publishTo")
+    #: The publishing targets to deliver to, one or a list (absent: the default target).
+    publish_to: PublishTo | None = Field(default=None, alias="publishTo")
 
 
 class TemplateDocument(DocumentLayout):
@@ -411,11 +430,13 @@ class Template(_Model):
             return list(self.delivery.formats)
         return ["csv", "json"]
 
-    def publish_to(self) -> str:
-        """The publishing target id (`delivery.publishTo`, else `default`)."""
-        if self.delivery and self.delivery.publish_to:
-            return self.delivery.publish_to
-        return DEFAULT_PUBLISH_TARGET
+    def publish_targets(self) -> list[str]:
+        """The publishing targets' ids, in the recipe's order (`delivery.publishTo`, else
+        `["default"]`; publishTargetsOf in TS). The triple store is never listed."""
+        to = self.delivery.publish_to if self.delivery else None
+        if to is None:
+            return [DEFAULT_PUBLISH_TARGET]
+        return [to] if isinstance(to, str) else list(to)
 
     def filler_of_field(self, field_id: str) -> FillingStep:
         return next(s for s in self.filling_steps() if field_id in s.fields)
