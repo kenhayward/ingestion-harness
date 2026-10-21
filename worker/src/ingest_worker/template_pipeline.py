@@ -372,7 +372,8 @@ def deliver_publication(
         and document is not None
         and deps.graph_registry is not None
     )
-    triples = deps.targets.rdf() if deps.targets is not None else None
+    # Only a graph needs the triple store: any other recipe must not wait on it.
+    triples = deps.targets.rdf() if publishes_graph and deps.targets is not None else None
     loads: list[tuple[str, str]] = []
     if publishes_graph and triples is not None and graph is not None:
         registry = deps.graph_registry

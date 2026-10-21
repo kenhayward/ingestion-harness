@@ -1105,6 +1105,26 @@ def test_a_job_delivering_rdf_waits_for_an_unsynced_triple_store_before_any_mode
     assert JOB.id not in queue.waiting_since  # past target resolution: no longer waiting
 
 
+def test_a_recipe_not_delivering_rdf_never_waits_for_the_triple_store(tmp_path: Path) -> None:
+    from ingest_worker.publish_targets import LiveTargets, TargetRow
+
+    from .fakes import MemoryPublishTargetStore
+
+    template = {**TEMPLATE, "review": {"required": "never"}, "delivery": {"formats": ["json"]}}
+    deps, default, _, queue = finance_deps(tmp_path, template)
+    provider = deps.models._providers["local"]  # type: ignore[attr-defined]
+    s3 = {"bucket": "published", "prefix": "pvp/", "layout": ""}
+    rows = [TargetRow("default", "Default", "internal", "s3", s3, synced_at=datetime.now(UTC))]
+    # RDF is expected but rdf-default is unsynced: only a graph needs it.
+    deps = replace(deps, targets=LiveTargets(MemoryPublishTargetStore(rows), rdf_expected=True))
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.waited or queue.reviewed or queue.failed
+    assert not queue.waited and not queue.failed
+    assert has(default, "published", "pvp/demo/v1/document/doc-1.json")
+    assert len(provider.calls) == 4  # one pass of the pipeline (see the call-count test above)
+
+
 def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: Path) -> None:
     deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
     assert isinstance(deps.targets, FakeTargets)
