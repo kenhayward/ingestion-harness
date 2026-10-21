@@ -1261,7 +1261,10 @@ def test_published_rows_are_recorded_per_target_with_archive_keys_for_the_packag
     assert all(o.key.startswith("fin/demo/v2/") for o in by_target["finance-lake"])
     [request] = [r for r in bridge.requests if r.package.kind == "document"]
     expected = package_archive_keys("arch/", request.package)
-    assert [(o.output_id, o.key) for o in by_target["archive"]] == expected
+    version = request.package.rdf.version if request.package.rdf else None
+    assert [(o.output_id, o.key) for o in by_target["archive"]] == [
+        (f"graph-version:v{version}" if i == "graph-version" else i, k) for i, k in expected
+    ]
     assert expected[-1] == (
         "package:manifest",
         f"arch/packages/{request.package.idempotency_key}/package.json",
@@ -1296,3 +1299,31 @@ def test_the_graphs_copy_is_recorded_on_the_primary_target(tmp_path: Path) -> No
     current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
     assert current is not None and current.target_id == "finance-lake"
     assert ("finance", f"fin/graphs/{SOURCE_SHA}/demo/v1.ttl") in bridge.objects
+
+
+def test_a_second_files_target_records_its_copy_of_the_graph_so_withdraw_finds_it(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = several_deps(tmp_path, DELIVERED_TEMPLATE, ["default", "finance-lake"])
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.reviewed or queue.failed
+    by_target = {t: outputs for (_, outputs, t) in queue.published}
+    copies = [o for o in by_target["finance-lake"] if o.output_id.startswith("graph-version")]
+    assert [(o.output_id, o.key) for o in copies] == [
+        ("graph-version:v1", f"fin/graphs/{SOURCE_SHA}/demo/v1.ttl")
+    ]
+    assert ("finance", copies[0].key) in bridge.objects
+    # The primary's copy is a graph version (published_graph_versions), never an output row.
+    assert not [o for o in by_target["default"] if o.output_id.startswith("graph-version")]
+
+
+def test_an_archives_graph_copy_is_recorded_per_version(tmp_path: Path) -> None:
+    deps, bridge, queue = several_deps(tmp_path, DELIVERED_TEMPLATE, ["default", "archive"])
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    by_target = {t: outputs for (_, outputs, t) in queue.published}
+    ids = [o.output_id for o in by_target["archive"]]
+    assert "graph-version:v1" in ids and "graph-version" not in ids

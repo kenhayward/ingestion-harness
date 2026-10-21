@@ -479,3 +479,28 @@ def test_published_outputs_are_recorded_per_target_with_the_primary_marked(
         "SELECT count(*) FROM job_outputs WHERE job_id = %s AND stage = 'draft'", (job.id,)
     ).fetchall()
     assert n == 1
+
+
+def test_a_new_primary_demotes_the_jobs_rows_at_other_targets(
+    queue_and_job: tuple[PgJobQueue, ClaimedJob],
+) -> None:
+    """A retry under a version naming other targets: Results reads the new primary only, while
+    the old target's rows stay live for withdrawal."""
+    from ingest_worker.outputs import RenderedOutput
+    from ingest_worker.publish_targets import Target
+
+    q, job = queue_and_job
+    q._conn.execute(
+        """INSERT INTO publish_targets (id, label, kind, bucket)
+           VALUES ('lake-a', 'Lake A', 'internal', 'lake-a'), ('lake-b', 'Lake B', 'internal', 'lake-b')
+           ON CONFLICT (id) DO NOTHING"""
+    )
+    out = RenderedOutput("fields", "csv", "demo/v1/fields/d.csv", b"", 1)
+    q.record_published(job, [out], Target("lake-a", "lake-a"), None)
+    q.record_published(job, [out], Target("lake-b", "lake-b"), None)
+    rows = q._conn.execute(
+        """SELECT target_id, is_primary, withdrawn_at IS NULL FROM job_outputs
+            WHERE job_id = %s AND stage = 'published' ORDER BY target_id""",
+        (job.id,),
+    ).fetchall()
+    assert rows == [("lake-a", False, True), ("lake-b", True, True)]

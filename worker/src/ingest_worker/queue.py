@@ -289,9 +289,19 @@ class PgJobQueue:
         *,
         primary: bool = True,
     ) -> None:
-        self._record_outputs(
-            job, outputs, target.bucket, "published", target.id, delivery_id, primary
-        )
+        with self._conn.transaction():
+            if primary:
+                # One primary per job: a round naming other targets (a retry under a new version)
+                # leaves the old target's rows live for withdrawal, but no longer read back.
+                self._conn.execute(
+                    """UPDATE job_outputs SET is_primary = false
+                        WHERE job_id = %s AND stage = 'published' AND target_id <> %s
+                          AND is_primary""",
+                    (job.id, target.id),
+                )
+            self._record_outputs(
+                job, outputs, target.bucket, "published", target.id, delivery_id, primary
+            )
 
     def delivering(
         self,

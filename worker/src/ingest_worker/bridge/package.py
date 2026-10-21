@@ -266,6 +266,9 @@ def deliver_outputs(
         t.id: archive_outputs(t, package, outputs)
         if t.layout == "package"
         else [replace(o, key=f"{t.prefix}{o.key}") for o in outputs]
+        # The primary's graph copy is a graph version; another files target's is an output row,
+        # so withdrawing the job deletes it there too.
+        + ([] if t.id == files.id else graph_copy_outputs(t, package))
         for t in targets
     }
     return Delivered(
@@ -293,10 +296,11 @@ def archive_outputs(
     rendered = {o.output_id: o for o in outputs}
     formats = {f.output: f.format for f in package.files}
     rows = []
-    for output_id, key in package_archive_keys(target.prefix, package):
-        source = rendered.get(output_id)
-        fmt = _ARCHIVE_FORMATS.get(output_id) or (
-            "rdf" if formats.get(output_id) == "ttl" else formats.get(output_id, "json")
+    for contract_id, key in package_archive_keys(target.prefix, package):
+        output_id = graph_copy_id(package) if contract_id == GRAPH_VERSION_OUTPUT else contract_id
+        source = rendered.get(contract_id)
+        fmt = _ARCHIVE_FORMATS.get(contract_id) or (
+            "rdf" if formats.get(contract_id) == "ttl" else formats.get(contract_id, "json")
         )
         rows.append(
             RenderedOutput(
@@ -308,6 +312,28 @@ def archive_outputs(
             )
         )
     return rows
+
+
+def graph_copy_id(package: BridgePackage) -> str:
+    """The output id a graph copy is recorded under off the primary target: one per graph
+    version, since each version is its own object (a re-delivery publishes the next one)."""
+    return f"{GRAPH_VERSION_OUTPUT}:v{package.rdf.version}" if package.rdf else GRAPH_VERSION_OUTPUT
+
+
+def graph_copy_outputs(target: Target, package: BridgePackage) -> list[RenderedOutput]:
+    """A files-layout target's record of the graph's versioned copy the package carries (none
+    without a graph)."""
+    return [
+        RenderedOutput(
+            output_id=graph_copy_id(package),
+            format="rdf",
+            key=f"{target.prefix}{f.name}",
+            body=b"",
+            row_count=None,
+        )
+        for f in package.files
+        if f.output == GRAPH_VERSION_OUTPUT
+    ]
 
 
 def record_delivered(
