@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
   DEFAULT_MAX_OUTPUT_TOKENS,
+  MAX_CONCURRENT_CALLS,
   MAX_OUTPUT_TOKENS,
   MIN_OUTPUT_TOKENS,
   type EndpointPatchBody,
@@ -136,52 +137,72 @@ export function ModelsPage({
   );
 }
 
-/** What the limit box holds: empty (the default) or a whole number of tokens in range. */
-function limitProblem(text: string): string | null {
+const enGB = (n: number) => n.toLocaleString('en-GB');
+
+/** What a setting's box holds: empty (the default) or a whole number in range. */
+function rangeProblem(text: string, min: number, max: number, message: string): string | null {
   if (text.trim() === '') return null;
   const n = Number(text);
-  return Number.isInteger(n) && n >= MIN_OUTPUT_TOKENS && n <= MAX_OUTPUT_TOKENS
-    ? null
-    : `Between ${MIN_OUTPUT_TOKENS.toLocaleString('en-GB')} and ${MAX_OUTPUT_TOKENS.toLocaleString('en-GB')} tokens, or empty for the default`;
+  return Number.isInteger(n) && n >= min && n <= max ? null : message;
 }
 
 /**
- * An offered model's output limit: the most tokens one reply may use where the step does not
- * say (Workbench drafting and mapping). Empty is the default. Set shows once it changed.
+ * One number setting of an offered model, beside it in the list: empty is the default, Set
+ * shows once it changed, Enter saves. Only a whole number from `min` to `max` can be set.
  */
-function OutputLimit({
-  model,
+function ModelSetting({
+  label,
+  unit,
+  stored: storedValue,
+  min,
+  max,
+  step,
+  placeholder,
+  title,
+  inputLabel,
+  setLabel,
+  outOfRange,
   disabled,
   onSave,
 }: {
-  model: LlmModelView;
+  label: string;
+  unit: string;
+  stored: number | null;
+  min: number;
+  max: number;
+  step: number;
+  placeholder: string;
+  title: string;
+  inputLabel: string;
+  setLabel: string;
+  /** Why a number outside the range cannot be set (the Set button's title). */
+  outOfRange: string;
   disabled: boolean;
-  onSave: (maxOutputTokens: number | null) => void;
+  onSave: (value: number | null) => void;
 }) {
-  const stored = model.maxOutputTokens === null ? '' : String(model.maxOutputTokens);
+  const stored = storedValue === null ? '' : String(storedValue);
   const [text, setText] = useState(stored);
   useEffect(() => setText(stored), [stored]);
-  const problem = limitProblem(text);
+  const problem = rangeProblem(text, min, max, outOfRange);
   const changed = text.trim() !== stored;
   const save = () => {
     if (problem || !changed) return;
     onSave(text.trim() === '' ? null : Number(text));
   };
-  const fallback = DEFAULT_MAX_OUTPUT_TOKENS.toLocaleString('en-GB');
   return (
-    <span className="output-limit">
+    <span className="model-setting">
       <span className="muted" aria-hidden="true">
-        Max output
+        {label}
       </span>
       <input
         type="number"
         inputMode="numeric"
-        min={MIN_OUTPUT_TOKENS}
-        max={MAX_OUTPUT_TOKENS}
-        step={1024}
-        aria-label={`Max output tokens for ${model.modelId}`}
-        title={`Empty: the default, ${fallback} tokens`}
-        placeholder={fallback}
+        min={min}
+        max={max}
+        step={step}
+        aria-label={inputLabel}
+        title={title}
+        placeholder={placeholder}
         value={text}
         disabled={disabled}
         onChange={(ev) => setText(ev.target.value)}
@@ -193,12 +214,12 @@ function OutputLimit({
         }}
       />
       <span className="muted" aria-hidden="true">
-        tokens
+        {unit}
       </span>
       {changed && (
         <button
           type="button"
-          aria-label={`Set the output limit of ${model.modelId}`}
+          aria-label={setLabel}
           disabled={disabled || problem !== null}
           title={problem ?? undefined}
           onClick={save}
@@ -207,6 +228,71 @@ function OutputLimit({
         </button>
       )}
     </span>
+  );
+}
+
+/**
+ * An offered model's output limit: the most tokens one reply may use where the step does not
+ * say (Workbench drafting and mapping). Empty is the default.
+ */
+function OutputLimit({
+  model,
+  disabled,
+  onSave,
+}: {
+  model: LlmModelView;
+  disabled: boolean;
+  onSave: (maxOutputTokens: number | null) => void;
+}) {
+  const fallback = enGB(DEFAULT_MAX_OUTPUT_TOKENS);
+  return (
+    <ModelSetting
+      label="Max output"
+      unit="tokens"
+      stored={model.maxOutputTokens}
+      min={MIN_OUTPUT_TOKENS}
+      max={MAX_OUTPUT_TOKENS}
+      step={1024}
+      placeholder={fallback}
+      title={`Empty: the default, ${fallback} tokens`}
+      inputLabel={`Max output tokens for ${model.modelId}`}
+      setLabel={`Set the output limit of ${model.modelId}`}
+      outOfRange={`Between ${enGB(MIN_OUTPUT_TOKENS)} and ${enGB(MAX_OUTPUT_TOKENS)} tokens, or empty for the default`}
+      disabled={disabled}
+      onSave={onSave}
+    />
+  );
+}
+
+/**
+ * How many calls a worker may send an offered model at once (a step's occurrences and page
+ * chunks, OCR pages). Empty is one at a time.
+ */
+function ParallelCalls({
+  model,
+  disabled,
+  onSave,
+}: {
+  model: LlmModelView;
+  disabled: boolean;
+  onSave: (maxConcurrentCalls: number | null) => void;
+}) {
+  return (
+    <ModelSetting
+      label="Parallel calls"
+      unit="at once"
+      stored={model.maxConcurrentCalls}
+      min={1}
+      max={MAX_CONCURRENT_CALLS}
+      step={1}
+      placeholder="1"
+      title="Empty: one at a time"
+      inputLabel={`Parallel calls for ${model.modelId}`}
+      setLabel={`Set the parallel calls of ${model.modelId}`}
+      outOfRange={`Between 1 and ${MAX_CONCURRENT_CALLS} calls, or empty for one at a time`}
+      disabled={disabled}
+      onSave={onSave}
+    />
   );
 }
 
@@ -467,6 +553,15 @@ function EndpointRow({
                       onSave={(maxOutputTokens) =>
                         void act(() =>
                           api.setLlmModelSettings(e.name, m.modelId, { maxOutputTokens }),
+                        )
+                      }
+                    />
+                    <ParallelCalls
+                      model={m}
+                      disabled={busy}
+                      onSave={(maxConcurrentCalls) =>
+                        void act(() =>
+                          api.setLlmModelSettings(e.name, m.modelId, { maxConcurrentCalls }),
                         )
                       }
                     />

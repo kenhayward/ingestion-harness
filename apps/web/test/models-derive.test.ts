@@ -8,6 +8,7 @@ const model = (modelId: string, over: Partial<LlmModelView> = {}): LlmModelView 
   curated: true,
   enabled: true,
   maxOutputTokens: null,
+  maxConcurrentCalls: null,
   ...over,
 });
 

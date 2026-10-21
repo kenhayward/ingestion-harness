@@ -4520,13 +4520,13 @@ button.endpoint-toggle {
   flex: 1 1 200px;
   min-width: 0;
 }
-.output-limit {
+.model-setting {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: var(--ih-text-sm);
 }
-.output-limit input {
+.model-setting input {
   width: 76px;
   min-height: 30px;
   padding: 0 8px;
@@ -4534,12 +4534,12 @@ button.endpoint-toggle {
   appearance: textfield;
 }
 /* No spinners: in 76 px they would hide the number. */
-.output-limit input::-webkit-inner-spin-button,
-.output-limit input::-webkit-outer-spin-button {
+.model-setting input::-webkit-inner-spin-button,
+.model-setting input::-webkit-outer-spin-button {
   margin: 0;
   appearance: none;
 }
-.output-limit button {
+.model-setting button {
   min-height: 30px;
   padding: 0 10px;
 }
