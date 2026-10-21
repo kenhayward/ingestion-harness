@@ -494,6 +494,7 @@ Task: propose the template's outputs from the survey, the brief and the samples.
     description tells an extractor exactly what to copy.
   - putTable: repeating rows. columns use the same keys as a field; columns is null for fields.
   - removeOutput: drop an output the current draft has that the brief does not want.
+- When the document repeats tables of the same shape (per study, batch or item), propose one table per shape with columns telling the blocks apart, not one table per printed block.
 - Keep outputs the current draft already has unless the brief or survey says otherwise;
   proposing an existing id replaces it.
 - Use null for keys that do not apply. reason: one sentence citing the brief or a sample.
@@ -543,6 +544,7 @@ Task: propose the extraction pipeline that fills every output in the current dra
   covers a repeated block (the same tables per batch, item or site), a table step reading it
   returns rows from every block and fills each row's identifying columns from that block's
   heading or table caption: say so in its instructions.
+- A table step reading a repeating section runs once per occurrence. Never write several steps that each want one occurrence of the same repeating section: one step per section, and one repeating section per kind of block.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in pipeline order; context may only use outputs filled by earlier steps. A putStep
