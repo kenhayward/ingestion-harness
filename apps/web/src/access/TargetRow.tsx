@@ -190,7 +190,11 @@ export function TargetRow({
           )}
           <label>
             Label
-            <input value={label} readOnly={gone} onChange={(ev) => setLabel(ev.target.value)} />
+            <input
+              value={label}
+              readOnly={gone || otherSink}
+              onChange={(ev) => setLabel(ev.target.value)}
+            />
           </label>
           {otherSink ? (
             <ul className="muted mono">
@@ -299,11 +303,11 @@ export function TargetRow({
             <button
               type="submit"
               className="primary"
-              disabled={busy || gone || !dirty || !label.trim()}
+              disabled={busy || gone || otherSink || !dirty || !label.trim()}
             >
               Save
             </button>
-            <button type="button" disabled={busy} onClick={() => void test()}>
+            <button type="button" disabled={busy || gone || otherSink} onClick={() => void test()}>
               Test connection
             </button>
             {t.id !== 'default' && !tripleStore && !confirmRemove && (
