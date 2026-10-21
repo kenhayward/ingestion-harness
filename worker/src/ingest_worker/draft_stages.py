@@ -457,12 +457,15 @@ def fit_filters(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
     dropped: list[str] = []
     for c in body["changes"]:
         step = c.get("step") if c["op"] == "putStep" else None
-        if step and step.get("occurrences"):
-            if not any(sections.get(i, {}).get("repeat") for i in step.get("sections") or []):
-                dropped.append(
-                    f"Ignored occurrenceMatch on {step['id']!r}: it reads no repeating section."
-                )
-                c = {**c, "step": {k: v for k, v in step.items() if k != "occurrences"}}
+        if (
+            step
+            and step.get("occurrences")
+            and not any(sections.get(i, {}).get("repeat") for i in step.get("sections") or [])
+        ):
+            dropped.append(
+                f"Ignored occurrenceMatch on {step['id']!r}: it reads no repeating section."
+            )
+            c = {**c, "step": {k: v for k, v in step.items() if k != "occurrences"}}
         changes.append(c)
     if not dropped:
         return body

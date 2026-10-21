@@ -836,18 +836,25 @@ def test_stage_guidance() -> None:
         "one table per shape with columns telling the blocks apart, not one table per printed "
         "block."
     ) in " ".join(OUTPUTS.instructions.split())
+    # The steps stage cannot add sections, so it filters occurrences instead (plan 2026-10-21).
+    steps = " ".join(STEPS.instructions.split())
     assert (
-        "A table step reading a repeating section runs once per occurrence and fills its table "
-        "from every occurrence. Never write several steps that each want a different occurrence "
-        "of the same repeating section: give each kind of block its own repeating section."
-    ) in " ".join(STEPS.instructions.split())
+        "When several table steps read one repeating section and each wants a different kind of "
+        "block (the heading names the test, form or product), set occurrenceMatch on each"
+    ) in steps
+    assert "give each kind of block its own repeating section" not in steps
+    assert (
+        "A step reading a repeating section already makes one call per occurrence: leave it null "
+        "there unless one occurrence runs to many pages."
+    ) in steps
 
 
 def test_revise_instructions_explain_run_diagnostics() -> None:
     assert (
         "- run_diagnostics are what the dev test runs of this draft showed: steps whose occurrence "
-        "calls mostly returned no rows (give each kind of block its own repeating section, or "
-        "narrow the anchor), columns whose values did not fit (each with a message and examples: "
+        "calls mostly returned no rows (set occurrenceMatch on the steps reading that section so "
+        "each reads only its kind of block, give each kind its own repeating section, or narrow "
+        "the anchor), columns whose values did not fit (each with a message and examples: "
         "fix the column's description or constraint, and make it text only when the values "
         "really are not of that type), and headings no anchor matched (fix the anchor, or narrow "
         "the key when those headings are blocks the recipe does not read). Address them where "
