@@ -2452,6 +2452,15 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "fields": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
                           }
                         },
                         "required": [
@@ -2459,7 +2468,8 @@
                           "name",
                           "sinkId",
                           "status",
-                          "statusReason"
+                          "statusReason",
+                          "fields"
                         ],
                         "additionalProperties": false
                       }

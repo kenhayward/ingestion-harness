@@ -22,6 +22,21 @@ const Query = z.strictObject({ kind: z.enum(['shared', 'personal']).optional() }
 export const connectionRoutes: FastifyPluginAsync = async (app) => {
   const tags = ['Connections'];
 
+  /** A connection's stored values for its sink's non-secret fields only: never a secret. */
+  const publicFields = async (
+    sinkId: string,
+    fields: Record<string, string>,
+  ): Promise<Record<string, string>> => {
+    const describe = await app.deps.sinks
+      .get(sinkId)
+      ?.describe()
+      .catch(() => null);
+    const ids = new Set(
+      (describe?.credentialFields ?? []).filter((f) => !f.secret).map((f) => f.id),
+    );
+    return Object.fromEntries(Object.entries(fields).filter(([k]) => ids.has(k)));
+  };
+
   app.get(
     '/v1/connections',
     {
@@ -43,13 +58,17 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
       const listed = await app.deps.connections.list(
         query.data.kind ? { kind: query.data.kind } : {},
       );
-      const connections: ConnectionSummary[] = listed.map((c) => ({
-        id: c.id,
-        name: c.name,
-        sinkId: c.sinkId,
-        status: c.status,
-        statusReason: c.statusReason,
-      }));
+      const connections: ConnectionSummary[] = [];
+      for (const c of listed) {
+        connections.push({
+          id: c.id,
+          name: c.name,
+          sinkId: c.sinkId,
+          status: c.status,
+          statusReason: c.statusReason,
+          fields: await publicFields(c.sinkId, c.fields),
+        });
+      }
       return { connections };
     },
   );

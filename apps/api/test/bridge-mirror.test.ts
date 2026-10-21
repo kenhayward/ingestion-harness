@@ -271,6 +271,7 @@ describe('the triple store target on the bridge', () => {
       sinkId: 'rdf',
       status: 'ok',
       statusReason: null,
+      fields: {},
     });
     await mirrorTargets({ targets, bridge, log });
     expect(bridge.connections.has('rdf-default')).toBe(false);

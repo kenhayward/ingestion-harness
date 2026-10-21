@@ -58,6 +58,7 @@ async function setup(withKeys = true) {
     sinkId: 's3',
     status: 'ok',
     statusReason: null,
+    fields: {},
   });
   const call = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) =>
     ctx.app.inject({ method, url: `/api${url}`, ...(payload ? { payload } : {}) });
@@ -401,6 +402,7 @@ describe('PATCH /api/publish-targets/:id', () => {
       sinkId: 's3',
       status: 'ok',
       statusReason: null,
+      fields: {},
     });
     const same = await c.call('PATCH', '/publish-targets/finance-lake', {
       bucket: 'finance-other',
@@ -842,6 +844,7 @@ describe('the triple store target (rdf-default, from RDF_ENDPOINT)', () => {
       sinkId: 'rdf',
       status: 'ok',
       statusReason: null,
+      fields: {},
     });
     const targets = (await c.call('GET', '/publish-targets')).json().targets as PublishTargetView[];
     expect(targets.find((t) => t.id === 'rdf-default')).toMatchObject({

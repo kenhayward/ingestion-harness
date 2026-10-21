@@ -23,7 +23,14 @@ export class FakeBridgeApi implements BridgeApi {
   readonly connections = new Map<string, SharedConnection>();
   /** Connection summaries listConnections answers (the internal one by default). */
   summaries: ConnectionSummary[] = [
-    { id: 'internal', name: 'This deployment', sinkId: 's3', status: 'ok', statusReason: null },
+    {
+      id: 'internal',
+      name: 'This deployment',
+      sinkId: 's3',
+      status: 'ok',
+      statusReason: null,
+      fields: {},
+    },
   ];
   /** Objects by target id, then `bucket/key`. */
   readonly objects = new Map<string, Map<string, Buffer>>();
