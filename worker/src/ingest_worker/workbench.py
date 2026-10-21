@@ -38,6 +38,8 @@ from .segment import (
     key_issues,
     missed_keys,
     missed_payload,
+    repeated_keys,
+    repeated_payload,
     section_spans,
     select_copy,
 )
@@ -198,7 +200,8 @@ def segment_samples(
     anchorErrors and skipped; they never fail the preview (an invalid key, under "<id>.key", is
     dropped: its section still segments, without keys). The grid also carries `suggestions`
     (anchor_hints) for required sections that miss a sample, every occurrence of a repeating
-    section, how often a plain section's anchor matches, and each sample's key issues."""
+    section, how often a plain section's anchor matches, each sample's key issues, the keys no
+    anchor caught (`missedKeys`) and the keys an anchor caught more than once (`repeatedKeys`)."""
     anchor_errors: dict[str, str] = {}
     keyed: list[Section] = []
     for section in document.sections:
@@ -304,6 +307,7 @@ def segment_samples(
         }
         missed = missed_keys(text, valid, spans)
         row.update(missed_payload(missed))
+        row.update(repeated_payload(repeated_keys(spans)))
         rows.append(row)
         for section in valid:
             if section.required and section.id in unmatched:

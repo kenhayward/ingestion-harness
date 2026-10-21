@@ -139,3 +139,75 @@ def test_label_variants_are_lower_case_single_spaced_and_unique() -> None:
             assert label == " ".join(label.lower().split())
             assert label not in seen, label
             seen.add(label)
+
+
+NBSP = " (U+00A0) where the anchor has a plain space."
+
+
+@pytest.mark.parametrize(
+    ("name", "anchor", "text", "expected"),
+    [
+        (
+            "a numbered heading with a no-break space after the word",
+            r"^Table \d+:[ \t]{2,}",
+            "Contents\nTable\xa013:      Study-201581 - Batch 95021\nrows\n",
+            (
+                r"^Table\s\d+:[ \u00a0\t]{2,}",
+                'This sample writes "Table 13:      Study-201581 - Batch 95021" with a no-break space'
+                + NBSP,
+            ),
+        ),
+        (
+            "the gap in a character class is the no-break one",
+            r"^Table\s+\d+:[ \t]{2,}Study",
+            "Table 1:\xa0\xa0Study A\n",
+            (
+                r"^Table\s+\d+:[ \u00a0\t]{2,}Study",
+                'This sample writes "Table 1:  Study A" with a no-break space' + NBSP,
+            ),
+        ),
+        (
+            "an escaped space",
+            r"^Total\ due",
+            "Total\xa0due: 5.00\n",
+            (
+                r"^Total\sdue",
+                'This sample writes "Total due: 5.00" with a no-break space' + NBSP,
+            ),
+        ),
+        (
+            "a narrow no-break space is named",
+            r"^Total due",
+            "Total\u202fdue: 5.00\n",
+            (
+                r"^Total\sdue",
+                'This sample writes "Total due: 5.00" with a narrow no-break space (U+202F) where '
+                "the anchor has a plain space.",
+            ),
+        ),
+        (
+            "a readable label anchor is not reported as indented",
+            r"^Invoice No\b",
+            "Invoice\xa0No 12\n",
+            (
+                r"^Invoice\sNo\b",
+                'This sample writes "Invoice No 12" with a no-break space' + NBSP,
+            ),
+        ),
+        (
+            "a space escaped inside a class stays one character",
+            r"^A[\ \t]B",
+            "A\xa0B\n",
+            (r"^A[\ \u00a0\t]B", 'This sample writes "A B" with a no-break space' + NBSP),
+        ),
+        ("a class with backslash-s already takes any space", r"^A[\s-]B", "A\xa0B\n", None),
+        ("no-break spaces are not why it misses", r"^Table \d+: Study", "Table\xa01: Data\n", None),
+        ("an anchor that already matches", r"^Table \d+", "Table 1\nTable\xa02\n", None),
+        ("verbose patterns ignore spaces", r"(?x)^Table \d+", "Table\xa01\n", None),
+        ("an anchor without a space", r"^Table\d+", "Table\xa01\n", None),
+    ],
+)
+def test_suggest_anchor_for_unicode_spaces(
+    name: str, anchor: str, text: str, expected: tuple[str, str] | None
+) -> None:
+    assert suggest_anchor(anchor, text) == expected
