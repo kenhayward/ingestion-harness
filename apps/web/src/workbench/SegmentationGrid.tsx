@@ -104,6 +104,9 @@ export function SegmentationGrid({
               const keyIssues = row.keyIssues ?? [];
               const missedText = missedKeysText(row);
               const firstMissed = row.missedKeys?.[0];
+              const missedSections = [
+                ...new Set((row.missedKeys ?? []).flatMap((m) => m.sections)),
+              ];
               return (
                 <Fragment key={row.sampleId}>
                   <tr aria-label={name}>
@@ -196,14 +199,14 @@ export function SegmentationGrid({
                       </td>
                     </tr>
                   )}
-                  {missedText && firstMissed && (
+                  {missedText && (
                     <tr className="seg-key-issues">
                       <td colSpan={Math.max(1, sections.length) + 1}>
                         <div role="note" aria-label={`Missed headings in ${name}`}>
                           <p className="tone-text-warn">
                             {missedText}
                             {' · '}
-                            {firstMissed.sections.map((id) => (
+                            {missedSections.map((id) => (
                               <SectionChip
                                 key={id}
                                 id={id}
@@ -211,7 +214,7 @@ export function SegmentationGrid({
                               />
                             ))}
                           </p>
-                          <small className="muted">{firstMissed.line}</small>
+                          <small className="muted">{firstMissed?.line}</small>
                         </div>
                       </td>
                     </tr>

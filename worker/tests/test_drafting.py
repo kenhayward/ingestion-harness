@@ -818,7 +818,9 @@ def test_anchor_check_feeds_back_missed_keys() -> None:
     assert miss.startswith(r'sections "result_tables" have key ^\s*Table\s+(\d+):')
     assert "finds keys 2, 4 in a.pdf that no anchor matched" in miss
     assert 'e.g. "Table 2: Study A - Assay and Purity (HDPE"' in miss
+    assert "If these are headings of the kind this section reads, widen the anchor" in miss
     assert "look ahead across them" in miss
+    assert "If they are headings of a kind the recipe does not read, make the key match" in miss
     assert _missed_key_check(r"^\s*Table\s+\d+:") == []
 
 

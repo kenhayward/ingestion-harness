@@ -164,7 +164,9 @@ def missed_keys(text: str, sections: list[Section], spans: list[SectionSpan]) ->
     Sections with their own `key` are judged in groups sharing the exact pattern; a pattern that
     is not line-anchored is skipped (it would flag every number). A candidate is a distinct key
     value found anywhere; it is covered when a span of the group carries it. Returned in document
-    order of each key's last match. A group whose spans cover no key reports nothing.
+    order of each key's last match. A group whose spans cover no key reports nothing. It runs the
+    key pattern over the whole text with `re.finditer`, uncapped in production segmentation (as
+    anchors are); previews run it inside the capped child.
     """
     groups: dict[str, list[str]] = {}
     for section in sections:

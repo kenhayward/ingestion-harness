@@ -437,5 +437,5 @@ def test_grid_omits_missed_keys_when_covered() -> None:
 def test_grid_caps_missed_keys() -> None:
     page = "Table 0: ok Results\n" + "".join(f"Table {n}: wrapped (\n" for n in range(1, 26))
     row = segment_samples([("s1", [page])], tables_doc())["samples"][0]
-    assert len(row["missedKeys"]) == 20
+    assert [m["key"] for m in row["missedKeys"]] == [str(n) for n in range(1, 21)]
     assert row["missedKeysTotal"] == 25

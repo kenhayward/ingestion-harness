@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from ingest_worker.segment import MAX_MISSED_KEYS, MissedKey, missed_keys, section_spans
+from ingest_worker.segment import (
+    MAX_MISSED_KEYS,
+    MissedKey,
+    SectionSpan,
+    missed_keys,
+    section_spans,
+)
 from ingest_worker.specs import Section
 
 ANCHOR = r"^\s*Table\s+\d+:\s.*Results\s*$"
@@ -22,7 +28,7 @@ def _body(*titles: str) -> str:
     return CONTENTS + "\f\n" + "\n".join(f"{t}\nrow data\n" for t in titles)
 
 
-def _spans(text: str, sections: list[Section]):  # type: ignore[no-untyped-def]
+def _spans(text: str, sections: list[Section]) -> list[SectionSpan]:
     return section_spans(text, sections)[0]
 
 
@@ -45,7 +51,7 @@ def test_wrapped_titles_are_missed() -> None:
     ]
 
 
-def _kinds(text: str) -> list[Section]:
+def _kinds() -> list[Section]:
     return [
         Section(id="kind_a", anchor=r"^Table \d+: A\b", repeat=True, key=r"^Table (\d+):"),
         Section(id="kind_b", anchor=r"^Table \d+: B\b", repeat=True, key=r"^Table (\d+):"),
@@ -54,7 +60,7 @@ def _kinds(text: str) -> list[Section]:
 
 def test_shared_key_pattern_is_one_group() -> None:
     text = "Table 1: A one\nx\nTable 2: B two\nx\nTable 3: A three\nx\nTable 4: B four\n"
-    sections = _kinds(text)
+    sections = _kinds()
     assert missed_keys(text, sections, _spans(text, sections)) == []
     broken = text.replace("Table 4: B four", "Table 4: C four")
     assert missed_keys(broken, sections, _spans(broken, sections)) == [
@@ -62,13 +68,12 @@ def test_shared_key_pattern_is_one_group() -> None:
     ]
 
 
-def test_listed_only_in_contents_is_missed() -> None:
+def test_table_3_listed_only_in_contents_is_missed() -> None:
     text = _body("Table 1: Study A - Results", "Table 2: Study A - Results")
     sections = [Section(id="t", anchor=ANCHOR, repeat=True, key=KEY)]
     spans = _spans(text, sections)
     keys = [m.key for m in missed_keys(text, sections, spans)]
     assert keys == ["3"]
-    assert "5" not in keys
 
 
 def test_unanchored_key_is_skipped() -> None:
