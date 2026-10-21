@@ -1,3 +1,4 @@
+import type { TargetPutRequest } from '@ih/bridge-contract';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   DEFAULT_TARGET_ID,
@@ -18,9 +19,15 @@ import {
 } from '@ih/shared';
 import { z } from 'zod';
 import { BridgeApiError } from '../bridge/client.js';
-import { destinationOf, INTERNAL_CONNECTION_ID, mirrorOf } from '../bridge/mirror.js';
 import { error, md, noContent, res } from '../openapi/zod.js';
-import type { NewTarget, TargetPatch, TargetRecord } from '../publish-targets/repo.js';
+import {
+  INTERNAL_CONNECTION_ID,
+  S3_SINK_ID,
+  s3Destination,
+  s3OptionsOf,
+  s3PlaceOf,
+} from '../publish-targets/place.js';
+import type { TargetRecord } from '../publish-targets/repo.js';
 
 const ADMINS_ONLY = error('`admins only`.');
 const NOT_FOUND_MESSAGE = 'publishing target not found';
@@ -79,12 +86,60 @@ function ownBucketProblem(
   return which ? `${target.bucket} is CT Studio's own ${which} bucket: pick another` : null;
 }
 
+/** An S3 target's settings as an admin edits them (its destination, read or about to be written). */
+interface Settings {
+  label: string;
+  kind: 'internal' | 'external';
+  bucket: string;
+  prefix: string;
+  layout: 'files' | 'package';
+  connectionId: string | null;
+  sse: 'none' | 'AES256' | 'aws:kms';
+  kmsKeyId: string | null;
+  storageClass: string | null;
+}
+
+/** A cached S3 target's settings; null for the triple store and other sinks. */
+function settingsOf(r: TargetRecord): Settings | null {
+  const place = s3PlaceOf(r);
+  const options = s3OptionsOf(r);
+  if (!place || !options || (r.kind !== 'internal' && r.kind !== 'external')) return null;
+  return {
+    label: r.label,
+    kind: r.kind,
+    ...place,
+    connectionId: r.kind === 'internal' ? null : r.connectionId,
+    ...options,
+  };
+}
+
+/** What the bridge is sent for these settings: internal targets use the built-in connection. */
+function putOf(s: Settings): TargetPutRequest {
+  return {
+    label: s.label,
+    sinkId: S3_SINK_ID,
+    instanceId: null,
+    connectionId: s.kind === 'internal' ? INTERNAL_CONNECTION_ID : s.connectionId,
+    destination: s3Destination(s),
+  };
+}
+
+/** A cached target written back to the bridge as it is (bar what `over` changes). */
+const putOfRecord = (r: TargetRecord, over: Partial<TargetPutRequest> = {}): TargetPutRequest => ({
+  label: r.label,
+  sinkId: r.sinkId,
+  instanceId: r.instanceId,
+  connectionId: r.connectionId,
+  destination: r.destination,
+  ...over,
+});
+
 /**
  * The stored settings overlaid with a patch, in create-body shape: `null` clears a field, and
  * the KMS key goes whenever the resulting encryption is not KMS (unless the patch names one,
  * which the create rules then refuse).
  */
-function overlay(stored: TargetRecord, patch: Record<string, unknown>): Record<string, unknown> {
+function overlay(stored: Settings, patch: Record<string, unknown>): Record<string, unknown> {
   const shape: Record<string, unknown> = { ...createShape(stored) };
   for (const [k, v] of Object.entries(patch)) {
     if (v === null) delete shape[k];
@@ -95,7 +150,7 @@ function overlay(stored: TargetRecord, patch: Record<string, unknown>): Record<s
 }
 
 /** The stored settings in create-body shape, so an overlay can be checked with the create rules. */
-function createShape(t: TargetRecord): Record<string, unknown> {
+function createShape(t: Settings): Record<string, unknown> {
   const shape: Record<string, unknown> = {
     label: t.label,
     kind: t.kind,
@@ -113,39 +168,23 @@ function createShape(t: TargetRecord): Record<string, unknown> {
   };
 }
 
-/** Settings checked with the create rules into a record. */
-function recordOf(
-  id: string,
+/** Settings checked with the create rules. */
+function settingsFrom(
   b: z.infer<typeof TargetCreateBodySchema>,
-  stored: TargetRecord | null,
-): TargetRecord {
+  stored: Settings | null,
+): Settings {
   const external = b.kind === 'external';
   return {
-    id,
     label: b.label,
     kind: b.kind,
     bucket: b.bucket,
     // A stored prefix kept as it is (`default` is seeded verbatim from `.env`); a new one normalised.
     prefix: stored && b.prefix === stored.prefix ? stored.prefix : normalisePrefix(b.prefix),
-    // What a target held before its keys moved to the bridge is left as it was.
-    endpoint: stored?.endpoint ?? null,
-    region: stored?.region ?? null,
-    accessKeyId: stored?.accessKeyId ?? null,
-    secretKeyEnc: stored?.secretKeyEnc ?? null,
-    accessKeyEnv: stored?.accessKeyEnv ?? null,
-    secretKeyEnv: stored?.secretKeyEnv ?? null,
-    forcePathStyle: stored?.forcePathStyle ?? false,
+    layout: b.layout,
     connectionId: external ? (b.connectionId ?? null) : null,
-    movedToBridgeAt: stored?.movedToBridgeAt ?? null,
     sse: external ? b.sse : 'none',
     kmsKeyId: external ? (b.kmsKeyId ?? null) : null,
     storageClass: external ? (b.storageClass ?? null) : null,
-    layout: b.layout,
-    source: stored?.source ?? 'ui',
-    seededAt: stored?.seededAt ?? null,
-    editedAt: stored?.editedAt ?? null,
-    updatedBy: stored?.updatedBy ?? null,
-    createdAt: stored?.createdAt ?? new Date().toISOString(),
   };
 }
 
@@ -163,7 +202,7 @@ function bridgeFailure(reply: FastifyReply, err: unknown): FastifyReply {
  * access hook has already required a session (`deps.access === null` disables both in unit
  * tests). No credential is accepted or returned: an external target names a shared connection
  * of the delivery bridge, whose keys are managed on the bridge's connections page. Every write
- * is mirrored to the bridge.
+ * goes to the bridge first; the cache then takes the bridge's answer.
  */
 export async function publishTargetRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -201,17 +240,23 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   const by = (req: FastifyRequest) => req.auth?.label ?? null;
   /** Creates an internal target's bucket; the error message, else null. */
-  const bucketProblem = async (target: TargetRecord): Promise<string | null> => {
+  const bucketProblem = async (target: Settings): Promise<string | null> => {
     if (target.kind !== 'internal') return null;
     try {
-      await stores.ensureBucket(target);
+      await stores.ensureBucket({
+        kind: target.kind,
+        sinkId: S3_SINK_ID,
+        destination: s3Destination(target),
+      });
       return null;
     } catch (err) {
       return `could not create bucket ${target.bucket}: ${(err as Error).message}`;
     }
   };
-  /** The bridge's shared S3 connections by id; empty when it cannot be reached. */
-  const connections = async (): Promise<Map<string, TargetConnection>> => {
+  /** The bridge's shared S3 and triple store connections by id; empty when it cannot be reached. */
+  const connections = async (): Promise<
+    Map<string, { connection: TargetConnection; fields: Record<string, string> }>
+  > => {
     try {
       const listed = await bridge.listConnections('shared');
       return new Map(
@@ -220,7 +265,15 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           .filter((c) => c.sinkId === 's3' || c.sinkId === 'rdf')
           .map((c) => [
             c.id,
-            { id: c.id, name: c.name, status: c.status, statusReason: c.statusReason },
+            {
+              connection: {
+                id: c.id,
+                name: c.name,
+                status: c.status,
+                statusReason: c.statusReason,
+              },
+              fields: c.fields,
+            },
           ]),
       );
     } catch (err) {
@@ -228,14 +281,28 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       return new Map();
     }
   };
+  /**
+   * The views with their connections as the bridge describes them; the triple store's endpoint
+   * is its connection's (null when the bridge cannot say).
+   */
   const withConnections = async (views: PublishTargetView[]): Promise<PublishTargetView[]> => {
     if (!views.some((v) => v.connectionId)) return views;
     const known = await connections();
-    return views.map((v) => ({
-      ...v,
-      connection: v.connectionId ? (known.get(v.connectionId) ?? null) : null,
-    }));
+    return views.map((v) => {
+      const found = v.connectionId ? known.get(v.connectionId) : undefined;
+      return {
+        ...v,
+        connection: found?.connection ?? null,
+        endpoint: v.kind === 'rdf' ? (found?.fields.endpoint ?? null) : v.endpoint,
+      };
+    });
   };
+  /** One target's view as the list shows it (after a write). */
+  const viewOf = async (id: string): Promise<PublishTargetView | undefined> =>
+    (await withConnections((await repo.list()).filter((v) => v.id === id)))[0];
+  /** Every id the cache holds, inert ones too: an inert id stays taken. */
+  const taken = async (): Promise<Set<string>> =>
+    new Set((await repo.cachedIds()).map((c) => c.id));
 
   app.get(
     '/publish-targets',
@@ -337,51 +404,29 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const b = body.data;
       if (b.id === DEFAULT_TARGET_ID) return reply.code(400).send({ error: 'default is reserved' });
       let id = b.id;
+      const ids = await taken();
       if (id === undefined) {
-        const taken = new Set((await repo.list()).map((t) => t.id));
         const stem = publishTargetIdFrom(b.label);
         id = stem;
-        for (let n = 2; taken.has(id); n++) id = `${stem}-${n}`;
-      } else if (await repo.get(id)) {
+        for (let n = 2; ids.has(id); n++) id = `${stem}-${n}`;
+      } else if (ids.has(id)) {
         return reply.code(409).send({ error: `a publishing target ${id} already exists` });
       }
-      const record = recordOf(id, b, null);
-      const own = ownBucketProblem(record, app.deps);
+      const settings = settingsFrom(b, null);
+      const own = ownBucketProblem(settings, app.deps);
       if (own) return reply.code(400).send({ error: own });
-      const problem = await bucketProblem(record);
+      const problem = await bucketProblem(settings);
       if (problem) return reply.code(502).send({ error: problem });
-      const input: NewTarget = {
-        id,
-        label: record.label,
-        kind: b.kind,
-        bucket: record.bucket,
-        prefix: record.prefix,
-        endpoint: null,
-        region: null,
-        accessKeyId: null,
-        secretKeyEnc: null,
-        accessKeyEnv: null,
-        secretKeyEnv: null,
-        forcePathStyle: false,
-        sse: record.sse,
-        kmsKeyId: record.kmsKeyId,
-        storageClass: record.storageClass,
-        layout: record.layout,
-        connectionId: record.connectionId,
-      };
-      const created = await repo.create(input, by(req));
-      if (created === 'exists') {
-        return reply.code(409).send({ error: `a publishing target ${id} already exists` });
-      }
+      let view;
       try {
-        await bridge.putTarget(id, mirrorOf((await repo.get(id))!));
+        // The bridge first: a target it refuses is not kept here either.
+        view = await bridge.putTarget(id, putOf(settings));
       } catch (err) {
-        // One unit with the bridge: a target it refuses is not kept here either.
-        await repo.remove(id);
         return bridgeFailure(reply, err);
       }
-      req.log.info({ target: id, kind: input.kind }, 'publishing target added');
-      return reply.code(201).send((await withConnections([created]))[0]);
+      await repo.cache(view, { source: 'ui', by: by(req) });
+      req.log.info({ target: id, kind: settings.kind }, 'publishing target added');
+      return reply.code(201).send(await viewOf(id));
     },
   );
 
@@ -395,16 +440,15 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (Object.keys(patch).some((k) => k !== 'label') || patch.label === undefined) {
       return reply.code(400).send({ error: 'the triple store target takes a label only' });
     }
-    const updated = await repo.update(stored.id, { label: patch.label }, by(req));
-    if (!updated) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
+    let view;
     try {
-      await bridge.putTarget(stored.id, mirrorOf((await repo.get(stored.id))!));
+      view = await bridge.putTarget(stored.id, putOfRecord(stored, { label: patch.label }));
     } catch (err) {
-      await repo.update(stored.id, { label: stored.label }, stored.updatedBy);
       return bridgeFailure(reply, err);
     }
+    await repo.cache(view, { by: by(req) });
     req.log.info({ target: stored.id }, 'triple store target renamed');
-    return (await withConnections([updated]))[0];
+    return viewOf(stored.id);
   };
 
   app.patch<{ Params: { id: string } }>(
@@ -450,15 +494,19 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (!stored) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
       if (stored.kind === 'rdf') return patchTripleStore(stored, patch, req, reply);
 
-      const merged = TargetCreateBodySchema.safeParse(overlay(stored, patch));
+      const current = settingsOf(stored);
+      if (!current) {
+        return reply.code(400).send({ error: `${stored.label} is not an S3 target` });
+      }
+      const merged = TargetCreateBodySchema.safeParse(overlay(current, patch));
       if (!merged.success) return reply.code(400).send({ error: issuesOf(merged.error) });
-      const next = recordOf(stored.id, merged.data, stored);
+      const next = settingsFrom(merged.data, current);
       if (patch.bucket !== undefined) {
         const own = ownBucketProblem(next, app.deps);
         if (own) return reply.code(400).send({ error: own });
       }
 
-      const changed = LOCKED.filter((k) => patch[k] !== undefined && next[k] !== stored[k]);
+      const changed = LOCKED.filter((k) => patch[k] !== undefined && next[k] !== current[k]);
       if (changed.length > 0) {
         const usage = await repo.usage(stored.id);
         if (targetInUse(usage)) {
@@ -467,37 +515,22 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           });
         }
       }
-      if (next.bucket !== stored.bucket) {
+      if (next.bucket !== current.bucket) {
         const problem = await bucketProblem(next);
         if (problem) return reply.code(502).send({ error: problem });
       }
 
-      const update: TargetPatch = {};
-      if (patch.label !== undefined) update.label = next.label;
-      if (patch.bucket !== undefined) update.bucket = next.bucket;
-      if (patch.prefix !== undefined) update.prefix = next.prefix;
-      if (patch.connectionId !== undefined) update.connectionId = next.connectionId;
-      if (patch.sse !== undefined) update.sse = next.sse;
-      if (patch.kmsKeyId !== undefined || next.kmsKeyId !== stored.kmsKeyId) {
-        update.kmsKeyId = next.kmsKeyId;
-      }
-      if (patch.storageClass !== undefined) update.storageClass = next.storageClass;
-      if (patch.layout !== undefined) update.layout = next.layout;
-      const updated = await repo.update(stored.id, update, by(req));
-      if (!updated) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
+      let view;
       try {
-        await bridge.putTarget(stored.id, mirrorOf((await repo.get(stored.id))!));
+        // The bridge first: a change it refuses leaves the target as it was.
+        view = await bridge.putTarget(stored.id, putOf(next));
       } catch (err) {
-        // One unit with the bridge: the row goes back to what it was.
-        const previous: TargetPatch = {};
-        for (const k of Object.keys(update) as (keyof TargetPatch)[]) {
-          (previous as Record<string, unknown>)[k] = stored[k as keyof TargetRecord];
-        }
-        await repo.update(stored.id, previous, stored.updatedBy);
         return bridgeFailure(reply, err);
       }
-      req.log.info({ target: stored.id, fields: Object.keys(update) }, 'publishing target changed');
-      return (await withConnections([updated]))[0];
+      await repo.cache(view, { by: by(req) });
+      const fields = Object.keys(patch).filter((k) => patch[k as keyof typeof patch] !== undefined);
+      req.log.info({ target: stored.id, fields }, 'publishing target changed');
+      return viewOf(stored.id);
     },
   );
 
@@ -553,7 +586,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (outcome === 'missing') return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
       if (outcome === 'in_use') {
         // Used meanwhile: the bridge gets it back, so its deliveries still have a target.
-        await bridge.putTarget(id, mirrorOf(target)).catch(() => undefined);
+        await bridge.putTarget(id, putOfRecord(target)).catch(() => undefined);
         return reply
           .code(409)
           .send({ error: `${target.label} is used by ${usageText(await repo.usage(id))}` });
@@ -599,14 +632,14 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         if (!stored) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
         return bridge.testTarget(stored.id).catch(() => down);
       }
-      const settings = recordOf('test', { label: 'test', ...body.data }, null);
+      const settings = settingsFrom({ label: 'test', ...body.data }, null);
       const own = ownBucketProblem(settings, app.deps);
       if (own) return reply.code(400).send({ error: own });
       return bridge
         .testSettings({
           connectionId:
             settings.kind === 'internal' ? INTERNAL_CONNECTION_ID : settings.connectionId!,
-          destination: destinationOf(settings),
+          destination: s3Destination(settings),
         })
         .catch(() => down);
     },

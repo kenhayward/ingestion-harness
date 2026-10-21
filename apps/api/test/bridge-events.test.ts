@@ -7,6 +7,7 @@ import { reconcileOnce } from '../src/bridge/reconcile.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { FakeBridgeApi } from './fake-bridge.js';
+import { cacheS3 } from './target-views.js';
 import { fakePdf, multipart, testApp, TEST_BRIDGE_KEY } from './helpers.js';
 
 const T0 = new Date('2026-10-20T10:00:00.000Z');
@@ -14,27 +15,13 @@ const T0 = new Date('2026-10-20T10:00:00.000Z');
 async function setup() {
   const repo = new MemoryRepo();
   const targets = new MemoryPublishTargetRepo();
-  await targets.create(
-    {
-      id: 'finance-lake',
-      label: 'Finance lake',
-      kind: 'external',
-      bucket: 'finance',
-      prefix: '',
-      endpoint: null,
-      region: null,
-      accessKeyId: null,
-      secretKeyEnc: null,
-      accessKeyEnv: null,
-      secretKeyEnv: null,
-      forcePathStyle: false,
-      sse: 'none',
-      kmsKeyId: null,
-      storageClass: null,
-      connectionId: 'finance-account',
-    },
-    null,
-  );
+  await cacheS3(targets, {
+    id: 'finance-lake',
+    label: 'Finance lake',
+    bucket: 'finance',
+    prefix: '',
+    connectionId: 'finance-account',
+  });
   const job = await repo.createDocumentAndJob(
     {
       id: randomUUID(),

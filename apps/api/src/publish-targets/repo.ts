@@ -1,42 +1,55 @@
+import type { TargetView } from '@ih/bridge-contract';
 import {
   DEFAULT_TARGET_ID,
-  TRIPLE_STORE_TARGET_ID,
   publishTargetsOf,
   targetInUse,
+  type PublishTargetKind,
   type PublishTargetView,
   type TargetChoice,
-  type TargetLayout,
   type TargetUsage,
 } from '@ih/shared';
-import { seedDifferences, type DefaultSeed, type RdfSeed } from './seed.js';
+import { kindOf, s3OptionsOf, s3PlaceOf } from './place.js';
 
 /**
- * A stored target: the view's fields plus what is never sent out. The credential columns are
- * what a target held before its keys moved to the delivery bridge (they are read once, by the
- * move, and the ciphertext is then dropped); new targets name a bridge connection instead.
+ * A cached target: the bridge's target (it is authoritative for where and how a target
+ * delivers) plus what only CT Studio knows (where it came from, who edited it and when).
  */
-export interface TargetRecord extends Omit<PublishTargetView, 'usage' | 'connection'> {
-  /** S3: an endpoint from before the bridge. The triple store: its URL. */
-  endpoint: string | null;
-  region: string | null;
-  /** S3: a key id from before the bridge. The triple store: its writer's user name (not secret). */
-  accessKeyId: string | null;
-  forcePathStyle: boolean;
-  secretKeyEnc: string | null;
-  accessKeyEnv: string | null;
-  secretKeyEnv: string | null;
-  seededAt: string | null;
-  /** When its keys moved to the bridge (then its ciphertext is gone). */
-  movedToBridgeAt: string | null;
-}
-
-/** What a create stores; the route has made the id and encrypted the secret. */
-export interface NewTarget {
+export interface TargetRecord {
   id: string;
   label: string;
-  kind: 'internal' | 'external';
-  bucket: string;
-  prefix: string;
+  /** Set by the cache writer from the sink and connection (`kindOf`). */
+  kind: PublishTargetKind;
+  sinkId: string;
+  instanceId: string | null;
+  connectionId: string | null;
+  destination: Record<string, string>;
+  /** False when the bridge's list last lacked it. */
+  onBridge: boolean;
+  /** When the cache last took it from the bridge (null: not yet). */
+  syncedAt: string | null;
+  source: 'env' | 'ui';
+  seededAt: string | null;
+  editedAt: string | null;
+  updatedBy: string | null;
+  createdAt: string;
+}
+
+/**
+ * CT Studio's facts a cache write sets; those left out are kept (a new row: `ui`, never seeded,
+ * nobody). `by`: an edit made here (who; `edited_at` is stamped when the row was there already).
+ */
+export interface CacheFacts {
+  source?: 'env' | 'ui';
+  seededAt?: string | null;
+  by?: string | null;
+}
+
+/**
+ * Keys a target held before they moved to the bridge (`publish_target_legacy_keys`): read once,
+ * by the move, then dropped.
+ */
+export interface LegacyKeys {
+  id: string;
   endpoint: string | null;
   region: string | null;
   accessKeyId: string | null;
@@ -44,38 +57,30 @@ export interface NewTarget {
   accessKeyEnv: string | null;
   secretKeyEnv: string | null;
   forcePathStyle: boolean;
-  sse: 'none' | 'AES256' | 'aws:kms';
-  kmsKeyId: string | null;
-  storageClass: string | null;
-  /** `files` when left out. */
-  layout?: TargetLayout;
-  /** The bridge connection an external target delivers with. */
-  connectionId?: string | null;
+  movedToBridgeAt: string | null;
 }
-
-/** Fields left out are kept; `null` clears an optional one. `kind` and `id` never change. */
-export type TargetPatch = Partial<Omit<NewTarget, 'id' | 'kind'>>;
 
 export type SeedOutcome = 'seeded' | 'kept' | 'differs';
 
 export interface PublishTargetRepo {
   list(): Promise<PublishTargetView[]>;
   get(id: string): Promise<TargetRecord | null>;
-  create(input: NewTarget, by: string | null): Promise<PublishTargetView | 'exists'>;
-  update(id: string, patch: TargetPatch, by: string | null): Promise<PublishTargetView | null>;
+  /** Upserts the bridge's view of a target: on the bridge, synced now. Inert rows stay inert. */
+  cache(view: TargetView, facts?: CacheFacts): Promise<TargetRecord>;
+  /** The bridge no longer lists these: kept (the foreign keys), marked not on the bridge. */
+  markMissing(ids: string[]): Promise<void>;
+  /** Every cached id, inert ones too (`live: false`). */
+  cachedIds(): Promise<{ id: string; live: boolean }[]>;
   /** `seeded`: the triple store target, which comes from `.env` and is never removed. */
   remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'>;
   usage(id: string): Promise<TargetUsage>;
-  /** What a recipe's picker offers: the default first, then by label. */
+  /** What a recipe's picker offers (S3 targets): the default first, then by label. */
   choices(): Promise<TargetChoice[]>;
   /** Moves on every write, so readers rebuild their stores. */
   version(): Promise<number>;
-  /** Writes the default from `.env` once (while `seeded_at` is null); never overwrites after. */
-  seedDefault(seed: DefaultSeed): Promise<SeedOutcome>;
-  /** Writes the triple store target from `.env` once; never overwrites after. */
-  seedRdf(seed: RdfSeed): Promise<SeedOutcome>;
-  /** Its keys are now the bridge's connection `connectionId`: the ciphertext is dropped. */
-  markMoved(id: string, connectionId: string): Promise<void>;
+  /** Keys from before the bridge not dropped yet, by id. */
+  legacyKeys(): Promise<LegacyKeys[]>;
+  dropLegacyKeys(id: string): Promise<void>;
   /** The bridge connection a target delivers with (null: none, or no such target). */
   connectionOf(id: string): Promise<string | null>;
 }
@@ -88,21 +93,31 @@ export const EMPTY_USAGE: TargetUsage = {
   pendingJobs: 0,
 };
 
-/** The view of a record: no credential, and the connection as the route finds it on the bridge. */
+/**
+ * The view of a record: an S3 target's place and options read from its destination (null for
+ * other sinks; the triple store's dataset shows as its bucket). The route fills in the
+ * connection as the bridge describes it, and the triple store's endpoint from that connection.
+ */
 export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
+  const place = s3PlaceOf(r);
+  const options = s3OptionsOf(r);
   return {
     id: r.id,
     label: r.label,
     kind: r.kind,
-    bucket: r.bucket,
-    prefix: r.prefix,
-    endpoint: r.kind === 'rdf' ? r.endpoint : null,
-    connectionId: r.connectionId,
+    sinkId: r.sinkId,
+    destination: r.destination,
+    onBridge: r.onBridge,
+    bucket: place?.bucket ?? (r.kind === 'rdf' ? (r.destination.dataset ?? null) : null),
+    prefix: place?.prefix ?? null,
+    endpoint: null,
+    // Internal targets deliver with the bridge's built-in connection, which the kind says.
+    connectionId: r.kind === 'internal' ? null : r.connectionId,
     connection: null,
-    sse: r.sse,
-    kmsKeyId: r.kmsKeyId,
-    storageClass: r.storageClass,
-    layout: r.layout,
+    sse: options?.sse ?? null,
+    kmsKeyId: options?.kmsKeyId ?? null,
+    storageClass: options?.storageClass ?? null,
+    layout: place?.layout ?? null,
     source: r.source,
     editedAt: r.editedAt,
     updatedBy: r.updatedBy,
@@ -111,113 +126,59 @@ export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
   };
 }
 
-export function recordFrom(input: NewTarget, by: string | null, now: Date): TargetRecord {
+/** A record after a cache write of `view` over `current` (null: a new row). */
+export function cached(
+  current: TargetRecord | null,
+  view: TargetView,
+  facts: CacheFacts,
+  now: Date,
+): TargetRecord {
+  const edit = facts.by !== undefined;
   return {
-    ...input,
-    layout: input.layout ?? 'files',
-    source: 'ui',
-    seededAt: null,
-    connectionId: input.connectionId ?? null,
-    movedToBridgeAt: null,
-    editedAt: null,
-    updatedBy: by,
-    createdAt: now.toISOString(),
+    id: view.id,
+    label: view.label,
+    kind: kindOf(view),
+    sinkId: view.sinkId,
+    instanceId: view.instanceId,
+    connectionId: view.connectionId,
+    destination: { ...view.destination },
+    onBridge: true,
+    syncedAt: now.toISOString(),
+    source: facts.source ?? current?.source ?? 'ui',
+    seededAt: facts.seededAt !== undefined ? facts.seededAt : (current?.seededAt ?? null),
+    editedAt: edit && current ? now.toISOString() : (current?.editedAt ?? null),
+    updatedBy: edit ? (facts.by ?? null) : (current?.updatedBy ?? null),
+    createdAt: current?.createdAt ?? now.toISOString(),
   };
 }
 
 /**
- * The record after a patch. Stored credentials replace the environment names they were read
- * from (unless the patch names those too), so a target never has both.
+ * The unseeded default row the migrations leave: the placeholder bucket, no connection, never
+ * synced (the API's seed writes it to the bridge).
  */
-export function patched(
-  r: TargetRecord,
-  patch: TargetPatch,
-  by: string | null,
-  now: Date,
-): TargetRecord {
-  const next: TargetRecord = { ...r };
-  for (const [k, v] of Object.entries(patch)) {
-    if (v !== undefined) (next as unknown as Record<string, unknown>)[k] = v;
-  }
-  if (patch.accessKeyId != null && patch.accessKeyEnv === undefined) next.accessKeyEnv = null;
-  if (patch.secretKeyEnc != null && patch.secretKeyEnv === undefined) next.secretKeyEnv = null;
-  next.editedAt = now.toISOString();
-  next.updatedBy = by;
-  return next;
-}
-
-/** The default as the environment describes it. */
-export function seeded(r: TargetRecord, seed: DefaultSeed, now: Date): TargetRecord {
-  return {
-    ...r,
-    ...seed,
-    source: 'env',
-    seededAt: now.toISOString(),
-    secretKeyEnc: null,
-    accessKeyId: null,
-  };
-}
-
-/** The triple store target as `.env` describes it. */
-export function rdfRecord(seed: RdfSeed, now: Date): TargetRecord {
-  return {
-    id: TRIPLE_STORE_TARGET_ID,
-    label: 'Triple store',
-    kind: 'rdf',
-    bucket: seed.dataset,
-    prefix: '',
-    endpoint: seed.endpoint,
-    region: null,
-    accessKeyId: seed.user,
-    secretKeyEnc: null,
-    accessKeyEnv: null,
-    secretKeyEnv: null,
-    forcePathStyle: false,
-    sse: 'none',
-    kmsKeyId: null,
-    storageClass: null,
-    layout: 'files',
-    source: 'env',
-    seededAt: now.toISOString(),
-    editedAt: null,
-    updatedBy: null,
-    createdAt: now.toISOString(),
-    connectionId: TRIPLE_STORE_TARGET_ID,
-    movedToBridgeAt: null,
-  };
-}
-
-/** Whether the stored triple store target still matches `.env` (it is never overwritten). */
-export function rdfSeedDiffers(r: TargetRecord, seed: RdfSeed): boolean {
-  return r.endpoint !== seed.endpoint || r.bucket !== seed.dataset || r.accessKeyId !== seed.user;
-}
-
-/** The unseeded default row the migration inserts. */
 export function initialDefault(now: Date): TargetRecord {
   return {
     id: DEFAULT_TARGET_ID,
     label: 'Default',
     kind: 'internal',
-    bucket: 'ingest-published',
-    prefix: '',
-    endpoint: null,
-    region: null,
-    accessKeyId: null,
-    secretKeyEnc: null,
-    accessKeyEnv: null,
-    secretKeyEnv: null,
-    forcePathStyle: false,
-    sse: 'none',
-    kmsKeyId: null,
-    storageClass: null,
-    layout: 'files',
+    sinkId: 's3',
+    instanceId: null,
+    connectionId: null,
+    destination: {
+      bucket: 'ingest-published',
+      prefix: '',
+      sse: 'none',
+      kmsKeyId: '',
+      storageClass: '',
+      layout: 'files',
+    },
+    onBridge: true,
+    syncedAt: null,
     source: 'env',
     seededAt: null,
     editedAt: null,
     updatedBy: null,
     createdAt: now.toISOString(),
-    connectionId: null,
-    movedToBridgeAt: null,
   };
 }
 
@@ -227,14 +188,17 @@ export const byDefaultThenLabel = (a: TargetChoice, b: TargetChoice): number =>
 
 /**
  * The target a job reads back from (Results, the zip, read keys, the graph's copy): the first in
- * the recipe's list whose layout is `files`. Undefined when there is none (validation refuses
- * such a recipe).
+ * the recipe's list that is an S3 target with the `files` layout. Undefined when there is none
+ * (validation refuses such a recipe).
  */
 export function primaryTargetOf(
   ids: readonly string[],
-  targets: readonly Pick<TargetRecord, 'id' | 'layout'>[],
+  targets: readonly Pick<TargetRecord, 'id' | 'sinkId' | 'destination'>[],
 ): string | undefined {
-  return ids.find((id) => targets.find((t) => t.id === id)?.layout === 'files');
+  return ids.find((id) => {
+    const t = targets.find((x) => x.id === id);
+    return t !== undefined && s3PlaceOf(t)?.layout === 'files';
+  });
 }
 
 export interface PublishedDefinition {
@@ -256,6 +220,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
   private readonly targets = new Map<string, TargetRecord>();
   /** Ids a copy restore made inert: the row stays (the id is taken), nothing else sees it. */
   private readonly inert = new Set<string>();
+  private readonly legacy = new Map<string, LegacyKeys>();
   private counter = 0;
 
   constructor(
@@ -276,7 +241,9 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
   }
 
   async get(id: string): Promise<TargetRecord | null> {
-    return this.inert.has(id) ? null : (this.targets.get(id) ?? null);
+    if (this.inert.has(id)) return null;
+    const r = this.targets.get(id);
+    return r ? structuredClone(r) : null;
   }
 
   /** What a copy restore does to a dropped external target (`inert_at` in Postgres). */
@@ -286,29 +253,32 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     this.counter += 1;
   }
 
+  /** What the migration leaves in `publish_target_legacy_keys`. */
+  putLegacyKeys(keys: LegacyKeys): void {
+    this.legacy.set(keys.id, structuredClone(keys));
+  }
+
   private live(): TargetRecord[] {
     return [...this.targets.values()].filter((r) => !this.inert.has(r.id));
   }
 
-  async create(input: NewTarget, by: string | null): Promise<PublishTargetView | 'exists'> {
-    if (this.targets.has(input.id)) return 'exists';
-    const r = recordFrom(input, by, new Date());
-    this.targets.set(r.id, r);
+  async cache(view: TargetView, facts: CacheFacts = {}): Promise<TargetRecord> {
+    const next = cached(this.targets.get(view.id) ?? null, view, facts, new Date());
+    this.targets.set(view.id, next);
     this.counter += 1;
-    return toView(r, await this.usage(r.id));
+    return structuredClone(next);
   }
 
-  async update(
-    id: string,
-    patch: TargetPatch,
-    by: string | null,
-  ): Promise<PublishTargetView | null> {
-    const r = await this.get(id);
-    if (!r) return null;
-    const next = patched(r, patch, by, new Date());
-    this.targets.set(id, next);
-    this.counter += 1;
-    return toView(next, await this.usage(id));
+  async markMissing(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      const r = this.targets.get(id);
+      if (r) this.targets.set(id, { ...r, onBridge: false });
+    }
+    if (ids.length) this.counter += 1;
+  }
+
+  async cachedIds(): Promise<{ id: string; live: boolean }[]> {
+    return [...this.targets.keys()].map((id) => ({ id, live: !this.inert.has(id) }));
   }
 
   async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'> {
@@ -318,6 +288,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     if (r.kind === 'rdf') return 'seeded';
     if (targetInUse(await this.usage(id))) return 'in_use';
     this.targets.delete(id);
+    this.legacy.delete(id);
     this.counter += 1;
     return 'deleted';
   }
@@ -337,9 +308,12 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
 
   async choices(): Promise<TargetChoice[]> {
     return this.live()
-      .flatMap(({ id, label, kind, bucket, prefix, layout }) =>
-        kind === 'rdf' ? [] : [{ id, label, kind, bucket, prefix, layout }],
-      )
+      .flatMap((r) => {
+        const place = s3PlaceOf(r);
+        return place && (r.kind === 'internal' || r.kind === 'external')
+          ? [{ id: r.id, label: r.label, kind: r.kind, ...place }]
+          : [];
+      })
       .sort(byDefaultThenLabel);
   }
 
@@ -347,36 +321,14 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     return this.counter;
   }
 
-  async seedDefault(seed: DefaultSeed): Promise<SeedOutcome> {
-    const r = this.targets.get(DEFAULT_TARGET_ID)!;
-    if (r.seededAt === null) {
-      this.targets.set(DEFAULT_TARGET_ID, seeded(r, seed, new Date()));
-      this.counter += 1;
-      return 'seeded';
-    }
-    return seedDifferences(r, seed).length > 0 ? 'differs' : 'kept';
+  async legacyKeys(): Promise<LegacyKeys[]> {
+    return [...this.legacy.values()]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((k) => structuredClone(k));
   }
 
-  async seedRdf(seed: RdfSeed): Promise<SeedOutcome> {
-    const r = this.targets.get(TRIPLE_STORE_TARGET_ID);
-    if (!r) {
-      this.targets.set(TRIPLE_STORE_TARGET_ID, rdfRecord(seed, new Date()));
-      this.counter += 1;
-      return 'seeded';
-    }
-    return rdfSeedDiffers(r, seed) ? 'differs' : 'kept';
-  }
-
-  async markMoved(id: string, connectionId: string): Promise<void> {
-    const r = this.targets.get(id);
-    if (!r) return;
-    this.targets.set(id, {
-      ...r,
-      connectionId,
-      secretKeyEnc: null,
-      movedToBridgeAt: new Date().toISOString(),
-    });
-    this.counter += 1;
+  async dropLegacyKeys(id: string): Promise<void> {
+    this.legacy.delete(id);
   }
 
   async connectionOf(id: string): Promise<string | null> {

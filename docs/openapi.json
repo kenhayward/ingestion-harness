@@ -75765,14 +75765,33 @@
                             "enum": [
                               "internal",
                               "external",
-                              "rdf"
+                              "rdf",
+                              "sink"
                             ]
                           },
-                          "bucket": {
+                          "sinkId": {
                             "type": "string"
                           },
+                          "destination": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "onBridge": {
+                            "type": "boolean"
+                          },
+                          "bucket": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "prefix": {
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "endpoint": {
                             "type": [
@@ -75825,11 +75844,18 @@
                             ]
                           },
                           "sse": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "AES256",
-                              "aws:kms"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "AES256",
+                                  "aws:kms"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
                           },
                           "kmsKeyId": {
@@ -75845,10 +75871,17 @@
                             ]
                           },
                           "layout": {
-                            "type": "string",
-                            "enum": [
-                              "files",
-                              "package"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "files",
+                                  "package"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
                           },
                           "source": {
@@ -75912,6 +75945,9 @@
                           "id",
                           "label",
                           "kind",
+                          "sinkId",
+                          "destination",
+                          "onBridge",
                           "bucket",
                           "prefix",
                           "endpoint",
@@ -76183,14 +76219,33 @@
                       "enum": [
                         "internal",
                         "external",
-                        "rdf"
+                        "rdf",
+                        "sink"
                       ]
                     },
-                    "bucket": {
+                    "sinkId": {
                       "type": "string"
                     },
+                    "destination": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "onBridge": {
+                      "type": "boolean"
+                    },
+                    "bucket": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "prefix": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "endpoint": {
                       "type": [
@@ -76243,11 +76298,18 @@
                       ]
                     },
                     "sse": {
-                      "type": "string",
-                      "enum": [
-                        "none",
-                        "AES256",
-                        "aws:kms"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "AES256",
+                            "aws:kms"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "kmsKeyId": {
@@ -76263,10 +76325,17 @@
                       ]
                     },
                     "layout": {
-                      "type": "string",
-                      "enum": [
-                        "files",
-                        "package"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "files",
+                            "package"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "source": {
@@ -76330,6 +76399,9 @@
                     "id",
                     "label",
                     "kind",
+                    "sinkId",
+                    "destination",
+                    "onBridge",
                     "bucket",
                     "prefix",
                     "endpoint",
@@ -76970,14 +77042,33 @@
                       "enum": [
                         "internal",
                         "external",
-                        "rdf"
+                        "rdf",
+                        "sink"
                       ]
                     },
-                    "bucket": {
+                    "sinkId": {
                       "type": "string"
                     },
+                    "destination": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "onBridge": {
+                      "type": "boolean"
+                    },
+                    "bucket": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "prefix": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "endpoint": {
                       "type": [
@@ -77030,11 +77121,18 @@
                       ]
                     },
                     "sse": {
-                      "type": "string",
-                      "enum": [
-                        "none",
-                        "AES256",
-                        "aws:kms"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "AES256",
+                            "aws:kms"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "kmsKeyId": {
@@ -77050,10 +77148,17 @@
                       ]
                     },
                     "layout": {
-                      "type": "string",
-                      "enum": [
-                        "files",
-                        "package"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "files",
+                            "package"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "source": {
@@ -77117,6 +77222,9 @@
                     "id",
                     "label",
                     "kind",
+                    "sinkId",
+                    "destination",
+                    "onBridge",
                     "bucket",
                     "prefix",
                     "endpoint",

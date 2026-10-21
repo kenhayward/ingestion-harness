@@ -8,6 +8,7 @@ import { createBackup, internalTargetBuckets } from '../src/backup/create.js';
 import { decryptStream } from '../src/backup/crypto.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
+import { cacheS3 } from './target-views.js';
 import { FakeTripleStore, fakeBackupDeps, TEST_MASTER } from './backup-fakes.js';
 
 async function readAll(body: Readable): Promise<Buffer> {
@@ -220,33 +221,20 @@ describe('createBackup', () => {
 describe('internalTargetBuckets', () => {
   it("lists internal targets' buckets once, without inert ones or CT Studio's own", async () => {
     const repo = new MemoryPublishTargetRepo();
-    const base = {
-      kind: 'internal' as const,
-      prefix: '',
-      endpoint: null,
-      region: null,
-      accessKeyId: null,
-      secretKeyEnc: null,
-      accessKeyEnv: null,
-      secretKeyEnv: null,
-      forcePathStyle: true,
-      sse: 'none' as const,
-      kmsKeyId: null,
-      storageClass: null,
-    };
-    await repo.create({ ...base, id: 'lake', label: 'Lake', bucket: 'lake-bucket' }, null);
-    await repo.create({ ...base, id: 'lake-2', label: 'Lake 2', bucket: 'lake-bucket' }, null);
-    await repo.create({ ...base, id: 'gone', label: 'Gone', bucket: 'gone-bucket' }, null);
-    await repo.create(
+    await cacheS3(repo, { id: 'lake', kind: 'internal', bucket: 'lake-bucket' });
+    await cacheS3(repo, { id: 'lake-2', kind: 'internal', bucket: 'lake-bucket' });
+    await cacheS3(repo, { id: 'gone', kind: 'internal', bucket: 'gone-bucket' });
+    await cacheS3(repo, { id: 'aws', kind: 'external', bucket: 'aws-bucket' });
+    await repo.cache(
       {
-        ...base,
-        id: 'aws',
-        label: 'AWS',
-        kind: 'external',
-        bucket: 'aws-bucket',
-        endpoint: 'https://s3.example.com',
+        id: 'box',
+        label: 'Box',
+        sinkId: 'archive-sink',
+        instanceId: null,
+        connectionId: 'internal',
+        destination: { bucket: 'box-bucket' },
       },
-      null,
+      {},
     );
     repo.makeInert('gone');
     expect(await internalTargetBuckets(repo, ['inbox', 'outputs', 'runs', 'backups'])).toEqual([

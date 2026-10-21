@@ -226,7 +226,7 @@ async function replaceTargets(side: pg.ClientBase, staging: TargetRow[]) {
  * secrets are under production's key); a restored bridge target naming a connection this server
  * lacks loses it, so its deliveries fail visibly until an admin picks one; production's
  * unfinished deliveries are failed and its unsent events dropped, so nothing it queued is
- * delivered or reported from here. Restored targets are mirrored again after the swap.
+ * delivered or reported from here. The cache takes the bridge's targets again after the swap.
  */
 async function keepBridge(side: pg.ClientBase, connections: unknown[]): Promise<void> {
   await side.query(

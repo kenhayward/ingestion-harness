@@ -9,6 +9,7 @@ import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { migrate } from '../../src/db/migrate.js';
 import { PgPublishTargetRepo } from '../../src/publish-targets/pg.js';
+import type { LegacyKeys } from '../../src/publish-targets/repo.js';
 import { publishTargetsContract } from '../publish-targets-contract.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
@@ -30,13 +31,16 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
     await pool.query('DELETE FROM templates');
     await pool.query('ALTER TABLE templates ENABLE TRIGGER templates_no_delete');
     await pool.query('DELETE FROM s3_consumers');
+    await pool.query('DELETE FROM publish_target_legacy_keys');
     await pool.query("DELETE FROM publish_targets WHERE id <> 'default'");
+    // The default as the migrations leave it on a fresh database: unseeded, never synced.
     await pool.query(
-      `UPDATE publish_targets SET label = 'Default', kind = 'internal', bucket = 'ingest-published',
-         prefix = '', endpoint = NULL, region = NULL, access_key_id = NULL, secret_key_enc = NULL,
-         access_key_env = NULL, secret_key_env = NULL, force_path_style = false, sse = 'none',
-         kms_key_id = NULL, storage_class = NULL, source = 'env', seeded_at = NULL,
-         edited_at = NULL, updated_by = NULL WHERE id = 'default'`,
+      `UPDATE publish_targets SET label = 'Default', kind = 'internal', sink_id = 's3',
+         instance_id = NULL, connection_id = NULL, on_bridge = true, synced_at = NULL,
+         destination = '{"bucket": "ingest-published", "prefix": "", "sse": "none",
+                         "kmsKeyId": "", "storageClass": "", "layout": "files"}',
+         source = 'env', seeded_at = NULL, edited_at = NULL, updated_by = NULL, inert_at = NULL
+       WHERE id = 'default'`,
     );
     const repo = new PgPublishTargetRepo(pool);
     const p = pool;
@@ -69,6 +73,24 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
           await p.query(
             `INSERT INTO jobs (task, status, params) VALUES ('withdraw', $1::job_status, $2)`,
             [status, JSON.stringify(params)],
+          );
+        },
+        legacyKeys: async (k: LegacyKeys) => {
+          await p.query(
+            `INSERT INTO publish_target_legacy_keys (id, endpoint, region, access_key_id,
+               secret_key_enc, access_key_env, secret_key_env, force_path_style, moved_to_bridge_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              k.id,
+              k.endpoint,
+              k.region,
+              k.accessKeyId,
+              k.secretKeyEnc,
+              k.accessKeyEnv,
+              k.secretKeyEnv,
+              k.forcePathStyle,
+              k.movedToBridgeAt,
+            ],
           );
         },
         inert: async (targetId: string) => {

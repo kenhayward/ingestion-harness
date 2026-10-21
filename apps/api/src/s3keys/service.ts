@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { TargetChoice } from '@ih/shared';
+import { s3PlaceOf } from '../publish-targets/place.js';
 import type { PublishTargetRepo } from '../publish-targets/repo.js';
 import { USER_PREFIX, type Grant, type S3KeyIssuer } from './issuer.js';
 import { z } from 'zod';
@@ -209,10 +210,11 @@ export class S3KeyService {
     const grants: Grant[] = [];
     for (const id of [...new Set(targetIds)].sort()) {
       const target = await this.opts.targets.get(id);
-      if (!target || target.kind !== 'internal') {
+      const place = target?.kind === 'internal' ? s3PlaceOf(target) : null;
+      if (!place) {
         return { problem: `${id} is not an internal publishing target`, status: 400 };
       }
-      grants.push({ bucket: target.bucket, prefix: target.prefix });
+      grants.push({ bucket: place.bucket, prefix: place.prefix });
     }
     return { grants };
   }

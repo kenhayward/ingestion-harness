@@ -46,8 +46,11 @@ export function publishTargetIdFrom(label: string): string {
 /** What an admin can create: S3 targets. */
 export const TARGET_KINDS = ['internal', 'external'] as const;
 export type TargetKind = (typeof TARGET_KINDS)[number];
-/** Every kind a stored target has: S3, or the triple store seeded from `RDF_ENDPOINT`. */
-export const PUBLISH_TARGET_KINDS = ['internal', 'external', 'rdf'] as const;
+/**
+ * Every kind a target has: S3 (`internal` on the bridge's built-in connection, else `external`),
+ * the triple store seeded from `RDF_ENDPOINT`, or a target of any other bridge sink (`sink`).
+ */
+export const PUBLISH_TARGET_KINDS = ['internal', 'external', 'rdf', 'sink'] as const;
 
 /**
  * How an S3 target writes a package: `files`, each rendered file at its key (today's keys), or
@@ -108,19 +111,26 @@ export const PublishTargetViewSchema = z.object({
   id: TargetIdSchema,
   label: z.string(),
   kind: z.enum(PUBLISH_TARGET_KINDS),
-  /** S3: the bucket. The triple store: its dataset. */
-  bucket: z.string(),
-  prefix: z.string(),
-  /** The triple store's URL (S3 targets: null; their endpoint is the connection's). */
+  /** The delivery bridge's sink it delivers through (`s3`, `rdf`, or another). */
+  sinkId: z.string(),
+  /** Where in that sink, as the bridge holds it (the sink's destination fields). */
+  destination: z.record(z.string(), z.string()),
+  /** False when the bridge no longer lists it: its deliveries fail until it is there again. */
+  onBridge: z.boolean(),
+  /** S3: the bucket. The triple store: its dataset. Any other sink: null. */
+  bucket: z.string().nullable(),
+  /** S3 only (others: null), as are the encryption, KMS key, storage class and layout. */
+  prefix: z.string().nullable(),
+  /** The triple store's URL, from its connection (null when unknown; S3 targets: null). */
   endpoint: z.string().nullable(),
-  /** The bridge connection an external target delivers with (internal targets: null). */
+  /** The bridge connection it delivers with (internal targets: null, the built-in one; else null: none yet). */
   connectionId: z.string().nullable(),
   /** That connection as the bridge describes it now; null when there is none, or it is unknown. */
   connection: TargetConnectionSchema.nullable(),
-  sse: z.enum(SSE_MODES),
+  sse: z.enum(SSE_MODES).nullable(),
   kmsKeyId: z.string().nullable(),
   storageClass: z.string().nullable(),
-  layout: z.enum(TARGET_LAYOUTS),
+  layout: z.enum(TARGET_LAYOUTS).nullable(),
   source: z.enum(['env', 'ui']),
   editedAt: z.string().nullable(),
   updatedBy: z.string().nullable(),

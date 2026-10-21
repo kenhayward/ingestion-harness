@@ -62,11 +62,12 @@ export function TargetRow({
 }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState(t.label);
-  const [bucket, setBucket] = useState(t.bucket);
-  const [prefix, setPrefix] = useState(t.prefix);
-  const [layout, setLayout] = useState(t.layout);
+  // Null for a target of a sink other than S3 (none is edited here yet).
+  const [bucket, setBucket] = useState(t.bucket ?? '');
+  const [prefix, setPrefix] = useState(t.prefix ?? '');
+  const [layout, setLayout] = useState(t.layout ?? 'files');
   const [connectionId, setConnectionId] = useState(t.connectionId ?? '');
-  const [sse, setSse] = useState<string>(t.sse);
+  const [sse, setSse] = useState<string>(t.sse ?? 'none');
   const [kms, setKms] = useState(t.kmsKeyId ?? '');
   const [storageClass, setStorageClass] = useState(t.storageClass ?? '');
   const [confirmRemove, setConfirmRemove] = useState(false);

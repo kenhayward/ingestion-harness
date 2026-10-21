@@ -14,6 +14,12 @@ const DESTINATION_FIELDS: Record<string, string[]> = {
   rdf: ['dataset'],
 };
 
+/** The credential fields each sink declares `secret: false` (what a summary may show). */
+const PUBLIC_FIELDS: Record<string, string[]> = {
+  s3: ['endpoint', 'region', 'accessKeyId', 'forcePathStyle'],
+  rdf: ['endpoint', 'user'],
+};
+
 /**
  * The delivery bridge in memory, as CT Studio's API sees it: mirrored targets, connections,
  * the objects targets hold (`bucket/key`, per target), deliveries, and scripted failures.
@@ -21,7 +27,10 @@ const DESTINATION_FIELDS: Record<string, string[]> = {
 export class FakeBridgeApi implements BridgeApi {
   readonly targets = new Map<string, TargetPutRequest>();
   readonly connections = new Map<string, SharedConnection>();
-  /** Connection summaries listConnections answers (the internal one by default). */
+  /**
+   * Connection summaries listConnections answers (the internal one by default), followed by
+   * those of the connections written here that are not listed in it.
+   */
   summaries: ConnectionSummary[] = [
     {
       id: 'internal',
@@ -106,7 +115,21 @@ export class FakeBridgeApi implements BridgeApi {
 
   async listConnections(): Promise<ConnectionSummary[]> {
     this.fail();
-    return structuredClone(this.summaries);
+    const written = [...this.connections.values()]
+      .filter((c) => !this.summaries.some((s) => s.id === c.id))
+      .map((c): ConnectionSummary => {
+        const sinkId = c.sinkId ?? 's3';
+        const shown = PUBLIC_FIELDS[sinkId] ?? [];
+        return {
+          id: c.id,
+          name: c.name,
+          sinkId,
+          status: 'untested',
+          statusReason: null,
+          fields: Object.fromEntries(Object.entries(c.fields).filter(([k]) => shown.includes(k))),
+        };
+      });
+    return structuredClone([...this.summaries, ...written]);
   }
 
   async testTarget(id: string): Promise<TargetTestResult> {

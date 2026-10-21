@@ -16,6 +16,7 @@ import { S3KeyService } from '../src/s3keys/service.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { TargetStores } from '../src/publish-targets/stores.js';
+import { cacheS3 } from './target-views.js';
 import { HandoffCodes } from '../src/bridge/handoff.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 
@@ -126,16 +127,12 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
           withdrawTargets(j.params).includes(id),
       ).length,
   });
-  await targets.seedDefault({
-    kind: 'internal',
-    bucket: 'published',
-    prefix: 'pub/',
-    endpoint: null,
-    region: null,
-    accessKeyEnv: null,
-    secretKeyEnv: null,
-    forcePathStyle: true,
-  });
+  // The default as the API's seed leaves it (written to the bridge, then cached).
+  await cacheS3(
+    targets,
+    { id: 'default', label: 'Default', kind: 'internal', bucket: 'published', prefix: 'pub/' },
+    { source: 'env', seededAt: new Date().toISOString() },
+  );
   const targetStores = new TargetStores({ internal: TEST_INTERNAL_S3, make: () => targetStore });
   const bridge = new FakeBridgeApi();
   bridge.fallback = targetStore;

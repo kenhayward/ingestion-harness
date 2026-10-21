@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { JobOutput, JobSummary, PublishTargetView } from '@ih/shared';
 import { BridgeApiError } from '../src/bridge/client.js';
-import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
-import type { NewTarget } from '../src/publish-targets/repo.js';
+import type { SecretsKeys } from '../src/llm/secrets.js';
+import { seedRdf as seedRdfOnBridge } from '../src/publish-targets/seed.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 import { accessApp, fakePdf, multipart, signInNewUser, testApp } from './helpers.js';
+import { cacheS3, type S3TargetSpec } from './target-views.js';
 
 const keys: SecretsKeys = { current: Buffer.alloc(32, 7), previous: null };
 const SECRET = 'wJalrXUtnFEMI-very-secret';
@@ -20,23 +21,14 @@ const externalBody = (over: object = {}) => ({
   ...over,
 });
 
-/** A stored external target, its keys already moved to the bridge. */
-const financeRecord = (over: Partial<NewTarget> = {}): NewTarget => ({
+/** A cached external target on the bridge connection `finance-account`. */
+const financeTarget = (over: Partial<S3TargetSpec> = {}): S3TargetSpec => ({
   id: 'finance-lake',
   label: 'Finance lake',
   kind: 'external',
   bucket: 'finance-lake',
   prefix: 'ingest/',
-  endpoint: FINANCE_ENDPOINT,
-  region: 'eu-west-2',
-  accessKeyId: 'AKIAFINANCE',
-  secretKeyEnc: encryptSecret(SECRET, keys),
-  accessKeyEnv: null,
-  secretKeyEnv: null,
-  forcePathStyle: true,
-  sse: 'none',
-  kmsKeyId: null,
-  storageClass: null,
+  connectionId: 'finance-account',
   ...over,
 });
 
@@ -78,8 +70,7 @@ async function publishLetter(
 describe('publishing target routes: list and choices', () => {
   it('lists the default with its usage and each connection as the bridge names it, never a secret', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), 'Ken');
-    await c.targets.markMoved('finance-lake', 'finance-account');
+    await cacheS3(c.targets, financeTarget(), { source: 'ui', by: 'Ken' });
     const res = await c.call('GET', '/publish-targets');
     expect(res.statusCode).toBe(200);
     const { targets } = res.json() as { targets: PublishTargetView[] };
@@ -103,8 +94,7 @@ describe('publishing target routes: list and choices', () => {
 
   it('still lists the targets when the bridge cannot name their connections', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), 'Ken');
-    await c.targets.markMoved('finance-lake', 'finance-account');
+    await cacheS3(c.targets, financeTarget(), { source: 'ui', by: 'Ken' });
     c.bridge.failNext = new BridgeApiError(0, null, 'the bridge could not be reached');
     const res = await c.call('GET', '/publish-targets');
     expect(res.statusCode).toBe(200);
@@ -303,15 +293,12 @@ describe('POST /api/publish-targets', () => {
       connectionId: 'finance-account',
       connection: { name: 'Finance account', status: 'ok' },
     });
+    // The cache holds the bridge's answer: no key, no endpoint.
     const stored = (await c.targets.get('finance-lake'))!;
-    expect(stored).toMatchObject({
-      secretKeyEnc: null,
-      accessKeyId: null,
-      accessKeyEnv: null,
-      secretKeyEnv: null,
-      endpoint: null,
-      connectionId: 'finance-account',
-    });
+    expect(stored).toMatchObject({ connectionId: 'finance-account', sinkId: 's3', source: 'ui' });
+    for (const hidden of ['secretKeyEnc', 'accessKeyId', 'endpoint']) {
+      expect(Object.keys(stored)).not.toContain(hidden);
+    }
     expect(c.bridge.targets.get('finance-lake')).toEqual({
       label: 'Finance lake',
       sinkId: 's3',
@@ -347,7 +334,7 @@ describe('POST /api/publish-targets', () => {
 describe('inert publishing targets (a copy restore)', () => {
   it('an inert target is not listed and is a 404', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), 'Ken');
+    await cacheS3(c.targets, financeTarget(), { source: 'ui', by: 'Ken' });
     await c.targets.makeInert('finance-lake');
     const list = (await c.call('GET', '/publish-targets')).json() as {
       targets: PublishTargetView[];
@@ -464,7 +451,7 @@ describe('PATCH /api/publish-targets/:id', () => {
     expect([created.statusCode, created.json().error]).toEqual([400, said]);
     const moved = await c.call('PATCH', '/publish-targets/default', { bucket: 'ingest-bridge' });
     expect([moved.statusCode, moved.json().error]).toEqual([400, said]);
-    expect((await c.targets.get('default'))!.bucket).toBe('published');
+    expect((await c.targets.get('default'))!.destination.bucket).toBe('published');
     const tested = await c.call('POST', '/publish-targets/test', {
       label: 'Oops',
       kind: 'internal',
@@ -479,7 +466,7 @@ describe('PATCH /api/publish-targets/:id', () => {
     const res = await c.call('PATCH', '/publish-targets/default', { bucket: 'inbox' });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("inbox is CT Studio's own inbox bucket: pick another");
-    expect((await c.targets.get('default'))!.bucket).toBe('published');
+    expect((await c.targets.get('default'))!.destination.bucket).toBe('published');
     const backups = await c.call('PATCH', '/publish-targets/default', { bucket: 'backups' });
     expect(backups.json().error).toBe("backups is CT Studio's own backups bucket: pick another");
   });
@@ -495,7 +482,7 @@ describe('PATCH /api/publish-targets/:id', () => {
     const offKms = await c.call('PATCH', '/publish-targets/finance-lake', { sse: 'AES256' });
     expect(offKms.statusCode).toBe(200);
     expect(offKms.json()).toMatchObject({ sse: 'AES256', kmsKeyId: null });
-    expect((await c.targets.get('finance-lake'))!.kmsKeyId).toBeNull();
+    expect((await c.targets.get('finance-lake'))!.destination.kmsKeyId).toBe('');
 
     const cleared = await c.call('PATCH', '/publish-targets/finance-lake', { storageClass: null });
     expect(cleared.statusCode).toBe(200);
@@ -520,7 +507,13 @@ describe('PATCH /api/publish-targets/:id', () => {
 
   it('keeps a prefix seeded verbatim from .env on other edits', async () => {
     const c = await setup();
-    await c.targets.update('default', { prefix: 'ingest' }, null);
+    await cacheS3(c.targets, {
+      id: 'default',
+      label: 'Default',
+      kind: 'internal',
+      bucket: 'published',
+      prefix: 'ingest',
+    });
     const res = await c.call('PATCH', '/publish-targets/default', { label: 'Main' });
     expect(res.json()).toMatchObject({ label: 'Main', prefix: 'ingest' });
   });
@@ -564,7 +557,7 @@ describe('DELETE /api/publish-targets/:id', () => {
 
   it('names up to three document types using it', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await cacheS3(c.targets, financeTarget());
     for (const id of ['alpha', 'beta', 'gamma', 'delta']) {
       await c.templates.create(id, 1, { ...letter(1, 'finance-lake'), id }, 'draft');
       await c.templates.publish(id, 1, 'Ken');
@@ -576,7 +569,7 @@ describe('DELETE /api/publish-targets/:id', () => {
 
   it('counts delivered outputs when no published version names it', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await cacheS3(c.targets, financeTarget());
     c.repo.outputs.set('j1', [
       {
         outputId: 'document',
@@ -595,7 +588,7 @@ describe('DELETE /api/publish-targets/:id', () => {
 
   it('counts a withdrawal still to run that names it', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await cacheS3(c.targets, financeTarget());
     const withdraw = (status: 'queued' | 'running' | 'succeeded') => ({
       id: `w-${status}`,
       task: 'withdraw' as const,
@@ -724,7 +717,7 @@ describe('reading published outputs through the bridge, from their recorded targ
 
   it('serves each output from its own target', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await cacheS3(c.targets, financeTarget());
     const a = await delivered(c);
     const b = await delivered(c);
     const onFinance = published(a.id, 'finance-lake', 'finance-lake', 'ingest/');
@@ -747,7 +740,7 @@ describe('reading published outputs through the bridge, from their recorded targ
 
   it('answers 502 naming the target when the bridge cannot read it, and still shows the result', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await cacheS3(c.targets, financeTarget());
     c.bridge.failReads = new BridgeApiError(0, null, 'the bridge could not be reached');
     const a = await delivered(c);
     c.repo.outputs.set(a.id, [published(a.id, 'finance-lake', 'finance-lake', 'ingest/')]);
@@ -769,7 +762,7 @@ describe('reading published outputs through the bridge, from their recorded targ
 
   it('answers 502 when the bridge refuses the target (no connection)', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await cacheS3(c.targets, financeTarget());
     c.bridge.failReads = FakeBridgeApi.refusal(
       'the target has no connection',
       'credential_missing',
@@ -802,7 +795,7 @@ describe('a recipe naming a publishing target', () => {
 
   it('is fine when the target exists, or when none is named', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord(), null);
+    await cacheS3(c.targets, financeTarget());
     await c.templates.create('letter', 1, letter(1, 'finance-lake'), 'draft');
     expect(await issuesOf(c, 1)).toEqual([]);
     await c.templates.create('letter', 2, letter(2), 'draft');
@@ -832,7 +825,10 @@ describe('a recipe naming a publishing target', () => {
 describe('the triple store target (rdf-default, from RDF_ENDPOINT)', () => {
   const seeded = async () => {
     const c = await setup();
-    await c.targets.seedRdf({ endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' });
+    await seedRdfOnBridge(
+      { targets: c.targets, bridge: c.bridge, log: c.app.log },
+      { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' },
+    );
     return c;
   };
 
@@ -844,7 +840,7 @@ describe('the triple store target (rdf-default, from RDF_ENDPOINT)', () => {
       sinkId: 'rdf',
       status: 'ok',
       statusReason: null,
-      fields: {},
+      fields: { endpoint: 'http://fuseki:3030', user: 'ct-writer' },
     });
     const targets = (await c.call('GET', '/publish-targets')).json().targets as PublishTargetView[];
     expect(targets.find((t) => t.id === 'rdf-default')).toMatchObject({
@@ -988,7 +984,10 @@ describe('a target layout (files, or package for archives)', () => {
 
   it('an rdf target refuses layout package', async () => {
     const c = await setup();
-    await c.targets.seedRdf({ endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' });
+    await seedRdfOnBridge(
+      { targets: c.targets, bridge: c.bridge, log: c.app.log },
+      { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' },
+    );
     const res = await c.call('PATCH', '/publish-targets/rdf-default', { layout: 'package' });
     expect([res.statusCode, res.json().error]).toEqual([
       400,
@@ -1024,7 +1023,10 @@ describe('a recipe naming several publishing targets', () => {
 
   it('refuses the triple store in a list', async () => {
     const c = await setup();
-    await c.targets.seedRdf({ endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' });
+    await seedRdfOnBridge(
+      { targets: c.targets, bridge: c.bridge, log: c.app.log },
+      { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' },
+    );
     await c.templates.create('letter', 1, letter(1, ['default', 'rdf-default']), 'draft');
     expect(await issuesOf(c, 1)).toEqual([
       { path: 'delivery.publishTo', message: 'rdf-default is a triple store: name an S3 target' },
@@ -1033,7 +1035,7 @@ describe('a recipe naming several publishing targets', () => {
 
   it('asks for a files target when every listed target is an archive', async () => {
     const c = await setup();
-    await c.targets.create(financeRecord({ layout: 'package' }), null);
+    await cacheS3(c.targets, financeTarget({ layout: 'package' }));
     await c.templates.create('letter', 1, letter(1, ['finance-lake']), 'draft');
     expect(await issuesOf(c, 1)).toEqual([
       { path: 'delivery.publishTo', message: 'needs a target with the files layout' },

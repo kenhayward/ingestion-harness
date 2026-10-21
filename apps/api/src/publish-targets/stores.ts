@@ -1,5 +1,6 @@
 import type { ObjectStore } from '../storage/object-store.js';
 import { S3ObjectStore, type S3Options } from '../storage/s3.js';
+import { s3PlaceOf } from './place.js';
 import type { TargetRecord } from './repo.js';
 
 export interface TargetStoresOptions {
@@ -20,9 +21,10 @@ export class TargetStores {
   constructor(private readonly opts: TargetStoresOptions) {}
 
   /** Creates an internal target's bucket when it is missing; external targets are left alone. */
-  async ensureBucket(target: Pick<TargetRecord, 'kind' | 'bucket'>): Promise<void> {
-    if (target.kind !== 'internal') return;
+  async ensureBucket(target: Pick<TargetRecord, 'kind' | 'sinkId' | 'destination'>): Promise<void> {
+    const place = s3PlaceOf(target);
+    if (target.kind !== 'internal' || !place) return;
     this.store ??= (this.opts.make ?? ((o: S3Options) => new S3ObjectStore(o)))(this.opts.internal);
-    await this.store.ensureBucket(target.bucket);
+    await this.store.ensureBucket(place.bucket);
   }
 }

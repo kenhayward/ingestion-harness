@@ -22,6 +22,7 @@ import { PgS3KeyRepo } from '../../src/s3keys/pg.js';
 import { iamClientConfig, SeaweedIamIssuer } from '../../src/s3keys/seaweed-iam.js';
 import { S3KeyService } from '../../src/s3keys/service.js';
 import { s3ClientConfig } from '../../src/storage/s3.js';
+import { s3View } from '../target-views.js';
 
 const env = (name: string) => {
   const value = process.env[name];
@@ -86,7 +87,7 @@ beforeAll(async () => {
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: 'a/b.json', Body: '{"ok":true}' }));
   }
   const targets = new PgPublishTargetRepo(pool);
-  await targets.update('default', { bucket: BUCKET, prefix: '' }, null);
+  await targets.cache(s3View({ id: 'default', kind: 'internal', bucket: BUCKET, prefix: '' }), {});
   service = new S3KeyService({ repo: new PgS3KeyRepo(pool), issuer, targets, endpoint: null });
 });
 

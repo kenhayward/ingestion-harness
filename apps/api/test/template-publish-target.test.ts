@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mirrorTargets } from '../src/bridge/mirror.js';
+import { pullTargets } from '../src/bridge/sync.js';
 import { testApp } from './helpers.js';
 
 const letter = (publishTo: string) => ({
@@ -12,9 +12,9 @@ const letter = (publishTo: string) => ({
   delivery: { publishTo },
 });
 
-/** Recipe validation still names CT Studio's targets (the registry the bridge mirrors). */
-describe('a recipe naming a publishing target, with targets mirrored to the bridge', () => {
-  it('still blocks an unknown target and passes a mirrored one', async () => {
+/** Recipe validation names the cached targets (the bridge's registry, cached here). */
+describe('a recipe naming a publishing target, with targets on the bridge', () => {
+  it('still blocks an unknown target and passes one on the bridge', async () => {
     const c = await testApp();
     const issues = async () =>
       (await c.app.inject('/api/templates/letter/versions/1')).json().issues as unknown[];
@@ -31,8 +31,8 @@ describe('a recipe naming a publishing target, with targets mirrored to the brid
       payload: { label: 'Finance lake', kind: 'internal', bucket: 'finance-bucket' },
     });
     expect(created.statusCode).toBe(201);
-    await mirrorTargets({ targets: c.targets, bridge: c.bridge, log: c.app.log });
     expect(c.bridge.targets.has('finance-lake')).toBe(true);
+    await pullTargets({ targets: c.targets, bridge: c.bridge, log: c.app.log });
     expect(await issues()).toEqual([]);
   });
 });
