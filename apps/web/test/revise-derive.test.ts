@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { DraftChange, FeedbackItem } from '@ih/shared';
+import type { DraftChange, FeedbackItem, RunDiagnostics } from '@ih/shared';
 import {
   answerNumbers,
+  diagnosticLines,
   earlierRevisions,
   failureChips,
   failuresHeader,
@@ -258,5 +259,53 @@ describe('sentFeedback', () => {
     const { sent, notSent } = sentFeedback([sentItem, held, answered], preview);
     expect(sent.map((f) => f.body)).toEqual(['sent', 'answered']);
     expect(notSent.map((f) => f.body)).toEqual(['held back']);
+  });
+});
+
+describe('diagnosticLines', () => {
+  const base: RunDiagnostics = {
+    from: { draftVersion: 4, jobIds: ['j1'], at: '2026-10-12T09:00:00.000Z' },
+    steps: [],
+    columns: [],
+    missedKeys: [],
+  };
+  it.each<[string, Partial<RunDiagnostics>, string[]]>([
+    ['nothing', {}, []],
+    [
+      'a step with mostly empty calls',
+      {
+        steps: [
+          { step: 'extract_table_8', sample: 'a.pdf', calls: 30, emptyCalls: 29, seconds: 169 },
+        ],
+      },
+      ['extract_table_8 on a.pdf: 29 of 30 calls returned no rows (02:49)'],
+    ],
+    [
+      'columns, one value and many',
+      {
+        columns: [
+          { step: 's', target: 'assay', column: 'impurity_1_pct', issues: 3, examples: ['<0.05'] },
+          { step: 's', target: 'assay', column: 'purity', issues: 1, examples: ['n/a'] },
+          { step: 's', target: 'notes', column: null, issues: 2, examples: [] },
+        ],
+      },
+      [
+        'assay.impurity_1_pct: 3 values did not fit (e.g. <0.05)',
+        'assay.purity: 1 value did not fit (e.g. n/a)',
+        'notes: 2 values did not fit',
+      ],
+    ],
+    [
+      'missed headings',
+      {
+        missedKeys: [
+          { sample: 'a.pdf', sections: ['s'], keys: ['1', '2', '3', '4'], total: 30 },
+          { sample: 'b.pdf', sections: ['s'], keys: ['7', '8'], total: 2 },
+        ],
+      },
+      ['a.pdf: headings 1, 2, 3 (+27) matched no anchor', 'b.pdf: headings 7, 8 matched no anchor'],
+    ],
+  ])('%s', (_name, part, lines) => {
+    expect(diagnosticLines({ ...base, ...part })).toEqual(lines);
   });
 });

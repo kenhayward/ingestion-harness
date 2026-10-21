@@ -28,6 +28,7 @@ import {
   answerNumbers,
   earlierRevisions,
   failureChips,
+  diagnosticLines,
   failuresHeader,
   latestRevise,
   notSentText,
@@ -115,6 +116,7 @@ export function ReviseTab({
   const models = useModelChoices(api);
   const seeId = useId();
   const failId = useId();
+  const diagId = useId();
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -264,7 +266,7 @@ export function ReviseTab({
       ? 'Start the next version on the Recipe tab first'
       : running
         ? 'A revision is being drafted'
-        : !preview.feedback.length
+        : !preview.feedback.length && !preview.diagnostics
           ? 'Add feedback first: a revision answers your feedback'
           : preview.model === null
             ? 'Set the drafting model under Administration > Models first'
@@ -385,6 +387,18 @@ export function ReviseTab({
                 sent (the worst {preview.limits.samples} are).
               </p>
             )}
+            <section className="revise-diagnostics" aria-labelledby={diagId}>
+              <h3 id={diagId}>Run diagnostics</h3>
+              {preview.diagnostics ? (
+                <ul className="failure-list">
+                  {diagnosticLines(preview.diagnostics).map((line, i) => (
+                    <li key={`${i}-${line}`}>{line}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">Run the dev samples to add what they show.</p>
+              )}
+            </section>
             <p className="holdout-note revise-not-sent">{notSentText(preview.notSent)}</p>
           </section>
         </div>
