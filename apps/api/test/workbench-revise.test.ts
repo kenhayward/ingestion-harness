@@ -721,7 +721,9 @@ describe('revise diagnostics (Part C)', () => {
     expect(shown.steps).toEqual([
       { step: 'lines', sample: 's1.pdf', calls: 6, emptyCalls: 5, seconds: 30 },
     ]);
-    expect(shown.columns).toMatchObject([{ step: 'lines', target: 'items', column: 'qty' }]);
+    expect(shown.columns).toMatchObject([
+      { step: 'lines', target: 'items', column: 'qty', message: 'bad', samples: ['s1.pdf'] },
+    ]);
   });
 
   it('diagnostics ignore runs from before the last save of the draft', async () => {

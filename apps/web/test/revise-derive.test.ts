@@ -290,6 +290,7 @@ describe('diagnosticLines', () => {
             column: 'impurity_1_pct',
             issues: 3,
             examples: ['<0.05'],
+            message: 'not a number',
             samples: ['a.pdf'],
           },
           {
@@ -298,9 +299,18 @@ describe('diagnosticLines', () => {
             column: 'purity',
             issues: 1,
             examples: ['n/a'],
+            message: 'not a number',
             samples: ['a.pdf'],
           },
-          { step: 's', target: 'notes', column: null, issues: 2, examples: [], samples: ['a.pdf'] },
+          {
+            step: 's',
+            target: 'notes',
+            column: null,
+            issues: 2,
+            examples: [],
+            message: 'not a number',
+            samples: ['a.pdf'],
+          },
         ],
       },
       [

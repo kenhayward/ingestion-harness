@@ -27,6 +27,7 @@ export const DiagnosticRunSchema = z.object({
       target: z.string(),
       column: z.string().nullable(),
       raw: z.string(),
+      message: z.string(),
     }),
   ),
 });
@@ -54,6 +55,8 @@ export const RunDiagnosticsSchema = z.object({
       column: z.string().nullable(),
       issues: z.number().int(),
       examples: z.array(z.string()),
+      /** The first issue's message for this column. */
+      message: z.string(),
       /** The dev file names whose issues this row counts, first seen first. */
       samples: z.array(z.string()),
     }),
@@ -129,17 +132,7 @@ export function runDiagnostics(
 ): RunDiagnostics | null {
   const steps: RunDiagnostics['steps'] = [];
   const missedKeys: RunDiagnostics['missedKeys'] = [];
-  const columnMap = new Map<
-    string,
-    {
-      step: string;
-      target: string;
-      column: string | null;
-      issues: number;
-      examples: string[];
-      samples: string[];
-    }
-  >();
+  const columnMap = new Map<string, RunDiagnostics['columns'][number]>();
 
   for (const run of runs) {
     steps.push(...flaggedSteps(run));
@@ -171,6 +164,7 @@ export function runDiagnostics(
           column: i.column,
           issues: 0,
           examples: [],
+          message: i.message,
           samples: [],
         };
         columnMap.set(id, row);

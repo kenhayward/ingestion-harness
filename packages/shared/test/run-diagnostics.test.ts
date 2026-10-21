@@ -111,6 +111,7 @@ describe('runDiagnostics', () => {
       target: 't',
       column: `c${i % 6}`,
       raw: `v${i % 5}`,
+      message: `m${i}`,
     }));
     const d = runDiagnostics([run({ issues })], 1);
     expect(d?.columns).toHaveLength(6);
@@ -122,18 +123,24 @@ describe('runDiagnostics', () => {
     expect(d?.columns.reduce((n, c) => n + c.issues, 0)).toBe(28);
   });
 
-  it('names the samples whose issues a column row counts, first seen first', () => {
-    const issue = (column: string) => ({ step: 's', target: 't', column, raw: 'x' });
+  it('names the samples whose issues a column row counts, first seen first, and the first message', () => {
+    const issue = (column: string, message = 'm') => ({
+      step: 's',
+      target: 't',
+      column,
+      raw: 'x',
+      message,
+    });
     const d = runDiagnostics(
       [
-        run({ sample: 'b.pdf', issues: [issue('qty'), issue('qty')] }),
-        run({ jobId: 'j2', sample: 'a.pdf', issues: [issue('qty'), issue('unit')] }),
+        run({ sample: 'b.pdf', issues: [issue('qty', 'first'), issue('qty', 'second')] }),
+        run({ jobId: 'j2', sample: 'a.pdf', issues: [issue('qty'), issue('unit', 'u')] }),
       ],
       1,
     );
-    expect(d?.columns.map((c) => [c.column, c.samples])).toEqual([
-      ['qty', ['b.pdf', 'a.pdf']],
-      ['unit', ['a.pdf']],
+    expect(d?.columns.map((c) => [c.column, c.samples, c.message])).toEqual([
+      ['qty', ['b.pdf', 'a.pdf'], 'first'],
+      ['unit', ['a.pdf'], 'u'],
     ]);
   });
 
@@ -194,6 +201,7 @@ describe('runDiagnostics', () => {
       target: 't',
       column: `c${i}`,
       raw: 'x',
+      message: 'm',
     }));
     const d = runDiagnostics([run({ issues })], 1);
     expect(d?.columns).toHaveLength(20);

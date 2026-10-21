@@ -534,9 +534,11 @@ def build_context(
         )
     if diagnostics:
         version = (diagnostics.get("from") or {}).get("draftVersion")
+        # Job ids and the run time are for people (the preview), not the model.
+        rows = {k: diagnostics.get(k) or [] for k in ("steps", "columns", "missedKeys")}
         blocks.append(
             f'<run_diagnostics draftVersion="{version}">\n'
-            f"{json.dumps(diagnostics, indent=1, ensure_ascii=False)}\n"
+            f"{json.dumps(rows, indent=1, ensure_ascii=False)}\n"
             "</run_diagnostics>"
         )
     if example_yaml:

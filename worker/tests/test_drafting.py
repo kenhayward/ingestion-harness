@@ -1011,6 +1011,12 @@ def test_context_includes_run_diagnostics(fixture_specs_dir: Path) -> None:
     prompt = revise_prompt(fixture_specs_dir, diagnostics=DIAGNOSTICS)
     assert '<run_diagnostics draftVersion="4">' in prompt
     assert '"emptyCalls": 4' in prompt and "</run_diagnostics>" in prompt
+    # Job ids and the run time are for people (the preview), not the model.
+    block = prompt.split("<run_diagnostics", 1)[1].split("</run_diagnostics>", 1)[0]
+    assert "jobIds" not in block and '"at"' not in block and '"from"' not in block
+    assert json.loads(block.split(">", 1)[1]) == {
+        k: DIAGNOSTICS[k] for k in ("steps", "columns", "missedKeys")
+    }
     assert "<run_diagnostics" not in revise_prompt(fixture_specs_dir)
     assert "<run_diagnostics" not in build_context(
         brief={}, draft=None, samples=[], example_yaml=None, diagnostics=None

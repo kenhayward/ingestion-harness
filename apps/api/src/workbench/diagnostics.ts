@@ -11,6 +11,7 @@ interface DraftIssue {
   column?: unknown;
   field?: unknown;
   raw?: unknown;
+  message?: unknown;
 }
 
 /** Normalisation issues of a job's draft document.json (none when it is missing or unreadable). */
@@ -36,7 +37,8 @@ async function draftIssues(app: FastifyInstance, jobId: string): Promise<Diagnos
       continue;
     const column =
       typeof i.column === 'string' ? i.column : typeof i.field === 'string' ? i.field : null;
-    out.push({ step: i.step, target: i.target, column, raw: String(i.raw) });
+    const message = typeof i.message === 'string' ? i.message : '';
+    out.push({ step: i.step, target: i.target, column, raw: String(i.raw), message });
   }
   return out;
 }

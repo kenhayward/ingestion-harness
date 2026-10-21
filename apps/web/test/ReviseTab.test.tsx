@@ -503,6 +503,7 @@ describe('ReviseTab', () => {
           column: 'purity',
           issues: 3,
           examples: ['<0.05'],
+          message: 'not a number',
           samples: ['a.pdf'],
         },
       ],
