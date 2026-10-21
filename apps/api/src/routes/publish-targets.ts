@@ -611,8 +611,14 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const outcome = await repo.remove(id);
       if (outcome === 'missing') return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
       if (outcome === 'in_use') {
-        // Used meanwhile: the bridge gets it back, so its deliveries still have a target.
-        await bridge.putTarget(id, putOfRecord(target)).catch(() => undefined);
+        // Used meanwhile: the bridge gets it back, so its deliveries still have a target. When it
+        // cannot, the bridge lacks a target CT Studio still uses: logged (the answer stays).
+        await bridge.putTarget(id, putOfRecord(target)).catch((err: unknown) => {
+          req.log.error(
+            { target: id, err },
+            `publishing target ${id} was used meanwhile but could not be put back on the bridge`,
+          );
+        });
         return reply
           .code(409)
           .send({ error: `${target.label} is used by ${usageText(await repo.usage(id))}` });

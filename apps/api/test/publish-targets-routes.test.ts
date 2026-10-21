@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { JobOutput, JobSummary, PublishTargetView } from '@ih/shared';
 import { BridgeApiError } from '../src/bridge/client.js';
 import { pullTargets } from '../src/bridge/sync.js';
@@ -627,6 +627,22 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('Finance lake has deliveries on the bridge');
     expect(await c.targets.get('finance-lake')).not.toBeNull();
+  });
+
+  it('logs a target used meanwhile that the bridge could not be given back', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    // Named by a recipe between the usage check and the removal: the bridge's row is put back.
+    vi.spyOn(c.targets, 'remove').mockResolvedValueOnce('in_use');
+    vi.spyOn(c.bridge, 'putTarget').mockRejectedValueOnce(new Error('bridge went away'));
+    const error = vi.spyOn(c.app.log, 'error');
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/^Finance lake is used by/);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'finance-lake' }),
+      expect.stringContaining('finance-lake'),
+    );
   });
 });
 
