@@ -8,6 +8,7 @@ import {
   olderText,
   progressText,
   queueText,
+  cancellableRuns,
   runAction,
   runBatches,
   runBlockedReason,
@@ -237,11 +238,20 @@ describe('run rows', () => {
     ['failed', 'retry'],
     ['needs_review', 'retry'],
     ['cancelled', 'retry'],
-    ['queued', null],
-    ['running', null],
+    ['queued', 'cancel'],
+    ['running', 'cancel'],
     ['rejected', null],
+    ['delivering', null],
   ] as const)('%s → %s', (status, action) => {
     expect(runAction(testRunView({ status }))).toBe(action);
+  });
+
+  it('lists the runs of a batch that can still be cancelled', () => {
+    const runs = (['running', 'queued', 'succeeded', 'failed', 'awaiting_review'] as const).map(
+      (status) => testRunView({ status, filename: `${status}.pdf` }),
+    );
+    expect(cancellableRuns(runs).map((r) => r.filename)).toEqual(['running.pdf', 'queued.pdf']);
+    expect(cancellableRuns(runs.slice(2))).toEqual([]);
   });
 });
 
