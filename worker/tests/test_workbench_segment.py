@@ -388,3 +388,54 @@ def test_an_invalid_key_is_an_anchor_error() -> None:
     assert "batch.key" in grid["anchorErrors"]
     cell = next(c for c in grid["samples"][0]["sections"] if c["id"] == "batch")
     assert [o["key"] for o in cell["occurrences"]] == [None, None, None]
+
+
+MISS_ANCHOR = r"^\s*Table\s+\d+:\s.*Results\s*$"
+MISS_KEY = r"^\s*Table\s+(\d+):"
+
+
+def tables_doc() -> SegmentDocument:
+    return SegmentDocument.model_validate(
+        {
+            "sections": [
+                {"id": "result_tables", "anchor": MISS_ANCHOR, "repeat": True, "key": MISS_KEY}
+            ]
+        }
+    )
+
+
+def test_grid_reports_missed_keys() -> None:
+    page = (
+        "Table\xa01: Study A - Assay and Chromatographic Purity (HDPE\n   bottle - X) Results\n"
+        "row data\n"
+        "Table\xa02: Study A - Assay Results\nrow data\n"
+        "Table\xa03: Study B - Assay and Chromatographic Purity (HDPE\n   bottle - Y) Results\n"
+    )
+    row = segment_samples([("s1", [page])], tables_doc())["samples"][0]
+    assert row["missedKeys"] == [
+        {
+            "sections": ["result_tables"],
+            "key": "1",
+            "line": "Table\xa01: Study A - Assay and Chromatographic Purity (HDPE",
+        },
+        {
+            "sections": ["result_tables"],
+            "key": "3",
+            "line": "Table\xa03: Study B - Assay and Chromatographic Purity (HDPE",
+        },
+    ]
+    assert "missedKeysTotal" not in row
+
+
+def test_grid_omits_missed_keys_when_covered() -> None:
+    page = "Table 1: A Results\nrow\nTable 2: B Results\nrow\n"
+    row = segment_samples([("s1", [page])], tables_doc())["samples"][0]
+    assert "missedKeys" not in row
+    assert "missedKeysTotal" not in row
+
+
+def test_grid_caps_missed_keys() -> None:
+    page = "Table 0: ok Results\n" + "".join(f"Table {n}: wrapped (\n" for n in range(1, 26))
+    row = segment_samples([("s1", [page])], tables_doc())["samples"][0]
+    assert len(row["missedKeys"]) == 20
+    assert row["missedKeysTotal"] == 25
