@@ -1,0 +1,16 @@
+{
+  "cases": [
+    { "input": "Study-201580", "norm": "STUDY-201580" },
+    { "input": "study-201580", "norm": "STUDY-201580" },
+    { "input": "Study\u2011201580", "norm": "STUDY-201580" },
+    { "input": "Study\u2013201580", "norm": "STUDY-201580" },
+    { "input": "Study\u2014201580", "norm": "STUDY-201580" },
+    { "input": "Study\u2212201580", "norm": "STUDY-201580" },
+    { "input": "Study - 201580", "norm": "STUDY-201580" },
+    { "input": "Study\u00a0201580", "norm": "STUDY201580" },
+    { "input": "Study\u200b-201580", "norm": "STUDY-201580" },
+    { "input": "Stu\u00addy-201580", "norm": "STUDY-201580" },
+    { "input": "\uff33\uff34\uff35\uff24\uff39-201580", "norm": "STUDY-201580" },
+    { "input": "Study_201580", "norm": "STUDY_201580" }
+  ]
+}

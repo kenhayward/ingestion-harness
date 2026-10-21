@@ -2,7 +2,8 @@
 
 A check compares every value found at `values` with the reference values at `reference`
 (plus optional per-reference `aliases`, e.g. OCR spelling variants the LLM reported). Values are
-compared case- and whitespace-insensitively and classified as:
+compared after NFKC, ignoring case, whitespace, zero-width characters and dash variants, and
+classified as:
 
     match      equal to a reference value
     alias      equal to an alias of a reference value
@@ -16,6 +17,8 @@ Paths are dotted, first segment = extraction id, `[*]` iterates a list:
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any
 
 from .specs import Check
@@ -63,8 +66,16 @@ def edit_distance(a: str, b: str) -> int:
     return previous[-1]
 
 
+_DASHES = re.compile(r"[\u2010-\u2015\u2212\ufe63\uff0d]")
+
+_INVISIBLE = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u00ad]")
+
+
 def norm(value: str) -> str:
-    return "".join(value.split()).upper()
+    """Comparison form: NFKC, no zero-width characters, every Unicode dash as `-`, no whitespace,
+    upper case. Held in step with the web's `normalise` by `check-norm.json`."""
+    folded = _INVISIBLE.sub("", unicodedata.normalize("NFKC", value))
+    return "".join(_DASHES.sub("-", folded).split()).upper()
 
 
 def run_check(check: Check, results: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -74,7 +85,9 @@ def run_check(check: Check, results: dict[str, Any]) -> dict[str, list[dict[str,
 
     references: list[tuple[str, set[str]]] = []  # (reference value, normalised aliases)
     for item in _select(results, prefix):
-        for ref in (str(v) for v in _select(item, ref_rest) if v is not None) if ref_rest else []:
+        # No path below the container: each item is itself a reference value (a list field).
+        found = _select(item, ref_rest) if ref_rest else [item]
+        for ref in (str(v) for v in found if v is not None and not isinstance(v, dict | list)):
             aliases = {norm(a) for a in select_values(item, alias_rest)} if alias_rest else set()
             if all(norm(ref) != norm(r) for r, _ in references):
                 references.append((ref, aliases))

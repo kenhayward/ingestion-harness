@@ -830,6 +830,19 @@ def test_a_context_cycle_is_left_for_the_check_to_report() -> None:
     assert any("not filled by an earlier step" in e for e in errors)
 
 
+def test_stage_guidance() -> None:
+    assert (
+        "When the document repeats tables of the same shape (per study, batch or item), propose "
+        "one table per shape with columns telling the blocks apart, not one table per printed "
+        "block."
+    ) in " ".join(OUTPUTS.instructions.split())
+    assert (
+        "A table step reading a repeating section runs once per occurrence and fills its table "
+        "from every occurrence. Never write several steps that each want a different occurrence "
+        "of the same repeating section: give each kind of block its own repeating section."
+    ) in " ".join(STEPS.instructions.split())
+
+
 def test_revise_instructions_explain_run_diagnostics() -> None:
     assert (
         "- run_diagnostics are what the dev test runs of this draft showed: steps whose occurrence "
