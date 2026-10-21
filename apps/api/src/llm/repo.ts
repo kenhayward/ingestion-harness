@@ -4,8 +4,12 @@ import type {
   LlmEndpointView,
   LlmModelView,
   LlmSettingsView,
+  ModelSettingsBody,
   ProviderKind,
 } from '@ih/shared';
+
+/** A model's settings to change: a setting left out (undefined) is kept, null clears it. */
+type ModelSettings = ModelSettingsBody;
 
 /**
  * LLM endpoints and curated models (ADR 0010, migrations 0024-0025). The worker seeds the .env
@@ -52,11 +56,14 @@ export interface LlmConfigRepo {
     modelIds: string[],
     by: string | null,
   ): Promise<LlmEndpointView | null>;
-  /** A model's output limit (null: the default); null if the endpoint or the model is unknown. */
-  setModelOutputLimit(
+  /**
+   * A model's output limit and parallel calls (null: the default; a setting left out is kept);
+   * null if the endpoint or the model is unknown.
+   */
+  setModelSettings(
     name: string,
     modelId: string,
-    maxOutputTokens: number | null,
+    settings: ModelSettings,
     by: string | null,
   ): Promise<LlmEndpointView | null>;
   /** The model choices (phase 4b), by id. */
@@ -181,6 +188,7 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
       curated: false,
       enabled: true,
       maxOutputTokens: null,
+      maxConcurrentCalls: null,
     };
     rows.set(modelId, row);
     return row;
@@ -247,16 +255,19 @@ export class MemoryLlmConfigRepo implements LlmConfigRepo {
     return this.view(e);
   }
 
-  async setModelOutputLimit(
+  async setModelSettings(
     name: string,
     modelId: string,
-    maxOutputTokens: number | null,
+    settings: ModelSettings,
     by: string | null,
   ) {
     const e = this.endpoints.get(name);
     const row = this.models.get(name)?.get(modelId);
     if (!e || !row) return null;
-    row.maxOutputTokens = maxOutputTokens;
+    if (settings.maxOutputTokens !== undefined) row.maxOutputTokens = settings.maxOutputTokens;
+    if (settings.maxConcurrentCalls !== undefined) {
+      row.maxConcurrentCalls = settings.maxConcurrentCalls;
+    }
     e.updatedBy = by;
     return this.view(e);
   }
@@ -337,7 +348,8 @@ const ENDPOINT_SELECT = `
          COALESCE((SELECT json_agg(json_build_object(
                       'modelId', m.model_id, 'displayName', m.display_name,
                       'curated', m.curated, 'enabled', m.enabled,
-                      'maxOutputTokens', m.max_output_tokens) ORDER BY m.model_id)
+                      'maxOutputTokens', m.max_output_tokens,
+                      'maxConcurrentCalls', m.max_concurrent_calls) ORDER BY m.model_id)
                      FROM llm_models m WHERE m.provider = e.name), '[]') AS models
     FROM llm_endpoints e`;
 
@@ -485,21 +497,31 @@ export class PgLlmConfigRepo implements LlmConfigRepo {
     return this.getEndpoint(name);
   }
 
-  async setModelOutputLimit(
+  async setModelSettings(
     name: string,
     modelId: string,
-    maxOutputTokens: number | null,
+    settings: ModelSettings,
     by: string | null,
   ) {
     const { rowCount } = await this.pool.query(
       `WITH m AS (
-         UPDATE llm_models SET max_output_tokens = $3
+         UPDATE llm_models
+            SET max_output_tokens = CASE WHEN $5 THEN $3 ELSE max_output_tokens END,
+                max_concurrent_calls = CASE WHEN $6 THEN $7 ELSE max_concurrent_calls END
           WHERE provider = $1 AND model_id = $2
             AND EXISTS (SELECT 1 FROM llm_endpoints WHERE name = $1)
          RETURNING provider)
        UPDATE llm_endpoints SET updated_by = $4, updated_at = now()
         WHERE name IN (SELECT provider FROM m)`,
-      [name, modelId, maxOutputTokens, by],
+      [
+        name,
+        modelId,
+        settings.maxOutputTokens ?? null,
+        by,
+        settings.maxOutputTokens !== undefined,
+        settings.maxConcurrentCalls !== undefined,
+        settings.maxConcurrentCalls ?? null,
+      ],
     );
     return rowCount ? this.getEndpoint(name) : null;
   }
