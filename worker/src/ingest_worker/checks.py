@@ -16,6 +16,8 @@ Paths are dotted, first segment = extraction id, `[*]` iterates a list:
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any
 
 from .specs import Check
@@ -63,8 +65,12 @@ def edit_distance(a: str, b: str) -> int:
     return previous[-1]
 
 
+_DASHES = re.compile(r"[\u2010-\u2015\u2212\ufe63\uff0d]")
+
+
 def norm(value: str) -> str:
-    return "".join(value.split()).upper()
+    """Comparison form: NFKC, every Unicode dash as `-`, no whitespace, upper case."""
+    return "".join(_DASHES.sub("-", unicodedata.normalize("NFKC", value)).split()).upper()
 
 
 def run_check(check: Check, results: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:

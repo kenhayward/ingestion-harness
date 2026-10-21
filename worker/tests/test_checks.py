@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ingest_worker.checks import edit_distance, run_check, select_values
+from ingest_worker.checks import edit_distance, norm, run_check, select_values
 from ingest_worker.specs import Check
 
 RESULTS = {
@@ -77,7 +77,21 @@ def test_list_field_reference() -> None:
         "t": {"rows": [{"s": "Study-1"}, {"s": "Study-9"}]},
     }
     check = Check.model_validate(
-        {"id": "studies", "values": "t.rows[*].s", "reference": "summary.studies.value[*]", "maxDistance": 0}
+        {
+            "id": "studies",
+            "values": "t.rows[*].s",
+            "reference": "summary.studies.value[*]",
+            "maxDistance": 0,
+        }
     )
     rows = {r["value"]: r["status"] for r in run_check(check, results)["rows"]}
     assert rows == {"Study-1": "match", "Study-9": "unmatched", "Study-2": "unused"}
+
+
+@pytest.mark.parametrize("variant", ["Study\u2011201580", "study-201580", "Study - 201580"])
+def test_norm_folds_dashes_and_spaces(variant: str) -> None:
+    assert norm(variant) == norm("STUDY-201580")
+
+
+def test_norm_keeps_underscores_distinct() -> None:
+    assert norm("Study_201580") != norm("STUDY-201580")
