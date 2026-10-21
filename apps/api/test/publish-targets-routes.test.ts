@@ -957,6 +957,32 @@ describe('a target layout (files, or package for archives)', () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it('a target is in use while an archive row records it', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody({ layout: 'package' }));
+    const job = (
+      await c.app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart({ specId: 'tdemo' }, { filename: 'a.pdf', content: fakePdf }),
+      })
+    ).json();
+    c.repo.outputs.set(job.id, [
+      {
+        outputId: 'package:manifest',
+        stage: 'published',
+        format: 'json',
+        bucket: 'finance-lake',
+        key: 'ingest/packages/k/package.json',
+        rowCount: null,
+        targetId: 'finance-lake',
+        isPrimary: false,
+      },
+    ]);
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(409);
+  });
+
   it('an rdf target refuses layout package', async () => {
     const c = await setup();
     await c.targets.seedRdf({ endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' });

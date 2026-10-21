@@ -61,6 +61,18 @@ const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled'
 const RUN_TASKS: JobSummary['task'][] = ['process', 'rerun', 'publish'];
 
 /** In-memory repo for unit tests and local UI work without Postgres. */
+/**
+ * A job_outputs row: a published one recorded for a target other than the job's primary one
+ * (an archive) has `isPrimary: false`, and only withdrawal and target usage see it.
+ */
+export type StoredOutput = JobOutput & { isPrimary?: boolean };
+
+/** A job's outputs as readers see them: drafts, and what its primary target holds. */
+const shown = (outputs: readonly StoredOutput[] = []): JobOutput[] =>
+  outputs
+    .filter((o) => o.stage !== 'published' || o.isPrimary !== false)
+    .map(({ isPrimary: _primary, ...o }) => o);
+
 export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
   /** Segment jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
@@ -77,7 +89,7 @@ export class MemoryRepo implements IngestionRepo {
   readonly exportJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** jobs.params of workbench jobs. */
   readonly jobParams = new Map<string, Record<string, unknown>>();
-  readonly outputs = new Map<string, JobOutput[]>();
+  readonly outputs = new Map<string, StoredOutput[]>();
   /** Published outputs a retirement withdrew (Postgres: job_outputs.withdrawn_at). */
   readonly withdrawnOutputs = new Map<string, JobOutput[]>();
   /** Graph versions as the worker records them (published_graph_versions); tests add them. */
@@ -422,7 +434,7 @@ export class MemoryRepo implements IngestionRepo {
 
   async getJob(id: string): Promise<JobDetail | null> {
     const job = this.jobs.get(id);
-    return job ? { ...this.withModels(job), outputs: this.outputs.get(id) ?? [] } : null;
+    return job ? { ...this.withModels(job), outputs: shown(this.outputs.get(id)) } : null;
   }
 
   async getJobParams(id: string): Promise<Record<string, unknown> | null> {
@@ -456,7 +468,7 @@ export class MemoryRepo implements IngestionRepo {
       .filter((j) => show !== 'reviewed' || j.reviewedAt !== null)
       .filter((j) => show !== 'auto' || j.reviewedAt === null)
       .flatMap((j): ResultSummary[] => {
-        const published = (this.outputs.get(j.id) ?? []).filter((o) => o.stage === 'published');
+        const published = shown(this.outputs.get(j.id)).filter((o) => o.stage === 'published');
         const at = this.publishedAt.get(j.id) ?? j.updatedAt;
         if (published.length === 0 || !isBefore(at, j.id)) return [];
         return [
@@ -882,7 +894,7 @@ export class MemoryRepo implements IngestionRepo {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))) {
       if (!latest.has(j.referenceId!)) latest.set(j.referenceId!, j);
     }
-    return [...latest.values()].map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
+    return [...latest.values()].map((j) => ({ ...j, outputs: shown(this.outputs.get(j.id)) }));
   }
 
   async metricsData(templateId: string): Promise<MetricsData> {
