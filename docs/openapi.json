@@ -62033,6 +62033,12 @@
                                 "integer",
                                 "null"
                               ]
+                            },
+                            "maxConcurrentCalls": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
@@ -62040,7 +62046,8 @@
                             "displayName",
                             "curated",
                             "enabled",
-                            "maxOutputTokens"
+                            "maxOutputTokens",
+                            "maxConcurrentCalls"
                           ]
                         }
                       }
@@ -62371,6 +62378,12 @@
                               "integer",
                               "null"
                             ]
+                          },
+                          "maxConcurrentCalls": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -62378,7 +62391,8 @@
                           "displayName",
                           "curated",
                           "enabled",
-                          "maxOutputTokens"
+                          "maxOutputTokens",
+                          "maxConcurrentCalls"
                         ]
                       }
                     }
@@ -62784,6 +62798,12 @@
                               "integer",
                               "null"
                             ]
+                          },
+                          "maxConcurrentCalls": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -62791,7 +62811,8 @@
                           "displayName",
                           "curated",
                           "enabled",
-                          "maxOutputTokens"
+                          "maxOutputTokens",
+                          "maxConcurrentCalls"
                         ]
                       }
                     }
@@ -63434,6 +63455,12 @@
                               "integer",
                               "null"
                             ]
+                          },
+                          "maxConcurrentCalls": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -63441,7 +63468,8 @@
                           "displayName",
                           "curated",
                           "enabled",
-                          "maxOutputTokens"
+                          "maxOutputTokens",
+                          "maxConcurrentCalls"
                         ]
                       }
                     }
@@ -63713,11 +63741,11 @@
     "/api/llm/endpoints/{name}/models/{modelId}": {
       "patch": {
         "operationId": "setLlmModelSettings",
-        "summary": "Set a model's output limit",
+        "summary": "Set a model's output limit and parallel calls",
         "tags": [
           "Models"
         ],
-        "description": "**Admins only.** `maxOutputTokens` is the most tokens one reply of this model may\nuse where the step does not say: the Workbench drafting stages and the mapping stage\n(16,000 when null). A reply cut off at the limit fails the stage with a message that\nnames this setting. Mainly a property of the model, so set it to what the model and\nits context window allow. A model id containing `/` is URL-encoded.",
+        "description": "**Admins only.** `maxOutputTokens` is the most tokens one reply of this model may\nuse where the step does not say: the Workbench drafting stages and the mapping stage\n(16,000 when null). A reply cut off at the limit fails the stage with a message that\nnames this setting. Mainly a property of the model, so set it to what the model and\nits context window allow.\n\n`maxConcurrentCalls` (1 to 32) is how many calls a worker may send this model at\nonce: a step's occurrence and chunk calls, and OCR pages. Null: one at a time (OCR\nkeeps `ocr.concurrency` of the config file). Set it no higher than the model's\nserver serves at once (LM Studio's parallel requests); each worker replica counts\non its own. A setting left out of the body is kept; null clears it. A model id\ncontaining `/` is URL-encoded.",
         "requestBody": {
           "required": true,
           "content": {
@@ -63736,11 +63764,20 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "maxConcurrentCalls": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 32
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
-                "required": [
-                  "maxOutputTokens"
-                ],
                 "additionalProperties": false
               }
             }
@@ -63858,6 +63895,12 @@
                               "integer",
                               "null"
                             ]
+                          },
+                          "maxConcurrentCalls": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -63865,7 +63908,8 @@
                           "displayName",
                           "curated",
                           "enabled",
-                          "maxOutputTokens"
+                          "maxOutputTokens",
+                          "maxConcurrentCalls"
                         ]
                       }
                     }
