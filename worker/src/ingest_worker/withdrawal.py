@@ -174,7 +174,7 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[
                 job.id, "warn", "republish skipped", {"job": withdrawn.job_id, "reason": str(exc)}
             )
             continue
-        target = targets.get(template.publish_to())  # the job's version's own target
+        target = targets.get(template.publish_targets()[0])  # the job's version's own target
         formats = template.delivery_formats()
         rendered = render_document(template, document, graph)
         delivered = deliver_publication(

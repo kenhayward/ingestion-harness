@@ -292,13 +292,29 @@ PUBLISH_FIXTURE = json.loads(
 def test_delivery_cases_match_the_shared_fixture(case: dict[str, Any]) -> None:
     t = Template.model_validate({**SEMANTICS_FIXTURE["base"], **case["definition"]})
     assert t.delivery_formats() == case["formats"]
-    assert t.publish_to() == case["publishTo"]
+    assert t.publish_targets() == case["publishTargets"]
 
 
 @pytest.mark.parametrize("bad", ["Lake", "-x", "a b", "x" * 41, ""])
 def test_publish_to_must_be_a_target_id(bad: str) -> None:
     with pytest.raises(ValidationError):
         Template.model_validate({**SEMANTICS_FIXTURE["base"], "delivery": {"publishTo": bad}})
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [[], [f"t{i}" for i in range(9)], ["lake", "archive", "lake"], ["lake", "Bad Id"]],
+    ids=["empty", "nine", "duplicate", "bad id"],
+)
+def test_publish_to_list_is_one_to_eight_distinct_ids(bad: list[str]) -> None:
+    with pytest.raises(ValidationError):
+        Template.model_validate({**SEMANTICS_FIXTURE["base"], "delivery": {"publishTo": bad}})
+
+
+def test_publish_to_takes_eight_distinct_ids() -> None:
+    ids = [f"t{i}" for i in range(8)]
+    t = Template.model_validate({**SEMANTICS_FIXTURE["base"], "delivery": {"publishTo": ids}})
+    assert t.publish_targets() == ids
 
 
 def test_delivery_still_refuses_unknown_keys_and_empty_formats() -> None:

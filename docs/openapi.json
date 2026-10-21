@@ -10409,8 +10409,21 @@
                                   }
                                 },
                                 "publishTo": {
-                                  "type": "string",
-                                  "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                                    },
+                                    {
+                                      "minItems": 1,
+                                      "maxItems": 8,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                                      }
+                                    }
+                                  ]
                                 }
                               },
                               "additionalProperties": false
@@ -16762,8 +16775,21 @@
                               }
                             },
                             "publishTo": {
-                              "type": "string",
-                              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                                },
+                                {
+                                  "minItems": 1,
+                                  "maxItems": 8,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                                  }
+                                }
+                              ]
                             }
                           },
                           "additionalProperties": false

@@ -1,7 +1,7 @@
 import {
   DEFAULT_TARGET_ID,
   TRIPLE_STORE_TARGET_ID,
-  deliveryPublishTo,
+  publishTargetsOf,
   targetInUse,
   type PublishTargetView,
   type TargetChoice,
@@ -304,8 +304,8 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
   }
 
   async usage(id: string): Promise<TargetUsage> {
-    const published = (await this.facts.publishedDefinitions()).filter(
-      (p) => deliveryPublishTo(p.definition) === id,
+    const published = (await this.facts.publishedDefinitions()).filter((p) =>
+      publishTargetsOf(p.definition).includes(id),
     );
     return {
       publishedVersions: published.length,

@@ -481,7 +481,7 @@ def target_for(deps: PipelineDeps, loaded: Any) -> Target | None:
     """The publishing target of a loaded recipe version (`delivery.publishTo`, else the default);
     legacy specs always deliver to the default."""
     if isinstance(loaded, LoadedTemplate):
-        return target_named(deps, loaded.template.publish_to())
+        return target_named(deps, loaded.template.publish_targets()[0])
     return target_named(deps, DEFAULT_TARGET_ID)
 
 

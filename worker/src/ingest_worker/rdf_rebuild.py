@@ -207,7 +207,7 @@ def job_target(deps: PipelineDeps, source: RebuildSource, job: DeliveredJob) -> 
         template = Template.model_validate(definition)
     except ValidationError as exc:
         raise DocumentError(f"recipe {job.template_id} v{job.template_version} is invalid") from exc
-    return deps.targets.get(template.publish_to())
+    return deps.targets.get(template.publish_targets()[0])
 
 
 def _publish(

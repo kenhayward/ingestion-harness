@@ -22,7 +22,7 @@
       "name": "no delivery",
       "definition": {},
       "formats": ["csv", "json"],
-      "publishTo": "default"
+      "publishTargets": ["default"]
     },
     {
       "name": "target only",
@@ -32,7 +32,7 @@
         }
       },
       "formats": ["csv", "json"],
-      "publishTo": "finance-lake"
+      "publishTargets": ["finance-lake"]
     },
     {
       "name": "formats only",
@@ -42,7 +42,7 @@
         }
       },
       "formats": ["json"],
-      "publishTo": "default"
+      "publishTargets": ["default"]
     },
     {
       "name": "both",
@@ -53,7 +53,28 @@
         }
       },
       "formats": ["csv"],
-      "publishTo": "lake_2"
+      "publishTargets": ["lake_2"]
+    },
+    {
+      "name": "a one-item list",
+      "definition": {
+        "delivery": {
+          "publishTo": ["finance-lake"]
+        }
+      },
+      "formats": ["csv", "json"],
+      "publishTargets": ["finance-lake"]
+    },
+    {
+      "name": "a list, in order",
+      "definition": {
+        "delivery": {
+          "formats": ["json"],
+          "publishTo": ["archive", "default", "lake_2"]
+        }
+      },
+      "formats": ["json"],
+      "publishTargets": ["archive", "default", "lake_2"]
     }
   ],
   "seed": [

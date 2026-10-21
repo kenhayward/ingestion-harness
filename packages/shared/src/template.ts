@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TargetIdSchema } from './publish-targets.js';
+import { PublishToSchema, type PublishTo } from './publish-targets.js';
 import { pythonPatternCompiles } from './python-pattern.js';
 import {
   CopySelectionSchema,
@@ -470,8 +470,8 @@ export type DeliveryFormat = (typeof DELIVERY_FORMATS)[number];
 export const DeliverySchema = z
   .object({
     formats: z.array(z.enum(DELIVERY_FORMATS)).min(1).optional(),
-    /** A publishing target's id (see `publish-targets.ts`); absent = `default`. */
-    publishTo: TargetIdSchema.optional(),
+    /** The publishing targets' ids, one or a list (see `publish-targets.ts`); absent = `default`. */
+    publishTo: PublishToSchema.optional(),
   })
   .strict();
 
@@ -800,7 +800,7 @@ export function setDeliveryTarget(
     f === 'rdf' ? targets.rdf : target === 's3' ? on : formatsOf(definition).includes(f),
   );
   const next: LooseDefinition = { ...definition };
-  const publishTo = (definition.delivery as { publishTo?: string } | undefined)?.publishTo;
+  const publishTo = (definition.delivery as { publishTo?: PublishTo } | undefined)?.publishTo;
   delete next.delivery;
   if (target === 'rdf' && !on) delete next.semantics;
   const isDefault = formats.join() === 'csv,json';

@@ -4,6 +4,7 @@ import {
   describeDefinitionChange,
   VALUE_TYPES,
   DEFAULT_TARGET_ID,
+  publishTargetsOf,
   type DataPolicy,
   type DeliveryFormat,
   type JobSummary,
@@ -42,6 +43,7 @@ import {
   removeAt,
   setIn,
   validateDefinition,
+  withPublishTo,
   type Definition,
 } from './model.js';
 import { choiceName } from '../jobs/derive.js';
@@ -628,8 +630,10 @@ export function TemplateEditor({
                     <span>Publish to</span>
                     <PublishToPicker
                       choices={targets}
-                      value={def.delivery?.publishTo}
-                      onChange={(id) => update(['delivery'], withPublishTo(def.delivery, id))}
+                      value={publishTargetsOf(def)[0]}
+                      onChange={(id) =>
+                        update(['delivery'], withPublishTo(def.delivery, id ? [id] : []))
+                      }
                     />
                   </div>
                   <Area
@@ -710,7 +714,7 @@ export function TemplateEditor({
                                 ['delivery'],
                                 withPublishTo(
                                   isDefault ? undefined : { formats: next },
-                                  def.delivery?.publishTo,
+                                  publishTargetsOf(def),
                                 ),
                               );
                             }}
@@ -1553,17 +1557,6 @@ function TableOutputs({
       )}
     </div>
   );
-}
-
-/** A delivery with `publishTo` set (or removed for ''/undefined); no `delivery` at all when nothing is left. */
-function withPublishTo(
-  delivery: object | undefined,
-  id: string | undefined,
-): Record<string, unknown> | undefined {
-  const rest: Record<string, unknown> = { ...delivery };
-  delete rest.publishTo;
-  const next = id ? { ...rest, publishTo: id } : rest;
-  return Object.keys(next).length === 0 ? undefined : next;
 }
 
 /** The recipe's publishing target: empty = the default target; a stored id nobody offers stays visible. */

@@ -8,6 +8,7 @@ import {
   type DataPolicy,
   type ModelChoice,
   type Template,
+  publishTargetsOf,
 } from '@ih/shared';
 import { z } from 'zod';
 import type { AppDeps } from '../app.js';
@@ -121,27 +122,20 @@ export async function templateIssues(
       ? [{ path: `pipeline.${i}.model`, message: `step "${step.id}": ${problem}` }]
       : [];
   });
-  // A recipe from another deployment keeps its target id; until one exists here it cannot publish.
-  const publishTo = parsed.data.delivery?.publishTo;
-  const named = publishTo === undefined ? null : await deps.targets.get(publishTo);
-  const targetIssues =
-    publishTo === undefined
-      ? []
-      : !named
-        ? [
-            {
-              path: 'delivery.publishTo',
-              message: `no publishing target ${publishTo} on this deployment`,
-            },
-          ]
-        : named.kind === 'rdf'
-          ? [
-              {
-                path: 'delivery.publishTo',
-                message: `${publishTo} is a triple store: name an S3 target`,
-              },
-            ]
-          : [];
+  // A recipe from another deployment keeps its target ids; until each exists here it cannot publish.
+  const listed = parsed.data.delivery?.publishTo === undefined ? [] : publishTargetsOf(parsed.data);
+  const targetIssues = (
+    await Promise.all(
+      listed.map(async (id) => {
+        const named = await deps.targets.get(id);
+        if (!named) return [`no publishing target ${id} on this deployment`];
+        if (named.kind === 'rdf') return [`${id} is a triple store: name an S3 target`];
+        return [];
+      }),
+    )
+  )
+    .flat()
+    .map((message) => ({ path: 'delivery.publishTo', message }));
   return [
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),

@@ -13,6 +13,24 @@ export const TRIPLE_STORE_TARGET_ID = 'rdf-default';
 export const TARGET_ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const TargetIdSchema = z.string().regex(TARGET_ID, 'a publishing target id');
 
+/** The most targets one recipe delivers to (delivery bridge phase 4). */
+export const MAX_PUBLISH_TARGETS = 8;
+
+/**
+ * A recipe's `delivery.publishTo`: one target id, or a list of 1 to `MAX_PUBLISH_TARGETS`
+ * distinct ids in order. A one-item list means the same as the string; the editor writes the
+ * string, so recipes that keep one target keep their hash.
+ */
+export const PublishToSchema = z.union([
+  TargetIdSchema,
+  z
+    .array(TargetIdSchema)
+    .min(1)
+    .max(MAX_PUBLISH_TARGETS)
+    .refine((ids) => new Set(ids).size === ids.length, 'a target is listed twice'),
+]);
+export type PublishTo = z.infer<typeof PublishToSchema>;
+
 /** An id made from a label (slug; `target` when nothing is left or it is the reserved `default`). */
 export function publishTargetIdFrom(label: string): string {
   const slug = label
@@ -214,7 +232,12 @@ export const TargetChoiceSchema = z.object({
 });
 export type TargetChoice = z.infer<typeof TargetChoiceSchema>;
 
-/** The target a recipe delivers to; absent means `default`. */
-export function deliveryPublishTo(definition: { delivery?: { publishTo?: string } }): string {
-  return definition.delivery?.publishTo ?? DEFAULT_TARGET_ID;
+/**
+ * The targets a recipe delivers to, in its order; absent means `["default"]`. The triple store
+ * (`rdf-default`) is never listed: the worker adds it when the recipe delivers `rdf`.
+ */
+export function publishTargetsOf(definition: { delivery?: { publishTo?: PublishTo } }): string[] {
+  const to = definition.delivery?.publishTo;
+  if (to === undefined) return [DEFAULT_TARGET_ID];
+  return typeof to === 'string' ? [to] : [...to];
 }
