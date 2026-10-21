@@ -261,6 +261,29 @@ describe("job state on each target's latest delivery", () => {
     expect(statusOf(repo, job.id)).toBe('succeeded');
   });
 
+  it('several deliveries to one target in a round all count (a republish, ontology loads)', async () => {
+    const { repo, job, deps } = await setup();
+    const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a },
+      { targetId: 'default', deliveryId: b },
+      { targetId: 'default', deliveryId: c },
+    ]);
+    expect(await repo.deliveriesOf(job.id)).toHaveLength(3);
+    await applyEvent(deps, event(a, 2));
+    await applyEvent(deps, event(b, 2));
+    expect(statusOf(repo, job.id)).toBe('delivering');
+    await applyEvent(
+      deps,
+      event(c, 2, {
+        status: 'failed',
+        receipt: null,
+        error: { class: 'retryable', code: 'timeout', message: 'gave up' },
+      }),
+    );
+    expect(statusOf(repo, job.id)).toBe('failed');
+  });
+
   it('one target failed and one succeeded: the job fails, naming the failed target', async () => {
     const { repo, job, deps } = await setup();
     const [a, b] = [randomUUID(), randomUUID()];

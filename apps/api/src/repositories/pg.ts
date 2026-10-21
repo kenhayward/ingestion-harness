@@ -1489,13 +1489,13 @@ export class PgRepo implements IngestionRepo {
     jobId: string,
     rows: { targetId: string; deliveryId: string }[],
   ): Promise<void> {
-    for (const r of rows) {
-      await this.pool.query(
-        `INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
-         VALUES ($1, $2, $3, 'queued') ON CONFLICT (delivery_id) DO NOTHING`,
-        [r.deliveryId, jobId, r.targetId],
-      );
-    }
+    // One statement, so one round (one created_at), as the worker's hand-off records them.
+    await this.pool.query(
+      `INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
+       SELECT d, $1, t, 'queued' FROM unnest($2::uuid[], $3::text[]) AS r(d, t)
+       ON CONFLICT (delivery_id) DO NOTHING`,
+      [jobId, rows.map((r) => r.deliveryId), rows.map((r) => r.targetId)],
+    );
   }
 
   async applyDeliveryUpdate(
@@ -1625,16 +1625,17 @@ const toDelivery = (r: DeliveryRow): JobDelivery => ({
 });
 
 /**
- * Each target's latest delivery of a job (an approval again starts a new round; the rounds
- * before stay for the record but no longer judge the job), oldest first.
+ * The deliveries of a job's latest round: every row recorded with its last hand-off (one
+ * transaction, so one `created_at`), however many go to one target (a republish, ontology loads).
+ * An approval again starts a new round; the rounds before stay for the record but no longer judge
+ * the job.
  */
 async function deliveriesIn(db: pg.Pool | pg.PoolClient, jobId: string): Promise<JobDelivery[]> {
   const { rows } = await db.query<DeliveryRow>(
-    `SELECT * FROM (
-       SELECT DISTINCT ON (d.target_id) ${DELIVERY_COLUMNS}, d.created_at AS round_at
-         FROM job_deliveries d WHERE d.job_id = $1
-        ORDER BY d.target_id, d.created_at DESC, d.delivery_id DESC
-     ) latest ORDER BY round_at, delivery_id`,
+    `SELECT ${DELIVERY_COLUMNS} FROM job_deliveries d
+      WHERE d.job_id = $1
+        AND d.created_at = (SELECT max(created_at) FROM job_deliveries WHERE job_id = $1)
+      ORDER BY d.delivery_id`,
     [jobId],
   );
   return rows.map(toDelivery);

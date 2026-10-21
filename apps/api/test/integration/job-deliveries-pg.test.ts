@@ -125,6 +125,20 @@ describe.skipIf(!url)('job deliveries against Postgres', { timeout: 30_000 }, ()
     expect(await statusOf(job.id)).toBe('succeeded');
   });
 
+  it('several deliveries to one target in a round all count (a republish, ontology loads)', async () => {
+    const job = await delivering();
+    const [a, b] = [randomUUID(), randomUUID()];
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a },
+      { targetId: 'default', deliveryId: b },
+    ]);
+    expect(await repo.deliveriesOf(job.id)).toHaveLength(2);
+    await applyEvent({ repo, targets }, event(a, 2));
+    expect(await statusOf(job.id)).toBe('delivering');
+    await applyEvent({ repo, targets }, event(b, 2));
+    expect(await statusOf(job.id)).toBe('succeeded');
+  });
+
   it('a needs_user delivery puts the job back in review with the target label', async () => {
     const job = await delivering();
     const d = randomUUID();

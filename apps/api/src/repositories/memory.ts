@@ -976,13 +976,19 @@ export class MemoryRepo implements IngestionRepo {
 
   /** job_deliveries, by delivery id. */
   readonly deliveries = new Map<string, JobDelivery>();
+  /** The hand-off (round) each delivery was recorded with: `recordDeliveries` calls, per job. */
+  private readonly roundOf = new Map<string, number>();
+  private readonly rounds = new Map<string, number>();
 
   async recordDeliveries(
     jobId: string,
     rows: { targetId: string; deliveryId: string }[],
   ): Promise<void> {
+    const round = (this.rounds.get(jobId) ?? 0) + 1;
+    this.rounds.set(jobId, round);
     for (const r of rows) {
       if (this.deliveries.has(r.deliveryId)) continue;
+      this.roundOf.set(r.deliveryId, round);
       this.deliveries.set(r.deliveryId, {
         deliveryId: r.deliveryId,
         jobId,
@@ -1038,15 +1044,13 @@ export class MemoryRepo implements IngestionRepo {
     return { outcome: 'applied', finished: outcome };
   }
 
-  /** Each target's latest delivery (a re-approval's round replaces the one before), in order. */
+  /** The deliveries of the job's latest round (a re-approval's round replaces the one before). */
   async deliveriesOf(jobId: string): Promise<JobDelivery[]> {
-    const latest = new Map<string, JobDelivery>();
-    for (const d of this.deliveries.values()) {
-      if (d.jobId !== jobId) continue;
-      latest.delete(d.targetId); // insertion order: a newer round goes last
-      latest.set(d.targetId, d);
-    }
-    return [...latest.values()].map((d) => ({ ...d }));
+    const mine = [...this.deliveries.values()].filter((d) => d.jobId === jobId);
+    const latest = Math.max(0, ...mine.map((d) => this.roundOf.get(d.deliveryId) ?? 0));
+    return mine
+      .filter((d) => (this.roundOf.get(d.deliveryId) ?? 0) === latest)
+      .map((d) => ({ ...d }));
   }
 
   async stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]> {
