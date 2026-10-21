@@ -184,11 +184,23 @@ describe('applyEvent', () => {
     });
   });
 
+  it('a final delivery takes no later event (a delayed one after the reconcile moved it on)', async () => {
+    const { repo, job, deps } = await setup();
+    const d = randomUUID();
+    await repo.recordDeliveries(job.id, [{ targetId: 'default', deliveryId: d }]);
+    expect(await applyEvent(deps, event(d, 2))).toBe('applied');
+    expect(await applyEvent(deps, event(d, 3, { status: 'running', receipt: null }))).toBe('stale');
+    expect((await repo.deliveriesOf(job.id))[0]).toMatchObject({
+      status: 'succeeded',
+      lastSequence: 2,
+    });
+  });
+
   it('an event after the job was finalised changes the delivery row only', async () => {
     const { repo, job, deps } = await setup();
     const d = randomUUID();
     await repo.recordDeliveries(job.id, [{ targetId: 'default', deliveryId: d }]);
-    await applyEvent(deps, event(d, 2));
+    await applyEvent(deps, event(d, 2, { status: 'running', receipt: null }));
     repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'cancelled' });
     const events = repo.events.get(job.id)?.length ?? 0;
     await applyEvent(

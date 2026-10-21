@@ -514,7 +514,9 @@ export interface IngestionRepo {
   recordDeliveries(jobId: string, rows: { targetId: string; deliveryId: string }[]): Promise<void>;
   /**
    * One transaction, holding the job's row: records `update` when its sequence is newer than the
-   * delivery's last one (else `stale`; `unknown` when there is no such delivery), then asks
+   * delivery's last one and the delivery is not final yet (else `stale`: the bridge never moves a
+   * final delivery, so a later event is a delayed one the reconcile overtook; `unknown` when
+   * there is no such delivery), then asks
    * `finish` about all the job's deliveries; a finish it answers ends the job, only while it is
    * still `delivering` (so it happens once), with a job event.
    */
