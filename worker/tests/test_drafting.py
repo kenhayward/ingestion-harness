@@ -846,6 +846,61 @@ def test_missed_key_feedback_caps_the_keys_named() -> None:
     assert missed_key_feedback([row], set(), {"s1": "a.pdf"}, sections) == []
 
 
+CONTENTS_AND_BODY = [
+    "Contents\nTable\xa01: Study A....25\nTable\xa02: Study B....26\n",
+    "Table\xa01:   Study A - Assay\nrows\n",
+    "Table\xa02:   Study B - Assay\nrows\n",
+]
+
+
+def _tables_check(anchor: str) -> list[str]:
+    samples = [DraftSample("s1", "a.pdf", "dev", CONTENTS_AND_BODY)]
+    draft = {"document": {"sections": [{"id": "all", "anchor": r"\A"}]}}
+    changes = [put("result_tables", anchor, repeat=True, key=r"^\s*Table\s+(\d+):")]
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    return misses
+
+
+def test_anchor_check_feeds_back_keys_caught_more_than_once() -> None:
+    [miss] = _tables_check(r"^Table\s+\d+:\s*Study")
+    assert miss.startswith(
+        'section "result_tables" reads keys 1, 2 more than once in a.pdf, e.g. key 1 at '
+        'p.1 "Table\xa01: Study A....25" and p.2 "Table\xa01:   Study A - Assay".'
+    )
+    assert "table-of-contents entries" in miss
+    assert "one occurrence per key" in miss
+    assert _tables_check(r"^Table\s+\d+:[ \t]{2,}Study") == []
+
+
+def test_repeated_key_feedback_caps_the_keys_named() -> None:
+    from ingest_worker.drafting import repeated_key_feedback
+
+    occurrences = [{"page": n, "line": f"Table {n}", "key": str(n)} for n in range(1, 31)]
+    row = {
+        "sampleId": "s1",
+        "sections": [{"id": "t", "found": True, "occurrences": occurrences}],
+        "repeatedKeys": [
+            {"section": "t", "key": str(n), "occurrences": [n, n + 15]} for n in range(1, 13)
+        ],
+        "repeatedKeysTotal": 14,
+    }
+    [line] = repeated_key_feedback([row], {"t"}, {"s1": "a.pdf"})
+    assert "reads keys 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 (and 4 more) more than once in a.pdf" in line
+    assert 'e.g. key 1 at p.1 "Table 1" and p.16 "Table 16".' in line
+    assert repeated_key_feedback([row], set(), {"s1": "a.pdf"}) == []
+
+
+def test_anchor_check_offers_the_no_break_space_fix() -> None:
+    [miss] = _tables_check(r"^Table \d+:[ \t]{2,}")
+    assert miss.startswith("section \"result_tables\": anchor '^Table \\\\d+:[ \\\\t]{2,}' matched")
+    assert miss.endswith(
+        r" Suggested anchor for a.pdf: ^Table\s\d+:[ \u00a0\t]{2,} (This sample writes "
+        '"Table 1:   Study A - Assay" with a no-break space (U+00A0) where the anchor has a '
+        "plain space.)"
+    )
+
+
 def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [sections_body("^SIGNATURES"), sections_body("^STILL WRONG")]

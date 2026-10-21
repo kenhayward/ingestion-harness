@@ -227,6 +227,16 @@ export const MissedKeySchema = z.object({
 });
 export type MissedKey = z.infer<typeof MissedKeySchema>;
 
+/** A key a repeating section read from more than one of its occurrences: its anchor also catches
+ * lines that are not its headings, usually contents entries (worker segment.repeated_keys). */
+export const RepeatedKeySchema = z.object({
+  section: z.string(),
+  key: z.string(),
+  /** The 1-based occurrences that read it, in document order (index into `occurrences`). */
+  occurrences: z.array(z.number().int().positive()),
+});
+export type RepeatedKey = z.infer<typeof RepeatedKeySchema>;
+
 export const SegmentedSampleSchema = z.object({
   sampleId: z.string(),
   /** 1-based first page of the kept copy (copy selection). */
@@ -242,6 +252,10 @@ export const SegmentedSampleSchema = z.object({
   missedKeys: z.array(MissedKeySchema).optional(),
   /** All missed keys, only when `missedKeys` was cut at 20. */
   missedKeysTotal: z.number().int().positive().optional(),
+  /** Keys an anchor caught more than once (the first 20); absent when none and in older grids. */
+  repeatedKeys: z.array(RepeatedKeySchema).optional(),
+  /** All repeated keys, only when `repeatedKeys` was cut at 20. */
+  repeatedKeysTotal: z.number().int().positive().optional(),
 });
 export type SegmentedSample = z.infer<typeof SegmentedSampleSchema>;
 

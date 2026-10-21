@@ -103,6 +103,26 @@ describe('segmentation contracts', () => {
     });
   });
 
+  it('parses a grid row with and without repeated keys', () => {
+    const row = {
+      sampleId: 's1',
+      firstPage: 1,
+      pageCount: 1,
+      error: null,
+      missingRequired: [],
+      sections: [],
+    };
+    const repeated = { section: 'result_tables', key: '13', occurrences: [1, 61] };
+    const parse = (r: object) => SegmentationResultSchema.parse({ anchorErrors: {}, samples: [r] });
+    expect(parse(row).samples[0]).toEqual(row);
+    expect(parse({ ...row, repeatedKeys: [repeated], repeatedKeysTotal: 48 }).samples[0]).toEqual({
+      ...row,
+      repeatedKeys: [repeated],
+      repeatedKeysTotal: 48,
+    });
+    expect(() => parse({ ...row, repeatedKeys: [{ ...repeated, occurrences: [0, 2] }] })).toThrow();
+  });
+
   it('parses the grid the worker writes', () => {
     const result = SegmentationResultSchema.parse({
       anchorErrors: { totals: 'missing ), unterminated subpattern at position 0' },

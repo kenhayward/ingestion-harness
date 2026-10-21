@@ -35306,6 +35306,36 @@
                                   "missedKeysTotal": {
                                     "type": "integer",
                                     "exclusiveMinimum": 0
+                                  },
+                                  "repeatedKeys": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "section": {
+                                          "type": "string"
+                                        },
+                                        "key": {
+                                          "type": "string"
+                                        },
+                                        "occurrences": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "section",
+                                        "key",
+                                        "occurrences"
+                                      ]
+                                    }
+                                  },
+                                  "repeatedKeysTotal": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
                                   }
                                 },
                                 "required": [
@@ -35823,6 +35853,36 @@
                                     }
                                   },
                                   "missedKeysTotal": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "repeatedKeys": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "section": {
+                                          "type": "string"
+                                        },
+                                        "key": {
+                                          "type": "string"
+                                        },
+                                        "occurrences": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          }
+                                        }
+                                      },
+                                      "required": [
+                                        "section",
+                                        "key",
+                                        "occurrences"
+                                      ]
+                                    }
+                                  },
+                                  "repeatedKeysTotal": {
                                     "type": "integer",
                                     "exclusiveMinimum": 0
                                   }
@@ -40107,6 +40167,36 @@
                                                 }
                                               },
                                               "missedKeysTotal": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
+                                              },
+                                              "repeatedKeys": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "section": {
+                                                      "type": "string"
+                                                    },
+                                                    "key": {
+                                                      "type": "string"
+                                                    },
+                                                    "occurrences": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "integer",
+                                                        "exclusiveMinimum": 0
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "section",
+                                                    "key",
+                                                    "occurrences"
+                                                  ]
+                                                }
+                                              },
+                                              "repeatedKeysTotal": {
                                                 "type": "integer",
                                                 "exclusiveMinimum": 0
                                               }
@@ -45333,6 +45423,36 @@
                                                 "missedKeysTotal": {
                                                   "type": "integer",
                                                   "exclusiveMinimum": 0
+                                                },
+                                                "repeatedKeys": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "section": {
+                                                        "type": "string"
+                                                      },
+                                                      "key": {
+                                                        "type": "string"
+                                                      },
+                                                      "occurrences": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "integer",
+                                                          "exclusiveMinimum": 0
+                                                        }
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "section",
+                                                      "key",
+                                                      "occurrences"
+                                                    ]
+                                                  }
+                                                },
+                                                "repeatedKeysTotal": {
+                                                  "type": "integer",
+                                                  "exclusiveMinimum": 0
                                                 }
                                               },
                                               "required": [
@@ -48137,6 +48257,36 @@
                                               "missedKeysTotal": {
                                                 "type": "integer",
                                                 "exclusiveMinimum": 0
+                                              },
+                                              "repeatedKeys": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "section": {
+                                                      "type": "string"
+                                                    },
+                                                    "key": {
+                                                      "type": "string"
+                                                    },
+                                                    "occurrences": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "integer",
+                                                        "exclusiveMinimum": 0
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "section",
+                                                    "key",
+                                                    "occurrences"
+                                                  ]
+                                                }
+                                              },
+                                              "repeatedKeysTotal": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
                                               }
                                             },
                                             "required": [
@@ -50604,6 +50754,36 @@
                                                 }
                                               },
                                               "missedKeysTotal": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
+                                              },
+                                              "repeatedKeys": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "section": {
+                                                      "type": "string"
+                                                    },
+                                                    "key": {
+                                                      "type": "string"
+                                                    },
+                                                    "occurrences": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "integer",
+                                                        "exclusiveMinimum": 0
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "section",
+                                                    "key",
+                                                    "occurrences"
+                                                  ]
+                                                }
+                                              },
+                                              "repeatedKeysTotal": {
                                                 "type": "integer",
                                                 "exclusiveMinimum": 0
                                               }

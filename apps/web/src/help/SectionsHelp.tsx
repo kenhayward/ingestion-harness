@@ -107,6 +107,16 @@ export function SectionsHelp() {
         matches this kind's headings.
       </p>
 
+      <h3>Keys caught more than once</h3>
+      <p>
+        Under a sample, <strong>Keys caught more than once</strong> lists keys that start more than
+        one occurrence of the same repeating section, with the page and line of each. Each heading
+        should start one occurrence, so the anchor is also catching lines that are not headings:
+        usually the table of contents, sometimes a running header or a <em>continued</em> line.
+        Tighten the anchor to what only the heading has, such as the gap after the colon or the
+        first word of the title, or leave out lines ending in dots and a page number.
+      </p>
+
       <h3>Before sections: copies</h3>
       <p>
         When a PDF holds several copies of the document (Document options), one copy is kept first,

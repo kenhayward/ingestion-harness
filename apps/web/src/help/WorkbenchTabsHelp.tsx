@@ -175,6 +175,11 @@ export function WbSectionsHelp() {
         updates as you type; for a required section that misses a sample, a suggested fix may be
         offered. Save to put the anchors in the draft.
       </p>
+      <p>
+        One fix is for a gap you cannot see: PDFs often put a no-break space where a plain one
+        appears, as in <em>Table 13:</em>. An anchor with a plain space then misses, and the
+        suggestion writes that space as <code>\s</code>, which matches either.
+      </p>
       <h3>Repeating blocks</h3>
       <p>
         For blocks that repeat per batch or item, tick <strong>Repeats</strong> and give a key; the

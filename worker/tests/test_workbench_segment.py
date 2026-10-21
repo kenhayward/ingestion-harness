@@ -434,6 +434,49 @@ def test_grid_omits_missed_keys_when_covered() -> None:
     assert "missedKeysTotal" not in row
 
 
+CONTENTS_AND_BODY = [
+    "Contents\nTable\xa01: Study A....25\nTable\xa02: Study B....26\n",
+    "Table\xa01:   Study A - Assay\nrows\n",
+    "Table\xa02:   Study B - Assay\nrows\n",
+]
+
+
+def study_tables(anchor: str) -> SegmentDocument:
+    return SegmentDocument.model_validate(
+        {"sections": [{"id": "result_tables", "anchor": anchor, "repeat": True, "key": MISS_KEY}]}
+    )
+
+
+def test_grid_reports_keys_the_anchor_caught_more_than_once() -> None:
+    grid = segment_samples([("s1", CONTENTS_AND_BODY)], study_tables(r"^Table\s+\d+:\s*Study"))
+    row = grid["samples"][0]
+    assert row["repeatedKeys"] == [
+        {"section": "result_tables", "key": "1", "occurrences": [1, 3]},
+        {"section": "result_tables", "key": "2", "occurrences": [2, 4]},
+    ]
+    assert "repeatedKeysTotal" not in row
+    assert (
+        "repeatedKeys"
+        not in segment_samples(
+            [("s1", CONTENTS_AND_BODY)], study_tables(r"^Table\s+\d+:[ \t]{2,}Study")
+        )["samples"][0]
+    )
+
+
+def test_an_anchor_missing_only_a_no_break_space_gets_a_suggestion() -> None:
+    grid = segment_samples([("s1", CONTENTS_AND_BODY)], study_tables(r"^Table \d+:[ \t]{2,}"))
+    assert grid["samples"][0]["missingRequired"] == ["result_tables"]
+    assert grid["suggestions"] == [
+        {
+            "section": "result_tables",
+            "sampleId": "s1",
+            "anchor": r"^Table\s\d+:[ \u00a0\t]{2,}",
+            "reason": 'This sample writes "Table 1:   Study A - Assay" with a no-break space '
+            "(U+00A0) where the anchor has a plain space.",
+        }
+    ]
+
+
 def test_grid_caps_missed_keys() -> None:
     page = "Table 0: ok Results\n" + "".join(f"Table {n}: wrapped (\n" for n in range(1, 26))
     row = segment_samples([("s1", [page])], tables_doc())["samples"][0]

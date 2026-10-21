@@ -217,6 +217,49 @@ def missed_payload(missed: list[MissedKey]) -> dict[str, Any]:
 
 
 @dataclass(frozen=True)
+class RepeatedKey:
+    """A key a repeating section read from more than one of its occurrences."""
+
+    section: str
+    key: str
+    #: The 1-based occurrences that read it, in document order.
+    occurrences: tuple[int, ...]
+
+
+def repeated_keys(spans: list[SectionSpan]) -> list[RepeatedKey]:
+    """Own keys that start more than one occurrence of the same repeating section: its anchor
+    also catches lines that are not its headings (a contents list, a running header, a
+    "continued" line). Inherited keys repeat by design (several occurrences per heading) and
+    are not reported. In document order of each key's first occurrence. Workbench only:
+    production segmentation never reports these."""
+    seen: dict[tuple[str, str], list[int]] = {}
+    for span in spans:
+        if span.key_source == "own" and span.key is not None:
+            seen.setdefault((span.id, span.key), []).append(span.index + 1)
+    return [
+        RepeatedKey(section, key, tuple(found))
+        for (section, key), found in seen.items()
+        if len(found) > 1
+    ]
+
+
+def repeated_payload(repeated: list[RepeatedKey]) -> dict[str, Any]:
+    """`repeatedKeys` (the first MAX_MISSED_KEYS) and `repeatedKeysTotal` (only when capped) for
+    a grid row; empty when no key repeats, so the keys stay absent."""
+    if not repeated:
+        return {}
+    payload: dict[str, Any] = {
+        "repeatedKeys": [
+            {"section": r.section, "key": r.key, "occurrences": list(r.occurrences)}
+            for r in repeated[:MAX_MISSED_KEYS]
+        ]
+    }
+    if len(repeated) > MAX_MISSED_KEYS:
+        payload["repeatedKeysTotal"] = len(repeated)
+    return payload
+
+
+@dataclass(frozen=True)
 class Occurrence:
     """One occurrence of a repeating section, 1-based."""
 
