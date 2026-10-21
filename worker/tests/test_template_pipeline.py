@@ -1320,7 +1320,7 @@ def test_a_second_files_target_records_its_copy_of_the_graph_so_withdraw_finds_i
 
 
 def test_an_archives_graph_copy_is_recorded_per_version(tmp_path: Path) -> None:
-    deps, bridge, queue = several_deps(tmp_path, DELIVERED_TEMPLATE, ["default", "archive"])
+    deps, _bridge, queue = several_deps(tmp_path, DELIVERED_TEMPLATE, ["default", "archive"])
     queue.jobs = [V2]
     deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
     run_once(queue, deps, "w1")
