@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
+import { primaryTargetOf } from '../publish-targets/repo.js';
 import type { TemplateRecord } from './repo.js';
 import { semanticsIssues } from './semantics.js';
 import type { PluginCatalogue } from '../plugins/catalogue.js';
@@ -124,24 +125,24 @@ export async function templateIssues(
   });
   // A recipe from another deployment keeps its target ids; until each exists here it cannot publish.
   const listed = parsed.data.delivery?.publishTo === undefined ? [] : publishTargetsOf(parsed.data);
-  const targetIssues = (
-    await Promise.all(
-      listed.map(async (id) => {
-        const named = await deps.targets.get(id);
-        if (!named) return [`no publishing target ${id} on this deployment`];
-        if (named.kind === 'rdf') return [`${id} is a triple store: name an S3 target`];
-        return [];
-      }),
-    )
-  )
-    .flat()
-    .map((message) => ({ path: 'delivery.publishTo', message }));
+  const named = await Promise.all(listed.map((id) => deps.targets.get(id)));
+  const targetMessages = listed.flatMap((id, i) => {
+    const t = named[i];
+    if (!t) return [`no publishing target ${id} on this deployment`];
+    return t.kind === 'rdf' ? [`${id} is a triple store: name an S3 target`] : [];
+  });
+  // Results, the zip, read keys and the graph's copy read from one files-layout target.
+  const known = named.flatMap((t) => (t ? [t] : []));
+  if (listed.length > 0 && targetMessages.length === 0 && !primaryTargetOf(listed, known)) {
+    targetMessages.push('needs a target with the files layout');
+  }
+  const targetProblems = targetMessages.map((message) => ({ path: 'delivery.publishTo', message }));
   return [
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),
     ...modelIssues,
     ...(await pluginIssues(deps.plugins, parsed.data)),
-    ...targetIssues,
+    ...targetProblems,
     ...(await semanticsIssues(deps.ontologies, parsed.data)),
   ];
 }

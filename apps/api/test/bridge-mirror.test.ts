@@ -68,7 +68,10 @@ describe('destinationOf and connectionIdOf', () => {
       sse: 'aws:kms',
       kmsKeyId: 'kms-1',
       storageClass: '',
+      layout: 'files',
     });
+    await targets.update('finance', { layout: 'package' }, null);
+    expect(destinationOf((await targets.get('finance'))!).layout).toBe('package');
     expect(connectionIdOf((await targets.get('default'))!)).toBe('internal');
     expect(connectionIdOf((await targets.get('finance'))!)).toBeNull();
     await targets.markMoved('finance', 'target-finance');
@@ -91,6 +94,7 @@ describe('mirrorTargets', () => {
         sse: 'none',
         kmsKeyId: '',
         storageClass: '',
+        layout: 'files',
       },
     });
   });

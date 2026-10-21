@@ -26,8 +26,22 @@ const consumer = (o: Partial<S3Consumer> = {}): S3Consumer => ({
   ...o,
 });
 const TARGETS: TargetChoice[] = [
-  { id: 'default', label: 'Default', kind: 'internal', bucket: 'ingest-published' },
-  { id: 'finance-lake', label: 'Finance lake', kind: 'internal', bucket: 'finance-published' },
+  {
+    id: 'default',
+    label: 'Default',
+    kind: 'internal',
+    bucket: 'ingest-published',
+    prefix: '',
+    layout: 'files',
+  },
+  {
+    id: 'finance-lake',
+    label: 'Finance lake',
+    kind: 'internal',
+    bucket: 'finance-published',
+    prefix: '',
+    layout: 'files',
+  },
 ];
 const overview = (
   consumers: S3Consumer[],

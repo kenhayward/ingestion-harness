@@ -51,6 +51,7 @@ export function AddTargetDialog({
       label: label.trim(),
       bucket: bucket.trim(),
       prefix: prefix.trim(),
+      layout: 'files' as const,
     };
     if (kind === 'internal') return { ...common, kind } as TargetCreateBody;
     return {

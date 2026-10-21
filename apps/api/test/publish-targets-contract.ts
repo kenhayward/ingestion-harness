@@ -7,7 +7,7 @@ import type { DefaultSeed, RdfSeed } from '../src/publish-targets/seed.js';
  * withdraw jobs (one object and one graph entry naming the target).
  */
 export interface TargetFacts {
-  publish(id: string, version: number, publishTo: string | null): Promise<void>;
+  publish(id: string, version: number, publishTo: string | string[] | null): Promise<void>;
   delivered(targetId: string): Promise<void>;
   grant(targetId: string): Promise<void>;
   withdrawal(targetId: string, status: 'queued' | 'running' | 'succeeded'): Promise<void>;
@@ -210,6 +210,30 @@ export function publishTargetsContract(
       expect(await repo.remove('finance')).toBe('in_use');
     });
 
+    it('a target is in use when a list names it', async () => {
+      const { repo, facts } = await make();
+      await repo.create(lake('finance'), null);
+      await repo.create(lake('archive'), null);
+      await facts.publish('invoice', 1, ['archive', 'finance']);
+      await facts.publish('memo', 1, ['finance']);
+      expect((await repo.usage('finance')).documentTypes).toEqual(['invoice', 'memo']);
+      expect((await repo.usage('archive')).publishedVersions).toBe(1);
+      expect((await repo.usage('default')).publishedVersions).toBe(0);
+      expect(await repo.remove('archive')).toBe('in_use');
+    });
+
+    it('stores the layout: files unless a target is made an archive', async () => {
+      const { repo } = await make();
+      await repo.create(lake('plain'), null);
+      await repo.create(lake('archive', { layout: 'package' }), null);
+      expect((await repo.get('plain'))?.layout).toBe('files');
+      expect((await repo.get('archive'))?.layout).toBe('package');
+      expect((await repo.list()).find((t) => t.id === 'archive')?.layout).toBe('package');
+      await repo.update('plain', { layout: 'package' }, null);
+      expect((await repo.get('plain'))?.layout).toBe('package');
+      expect((await repo.get('default'))?.layout).toBe('files');
+    });
+
     it('counts a recipe naming no target as using the default', async () => {
       const { repo, facts } = await make();
       await facts.publish('memo', 1, null);
@@ -222,9 +246,30 @@ export function publishTargetsContract(
       await repo.create(lake('z', { label: 'Zeta' }), null);
       await repo.create(lake('a', { label: 'Alpha' }), null);
       expect(await repo.choices()).toEqual([
-        { id: 'default', label: 'Default', kind: 'internal', bucket: 'ingest-published' },
-        { id: 'a', label: 'Alpha', kind: 'external', bucket: 'lake' },
-        { id: 'z', label: 'Zeta', kind: 'external', bucket: 'lake' },
+        {
+          id: 'default',
+          label: 'Default',
+          kind: 'internal',
+          bucket: 'ingest-published',
+          prefix: '',
+          layout: 'files',
+        },
+        {
+          id: 'a',
+          label: 'Alpha',
+          kind: 'external',
+          bucket: 'lake',
+          prefix: 'out/',
+          layout: 'files',
+        },
+        {
+          id: 'z',
+          label: 'Zeta',
+          kind: 'external',
+          bucket: 'lake',
+          prefix: 'out/',
+          layout: 'files',
+        },
       ]);
     });
 

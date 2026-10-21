@@ -40,7 +40,7 @@ const financeRecord = (over: Partial<NewTarget> = {}): NewTarget => ({
   ...over,
 });
 
-const letter = (version: number, publishTo?: string) => ({
+const letter = (version: number, publishTo?: string | string[]) => ({
   id: 'letter',
   version,
   name: 'Letter',
@@ -68,7 +68,7 @@ async function setup(withKeys = true) {
 async function publishLetter(
   ctx: Awaited<ReturnType<typeof setup>>,
   version: number,
-  publishTo?: string,
+  publishTo?: string | string[],
 ) {
   await ctx.templates.create('letter', version, letter(version, publishTo), 'draft');
   await ctx.templates.publish('letter', version, 'Ken');
@@ -121,7 +121,16 @@ describe('publishing target routes: list and choices', () => {
     });
     expect(choices.statusCode).toBe(200);
     expect(choices.json()).toEqual({
-      choices: [{ id: 'default', label: 'Default', kind: 'internal', bucket: 'published' }],
+      choices: [
+        {
+          id: 'default',
+          label: 'Default',
+          kind: 'internal',
+          bucket: 'published',
+          prefix: 'pub/',
+          layout: 'files',
+        },
+      ],
     });
     const calls = [
       { method: 'GET' as const, url: '/api/publish-targets' },
@@ -313,6 +322,7 @@ describe('POST /api/publish-targets', () => {
         sse: 'none',
         kmsKeyId: '',
         storageClass: '',
+        layout: 'files',
       },
     });
   });
@@ -643,6 +653,7 @@ describe('POST /api/publish-targets/test', () => {
         sse: 'none',
         kmsKeyId: '',
         storageClass: '',
+        layout: 'files',
       },
     });
 
@@ -893,5 +904,112 @@ describe('the triple store target (rdf-default, from RDF_ENDPOINT)', () => {
     ]);
     const choices = (await c.call('GET', '/publish-targets/choices')).json();
     expect(JSON.stringify(choices)).not.toContain('rdf-default');
+  });
+});
+
+describe('a target layout (files, or package for archives)', () => {
+  it('creates a target with layout package, mirrored; files when none is given', async () => {
+    const c = await setup();
+    const archive = await c.call('POST', '/publish-targets', {
+      label: 'Archive',
+      kind: 'internal',
+      bucket: 'archive-bucket',
+      layout: 'package',
+    });
+    expect(archive.statusCode).toBe(201);
+    expect(archive.json()).toMatchObject({ id: 'archive', layout: 'package' });
+    expect(c.bridge.targets.get('archive')).toMatchObject({
+      destination: { bucket: 'archive-bucket', layout: 'package' },
+    });
+    const plain = await c.call('POST', '/publish-targets', externalBody());
+    expect(plain.json()).toMatchObject({ layout: 'files' });
+    expect(c.bridge.targets.get('finance-lake')).toMatchObject({
+      destination: { layout: 'files' },
+    });
+  });
+
+  it('refuses an unknown layout', async () => {
+    const c = await setup();
+    const res = await c.call('POST', '/publish-targets', externalBody({ layout: 'zip' }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('layout is locked while a recipe names the target', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    const free = await c.call('PATCH', '/publish-targets/finance-lake', { layout: 'package' });
+    expect(free.statusCode).toBe(200);
+    expect(free.json()).toMatchObject({ layout: 'package' });
+
+    await publishLetter(c, 1, ['default', 'finance-lake']);
+    const res = await c.call('PATCH', '/publish-targets/finance-lake', { layout: 'files' });
+    expect([res.statusCode, res.json().error]).toEqual([
+      409,
+      'Finance lake is used by letter: add a new target instead',
+    ]);
+  });
+
+  it('a target is in use when a list names it, and cannot be removed', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    await publishLetter(c, 1, ['default', 'finance-lake']);
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('an rdf target refuses layout package', async () => {
+    const c = await setup();
+    await c.targets.seedRdf({ endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' });
+    const res = await c.call('PATCH', '/publish-targets/rdf-default', { layout: 'package' });
+    expect([res.statusCode, res.json().error]).toEqual([
+      400,
+      'the triple store target takes a label only',
+    ]);
+  });
+
+  it('offers each choice with its prefix and layout', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody({ layout: 'package' }));
+    const res = await c.call('GET', '/publish-targets/choices');
+    expect(res.json().choices).toContainEqual(
+      expect.objectContaining({ id: 'finance-lake', prefix: 'ingest/', layout: 'package' }),
+    );
+  });
+});
+
+describe('a recipe naming several publishing targets', () => {
+  const issuesOf = async (c: Awaited<ReturnType<typeof setup>>, version: number) =>
+    (await c.call('GET', `/templates/letter/versions/${version}`)).json().issues as {
+      path: string;
+      message: string;
+    }[];
+
+  it('names each unknown id in a list', async () => {
+    const c = await setup();
+    await c.templates.create('letter', 1, letter(1, ['default', 'nope', 'gone']), 'draft');
+    expect(await issuesOf(c, 1)).toEqual([
+      { path: 'delivery.publishTo', message: 'no publishing target nope on this deployment' },
+      { path: 'delivery.publishTo', message: 'no publishing target gone on this deployment' },
+    ]);
+  });
+
+  it('refuses the triple store in a list', async () => {
+    const c = await setup();
+    await c.targets.seedRdf({ endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' });
+    await c.templates.create('letter', 1, letter(1, ['default', 'rdf-default']), 'draft');
+    expect(await issuesOf(c, 1)).toEqual([
+      { path: 'delivery.publishTo', message: 'rdf-default is a triple store: name an S3 target' },
+    ]);
+  });
+
+  it('asks for a files target when every listed target is an archive', async () => {
+    const c = await setup();
+    await c.targets.create(financeRecord({ layout: 'package' }), null);
+    await c.templates.create('letter', 1, letter(1, ['finance-lake']), 'draft');
+    expect(await issuesOf(c, 1)).toEqual([
+      { path: 'delivery.publishTo', message: 'needs a target with the files layout' },
+    ]);
+    await c.templates.create('letter', 2, letter(2, ['finance-lake', 'default']), 'draft');
+    expect(await issuesOf(c, 2)).toEqual([]);
   });
 });

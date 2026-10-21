@@ -29,6 +29,7 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     kind: 'internal',
     bucket: 'ingest-published',
     prefix: '',
+    layout: 'files',
     endpoint: null,
     connectionId: null,
     connection: null,
@@ -338,6 +339,7 @@ describe('PublishedOutputsPage', () => {
       expect(api.createPublishTarget).toHaveBeenCalledWith({
         id: 'archive-2026',
         label: 'Archive 2026',
+        layout: 'files',
         kind: 'internal',
         bucket: 'archive-bucket',
         prefix: 'out',
@@ -366,6 +368,7 @@ describe('PublishedOutputsPage', () => {
     const body = {
       id: 'finance-lake',
       label: 'Finance lake',
+      layout: 'files',
       kind: 'external',
       bucket: 'finance-bucket',
       prefix: '',

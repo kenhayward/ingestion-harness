@@ -59095,13 +59095,25 @@
                           },
                           "bucket": {
                             "type": "string"
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "layout": {
+                            "type": "string",
+                            "enum": [
+                              "files",
+                              "package"
+                            ]
                           }
                         },
                         "required": [
                           "id",
                           "label",
                           "kind",
-                          "bucket"
+                          "bucket",
+                          "prefix",
+                          "layout"
                         ]
                       }
                     },
@@ -75401,13 +75413,25 @@
                           },
                           "bucket": {
                             "type": "string"
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "layout": {
+                            "type": "string",
+                            "enum": [
+                              "files",
+                              "package"
+                            ]
                           }
                         },
                         "required": [
                           "id",
                           "label",
                           "kind",
-                          "bucket"
+                          "bucket",
+                          "prefix",
+                          "layout"
                         ]
                       }
                     }
@@ -75646,6 +75670,13 @@
                               "null"
                             ]
                           },
+                          "layout": {
+                            "type": "string",
+                            "enum": [
+                              "files",
+                              "package"
+                            ]
+                          },
                           "source": {
                             "type": "string",
                             "enum": [
@@ -75715,6 +75746,7 @@
                           "sse",
                           "kmsKeyId",
                           "storageClass",
+                          "layout",
                           "source",
                           "editedAt",
                           "updatedBy",
@@ -75936,6 +75968,14 @@
                       "INTELLIGENT_TIERING",
                       "GLACIER_IR"
                     ]
+                  },
+                  "layout": {
+                    "default": "files",
+                    "type": "string",
+                    "enum": [
+                      "files",
+                      "package"
+                    ]
                   }
                 },
                 "required": [
@@ -76048,6 +76088,13 @@
                         "null"
                       ]
                     },
+                    "layout": {
+                      "type": "string",
+                      "enum": [
+                        "files",
+                        "package"
+                      ]
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -76117,6 +76164,7 @@
                     "sse",
                     "kmsKeyId",
                     "storageClass",
+                    "layout",
                     "source",
                     "editedAt",
                     "updatedBy",
@@ -76702,6 +76750,13 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "layout": {
+                    "type": "string",
+                    "enum": [
+                      "files",
+                      "package"
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -76820,6 +76875,13 @@
                         "null"
                       ]
                     },
+                    "layout": {
+                      "type": "string",
+                      "enum": [
+                        "files",
+                        "package"
+                      ]
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -76889,6 +76951,7 @@
                     "sse",
                     "kmsKeyId",
                     "storageClass",
+                    "layout",
                     "source",
                     "editedAt",
                     "updatedBy",
@@ -77553,6 +77616,14 @@
                           "ONEZONE_IA",
                           "INTELLIGENT_TIERING",
                           "GLACIER_IR"
+                        ]
+                      },
+                      "layout": {
+                        "default": "files",
+                        "type": "string",
+                        "enum": [
+                          "files",
+                          "package"
                         ]
                       }
                     },
