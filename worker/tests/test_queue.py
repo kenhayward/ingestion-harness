@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import threading
+from typing import Any
+
+import pytest
 
 from ingest_worker.config import Settings
 from ingest_worker.main import idle
@@ -45,3 +48,22 @@ def test_idle_does_not_wait_once_stopping() -> None:
     stop.set()
     idle(queue, stop, 2.0)
     assert queue.waits == []
+
+
+def test_a_target_not_synced_yet_never_uses_up_the_jobs_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ingest_worker import main
+    from ingest_worker.publish_targets import TargetNotSynced
+    from ingest_worker.queue import ClaimedJob
+
+    def not_synced(*_args: Any) -> Any:
+        raise TargetNotSynced("default")
+
+    monkeypatch.setitem(main.TASKS, "process", not_synced)
+    job = ClaimedJob("j", "d", "demo", 1, "inbox", "k", None, 1, 3)
+    queue = FakeQueue()
+    for _ in range(5):  # more waits than max_attempts
+        main._run_claimed(job, queue, None)  # type: ignore[arg-type]
+    assert len(queue.waited) == 5 and queue.failed == [] and queue.reviewed == []
+    assert all(delay == main.TARGET_SYNC_WAIT_S for _, _, delay in queue.waited)

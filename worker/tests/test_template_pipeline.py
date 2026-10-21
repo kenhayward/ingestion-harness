@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1050,9 +1051,9 @@ def test_a_target_not_synced_yet_is_retried_and_nothing_is_delivered(tmp_path: P
     deps = replace(deps, targets=LiveTargets(store))
     queue.jobs = [JOB]
     run_once(queue, deps, "w1")
-    [(_, error)] = queue.failed  # failed = re-queued with backoff while attempts remain
+    [(_, error, _)] = queue.waited  # re-queued without spending an attempt
     assert error.startswith("TargetNotSynced")
-    assert not queue.reviewed and not queue.finished and not queue.published
+    assert not queue.failed and not queue.reviewed and not queue.finished and not queue.published
     assert bridge.requests == [] and not default.objects and not finance.objects
     # Once the API has synced the row, the retry delivers.
     store.set_rows(
@@ -1065,6 +1066,39 @@ def test_a_target_not_synced_yet_is_retried_and_nothing_is_delivered(tmp_path: P
     queue.jobs = [JOB]
     run_once(queue, deps, "w1")
     assert queue.finished and queue.published
+
+
+def test_a_job_delivering_rdf_waits_for_an_unsynced_triple_store(tmp_path: Path) -> None:
+    from ingest_worker.publish_targets import LiveTargets, TargetRow
+
+    from .fakes import MemoryPublishTargetStore
+
+    deps, default, _, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    bridge = deps.bridge
+    assert isinstance(bridge, FakeBridge)
+    deps.models._providers["local"].responses = list(RESPONSES) * 3  # type: ignore[attr-defined]
+    synced = datetime.now(UTC)
+    s3 = {"bucket": "published", "prefix": "pvp/", "layout": ""}
+    rows = [TargetRow("default", "Default", "internal", "s3", s3, synced_at=synced)]
+    store = MemoryPublishTargetStore(rows)  # rdf-default is not in the cache yet
+    deps = replace(deps, targets=LiveTargets(store, rdf_expected=True))
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    [(_, error, _)] = queue.waited
+    assert error.startswith("TargetNotSynced") and "rdf-default" in error
+    assert not queue.failed and not queue.reviewed and not queue.finished
+    assert bridge.requests == [] and not default.objects
+    # Present but unsynced waits as well; once synced the retry delivers with its graph load.
+    rdf = TargetRow("rdf-default", "Triple store", "rdf", "rdf", {"dataset": "ct"})
+    store.set_rows([*rows, rdf])
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert len(queue.waited) == 2 and bridge.requests == []
+    bridge.rdf.add("rdf-default")
+    store.set_rows([*rows, replace(rdf, synced_at=synced)])
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert queue.finished and bridge.graphs
 
 
 def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: Path) -> None:

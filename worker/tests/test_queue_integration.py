@@ -504,3 +504,24 @@ def test_a_new_primary_demotes_the_jobs_rows_at_other_targets(
         (job.id,),
     ).fetchall()
     assert rows == [("lake-a", False, True), ("lake-b", True, True)]
+
+
+def test_waiting_requeues_without_spending_an_attempt(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, job_id = queue_with_queued_job
+    claimed = q.claim("w1")
+    assert claimed is not None and claimed.attempts == 1
+    q.wait(claimed, "TargetNotSynced: default", 15)
+    row = q._conn.execute(
+        "SELECT status, attempts, locked_by, run_after > now(), error FROM jobs WHERE id = %s",
+        (job_id,),
+    ).fetchone()
+    assert row == ("queued", 0, None, True, "TargetNotSynced: default")
+    q._conn.execute("UPDATE jobs SET run_after = now() WHERE id = %s", (job_id,))
+    again = q.claim("w1")
+    assert again is not None and again.attempts == 1
+    # A late wait from the old claim touches nothing.
+    q.wait(claimed, "x", 15)
+    row = q._conn.execute("SELECT status FROM jobs WHERE id = %s", (job_id,)).fetchone()
+    assert row == ("running",)

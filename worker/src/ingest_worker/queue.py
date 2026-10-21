@@ -140,6 +140,10 @@ class JobQueue(Protocol):
         """Re-queue with backoff while attempts remain, else mark failed."""
         ...
 
+    def wait(self, job: ClaimedJob, reason: str, delay_s: float) -> None:
+        """Re-queue after `delay_s` without spending an attempt (the claim's is given back)."""
+        ...
+
     def event(
         self, job_id: str, level: Level, message: str, data: dict[str, Any] | None = None
     ) -> None: ...
@@ -406,6 +410,16 @@ class PgJobQueue:
             )
         else:
             self._finish(job, "failed", error)
+
+    def wait(self, job: ClaimedJob, reason: str, delay_s: float) -> None:
+        self._conn.execute(
+            f"""UPDATE jobs SET status = 'queued', error = %(error)s, locked_by = NULL,
+                       locked_at = NULL, heartbeat_at = NULL, updated_at = now(),
+                       attempts = GREATEST(attempts - 1, 0),
+                       run_after = now() + make_interval(secs => %(delay)s)
+                 WHERE {_MINE}""",
+            {"error": reason, "delay": delay_s, "id": job.id, "claimed": job.claimed_at},
+        )
 
     def _finish(self, job: ClaimedJob, status: str, error: str | None) -> bool:
         """Final status for this run. False when the job is no longer its claim (cancelled)."""

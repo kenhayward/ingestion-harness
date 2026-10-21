@@ -155,8 +155,11 @@ class TargetNotSynced(Exception):
 class LiveTargets:
     """The publishing targets by id, reloaded when the stored targets change."""
 
-    def __init__(self, store: PublishTargetStore) -> None:
+    def __init__(self, store: PublishTargetStore, rdf_expected: bool = False) -> None:
         self._store = store
+        #: The deployment has a triple store (`RDF_ENDPOINT` is set): until the API has synced
+        #: `rdf-default`, a delivery waits for it rather than skip the load.
+        self._rdf_expected = rdf_expected
         self._version = store.version()
         self._rows = {r.id: r for r in store.load()}
 
@@ -184,9 +187,17 @@ class LiveTargets:
         return Target(row.id, d.get("bucket", ""), d.get("prefix", ""), layout)
 
     def rdf(self) -> Target | None:
-        """The triple store target (its dataset as the bucket), or None without one."""
+        """The triple store target (its dataset as the bucket), or None without one.
+        TargetNotSynced while it is expected (RDF_ENDPOINT is set) and the cache lacks the row,
+        or holds it unsynced: delivering now would silently skip the load."""
         self.refresh()
         row = self._rows.get(TRIPLE_STORE_TARGET_ID)
-        if row is None or row.inert or row.kind != "rdf" or row.synced_at is None:
+        if row is None or row.inert:
+            if self._rdf_expected:
+                raise TargetNotSynced(TRIPLE_STORE_TARGET_ID)
             return None
+        if row.kind != "rdf":
+            return None
+        if row.synced_at is None:
+            raise TargetNotSynced(TRIPLE_STORE_TARGET_ID)
         return Target(row.id, row.destination.get("dataset", ""), "")

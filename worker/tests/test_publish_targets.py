@@ -102,6 +102,26 @@ def test_a_target_not_synced_yet_is_not_ready_and_is_no_document_error() -> None
     assert targets.get("default").bucket == "ingest-published"
 
 
+def test_an_unsynced_rdf_default_is_waited_for_not_skipped() -> None:
+    rdf = row(id="rdf-default", kind="rdf", sink_id="rdf", destination={"dataset": "kb"})
+    # Present but unsynced raises whether or not RDF is configured.
+    unsynced = replace(rdf, synced_at=None)
+    for expected in (True, False):
+        with pytest.raises(TargetNotSynced, match="rdf-default"):
+            LiveTargets(MemoryPublishTargetStore([row(), unsynced]), expected).rdf()
+    # Configured but not in the cache yet: wait.
+    with pytest.raises(TargetNotSynced):
+        LiveTargets(MemoryPublishTargetStore([row()]), rdf_expected=True).rdf()
+    store = MemoryPublishTargetStore([row(), unsynced])
+    targets = LiveTargets(store, rdf_expected=True)
+    store.set_rows([row(), rdf])
+    assert targets.rdf() == Target("rdf-default", "kb", "")
+
+
+def test_without_rdf_endpoint_a_missing_rdf_default_is_none() -> None:
+    assert LiveTargets(MemoryPublishTargetStore([row()]), rdf_expected=False).rdf() is None
+
+
 def test_an_unknown_target_is_missing_never_the_default() -> None:
     targets, _ = live([row()])
     with pytest.raises(TargetMissing, match="no publishing target gone"):

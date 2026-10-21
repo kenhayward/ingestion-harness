@@ -170,6 +170,8 @@ class FakeQueue:
     completed: list[tuple[str, list[RenderedOutput]]] = field(default_factory=list)
     reviewed: list[tuple[str, str]] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)
+    #: `wait`: (job id, reason, delay) - re-queued without spending an attempt.
+    waited: list[tuple[str, str, float]] = field(default_factory=list)
     events: list[tuple[str, str, str]] = field(default_factory=list)
     #: Same events with their data payloads.
     event_details: list[tuple[str, str, str, dict[str, Any]]] = field(default_factory=list)
@@ -280,6 +282,9 @@ class FakeQueue:
 
     def fail(self, job: ClaimedJob, error: str) -> None:
         self.failed.append((job.id, error))
+
+    def wait(self, job: ClaimedJob, reason: str, delay_s: float) -> None:
+        self.waited.append((job.id, reason, delay_s))
 
     def event(
         self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
