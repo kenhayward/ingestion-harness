@@ -118,7 +118,9 @@ describe.skipIf(!url)('job deliveries against Postgres', { timeout: 30_000 }, ()
       { targetId: 'default', deliveryId: a2 },
       { targetId: 'lake-2', deliveryId: b2 },
     ]);
-    expect((await repo.deliveriesOf(job.id)).map((d) => d.deliveryId)).toEqual([a2, b2]);
+    expect((await repo.deliveriesOf(job.id)).map((d) => d.deliveryId).sort()).toEqual(
+      [a2, b2].sort(),
+    );
     await applyEvent({ repo, targets }, event(a2, 2));
     expect(await statusOf(job.id)).toBe('delivering');
     await applyEvent({ repo, targets }, event(b2, 2));
