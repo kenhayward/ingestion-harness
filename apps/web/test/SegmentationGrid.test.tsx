@@ -286,7 +286,9 @@ describe('SegmentationGrid with repeating sections', () => {
       />,
     );
     const note = screen.getByRole('note', { name: 'Missed headings in a.pdf' });
-    expect(note).toHaveTextContent('Missed headings: 4586785, 4586786');
+    expect(note.querySelector('p')?.textContent).toBe(
+      'Missed headings: 4586785, 4586786 · dissolution',
+    );
     expect(note).toHaveTextContent('dissolution');
     expect(note).toHaveTextContent('Table 9: Batch 4586785');
     expect(screen.queryByRole('note', { name: 'Missed headings in b.pdf' })).toBeNull();

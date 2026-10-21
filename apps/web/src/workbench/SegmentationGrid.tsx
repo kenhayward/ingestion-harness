@@ -202,7 +202,7 @@ export function SegmentationGrid({
                         <div role="note" aria-label={`Missed headings in ${name}`}>
                           <p className="tone-text-warn">
                             {missedText}
-                            {' � '}
+                            {' · '}
                             {firstMissed.sections.map((id) => (
                               <SectionChip
                                 key={id}
