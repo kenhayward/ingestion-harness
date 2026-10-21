@@ -840,6 +840,7 @@ def anchor_check(
                 f"{', '.join(missed)}"
             )
     misses += repeated_blocks(rows, put_ids, names)
+    misses += missed_key_feedback(rows, put_ids, names, block["sections"])
     return grid, misses
 
 
@@ -866,6 +867,41 @@ def repeated_blocks(
             "block's heading section if there is one; keep plain sections for parts that "
             "occur once."
         )
+    return out
+
+
+def missed_key_feedback(
+    rows: list[dict[str, Any]],
+    put_ids: set[str],
+    names: dict[str, str],
+    sections: list[dict[str, Any]],
+) -> list[str]:
+    """Headings a proposed repeating section's key pattern finds that no anchor caught, per
+    sample and group of sections sharing the key: usually a title that wraps over lines."""
+    keys = {s["id"]: s.get("key") for s in sections}
+    out: list[str] = []
+    for row in rows:
+        groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+        for entry in row.get("missedKeys", []):
+            groups.setdefault(tuple(entry["sections"]), []).append(entry)
+        for ids, entries in groups.items():
+            if not put_ids.intersection(ids):
+                continue
+            # missedKeysTotal counts the whole sample's keys, so it is exact for one group only.
+            total = row.get("missedKeysTotal", len(entries)) if len(groups) == 1 else len(entries)
+            named = [e["key"] for e in entries[:10]]
+            more = f" (and {total - len(named)} more)" if total > len(named) else ""
+            pattern = next((keys[i] for i in ids if keys.get(i)), "")
+            quoted = ", ".join(f'"{i}"' for i in ids)
+            out.append(
+                f"sections {quoted} have key {pattern}, which finds keys "
+                f"{', '.join(named)}{more} in "
+                f"{names.get(row['sampleId'], row['sampleId'])} that no anchor matched, "
+                f'e.g. "{entries[0]["line"]}". An anchor must match every heading of its kind: '
+                "headings may wrap over several lines, so look ahead across them (for example "
+                r"(?=(?:(?!Header)[\s\S]){0,400}?Results[ \t]*$)) rather than requiring the "
+                "whole title on one line; keep contents entries out."
+            )
     return out
 
 
