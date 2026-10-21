@@ -45,7 +45,12 @@ def target_buckets(load: Callable[[], list[TargetRow]], fallback: list[str]) -> 
     except Exception as exc:
         log.info("publishing targets unavailable (%s); using the .env target bucket", exc)
         return fallback
-    return list(dict.fromkeys(r.bucket for r in rows if r.kind == "internal"))
+    buckets = (
+        r.destination.get("bucket", "")
+        for r in rows
+        if r.kind == "internal" and r.sink_id == "s3" and not r.inert
+    )
+    return list(dict.fromkeys(b for b in buckets if b))
 
 
 def env_target_bucket(env: Mapping[str, str], s3_endpoint: str) -> list[str]:
@@ -68,14 +73,13 @@ def backups_bucket(env: Mapping[str, str]) -> str:
 
 
 def _stored_targets(s: Settings) -> list[TargetRow]:
-    """Seed the default target from .env (first start), then read every target."""
+    """Every target the API's cache holds (the API seeds the default one)."""
     import psycopg
 
-    from .publish_targets import PgPublishTargetStore, default_seed
+    from .publish_targets import PgPublishTargetStore
 
     with psycopg.connect(s.database_url, autocommit=True, connect_timeout=5) as conn:
         store = PgPublishTargetStore(conn)
-        store.seed_default(default_seed(os.environ))
         return store.load()
 
 

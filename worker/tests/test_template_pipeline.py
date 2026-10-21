@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1031,6 +1032,97 @@ def test_a_version_naming_no_target_delivers_to_the_default(tmp_path: Path) -> N
     assert not finance.objects
     current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
     assert current is not None and current.target_id == "default"
+
+
+def test_a_target_not_synced_yet_is_retried_and_nothing_is_delivered(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from ingest_worker.publish_targets import LiveTargets, TargetRow
+
+    from .fakes import MemoryPublishTargetStore
+
+    deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    bridge = deps.bridge
+    assert isinstance(bridge, FakeBridge)
+    destination = {"bucket": "published", "prefix": "pvp/", "layout": ""}
+    store = MemoryPublishTargetStore(
+        [TargetRow("default", "Default", "internal", "s3", destination, synced_at=None)]
+    )
+    deps = replace(deps, targets=LiveTargets(store))
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    [(_, error, _)] = queue.waited  # re-queued without spending an attempt
+    assert error.startswith("TargetNotSynced")
+    assert not queue.failed and not queue.reviewed and not queue.finished and not queue.published
+    assert bridge.requests == [] and not default.objects and not finance.objects
+    # Once the API has synced the row, the retry delivers.
+    store.set_rows(
+        [
+            TargetRow(
+                "default", "Default", "internal", "s3", destination, synced_at=datetime.now(UTC)
+            )
+        ]
+    )
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert queue.finished and queue.published
+
+
+def test_a_job_delivering_rdf_waits_for_an_unsynced_triple_store_before_any_model_call(
+    tmp_path: Path,
+) -> None:
+    from ingest_worker.publish_targets import LiveTargets, TargetRow
+
+    from .fakes import MemoryPublishTargetStore
+
+    deps, default, _, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    bridge = deps.bridge
+    assert isinstance(bridge, FakeBridge)
+    provider = deps.models._providers["local"]  # type: ignore[attr-defined]
+    synced = datetime.now(UTC)
+    s3 = {"bucket": "published", "prefix": "pvp/", "layout": ""}
+    rows = [TargetRow("default", "Default", "internal", "s3", s3, synced_at=synced)]
+    store = MemoryPublishTargetStore(rows)  # rdf-default is not in the cache yet
+    deps = replace(deps, targets=LiveTargets(store, rdf_expected=True))
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    [(_, error, _)] = queue.waited
+    assert error.startswith("TargetNotSynced") and "rdf-default" in error
+    assert not queue.failed and not queue.reviewed and not queue.finished
+    assert bridge.requests == [] and not default.objects
+    assert provider.calls == []  # the wait comes before extraction: no paid call is repeated
+    # Present but unsynced waits as well; once synced the retry delivers with its graph load.
+    rdf = TargetRow("rdf-default", "Triple store", "rdf", "rdf", {"dataset": "ct"})
+    store.set_rows([*rows, rdf])
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert len(queue.waited) == 2 and bridge.requests == [] and provider.calls == []
+    bridge.rdf.add("rdf-default")
+    store.set_rows([*rows, replace(rdf, synced_at=synced)])
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert queue.finished and bridge.graphs
+    assert JOB.id not in queue.waiting_since  # past target resolution: no longer waiting
+
+
+def test_a_recipe_not_delivering_rdf_never_waits_for_the_triple_store(tmp_path: Path) -> None:
+    from ingest_worker.publish_targets import LiveTargets, TargetRow
+
+    from .fakes import MemoryPublishTargetStore
+
+    template = {**TEMPLATE, "review": {"required": "never"}, "delivery": {"formats": ["json"]}}
+    deps, default, _, queue = finance_deps(tmp_path, template)
+    provider = deps.models._providers["local"]  # type: ignore[attr-defined]
+    s3 = {"bucket": "published", "prefix": "pvp/", "layout": ""}
+    rows = [TargetRow("default", "Default", "internal", "s3", s3, synced_at=datetime.now(UTC))]
+    # RDF is expected but rdf-default is unsynced: only a graph needs it.
+    deps = replace(deps, targets=LiveTargets(MemoryPublishTargetStore(rows), rdf_expected=True))
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.waited or queue.reviewed or queue.failed
+    assert not queue.waited and not queue.failed
+    assert has(default, "published", "pvp/demo/v1/document/doc-1.json")
+    assert len(provider.calls) == 4  # one pass of the pipeline (see the call-count test above)
 
 
 def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: Path) -> None:

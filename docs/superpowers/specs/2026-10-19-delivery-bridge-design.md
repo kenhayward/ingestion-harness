@@ -256,7 +256,8 @@ What each sink's `describe` declares:
 ### Targets
 
 - **Who creates them.** Admins, as today, on Administration > Published outputs. This now lists
-  bridge targets.
+  bridge targets: the bridge is the registry, and CT Studio caches it (see "Target registry as
+  built").
 - **What a target records:**
   - an id (target ids still name recipients);
   - a label;
@@ -513,7 +514,7 @@ Phase 2 (S3 behind the bridge) made these calls, recorded in
   table (labels, locking, recipe validation, S3 read-key grants) and mirrors every write to the
   bridge (`PUT /v1/targets/{id}`) as one unit: a bridge refusal or outage leaves the row unchanged.
   Merging the two registries (the bridge becoming the one registry) is its own plan, after
-  phase 4 and before phase 6.
+  phase 4 and before phase 6 (done: see "Target registry as built").
 - **Target object routes instead of per-delivery files.** Read-back, withdraw and the RDF graph
   copy use `POST /v1/targets/{id}/objects:read|put|delete`, confined to the target's bucket and
   prefix. Outputs written before the bridge have no delivery id, so reading them by delivery was
@@ -542,7 +543,9 @@ Phase 3 (RDF behind the bridge) made these calls
 - **`rdf-default` is a `publish_targets` row of kind `rdf`**: its dataset in `bucket`, Fuseki's
   URL in `endpoint`, the writer's user in `access_key_id`. It is seeded from `RDF_ENDPOINT` by the
   API and the worker and mirrored like the S3 targets. Only its label changes; it is never a
-  recipe's `publishTo` and never a choice.
+  recipe's `publishTo` and never a choice. *Superseded by "Target registry as built": the bridge
+  holds the target, `publish_targets` is its cache (no `bucket`/`endpoint`/`access_key_id`
+  columns), and only the API seeds it.*
 - **The endpoint and user sit in the shared connection `rdf-default`**, as S3's endpoint does,
   and the destination is `{ dataset }` (not a dataset URL), so the connections page can test the
   connection. The password is read from the bridge's allowlisted `RDF_PASSWORD`.
@@ -574,7 +577,9 @@ Phase 4 (several targets per recipe) made these calls
   "needs a target with the files layout".
 - **`publish_targets` stays CT Studio's registry, mirrored**, and gains `layout` (`files` |
   `package`, a fixed field that locks with the bucket and prefix; the triple store is always
-  `files`). The mirror sends it as the S3 sink's destination value `layout`.
+  `files`). The mirror sends it as the S3 sink's destination value `layout`. *Superseded by
+  "Target registry as built": the bridge is the registry, `publish_targets` its cache, and
+  `layout` a value of the cached `destination`.*
 - **The package layout** writes `{prefix}packages/{idempotencyKey}/`: `files/<name>`, `data.json`,
   `graph.ttl`, `images/<id>`, and `package.json` (the package without its bytes,
   `ArchivedPackageSchema`) last. `packageArchiveKeys` / `package_archive_keys` (fixture
@@ -588,6 +593,83 @@ Phase 4 (several targets per recipe) made these calls
   replaces the one before, so an earlier `needs_user` no longer sends the job back to review.
 - **Graph-only re-deliveries** (backfill, remint) go to the primary target and the triple store,
   not to archives.
+
+## Target registry as built
+
+The merge of the two target registries (after phase 4, before phase 6) made these calls
+([plan](../plans/2026-10-21-delivery-bridge-target-registry-merge.md)):
+
+- **The bridge is the registry of record.** `bridge.targets` holds every target: sink, instance,
+  connection, destination and label. It refuses a destination field its sink doesn't declare
+  (422 `content_rejected`, "`<field>` is not a destination field of `<sink>`"); overrides stay
+  unchecked until phase 6.
+- **`publish_targets` is CT Studio's cache of it**, keeping its name so the five foreign keys
+  (`job_outputs`, `job_deliveries`, `published_graphs`, `published_graph_versions`,
+  `s3_consumer_targets`) and the in-use guard still have a local row:
+  - the bridge's shape: `sink_id`, `instance_id`, `connection_id`, a `destination` jsonb and the
+    label, as the bridge last answered;
+  - CT Studio's own facts: `kind`, `source`, `seeded_at`, `edited_at`, `updated_by`, `created_at`,
+    `inert_at`, and `on_bridge` and `synced_at`;
+  - no S3-shaped column. Readers that need an S3 place get it from `s3PlaceOf` (the worker's
+    `target_s3_place`); `kind` is set by the cache writer (`kindOf`): `rdf`, `internal`,
+    `external`, or `sink` for any other sink.
+- **The upgrade moves nothing.** The migration backfills each row's destination exactly as the
+  mirror sent it (S3: bucket, prefix, sse, kmsKeyId, storageClass, layout; the triple store:
+  `{dataset}`). Only the rows the mirror had sent (seeded, or added in the UI) are marked synced,
+  and for those the API's first start PUTs nothing to the bridge; the unseeded `default` the
+  first migration inserted stays unsynced and waits for the API's seed (which picks its kind and
+  so its connection).
+- **Legacy keys** that had not moved to a bridge connection yet sit in
+  `publish_target_legacy_keys` until `moveTargetsToBridge` moves them, once; a restored backup
+  from before phase 2 lands its keys there too.
+- **The triple store's endpoint and writer user** live in the bridge connection `rdf-default`.
+  Published outputs shows the endpoint from that connection's summary, whose new `fields` carry
+  a connection's non-secret fields only (`ConnectionSummarySchema`, bridge contract 0.3.0).
+- **The sync is a pull.** `pullTargets` (`GET /v1/targets`) upserts every bridge target into the
+  cache at start (retrying until the bridge answers) and after every restore; a cached target the
+  bridge no longer lists is kept, marked not on the bridge (Published outputs tags it, and a
+  delivery to it fails `target_missing`). Every write also caches the bridge's own answer.
+- **Writes go to the bridge first.** CT Studio still checks the body, usage and locks against its
+  own tables (only it knows recipes, outputs and read-key grants), then PUTs or DELETEs on the
+  bridge and caches what the bridge accepted. A refusal stores nothing; with the bridge down,
+  Published outputs lists the cache and every write answers 502. A cache write that fails after
+  the bridge accepted answers 500 "saved on the bridge; refresh", and the next pull heals it.
+- **A removed target is never deleted, on either side** (merged from main's PR #290). CT Studio
+  checks usage, then, holding the cache row's lock (an output or graph copy recorded against it
+  meanwhile waits, then names the inert target; a recipe takes no lock), DELETEs on the
+  bridge, which refuses (409) while an unfinished delivery names the target and otherwise
+  soft-removes it (`bridge.targets.removed_at`, its connection cleared; a later PUT of that id is
+  409 `name_conflict`); the cache row is then made inert. Ids are never reused, so no new target
+  inherits an old one's delivery history; a new target with the same label gets `<id>-2`. A copy
+  restore's kept targets are live on the bridge even where production had removed the id.
+- **The key move never overwrites**: `moveTargetsToBridge` keeps a connection an admin gave the
+  target before the move (only the legacy keys are dropped), and takes `target-<id>-2`, … when a
+  connection `target-<id>` exists already. The id it chooses is recorded on the legacy row
+  (`connection_id`, migration 202610221100) before the connection is written, so a retry after
+  a failed target write reuses it rather than writing another copy of the secret.
+- **A removal half done says so.** When the bridge removed a target (or did not answer in time)
+  but the cache row could not be made inert, the API answers 500 "removed on the bridge; remove
+  again"; the bridge's DELETE is idempotent, so a second delete finishes it.
+- **The API alone seeds** `default` and `rdf-default`, through the bridge, when the bridge lacks
+  the target or it was never seeded. The worker no longer seeds; it reads the cache and builds
+  `Target(id, bucket, prefix, layout)` from the destination. A target the API hasn't synced yet,
+  or an expected triple store not synced yet, raises `TargetNotSynced`: the job waits and is
+  retried without spending its attempts, so a worker that starts first never records keys under
+  an unseeded prefix. Both are resolved before any model call (the triple store when the version
+  delivers `rdf`), so a wait never re-runs a paid extraction. The wait has a ceiling:
+  `jobs.waiting_since` records when the job started waiting (cleared once it gets past target
+  resolution or finishes), and after 30 minutes the job fails "publishing target `<id>` has not
+  synced with the delivery bridge for 30 minutes: check the bridge and the API's log".
+- **Sink targets are refused until phase 6.** A `sink` target is cached and listed (read-only on
+  Published outputs), but a recipe naming one gets the issue "`<id>` is a `<sinkId>` target:
+  recipes can't deliver to it yet", which blocks publishing; the worker refuses one met at run
+  time with the same message (review), and a copy restore treats production's sink targets like
+  its external ones (inert here, no connection).
+- **Restores write the bridge too.** The copy restore keeps this server's targets from its
+  cache and upserts them into `bridge.targets` as well (so an edit made on the bridge but not yet
+  pulled is overwritten); a dropped external target keeps its bridge row and is marked inert
+  here. After any restore, cached targets the bridge lacks are put back on the bridge, then
+  `pullTargets` runs.
 
 ## Left to the builder
 

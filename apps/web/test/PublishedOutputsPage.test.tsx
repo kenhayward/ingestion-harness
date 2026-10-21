@@ -27,6 +27,9 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     id: 'default',
     label: 'Default',
     kind: 'internal',
+    sinkId: 's3',
+    destination: { bucket: 'ingest-published', prefix: '', layout: 'files' },
+    onBridge: true,
     bucket: 'ingest-published',
     prefix: '',
     layout: 'files',
@@ -561,5 +564,73 @@ describe('AdminDialog Published outputs tab', () => {
     expect(api.updatePublishTarget).toHaveBeenCalledWith('rdf-default', {
       label: 'Knowledge graph',
     });
+  });
+  it('a target not on the bridge is tagged and its fields are read-only', async () => {
+    page([external({ onBridge: false })]);
+    const r = await open('Finance lake');
+    expect(r).toHaveTextContent('Not on the bridge');
+    expect(r).toHaveTextContent(
+      'The delivery bridge no longer has this target; deliveries to it fail until it is added back.',
+    );
+    expect(within(r).getByLabelText('Label')).toHaveAttribute('readonly');
+    expect(within(r).getByLabelText('Bucket')).toHaveAttribute('readonly');
+    expect(within(r).getByLabelText('Prefix')).toHaveAttribute('readonly');
+    expect(within(r).getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(within(r).getByRole('button', { name: 'Test connection' })).toBeDisabled();
+  });
+
+  it("a target of a sink this page doesn't edit shows its destination read-only", async () => {
+    page([
+      target({
+        id: 'archive-sftp',
+        label: 'Archive SFTP',
+        kind: 'sink',
+        sinkId: 'sftp',
+        destination: { host: 'sftp.example.com', path: '/in' },
+        bucket: null,
+        prefix: null,
+        layout: null,
+        sse: null,
+        usage: NO_USE,
+      }),
+    ]);
+    const row0 = await row('Archive SFTP');
+    expect(row0).toHaveTextContent('sftp');
+    const r = await open('Archive SFTP');
+    expect(r).toHaveTextContent('host: sftp.example.com');
+    expect(r).toHaveTextContent('path: /in');
+    expect(within(r).queryByLabelText('Bucket')).toBeNull();
+    expect(within(r).queryByLabelText('Connection')).toBeNull();
+    expect(within(r).getByRole('button', { name: /Remove/ })).toBeEnabled();
+    expect(within(r).getByRole('button', { name: 'Test connection' })).toBeDisabled();
+  });
+
+  it("a sink target's label is read-only and Save stays disabled", async () => {
+    page([
+      target({
+        id: 'archive-sftp',
+        label: 'Archive SFTP',
+        kind: 'sink',
+        sinkId: 'sftp',
+        destination: { host: 'h' },
+        bucket: null,
+        prefix: null,
+        layout: null,
+        sse: null,
+        usage: NO_USE,
+      }),
+    ]);
+    const r = await open('Archive SFTP');
+    const label = within(r).getByLabelText('Label');
+    expect(label).toHaveAttribute('readonly');
+    await userEvent.type(label, 'x');
+    expect(within(r).getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it("the triple store's endpoint comes from its connection", async () => {
+    page([tripleStore({ endpoint: null })]);
+    const store = await row('Triple store');
+    expect(store).toHaveTextContent('endpoint not known');
+    expect(store).toHaveTextContent('dataset ct');
   });
 });

@@ -149,7 +149,8 @@ describe.skipIf(!url)('withdrawals against Postgres', { timeout: 30_000 }, () =>
 
   it('names the recorded target of every object and graph copy', async () => {
     await pool.query(
-      `INSERT INTO publish_targets (id, label, kind, bucket) VALUES ('finance-lake', 'Finance', 'external', 'fin')
+      `INSERT INTO publish_targets (id, label, kind, sink_id, destination)
+       VALUES ('finance-lake', 'Finance', 'external', 's3', '{"bucket": "fin"}')
        ON CONFLICT DO NOTHING`,
     );
     const type = `tg-${randomUUID().slice(0, 8)}`;

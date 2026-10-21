@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import type { TargetPutRequest } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
-import type { NewTarget, PublishTargetRepo } from '../src/publish-targets/repo.js';
-import type { DefaultSeed, RdfSeed } from '../src/publish-targets/seed.js';
+import { s3PlaceOf } from '../src/publish-targets/place.js';
+import type { LegacyKeys, PublishTargetRepo } from '../src/publish-targets/repo.js';
+import { cacheS3, rdfView, s3View } from './target-views.js';
 
 /**
  * What the repo cannot see itself: published recipes, recorded outputs, consumer grants and
@@ -13,14 +16,30 @@ export interface TargetFacts {
   withdrawal(targetId: string, status: 'queued' | 'running' | 'succeeded'): Promise<void>;
   /** A copy restore keeps a dropped external target as an inert row (`inert_at`). */
   inert(targetId: string): Promise<void>;
+  /** Keys from before the bridge (`publish_target_legacy_keys`), as the migration leaves them. */
+  legacyKeys(keys: LegacyKeys): Promise<void>;
 }
 
-const lake = (id: string, over: Partial<NewTarget> = {}): NewTarget => ({
+/**
+ * Target rows from before the merge with what the mirror sent the bridge for each (shared with
+ * integration/targets-on-bridge-pg.test.ts, which checks the migration's backfill).
+ */
+interface DestinationCase {
+  name: string;
+  row: { id: string; bucket: string; prefix: string; layout: string; kind: string };
+  mirror: TargetPutRequest;
+}
+const destinationCases = (
+  JSON.parse(
+    readFileSync(
+      new URL('../../../packages/shared/test/fixtures/target-destinations.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { cases: DestinationCase[] }
+).cases;
+
+const legacy = (id: string, over: Partial<LegacyKeys> = {}): LegacyKeys => ({
   id,
-  label: `Lake ${id}`,
-  kind: 'external',
-  bucket: 'lake',
-  prefix: 'out/',
   endpoint: 'https://s3.eu-west-2.amazonaws.com',
   region: 'eu-west-2',
   accessKeyId: 'AKIA',
@@ -28,121 +47,219 @@ const lake = (id: string, over: Partial<NewTarget> = {}): NewTarget => ({
   accessKeyEnv: null,
   secretKeyEnv: null,
   forcePathStyle: false,
-  sse: 'none',
-  kmsKeyId: null,
-  storageClass: null,
+  movedToBridgeAt: null,
+  connectionId: null,
   ...over,
 });
-
-const SEED: DefaultSeed = {
-  kind: 'internal',
-  bucket: 'pub',
-  prefix: '',
-  endpoint: null,
-  region: null,
-  accessKeyEnv: null,
-  secretKeyEnv: null,
-  forcePathStyle: true,
-};
-
-const RDF: RdfSeed = { endpoint: 'http://fuseki:3030', dataset: 'ct', user: 'ct-writer' };
 
 export function publishTargetsContract(
   name: string,
   make: () => Promise<{ repo: PublishTargetRepo; facts: TargetFacts }>,
 ): void {
   describe(`PublishTargetRepo (${name})`, () => {
-    it('starts with the unseeded default target', async () => {
+    it('starts with the unseeded default target, not synced yet', async () => {
       const { repo } = await make();
       const list = await repo.list();
       expect(list.map((t) => t.id)).toEqual(['default']);
       expect(list[0]).toMatchObject({
         kind: 'internal',
+        sinkId: 's3',
         bucket: 'ingest-published',
         source: 'env',
       });
-      expect((await repo.get('default'))?.seededAt).toBeNull();
+      expect(await repo.get('default')).toMatchObject({ seededAt: null, syncedAt: null });
     });
 
-    it('creates, lists and gets, never exposing a credential', async () => {
+    it('caches a bridge target and derives its kind', async () => {
       const { repo } = await make();
-      const view = await repo.create(lake('finance', { connectionId: 'finance-account' }), 'Ann');
-      expect(view).not.toBe('exists');
-      expect(view).toMatchObject({
-        id: 'finance',
-        connectionId: 'finance-account',
-        connection: null,
-        source: 'ui',
-        updatedBy: 'Ann',
-      });
-      expect(JSON.stringify(view)).not.toContain('v1:abc');
-      expect(JSON.stringify(view)).not.toContain('AKIA');
-      expect((await repo.get('finance'))?.accessKeyId).toBe('AKIA');
-      expect((await repo.get('finance'))?.secretKeyEnc).toBe('v1:abc');
-      expect((await repo.list()).map((t) => t.id)).toEqual(['default', 'finance']);
-      expect(await repo.get('nope')).toBeNull();
-    });
-
-    it('refuses a duplicate id', async () => {
-      const { repo } = await make();
-      await repo.create(lake('finance'), null);
-      expect(await repo.create(lake('finance'), null)).toBe('exists');
-      expect(await repo.create(lake('default'), null)).toBe('exists');
-    });
-
-    it('keeps the names of keys read from the environment (for the move to the bridge)', async () => {
-      const { repo } = await make();
-      await repo.create(
-        lake('envkeys', {
-          accessKeyId: null,
-          secretKeyEnc: null,
-          accessKeyEnv: 'A_KEY',
-          secretKeyEnv: 'A_SECRET',
-        }),
-        null,
+      await repo.cache(s3View({ id: 'own', kind: 'internal', bucket: 'own-bucket' }), {});
+      await repo.cache(s3View({ id: 'lake', connectionId: 'finance-account' }), {});
+      await repo.cache(rdfView(), {});
+      await repo.cache(
+        {
+          id: 'archive-box',
+          label: 'Archive box',
+          sinkId: 'archive-sink',
+          instanceId: 'eu',
+          connectionId: null,
+          destination: { folder: 'ct' },
+        },
+        {},
       );
-      expect(await repo.get('envkeys')).toMatchObject({
-        secretKeyEnc: null,
-        accessKeyEnv: 'A_KEY',
-        secretKeyEnv: 'A_SECRET',
+      const kinds = Object.fromEntries((await repo.list()).map((t) => [t.id, t.kind]));
+      expect(kinds).toEqual({
+        default: 'internal',
+        own: 'internal',
+        lake: 'external',
+        'rdf-default': 'rdf',
+        'archive-box': 'sink',
+      });
+      const lake = await repo.get('lake');
+      expect(lake).toMatchObject({
+        label: 'Lake lake',
+        sinkId: 's3',
+        instanceId: null,
+        connectionId: 'finance-account',
+        destination: { bucket: 'lake', prefix: 'out/', layout: 'files' },
+        onBridge: true,
+        source: 'ui',
+        seededAt: null,
+        editedAt: null,
+      });
+      expect(lake?.syncedAt).not.toBeNull();
+      expect(await repo.get('archive-box')).toMatchObject({
+        sinkId: 'archive-sink',
+        instanceId: 'eu',
+        destination: { folder: 'ct' },
       });
     });
 
-    it('update keeps unspecified fields and stamps who and when', async () => {
+    it('views an S3 target with its place and options, another sink with none', async () => {
       const { repo } = await make();
-      await repo.create(lake('finance'), 'Ann');
-      const view = await repo.update('finance', { label: 'Finance lake', sse: 'AES256' }, 'Bob');
-      expect(view).toMatchObject({
-        label: 'Finance lake',
-        sse: 'AES256',
+      await cacheS3(repo, {
+        id: 'lake',
+        connectionId: 'finance-account',
+        sse: 'aws:kms',
+        kmsKeyId: 'kms-1',
+        layout: 'package',
+      });
+      await repo.cache(
+        {
+          id: 'box',
+          label: 'Box',
+          sinkId: 'archive-sink',
+          instanceId: null,
+          connectionId: null,
+          destination: { folder: 'ct' },
+        },
+        {},
+      );
+      await repo.cache(rdfView('kb'), {});
+      const views = Object.fromEntries((await repo.list()).map((t) => [t.id, t]));
+      expect(views.lake).toMatchObject({
+        sinkId: 's3',
+        onBridge: true,
         bucket: 'lake',
         prefix: 'out/',
-        updatedBy: 'Bob',
+        layout: 'package',
+        sse: 'aws:kms',
+        kmsKeyId: 'kms-1',
+        storageClass: null,
+        connectionId: 'finance-account',
+        connection: null,
+        endpoint: null,
       });
-      expect(view?.editedAt).not.toBeNull();
-      expect((await repo.get('finance'))?.secretKeyEnc).toBe('v1:abc');
-      expect(await repo.update('nope', { label: 'x' }, null)).toBeNull();
+      expect(views.box).toMatchObject({
+        kind: 'sink',
+        destination: { folder: 'ct' },
+        bucket: null,
+        prefix: null,
+        layout: null,
+        sse: null,
+      });
+      // The triple store's dataset shows where an S3 target's bucket does.
+      expect(views['rdf-default']).toMatchObject({ kind: 'rdf', bucket: 'kb', prefix: null });
     });
 
-    it('update can replace and clear credentials', async () => {
+    it('a cache write keeps CT Studio’s own facts unless it names them', async () => {
       const { repo } = await make();
-      await repo.create(lake('finance'), null);
-      await repo.update('finance', { secretKeyEnc: 'v1:new' }, null);
-      expect((await repo.get('finance'))?.secretKeyEnc).toBe('v1:new');
-      await repo.update(
-        'finance',
-        { accessKeyId: null, secretKeyEnc: null, accessKeyEnv: 'K', secretKeyEnv: 'S' },
-        null,
-      );
-      expect(await repo.get('finance')).toMatchObject({
-        accessKeyId: null,
-        secretKeyEnc: null,
-        accessKeyEnv: 'K',
-        secretKeyEnv: 'S',
+      await cacheS3(repo, { id: 'lake' }, { source: 'ui', by: 'Ann' });
+      const first = await repo.get('lake');
+      expect(first).toMatchObject({ source: 'ui', updatedBy: 'Ann', editedAt: null });
+      // A pull: no facts.
+      await cacheS3(repo, { id: 'lake', label: 'Renamed on the bridge' }, {});
+      expect(await repo.get('lake')).toMatchObject({
+        label: 'Renamed on the bridge',
+        source: 'ui',
+        updatedBy: 'Ann',
+        editedAt: null,
+        createdAt: first?.createdAt,
       });
-      await repo.update('finance', { connectionId: 'other' }, null);
-      expect(await repo.connectionOf('finance')).toBe('other');
+      // An edit: who and when.
+      await cacheS3(repo, { id: 'lake', bucket: 'other' }, { by: 'Bob' });
+      const edited = await repo.get('lake');
+      expect(edited).toMatchObject({ updatedBy: 'Bob', destination: { bucket: 'other' } });
+      expect(edited?.editedAt).not.toBeNull();
+      // A seed: where from and when.
+      const at = '2026-10-21T09:00:00.000Z';
+      await cacheS3(
+        repo,
+        { id: 'default', kind: 'internal', bucket: 'pub' },
+        {
+          source: 'env',
+          seededAt: at,
+        },
+      );
+      expect(await repo.get('default')).toMatchObject({
+        source: 'env',
+        seededAt: at,
+        connectionId: 'internal',
+        destination: { bucket: 'pub' },
+      });
     });
+
+    it('a cache write rewrites what code from before it left in a row', async () => {
+      const { repo } = await make();
+      // Old code inserted the triple store row as an S3 one with an empty destination.
+      await cacheS3(repo, { id: 'rdf-default', kind: 'internal', bucket: '' }, {});
+      await repo.cache(rdfView('ct'), {});
+      expect(await repo.get('rdf-default')).toMatchObject({
+        kind: 'rdf',
+        sinkId: 'rdf',
+        connectionId: 'rdf-default',
+        destination: { dataset: 'ct' },
+      });
+    });
+
+    it('never makes an inert target live again', async () => {
+      const { repo, facts } = await make();
+      await cacheS3(repo, { id: 'prod-lake' });
+      await facts.inert('prod-lake');
+      await cacheS3(repo, { id: 'prod-lake', label: 'Still on the bridge' }, {});
+      expect(await repo.get('prod-lake')).toBeNull();
+      expect((await repo.list()).map((t) => t.id)).toEqual(['default']);
+      expect(await repo.cachedIds()).toEqual(
+        expect.arrayContaining([
+          { id: 'default', live: true },
+          { id: 'prod-lake', live: false },
+        ]),
+      );
+    });
+
+    it('a target marked missing stays, not on the bridge, until a cache write', async () => {
+      const { repo } = await make();
+      await cacheS3(repo, { id: 'lake' });
+      const before = await repo.version();
+      await repo.markMissing(['lake']);
+      expect(await repo.version()).toBeGreaterThan(before);
+      expect(await repo.get('lake')).toMatchObject({ onBridge: false });
+      expect((await repo.list()).find((t) => t.id === 'lake')?.onBridge).toBe(false);
+      await repo.markMissing([]);
+      await cacheS3(repo, { id: 'lake' }, {});
+      expect((await repo.get('lake'))?.onBridge).toBe(true);
+    });
+
+    it.each(destinationCases.map((c) => [c.name, c] as const))(
+      'the cache keeps what the bridge holds, and s3PlaceOf reads it: %s',
+      async (_name, c) => {
+        const { repo } = await make();
+        await repo.cache({ id: c.row.id, ...c.mirror }, {});
+        const got = await repo.get(c.row.id);
+        expect(got).toMatchObject({
+          label: c.mirror.label,
+          sinkId: c.mirror.sinkId,
+          instanceId: c.mirror.instanceId,
+          connectionId: c.mirror.connectionId,
+          destination: c.mirror.destination,
+          kind: c.row.kind,
+        });
+        expect(s3PlaceOf(got!)).toEqual(
+          c.mirror.sinkId === 's3'
+            ? { bucket: c.row.bucket, prefix: c.row.prefix, layout: c.row.layout }
+            : null,
+        );
+      },
+    );
 
     it('never removes the default target', async () => {
       const { repo } = await make();
@@ -152,7 +269,7 @@ export function publishTargetsContract(
 
     it('removes an unused target', async () => {
       const { repo } = await make();
-      await repo.create(lake('finance'), null);
+      await cacheS3(repo, { id: 'finance' });
       expect(await repo.remove('finance')).toBe('deleted');
       expect(await repo.get('finance')).toBeNull();
       expect((await repo.list()).map((t) => t.id)).not.toContain('finance');
@@ -161,14 +278,35 @@ export function publishTargetsContract(
 
     it("keeps a removed target's id taken (the bridge never reuses it)", async () => {
       const { repo } = await make();
-      await repo.create(lake('finance'), null);
+      await cacheS3(repo, { id: 'finance' });
       await repo.remove('finance');
-      expect(await repo.create(lake('finance'), null)).toBe('exists');
+      expect(await repo.cachedIds()).toContainEqual({ id: 'finance', live: false });
+      // A pull or a write that caches the id again leaves it inert.
+      await cacheS3(repo, { id: 'finance' });
+      expect(await repo.get('finance')).toBeNull();
+    });
+
+    it('asks the bridge after the usage check, and keeps the row when the bridge refuses', async () => {
+      const { repo, facts } = await make();
+      await cacheS3(repo, { id: 'finance' });
+      let asked = 0;
+      expect(await repo.remove('finance', async () => (asked++, false))).toBe('refused');
+      expect(asked).toBe(1);
+      expect(await repo.get('finance')).not.toBeNull();
+      await expect(
+        repo.remove('finance', async () => {
+          throw new Error('bridge went away');
+        }),
+      ).rejects.toThrow('bridge went away');
+      expect(await repo.get('finance')).not.toBeNull();
+      await facts.publish('alpha', 1, 'finance');
+      expect(await repo.remove('finance', async () => (asked++, true))).toBe('in_use');
+      expect(asked).toBe(1);
     });
 
     it('refuses to remove a target a published version names', async () => {
       const { repo, facts } = await make();
-      await repo.create(lake('finance'), null);
+      await cacheS3(repo, { id: 'finance' });
       await facts.publish('invoice', 1, 'finance');
       expect(await repo.remove('finance')).toBe('in_use');
       expect(await repo.get('finance')).not.toBeNull();
@@ -176,7 +314,7 @@ export function publishTargetsContract(
 
     it('counts usage from each source', async () => {
       const { repo, facts } = await make();
-      await repo.create(lake('finance'), null);
+      await cacheS3(repo, { id: 'finance' });
       expect(await repo.usage('finance')).toEqual({
         publishedVersions: 0,
         documentTypes: [],
@@ -206,8 +344,8 @@ export function publishTargetsContract(
 
     it('counts withdrawals still to run that name the target', async () => {
       const { repo, facts } = await make();
-      await repo.create(lake('finance'), null);
-      await repo.create(lake('other'), null);
+      await cacheS3(repo, { id: 'finance' });
+      await cacheS3(repo, { id: 'other' });
       await facts.withdrawal('finance', 'succeeded');
       expect((await repo.usage('finance')).pendingJobs).toBe(0);
       expect(await repo.remove('other')).toBe('deleted');
@@ -221,26 +359,14 @@ export function publishTargetsContract(
 
     it('a target is in use when a list names it', async () => {
       const { repo, facts } = await make();
-      await repo.create(lake('finance'), null);
-      await repo.create(lake('archive'), null);
+      await cacheS3(repo, { id: 'finance' });
+      await cacheS3(repo, { id: 'archive' });
       await facts.publish('invoice', 1, ['archive', 'finance']);
       await facts.publish('memo', 1, ['finance']);
       expect((await repo.usage('finance')).documentTypes).toEqual(['invoice', 'memo']);
       expect((await repo.usage('archive')).publishedVersions).toBe(1);
       expect((await repo.usage('default')).publishedVersions).toBe(0);
       expect(await repo.remove('archive')).toBe('in_use');
-    });
-
-    it('stores the layout: files unless a target is made an archive', async () => {
-      const { repo } = await make();
-      await repo.create(lake('plain'), null);
-      await repo.create(lake('archive', { layout: 'package' }), null);
-      expect((await repo.get('plain'))?.layout).toBe('files');
-      expect((await repo.get('archive'))?.layout).toBe('package');
-      expect((await repo.list()).find((t) => t.id === 'archive')?.layout).toBe('package');
-      await repo.update('plain', { layout: 'package' }, null);
-      expect((await repo.get('plain'))?.layout).toBe('package');
-      expect((await repo.get('default'))?.layout).toBe('files');
     });
 
     it('counts a recipe naming no target as using the default', async () => {
@@ -250,10 +376,22 @@ export function publishTargetsContract(
       expect((await repo.usage('default')).documentTypes).toEqual(['invoice', 'memo']);
     });
 
-    it('offers choices with the default first, then by label', async () => {
+    it('offers S3 choices from their destinations, the default first, then by label', async () => {
       const { repo } = await make();
-      await repo.create(lake('z', { label: 'Zeta' }), null);
-      await repo.create(lake('a', { label: 'Alpha' }), null);
+      await cacheS3(repo, { id: 'z', label: 'Zeta' });
+      await cacheS3(repo, { id: 'a', label: 'Alpha', layout: 'package' });
+      await repo.cache(rdfView(), {});
+      await repo.cache(
+        {
+          id: 'box',
+          label: 'Box',
+          sinkId: 'archive-sink',
+          instanceId: null,
+          connectionId: null,
+          destination: {},
+        },
+        {},
+      );
       expect(await repo.choices()).toEqual([
         {
           id: 'default',
@@ -269,7 +407,7 @@ export function publishTargetsContract(
           kind: 'external',
           bucket: 'lake',
           prefix: 'out/',
-          layout: 'files',
+          layout: 'package',
         },
         {
           id: 'z',
@@ -284,23 +422,20 @@ export function publishTargetsContract(
 
     it('an inert target is not listed and is a 404', async () => {
       const { repo, facts } = await make();
-      await repo.create(lake('prod-lake'), null);
+      await cacheS3(repo, { id: 'prod-lake' });
       await facts.inert('prod-lake');
       expect((await repo.list()).map((t) => t.id)).toEqual(['default']);
       expect((await repo.choices()).map((t) => t.id)).toEqual(['default']);
       expect(await repo.get('prod-lake')).toBeNull();
-      expect(await repo.update('prod-lake', { label: 'P' }, null)).toBeNull();
       expect(await repo.remove('prod-lake')).toBe('missing');
-      // The id stays taken: the row is still there for the delivery records naming it.
-      expect(await repo.create(lake('prod-lake'), null)).toBe('exists');
     });
 
     it('moves the version on every write', async () => {
       const { repo } = await make();
       const v0 = await repo.version();
-      await repo.create(lake('finance'), null);
+      await cacheS3(repo, { id: 'finance' });
       const v1 = await repo.version();
-      await repo.update('finance', { label: 'F' }, null);
+      await cacheS3(repo, { id: 'finance', label: 'F' }, { by: null });
       const v2 = await repo.version();
       await repo.remove('finance');
       const v3 = await repo.version();
@@ -309,100 +444,54 @@ export function publishTargetsContract(
       expect(v3).toBeGreaterThan(v2);
     });
 
-    it('seeds the default once, then keeps it', async () => {
-      const { repo } = await make();
-      expect(await repo.seedDefault(SEED)).toBe('seeded');
-      const got = await repo.get('default');
-      expect(got).toMatchObject({ bucket: 'pub', forcePathStyle: true, source: 'env' });
-      expect(got?.seededAt).not.toBeNull();
-      expect(await repo.seedDefault(SEED)).toBe('kept');
+    it('lists the keys from before the bridge, and drops a row once moved', async () => {
+      const { repo, facts } = await make();
+      await cacheS3(repo, { id: 'finance' });
+      await cacheS3(repo, { id: 'archive' });
+      expect(await repo.legacyKeys()).toEqual([]);
+      await facts.legacyKeys(legacy('finance'));
+      await facts.legacyKeys(
+        legacy('archive', {
+          accessKeyId: null,
+          secretKeyEnc: null,
+          accessKeyEnv: 'A_KEY',
+          secretKeyEnv: 'A_SECRET',
+          forcePathStyle: true,
+        }),
+      );
+      const keys = await repo.legacyKeys();
+      expect(keys.map((k) => k.id)).toEqual(['archive', 'finance']);
+      expect(keys[0]).toEqual(
+        legacy('archive', {
+          accessKeyId: null,
+          secretKeyEnc: null,
+          accessKeyEnv: 'A_KEY',
+          secretKeyEnv: 'A_SECRET',
+          forcePathStyle: true,
+        }),
+      );
+      // The connection a move chose is recorded before it is written, for its retry to reuse.
+      await repo.chooseLegacyConnection('finance', 'target-finance');
+      expect((await repo.legacyKeys()).find((k) => k.id === 'finance')).toEqual(
+        legacy('finance', { connectionId: 'target-finance' }),
+      );
+      await repo.dropLegacyKeys('finance');
+      expect((await repo.legacyKeys()).map((k) => k.id)).toEqual(['archive']);
+      // A removed target takes its legacy keys with it.
+      expect(await repo.remove('archive')).toBe('deleted');
+      expect(await repo.legacyKeys()).toEqual([]);
     });
 
-    it('does not overwrite an edit, and says when the environment moved', async () => {
+    it('offers the triple store as no choice, and never removes it', async () => {
       const { repo } = await make();
-      await repo.seedDefault(SEED);
-      await repo.update('default', { label: 'Main lake' }, 'Ann');
-      expect(await repo.seedDefault(SEED)).toBe('kept');
-      expect((await repo.get('default'))?.label).toBe('Main lake');
-      expect(await repo.seedDefault({ ...SEED, bucket: 'moved' })).toBe('differs');
-      expect((await repo.get('default'))?.bucket).toBe('pub');
-    });
-
-    it('seeds an external default from the environment keys', async () => {
-      const { repo } = await make();
-      await repo.seedDefault({
-        ...SEED,
-        kind: 'external',
-        endpoint: 'https://s3.example.com',
-        region: 'eu-west-2',
-        accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
-        secretKeyEnv: 'TARGET_S3_SECRET_KEY',
-      });
-      expect((await repo.list())[0]).toMatchObject({ kind: 'external', connectionId: null });
-      expect(await repo.get('default')).toMatchObject({
-        endpoint: 'https://s3.example.com',
-        secretKeyEnc: null,
-        accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
-        secretKeyEnv: 'TARGET_S3_SECRET_KEY',
-      });
-    });
-
-    it('marks a target moved to the bridge: its connection kept, its ciphertext gone', async () => {
-      const { repo } = await make();
-      await repo.create(lake('finance'), 'Ann');
-      expect(await repo.connectionOf('finance')).toBeNull();
-      expect((await repo.get('finance'))?.movedToBridgeAt).toBeNull();
-      const before = await repo.version();
-      await repo.markMoved('finance', 'target-finance');
-      const moved = await repo.get('finance');
-      expect(moved?.secretKeyEnc).toBeNull();
-      expect(moved?.movedToBridgeAt).not.toBeNull();
-      expect(moved?.accessKeyId).toBe('AKIA');
-      expect(await repo.connectionOf('finance')).toBe('target-finance');
-      expect(await repo.version()).toBeGreaterThan(before);
-      expect(await repo.connectionOf('nope')).toBeNull();
-    });
-
-    it('keeps the connection across other edits', async () => {
-      const { repo } = await make();
-      await repo.create(lake('finance'), null);
-      await repo.markMoved('finance', 'target-finance');
-      await repo.update('finance', { label: 'Renamed' }, null);
-      expect(await repo.connectionOf('finance')).toBe('target-finance');
-    });
-
-    it('seeds the triple store target once, keeps it, and says when the environment moved', async () => {
-      const { repo } = await make();
-      expect(await repo.get('rdf-default')).toBeNull();
-      expect(await repo.seedRdf(RDF)).toBe('seeded');
-      expect(await repo.get('rdf-default')).toMatchObject({
-        id: 'rdf-default',
-        label: 'Triple store',
-        kind: 'rdf',
-        bucket: 'ct',
-        prefix: '',
-        endpoint: 'http://fuseki:3030',
-        accessKeyId: 'ct-writer',
-        source: 'env',
-      });
-      expect(await repo.seedRdf(RDF)).toBe('kept');
-      await repo.update('rdf-default', { label: 'Knowledge graph' }, 'Ann');
-      expect(await repo.seedRdf(RDF)).toBe('kept');
-      expect((await repo.get('rdf-default'))?.label).toBe('Knowledge graph');
-      expect(await repo.seedRdf({ ...RDF, dataset: 'kb' })).toBe('differs');
-      expect((await repo.get('rdf-default'))?.bucket).toBe('ct');
-    });
-
-    it('lists the triple store with its endpoint, offers it as no choice, and never removes it', async () => {
-      const { repo } = await make();
-      await repo.seedRdf(RDF);
+      await repo.cache(rdfView(), { source: 'env', seededAt: new Date().toISOString() });
       const views = await repo.list();
       expect(views.find((t) => t.id === 'rdf-default')).toMatchObject({
         kind: 'rdf',
         bucket: 'ct',
-        endpoint: 'http://fuseki:3030',
+        // Its endpoint is its bridge connection's: the route fills it from the summary.
+        endpoint: null,
       });
-      expect(views.find((t) => t.id === 'default')?.endpoint).toBeNull();
       expect((await repo.choices()).map((c) => c.id)).toEqual(['default']);
       expect(await repo.remove('rdf-default')).toBe('seeded');
       expect(await repo.get('rdf-default')).not.toBeNull();

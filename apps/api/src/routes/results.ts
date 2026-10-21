@@ -14,6 +14,7 @@ import {
 } from '@ih/shared';
 import { zipSync } from 'fflate';
 import { z } from 'zod';
+import { s3PlaceOf } from '../publish-targets/place.js';
 import { binary, error, md, res } from '../openapi/zod.js';
 import { contentDisposition } from './jobs.js';
 import { OutputUnavailableError, readOutput } from '../storage/stage.js';
@@ -169,7 +170,7 @@ export const resultRoutes: FastifyPluginAsync = async (app) => {
           id: targetId,
           label: target?.label ?? targetId,
           bucket: delivered.bucket,
-          prefix: target?.prefix ?? '',
+          prefix: (target && s3PlaceOf(target)?.prefix) ?? '',
         },
         publishedAt: (await app.deps.repo.getPublishedAt(job.id)) ?? job.updatedAt,
         outputs,

@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 22 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">Thursday 22 October 2026: one registry of publishing targets.</p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Major changes</h4>
+        <ul>
+          <li>
+            <a href="#one-registry">One registry of publishing targets</a>
+            <span>— the delivery bridge holds every target; CT Studio shows what it holds</span>
+          </li>
+        </ul>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#waiting">A worker that starts first waits</a>
+            <span
+              >— no job is delivered to a target CT Studio hasn&apos;t synced yet, and none waits
+              more than 30 minutes</span
+            >
+          </li>
+          <li>
+            <a href="#restores">Restores and targets</a>
+            <span>— a restore puts back the targets the bridge lacks</span>
+          </li>
+        </ul>
+      </nav>
+
+      <h2 id="one-registry">One registry of publishing targets</h2>
+      <p>
+        Publishing targets now live in one place: the delivery bridge. Administration &gt;
+        <em>Published outputs</em> lists the bridge&apos;s targets, and every save goes to the
+        bridge first, so nothing is stored when the bridge refuses a change or can&apos;t be
+        reached. A target the bridge no longer has is tagged <strong>Not on the bridge</strong>
+        and can&apos;t be edited. Upgrading moves nothing: every target keeps its bucket, prefix,
+        layout and connection, and every published output stays where it is.
+      </p>
+      <p>
+        The triple store&apos;s endpoint is now read from its bridge connection, whose summary shows
+        only the fields that are not secret. The bridge refuses a destination setting its sink
+        doesn&apos;t know. For integrators: the bridge contract package is now 0.3.0 (connection
+        summaries carry <code>fields</code>).
+      </p>
+      <p>
+        A target of another kind of sink is listed, read-only, but recipes can&apos;t deliver to it
+        yet: a recipe naming one can&apos;t be published (<em
+          >&lt;id&gt; is a &lt;sink&gt; target: recipes can&apos;t deliver to it yet</em
+        >), and a copy restore treats production&apos;s like its external targets.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="waiting">A worker that starts first waits</h2>
+      <p>
+        Only the API creates the <code>default</code> and triple store targets now, on its first
+        start. A worker that starts earlier waits for them, and the job is retried without using up
+        its attempts. It waits before any model call, so waiting never re-runs a paid extraction. A
+        job that has waited 30 minutes fails with
+        <em>publishing target &lt;id&gt; has not synced with the delivery bridge for 30 minutes</em
+        >: check that the bridge is running and read the API&apos;s log.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="restores">Restores and targets</h2>
+      <p>
+        After a restore, targets CT Studio has but the bridge lacks are put back on the bridge. A
+        copy restore keeps this server&apos;s targets, so a change made directly on the bridge and
+        not yet shown in CT Studio is overwritten.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>

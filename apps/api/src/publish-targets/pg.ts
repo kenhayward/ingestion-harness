@@ -1,54 +1,40 @@
 import type pg from 'pg';
+import type { TargetView } from '@ih/bridge-contract';
 import {
   DEFAULT_TARGET_ID,
-  TRIPLE_STORE_TARGET_ID,
   targetInUse,
+  type PublishTargetKind,
   type PublishTargetView,
   type TargetChoice,
   type TargetLayout,
   type TargetUsage,
 } from '@ih/shared';
+import { kindOf } from './place.js';
 import {
   byDefaultThenLabel,
   EMPTY_USAGE,
-  patched,
-  rdfRecord,
-  rdfSeedDiffers,
-  recordFrom,
-  seeded,
   toView,
-  type NewTarget,
+  type CacheFacts,
+  type LegacyKeys,
   type PublishTargetRepo,
-  type SeedOutcome,
-  type TargetPatch,
   type TargetRecord,
 } from './repo.js';
-import { seedDifferences, type DefaultSeed, type RdfSeed } from './seed.js';
 
 interface Row {
   id: string;
   label: string;
-  kind: 'internal' | 'external' | 'rdf';
-  bucket: string;
-  prefix: string;
-  endpoint: string | null;
-  region: string | null;
-  access_key_id: string | null;
-  secret_key_enc: string | null;
-  access_key_env: string | null;
-  secret_key_env: string | null;
-  force_path_style: boolean;
-  sse: 'none' | 'AES256' | 'aws:kms';
-  kms_key_id: string | null;
-  storage_class: string | null;
-  layout: TargetLayout;
+  kind: PublishTargetKind;
+  sink_id: string;
+  instance_id: string | null;
+  connection_id: string | null;
+  destination: Record<string, string>;
+  on_bridge: boolean;
+  synced_at: Date | null;
   source: 'env' | 'ui';
   seeded_at: Date | null;
   edited_at: Date | null;
   updated_by: string | null;
   created_at: Date;
-  connection_id: string | null;
-  moved_to_bridge_at: Date | null;
 }
 
 const iso = (d: Date | null): string | null => d?.toISOString() ?? null;
@@ -57,31 +43,22 @@ const toRecord = (r: Row): TargetRecord => ({
   id: r.id,
   label: r.label,
   kind: r.kind,
-  bucket: r.bucket,
-  prefix: r.prefix,
-  endpoint: r.endpoint,
-  region: r.region,
-  accessKeyId: r.access_key_id,
-  secretKeyEnc: r.secret_key_enc,
-  accessKeyEnv: r.access_key_env,
-  secretKeyEnv: r.secret_key_env,
-  forcePathStyle: r.force_path_style,
-  sse: r.sse,
-  kmsKeyId: r.kms_key_id,
-  storageClass: r.storage_class,
-  layout: r.layout,
+  sinkId: r.sink_id,
+  instanceId: r.instance_id,
+  connectionId: r.connection_id,
+  destination: r.destination,
+  onBridge: r.on_bridge,
+  syncedAt: iso(r.synced_at),
   source: r.source,
   seededAt: iso(r.seeded_at),
   editedAt: iso(r.edited_at),
   updatedBy: r.updated_by,
   createdAt: r.created_at.toISOString(),
-  connectionId: r.connection_id,
-  movedToBridgeAt: iso(r.moved_to_bridge_at),
 });
 
-const COLUMNS = `id, label, kind, bucket, prefix, endpoint, region, access_key_id, secret_key_enc,
-  access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, layout,
-  source, seeded_at, edited_at, updated_by, created_at, connection_id, moved_to_bridge_at`;
+/** The cache's columns (the old S3 and key columns are no longer read: a later migration drops them). */
+const COLUMNS = `id, label, kind, sink_id, instance_id, connection_id, destination, on_bridge,
+  synced_at, source, seeded_at, edited_at, updated_by, created_at`;
 
 /**
  * Rows made inert (`inert_at`: a removed target, or a dropped external target of a copy restore,
@@ -89,51 +66,6 @@ const COLUMNS = `id, label, kind, bucket, prefix, endpoint, region, access_key_i
  * taken only: never listed, offered, read or changed.
  */
 const LIVE = 'inert_at IS NULL';
-
-/** The columns an update or a seed rewrites, in `values()` order. */
-const WRITE = [
-  'label',
-  'bucket',
-  'prefix',
-  'endpoint',
-  'region',
-  'access_key_id',
-  'secret_key_enc',
-  'access_key_env',
-  'secret_key_env',
-  'force_path_style',
-  'sse',
-  'kms_key_id',
-  'storage_class',
-  'layout',
-  'source',
-  'seeded_at',
-  'edited_at',
-  'updated_by',
-  'connection_id',
-] as const;
-
-const values = (r: TargetRecord): unknown[] => [
-  r.label,
-  r.bucket,
-  r.prefix,
-  r.endpoint,
-  r.region,
-  r.accessKeyId,
-  r.secretKeyEnc,
-  r.accessKeyEnv,
-  r.secretKeyEnv,
-  r.forcePathStyle,
-  r.sse,
-  r.kmsKeyId,
-  r.storageClass,
-  r.layout,
-  r.source,
-  r.seededAt,
-  r.editedAt,
-  r.updatedBy,
-  r.connectionId,
-];
 
 export class PgPublishTargetRepo implements PublishTargetRepo {
   constructor(private readonly pool: pg.Pool) {}
@@ -156,51 +88,67 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     return rows[0] ? toRecord(rows[0]) : null;
   }
 
-  async create(input: NewTarget, by: string | null): Promise<PublishTargetView | 'exists'> {
-    const r = recordFrom(input, by, new Date());
-    const { rowCount } = await this.pool.query(
-      `INSERT INTO publish_targets (id, kind, ${WRITE.join(', ')})
-       VALUES ($1, $2, ${WRITE.map((_, i) => `$${i + 3}`).join(', ')})
-       ON CONFLICT (id) DO NOTHING`,
-      [r.id, r.kind, ...values(r)],
+  /**
+   * One statement: the bridge's fields always; CT Studio's facts only when named (`by`: who
+   * edited it, and when, if the row was there already). `inert_at` is never written.
+   */
+  async cache(view: TargetView, facts: CacheFacts = {}): Promise<TargetRecord> {
+    const { rows } = await this.pool.query<Row>(
+      `INSERT INTO publish_targets AS t
+         (id, label, kind, sink_id, instance_id, connection_id, destination, on_bridge, synced_at,
+          source, seeded_at, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, now(), coalesce($8, 'ui'), $9, $10)
+       ON CONFLICT (id) DO UPDATE SET
+         label = EXCLUDED.label,
+         kind = EXCLUDED.kind,
+         sink_id = EXCLUDED.sink_id,
+         instance_id = EXCLUDED.instance_id,
+         connection_id = EXCLUDED.connection_id,
+         destination = EXCLUDED.destination,
+         on_bridge = true,
+         synced_at = now(),
+         source = coalesce($8, t.source),
+         seeded_at = CASE WHEN $11 THEN EXCLUDED.seeded_at ELSE t.seeded_at END,
+         updated_by = CASE WHEN $12 THEN EXCLUDED.updated_by ELSE t.updated_by END,
+         edited_at = CASE WHEN $12 THEN now() ELSE t.edited_at END
+       RETURNING ${COLUMNS}`,
+      [
+        view.id,
+        view.label,
+        kindOf(view),
+        view.sinkId,
+        view.instanceId,
+        view.connectionId,
+        JSON.stringify(view.destination),
+        facts.source ?? null,
+        facts.seededAt ?? null,
+        facts.by ?? null,
+        facts.seededAt !== undefined,
+        facts.by !== undefined,
+      ],
     );
-    if (rowCount === 0) return 'exists';
-    return toView(r, (await this.usageOf(r.id)).get(r.id) ?? EMPTY_USAGE);
+    return toRecord(rows[0]!);
   }
 
-  async update(
+  async markMissing(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.pool.query(
+      'UPDATE publish_targets SET on_bridge = false WHERE id = ANY($1::text[])',
+      [ids],
+    );
+  }
+
+  async cachedIds(): Promise<{ id: string; live: boolean }[]> {
+    const { rows } = await this.pool.query<{ id: string; live: boolean }>(
+      `SELECT id, ${LIVE} AS live FROM publish_targets ORDER BY id`,
+    );
+    return rows;
+  }
+
+  async remove(
     id: string,
-    patch: TargetPatch,
-    by: string | null,
-  ): Promise<PublishTargetView | null> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows } = await client.query<Row>(
-        `SELECT ${COLUMNS} FROM publish_targets WHERE id = $1 AND ${LIVE} FOR UPDATE`,
-        [id],
-      );
-      if (!rows[0]) {
-        await client.query('ROLLBACK');
-        return null;
-      }
-      const next = patched(toRecord(rows[0]), patch, by, new Date());
-      await client.query(
-        `UPDATE publish_targets SET ${WRITE.map((c, i) => `${c} = $${i + 2}`).join(', ')}
-         WHERE id = $1`,
-        [id, ...values(next)],
-      );
-      await client.query('COMMIT');
-      return toView(next, (await this.usageOf(id)).get(id) ?? EMPTY_USAGE);
-    } catch (e) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw e;
-    } finally {
-      client.release();
-    }
-  }
-
-  async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'> {
+    onBridge?: () => Promise<boolean>,
+  ): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use' | 'refused'> {
     if (id === DEFAULT_TARGET_ID) return 'default';
     const client = await this.pool.connect();
     try {
@@ -221,12 +169,18 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
         await client.query('ROLLBACK');
         return 'in_use';
       }
+      // The bridge removes it while this row is locked: a job output or graph copy recorded
+      // against it meanwhile waits for the lock, then commits naming the now inert target (the
+      // foreign key holds; it is not refused). A recipe naming it takes no lock at all.
+      if (onBridge && !(await onBridge())) {
+        await client.query('ROLLBACK');
+        return 'refused';
+      }
       // Made inert, not deleted: delivery records (job_deliveries) may still name it, and its id
-      // stays taken, as the bridge never takes a removed target's id again.
-      await client.query(
-        'UPDATE publish_targets SET inert_at = now(), secret_key_enc = NULL WHERE id = $1',
-        [id],
-      );
+      // stays taken, as the bridge never takes a removed target's id again. Any keys it still had
+      // waiting to move to the bridge go with it.
+      await client.query('UPDATE publish_targets SET inert_at = now() WHERE id = $1', [id]);
+      await client.query('DELETE FROM publish_target_legacy_keys WHERE id = $1', [id]);
       await client.query('COMMIT');
       return 'deleted';
     } catch (e) {
@@ -242,9 +196,17 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
   }
 
   async choices(): Promise<TargetChoice[]> {
-    const { rows } = await this.pool.query<TargetChoice>(
-      `SELECT id, label, kind, bucket, prefix, layout FROM publish_targets
-        WHERE ${LIVE} AND kind <> 'rdf'`,
+    const { rows } = await this.pool.query<{
+      id: string;
+      label: string;
+      kind: 'internal' | 'external';
+      bucket: string;
+      prefix: string;
+      layout: TargetLayout;
+    }>(
+      `SELECT t.id, t.label, t.kind, p.bucket, p.prefix, p.layout
+         FROM publish_targets t, target_s3_place(t.destination, t.sink_id) p
+        WHERE t.${LIVE} AND t.kind IN ('internal', 'external')`,
     );
     return rows.sort(byDefaultThenLabel);
   }
@@ -256,54 +218,44 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     return Number(rows[0]?.version ?? 0);
   }
 
-  async seedDefault(seed: DefaultSeed): Promise<SeedOutcome> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows } = await client.query<Row>(
-        `SELECT ${COLUMNS} FROM publish_targets WHERE id = $1 FOR UPDATE`,
-        [DEFAULT_TARGET_ID],
-      );
-      if (!rows[0]) throw new Error('the default publishing target row is missing');
-      const current = toRecord(rows[0]);
-      if (current.seededAt !== null) {
-        await client.query('ROLLBACK');
-        return seedDifferences(current, seed).length > 0 ? 'differs' : 'kept';
-      }
-      const next = seeded(current, seed, new Date());
-      await client.query(
-        `UPDATE publish_targets SET kind = $2, ${WRITE.map((c, i) => `${c} = $${i + 3}`).join(', ')}
-         WHERE id = $1`,
-        [DEFAULT_TARGET_ID, next.kind, ...values(next)],
-      );
-      await client.query('COMMIT');
-      return 'seeded';
-    } catch (e) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw e;
-    } finally {
-      client.release();
-    }
-  }
-
-  async seedRdf(seed: RdfSeed): Promise<SeedOutcome> {
-    const r = rdfRecord(seed, new Date());
-    const inserted = await this.pool.query(
-      `INSERT INTO publish_targets (id, kind, ${WRITE.join(', ')})
-       VALUES ($1, $2, ${WRITE.map((_, i) => `$${i + 3}`).join(', ')})
-       ON CONFLICT (id) DO NOTHING`,
-      [r.id, r.kind, ...values(r)],
+  async legacyKeys(): Promise<LegacyKeys[]> {
+    const { rows } = await this.pool.query<{
+      id: string;
+      endpoint: string | null;
+      region: string | null;
+      access_key_id: string | null;
+      secret_key_enc: string | null;
+      access_key_env: string | null;
+      secret_key_env: string | null;
+      force_path_style: boolean;
+      moved_to_bridge_at: Date | null;
+      connection_id: string | null;
+    }>(
+      `SELECT id, endpoint, region, access_key_id, secret_key_enc, access_key_env, secret_key_env,
+              force_path_style, moved_to_bridge_at, connection_id
+         FROM publish_target_legacy_keys ORDER BY id`,
     );
-    if (inserted.rowCount) return 'seeded';
-    const stored = await this.get(TRIPLE_STORE_TARGET_ID);
-    return stored && rdfSeedDiffers(stored, seed) ? 'differs' : 'kept';
+    return rows.map((r) => ({
+      id: r.id,
+      endpoint: r.endpoint,
+      region: r.region,
+      accessKeyId: r.access_key_id,
+      secretKeyEnc: r.secret_key_enc,
+      accessKeyEnv: r.access_key_env,
+      secretKeyEnv: r.secret_key_env,
+      forcePathStyle: r.force_path_style,
+      movedToBridgeAt: iso(r.moved_to_bridge_at),
+      connectionId: r.connection_id,
+    }));
   }
 
-  async markMoved(id: string, connectionId: string): Promise<void> {
+  async dropLegacyKeys(id: string): Promise<void> {
+    await this.pool.query('DELETE FROM publish_target_legacy_keys WHERE id = $1', [id]);
+  }
+
+  async chooseLegacyConnection(id: string, connectionId: string): Promise<void> {
     await this.pool.query(
-      `UPDATE publish_targets
-          SET connection_id = $2, secret_key_enc = NULL, moved_to_bridge_at = now()
-        WHERE id = $1`,
+      'UPDATE publish_target_legacy_keys SET connection_id = $2 WHERE id = $1',
       [id, connectionId],
     );
   }

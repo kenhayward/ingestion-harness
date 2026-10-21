@@ -319,8 +319,9 @@ def test_published_outputs_record_their_publishing_target(
 
     q, job = queue_and_job
     q._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, bucket)
-           VALUES ('finance-lake', 'Finance lake', 'internal', 'finance')
+        """INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+           VALUES ('finance-lake', 'Finance lake', 'internal', 's3', 'internal',
+                   '{"bucket": "finance"}')
            ON CONFLICT (id) DO NOTHING"""
     )
     key = f"fin/demo/v2/fields/{job.document_id}.csv"
@@ -450,9 +451,11 @@ def test_published_outputs_are_recorded_per_target_with_the_primary_marked(
 
     q, job = queue_and_job
     q._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, bucket, layout)
-           VALUES ('finance-lake', 'Finance lake', 'internal', 'finance', 'files'),
-                  ('archive', 'Archive', 'internal', 'keep', 'package')
+        """INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+           VALUES ('finance-lake', 'Finance lake', 'internal', 's3', 'internal',
+                   '{"bucket": "finance", "layout": "files"}'),
+                  ('archive', 'Archive', 'internal', 's3', 'internal',
+                   '{"bucket": "keep", "layout": "package"}')
            ON CONFLICT (id) DO NOTHING"""
     )
     fin = RenderedOutput("fields", "csv", "fin/demo/v2/fields/d.csv", b"", 1)
@@ -491,8 +494,9 @@ def test_a_new_primary_demotes_the_jobs_rows_at_other_targets(
 
     q, job = queue_and_job
     q._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, bucket)
-           VALUES ('lake-a', 'Lake A', 'internal', 'lake-a'), ('lake-b', 'Lake B', 'internal', 'lake-b')
+        """INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+           VALUES ('lake-a', 'Lake A', 'internal', 's3', 'internal', '{"bucket": "lake-a"}'),
+                  ('lake-b', 'Lake B', 'internal', 's3', 'internal', '{"bucket": "lake-b"}')
            ON CONFLICT (id) DO NOTHING"""
     )
     out = RenderedOutput("fields", "csv", "demo/v1/fields/d.csv", b"", 1)
@@ -504,3 +508,65 @@ def test_a_new_primary_demotes_the_jobs_rows_at_other_targets(
         (job.id,),
     ).fetchall()
     assert rows == [("lake-a", False, True), ("lake-b", True, True)]
+
+
+def test_waiting_requeues_without_spending_an_attempt(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, job_id = queue_with_queued_job
+    claimed = q.claim("w1")
+    assert claimed is not None and claimed.attempts == 1
+    q.wait(claimed, "TargetNotSynced: default", 15)
+    row = q._conn.execute(
+        "SELECT status, attempts, locked_by, run_after > now(), error FROM jobs WHERE id = %s",
+        (job_id,),
+    ).fetchone()
+    assert row == ("queued", 0, None, True, "TargetNotSynced: default")
+    q._conn.execute("UPDATE jobs SET run_after = now() WHERE id = %s", (job_id,))
+    again = q.claim("w1")
+    assert again is not None and again.attempts == 1
+    # A late wait from the old claim touches nothing.
+    q.wait(claimed, "x", 15)
+    row = q._conn.execute("SELECT status FROM jobs WHERE id = %s", (job_id,)).fetchone()
+    assert row == ("running",)
+
+
+def test_waiting_since_is_set_on_the_first_wait_and_cleared_past_it(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, job_id = queue_with_queued_job
+
+    def since() -> object:
+        row = q._conn.execute("SELECT waiting_since FROM jobs WHERE id = %s", (job_id,)).fetchone()
+        assert row is not None
+        return row[0]
+
+    def claim_now() -> ClaimedJob:
+        q._conn.execute("UPDATE jobs SET run_after = now() WHERE id = %s", (job_id,))
+        claimed = q.claim("w1")
+        assert claimed is not None and claimed.id == job_id
+        return claimed
+
+    first = claim_now()
+    assert first.waited_s is None and since() is None
+    q.wait(first, "TargetNotSynced: default", 15)
+    started = since()
+    assert started is not None
+    q._conn.execute(
+        "UPDATE jobs SET waiting_since = waiting_since - interval '10 minutes' WHERE id = %s",
+        (job_id,),
+    )
+    second = claim_now()
+    assert second.waited_s is not None and 600 <= second.waited_s < 700
+    q.wait(second, "TargetNotSynced: default", 15)  # a later wait keeps when it started
+    assert since() is not None and since() < started  # type: ignore[operator]
+    third = claim_now()
+    q.stop_waiting(third)  # past target resolution
+    assert since() is None
+    q.wait(third, "TargetNotSynced: default", 15)
+    fourth = claim_now()
+    q.give_up(fourth, "publishing target default has not synced")  # finishing clears it too
+    row = q._conn.execute(
+        "SELECT status, waiting_since, error FROM jobs WHERE id = %s", (job_id,)
+    ).fetchone()
+    assert row == ("failed", None, "publishing target default has not synced")

@@ -126,8 +126,9 @@ describe.skipIf(!url)('published results against Postgres', { timeout: 30_000 },
       issues: null,
     });
     await pool.query(
-      `INSERT INTO publish_targets (id, label, kind, bucket, layout)
-       VALUES ('archive', 'Archive', 'internal', 'keep', 'package') ON CONFLICT (id) DO NOTHING`,
+      `INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+       VALUES ('archive', 'Archive', 'internal', 's3', 'internal',
+               '{"bucket": "keep", "layout": "package"}') ON CONFLICT (id) DO NOTHING`,
     );
     await pool.query(
       `INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key, target_id,

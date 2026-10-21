@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
@@ -470,7 +471,10 @@ def main(argv: list[str] = sys.argv[1:]) -> int:
         models=ModelRegistry({}, {}, {}),
         extract_text=extract_pages,
         buckets=Buckets(settings.bucket_inbox, settings.bucket_outputs, settings.bucket_runs),
-        targets=LiveTargets(PgPublishTargetStore.connect(settings.database_url)),
+        targets=LiveTargets(
+            PgPublishTargetStore.connect(settings.database_url),
+            rdf_expected=bool(os.environ.get("RDF_ENDPOINT")),
+        ),
         bridge=HttpBridgeClient(settings.bridge_url, settings.bridge_client_key),
         ontologies=PgOntologyStore(library),
         linked_data=PgLinkedDataSettings(library),

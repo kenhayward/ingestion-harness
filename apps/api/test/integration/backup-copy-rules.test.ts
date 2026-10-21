@@ -7,14 +7,22 @@
  *   IH_TEST_DATABASE_URL=postgres://postgres:test@localhost:55433/postgres \
  *     npx vitest run --config apps/api/vitest.integration.config.ts backup-copy-rules
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ConnectionSummary, TargetPutRequest, TargetView } from '@ih/bridge-contract';
+import type { FastifyBaseLogger } from 'fastify';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyCopyRules, readKeptState, type CopyResult } from '../../src/backup/copy-rules.js';
-import { databaseUrl } from '../../src/backup/pg-tools.js';
+import { databaseUrl, PgDatabaseTools } from '../../src/backup/pg-tools.js';
+import type { SharedConnection } from '../../src/bridge/client.js';
+import { resyncAfterRestore } from '../../src/bridge/sync.js';
 import { migrate, migrateRestored } from '../../src/db/migrate.js';
+import { encryptSecret, type SecretsKeys } from '../../src/llm/secrets.js';
+import { PgPublishTargetRepo } from '../../src/publish-targets/pg.js';
+import { FakeBridgeApi } from '../fake-bridge.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
 const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
@@ -72,10 +80,16 @@ const STAGING = `
   INSERT INTO github_sync_settings (instance_name) VALUES ('staging');
   INSERT INTO linked_data_settings (customer_name, base_iri) VALUES ('Staging', 'https://id.example/staging/');
   INSERT INTO linked_data_base_history (id, from_base, to_base) VALUES (7, NULL, 'https://id.example/staging/');
-  UPDATE publish_targets SET bucket = 'staging-published', label = 'Staging default' WHERE id = 'default';
-  INSERT INTO publish_targets (id, label, kind, bucket, endpoint, access_key_id, secret_key_enc)
-       VALUES ('staging-ext', 'Staging lake', 'external', 'staging-lake', 'https://s3.staging.example', 'AKSTAGING', 'v1:staging-secret'),
-              ('shared', 'Staging shared', 'internal', 'staging-shared', NULL, NULL, NULL);
+  UPDATE publish_targets SET label = 'Staging default', connection_id = 'internal', synced_at = now(),
+         seeded_at = now(), destination = destination || '{"bucket": "staging-published"}'
+   WHERE id = 'default';
+  INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination, synced_at)
+       VALUES ('staging-ext', 'Staging lake', 'external', 's3', 'staging-keys', '{"bucket": "staging-lake"}', now()),
+              ('shared', 'Staging shared', 'internal', 's3', 'internal', '{"bucket": "staging-shared"}', now()),
+              ('staging-old', 'Staging old lake', 'external', 's3', NULL, '{"bucket": "staging-old"}', now());
+  -- Keys not moved to the bridge yet: encrypted under this server's key, so a copy keeps them.
+  INSERT INTO publish_target_legacy_keys (id, endpoint, access_key_id, secret_key_enc)
+       VALUES ('staging-old', 'https://s3.staging.example', 'AKSTAGING', 'v1:staging-secret');
   INSERT INTO s3_consumers (id, label, user_name) VALUES ('${CONSUMER_STAGING}', 'Staging lake', 'lake-staging');
   INSERT INTO s3_access_keys (consumer_id, access_key_id) VALUES ('${CONSUMER_STAGING}', 'AKLAKESTAGING');
   INSERT INTO s3_consumer_targets (consumer_id, target_id) VALUES ('${CONSUMER_STAGING}', 'default'), ('${CONSUMER_STAGING}', 'shared');
@@ -107,12 +121,18 @@ const PRODUCTION = `
                                       label_sha, pushed_by, pushed_at)
        VALUES ('invoice', 1, 'acme/recipes', 'main', 'ct/production/invoice/v1.yaml', 'c', 'b', 'l', 'Pat', now());
 
-  UPDATE publish_targets SET bucket = 'ingest-published' WHERE id = 'default';
-  INSERT INTO publish_targets (id, label, kind, bucket, endpoint, region, access_key_id, secret_key_enc)
-       VALUES ('prod-ext', 'Production lake', 'external', 'prod-lake', 'https://s3.prod.example', 'eu-west-1', 'AKPROD', 'v1:prod-secret'),
-              ('shared', 'Production shared', 'external', 'prod-shared', 'https://s3.shared.example', NULL, 'AKSHARED', 'v1:shared-secret'),
-              ('prod-int', 'Production archive', 'internal', 'prod-archive', NULL, NULL, NULL, NULL),
-              ('rdf-default', 'Triple store', 'rdf', 'ct', 'http://fuseki.prod:3030', NULL, 'ct-writer', NULL);
+  UPDATE publish_targets SET connection_id = 'internal', synced_at = now(), seeded_at = now()
+   WHERE id = 'default';
+  INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination, synced_at)
+       VALUES ('prod-ext', 'Production lake', 'external', 's3', 'target-prod-ext', '{"bucket": "prod-lake"}', now()),
+              ('shared', 'Production shared', 'external', 's3', 'staging-keys', '{"bucket": "prod-shared"}', now()),
+              ('prod-int', 'Production archive', 'internal', 's3', 'internal', '{"bucket": "prod-archive"}', now()),
+              ('rdf-default', 'Triple store', 'rdf', 'rdf', 'rdf-default', '{"dataset": "ct"}', now()),
+              ('prod-3ds', 'Production 3DEXPERIENCE', 'sink', '3dexperience', 'prod-3ds-keys', '{"space": "prod"}', now());
+  -- Production's keys from before the bridge: none of them may survive a copy.
+  INSERT INTO publish_target_legacy_keys (id, endpoint, region, access_key_id, secret_key_enc)
+       VALUES ('prod-ext', 'https://s3.prod.example', 'eu-west-1', 'AKPROD', 'v1:prod-secret'),
+              ('shared', 'https://s3.shared.example', NULL, 'AKSHARED', 'v1:shared-secret');
   INSERT INTO s3_consumers (id, label, user_name) VALUES ('${CONSUMER_PROD}', 'Production lake', 'lake-prod');
   INSERT INTO s3_access_keys (consumer_id, access_key_id) VALUES ('${CONSUMER_PROD}', 'AKLAKEPROD');
   INSERT INTO s3_consumer_targets (consumer_id, target_id) VALUES ('${CONSUMER_PROD}', 'default'), ('${CONSUMER_PROD}', 'prod-int'), ('${CONSUMER_PROD}', 'prod-ext');
@@ -174,11 +194,15 @@ const BRIDGE_PRODUCTION = `
   INSERT INTO bridge.connections (id, kind, sink_id, name, fields, secret_enc)
        VALUES ('internal', 'shared', 's3', 'This deployment', '{}', NULL),
               ('staging-keys', 'shared', 's3', 'Same id, production keys', '{}', 'v1:prod-same-id'),
-              ('target-prod-ext', 'shared', 's3', 'Production lake', '{"accessKeyId": "AKPROD"}', 'v1:prod-bridge-secret');
+              ('target-prod-ext', 'shared', 's3', 'Production lake', '{"accessKeyId": "AKPROD"}', 'v1:prod-bridge-secret'),
+              ('prod-3ds-keys', 'shared', '3dexperience', 'Production 3DEXPERIENCE', '{}', 'v1:prod-3ds-secret');
   INSERT INTO bridge.targets (id, label, sink_id, connection_id, destination)
        VALUES ('default', 'Default', 's3', 'internal', '{"bucket": "ingest-published"}'),
+              ('prod-3ds', 'Production 3DEXPERIENCE', '3dexperience', 'prod-3ds-keys', '{"space": "prod"}'),
               ('prod-ext', 'Production lake', 's3', 'target-prod-ext', '{"bucket": "prod-lake"}'),
               ('shared', 'Production shared', 's3', 'staging-keys', '{"bucket": "prod-shared"}');
+  -- Production removed its 'shared' (soft: the row stays); staging's live 'shared' replaces it.
+  UPDATE bridge.targets SET removed_at = now(), connection_id = NULL WHERE id = 'shared';
   INSERT INTO bridge.packages (id, kind, idempotency_key, manifest, staged_key)
        VALUES ('00000000-0000-4000-8000-0000000000a1', 'document', 'k', '{}', 'packages/a1.json');
   INSERT INTO bridge.deliveries (id, package_id, target_id, idempotency_key, status)
@@ -272,28 +296,19 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
 
   it("makes production's external targets inert and withdraws their outputs", async () => {
     const [prodExt] = await side<Record<string, unknown>>(
-      `SELECT kind, endpoint, region, access_key_id, secret_key_enc, access_key_env,
-              secret_key_env, inert_at IS NOT NULL AS inert FROM publish_targets WHERE id = 'prod-ext'`,
+      `SELECT kind, connection_id, inert_at IS NOT NULL AS inert FROM publish_targets
+        WHERE id = 'prod-ext'`,
     );
-    expect(prodExt).toEqual({
-      kind: 'external',
-      endpoint: null,
-      region: null,
-      access_key_id: null,
-      secret_key_enc: null,
-      access_key_env: null,
-      secret_key_env: null,
-      inert: true,
-    });
-    expect(result.droppedTargets).toEqual(['prod-ext', 'rdf-default']);
-    // Production's triple store (this server has none): inert, its endpoint and user gone, so
-    // nothing here delivers to production's Fuseki.
+    expect(prodExt).toEqual({ kind: 'external', connection_id: null, inert: true });
+    expect(result.droppedTargets).toEqual(['prod-3ds', 'prod-ext', 'rdf-default']);
+    // Production's triple store (this server has none): inert, no connection (its endpoint and
+    // writer user were production's), so nothing here delivers to production's Fuseki.
     expect(
       await side(
-        `SELECT kind, endpoint, access_key_id, inert_at IS NOT NULL AS inert
+        `SELECT kind, connection_id, inert_at IS NOT NULL AS inert
            FROM publish_targets WHERE id = 'rdf-default'`,
       ),
-    ).toEqual([{ kind: 'rdf', endpoint: null, access_key_id: null, inert: true }]);
+    ).toEqual([{ kind: 'rdf', connection_id: null, inert: true }]);
     // prod-ext (dropped) and shared (production external, staging internal): withdrawn;
     // default and prod-int (internal on both or production's only): still live; drafts untouched.
     expect(
@@ -323,14 +338,25 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
     ]);
     // Production's internal-only target comes across as it is.
     expect(
-      await side("SELECT kind, bucket, inert_at FROM publish_targets WHERE id = 'prod-int'"),
+      await side(
+        `SELECT kind, p.bucket, inert_at FROM publish_targets t,
+                target_s3_place(t.destination, t.sink_id) p WHERE id = 'prod-int'`,
+      ),
     ).toEqual([{ kind: 'internal', bucket: 'prod-archive', inert_at: null }]);
+  });
+
+  it("an inert target's keys from before the bridge go; this server's are kept", async () => {
+    expect(
+      await side('SELECT id, access_key_id, secret_key_enc FROM publish_target_legacy_keys'),
+    ).toEqual([
+      { id: 'staging-old', access_key_id: 'AKSTAGING', secret_key_enc: 'v1:staging-secret' },
+    ]);
   });
 
   it("staging's row wins on a shared id", async () => {
     expect(
       await side(
-        `SELECT id, label, kind, bucket, endpoint, access_key_id, secret_key_enc, inert_at
+        `SELECT id, label, kind, sink_id, connection_id, destination->>'bucket' AS bucket, inert_at
            FROM publish_targets WHERE id IN ('default', 'shared', 'staging-ext') ORDER BY id`,
       ),
     ).toEqual([
@@ -338,30 +364,27 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
         id: 'default',
         label: 'Staging default',
         kind: 'internal',
+        sink_id: 's3',
+        connection_id: 'internal',
         bucket: 'staging-published',
-        endpoint: null,
-        access_key_id: null,
-        secret_key_enc: null,
         inert_at: null,
       },
       {
         id: 'shared',
         label: 'Staging shared',
         kind: 'internal',
+        sink_id: 's3',
+        connection_id: 'internal',
         bucket: 'staging-shared',
-        endpoint: null,
-        access_key_id: null,
-        secret_key_enc: null,
         inert_at: null,
       },
       {
         id: 'staging-ext',
         label: 'Staging lake',
         kind: 'external',
+        sink_id: 's3',
+        connection_id: 'staging-keys',
         bucket: 'staging-lake',
-        endpoint: 'https://s3.staging.example',
-        access_key_id: 'AKSTAGING',
-        secret_key_enc: 'v1:staging-secret',
         inert_at: null,
       },
     ]);
@@ -408,12 +431,90 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
     ]);
   });
 
-  it('a restored target naming a connection the live deployment lacks loses its connection', async () => {
-    expect(await side('SELECT id, connection_id FROM bridge.targets ORDER BY id')).toEqual([
-      { id: 'default', connection_id: 'internal' },
-      { id: 'prod-ext', connection_id: null },
-      { id: 'shared', connection_id: 'staging-keys' },
+  it('a kept target is live on the bridge even where production had removed its id', async () => {
+    expect(
+      await side(`SELECT id, removed_at IS NULL AS live FROM bridge.targets WHERE id = 'shared'`),
+    ).toEqual([{ id: 'shared', live: true }]);
+  });
+
+  it('a copy restore writes the kept targets into bridge.targets and the cache', async () => {
+    const bridgeTargets = await side(
+      `SELECT id, label, sink_id, instance_id, connection_id, destination
+         FROM bridge.targets WHERE id NOT IN ('prod-ext', 'prod-3ds') ORDER BY id`,
+    );
+    expect(bridgeTargets).toEqual([
+      {
+        id: 'default',
+        label: 'Staging default',
+        sink_id: 's3',
+        instance_id: null,
+        connection_id: 'internal',
+        destination: {
+          bucket: 'staging-published',
+          prefix: '',
+          sse: 'none',
+          kmsKeyId: '',
+          storageClass: '',
+          layout: 'files',
+        },
+      },
+      {
+        id: 'shared',
+        label: 'Staging shared',
+        sink_id: 's3',
+        instance_id: null,
+        connection_id: 'internal',
+        destination: { bucket: 'staging-shared' },
+      },
+      {
+        id: 'staging-ext',
+        label: 'Staging lake',
+        sink_id: 's3',
+        instance_id: null,
+        connection_id: 'staging-keys',
+        destination: { bucket: 'staging-lake' },
+      },
+      {
+        id: 'staging-old',
+        label: 'Staging old lake',
+        sink_id: 's3',
+        instance_id: null,
+        connection_id: null,
+        destination: { bucket: 'staging-old' },
+      },
     ]);
+    // The cache holds the same, so the pull after the swap caches this server's rows.
+    expect(
+      await side(
+        `SELECT id, label, sink_id, instance_id, connection_id, destination FROM publish_targets
+          WHERE id = ANY('{default,shared,staging-ext,staging-old}') ORDER BY id`,
+      ),
+    ).toEqual(bridgeTargets);
+  });
+
+  it('a dropped external target keeps its bridge row and is inert here', async () => {
+    // Its delivery records name it (the bridge's foreign key): the row stays, without
+    // production's connection.
+    expect(
+      await side(`SELECT id, connection_id, destination FROM bridge.targets WHERE id = 'prod-ext'`),
+    ).toEqual([{ id: 'prod-ext', connection_id: null, destination: { bucket: 'prod-lake' } }]);
+    expect(
+      await side("SELECT inert_at IS NOT NULL AS inert FROM publish_targets WHERE id = 'prod-ext'"),
+    ).toEqual([{ inert: true }]);
+  });
+
+  it("production's sink targets are dropped like its external ones", async () => {
+    // A sink target (phase 6) delivers to production's system: inert here, no connection, and
+    // its bridge row (which production's deliveries may name) stays without production's link.
+    expect(
+      await side(
+        `SELECT kind, connection_id, inert_at IS NOT NULL AS inert
+           FROM publish_targets WHERE id = 'prod-3ds'`,
+      ),
+    ).toEqual([{ kind: 'sink', connection_id: null, inert: true }]);
+    expect(
+      await side(`SELECT id, connection_id FROM bridge.targets WHERE id = 'prod-3ds'`),
+    ).toEqual([{ id: 'prod-3ds', connection_id: null }]);
   });
 
   it("never delivers production's unfinished deliveries nor sends its events here", async () => {
@@ -488,5 +589,226 @@ describe.skipIf(!url)('copy rules (Postgres): a backup from before the bridge', 
       { id: 'internal', secret_enc: null },
       { id: 'staging-keys', secret_enc: 'v1:staging-bridge-secret' },
     ]);
+  });
+});
+
+/**
+ * The delivery bridge's tables as its producer API would answer over them (the API reads and
+ * writes the bridge only over HTTP; here the bridge's rows are the restored database's).
+ */
+class TableBridge extends FakeBridgeApi {
+  constructor(private readonly pool: pg.Pool) {
+    super();
+  }
+
+  override async listTargets(): Promise<TargetView[]> {
+    const { rows } = await this.pool.query<TargetView>(
+      `SELECT id, label, sink_id AS "sinkId", instance_id AS "instanceId",
+              connection_id AS "connectionId", destination FROM bridge.targets ORDER BY id`,
+    );
+    return rows;
+  }
+
+  override async putTarget(id: string, t: TargetPutRequest): Promise<TargetView> {
+    this.targetPuts += 1;
+    if (t.connectionId !== null) {
+      const found = await this.pool.query('SELECT 1 FROM bridge.connections WHERE id = $1', [
+        t.connectionId,
+      ]);
+      if (found.rowCount === 0) {
+        throw FakeBridgeApi.refusal(
+          `there is no connection ${t.connectionId}`,
+          'connection_missing',
+        );
+      }
+    }
+    await this.pool.query(
+      `INSERT INTO bridge.targets (id, label, sink_id, instance_id, connection_id, destination)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, sink_id = EXCLUDED.sink_id,
+         instance_id = EXCLUDED.instance_id, connection_id = EXCLUDED.connection_id,
+         destination = EXCLUDED.destination, updated_at = now()`,
+      [id, t.label, t.sinkId, t.instanceId, t.connectionId, JSON.stringify(t.destination)],
+    );
+    return { id, ...structuredClone(t) };
+  }
+
+  override async putSharedConnection(c: SharedConnection): Promise<void> {
+    this.connectionPuts += 1;
+    this.connections.set(c.id, structuredClone(c));
+    await this.pool.query(
+      `INSERT INTO bridge.connections (id, kind, sink_id, name, fields, secret_enc, secret_env)
+       VALUES ($1, 'shared', $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, fields = EXCLUDED.fields,
+         secret_enc = EXCLUDED.secret_enc, secret_env = EXCLUDED.secret_env`,
+      [
+        c.id,
+        c.sinkId ?? 's3',
+        c.name,
+        JSON.stringify(c.fields),
+        c.secret === null ? null : `bridge:${c.secret}`,
+        c.secretEnv,
+      ],
+    );
+  }
+
+  override async listConnections(): Promise<ConnectionSummary[]> {
+    const { rows } = await this.pool.query<ConnectionSummary>(
+      `SELECT id, name, sink_id AS "sinkId", status, status_reason AS "statusReason", fields
+         FROM bridge.connections ORDER BY id`,
+    );
+    return rows;
+  }
+}
+
+/** The migration that merged the target registries; a pre-merge backup stops just before it. */
+const MERGE = '202610220900_targets_on_bridge.sql';
+const PRE_MERGE = 'ih_cr_premerge';
+const PRE_MERGE_SIDE = 'ih_cr_premerge_side';
+const SECRETS: SecretsKeys = { current: Buffer.alloc(32, 9), previous: null };
+
+function migrationsBefore(first: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'ih-migrations-'));
+  for (const f of readdirSync(migrations).filter((f) => f.endsWith('.sql') && f < first)) {
+    copyFileSync(join(migrations, f), join(dir, f));
+  }
+  return dir;
+}
+
+const dropPreMerge = () =>
+  onDb('postgres', async (c) => {
+    for (const n of [PRE_MERGE, PRE_MERGE_SIDE])
+      await c.query(`DROP DATABASE IF EXISTS ${n} WITH (FORCE)`);
+  });
+
+describe.skipIf(!url)('restore (Postgres): a backup from before the target registry merge', () => {
+  let pool: pg.Pool | undefined;
+
+  beforeAll(async () => {
+    await dropPreMerge();
+    await onDb('postgres', (c) => c.query(`CREATE DATABASE ${PRE_MERGE}`));
+    const before = migrationsBefore(MERGE);
+    try {
+      // The bridge's schema as its own runner leaves it (bookkept, so the restore skips it).
+      await migrateRestored(databaseUrl(url!, PRE_MERGE), { migrations: before, bridgeMigrations });
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+    }
+    // The targets as they were before the merge: places and keys in publish_targets, the
+    // bridge's registry empty. The seeded default, an internal target and an archive made on
+    // the page, and an external target whose keys never moved to the bridge.
+    await onDb(PRE_MERGE, async (c) => {
+      await c.query(
+        `INSERT INTO bridge.connections (id, kind, sink_id, name, fields)
+         VALUES ('internal', 'shared', 's3', 'This deployment', '{}')`,
+      );
+      await c.query(
+        "UPDATE publish_targets SET bucket = 'published', seeded_at = now() WHERE id = 'default'",
+      );
+      await c.query(
+        `INSERT INTO publish_targets (id, label, kind, bucket, prefix, layout, source)
+         VALUES ('shared', 'Shared', 'internal', 'shared', 'x/', 'files', 'ui'),
+                ('archive', 'Archive', 'internal', 'archive', '', 'package', 'ui')`,
+      );
+      await c.query(
+        `INSERT INTO publish_targets (id, label, kind, bucket, endpoint, region, access_key_id,
+                                      secret_key_enc, force_path_style, source)
+         VALUES ('old-lake', 'Old lake', 'external', 'old', 'https://s3.eu-west-2.amazonaws.com',
+                 'eu-west-2', 'AKIAOLD', $1, true, 'ui')`,
+        [encryptSecret('old-secret', SECRETS)],
+      );
+    });
+    // The backup, restored into a side database and brought forward as a restore does.
+    const tools = new PgDatabaseTools(databaseUrl(url!, PRE_MERGE));
+    const { body, done } = await tools.dump();
+    const sideUrl = await tools.createSideDatabase(PRE_MERGE_SIDE);
+    await tools.restore(sideUrl, body);
+    await done;
+    await migrateRestored(sideUrl, { migrations, bridgeMigrations });
+    pool = new pg.Pool({ connectionString: sideUrl, max: 3 });
+  }, 120_000);
+  afterAll(async () => {
+    await pool?.end();
+    await dropPreMerge();
+  });
+
+  it("a restored pre-merge backup's targets come back and its keys move once", async () => {
+    const bridge = new TableBridge(pool!);
+    const deps = {
+      targets: new PgPublishTargetRepo(pool!),
+      bridge,
+      log: { warn: () => {}, info: () => {}, error: () => {} } as unknown as FastifyBaseLogger,
+      secrets: SECRETS,
+      seed: {
+        kind: 'internal' as const,
+        bucket: 'published',
+        prefix: '',
+        endpoint: null,
+        region: null,
+        accessKeyEnv: null,
+        secretKeyEnv: null,
+        forcePathStyle: true,
+      },
+      rdfSeed: null,
+    };
+    const first = await resyncAfterRestore(deps);
+    expect(first.moved).toEqual(['old-lake']);
+    expect(first.pulled.missing).toEqual([]);
+
+    const s3 = (bucket: string, prefix: string, layout: string) => ({
+      bucket,
+      prefix,
+      sse: 'none',
+      kmsKeyId: '',
+      storageClass: '',
+      layout,
+    });
+    expect(
+      (await pool!.query('SELECT id, connection_id, destination FROM bridge.targets ORDER BY id'))
+        .rows,
+    ).toEqual([
+      { id: 'archive', connection_id: 'internal', destination: s3('archive', '', 'package') },
+      { id: 'default', connection_id: 'internal', destination: s3('published', '', 'files') },
+      { id: 'old-lake', connection_id: 'target-old-lake', destination: s3('old', '', 'files') },
+      { id: 'shared', connection_id: 'internal', destination: s3('shared', 'x/', 'files') },
+    ]);
+    expect(
+      (
+        await pool!.query(
+          "SELECT id, fields, secret_enc FROM bridge.connections WHERE id <> 'internal'",
+        )
+      ).rows,
+    ).toEqual([
+      {
+        id: 'target-old-lake',
+        fields: {
+          endpoint: 'https://s3.eu-west-2.amazonaws.com',
+          region: 'eu-west-2',
+          accessKeyId: 'AKIAOLD',
+          forcePathStyle: 'true',
+        },
+        secret_enc: 'bridge:old-secret',
+      },
+    ]);
+    expect((await pool!.query('SELECT id FROM publish_target_legacy_keys')).rows).toEqual([]);
+    expect(
+      (
+        await pool!.query(
+          'SELECT id, on_bridge, synced_at IS NOT NULL AS synced FROM publish_targets ORDER BY id',
+        )
+      ).rows,
+    ).toEqual(
+      ['archive', 'default', 'old-lake', 'shared'].map((id) => ({
+        id,
+        on_bridge: true,
+        synced: true,
+      })),
+    );
+
+    // Once: a second pass moves nothing and writes no connection.
+    const puts = bridge.connectionPuts;
+    const second = await resyncAfterRestore(deps);
+    expect(second.moved).toEqual([]);
+    expect(bridge.connectionPuts).toBe(puts);
   });
 });

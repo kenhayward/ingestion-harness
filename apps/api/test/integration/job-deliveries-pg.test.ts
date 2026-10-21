@@ -110,7 +110,8 @@ describe.skipIf(!url)('job deliveries against Postgres', { timeout: 30_000 }, ()
   it("a later round's success replaces the earlier needs_user", async () => {
     const job = await delivering();
     await pool.query(
-      `INSERT INTO publish_targets (id, label, kind, bucket) VALUES ('lake-2', 'Lake 2', 'internal', 'lake-2')
+      `INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+       VALUES ('lake-2', 'Lake 2', 'internal', 's3', 'internal', '{"bucket": "lake-2"}')
        ON CONFLICT (id) DO NOTHING`,
     );
     const [a1, b1, a2, b2] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];

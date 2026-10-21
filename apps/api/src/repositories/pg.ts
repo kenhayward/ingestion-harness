@@ -929,7 +929,7 @@ export class PgRepo implements IngestionRepo {
                 reviewed_at = CASE WHEN status = 'succeeded' THEN NULL ELSE reviewed_at END,
                 review_reasons = CASE WHEN status = 'succeeded' THEN NULL ELSE review_reasons END,
                 status = 'queued', attempts = 0, error = NULL, run_after = now(),
-                locked_by = NULL, locked_at = NULL, updated_at = now(),
+                locked_by = NULL, locked_at = NULL, updated_at = now(), waiting_since = NULL,
                 model_override = CASE WHEN $2 THEN $3 ELSE model_override END,
                 params = CASE WHEN $5 THEN COALESCE(params, '{}'::jsonb)
                                            || jsonb_build_object('outputs', $6::jsonb)

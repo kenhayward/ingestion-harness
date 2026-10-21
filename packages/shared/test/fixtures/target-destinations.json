@@ -1,0 +1,151 @@
+{
+  "note": "Target rows in the publish_targets columns from before 202610220900_targets_on_bridge.sql, each with what the API's mirror (apps/api/src/bridge/mirror.ts, mirrorOf) sent the bridge for it. The migration's backfill must give each row exactly this sink, instance, connection and destination (apps/api/test/integration/targets-on-bridge-pg.test.ts); apps/api/test/bridge-mirror.test.ts pins the mirror's side.",
+  "cases": [
+    {
+      "name": "internal",
+      "row": {
+        "id": "lake",
+        "label": "Lake",
+        "kind": "internal",
+        "bucket": "published",
+        "prefix": "pub/",
+        "endpoint": null,
+        "region": null,
+        "access_key_id": null,
+        "secret_key_enc": null,
+        "access_key_env": null,
+        "secret_key_env": null,
+        "force_path_style": false,
+        "sse": "none",
+        "kms_key_id": null,
+        "storage_class": null,
+        "layout": "files",
+        "source": "ui",
+        "connection_id": null,
+        "moved_to_bridge_at": null
+      },
+      "mirror": {
+        "label": "Lake",
+        "sinkId": "s3",
+        "instanceId": null,
+        "connectionId": "internal",
+        "destination": {
+          "bucket": "published",
+          "prefix": "pub/",
+          "sse": "none",
+          "kmsKeyId": "",
+          "storageClass": "",
+          "layout": "files"
+        }
+      }
+    },
+    {
+      "name": "external with KMS and a storage class",
+      "row": {
+        "id": "finance",
+        "label": "Finance lake",
+        "kind": "external",
+        "bucket": "finance-lake",
+        "prefix": "out/",
+        "endpoint": null,
+        "region": null,
+        "access_key_id": null,
+        "secret_key_enc": null,
+        "access_key_env": null,
+        "secret_key_env": null,
+        "force_path_style": false,
+        "sse": "aws:kms",
+        "kms_key_id": "arn:aws:kms:eu-west-2:111122223333:key/fin-1",
+        "storage_class": "STANDARD_IA",
+        "layout": "files",
+        "source": "ui",
+        "connection_id": "target-finance",
+        "moved_to_bridge_at": "2026-10-20T12:00:00.000Z"
+      },
+      "mirror": {
+        "label": "Finance lake",
+        "sinkId": "s3",
+        "instanceId": null,
+        "connectionId": "target-finance",
+        "destination": {
+          "bucket": "finance-lake",
+          "prefix": "out/",
+          "sse": "aws:kms",
+          "kmsKeyId": "arn:aws:kms:eu-west-2:111122223333:key/fin-1",
+          "storageClass": "STANDARD_IA",
+          "layout": "files"
+        }
+      }
+    },
+    {
+      "name": "archive",
+      "row": {
+        "id": "archive",
+        "label": "Archive",
+        "kind": "internal",
+        "bucket": "archive",
+        "prefix": "",
+        "endpoint": null,
+        "region": null,
+        "access_key_id": null,
+        "secret_key_enc": null,
+        "access_key_env": null,
+        "secret_key_env": null,
+        "force_path_style": false,
+        "sse": "AES256",
+        "kms_key_id": null,
+        "storage_class": null,
+        "layout": "package",
+        "source": "ui",
+        "connection_id": null,
+        "moved_to_bridge_at": null
+      },
+      "mirror": {
+        "label": "Archive",
+        "sinkId": "s3",
+        "instanceId": null,
+        "connectionId": "internal",
+        "destination": {
+          "bucket": "archive",
+          "prefix": "",
+          "sse": "AES256",
+          "kmsKeyId": "",
+          "storageClass": "",
+          "layout": "package"
+        }
+      }
+    },
+    {
+      "name": "rdf",
+      "row": {
+        "id": "rdf-default",
+        "label": "Triple store",
+        "kind": "rdf",
+        "bucket": "ih",
+        "prefix": "",
+        "endpoint": "http://fuseki:3030",
+        "region": null,
+        "access_key_id": "writer",
+        "secret_key_enc": null,
+        "access_key_env": null,
+        "secret_key_env": null,
+        "force_path_style": false,
+        "sse": "none",
+        "kms_key_id": null,
+        "storage_class": null,
+        "layout": "files",
+        "source": "env",
+        "seeded_at": "2026-10-20T12:00:00.000Z",
+        "connection_id": "rdf-default",
+        "moved_to_bridge_at": null
+      },
+      "mirror": {
+        "label": "Triple store",
+        "sinkId": "rdf",
+        "instanceId": null,
+        "connectionId": "rdf-default",
+        "destination": { "dataset": "ih" }
+      }
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryConnectionRepo } from '../src/connections/repo.js';
 import { decryptSecret } from '../src/secrets.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
+import { RdfSink } from '../src/sinks/rdf.js';
 import { S3Sink } from '../src/sinks/s3.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { connection } from './connections-contract.js';
@@ -20,7 +21,12 @@ async function setup() {
       forcePathStyle: true,
     },
   });
-  const app = await testBridge({ targets, connections, sinks: new MapSinkRegistry({ s3 }) });
+  const rdf = new RdfSink({
+    store: () => {
+      throw new Error('no triple store in these tests');
+    },
+  });
+  const app = await testBridge({ targets, connections, sinks: new MapSinkRegistry({ s3, rdf }) });
   const call = (method: 'GET' | 'PUT', url: string, body?: unknown) =>
     signedInject(app, KEY, { method, url, body });
   return { app, call, connections };
@@ -111,6 +117,7 @@ describe('GET /v1/connections', () => {
         sinkId: 's3',
         status: 'needs_attention',
         statusReason: 'access denied',
+        fields: { endpoint: 'https://s3.example.com', accessKeyId: 'AKIA1' },
       },
       {
         id: 'internal',
@@ -118,7 +125,47 @@ describe('GET /v1/connections', () => {
         sinkId: 's3',
         status: 'untested',
         statusReason: null,
+        fields: {},
       },
     ]);
+  });
+
+  it('a summary lists the non-secret fields and never a secret one', async () => {
+    const { call, connections } = await setup();
+    // Stored straight into the repo: a secret or undeclared field must still never be answered.
+    await connections.put({
+      ...connection('lake', {
+        fields: {
+          endpoint: 'https://s3.example.com',
+          accessKeyId: 'AKIA9',
+          secretAccessKey: 'leaked-if-listed',
+          accessKeyIdEnv: 'TARGET_S3_ACCESS_KEY',
+        },
+        secretEnv: 'TARGET_S3_SECRET_KEY',
+      }),
+    });
+    await connections.put({
+      ...connection('rdf-default', {
+        sinkId: 'rdf',
+        name: 'Triple store',
+        fields: { endpoint: 'http://fuseki:3030', user: 'ct-writer', password: 'pw-if-listed' },
+      }),
+      secretEnc: 'v1:rdf-ciphertext',
+    });
+    const res = await call('GET', '/v1/connections?kind=shared');
+    expect(res.statusCode).toBe(200);
+    for (const leak of ['leaked-if-listed', 'pw-if-listed', 'v1:rdf-ciphertext', 'TARGET_S3_']) {
+      expect(res.body).not.toContain(leak);
+    }
+    const byId = Object.fromEntries(
+      res.json().connections.map((c: unknown) => {
+        const s = ConnectionSummarySchema.parse(c);
+        return [s.id, s.fields];
+      }),
+    );
+    expect(byId).toEqual({
+      lake: { endpoint: 'https://s3.example.com', accessKeyId: 'AKIA9' },
+      'rdf-default': { endpoint: 'http://fuseki:3030', user: 'ct-writer' },
+    });
   });
 });

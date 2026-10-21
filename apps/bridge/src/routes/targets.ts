@@ -63,6 +63,11 @@ async function checkTarget(
       throw refuse('content_rejected', `connection ${t.connectionId} is not for ${t.sinkId}`);
     }
   }
+  const declared = new Set(described.destinationFields.map((f) => f.id));
+  const undeclared = Object.keys(t.destination).find((k) => !declared.has(k));
+  if (undeclared) {
+    throw refuse('content_rejected', `${undeclared} is not a destination field of ${t.sinkId}`);
+  }
   const missing = described.destinationFields.find(
     (f) => f.required && f.kind === 'fixed' && !t.destination[f.id],
   );

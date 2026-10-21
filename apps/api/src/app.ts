@@ -72,7 +72,7 @@ export interface AppDeps {
   targets: PublishTargetRepo;
   /** One object store per publishing target; published outputs are read through their own. */
   targetStores: TargetStores;
-  /** The delivery bridge: targets are mirrored to it, published files read back through it. */
+  /** The delivery bridge: it holds the targets (cached here), published files are read back through it. */
   bridge: BridgeApi;
   /**
    * How the bridge and CT Studio trust each other in this direction: the shared key its signed

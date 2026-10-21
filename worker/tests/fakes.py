@@ -7,7 +7,6 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from typing import Any
 
 from ingest_worker.bridge.client import BridgeRefused, BridgeUnavailable
@@ -41,14 +40,9 @@ from ingest_worker.ontology import (
 )
 from ingest_worker.outputs import RenderedOutput
 from ingest_worker.publish_targets import (
-    DefaultSeed,
-    RdfSeed,
-    SeedOutcome,
     Target,
     TargetMissing,
     TargetRow,
-    rdf_seed_differences,
-    seed_differences,
 )
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.storage import MemoryObjectStore
@@ -176,6 +170,14 @@ class FakeQueue:
     completed: list[tuple[str, list[RenderedOutput]]] = field(default_factory=list)
     reviewed: list[tuple[str, str]] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)
+    #: `wait`: (job id, reason, delay) - re-queued without spending an attempt.
+    waited: list[tuple[str, str, float]] = field(default_factory=list)
+    #: Like `jobs.waiting_since`: the clock (`now_s`) when each waiting job first waited.
+    waiting_since: dict[str, float] = field(default_factory=dict)
+    #: The queue's clock in seconds (the database's now()); a test advances it.
+    now_s: float = 0.0
+    #: `give_up`: (job id, error) - failed whatever attempts remain.
+    gave_up: list[tuple[str, str]] = field(default_factory=list)
     events: list[tuple[str, str, str]] = field(default_factory=list)
     #: Same events with their data payloads.
     event_details: list[tuple[str, str, str, dict[str, Any]]] = field(default_factory=list)
@@ -219,9 +221,17 @@ class FakeQueue:
         self.waits.append(timeout_s)
 
     def claim(self, worker_id: str) -> ClaimedJob | None:
-        return self.jobs.pop(0) if self.jobs and not self.paused else None
+        if not self.jobs or self.paused:
+            return None
+        job = self.jobs.pop(0)
+        since = self.waiting_since.get(job.id)
+        return replace(job, waited_s=None if since is None else self.now_s - since)
+
+    def stop_waiting(self, job: ClaimedJob) -> None:
+        self.waiting_since.pop(job.id, None)
 
     def complete(self, job: ClaimedJob, outputs: list[RenderedOutput], outputs_bucket: str) -> None:
+        self.stop_waiting(job)
         self.completed.append((job.id, outputs))
 
     def delivering(
@@ -231,6 +241,7 @@ class FakeQueue:
         outputs_bucket: str,
         deliveries: list[tuple[str, str]],
     ) -> None:
+        self.stop_waiting(job)
         self.handed_over.append((job.id, outputs, deliveries))
 
     @property
@@ -251,6 +262,7 @@ class FakeQueue:
         outputs_bucket: str,
         reasons: list[str],
     ) -> None:
+        self.stop_waiting(job)
         self.awaiting.append((job.id, outputs, reasons))
 
     def record_drafts(self, job: ClaimedJob, outputs: list[RenderedOutput], bucket: str) -> None:
@@ -282,10 +294,20 @@ class FakeQueue:
         return self.templates.get((template_id, version))
 
     def needs_review(self, job: ClaimedJob, reason: str) -> None:
+        self.stop_waiting(job)
         self.reviewed.append((job.id, reason))
 
     def fail(self, job: ClaimedJob, error: str) -> None:
+        self.stop_waiting(job)
         self.failed.append((job.id, error))
+
+    def give_up(self, job: ClaimedJob, error: str) -> None:
+        self.stop_waiting(job)
+        self.gave_up.append((job.id, error))
+
+    def wait(self, job: ClaimedJob, reason: str, delay_s: float) -> None:
+        self.waiting_since.setdefault(job.id, self.now_s)
+        self.waited.append((job.id, reason, delay_s))
 
     def event(
         self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None
@@ -760,8 +782,7 @@ class MemoryLinkedDataSettings:
 
 
 class MemoryPublishTargetStore:
-    """In-memory PublishTargetStore with PgPublishTargetStore's seeding rule: the default row is
-    written from .env once (while `seeded_at` is None), then only compared."""
+    """In-memory PublishTargetStore: the rows of the API's cache, in the new shape."""
 
     def __init__(self, rows: list[TargetRow] | None = None) -> None:
         self.rows = list(rows or [])
@@ -776,55 +797,6 @@ class MemoryPublishTargetStore:
     def set_rows(self, rows: list[TargetRow]) -> None:
         self.rows = list(rows)
         self._version += 1
-
-    def seed_rdf(self, seed: RdfSeed) -> SeedOutcome:
-        current = next((r for r in self.rows if r.id == "rdf-default"), None)
-        if current is not None:
-            return "differs" if rdf_seed_differences(current, seed) else "kept"
-        self.rows.append(
-            TargetRow(
-                id="rdf-default",
-                label="Triple store",
-                kind="rdf",
-                bucket=seed.dataset,
-                prefix="",
-                endpoint=seed.endpoint,
-                region=None,
-                access_key_id=seed.user,
-                secret_key_enc=None,
-                access_key_env=None,
-                secret_key_env=None,
-                path_style=False,
-                sse="none",
-                kms_key_id=None,
-                storage_class=None,
-                seeded_at=datetime.now(UTC),
-            )
-        )
-        self._version += 1
-        return "seeded"
-
-    def seed_default(self, seed: DefaultSeed) -> SeedOutcome:
-        i = next(n for n, r in enumerate(self.rows) if r.id == "default")
-        current = self.rows[i]
-        if current.seeded_at is not None:
-            return "differs" if seed_differences(current, seed) else "kept"
-        self.rows[i] = replace(
-            current,
-            kind=seed.kind,
-            bucket=seed.bucket,
-            prefix=seed.prefix,
-            endpoint=seed.endpoint,
-            region=seed.region,
-            access_key_id=None,
-            secret_key_enc=None,
-            access_key_env=seed.access_key_env,
-            secret_key_env=seed.secret_key_env,
-            path_style=seed.force_path_style,
-            seeded_at=datetime.now(UTC),
-        )
-        self._version += 1
-        return "seeded"
 
 
 class FakeTargets:

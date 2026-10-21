@@ -30,9 +30,11 @@ system's API, would put secrets and private code in a public product.
   encrypted under `BRIDGE_SECRETS_KEY`; keys named in `.env` are read in the bridge's container
   from the same allowlisted variables. An upgrade moves every target's keys onto the bridge once
   (`target-<id>`) and drops the ciphertext from CT Studio.
-- **CT Studio keeps `publish_targets` as its recipient registry** (id, label, kind, bucket,
-  prefix, encryption; usage, locking, read-key grants, backup rules) and mirrors it to the
-  bridge's targets on every write and at start. Read-back (Results, the zip), withdrawal and the
+- **The bridge's targets are the recipient registry** (sink, instance, connection, destination,
+  label). CT Studio's `publish_targets` caches them beside what only CT Studio knows (usage,
+  locking, read-key grants, backup rules), pulls them at start and after restores, and sends every
+  write to the bridge first (phase 2 mirrored CT Studio's table to the bridge; the registries
+  merged after phase 4). Read-back (Results, the zip), withdrawal and the
   graph's versioned copy go through the bridge's target object routes
   (`/v1/targets/{id}/objects:read|put|delete`), which keep to the target's bucket and prefix, so
   outputs delivered before the bridge read and withdraw the same way.
@@ -45,9 +47,17 @@ system's API, would put secrets and private code in a public product.
   `BRIDGE_SECRETS_KEY` (keep it with `LLM_SECRETS_KEY`: a restore needs both). The API and the
   worker need the bridge to publish: a bridge that is down makes the worker retry the job, never
   record it as published.
-- Two target registries until a separate plan merges them, after phase 4 and before phase 6:
-  CT Studio's (`publish_targets`, mirrored) and the bridge's (authoritative for sink, destination
-  and connection).
+- One target registry: the bridge's (`bridge.targets`, authoritative for sink, instance,
+  connection, destination and label; it refuses destination fields its sink doesn't declare).
+  CT Studio's `publish_targets` caches it beside facts that are CT Studio's own (kind, source,
+  seeding, edits, inert, `on_bridge`, `synced_at`), so its foreign keys and locks keep a local
+  row. The API pulls the bridge into the cache at start and after restores (`pullTargets`),
+  writes to the bridge first and caches its answer, and alone seeds `default` and
+  `rdf-default`; the worker reads the cache and waits (`TargetNotSynced`, keeping its attempts)
+  for a target or triple store the API hasn't synced yet. A copy restore keeps this server's
+  targets from its cache, so an edit made on the bridge but not yet pulled is overwritten;
+  cached targets the bridge lacks are put back on it. Connection summaries carry their
+  non-secret `fields`.
 - **Phase 4** lets a recipe deliver to several targets (`publishTo` as a list; the first
   files-layout target is the primary one, read back from), adds the S3 `package` layout for
   archives (`{prefix}packages/{idempotencyKey}/`, `package.json` last), records published outputs

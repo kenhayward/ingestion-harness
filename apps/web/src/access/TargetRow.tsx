@@ -25,6 +25,13 @@ function usedBy(u: PublishTargetView['usage']): string {
   return `used by ${parts.length > 0 ? parts.join(' · ') : count(0, 'document type')}`;
 }
 
+/** A sink target's destination fields on one line: `key: value · key: value`. */
+function destinationText(d: Record<string, string>): string {
+  return Object.entries(d)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(' · ');
+}
+
 const REMOVE_BLOCKED = 'In use: a recipe version, output, key or withdrawal names it';
 
 function whereFrom(t: PublishTargetView): string {
@@ -62,11 +69,12 @@ export function TargetRow({
 }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState(t.label);
-  const [bucket, setBucket] = useState(t.bucket);
-  const [prefix, setPrefix] = useState(t.prefix);
-  const [layout, setLayout] = useState(t.layout);
+  // Null for a target of a sink other than S3 (none is edited here yet).
+  const [bucket, setBucket] = useState(t.bucket ?? '');
+  const [prefix, setPrefix] = useState(t.prefix ?? '');
+  const [layout, setLayout] = useState(t.layout ?? 'files');
   const [connectionId, setConnectionId] = useState(t.connectionId ?? '');
-  const [sse, setSse] = useState<string>(t.sse);
+  const [sse, setSse] = useState<string>(t.sse ?? 'none');
   const [kms, setKms] = useState(t.kmsKeyId ?? '');
   const [storageClass, setStorageClass] = useState(t.storageClass ?? '');
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -77,6 +85,10 @@ export function TargetRow({
   const external = t.kind === 'external';
   // The triple store (seeded from RDF_ENDPOINT): only its label changes here.
   const tripleStore = t.kind === 'rdf';
+  // A target of a sink this page does not edit yet: shown, never changed.
+  const otherSink = t.kind === 'sink';
+  // The bridge no longer has it: nothing here can be saved until it is added back.
+  const gone = !t.onBridge;
   const locked = targetInUse(t.usage);
   const usedByText = usedBy(t.usage);
 
@@ -143,11 +155,16 @@ export function TargetRow({
         <span>{t.label}</span>
         <span className="mono endpoint-name">{t.id}</span>
         <span className="tag tone-neutral">
-          {tripleStore ? 'Triple store' : external ? 'External' : 'Internal'}
+          {otherSink ? t.sinkId : tripleStore ? 'Triple store' : external ? 'External' : 'Internal'}
         </span>
+        {gone && <span className="tag tone-warn">Not on the bridge</span>}
         {t.layout === 'package' && <span className="tag tone-neutral">Archive</span>}
         <span className="mono muted">
-          {tripleStore ? `${t.endpoint ?? ''} · dataset ${t.bucket}` : `${t.bucket}/${t.prefix}`}
+          {otherSink
+            ? destinationText(t.destination)
+            : tripleStore
+              ? `${t.endpoint ?? 'endpoint not known'} · dataset ${t.bucket}`
+              : `${t.bucket}/${t.prefix}`}
         </span>
         <span className="endpoint-count">{usedByText}</span>
         <span className="muted endpoint-where">{whereFrom(t)}</span>
@@ -165,15 +182,31 @@ export function TargetRow({
             }
           }}
         >
+          {gone && (
+            <p className="muted">
+              The delivery bridge no longer has this target; deliveries to it fail until it is added
+              back.
+            </p>
+          )}
           <label>
             Label
-            <input value={label} onChange={(ev) => setLabel(ev.target.value)} />
+            <input
+              value={label}
+              readOnly={gone || otherSink}
+              onChange={(ev) => setLabel(ev.target.value)}
+            />
           </label>
-          {tripleStore ? (
+          {otherSink ? (
+            <ul className="muted mono">
+              {Object.entries(t.destination).map(([k, v]) => (
+                <li key={k}>{`${k}: ${v}`}</li>
+              ))}
+            </ul>
+          ) : tripleStore ? (
             <p className="muted">
               From RDF_ENDPOINT: recipes that deliver RDF load their graphs into dataset{' '}
-              <span className="mono">{t.bucket}</span> at <span className="mono">{t.endpoint}</span>
-              .{' '}
+              <span className="mono">{t.bucket}</span> at{' '}
+              <span className="mono">{t.endpoint ?? 'endpoint not known'}</span>.{' '}
               {t.connection
                 ? connectionStatus(t.connection)
                 : 'Its connection is not known now: see Manage connections'}
@@ -184,7 +217,7 @@ export function TargetRow({
                 Bucket
                 <input
                   value={bucket}
-                  readOnly={locked}
+                  readOnly={locked || gone}
                   onChange={(ev) => setBucket(ev.target.value)}
                 />
               </label>
@@ -192,7 +225,7 @@ export function TargetRow({
                 Prefix
                 <input
                   value={prefix}
-                  readOnly={locked}
+                  readOnly={locked || gone}
                   placeholder="none"
                   onChange={(ev) => setPrefix(ev.target.value)}
                 />
@@ -201,7 +234,7 @@ export function TargetRow({
                 Layout
                 <select
                   value={layout}
-                  disabled={locked}
+                  disabled={locked || gone}
                   onChange={(ev) => setLayout(ev.target.value as TargetLayout)}
                 >
                   {(Object.keys(LAYOUT_LABELS) as TargetLayout[]).map((l) => (
@@ -213,7 +246,7 @@ export function TargetRow({
               </label>
             </>
           )}
-          {external && (
+          {external && !otherSink && (
             <>
               <ConnectionPicker
                 api={api}
@@ -230,7 +263,7 @@ export function TargetRow({
               </p>
               <label>
                 Server-side encryption
-                <select value={sse} onChange={(ev) => setSse(ev.target.value)}>
+                <select value={sse} disabled={gone} onChange={(ev) => setSse(ev.target.value)}>
                   {SSE_MODES.map((m) => (
                     <option key={m} value={m}>
                       {m === 'none' ? 'None' : m}
@@ -241,12 +274,16 @@ export function TargetRow({
               {sse === 'aws:kms' && (
                 <label>
                   KMS key id
-                  <input value={kms} onChange={(ev) => setKms(ev.target.value)} />
+                  <input value={kms} readOnly={gone} onChange={(ev) => setKms(ev.target.value)} />
                 </label>
               )}
               <label>
                 Storage class
-                <select value={storageClass} onChange={(ev) => setStorageClass(ev.target.value)}>
+                <select
+                  value={storageClass}
+                  disabled={gone}
+                  onChange={(ev) => setStorageClass(ev.target.value)}
+                >
                   <option value="">Bucket default</option>
                   {STORAGE_CLASSES.map((c) => (
                     <option key={c} value={c}>
@@ -257,16 +294,20 @@ export function TargetRow({
               </label>
             </>
           )}
-          {locked && !tripleStore && (
+          {locked && !tripleStore && !otherSink && (
             <small className="muted">In use: add a new target to move bucket or prefix.</small>
           )}
           {error && <p role="alert">{error}</p>}
           <TestOutcome result={result} />
           <div className="endpoint-actions">
-            <button type="submit" className="primary" disabled={busy || !dirty || !label.trim()}>
+            <button
+              type="submit"
+              className="primary"
+              disabled={busy || gone || otherSink || !dirty || !label.trim()}
+            >
               Save
             </button>
-            <button type="button" disabled={busy} onClick={() => void test()}>
+            <button type="button" disabled={busy || gone || otherSink} onClick={() => void test()}>
               Test connection
             </button>
             {t.id !== 'default' && !tripleStore && !confirmRemove && (

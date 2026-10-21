@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryS3KeyIssuer, READ_ONLY_ACTIONS } from '../src/s3keys/issuer.js';
-import { MemoryPublishTargetRepo, type NewTarget } from '../src/publish-targets/repo.js';
+import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
+import { cacheS3 } from './target-views.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
 import { S3KeyService } from '../src/s3keys/service.js';
 
@@ -29,25 +30,6 @@ class FlakyIssuer extends MemoryS3KeyIssuer {
   }
 }
 
-const newTarget = (over: Partial<NewTarget>): NewTarget => ({
-  id: 'finance',
-  label: 'Finance lake',
-  kind: 'internal',
-  bucket: 'finance-lake',
-  prefix: 'out/',
-  endpoint: null,
-  region: null,
-  accessKeyId: null,
-  secretKeyEnc: null,
-  accessKeyEnv: null,
-  secretKeyEnv: null,
-  forcePathStyle: false,
-  sse: 'none',
-  kmsKeyId: null,
-  storageClass: null,
-  ...over,
-});
-
 async function setup() {
   let now = Date.parse('2026-10-12T00:00:00Z');
   const clock = () => now;
@@ -59,21 +41,21 @@ async function setup() {
     consumerCount: async (id) => repo.grantCount(id),
     pendingJobCount: async () => 0,
   });
-  await targets.create(newTarget({}), null);
-  await targets.create(
-    newTarget({
-      id: 'ext',
-      label: 'Partner',
-      kind: 'external',
-      bucket: 'partner',
-      prefix: '',
-      endpoint: 'https://s3.example.com',
-      region: 'eu-west-2',
-      accessKeyId: 'AK',
-      secretKeyEnc: 'v1:x',
-    }),
-    null,
-  );
+  await cacheS3(targets, {
+    id: 'finance',
+    label: 'Finance lake',
+    kind: 'internal',
+    bucket: 'finance-lake',
+    prefix: 'out/',
+  });
+  await cacheS3(targets, {
+    id: 'ext',
+    label: 'Partner',
+    kind: 'external',
+    bucket: 'partner',
+    prefix: '',
+    connectionId: 'partner',
+  });
   const service = new S3KeyService({
     repo,
     issuer,
@@ -192,16 +174,7 @@ describe('S3 read keys (ADR 0008)', () => {
     const issuer = new FlakyIssuer();
     issuer.failing.add('listUsers');
     const targets = new MemoryPublishTargetRepo();
-    await targets.seedDefault({
-      kind: 'external',
-      bucket: 'lake',
-      prefix: '',
-      endpoint: 'https://s3.example.com',
-      region: 'eu-west-2',
-      accessKeyEnv: 'TARGET_S3_ACCESS_KEY',
-      secretKeyEnv: 'TARGET_S3_SECRET_KEY',
-      forcePathStyle: true,
-    });
+    await cacheS3(targets, { id: 'default', kind: 'external', connectionId: 'target-default' });
     const service = new S3KeyService({
       repo: new MemoryS3KeyRepo(),
       issuer,
@@ -316,15 +289,25 @@ describe('grants per publishing target', () => {
   });
 });
 
-describe('S3 read keys across the move to the delivery bridge', () => {
-  it('grants still resolve after the targets are mirrored and their keys moved', async () => {
+describe('S3 read keys across a pull from the delivery bridge', () => {
+  it('grants still resolve after the cache takes the bridge registry again', async () => {
     const { issuer, targets, issue } = await setup();
     const { FakeBridgeApi } = await import('./fake-bridge.js');
-    const { moveTargetsToBridge } = await import('../src/bridge/mirror.js');
+    const { pullTargets } = await import('../src/bridge/sync.js');
     const bridge = new FakeBridgeApi();
+    for (const id of ['default', 'finance', 'ext']) {
+      const t = (await targets.get(id))!;
+      bridge.targets.set(id, {
+        label: t.label,
+        sinkId: t.sinkId,
+        instanceId: t.instanceId,
+        connectionId: t.connectionId,
+        destination: t.destination,
+      });
+    }
     const log = { warn: () => {}, info: () => {}, error: () => {} } as never;
-    await moveTargetsToBridge({ targets, bridge, secrets: null, log });
-    expect(bridge.targets.get('finance')?.connectionId).toBe('internal');
+    await pullTargets({ targets, bridge, log });
+    expect((await targets.get('finance'))?.connectionId).toBe('internal');
     const issued = await issue('Lake', 30, ['finance']);
     expect(issuer.user(issued.consumer.userName)!.grants).toEqual([
       { bucket: 'finance-lake', prefix: 'out/' },
