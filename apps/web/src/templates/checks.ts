@@ -126,7 +126,7 @@ export function templateChecks(input: {
     const first = asList(tableShapes.get(ids[0])?.columns).map((c) => asRecord(c).id)[0];
     checks.push({
       tone: 'warn',
-      text: `${ids.length} tables have the same columns (${first}, 2026): one table with columns telling them apart (study, batch) is usually better.`,
+      text: `${ids.length} tables have the same columns (${first}, \u2026): one table with columns telling them apart (study, batch) is usually better.`,
       link: { label: 'Open Outputs', subTab: 'outputs' },
       subTabs: ['outputs'],
     });

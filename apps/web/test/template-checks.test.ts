@@ -247,7 +247,7 @@ describe('shared repeating sections and same-shape tables', () => {
     expect(found).toHaveLength(5);
     expect(found[0]).toEqual({
       tone: 'warn',
-      text: '12 tables have the same columns (a0, 2026): one table with columns telling them apart (study, batch) is usually better.',
+      text: '12 tables have the same columns (a0, \u2026): one table with columns telling them apart (study, batch) is usually better.',
       link: { label: 'Open Outputs', subTab: 'outputs' },
       subTabs: ['outputs'],
     });
