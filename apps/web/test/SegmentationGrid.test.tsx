@@ -249,4 +249,88 @@ describe('SegmentationGrid with repeating sections', () => {
       'microbial: no occurrence for batch 4586785',
     );
   });
+
+  it('notes the headings no anchor caught, with the first line, and nothing without any', () => {
+    const missed: SegmentationResult = {
+      anchorErrors: {},
+      suggestions: [],
+      samples: [
+        {
+          sampleId: 's1',
+          firstPage: 1,
+          pageCount: 2,
+          error: null,
+          missingRequired: [],
+          missedKeys: [
+            { sections: ['dissolution'], key: '4586785', line: 'Table 9: Batch 4586785' },
+            { sections: ['dissolution'], key: '4586786', line: 'Table 10: Batch 4586786' },
+          ],
+          sections: [{ id: 'dissolution', found: true, page: 1, line: 'Table 1', chars: 50 }],
+        },
+        {
+          sampleId: 's2',
+          firstPage: 1,
+          pageCount: 1,
+          error: null,
+          missingRequired: [],
+          sections: [{ id: 'dissolution', found: true, page: 1, line: 'Table 1', chars: 50 }],
+        },
+      ],
+    };
+    render(
+      <SegmentationGrid
+        result={missed}
+        sections={[{ id: 'dissolution', required: true }]}
+        samples={[a, b]}
+        onOpen={vi.fn()}
+      />,
+    );
+    const note = screen.getByRole('note', { name: 'Missed headings in a.pdf' });
+    expect(note.querySelector('p')?.textContent).toBe(
+      'Missed headings: 4586785, 4586786 · dissolution',
+    );
+    expect(note).toHaveTextContent('dissolution');
+    expect(note).toHaveTextContent('Table 9: Batch 4586785');
+    expect(screen.queryByRole('note', { name: 'Missed headings in b.pdf' })).toBeNull();
+  });
+
+  it('names the sections of every missed-heading group, not only the first', () => {
+    const missed: SegmentationResult = {
+      anchorErrors: {},
+      suggestions: [],
+      samples: [
+        {
+          sampleId: 's1',
+          firstPage: 1,
+          pageCount: 2,
+          error: null,
+          missingRequired: [],
+          missedKeys: [
+            { sections: ['dissolution'], key: '7', line: 'Table 7: D' },
+            { sections: ['assay'], key: '8', line: 'Table 8: A' },
+            { sections: ['dissolution'], key: '9', line: 'Table 9: D' },
+          ],
+          sections: [
+            { id: 'dissolution', found: true, page: 1, line: 'Table 1', chars: 50 },
+            { id: 'assay', found: true, page: 1, line: 'Table 2', chars: 50 },
+          ],
+        },
+      ],
+    };
+    render(
+      <SegmentationGrid
+        result={missed}
+        sections={[
+          { id: 'dissolution', required: true },
+          { id: 'assay', required: true },
+        ]}
+        samples={[a]}
+        onOpen={vi.fn()}
+      />,
+    );
+    const note = screen.getByRole('note', { name: 'Missed headings in a.pdf' });
+    expect(note.querySelector('p')?.textContent).toBe(
+      'Missed headings: 7, 8, 9 · dissolutionassay',
+    );
+  });
 });

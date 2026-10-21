@@ -35277,6 +35277,35 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "missedKeys": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "sections": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "key": {
+                                          "type": "string"
+                                        },
+                                        "line": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "sections",
+                                        "key",
+                                        "line"
+                                      ]
+                                    }
+                                  },
+                                  "missedKeysTotal": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
                                   }
                                 },
                                 "required": [
@@ -35767,6 +35796,35 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "missedKeys": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "sections": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "key": {
+                                          "type": "string"
+                                        },
+                                        "line": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "sections",
+                                        "key",
+                                        "line"
+                                      ]
+                                    }
+                                  },
+                                  "missedKeysTotal": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
                                   }
                                 },
                                 "required": [
@@ -39872,6 +39930,35 @@
                                                 "items": {
                                                   "type": "string"
                                                 }
+                                              },
+                                              "missedKeys": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "sections": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "key": {
+                                                      "type": "string"
+                                                    },
+                                                    "line": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "sections",
+                                                    "key",
+                                                    "line"
+                                                  ]
+                                                }
+                                              },
+                                              "missedKeysTotal": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
                                               }
                                             },
                                             "required": [
@@ -45067,6 +45154,35 @@
                                                   "items": {
                                                     "type": "string"
                                                   }
+                                                },
+                                                "missedKeys": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "sections": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string"
+                                                        }
+                                                      },
+                                                      "key": {
+                                                        "type": "string"
+                                                      },
+                                                      "line": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "sections",
+                                                      "key",
+                                                      "line"
+                                                    ]
+                                                  }
+                                                },
+                                                "missedKeysTotal": {
+                                                  "type": "integer",
+                                                  "exclusiveMinimum": 0
                                                 }
                                               },
                                               "required": [
@@ -47842,6 +47958,35 @@
                                                 "items": {
                                                   "type": "string"
                                                 }
+                                              },
+                                              "missedKeys": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "sections": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "key": {
+                                                      "type": "string"
+                                                    },
+                                                    "line": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "sections",
+                                                    "key",
+                                                    "line"
+                                                  ]
+                                                }
+                                              },
+                                              "missedKeysTotal": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
                                               }
                                             },
                                             "required": [
@@ -50282,6 +50427,35 @@
                                                 "items": {
                                                   "type": "string"
                                                 }
+                                              },
+                                              "missedKeys": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "sections": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "key": {
+                                                      "type": "string"
+                                                    },
+                                                    "line": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "sections",
+                                                    "key",
+                                                    "line"
+                                                  ]
+                                                }
+                                              },
+                                              "missedKeysTotal": {
+                                                "type": "integer",
+                                                "exclusiveMinimum": 0
                                               }
                                             },
                                             "required": [

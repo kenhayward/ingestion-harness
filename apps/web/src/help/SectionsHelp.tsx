@@ -96,6 +96,17 @@ export function SectionsHelp() {
         missed for one batch, the job stops for review rather than delivering two batches.
       </p>
 
+      <h3>Missed headings</h3>
+      <p>
+        Under a sample, <strong>Missed headings</strong> lists keys (batch numbers, say) that appear
+        in a heading line of the document but that no anchor caught, with the first such line. Most
+        often the anchor is too strict, or the document varies the wording. If a heading sits just
+        before the section it names, widen the anchor, or start the section earlier with a
+        look-ahead such as <code>(?=...)</code>, so the section begins at the heading. If the missed
+        headings are a kind of block this recipe does not read, narrow the section's key so it only
+        matches this kind's headings.
+      </p>
+
       <h3>Before sections: copies</h3>
       <p>
         When a PDF holds several copies of the document (Document options), one copy is kept first,

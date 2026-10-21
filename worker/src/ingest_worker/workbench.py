@@ -32,7 +32,15 @@ from .pipeline import (
     read_pages,
 )
 from .queue import ClaimedJob, JobQueue
-from .segment import PAGE_BREAK, SectionSpan, key_issues, section_spans, select_copy
+from .segment import (
+    PAGE_BREAK,
+    SectionSpan,
+    key_issues,
+    missed_keys,
+    missed_payload,
+    section_spans,
+    select_copy,
+)
 from .specs import CopySelection, Section, key_from_errors
 from .storage import prepared_text_key, prepared_triage_key, segmentation_key
 
@@ -285,17 +293,18 @@ def segment_samples(
                     "matches": matches,
                 }
             )
-        rows.append(
-            {
-                "sampleId": sample_id,
-                "firstPage": first + 1,
-                "pageCount": len(kept),
-                "error": None,
-                "missingRequired": [i for i in unmatched if i in required],
-                "sections": cells,
-                "keyIssues": [i.message for i in key_issues(valid, spans)],
-            }
-        )
+        row: dict[str, Any] = {
+            "sampleId": sample_id,
+            "firstPage": first + 1,
+            "pageCount": len(kept),
+            "error": None,
+            "missingRequired": [i for i in unmatched if i in required],
+            "sections": cells,
+            "keyIssues": [i.message for i in key_issues(valid, spans)],
+        }
+        missed = missed_keys(text, valid, spans)
+        row.update(missed_payload(missed))
+        rows.append(row)
         for section in valid:
             if section.required and section.id in unmatched:
                 hint = suggest_anchor(section.anchor, text)

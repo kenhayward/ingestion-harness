@@ -796,6 +796,54 @@ def test_anchor_check_reports_repeated_blocks(
     assert all(e in m for m, e in zip(misses, expected, strict=True))
 
 
+WRAPPED = (
+    "Table 1: Study A - Assay Results\nrows\n"
+    "Table 2: Study A - Assay and Purity (HDPE\nbottle) Results\nrows\n"
+    "Table 3: Study B - Assay Results\nrows\n"
+    "Table 4: Study B - Assay and Purity (HDPE\nbottle) Results\nrows\n"
+)
+
+
+def _missed_key_check(anchor: str) -> list[str]:
+    samples = [DraftSample("s1", "a.pdf", "dev", [WRAPPED])]
+    draft = {"document": {"sections": [{"id": "all", "anchor": r"\A"}]}}
+    changes = [put("result_tables", anchor, repeat=True, key=r"^\s*Table\s+(\d+):")]
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    return misses
+
+
+def test_anchor_check_feeds_back_missed_keys() -> None:
+    [miss] = _missed_key_check(r"^\s*Table\s+\d+:\s.*Results\s*$")
+    assert miss.startswith(r'sections "result_tables" have key ^\s*Table\s+(\d+):')
+    assert "finds keys 2, 4 in a.pdf that no anchor matched" in miss
+    assert 'e.g. "Table 2: Study A - Assay and Purity (HDPE"' in miss
+    assert "If these are headings of the kind this section reads, widen the anchor" in miss
+    assert "look ahead across them" in miss
+    assert (
+        r"(for example ^\s*Table\s+\d+:(?=(?:(?!<first column header>)[\s\S]){0,400}?"
+        r"<last word of the title>[ \t]*$)) rather than requiring the whole title" in miss
+    )
+    assert "\t" not in miss
+    assert "If they are headings of a kind the recipe does not read, make the key match" in miss
+    assert _missed_key_check(r"^\s*Table\s+\d+:") == []
+
+
+def test_missed_key_feedback_caps_the_keys_named() -> None:
+    from ingest_worker.drafting import missed_key_feedback
+
+    keys = [str(n) for n in range(1, 16)]
+    row = {
+        "sampleId": "s1",
+        "missedKeys": [{"sections": ["t"], "key": k, "line": f"Table {k}: x"} for k in keys],
+        "missedKeysTotal": 36,
+    }
+    sections = [{"id": "t", "anchor": "^x", "key": r"^Table (\d+)"}]
+    [line] = missed_key_feedback([row], {"t"}, {"s1": "a.pdf"}, sections)
+    assert "keys 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 (and 26 more) in a.pdf" in line
+    assert missed_key_feedback([row], set(), {"s1": "a.pdf"}, sections) == []
+
+
 def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [sections_body("^SIGNATURES"), sections_body("^STILL WRONG")]

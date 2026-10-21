@@ -84,6 +84,25 @@ describe('segmentation contracts', () => {
     expect(JSON.stringify(result.error?.issues)).toContain('duplicate section id a');
   });
 
+  it('parses a grid row with and without missed keys', () => {
+    const row = {
+      sampleId: 's1',
+      firstPage: 1,
+      pageCount: 1,
+      error: null,
+      missingRequired: [],
+      sections: [],
+    };
+    const missed = { sections: ['result_tables'], key: '1', line: 'Table 1: wrapped (' };
+    const parse = (r: object) => SegmentationResultSchema.parse({ anchorErrors: {}, samples: [r] });
+    expect(parse(row).samples[0]).toEqual(row);
+    expect(parse({ ...row, missedKeys: [missed], missedKeysTotal: 25 }).samples[0]).toEqual({
+      ...row,
+      missedKeys: [missed],
+      missedKeysTotal: 25,
+    });
+  });
+
   it('parses the grid the worker writes', () => {
     const result = SegmentationResultSchema.parse({
       anchorErrors: { totals: 'missing ), unterminated subpattern at position 0' },
