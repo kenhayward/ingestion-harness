@@ -276,7 +276,9 @@ describe('revise', () => {
     const { start, feedback, templates } = await project();
     const none = await start('revise');
     expect(none.statusCode).toBe(409);
-    expect(none.json().error).toBe('add feedback before asking for a revision');
+    expect(none.json().error).toBe(
+      'add feedback or run the dev samples before asking for a revision',
+    );
     await feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
     expect((await start('revise')).statusCode).toBe(202); // survey not done: revise is outside the order
     await templates.publish('letter', 1);
@@ -362,7 +364,9 @@ describe('revise', () => {
     await setRole(b.id, 'holdout');
     const res = await start('revise');
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('add feedback before asking for a revision');
+    expect(res.json().error).toBe(
+      'add feedback or run the dev samples before asking for a revision',
+    );
   });
 
   it('works from feedback alone before any evaluation', async () => {
@@ -564,6 +568,7 @@ describe('revise preview (RV1)', () => {
       model: null,
       draft: { version: 1, definition: (await ctx.templates.get('letter', 1))!.definition },
       samples: [],
+      diagnostics: null,
       limits: { samples: 8, fieldDiffs: 20, rowDiffs: 5 },
       notSent: { holdoutSamples: 0, holdoutRun: null },
     });
@@ -620,5 +625,135 @@ describe('revise preview (RV1)', () => {
     const ctx = await project();
     await ctx.templates.publish('letter', 1);
     expect((await preview(ctx)).draft).toBeNull();
+  });
+});
+
+describe('revise diagnostics (Part C)', () => {
+  const EMPTY = { calls: 6, emptyCalls: 5 };
+
+  /** A finished test run of the open draft on `s`, with the events, step runs and issues given. */
+  async function run(
+    ctx: Awaited<ReturnType<typeof project>>,
+    s: SampleView,
+    opts: { version?: number; issues?: unknown[]; status?: 'awaiting_review' | 'succeeded' } = {},
+  ) {
+    const job = await ctx.repo.createWorkbenchJob(
+      {
+        id: crypto.randomUUID(),
+        filename: s.filename,
+        sha256: s.sha256,
+        sizeBytes: 1,
+        specId: 'letter',
+        specVersion: opts.version ?? 1,
+        bucket: 'inbox',
+        objectKey: `letter/${s.id}`,
+      },
+      { projectId: 'letter', task: 'process' },
+    );
+    const key = outputKey('letter', 1, 'document', job.documentId, 'json');
+    await ctx.store.put(
+      'outputs',
+      key,
+      Buffer.from(JSON.stringify({ fields: {}, tables: {}, issues: opts.issues ?? [] })),
+      'application/json',
+    );
+    ctx.repo.outputs.set(job.id, [
+      {
+        outputId: 'document',
+        stage: 'draft',
+        format: 'json',
+        bucket: 'outputs',
+        key,
+        rowCount: null,
+        targetId: null,
+      },
+    ]);
+    ctx.repo.jobs.set(job.id, {
+      ...ctx.repo.jobs.get(job.id)!,
+      test: true,
+      status: opts.status ?? 'awaiting_review',
+    });
+    ctx.repo.addEvent(job.id, 'info', 'extracted lines', EMPTY);
+    ctx.repo.stepRuns.set(job.id, [
+      {
+        id: 1,
+        stepId: 'lines',
+        trigger: 'process',
+        model: null,
+        attempts: 1,
+        inputTokens: null,
+        outputTokens: null,
+        status: 'succeeded',
+        error: null,
+        startedAt: '2026-10-21T10:00:00.000Z',
+        finishedAt: '2026-10-21T10:00:30.000Z',
+      },
+    ]);
+    return job;
+  }
+  const preview = async (ctx: Awaited<ReturnType<typeof project>>) =>
+    (
+      await ctx.app.inject('/api/workbench/projects/letter/stages/revise/preview')
+    ).json() as RevisePreview;
+
+  it('revise preview carries diagnostics from the latest dev run', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const job = await run(ctx, a, {
+      issues: [{ step: 'lines', target: 'items', column: 'qty', raw: 'x', message: 'bad' }],
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.from).toMatchObject({ draftVersion: 1, jobIds: [job.id] });
+    expect(shown.steps).toEqual([
+      { step: 'lines', sample: 's1.pdf', calls: 6, emptyCalls: 5, seconds: 30 },
+    ]);
+    expect(shown.columns).toMatchObject([{ step: 'lines', target: 'items', column: 'qty' }]);
+  });
+
+  it('diagnostics ignore runs from before the last save of the draft', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    await new Promise((resolve) => setTimeout(resolve, 5)); // clocks tick in milliseconds
+    await ctx.templates.updateDraft('letter', 1, letter(1));
+    expect((await preview(ctx)).diagnostics).toBeNull();
+  });
+
+  it('diagnostics ignore runs of other versions and unfinished runs', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a, { version: 2 });
+    const queued = await run(ctx, a);
+    ctx.repo.jobs.set(queued.id, { ...ctx.repo.jobs.get(queued.id)!, status: 'running' });
+    expect((await preview(ctx)).diagnostics).toBeNull();
+  });
+
+  it('diagnostics never read holdout runs', async () => {
+    const ctx = await project();
+    const h = await ctx.add(1);
+    await ctx.setRole(h.id, 'holdout');
+    await run(ctx, h);
+    expect((await preview(ctx)).diagnostics).toBeNull();
+  });
+
+  it('revise starts with diagnostics and no feedback', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    const res = await ctx.start('revise');
+    expect(res.statusCode).toBe(202);
+    const params = paramsOf(ctx, res.json().id);
+    expect(params.feedback).toEqual([]);
+    expect(params.diagnostics).toMatchObject({ from: { draftVersion: 1 } });
+  });
+
+  it('revise without feedback or diagnostics is 409', async () => {
+    const ctx = await project();
+    await ctx.add(1);
+    const res = await ctx.start('revise');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe(
+      'add feedback or run the dev samples before asking for a revision',
+    );
   });
 });

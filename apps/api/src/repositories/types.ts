@@ -398,6 +398,8 @@ export interface IngestionRepo {
   getJobParams(id: string): Promise<Record<string, unknown> | null>;
   /** The newest event with each of `messages` for each job (job_events); none: left out. */
   latestEvents(jobIds: string[], messages: readonly string[]): Promise<JobEventRecord[]>;
+  /** Every event of a job, oldest first (job_events). */
+  listEvents(jobId: string): Promise<{ message: string; data: unknown; at: string }[]>;
   /** When the job's first `message` event at or after `since` whose data contains `match` came. */
   firstEventAt(
     jobId: string,

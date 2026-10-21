@@ -703,6 +703,14 @@ export class PgRepo implements IngestionRepo {
     }));
   }
 
+  async listEvents(jobId: string): Promise<{ message: string; data: unknown; at: string }[]> {
+    const { rows } = await this.pool.query<{ message: string; data: unknown; at: Date }>(
+      `SELECT message, data, at FROM job_events WHERE job_id = $1 ORDER BY at, id`,
+      [jobId],
+    );
+    return rows.map((r) => ({ message: r.message, data: r.data, at: r.at.toISOString() }));
+  }
+
   async firstEventAt(
     jobId: string,
     message: string,

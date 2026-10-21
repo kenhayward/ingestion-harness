@@ -516,6 +516,14 @@ export class MemoryRepo implements IngestionRepo {
     );
   }
 
+  async listEvents(jobId: string): Promise<{ message: string; data: unknown; at: string }[]> {
+    return (this.events.get(jobId) ?? []).map((e) => ({
+      message: e.message,
+      data: e.data,
+      at: e.at,
+    }));
+  }
+
   async firstEventAt(
     jobId: string,
     message: string,
