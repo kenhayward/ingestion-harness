@@ -111,3 +111,20 @@ describe('HttpBridgeApi.readObject', () => {
     expect(err).toMatchObject({ status: 404, error: { code: 'target_missing' } });
   });
 });
+
+describe('HttpBridgeApi timeouts', () => {
+  it('marks a call the bridge did not answer in time, unlike one it could not be reached for', async () => {
+    const failing = (err: Error) =>
+      new HttpBridgeApi('http://bridge:3100', KEY, (async () => {
+        throw err;
+      }) as unknown as typeof fetch);
+    const timeout = Object.assign(new Error('aborted'), { name: 'TimeoutError' });
+    await expect(failing(timeout).deleteTarget('finance')).rejects.toMatchObject({
+      status: 0,
+      timedOut: true,
+    });
+    await expect(
+      failing(new TypeError('fetch failed')).deleteTarget('finance'),
+    ).rejects.toMatchObject({ status: 0, timedOut: false });
+  });
+});

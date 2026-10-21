@@ -34,6 +34,7 @@ const NOT_FOUND_MESSAGE = 'publishing target not found';
 const NOT_FOUND = error(`\`${NOT_FOUND_MESSAGE}\`.`);
 const BRIDGE_DOWN = 'the delivery bridge could not be reached';
 const CACHE_FAILED = 'saved on the bridge; refresh';
+const REMOVED_ON_BRIDGE = 'removed on the bridge; remove again';
 const IdParams = z.object({ id: z.string().describe('The publishing target id.') });
 const LOCKED = ['bucket', 'prefix', 'layout'] as const;
 const base = (operationId: string, summary: string, description: string) => ({
@@ -585,6 +586,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           409: error(
             '`default cannot be removed`, `{label} is used by {what}`, or `{label} has deliveries on the bridge`.',
           ),
+          500: error(
+            `\`${REMOVED_ON_BRIDGE}\`: the bridge removed it (or did not answer in time) but CT Studio could not; removing again finishes it.`,
+          ),
           502: error(`\`${BRIDGE_DOWN}\`; nothing is removed.`),
         },
       },
@@ -604,22 +608,37 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(409).send({ error: `${target.label} is used by ${usageText(usage)}` });
       }
       // The bridge first, while the row is held: it soft-removes the target and never takes its
-      // id again, so it cannot be given back if something started using it meanwhile.
-      let bridgeDown = false;
+      // id again, so it cannot be given back if a recipe or output started naming it meanwhile.
+      // Once the bridge may have removed it (it accepted, or did not answer in time), a failure
+      // says so: the bridge's DELETE is idempotent, so removing again heals it.
+      let bridgeFailure: 'down' | 'maybe_removed' | null = null;
+      let bridgeAccepted = false;
       const outcome = await repo
         .remove(id, async () => {
           try {
-            return (await bridge.deleteTarget(id)) === 'deleted';
+            bridgeAccepted = (await bridge.deleteTarget(id)) === 'deleted';
+            return bridgeAccepted;
           } catch (err) {
-            bridgeDown = true;
+            bridgeFailure =
+              err instanceof BridgeApiError && err.timedOut ? 'maybe_removed' : 'down';
             throw err;
           }
         })
         .catch((err: unknown) => {
-          if (bridgeDown) return 'bridge_down' as const;
+          if (bridgeFailure === 'down') return 'bridge_down' as const;
+          if (bridgeFailure === 'maybe_removed' || bridgeAccepted) {
+            req.log.error(
+              { target: id, err },
+              `publishing target ${id} may be removed on the bridge but not here: remove it again`,
+            );
+            return 'bridge_removed' as const;
+          }
           throw err;
         });
       if (outcome === 'bridge_down') return reply.code(502).send({ error: BRIDGE_DOWN });
+      if (outcome === 'bridge_removed') {
+        return reply.code(500).send({ error: REMOVED_ON_BRIDGE });
+      }
       if (outcome === 'refused') {
         return reply.code(409).send({ error: `${target.label} has deliveries on the bridge` });
       }

@@ -170,7 +170,8 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
         return 'in_use';
       }
       // The bridge removes it while this row is locked: a job output or graph copy recorded
-      // against it waits for the lock, so nothing starts using a target the bridge just dropped.
+      // against it meanwhile waits for the lock, then commits naming the now inert target (the
+      // foreign key holds; it is not refused). A recipe naming it takes no lock at all.
       if (onBridge && !(await onBridge())) {
         await client.query('ROLLBACK');
         return 'refused';

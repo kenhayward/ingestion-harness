@@ -58,6 +58,8 @@ export class BridgeApiError extends Error {
     readonly status: number,
     readonly error: BridgeError | null,
     message: string,
+    /** The bridge did not answer in time: it may have done what it was asked. */
+    readonly timedOut = false,
   ) {
     super(message);
     this.name = 'BridgeApiError';
@@ -98,6 +100,10 @@ export class HttpBridgeApi implements BridgeApi {
         signal: AbortSignal.timeout(30_000),
       });
     } catch (err) {
+      const name = (err as Error).name;
+      if (name === 'TimeoutError' || name === 'AbortError') {
+        throw new BridgeApiError(0, null, 'the bridge did not answer in time', true);
+      }
       throw new BridgeApiError(
         0,
         null,

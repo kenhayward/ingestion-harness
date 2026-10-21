@@ -635,7 +635,8 @@ The merge of the two target registries (after phase 4, before phase 6) made thes
   Published outputs lists the cache and every write answers 502. A cache write that fails after
   the bridge accepted answers 500 "saved on the bridge; refresh", and the next pull heals it.
 - **A removed target is never deleted, on either side** (merged from main's PR #290). CT Studio
-  checks usage, then, holding the cache row so nothing starts using it meanwhile, DELETEs on the
+  checks usage, then, holding the cache row's lock (an output or graph copy recorded against it
+  meanwhile waits, then names the inert target; a recipe takes no lock), DELETEs on the
   bridge, which refuses (409) while an unfinished delivery names the target and otherwise
   soft-removes it (`bridge.targets.removed_at`, its connection cleared; a later PUT of that id is
   409 `name_conflict`); the cache row is then made inert. Ids are never reused, so no new target
@@ -643,7 +644,12 @@ The merge of the two target registries (after phase 4, before phase 6) made thes
   restore's kept targets are live on the bridge even where production had removed the id.
 - **The key move never overwrites**: `moveTargetsToBridge` keeps a connection an admin gave the
   target before the move (only the legacy keys are dropped), and takes `target-<id>-2`, … when a
-  connection `target-<id>` exists already.
+  connection `target-<id>` exists already. The id it chooses is recorded on the legacy row
+  (`connection_id`, migration 202610221100) before the connection is written, so a retry after
+  a failed target write reuses it rather than writing another copy of the secret.
+- **A removal half done says so.** When the bridge removed a target (or did not answer in time)
+  but the cache row could not be made inert, the API answers 500 "removed on the bridge; remove
+  again"; the bridge's DELETE is idempotent, so a second delete finishes it.
 - **The API alone seeds** `default` and `rdf-default`, through the bridge, when the bridge lacks
   the target or it was never seeded. The worker no longer seeds; it reads the cache and builds
   `Target(id, bucket, prefix, layout)` from the destination. A target the API hasn't synced yet,

@@ -78131,6 +78131,37 @@
               }
             }
           },
+          "500": {
+            "description": "`removed on the bridge; remove again`: the bridge removed it (or did not answer in time) but CT Studio could not; removing again finishes it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`removed on the bridge; remove again`: the bridge removed it (or did not answer in time) but CT Studio could not; removing again finishes it."
+                }
+              }
+            }
+          },
           "502": {
             "description": "`the delivery bridge could not be reached`; nothing is removed.",
             "content": {

@@ -662,6 +662,33 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect(await c.targets.get('finance-lake')).not.toBeNull();
   });
 
+  it('says so when the bridge removed it but the cache could not, and a second delete heals it', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    vi.spyOn(c.targets, 'makeInert').mockImplementationOnce(() => {
+      throw new Error('the database went away');
+    });
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe('removed on the bridge; remove again');
+    expect(c.bridge.removed.has('finance-lake')).toBe(true);
+    expect(await c.targets.get('finance-lake')).not.toBeNull();
+    expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
+    expect(await c.targets.get('finance-lake')).toBeNull();
+  });
+
+  it('says it may be removed on the bridge when the bridge did not answer in time', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    vi.spyOn(c.bridge, 'deleteTarget').mockRejectedValueOnce(
+      new BridgeApiError(0, null, 'the bridge did not answer in time', true),
+    );
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe('removed on the bridge; remove again');
+    expect(await c.targets.get('finance-lake')).not.toBeNull();
+  });
+
   it('removes nothing while the bridge cannot be reached', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', externalBody());

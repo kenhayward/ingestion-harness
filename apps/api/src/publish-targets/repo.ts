@@ -77,7 +77,8 @@ export interface PublishTargetRepo {
    * Makes the target inert (never deleted: delivery records may still name it, and its id stays
    * taken). `seeded`: the triple store target, which comes from `.env` and is never removed.
    * `onBridge` runs after the usage check and before the row goes inert (in Postgres, holding the
-   * row's lock, so nothing can start using it in between); `false` from it refuses (`refused`),
+   * row's lock: an output or graph copy recorded against it meanwhile waits, then names the inert
+   * target); `false` from it refuses (`refused`),
    * and a throw leaves the row as it was.
    */
   remove(
