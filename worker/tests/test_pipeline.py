@@ -25,6 +25,7 @@ from ingest_worker.specs import (
     CopySelection,
     CsvOutput,
     LoadedSpec,
+    Section,
     SpecRegistry,
     load_specs,
 )
@@ -670,3 +671,34 @@ def test_conversion_errors_are_routed(setup, error: Exception, outcome: str) -> 
     run_once(queue, deps, "w1")
     assert len(getattr(queue, outcome)) == 1
     assert provider.calls == []  # before any model call
+
+
+def test_segmented_event_carries_missed_keys(setup, fixture_specs_dir: Path) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    loaded = deps.specs.get("example-invoice", 1)
+    sections = [
+        *loaded.spec.document.sections,
+        Section(id="rows", anchor=r"^Widget\b", repeat=True, key=r"^(Widget|Gadget)\b"),
+    ]
+    with_spec_changes(deps, fixture_specs_dir, document={"sections": sections})
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed
+    [data] = [d for _, _, m, d in queue.event_details if m == "segmented"]
+    assert data["missedKeys"] == [
+        {"sections": ["rows"], "key": "Gadget", "line": "Gadget               1     3.00   3.00"}
+    ]
+    assert "missedKeysTotal" not in data
+    assert not queue.reviewed and not queue.failed
+
+
+def test_segmented_event_has_no_missed_keys_when_none(setup) -> None:  # type: ignore[no-untyped-def]
+    provider, _, deps = setup
+    provider.responses = [HEADER, LINES]
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+    [data] = [d for _, _, m, d in queue.event_details if m == "segmented"]
+    assert "missedKeys" not in data

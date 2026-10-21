@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, replace
-from typing import Literal
+from dataclasses import dataclass, field, replace
+from typing import Any, Literal
 
 from .specs import CopySelection, Section
 
@@ -198,6 +198,22 @@ def missed_keys(text: str, sections: list[Section], spans: list[SectionSpan]) ->
     return [missed for _, missed in sorted(found, key=lambda item: item[0])]
 
 
+def missed_payload(missed: list[MissedKey]) -> dict[str, Any]:
+    """`missedKeys` (the first MAX_MISSED_KEYS) and `missedKeysTotal` (only when capped) for a grid
+    row or event; empty when nothing was missed, so the keys stay absent."""
+    if not missed:
+        return {}
+    payload: dict[str, Any] = {
+        "missedKeys": [
+            {"sections": list(m.sections), "key": m.key, "line": m.line}
+            for m in missed[:MAX_MISSED_KEYS]
+        ]
+    }
+    if len(missed) > MAX_MISSED_KEYS:
+        payload["missedKeysTotal"] = len(missed)
+    return payload
+
+
 @dataclass(frozen=True)
 class Occurrence:
     """One occurrence of a repeating section, 1-based."""
@@ -219,6 +235,8 @@ class Segmented:
     #: Repeating sections only.
     occurrences: dict[str, list[Occurrence]]
     key_issues: list[KeyIssue]
+    #: Keys of repeating sections that no anchor caught (advisory; see missed_keys).
+    missed: list[MissedKey] = field(default_factory=list)
 
 
 def segment_occurrences(
@@ -261,7 +279,9 @@ def segment_occurrences(
     }
     for section_id, items in occurrences.items():
         result[section_id] = "\n\n".join(o.text for o in items if o.text)
-    return Segmented(result, occurrences, key_issues(sections, spans))
+    return Segmented(
+        result, occurrences, key_issues(sections, spans), missed_keys(text, sections, spans)
+    )
 
 
 def segment(

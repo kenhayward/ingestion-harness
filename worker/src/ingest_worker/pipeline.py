@@ -48,6 +48,7 @@ from .segment import (
     MissingSectionsError,
     Occurrence,
     Segmented,
+    missed_payload,
     segment_occurrences,
     select_copy,
 )
@@ -449,6 +450,7 @@ def segment_pages(
     data: dict[str, Any] = {"pages": len(selected.pages), "sections": list(segmented.sections)}
     if segmented.occurrences:
         data["occurrences"] = {k: len(v) for k, v in segmented.occurrences.items()}
+    data.update(missed_payload(segmented.missed))
     queue.event(job.id, "info", SEGMENTED, data)
     return segmented
 

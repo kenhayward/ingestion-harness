@@ -105,3 +105,28 @@ def test_line_is_cut_at_120_characters() -> None:
 
 def test_cap_constant() -> None:
     assert MAX_MISSED_KEYS == 20
+
+
+def test_segment_occurrences_lists_missed() -> None:
+    from ingest_worker.segment import segment_occurrences
+
+    text = _body(
+        "Table\xa01: Study A - Assay and Chromatographic Purity (HDPE\n   bottle - X) Results",
+        "Table\xa02: Study A - Assay Results",
+        "Table\xa03: Study B - Assay and Chromatographic Purity (HDPE\n   bottle - Y) Results",
+    )
+    sections = [Section(id="result_tables", anchor=ANCHOR, repeat=True, key=KEY)]
+    segmented = segment_occurrences(text.split("\f"), sections)
+    assert [m.key for m in segmented.missed] == ["1", "3"]
+
+
+def test_missed_payload_caps_and_stays_absent_when_empty() -> None:
+    from ingest_worker.segment import missed_payload
+
+    assert missed_payload([]) == {}
+    many = [MissedKey(("s",), str(n), f"Table {n}") for n in range(MAX_MISSED_KEYS + 3)]
+    payload = missed_payload(many)
+    assert len(payload["missedKeys"]) == MAX_MISSED_KEYS
+    assert payload["missedKeys"][0] == {"sections": ["s"], "key": "0", "line": "Table 0"}
+    assert payload["missedKeysTotal"] == MAX_MISSED_KEYS + 3
+    assert "missedKeysTotal" not in missed_payload(many[:2])

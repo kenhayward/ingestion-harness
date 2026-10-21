@@ -33,11 +33,11 @@ from .pipeline import (
 )
 from .queue import ClaimedJob, JobQueue
 from .segment import (
-    MAX_MISSED_KEYS,
     PAGE_BREAK,
     SectionSpan,
     key_issues,
     missed_keys,
+    missed_payload,
     section_spans,
     select_copy,
 )
@@ -303,13 +303,7 @@ def segment_samples(
             "keyIssues": [i.message for i in key_issues(valid, spans)],
         }
         missed = missed_keys(text, valid, spans)
-        if missed:
-            row["missedKeys"] = [
-                {"sections": list(m.sections), "key": m.key, "line": m.line}
-                for m in missed[:MAX_MISSED_KEYS]
-            ]
-            if len(missed) > MAX_MISSED_KEYS:
-                row["missedKeysTotal"] = len(missed)
+        row.update(missed_payload(missed))
         rows.append(row)
         for section in valid:
             if section.required and section.id in unmatched:
