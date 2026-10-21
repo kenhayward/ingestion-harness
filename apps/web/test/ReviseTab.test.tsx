@@ -496,7 +496,16 @@ describe('ReviseTab', () => {
       steps: [
         { step: 'extract_table_8', sample: 'a.pdf', calls: 30, emptyCalls: 29, seconds: 169 },
       ],
-      columns: [{ step: 's', target: 'assay', column: 'purity', issues: 3, examples: ['<0.05'] }],
+      columns: [
+        {
+          step: 's',
+          target: 'assay',
+          column: 'purity',
+          issues: 3,
+          examples: ['<0.05'],
+          samples: ['a.pdf'],
+        },
+      ],
       missedKeys: [{ sample: 'a.pdf', sections: ['s'], keys: ['1', '2'], total: 2 }],
     };
 

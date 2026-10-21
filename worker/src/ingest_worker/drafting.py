@@ -618,6 +618,41 @@ def select_failures(failures: list[dict[str, Any]], dev_files: set[str]) -> list
     )[:MAX_CONTEXT_SAMPLES]
 
 
+def dev_diagnostics(
+    diagnostics: dict[str, Any] | None, dev_files: set[str]
+) -> dict[str, Any] | None:
+    """Run diagnostics (TS RunDiagnostics) keeping only rows of dev samples: the API reads dev
+    runs only, so this is a defensive no-op on its input. A column row counts every sample it
+    names, so one naming any other sample is dropped whole. None when no row is left."""
+    if not diagnostics:
+        return None
+
+    def rows(key: str) -> list[dict[str, Any]]:
+        value = diagnostics.get(key)
+        return [r for r in value if isinstance(r, dict)] if isinstance(value, list) else []
+
+    steps = [r for r in rows("steps") if r.get("sample") in dev_files]
+    columns = [
+        r
+        for r in rows("columns")
+        if isinstance(r.get("samples"), list)
+        and r["samples"]
+        and all(name in dev_files for name in r["samples"])
+    ]
+    missed = [r for r in rows("missedKeys") if r.get("sample") in dev_files]
+    if not (steps or columns or missed):
+        return None
+    return {**diagnostics, "steps": steps, "columns": columns, "missedKeys": missed}
+
+
+def diagnostics_samples(diagnostics: dict[str, Any] | None) -> set[str]:
+    """Every sample file name run diagnostics name (for the external-call audit)."""
+    if not diagnostics:
+        return set()
+    names = {str(r["sample"]) for r in diagnostics["steps"] + diagnostics["missedKeys"]}
+    return names | {str(n) for r in diagnostics["columns"] for n in r["samples"]}
+
+
 def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
     """Run one drafting stage and write its result (TS: DraftResult) to the runs bucket."""
     try:
@@ -655,6 +690,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     dev_feedback = [f for f in params.feedback if not f.get("sample") or f["sample"] in names]
     # The worst-scoring failures are the most worth fixing; the cap keeps the prompt bounded.
     dev_failures = select_failures(params.failures, names)
+    diagnostics = dev_diagnostics(params.diagnostics, names)
     # The prompt labels feedback F1..Fn in this order; answers name those labels (RV2).
     labels = {f"F{n}": str(f["id"]) for n, f in enumerate(dev_feedback, 1) if f.get("id")}
     context = build_context(
@@ -666,7 +702,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         feedback=dev_feedback,
         failures=dev_failures,
         failures_from=params.failures_from,
-        diagnostics=params.diagnostics,
+        diagnostics=diagnostics,
     )
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":
@@ -678,9 +714,10 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 "stage": stage.id,
                 "model": model_ref,
                 "samples": [s.sample_id for s in samples],
-                # Failures and feedback can name dev samples whose text is not sent.
+                # Failures, feedback and diagnostics can name dev samples whose text is not sent.
                 "referencedSamples": sorted(
                     {str(f["sample"]) for f in dev_feedback + dev_failures if f.get("sample")}
+                    | diagnostics_samples(diagnostics)
                 ),
             },
         )

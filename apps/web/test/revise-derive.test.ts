@@ -284,9 +284,23 @@ describe('diagnosticLines', () => {
       'columns, one value and many',
       {
         columns: [
-          { step: 's', target: 'assay', column: 'impurity_1_pct', issues: 3, examples: ['<0.05'] },
-          { step: 's', target: 'assay', column: 'purity', issues: 1, examples: ['n/a'] },
-          { step: 's', target: 'notes', column: null, issues: 2, examples: [] },
+          {
+            step: 's',
+            target: 'assay',
+            column: 'impurity_1_pct',
+            issues: 3,
+            examples: ['<0.05'],
+            samples: ['a.pdf'],
+          },
+          {
+            step: 's',
+            target: 'assay',
+            column: 'purity',
+            issues: 1,
+            examples: ['n/a'],
+            samples: ['a.pdf'],
+          },
+          { step: 's', target: 'notes', column: null, issues: 2, examples: [], samples: ['a.pdf'] },
         ],
       },
       [

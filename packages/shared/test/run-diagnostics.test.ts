@@ -122,6 +122,21 @@ describe('runDiagnostics', () => {
     expect(d?.columns.reduce((n, c) => n + c.issues, 0)).toBe(28);
   });
 
+  it('names the samples whose issues a column row counts, first seen first', () => {
+    const issue = (column: string) => ({ step: 's', target: 't', column, raw: 'x' });
+    const d = runDiagnostics(
+      [
+        run({ sample: 'b.pdf', issues: [issue('qty'), issue('qty')] }),
+        run({ jobId: 'j2', sample: 'a.pdf', issues: [issue('qty'), issue('unit')] }),
+      ],
+      1,
+    );
+    expect(d?.columns.map((c) => [c.column, c.samples])).toEqual([
+      ['qty', ['b.pdf', 'a.pdf']],
+      ['unit', ['a.pdf']],
+    ]);
+  });
+
   it('reports missed keys with the union of sections and the total', () => {
     const d = runDiagnostics(
       [
