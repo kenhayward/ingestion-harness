@@ -37,6 +37,49 @@ export function issueSubTab(issue: string): SubTab {
 export const issueText = (i: { path: string; message: string }) =>
   i.path ? `${i.path}: ${i.message}` : i.message;
 
+const asList = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const asRecord = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/** Repeating sections that three or more table steps (extract or plugin) read. */
+export function sharedRepeatSteps(
+  definition: Record<string, unknown>,
+): { section: string; steps: string[] }[] {
+  const repeating = asList(asRecord(definition.document).sections)
+    .map(asRecord)
+    .filter((s) => s.repeat === true && typeof s.id === 'string')
+    .map((s) => s.id as string);
+  const steps = asList(definition.pipeline)
+    .map(asRecord)
+    .filter(
+      (s) =>
+        (s.type === 'extract' || s.type === 'plugin') &&
+        typeof s.table === 'string' &&
+        typeof s.id === 'string',
+    );
+  return repeating
+    .map((section) => ({
+      section,
+      steps: steps.filter((s) => asList(s.sections).includes(section)).map((s) => s.id as string),
+    }))
+    .filter((g) => g.steps.length >= 3);
+}
+
+/** Groups of three or more tables with the same column ids in the same order. */
+export function sameShapeTables(definition: Record<string, unknown>): string[][] {
+  const groups = new Map<string, string[]>();
+  for (const t of asList(asRecord(definition.outputs).tables).map(asRecord)) {
+    if (typeof t.id !== 'string') continue;
+    const cols = asList(t.columns)
+      .map((c) => asRecord(c).id)
+      .filter((id): id is string => typeof id === 'string');
+    if (cols.length === 0) continue;
+    const key = JSON.stringify(cols);
+    groups.set(key, [...(groups.get(key) ?? []), t.id]);
+  }
+  return [...groups.entries()].filter(([, ids]) => ids.length >= 3).map(([, ids]) => ids);
+}
+
 /**
  * The Template tab's Checks (handoff §10): outputs no step fills (or several fill), validation
  * issues, or that all is valid; then stale stages. Every item links to where it is fixed.
@@ -68,6 +111,28 @@ export function templateChecks(input: {
       subTabs: ['pipeline'],
     })),
   ];
+  for (const g of sharedRepeatSteps(input.definition)) {
+    checks.push({
+      tone: 'warn',
+      text: `${g.steps.length} steps read the repeating section ${g.section}: each runs once per occurrence, so a step meant for one block reads them all. Give each kind of block its own repeating section.`,
+      link: { label: 'Open Sections', subTab: 'sections' },
+      subTabs: ['sections', 'pipeline'],
+    });
+  }
+  const tableShapes = new Map(
+    asList(asRecord(input.definition.outputs).tables).map((t) => [asRecord(t).id, asRecord(t)]),
+  );
+  for (const ids of sameShapeTables(input.definition)) {
+    const first = asList(tableShapes.get(ids[0])?.columns)
+      .map((c) => asRecord(c).id)
+      .join(', ');
+    checks.push({
+      tone: 'warn',
+      text: `${ids.length} tables have the same columns (${first}): one table with columns telling them apart (study, batch) is usually better.`,
+      link: { label: 'Open Outputs', subTab: 'outputs' },
+      subTabs: ['outputs'],
+    });
+  }
   const issues = [...new Set([...input.issues, ...input.serverIssues])].filter(
     (i) => !COVERAGE.test(i),
   );

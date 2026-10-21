@@ -4,6 +4,8 @@ import {
   attentionTabs,
   issueSubTab,
   issueText,
+  sameShapeTables,
+  sharedRepeatSteps,
   templateChecks,
   type SubTab,
 } from '../src/templates/checks.js';
@@ -159,5 +161,99 @@ describe('mapping checks (ADR 0011)', () => {
       subTabs: ['mapping'],
     });
     expect(attentionTabs(checks).has('mapping')).toBe(true);
+  });
+});
+
+describe('shared repeating sections and same-shape tables', () => {
+  const sections = (ids: string[]) => ids.map((id) => ({ id, repeat: true }));
+  const tableSteps = (n: number, section: string) =>
+    Array.from({ length: n }, (_, i) => ({
+      type: 'extract',
+      id: `s${i}`,
+      table: `t${i}`,
+      sections: [section],
+    }));
+  const tables = (n: number, shapes: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `t${i}`,
+      columns: [`a${i % shapes}`, `b${i % shapes}`].map((id) => ({ id })),
+    }));
+
+  it('warns once for table steps sharing one repeating section', () => {
+    const def = {
+      document: { sections: sections(['result_tables']) },
+      pipeline: tableSteps(60, 'result_tables'),
+    };
+    expect(sharedRepeatSteps(def)).toEqual([
+      { section: 'result_tables', steps: tableSteps(60, 'x').map((s) => s.id) },
+    ]);
+    const checks = run({ definition: def });
+    const found = checks.filter((c) => c.text.startsWith('60 steps read the repeating section'));
+    expect(found).toEqual([
+      {
+        tone: 'warn',
+        text: '60 steps read the repeating section result_tables: each runs once per occurrence, so a step meant for one block reads them all. Give each kind of block its own repeating section.',
+        link: { label: 'Open Sections', subTab: 'sections' },
+        subTabs: ['sections', 'pipeline'],
+      },
+    ]);
+  });
+
+  it('is quiet for two steps, and for one repeating section each', () => {
+    expect(
+      sharedRepeatSteps({
+        document: { sections: sections(['r']) },
+        pipeline: tableSteps(2, 'r'),
+      }),
+    ).toEqual([]);
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    expect(
+      sharedRepeatSteps({
+        document: { sections: sections(ids) },
+        pipeline: ids.map((id) => ({
+          type: 'extract',
+          id: `s${id}`,
+          table: `t${id}`,
+          sections: [id],
+        })),
+      }),
+    ).toEqual([]);
+  });
+
+  it('ignores non-repeating sections and steps without a table', () => {
+    const steps = Array.from({ length: 4 }, (_, i) => ({
+      type: 'extract',
+      id: `s${i}`,
+      fields: ['f'],
+      sections: ['r'],
+    }));
+    expect(sharedRepeatSteps({ document: { sections: sections(['r']) }, pipeline: steps })).toEqual(
+      [],
+    );
+    expect(
+      sharedRepeatSteps({
+        document: { sections: [{ id: 'r' }] },
+        pipeline: tableSteps(4, 'r'),
+      }),
+    ).toEqual([]);
+  });
+
+  it('warns for each group of three or more tables with the same columns', () => {
+    const def = { outputs: { fields: [], tables: tables(60, 5) } };
+    expect(sameShapeTables(def)).toHaveLength(5);
+    const found = run({ definition: def }).filter((c) =>
+      c.text.includes('tables have the same columns'),
+    );
+    expect(found).toHaveLength(5);
+    expect(found[0]).toEqual({
+      tone: 'warn',
+      text: '12 tables have the same columns (a0, b0): one table with columns telling them apart (study, batch) is usually better.',
+      link: { label: 'Open Outputs', subTab: 'outputs' },
+      subTabs: ['outputs'],
+    });
+  });
+
+  it('is quiet for two same-shape tables', () => {
+    expect(sameShapeTables({ outputs: { tables: tables(2, 1) } })).toEqual([]);
   });
 });
