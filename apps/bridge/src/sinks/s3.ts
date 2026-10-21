@@ -111,6 +111,16 @@ export const INTERNAL_CREDENTIAL: Readonly<Record<string, string>> = Object.free
 
 const SSE = new Set(['none', 'AES256', 'aws:kms']);
 
+/** `host:port` of an endpoint URL (the scheme's port when none is given), or null. */
+function hostOf(endpoint: string): string | null {
+  try {
+    const u = new URL(endpoint);
+    return `${u.hostname}:${u.port || (u.protocol === 'https:' ? '443' : '80')}`;
+  } catch {
+    return null;
+  }
+}
+
 /** An S3 failure in contract terms; never the error's own text, which can echo request detail. */
 export function s3Error(err: unknown, bucket: string): BridgeError {
   if (err instanceof SinkError) return err.error;
@@ -139,11 +149,31 @@ export class S3Sink implements SinkPort, TargetObjects {
       /** The deployment's own S3 (`S3_*`). */
       internal: Omit<S3StoreOptions, 'sse' | 'kmsKeyId' | 'storageClass'>;
       make?: (o: S3StoreOptions) => ObjectStorePort;
-      /** Buckets of the internal store no target may use (the package staging bucket). */
+      /**
+       * Buckets of the internal store no target may use, through the internal connection or any
+       * connection to the same endpoint: the package staging bucket and CT Studio's own.
+       */
       reservedBuckets?: string[];
+      /** Other URLs the internal store answers on (`S3_PUBLIC_URL`). */
+      ownEndpoints?: string[];
     },
   ) {
     this.make = opts.make ?? ((o) => new S3ObjectStore(o));
+    this.own = new Set(
+      [opts.internal.endpoint, ...(opts.ownEndpoints ?? [])]
+        .map(hostOf)
+        .filter((h): h is string => h !== null),
+    );
+  }
+
+  /** The internal store's hosts: a connection there keeps to the internal store's rules. */
+  private readonly own: Set<string>;
+
+  /** On the deployment's own storage, the bridge's and CT Studio's buckets are out of reach. */
+  private refuseReserved(bucket: string | undefined): void {
+    if (this.opts.reservedBuckets?.includes(bucket ?? '')) {
+      throw new SinkError(bridgeError('content_rejected', `bucket ${bucket} is reserved`));
+    }
   }
 
   async describe(): Promise<SinkDescribe> {
@@ -281,13 +311,11 @@ export class S3Sink implements SinkPort, TargetObjects {
       storageClass: destination.storageClass || null,
     };
     if (this.isInternal(place)) {
-      if (this.opts.reservedBuckets?.includes(destination.bucket ?? '')) {
-        throw new SinkError(
-          bridgeError('content_rejected', `bucket ${destination.bucket} is reserved`),
-        );
-      }
+      this.refuseReserved(destination.bucket);
       return { ...this.opts.internal, ...write };
     }
+    const host = credential.endpoint ? hostOf(credential.endpoint) : null;
+    if (host !== null && this.own.has(host)) this.refuseReserved(destination.bucket);
     if (!credential.accessKeyId || !credential.secretAccessKey) {
       throw new SinkError(bridgeError('credential_missing', 'the connection has no keys'));
     }

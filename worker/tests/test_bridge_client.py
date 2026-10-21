@@ -219,3 +219,24 @@ def test_the_fake_bridge_is_a_bridge_client() -> None:
     assert [d.target_id for d in result.deliveries] == ["finance-lake"]
     name = REQUEST.package.files[0].name
     assert bridge.read_object("finance-lake", "pub", f"out/{name}") is not None
+
+
+def test_the_fake_bridge_answers_as_the_bridge_does_for_targets_and_their_bounds() -> None:
+    from .fakes import FakeBridge
+
+    bridge = FakeBridge({"finance-lake": ("pub", "out/")})
+    bridge.put_object("finance-lake", "pub", "out/a.csv", b"a", "text/csv")
+    assert bridge.read_object("finance-lake", "pub", "out/a.csv") == b"a"
+    # A target the bridge lacks is retried (the API has not mirrored it yet).
+    with pytest.raises(BridgeUnavailable):
+        bridge.read_object("nope", "pub", "out/a.csv")
+    with pytest.raises(BridgeUnavailable):
+        bridge.deliver(REQUEST.model_copy(update={"targets": ["nope"]}))
+    # Outside the target's bucket or prefix is refused, as the S3 sink refuses it.
+    for bucket, key in [("other", "out/a.csv"), ("pub", "elsewhere/a.csv")]:
+        with pytest.raises(BridgeRefused, match="outside the target"):
+            bridge.read_object("finance-lake", bucket, key)
+        with pytest.raises(BridgeRefused, match="outside the target"):
+            bridge.put_object("finance-lake", bucket, key, b"x", "text/csv")
+        with pytest.raises(BridgeRefused, match="outside the target"):
+            bridge.delete_objects("finance-lake", [(bucket, key)])

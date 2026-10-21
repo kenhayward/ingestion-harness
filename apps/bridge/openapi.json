@@ -1382,6 +1382,46 @@
               }
             }
           },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "class": {
+                      "type": "string",
+                      "enum": [
+                        "needs_user",
+                        "retryable"
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "class",
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "422": {
             "description": "Default Response",
             "content": {
@@ -1429,7 +1469,7 @@
         "tags": [
           "Targets"
         ],
-        "description": "Refused with 409 while any delivery names the target.",
+        "description": "Refused with 409 while an unfinished delivery names the target. A removed target keeps its id: putting it again is refused with 409.",
         "parameters": [
           {
             "schema": {

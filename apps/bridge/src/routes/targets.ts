@@ -117,7 +117,12 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
         tags,
         params: Params,
         body: TargetPutRequestSchema,
-        response: { 200: TargetViewSchema, 400: BridgeErrorSchema, 422: BridgeErrorSchema },
+        response: {
+          200: TargetViewSchema,
+          400: BridgeErrorSchema,
+          409: BridgeErrorSchema,
+          422: BridgeErrorSchema,
+        },
       },
     },
     async (req, reply) => {
@@ -131,7 +136,16 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       }
       const target: Target = { id: params.id, ...body };
-      await app.deps.targets.put(target);
+      if (!(await app.deps.targets.put(target))) {
+        return reply
+          .code(409)
+          .send(
+            bridgeError(
+              'name_conflict',
+              `target ${params.id} was removed, and its id is not used again: pick another`,
+            ),
+          );
+      }
       return target;
     },
   );
@@ -141,7 +155,9 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
     {
       schema: {
         summary: 'Remove a target',
-        description: 'Refused with 409 while any delivery names the target.',
+        description:
+          'Refused with 409 while an unfinished delivery names the target. A removed target ' +
+          'keeps its id: putting it again is refused with 409.',
         tags,
         params: Params,
         response: { 204: z.null(), 409: BridgeErrorSchema },

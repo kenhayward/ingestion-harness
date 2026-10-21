@@ -221,7 +221,8 @@ export class PgDeliveryRepo implements DeliveryRepo {
 
   async usesTarget(targetId: string): Promise<boolean> {
     const { rows } = await this.pool.query<{ used: boolean }>(
-      'SELECT EXISTS (SELECT 1 FROM bridge.deliveries WHERE target_id = $1) AS used',
+      `SELECT EXISTS (SELECT 1 FROM bridge.deliveries WHERE target_id = $1
+         AND status NOT IN ('succeeded', 'skipped', 'needs_user', 'failed')) AS used`,
       [targetId],
     );
     return rows[0]!.used;

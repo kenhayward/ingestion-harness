@@ -35,7 +35,8 @@ export function finishOf(
 
 /**
  * Records one of the bridge's delivery events (signed, at least once, maybe out of order): only
- * an event newer than the delivery's last one counts, and the job finishes once, when its last
+ * an event newer than the delivery's last one, for a delivery not final yet, counts, and the job
+ * finishes once, when its last
  * delivery is final and it is still delivering. `unknown`: no such delivery here yet (the worker
  * may not have recorded it), so the bridge should send it again later.
  */

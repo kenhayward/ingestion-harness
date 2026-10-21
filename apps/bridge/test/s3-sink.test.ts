@@ -195,6 +195,49 @@ describe('S3Sink', () => {
     );
   });
 
+  it("keeps a connection to the deployment's own storage off its reserved buckets", async () => {
+    const built: S3StoreOptions[] = [];
+    const sink = new S3Sink({
+      internal: INTERNAL,
+      reservedBuckets: ['ingest-bridge', 'ingest-inbox'],
+      ownEndpoints: ['https://s3.ct.example.com'],
+      make: (o) => {
+        built.push(o);
+        return new MemoryObjectStore();
+      },
+    });
+    for (const endpoint of [
+      'http://seaweedfs:8333',
+      'http://SeaweedFS:8333/',
+      'https://s3.ct.example.com:443',
+    ]) {
+      for (const bucket of ['ingest-bridge', 'ingest-inbox']) {
+        const place = { credential: { ...CREDENTIAL, endpoint }, destination: { bucket } };
+        expect(await errorOf(sink.deliver(deliverRequest(place)))).toMatchObject({
+          code: 'content_rejected',
+          message: `bucket ${bucket} is reserved`,
+        });
+        expect((await errorOf(sink.readObject(place, bucket, 'packages/p.json'))).code).toBe(
+          'content_rejected',
+        );
+      }
+    }
+    expect(built).toEqual([]);
+    // Its other buckets are fine (the seeded default may write there with keys of its own), and
+    // another server's bucket of a reserved name is not ours.
+    const ours = {
+      credential: { ...CREDENTIAL, endpoint: 'http://seaweedfs:8333' },
+      destination: { bucket: 'pub' },
+    };
+    await sink.deliver(deliverRequest(ours));
+    const other = {
+      credential: { ...CREDENTIAL, endpoint: 'http://minio:8333' },
+      destination: { bucket: 'ingest-inbox' },
+    };
+    await sink.deliver(deliverRequest(other));
+    expect(built).toHaveLength(2);
+  });
+
   it('refuses a delivery with no credential at all', async () => {
     const { sink } = sinkOver(new MemoryObjectStore());
     const error = await errorOf(

@@ -123,7 +123,8 @@ export const movedConnectionId = (targetId: string): string => `target-${targetI
 
 /**
  * One-off, per row: an external target's keys become the bridge's shared connection
- * `target-<id>`, then the row's ciphertext is dropped and `moved_to_bridge_at` set. Keys read
+ * `target-<id>` (`target-<id>-2`, … when a connection of that id exists already); a row an admin
+ * already gave a connection keeps it and only drops its keys; then the row's ciphertext is dropped and `moved_to_bridge_at` set. Keys read
  * from `.env` (the seeded default) become an env connection: the bridge reads the same allowlisted
  * variables in its own container. A row whose secret cannot be decrypted, or that has no keys, is
  * skipped and logged, as is one whose connection the bridge refuses; it is mirrored without a
@@ -137,9 +138,17 @@ export async function moveTargetsToBridge(deps: {
 }): Promise<{ moved: string[]; skipped: string[] }> {
   const moved: string[] = [];
   const skipped: string[] = [];
+  let taken: Set<string> | null = null;
   for (const view of await deps.targets.list()) {
     const t = await deps.targets.get(view.id);
     if (!t || t.kind !== 'external' || t.movedToBridgeAt !== null) continue;
+    if (t.connectionId !== null) {
+      // An admin picked a connection before the move ran: that one stays, and the row's own
+      // keys, which nothing uses any more, are dropped.
+      await deps.targets.markMoved(t.id, t.connectionId);
+      moved.push(t.id);
+      continue;
+    }
     const fields: Record<string, string> = {};
     if (t.endpoint) fields.endpoint = t.endpoint;
     if (t.region) fields.region = t.region;
@@ -172,7 +181,10 @@ export async function moveTargetsToBridge(deps: {
       continue;
     }
     fields.forcePathStyle = String(t.forcePathStyle);
-    const connectionId = movedConnectionId(t.id);
+    // Never over an existing connection (one an admin made under that name): the next free id.
+    taken ??= new Set((await deps.bridge.listConnections('shared')).map((c) => c.id));
+    let connectionId = movedConnectionId(t.id);
+    for (let n = 2; taken.has(connectionId); n++) connectionId = `${movedConnectionId(t.id)}-${n}`;
     try {
       await deps.bridge.putSharedConnection({
         id: connectionId,
@@ -191,6 +203,7 @@ export async function moveTargetsToBridge(deps: {
       skipped.push(t.id);
       continue;
     }
+    taken.add(connectionId);
     await deps.targets.markMoved(t.id, connectionId);
     moved.push(t.id);
   }

@@ -17,6 +17,7 @@ import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { TargetStores } from '../src/publish-targets/stores.js';
 import { HandoffCodes } from '../src/bridge/handoff.js';
+import { mirrorTargets } from '../src/bridge/mirror.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 
 /** The key test bridges sign their calls to the API with (BRIDGE_CLIENT_KEY). */
@@ -181,6 +182,11 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     ...deps,
   });
   installConformance(app);
+  const targetRepo = (deps.targets ?? targets) as MemoryPublishTargetRepo;
+  const theBridge = (deps.bridge ?? bridge) as FakeBridgeApi;
+  /** Mirrors every target row to the fake bridge, as the API does at start and on each write. */
+  const mirror = () => mirrorTargets({ targets: targetRepo, bridge: theBridge, log: app.log });
+  await mirror();
   // A test passing its own `llm` keeps it; the default one is a MemoryLlmConfigRepo.
   const llmRepo = (deps.llm ?? llm) as MemoryLlmConfigRepo;
   const ontologyRepo = (deps.ontologies ?? ontologies) as MemoryOntologyRepo;
@@ -189,9 +195,11 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     repo,
     store,
     targetStore,
-    targets: (deps.targets ?? targets) as MemoryPublishTargetRepo,
+    targets: targetRepo,
     targetStores: deps.targetStores ?? targetStores,
-    bridge: (deps.bridge ?? bridge) as FakeBridgeApi,
+    bridge: theBridge,
+    /** Mirrors target rows a test added through the repo (the routes mirror their own). */
+    mirror,
     templates,
     workbench,
     githubSync: (deps.githubSync ?? githubSync) as MemoryGitHubSyncRepo,

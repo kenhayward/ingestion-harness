@@ -20,13 +20,13 @@ const toTarget = (r: Row): Target => ({
 });
 
 const SELECT =
-  'SELECT id, label, sink_id, instance_id, connection_id, destination FROM bridge.targets';
+  'SELECT id, label, sink_id, instance_id, connection_id, destination FROM bridge.targets WHERE removed_at IS NULL';
 
 export class PgTargetRepo implements TargetRepo {
   constructor(private readonly pool: pg.Pool) {}
 
   async get(id: string): Promise<Target | null> {
-    const { rows } = await this.pool.query<Row>(`${SELECT} WHERE id = $1`, [id]);
+    const { rows } = await this.pool.query<Row>(`${SELECT} AND id = $1`, [id]);
     return rows[0] ? toTarget(rows[0]) : null;
   }
 
@@ -35,19 +35,25 @@ export class PgTargetRepo implements TargetRepo {
     return rows.map(toTarget);
   }
 
-  async put(t: Target): Promise<void> {
-    await this.pool.query(
+  async put(t: Target): Promise<boolean> {
+    const { rowCount } = await this.pool.query(
       `INSERT INTO bridge.targets (id, label, sink_id, instance_id, connection_id, destination)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, sink_id = EXCLUDED.sink_id,
          instance_id = EXCLUDED.instance_id, connection_id = EXCLUDED.connection_id,
-         destination = EXCLUDED.destination, updated_at = now()`,
+         destination = EXCLUDED.destination, updated_at = now()
+       WHERE bridge.targets.removed_at IS NULL`,
       [t.id, t.label, t.sinkId, t.instanceId, t.connectionId, JSON.stringify(t.destination)],
     );
+    return (rowCount ?? 0) > 0;
   }
 
   async remove(id: string): Promise<boolean> {
-    const { rowCount } = await this.pool.query('DELETE FROM bridge.targets WHERE id = $1', [id]);
+    const { rowCount } = await this.pool.query(
+      `UPDATE bridge.targets SET removed_at = now(), connection_id = NULL, updated_at = now()
+        WHERE id = $1 AND removed_at IS NULL`,
+      [id],
+    );
     return (rowCount ?? 0) > 0;
   }
 }

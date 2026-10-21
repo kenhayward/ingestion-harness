@@ -33,10 +33,19 @@ export function targetsContract(name: string, make: () => Promise<TargetRepo>): 
 
     it('remove deletes the target, and says when there was none', async () => {
       const repo = await make();
-      await repo.put(target('a'));
+      expect(await repo.put(target('a'))).toBe(true);
       expect(await repo.remove('a')).toBe(true);
       expect(await repo.get('a')).toBeNull();
+      expect(await repo.list()).toEqual([]);
       expect(await repo.remove('a')).toBe(false);
+    });
+
+    it("a removed target's id is not used again (its deliveries keep naming it)", async () => {
+      const repo = await make();
+      await repo.put(target('a'));
+      await repo.remove('a');
+      expect(await repo.put(target('a', { label: 'Again' }))).toBe(false);
+      expect(await repo.get('a')).toBeNull();
     });
   });
 }
