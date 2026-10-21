@@ -301,6 +301,41 @@ describe('moveTargetsToBridge', () => {
   });
 });
 
+describe('moveTargetsToBridge and what an admin set first', () => {
+  it('keeps a connection an admin picked before the move ran, and drops the old keys', async () => {
+    const { targets, bridge, log } = setup();
+    const view = s3View({ id: 'finance', connectionId: 'finance-account' });
+    onBridge(bridge, view);
+    await targets.cache(view, { source: 'ui' });
+    targets.putLegacyKeys(legacy('finance'));
+    const result = await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log });
+    expect(result).toEqual({ moved: ['finance'], skipped: [] });
+    expect(bridge.connections.size).toBe(0);
+    expect(bridge.targetPuts).toBe(0);
+    expect(await targets.connectionOf('finance')).toBe('finance-account');
+    expect(bridge.targets.get('finance')?.connectionId).toBe('finance-account');
+    expect(await targets.legacyKeys()).toEqual([]);
+  });
+
+  it("does not overwrite an admin's connection already named target-<id>", async () => {
+    const { targets, bridge, log } = setup();
+    await cacheS3(targets, { id: 'finance' });
+    targets.putLegacyKeys(legacy('finance'));
+    bridge.summaries.push({
+      id: 'target-finance',
+      name: 'Made by hand',
+      sinkId: 's3',
+      status: 'ok',
+      statusReason: null,
+      fields: {},
+    });
+    await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log });
+    expect([...bridge.connections.keys()]).toEqual(['target-finance-2']);
+    expect(await targets.connectionOf('finance')).toBe('target-finance-2');
+    expect(bridge.targets.get('finance')?.connectionId).toBe('target-finance-2');
+  });
+});
+
 describe('startTargetSync', () => {
   it('retries until the bridge answers, then moves keys, seeds and pulls', async () => {
     const { targets, bridge, log } = setup();

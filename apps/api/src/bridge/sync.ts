@@ -64,8 +64,10 @@ export const movedConnectionId = (targetId: string): string => `target-${targetI
 
 /**
  * One-off, per row of `publish_target_legacy_keys`: an external target's keys become the
- * bridge's shared connection `target-<id>`, the bridge's target is pointed at it (its place
- * unchanged) and cached, and the legacy row is dropped. Keys read from `.env` (an env-keyed
+ * bridge's shared connection `target-<id>` (`target-<id>-2`, … when a connection of that id
+ * exists already: one an admin made is never overwritten), the bridge's target is pointed at it
+ * (its place unchanged) and cached, and the legacy row is dropped. A target an admin already gave
+ * a connection keeps it: only its legacy row is dropped. Keys read from `.env` (an env-keyed
  * default) become an env connection: the bridge reads the same allowlisted variables in its own
  * container. A row an earlier move already took is dropped. A row whose secret cannot be
  * decrypted, that has no keys, or whose connection the bridge refuses is skipped and logged; it
@@ -77,6 +79,7 @@ export async function moveTargetsToBridge(
 ): Promise<{ moved: string[]; skipped: string[] }> {
   const moved: string[] = [];
   const skipped: string[] = [];
+  let taken: Set<string> | null = null;
   for (const k of await deps.targets.legacyKeys()) {
     if (k.movedToBridgeAt !== null) {
       await deps.targets.dropLegacyKeys(k.id);
@@ -85,6 +88,13 @@ export async function moveTargetsToBridge(
     const t = await deps.targets.get(k.id);
     if (!t || t.kind !== 'external') {
       await deps.targets.dropLegacyKeys(k.id);
+      continue;
+    }
+    if (t.connectionId !== null) {
+      // An admin picked a connection before the move ran: that one stays, and the row's own
+      // keys, which nothing uses any more, are dropped.
+      await deps.targets.dropLegacyKeys(k.id);
+      moved.push(t.id);
       continue;
     }
     const fields: Record<string, string> = {};
@@ -117,7 +127,10 @@ export async function moveTargetsToBridge(
     if (k.accessKeyId) fields.accessKeyId = k.accessKeyId;
     else if (k.accessKeyEnv) fields.accessKeyIdEnv = k.accessKeyEnv;
     fields.forcePathStyle = String(k.forcePathStyle);
-    const connectionId = movedConnectionId(t.id);
+    // Never over an existing connection (one an admin made under that name): the next free id.
+    taken ??= new Set((await deps.bridge.listConnections('shared')).map((c) => c.id));
+    let connectionId = movedConnectionId(t.id);
+    for (let n = 2; taken.has(connectionId); n++) connectionId = `${movedConnectionId(t.id)}-${n}`;
     try {
       await deps.bridge.putSharedConnection({
         id: connectionId,
@@ -126,6 +139,7 @@ export async function moveTargetsToBridge(
         secret,
         secretEnv,
       });
+      taken.add(connectionId);
       const view = await deps.bridge.putTarget(t.id, {
         label: t.label,
         sinkId: t.sinkId,

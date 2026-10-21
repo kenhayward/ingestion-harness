@@ -201,6 +201,8 @@ const BRIDGE_PRODUCTION = `
               ('prod-3ds', 'Production 3DEXPERIENCE', '3dexperience', 'prod-3ds-keys', '{"space": "prod"}'),
               ('prod-ext', 'Production lake', 's3', 'target-prod-ext', '{"bucket": "prod-lake"}'),
               ('shared', 'Production shared', 's3', 'staging-keys', '{"bucket": "prod-shared"}');
+  -- Production removed its 'shared' (soft: the row stays); staging's live 'shared' replaces it.
+  UPDATE bridge.targets SET removed_at = now(), connection_id = NULL WHERE id = 'shared';
   INSERT INTO bridge.packages (id, kind, idempotency_key, manifest, staged_key)
        VALUES ('00000000-0000-4000-8000-0000000000a1', 'document', 'k', '{}', 'packages/a1.json');
   INSERT INTO bridge.deliveries (id, package_id, target_id, idempotency_key, status)
@@ -427,6 +429,12 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
       { id: 'internal', name: 'This deployment', secret_enc: null },
       { id: 'staging-keys', name: 'Staging keys', secret_enc: 'v1:staging-bridge-secret' },
     ]);
+  });
+
+  it('a kept target is live on the bridge even where production had removed its id', async () => {
+    expect(
+      await side(`SELECT id, removed_at IS NULL AS live FROM bridge.targets WHERE id = 'shared'`),
+    ).toEqual([{ id: 'shared', live: true }]);
   });
 
   it('a copy restore writes the kept targets into bridge.targets and the cache', async () => {

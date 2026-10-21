@@ -993,6 +993,7 @@ export function revisePreview(overrides: Partial<RevisePreview> = {}): RevisePre
     failuresTotal: 0,
     failuresFrom: null,
     model: 'local/qwen',
+    diagnostics: null,
     draft: {
       version: 4,
       definition: {

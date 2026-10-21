@@ -122,3 +122,31 @@ export function missedKeysText(row: SegmentedSample): string | null {
   const more = total - keys.length;
   return `Missed headings: ${keys.join(', ')}${more > 0 ? ` (+${more})` : ''}`;
 }
+
+/** The grid's note for keys an anchor caught more than once: the first 10 and how many more. */
+export function repeatedKeysText(row: SegmentedSample): string | null {
+  const repeated = row.repeatedKeys ?? [];
+  if (repeated.length === 0) return null;
+  const total = row.repeatedKeysTotal ?? repeated.length;
+  const keys = repeated.slice(0, 10).map((r) => r.key);
+  const more = total - keys.length;
+  return `Keys caught more than once: ${keys.join(', ')}${more > 0 ? ` (+${more})` : ''}`;
+}
+
+/** Where the first repeated key starts its occurrences (page and line, at most three), and why. */
+export function repeatedKeyExample(row: SegmentedSample): string | null {
+  const first = row.repeatedKeys?.[0];
+  if (!first) return null;
+  const cell = row.sections.find((c) => c.id === first.section);
+  const quoted = first.occurrences
+    .slice(0, 3)
+    .map((n) => cell?.occurrences?.[n - 1])
+    .filter((o) => o !== undefined)
+    .map((o) => `p.${o.page} “${o.line ?? ''}”`);
+  const where =
+    quoted.length > 1 ? `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}` : quoted.join('');
+  return (
+    `Key ${first.key} starts occurrences on ${where}: ` +
+    'the anchor also catches lines that are not headings, such as contents entries.'
+  );
+}

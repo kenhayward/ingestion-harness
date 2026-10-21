@@ -619,6 +619,15 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect(c.bridge.targets.has('finance-lake')).toBe(false);
   });
 
+  it('names a new target past the id of a removed one', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
+    const again = await c.call('POST', '/publish-targets', externalBody());
+    expect(again.statusCode).toBe(201);
+    expect(again.json().id).toBe('finance-lake-2');
+  });
+
   it('keeps a target the bridge still has deliveries for', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', externalBody());
@@ -629,20 +638,38 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect(await c.targets.get('finance-lake')).not.toBeNull();
   });
 
-  it('logs a target used meanwhile that the bridge could not be given back', async () => {
+  it('never removes from the bridge a target used meanwhile', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', externalBody());
-    // Named by a recipe between the usage check and the removal: the bridge's row is put back.
-    vi.spyOn(c.targets, 'remove').mockResolvedValueOnce('in_use');
-    vi.spyOn(c.bridge, 'putTarget').mockRejectedValueOnce(new Error('bridge went away'));
-    const error = vi.spyOn(c.app.log, 'error');
+    // Named by a recipe after the route's own usage check: the removal's check, which holds the
+    // row while the bridge is asked, still sees it, so the bridge is never asked (a removed
+    // target's id could not be put back there).
+    await c.templates.create('alpha', 1, { ...letter(1, 'finance-lake'), id: 'alpha' }, 'draft');
+    await c.templates.publish('alpha', 1, 'Ken');
+    vi.spyOn(c.targets, 'usage').mockResolvedValueOnce({
+      publishedVersions: 0,
+      documentTypes: [],
+      deliveredOutputs: 0,
+      consumers: 0,
+      pendingJobs: 0,
+    });
+    const deleted = vi.spyOn(c.bridge, 'deleteTarget');
     const res = await c.call('DELETE', '/publish-targets/finance-lake');
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/^Finance lake is used by/);
-    expect(error).toHaveBeenCalledWith(
-      expect.objectContaining({ target: 'finance-lake' }),
-      expect.stringContaining('finance-lake'),
-    );
+    expect(res.json().error).toBe('Finance lake is used by alpha');
+    expect(deleted).not.toHaveBeenCalled();
+    expect(c.bridge.targets.has('finance-lake')).toBe(true);
+    expect(await c.targets.get('finance-lake')).not.toBeNull();
+  });
+
+  it('removes nothing while the bridge cannot be reached', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    vi.spyOn(c.bridge, 'deleteTarget').mockRejectedValueOnce(new Error('bridge went away'));
+    const res = await c.call('DELETE', '/publish-targets/finance-lake');
+    expect(res.statusCode).toBe(502);
+    expect(await c.targets.get('finance-lake')).not.toBeNull();
+    expect(c.bridge.targets.has('finance-lake')).toBe(true);
   });
 });
 
@@ -735,6 +762,7 @@ describe('reading published outputs through the bridge, from their recorded targ
   it('serves each output from its own target', async () => {
     const c = await setup();
     await cacheS3(c.targets, financeTarget());
+    await c.mirror();
     const a = await delivered(c);
     const b = await delivered(c);
     const onFinance = published(a.id, 'finance-lake', 'finance-lake', 'ingest/');

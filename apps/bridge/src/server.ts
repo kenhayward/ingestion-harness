@@ -3,7 +3,7 @@ import pg from 'pg';
 import { loadBridgeConfig } from './config.js';
 import { migrateBridge } from './db/migrate.js';
 import { runOnce } from './deliveries/runner.js';
-import { dispatchOnce, HttpEventSender } from './events/dispatch.js';
+import { dispatchOnce, HttpEventSender, UNKNOWN_EVENT_GIVE_UP_HOURS } from './events/dispatch.js';
 import { seedInternalConnection } from './connections/repo.js';
 import { withSchemaRepair } from './db/repair.js';
 import { prunePackagesOnce } from './packages/prune.js';
@@ -70,7 +70,19 @@ if (config.BRIDGE_EVENTS_URL) {
   loops.push(
     loop(
       'event dispatcher',
-      async () => (await dispatchOnce({ deliveries: runner.deliveries, sender }, new Date())) > 0,
+      async () =>
+        (await dispatchOnce(
+          {
+            deliveries: runner.deliveries,
+            sender,
+            onDropped: (e) =>
+              app.log.warn(
+                { deliveryId: e.deliveryId, eventId: e.eventId, sequence: e.sequence },
+                `event ${e.eventId} dropped: the producer has not known delivery ${e.deliveryId} for ${UNKNOWN_EVENT_GIVE_UP_HOURS} hours`,
+              ),
+          },
+          new Date(),
+        )) > 0,
       2000,
     ),
   );

@@ -5,6 +5,8 @@ import {
   cellFlag,
   cellShare,
   missedKeysText,
+  repeatedKeyExample,
+  repeatedKeysText,
   occurrenceSummary,
   sectionHits,
   type CellFlag,
@@ -107,6 +109,8 @@ export function SegmentationGrid({
               const missedSections = [
                 ...new Set((row.missedKeys ?? []).flatMap((m) => m.sections)),
               ];
+              const repeatedText = repeatedKeysText(row);
+              const repeatedSections = [...new Set((row.repeatedKeys ?? []).map((r) => r.section))];
               return (
                 <Fragment key={row.sampleId}>
                   <tr aria-label={name}>
@@ -215,6 +219,26 @@ export function SegmentationGrid({
                             ))}
                           </p>
                           <small className="muted">{firstMissed?.line}</small>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {repeatedText && (
+                    <tr className="seg-key-issues">
+                      <td colSpan={Math.max(1, sections.length) + 1}>
+                        <div role="note" aria-label={`Repeated keys in ${name}`}>
+                          <p className="tone-text-warn">
+                            {repeatedText}
+                            {' · '}
+                            {repeatedSections.map((id) => (
+                              <SectionChip
+                                key={id}
+                                id={id}
+                                index={rawSections.findIndex((o) => o.id === id)}
+                              />
+                            ))}
+                          </p>
+                          <small className="muted">{repeatedKeyExample(row)}</small>
                         </div>
                       </td>
                     </tr>

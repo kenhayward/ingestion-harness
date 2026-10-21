@@ -1,12 +1,16 @@
-"""missed_keys: repeating-section keys a key pattern finds that no anchor caught."""
+"""missed_keys: repeating-section keys a key pattern finds that no anchor caught; repeated_keys:
+keys the anchor caught more than once (a contents list or a running header)."""
 
 from __future__ import annotations
 
 from ingest_worker.segment import (
     MAX_MISSED_KEYS,
     MissedKey,
+    RepeatedKey,
     SectionSpan,
     missed_keys,
+    repeated_keys,
+    repeated_payload,
     section_spans,
 )
 from ingest_worker.specs import Section
@@ -135,3 +139,54 @@ def test_missed_payload_caps_and_stays_absent_when_empty() -> None:
     assert payload["missedKeys"][0] == {"sections": ["s"], "key": "0", "line": "Table 0"}
     assert payload["missedKeysTotal"] == MAX_MISSED_KEYS + 3
     assert "missedKeysTotal" not in missed_payload(many[:2])
+
+
+STUDY = r"^Table\s+(\d+):\s*Study"
+
+
+def test_contents_entries_caught_by_the_anchor_repeat_keys() -> None:
+    text = (
+        "Contents\nTable 1: Study A....25\nTable 2: Study A....26\n\f\n"
+        "Table 1:   Study A - Assay\nrows\nTable 2:   Study A - Purity\nrows\n"
+    )
+    sections = [Section(id="t", anchor=STUDY, repeat=True, key=KEY)]
+    assert repeated_keys(_spans(text, sections)) == [
+        RepeatedKey("t", "1", (1, 3)),
+        RepeatedKey("t", "2", (2, 4)),
+    ]
+
+
+def test_a_key_read_three_times_names_every_occurrence() -> None:
+    text = "Table 1: Study\nTable 1: Study (continued)\nTable 2: Study\nTable 1: Study\n"
+    sections = [Section(id="t", anchor=STUDY, repeat=True, key=KEY)]
+    assert repeated_keys(_spans(text, sections)) == [RepeatedKey("t", "1", (1, 2, 4))]
+
+
+def test_unique_keys_and_keys_shared_by_two_sections_are_not_repeats() -> None:
+    text = "Table 1: A x\nTable 2: A y\nTable 1: B x\nTable 2: B y\n"
+    sections = [
+        Section(id="a", anchor=r"^Table \d+: A", repeat=True, key=KEY),
+        Section(id="b", anchor=r"^Table \d+: B", repeat=True, key=KEY),
+    ]
+    assert repeated_keys(_spans(text, sections)) == []
+
+
+def test_inherited_keys_repeat_by_design() -> None:
+    text = "BATCH 7\nAssay\nrows\nPurity\nrows\nBATCH 8\nAssay\nrows\n"
+    sections = [
+        Section(id="batch", anchor=r"^BATCH", repeat=True, key=r"^BATCH (\d+)"),
+        Section(id="test", anchor=r"^(Assay|Purity)$", repeat=True, keyFrom="batch"),
+    ]
+    spans = _spans(text, sections)
+    assert [s.key for s in spans if s.id == "test"] == ["7", "7", "8"]
+    assert repeated_keys(spans) == []
+
+
+def test_repeated_payload_caps_and_stays_absent_when_empty() -> None:
+    assert repeated_payload([]) == {}
+    many = [RepeatedKey("t", str(n), (n, n + 100)) for n in range(MAX_MISSED_KEYS + 2)]
+    payload = repeated_payload(many)
+    assert len(payload["repeatedKeys"]) == MAX_MISSED_KEYS
+    assert payload["repeatedKeys"][1] == {"section": "t", "key": "1", "occurrences": [1, 101]}
+    assert payload["repeatedKeysTotal"] == MAX_MISSED_KEYS + 2
+    assert "repeatedKeysTotal" not in repeated_payload(many[:2])

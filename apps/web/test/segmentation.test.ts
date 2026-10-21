@@ -11,6 +11,8 @@ import {
   landingText,
   missedKeysText,
   move,
+  repeatedKeyExample,
+  repeatedKeysText,
   sectionHits,
   suggestionFor,
 } from '../src/workbench/segmentation.js';
@@ -232,6 +234,45 @@ describe('repeating sections', () => {
       ],
     ])('missedKeysText(%j, total %s)', (missed, total, text) => {
       expect(missedKeysText(row(missed, total))).toBe(text);
+    });
+  });
+
+  describe('repeated keys', () => {
+    const occurrences = Array.from({ length: 30 }, (_, i) => ({
+      page: i + 1,
+      line: `Table ${i + 1}: Study`,
+      chars: 10,
+      key: String(i + 1),
+      keySource: 'own' as const,
+    }));
+    const row = (
+      repeatedKeys?: { section: string; key: string; occurrences: number[] }[],
+      total?: number,
+    ) =>
+      sample([cell({ id: 't', occurrences })], {
+        ...(repeatedKeys ? { repeatedKeys } : {}),
+        ...(total ? { repeatedKeysTotal: total } : {}),
+      });
+    const twice = (key: string) => ({ section: 't', key, occurrences: [Number(key), 20] });
+    it.each([
+      [undefined, undefined, null],
+      [[], undefined, null],
+      [['1', '2'].map(twice), undefined, 'Keys caught more than once: 1, 2'],
+      [
+        Array.from({ length: 20 }, (_, i) => twice(String(i + 1))),
+        48,
+        'Keys caught more than once: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 (+38)',
+      ],
+    ])('repeatedKeysText(%j, total %s)', (repeated, total, text) => {
+      expect(repeatedKeysText(row(repeated, total))).toBe(text);
+    });
+
+    it('quotes where the first repeated key starts each occurrence', () => {
+      expect(repeatedKeyExample(row([twice('3'), twice('4')]))).toBe(
+        'Key 3 starts occurrences on p.3 “Table 3: Study” and p.20 “Table 20: Study”: ' +
+          'the anchor also catches lines that are not headings, such as contents entries.',
+      );
+      expect(repeatedKeyExample(row())).toBeNull();
     });
   });
 });

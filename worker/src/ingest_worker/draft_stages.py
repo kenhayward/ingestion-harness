@@ -494,6 +494,7 @@ Task: propose the template's outputs from the survey, the brief and the samples.
     description tells an extractor exactly what to copy.
   - putTable: repeating rows. columns use the same keys as a field; columns is null for fields.
   - removeOutput: drop an output the current draft has that the brief does not want.
+- When the document repeats tables of the same shape (per study, batch or item), propose one table per shape with columns telling the blocks apart, not one table per printed block.
 - Keep outputs the current draft already has unless the brief or survey says otherwise;
   proposing an existing id replaces it.
 - Use null for keys that do not apply. reason: one sentence citing the brief or a sample.
@@ -543,6 +544,7 @@ Task: propose the extraction pipeline that fills every output in the current dra
   covers a repeated block (the same tables per batch, item or site), a table step reading it
   returns rows from every block and fills each row's identifying columns from that block's
   heading or table caption: say so in its instructions.
+- A table step reading a repeating section runs once per occurrence and fills its table from every occurrence. Never write several steps that each want a different occurrence of the same repeating section: give each kind of block its own repeating section.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in pipeline order; context may only use outputs filled by earlier steps. A putStep
@@ -833,6 +835,7 @@ failures (expected vs actual values on the dev samples).
   outputs. reason: which feedback item or failure the change addresses.
 - answers: the labels of the feedback items the change answers (for example ["F1", "F3"]);
   [] when it only fixes evaluation failures.
+- run_diagnostics are what the dev test runs of this draft showed: steps whose occurrence calls mostly returned no rows (give each kind of block its own repeating section, or narrow the anchor), columns whose values did not fit (each with a message and examples: fix the column's description or constraint, and make it text only when the values really are not of that type), and headings no anchor matched (fix the anchor, or narrow the key when those headings are blocks the recipe does not read). Address them where they point to a recipe problem; reason names the diagnostic.
 - notes: anything you could not fix and why.
 Return JSON only.""",
     REVISE_SCHEMA,

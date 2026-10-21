@@ -271,6 +271,36 @@ export function publishTargetsContract(
       await cacheS3(repo, { id: 'finance' });
       expect(await repo.remove('finance')).toBe('deleted');
       expect(await repo.get('finance')).toBeNull();
+      expect((await repo.list()).map((t) => t.id)).not.toContain('finance');
+      expect(await repo.remove('finance')).toBe('missing');
+    });
+
+    it("keeps a removed target's id taken (the bridge never reuses it)", async () => {
+      const { repo } = await make();
+      await cacheS3(repo, { id: 'finance' });
+      await repo.remove('finance');
+      expect(await repo.cachedIds()).toContainEqual({ id: 'finance', live: false });
+      // A pull or a write that caches the id again leaves it inert.
+      await cacheS3(repo, { id: 'finance' });
+      expect(await repo.get('finance')).toBeNull();
+    });
+
+    it('asks the bridge after the usage check, and keeps the row when the bridge refuses', async () => {
+      const { repo, facts } = await make();
+      await cacheS3(repo, { id: 'finance' });
+      let asked = 0;
+      expect(await repo.remove('finance', async () => (asked++, false))).toBe('refused');
+      expect(asked).toBe(1);
+      expect(await repo.get('finance')).not.toBeNull();
+      await expect(
+        repo.remove('finance', async () => {
+          throw new Error('bridge went away');
+        }),
+      ).rejects.toThrow('bridge went away');
+      expect(await repo.get('finance')).not.toBeNull();
+      await facts.publish('alpha', 1, 'finance');
+      expect(await repo.remove('finance', async () => (asked++, true))).toBe('in_use');
+      expect(asked).toBe(1);
     });
 
     it('refuses to remove a target a published version names', async () => {

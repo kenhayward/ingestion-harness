@@ -54,7 +54,17 @@ export async function buildFromConfig(
   });
   const packages = new S3PackageStore(internalStore, config.BRIDGE_STAGING_BUCKET);
   const sinks = new MapSinkRegistry({
-    [S3_SINK_ID]: new S3Sink({ internal, reservedBuckets: [config.BRIDGE_STAGING_BUCKET] }),
+    [S3_SINK_ID]: new S3Sink({
+      internal,
+      reservedBuckets: [
+        config.BRIDGE_STAGING_BUCKET,
+        config.S3_BUCKET_INBOX,
+        config.S3_BUCKET_OUTPUTS,
+        config.S3_BUCKET_RUNS,
+        config.S3_BUCKET_BACKUPS,
+      ],
+      ownEndpoints: config.S3_PUBLIC_URL ? [config.S3_PUBLIC_URL] : [],
+    }),
     [RDF_SINK_ID]: new RdfSink({
       store: (credential, dataset) => new HttpGraphStore({ ...credential, dataset }),
     }),

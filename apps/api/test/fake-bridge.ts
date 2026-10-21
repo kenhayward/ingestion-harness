@@ -46,6 +46,8 @@ export class FakeBridgeApi implements BridgeApi {
   readonly deliveries = new Map<string, DeliveryView>();
   /** Targets deliveries name: deleteTarget answers in_use. */
   readonly inUse = new Set<string>();
+  /** Removed targets: their ids are not taken again (as on the bridge). */
+  readonly removed = new Set<string>();
   /** What testTarget and testSettings answer. */
   testResult: TargetTestResult = {
     ok: true,
@@ -89,6 +91,14 @@ export class FakeBridgeApi implements BridgeApi {
 
   async putTarget(id: string, t: TargetPutRequest): Promise<TargetView> {
     this.fail();
+    if (this.removed.has(id)) {
+      const message = `target ${id} was removed, and its id is not used again: pick another`;
+      throw new BridgeApiError(
+        409,
+        { class: 'needs_user', code: 'name_conflict', message },
+        message,
+      );
+    }
     this.targetPuts += 1;
     const undeclared = Object.keys(t.destination).find(
       (k) => !(DESTINATION_FIELDS[t.sinkId] ?? []).includes(k),
@@ -103,7 +113,7 @@ export class FakeBridgeApi implements BridgeApi {
   async deleteTarget(id: string): Promise<'deleted' | 'in_use'> {
     this.fail();
     if (this.inUse.has(id)) return 'in_use';
-    this.targets.delete(id);
+    if (this.targets.delete(id)) this.removed.add(id);
     return 'deleted';
   }
 
@@ -113,6 +123,7 @@ export class FakeBridgeApi implements BridgeApi {
     this.connections.set(c.id, structuredClone(c));
   }
 
+  /** The summaries given, then every connection put (as the bridge lists what it holds). */
   async listConnections(): Promise<ConnectionSummary[]> {
     this.fail();
     const written = [...this.connections.values()]
@@ -150,6 +161,19 @@ export class FakeBridgeApi implements BridgeApi {
   async readObject(targetId: string, bucket: string, key: string): Promise<Buffer | null> {
     this.fail();
     if (this.failReads) throw this.failReads;
+    const target = this.targets.get(targetId);
+    if (!target) {
+      const message = `no target ${targetId}`;
+      throw new BridgeApiError(
+        404,
+        { class: 'needs_user', code: 'target_missing', message },
+        message,
+      );
+    }
+    const prefix = target.destination.prefix ?? '';
+    if (bucket !== target.destination.bucket || !key.startsWith(prefix)) {
+      throw FakeBridgeApi.refusal('the object is outside the target');
+    }
     const held = this.objects.get(targetId)?.get(`${bucket}/${key}`);
     if (held) return held;
     return this.fallback ? this.fallback.get(bucket, key) : null;

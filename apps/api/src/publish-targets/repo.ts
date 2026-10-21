@@ -71,8 +71,17 @@ export interface PublishTargetRepo {
   markMissing(ids: string[]): Promise<void>;
   /** Every cached id, inert ones too (`live: false`). */
   cachedIds(): Promise<{ id: string; live: boolean }[]>;
-  /** `seeded`: the triple store target, which comes from `.env` and is never removed. */
-  remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'>;
+  /**
+   * Makes the target inert (never deleted: delivery records may still name it, and its id stays
+   * taken). `seeded`: the triple store target, which comes from `.env` and is never removed.
+   * `onBridge` runs after the usage check and before the row goes inert (in Postgres, holding the
+   * row's lock, so nothing can start using it in between); `false` from it refuses (`refused`),
+   * and a throw leaves the row as it was.
+   */
+  remove(
+    id: string,
+    onBridge?: () => Promise<boolean>,
+  ): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use' | 'refused'>;
   usage(id: string): Promise<TargetUsage>;
   /** What a recipe's picker offers (S3 targets): the default first, then by label. */
   choices(): Promise<TargetChoice[]>;
@@ -218,7 +227,10 @@ export interface TargetFactSource {
 
 export class MemoryPublishTargetRepo implements PublishTargetRepo {
   private readonly targets = new Map<string, TargetRecord>();
-  /** Ids a copy restore made inert: the row stays (the id is taken), nothing else sees it. */
+  /**
+   * Ids removed, or made inert by a copy restore: the row stays (the id is taken, so the bridge
+   * never sees it reused), nothing else sees it.
+   */
   private readonly inert = new Set<string>();
   private readonly legacy = new Map<string, LegacyKeys>();
   private counter = 0;
@@ -246,7 +258,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     return r ? structuredClone(r) : null;
   }
 
-  /** What a copy restore does to a dropped external target (`inert_at` in Postgres). */
+  /** What a removal, or a copy restore to a dropped external target, does (`inert_at` in Postgres). */
   makeInert(id: string): void {
     if (!this.targets.has(id)) return;
     this.inert.add(id);
@@ -281,15 +293,18 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     return [...this.targets.keys()].map((id) => ({ id, live: !this.inert.has(id) }));
   }
 
-  async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'> {
+  async remove(
+    id: string,
+    onBridge?: () => Promise<boolean>,
+  ): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use' | 'refused'> {
     if (id === DEFAULT_TARGET_ID) return 'default';
     const r = await this.get(id);
     if (!r) return 'missing';
     if (r.kind === 'rdf') return 'seeded';
     if (targetInUse(await this.usage(id))) return 'in_use';
-    this.targets.delete(id);
+    if (onBridge && !(await onBridge())) return 'refused';
     this.legacy.delete(id);
-    this.counter += 1;
+    this.makeInert(id);
     return 'deleted';
   }
 

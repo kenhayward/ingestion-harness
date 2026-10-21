@@ -175,6 +175,11 @@ export function WbSectionsHelp() {
         updates as you type; for a required section that misses a sample, a suggested fix may be
         offered. Save to put the anchors in the draft.
       </p>
+      <p>
+        One fix is for a gap you cannot see: PDFs often put a no-break space where a plain one
+        appears, as in <em>Table 13:</em>. An anchor with a plain space then misses, and the
+        suggestion writes that space as <code>\s</code>, which matches either.
+      </p>
       <h3>Repeating blocks</h3>
       <p>
         For blocks that repeat per batch or item, tick <strong>Repeats</strong> and give a key; the
@@ -316,6 +321,12 @@ export function WbReviseHelp() {
         dev run, and the draft. <strong>Not sent</strong> lists what stays back, such as anything
         from holdout samples.
       </p>
+      <h3>Run diagnostics</h3>
+      <p>
+        Revise also sends what the latest dev runs of this draft showed: steps whose calls mostly
+        returned no rows, values that did not fit their columns, and headings that matched no
+        anchor. You can ask for a revision from diagnostics alone, without writing feedback.
+      </p>
       <h3>After applying</h3>
       <p>
         Evaluate the new draft on dev to see whether it helped; the footer warns before Apply when
@@ -424,6 +435,13 @@ export function WbRunsHelp() {
         status, the step it is on, and how long it took. <strong>Review</strong> opens a finished
         run; <strong>Retry</strong> runs a failed one again. Older batches are behind{' '}
         <strong>Show</strong>.
+      </p>
+      <h3>Cancelling</h3>
+      <p>
+        <strong>Cancel</strong> on a queued or running row stops that run, and{' '}
+        <strong>Cancel batch…</strong> stops every run of the batch that has not finished; both ask
+        first. A running run stops at its next safe point, finished runs are left as they are, and a
+        cancelled run can be retried.
       </p>
     </>
   );

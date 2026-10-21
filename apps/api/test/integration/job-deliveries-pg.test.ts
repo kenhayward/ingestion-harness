@@ -92,6 +92,21 @@ describe.skipIf(!url)('job deliveries against Postgres', { timeout: 30_000 }, ()
     expect(await applyEvent({ repo, targets }, event(randomUUID(), 1))).toBe('unknown');
   });
 
+  it('a final delivery takes no later event (a delayed one after the reconcile moved it on)', async () => {
+    const job = await delivering();
+    const d = randomUUID();
+    await repo.recordDeliveries(job.id, [{ targetId: 'default', deliveryId: d }]);
+    expect(await applyEvent({ repo, targets }, event(d, 2))).toBe('applied');
+    expect(
+      await applyEvent({ repo, targets }, event(d, 3, { status: 'running', receipt: null })),
+    ).toBe('stale');
+    expect((await repo.deliveriesOf(job.id))[0]).toMatchObject({
+      status: 'succeeded',
+      lastSequence: 2,
+    });
+    expect(await statusOf(job.id)).toBe('succeeded');
+  });
+
   it("a later round's success replaces the earlier needs_user", async () => {
     const job = await delivering();
     await pool.query(

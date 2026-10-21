@@ -571,8 +571,10 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
             **Admins only.** Only a target nothing uses: no published recipe version names it,
             nothing was delivered to it, no S3 key consumer is granted it and no withdrawal still
             to run names it. The \`default\` target is never removed. It is removed from the
-            bridge first: one the bridge still has deliveries for stays (409), and nothing is
-            removed while the bridge cannot be reached (502).
+            bridge first: one the bridge still has unfinished deliveries for stays (409), and
+            nothing is removed while the bridge cannot be reached (502). A removed target is kept
+            inert, never deleted: finished delivery records still name it, and its id is not
+            used again (a new target with the same label gets \`<id>-2\`).
           `,
         ),
         params: IdParams,
@@ -601,24 +603,28 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (targetInUse(usage)) {
         return reply.code(409).send({ error: `${target.label} is used by ${usageText(usage)}` });
       }
-      try {
-        if ((await bridge.deleteTarget(id)) === 'in_use') {
-          return reply.code(409).send({ error: `${target.label} has deliveries on the bridge` });
-        }
-      } catch {
-        return reply.code(502).send({ error: BRIDGE_DOWN });
+      // The bridge first, while the row is held: it soft-removes the target and never takes its
+      // id again, so it cannot be given back if something started using it meanwhile.
+      let bridgeDown = false;
+      const outcome = await repo
+        .remove(id, async () => {
+          try {
+            return (await bridge.deleteTarget(id)) === 'deleted';
+          } catch (err) {
+            bridgeDown = true;
+            throw err;
+          }
+        })
+        .catch((err: unknown) => {
+          if (bridgeDown) return 'bridge_down' as const;
+          throw err;
+        });
+      if (outcome === 'bridge_down') return reply.code(502).send({ error: BRIDGE_DOWN });
+      if (outcome === 'refused') {
+        return reply.code(409).send({ error: `${target.label} has deliveries on the bridge` });
       }
-      const outcome = await repo.remove(id);
       if (outcome === 'missing') return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
       if (outcome === 'in_use') {
-        // Used meanwhile: the bridge gets it back, so its deliveries still have a target. When it
-        // cannot, the bridge lacks a target CT Studio still uses: logged (the answer stays).
-        await bridge.putTarget(id, putOfRecord(target)).catch((err: unknown) => {
-          req.log.error(
-            { target: id, err },
-            `publishing target ${id} was used meanwhile but could not be put back on the bridge`,
-          );
-        });
         return reply
           .code(409)
           .send({ error: `${target.label} is used by ${usageText(await repo.usage(id))}` });

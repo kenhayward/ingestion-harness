@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from ingest_worker.bridge.client import BridgeRefused
+from ingest_worker.bridge.client import BridgeRefused, BridgeUnavailable
 from ingest_worker.bridge.models import (
     ActingUser,
     BridgeError,
@@ -829,7 +829,9 @@ class FakeBridge:
     sink does. A delivery to a target in `rdf` (a triple store) loads the package's graph into
     `graphs` (graph name -> Turtle), and deleting an object there drops the graph named by its key.
     `requests` records every delivery request; `refusals` are raised, in order, by the next calls
-    (a BridgeError becomes BridgeRefused; an exception is raised as it is)."""
+    (a BridgeError becomes BridgeRefused; an exception is raised as it is). As on the bridge, a
+    target in none of those is missing (BridgeUnavailable: the client retries it), and an object
+    outside a target's bucket and prefix is refused (content_rejected)."""
 
     def __init__(
         self,
@@ -861,8 +863,33 @@ class FakeBridge:
         self._ids += 1
         return f"00000000-0000-4000-8000-{self._ids:012d}"
 
+    def _known(self, target_id: str) -> None:
+        if (
+            target_id not in self.targets
+            and target_id not in self.stores
+            and target_id not in self.rdf
+        ):
+            raise BridgeUnavailable(f"the bridge answered 404 to a target: no target {target_id}")
+
+    def _inside(self, target_id: str, bucket: str, key: str) -> None:
+        self._known(target_id)
+        if target_id in self.targets:
+            where_bucket, prefix = self.targets[target_id]
+            if bucket != where_bucket or not key.startswith(prefix):
+                raise BridgeRefused(
+                    BridgeError.model_validate(
+                        {
+                            "class": "needs_user",
+                            "code": "content_rejected",
+                            "message": "the object is outside the target",
+                        }
+                    )
+                )
+
     def deliver(self, request: CreateDeliveriesRequest) -> CreateDeliveriesResult:
         self._next_refusal()
+        for target_id in request.targets:
+            self._known(target_id)
         self.requests.append(request)
         for target_id in request.targets:
             if target_id in self.rdf:
@@ -894,6 +921,7 @@ class FakeBridge:
 
     def read_object(self, target_id: str, bucket: str, key: str) -> bytes | None:
         self._next_refusal()
+        self._inside(target_id, bucket, key)
         if target_id in self.stores:
             return self.stores[target_id].get_optional(bucket, key)
         found = self.objects.get((bucket, key))
@@ -903,11 +931,14 @@ class FakeBridge:
         self, target_id: str, bucket: str, key: str, body: bytes, content_type: str
     ) -> None:
         self._next_refusal()
+        self._inside(target_id, bucket, key)
         self.puts.append((target_id, bucket, key))
         self._write(target_id, bucket, key, body, content_type)
 
     def delete_objects(self, target_id: str, objects: list[tuple[str, str]]) -> int:
         self._next_refusal()
+        for bucket, key in objects:
+            self._inside(target_id, bucket, key)
         self.deletes.append((target_id, list(objects)))
         for bucket, key in objects:
             if target_id in self.rdf:

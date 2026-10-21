@@ -623,6 +623,7 @@ def run_step(
         "output_tokens": None,
         "started_at": datetime.now(UTC).isoformat(),
     }
+    repeat = repeat_plan(loaded.template, step, doc)
     try:
         result = run_step_extraction(
             job,
@@ -635,7 +636,7 @@ def run_step(
             images,
             cache=cache,
             progress=progress,
-            repeat=repeat_plan(loaded.template, step, doc),
+            repeat=repeat,
             check=check,
         )
     except Exception as exc:
@@ -670,6 +671,11 @@ def run_step(
             "finished_at": datetime.now(UTC).isoformat(),
         },
     )
+    event: dict[str, Any] = {"model": result.model_ref, "attempts": len(result.attempts)}
+    # A step reading a repeating section calls once per occurrence: count the empty replies.
+    if repeat is not None and not result.cached:
+        event["calls"] = len(result.call_rows)
+        event["emptyCalls"] = sum(1 for n in result.call_rows if n == 0)
     queue.event(
         job.id,
         "info",
@@ -678,7 +684,7 @@ def run_step(
         else f"extracted {step.id}"
         if trigger == "process"
         else f"re-ran {step.id}",
-        {"model": result.model_ref, "attempts": len(result.attempts)},
+        event,
     )
     return result
 

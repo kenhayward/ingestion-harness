@@ -61,8 +61,9 @@ const COLUMNS = `id, label, kind, sink_id, instance_id, connection_id, destinati
   synced_at, source, seeded_at, edited_at, updated_by, created_at`;
 
 /**
- * Rows a copy restore made inert (`inert_at`: a dropped external target its delivery records
- * still name) are kept for the foreign keys only: never listed, offered or read.
+ * Rows made inert (`inert_at`: a removed target, or a dropped external target of a copy restore,
+ * that delivery records may still name) are kept for the foreign keys and to keep their id
+ * taken only: never listed, offered, read or changed.
  */
 const LIVE = 'inert_at IS NULL';
 
@@ -144,7 +145,10 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
     return rows;
   }
 
-  async remove(id: string): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use'> {
+  async remove(
+    id: string,
+    onBridge?: () => Promise<boolean>,
+  ): Promise<'deleted' | 'missing' | 'default' | 'seeded' | 'in_use' | 'refused'> {
     if (id === DEFAULT_TARGET_ID) return 'default';
     const client = await this.pool.connect();
     try {
@@ -165,16 +169,17 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
         await client.query('ROLLBACK');
         return 'in_use';
       }
-      try {
-        await client.query('DELETE FROM publish_targets WHERE id = $1', [id]);
-      } catch (e) {
-        // A row recorded against it between the count and the delete: the foreign key says in use.
-        if ((e as { code?: string }).code === '23503') {
-          await client.query('ROLLBACK');
-          return 'in_use';
-        }
-        throw e;
+      // The bridge removes it while this row is locked: a job output or graph copy recorded
+      // against it waits for the lock, so nothing starts using a target the bridge just dropped.
+      if (onBridge && !(await onBridge())) {
+        await client.query('ROLLBACK');
+        return 'refused';
       }
+      // Made inert, not deleted: delivery records (job_deliveries) may still name it, and its id
+      // stays taken, as the bridge never takes a removed target's id again. Any keys it still had
+      // waiting to move to the bridge go with it.
+      await client.query('UPDATE publish_targets SET inert_at = now() WHERE id = $1', [id]);
+      await client.query('DELETE FROM publish_target_legacy_keys WHERE id = $1', [id]);
       await client.query('COMMIT');
       return 'deleted';
     } catch (e) {

@@ -178,6 +178,21 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     ...deps,
   });
   installConformance(app);
+  const targetRepo = (deps.targets ?? targets) as MemoryPublishTargetRepo;
+  const theBridge = (deps.bridge ?? bridge) as FakeBridgeApi;
+  /**
+   * Puts every live cached target the fake bridge lacks on it (removed ids stay removed), without
+   * counting puts: the cache then reads as a pull from a bridge that holds these targets.
+   */
+  const mirror = async (): Promise<void> => {
+    for (const { id } of await targetRepo.list()) {
+      const r = await targetRepo.get(id);
+      if (!r || theBridge.targets.has(id) || theBridge.removed.has(id)) continue;
+      const { label, sinkId, instanceId, connectionId, destination } = r;
+      theBridge.targets.set(id, { label, sinkId, instanceId, connectionId, destination });
+    }
+  };
+  await mirror();
   // A test passing its own `llm` keeps it; the default one is a MemoryLlmConfigRepo.
   const llmRepo = (deps.llm ?? llm) as MemoryLlmConfigRepo;
   const ontologyRepo = (deps.ontologies ?? ontologies) as MemoryOntologyRepo;
@@ -186,9 +201,11 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     repo,
     store,
     targetStore,
-    targets: (deps.targets ?? targets) as MemoryPublishTargetRepo,
+    targets: targetRepo,
     targetStores: deps.targetStores ?? targetStores,
-    bridge: (deps.bridge ?? bridge) as FakeBridgeApi,
+    bridge: theBridge,
+    /** Puts target rows a test cached through the repo on the fake bridge (routes write their own). */
+    mirror,
     templates,
     workbench,
     githubSync: (deps.githubSync ?? githubSync) as MemoryGitHubSyncRepo,

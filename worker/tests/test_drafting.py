@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from ingest_worker.config import REPO_ROOT
 from ingest_worker.draft_stages import REVISE_SCHEMA
@@ -18,6 +19,7 @@ from ingest_worker.drafting import (
     MAX_SAMPLE_CHARS,
     SURVEY,
     SURVEY_SCHEMA,
+    DraftParams,
     DraftSample,
     anchor_check,
     build_context,
@@ -844,6 +846,61 @@ def test_missed_key_feedback_caps_the_keys_named() -> None:
     assert missed_key_feedback([row], set(), {"s1": "a.pdf"}, sections) == []
 
 
+CONTENTS_AND_BODY = [
+    "Contents\nTable\xa01: Study A....25\nTable\xa02: Study B....26\n",
+    "Table\xa01:   Study A - Assay\nrows\n",
+    "Table\xa02:   Study B - Assay\nrows\n",
+]
+
+
+def _tables_check(anchor: str) -> list[str]:
+    samples = [DraftSample("s1", "a.pdf", "dev", CONTENTS_AND_BODY)]
+    draft = {"document": {"sections": [{"id": "all", "anchor": r"\A"}]}}
+    changes = [put("result_tables", anchor, repeat=True, key=r"^\s*Table\s+(\d+):")]
+    grid, misses = anchor_check(samples, draft, {"notes": "", "changes": changes})
+    assert grid is not None
+    return misses
+
+
+def test_anchor_check_feeds_back_keys_caught_more_than_once() -> None:
+    [miss] = _tables_check(r"^Table\s+\d+:\s*Study")
+    assert miss.startswith(
+        'section "result_tables" reads keys 1, 2 more than once in a.pdf, e.g. key 1 at '
+        'p.1 "Table\xa01: Study A....25" and p.2 "Table\xa01:   Study A - Assay".'
+    )
+    assert "table-of-contents entries" in miss
+    assert "one occurrence per key" in miss
+    assert _tables_check(r"^Table\s+\d+:[ \t]{2,}Study") == []
+
+
+def test_repeated_key_feedback_caps_the_keys_named() -> None:
+    from ingest_worker.drafting import repeated_key_feedback
+
+    occurrences = [{"page": n, "line": f"Table {n}", "key": str(n)} for n in range(1, 31)]
+    row = {
+        "sampleId": "s1",
+        "sections": [{"id": "t", "found": True, "occurrences": occurrences}],
+        "repeatedKeys": [
+            {"section": "t", "key": str(n), "occurrences": [n, n + 15]} for n in range(1, 13)
+        ],
+        "repeatedKeysTotal": 14,
+    }
+    [line] = repeated_key_feedback([row], {"t"}, {"s1": "a.pdf"})
+    assert "reads keys 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 (and 4 more) more than once in a.pdf" in line
+    assert 'e.g. key 1 at p.1 "Table 1" and p.16 "Table 16".' in line
+    assert repeated_key_feedback([row], set(), {"s1": "a.pdf"}) == []
+
+
+def test_anchor_check_offers_the_no_break_space_fix() -> None:
+    [miss] = _tables_check(r"^Table \d+:[ \t]{2,}")
+    assert miss.startswith("section \"result_tables\": anchor '^Table \\\\d+:[ \\\\t]{2,}' matched")
+    assert miss.endswith(
+        r" Suggested anchor for a.pdf: ^Table\s\d+:[ \u00a0\t]{2,} (This sample writes "
+        '"Table 1:   Study A - Assay" with a no-break space (U+00A0) where the anchor has a '
+        "plain space.)"
+    )
+
+
 def test_sections_keep_the_last_misses_visible(fixture_specs_dir: Path) -> None:
     provider, store, deps = make(fixture_specs_dir)
     provider.responses = [sections_body("^SIGNATURES"), sections_body("^STILL WRONG")]
@@ -995,6 +1052,116 @@ def test_revise_failures_header_names_the_iteration_they_came_from(
         failuresFrom={"templateVersion": 3, "model": model},
     )
     assert f'<evaluation_failures templateVersion="3" model="{shown}">' in prompt
+
+
+DIAGNOSTICS: dict[str, Any] = {
+    "from": {"draftVersion": 4, "jobIds": ["j1"], "at": "2026-10-21T10:00:00.000Z"},
+    "steps": [{"step": "head", "sample": "a.pdf", "calls": 5, "emptyCalls": 4, "seconds": 2}],
+    "columns": [],
+    "missedKeys": [],
+}
+
+
+def test_context_includes_run_diagnostics(fixture_specs_dir: Path) -> None:
+    prompt = revise_prompt(fixture_specs_dir, diagnostics=DIAGNOSTICS)
+    assert '<run_diagnostics draftVersion="4">' in prompt
+    assert '"emptyCalls": 4' in prompt and "</run_diagnostics>" in prompt
+    # Job ids and the run time are for people (the preview), not the model.
+    block = prompt.split("<run_diagnostics", 1)[1].split("</run_diagnostics>", 1)[0]
+    assert "jobIds" not in block and '"at"' not in block and '"from"' not in block
+    assert json.loads(block.split(">", 1)[1]) == {
+        k: DIAGNOSTICS[k] for k in ("steps", "columns", "missedKeys")
+    }
+    assert "<run_diagnostics" not in revise_prompt(fixture_specs_dir)
+    assert "<run_diagnostics" not in build_context(
+        brief={}, draft=None, samples=[], example_yaml=None, diagnostics=None
+    )
+
+
+def diag_row(sample: str) -> dict[str, Any]:
+    return {"step": "head", "sample": sample, "calls": 5, "emptyCalls": 4, "seconds": 1}
+
+
+def diag_column(*samples: str) -> dict[str, Any]:
+    return {
+        "step": "s",
+        "target": "items",
+        "column": f"col-{samples[0]}",
+        "issues": 1,
+        "examples": ["x"],
+        "message": "not a number",
+        "samples": list(samples),
+    }
+
+
+def diag_keys(sample: str) -> dict[str, Any]:
+    return {"sample": sample, "sections": ["kinds"], "keys": [f"K-{sample}"], "total": 1}
+
+
+def test_revise_drops_diagnostics_rows_of_samples_that_are_not_dev(
+    fixture_specs_dir: Path,
+) -> None:
+    mixed = {
+        "from": {"draftVersion": 4, "jobIds": ["j1"], "at": "2026-10-21T10:00:00.000Z"},
+        "steps": [diag_row("a.pdf"), diag_row("h.pdf")],
+        "columns": [diag_column("a.pdf"), diag_column("a.pdf", "h.pdf")],
+        "missedKeys": [diag_keys("a.pdf"), diag_keys("h.pdf")],
+    }
+    prompt = revise_prompt(fixture_specs_dir, diagnostics=mixed)
+    block = prompt.split("<run_diagnostics", 1)[1].split("</run_diagnostics>", 1)[0]
+    assert "h.pdf" not in block
+    assert '"sample": "a.pdf"' in block and "col-a.pdf" in block and "K-a.pdf" in block
+    holdout_only = {
+        **mixed,
+        "steps": [diag_row("h.pdf")],
+        "columns": [diag_column("h.pdf")],
+        "missedKeys": [diag_keys("h.pdf")],
+    }
+    assert "<run_diagnostics" not in revise_prompt(fixture_specs_dir, diagnostics=holdout_only)
+
+
+def test_external_revise_lists_the_samples_its_diagnostics_name(fixture_specs_dir: Path) -> None:
+    provider, store, deps = make(fixture_specs_dir, location="external")
+    provider.responses = [revise_response()]
+    samples = [{"sampleId": "s1", "filename": "a.pdf", "sha256": "sha-a", "role": "dev"}]
+    for name in ("b", "c", "d"):
+        text = {"sha256": f"sha-{name}", "pages": [{"number": 1, "text": name, "ocr": False}]}
+        store.put(
+            "runs", prepared_text_key(f"sha-{name}"), json.dumps(text).encode(), "application/json"
+        )
+        samples.append(
+            {"sampleId": f"s-{name}", "filename": f"{name}.pdf", "sha256": f"sha-{name}",
+             "role": "dev"}
+        )  # fmt: skip
+    diagnostics = {
+        "from": {"draftVersion": 4, "jobIds": ["j1"], "at": "2026-10-21T10:00:00.000Z"},
+        "steps": [diag_row("b.pdf")],
+        "columns": [diag_column("c.pdf")],
+        "missedKeys": [diag_keys("d.pdf")],
+    }
+    queue = FakeQueue(
+        jobs=[
+            draft_job(
+                stage="revise",
+                dataPolicy="external",
+                draft=REVISE_DRAFT,
+                samples=samples,
+                diagnostics=diagnostics,
+            )
+        ]
+    )
+    run_once(queue, deps, "w1")
+    assert queue.completed
+    [details] = [d for _, _, msg, d in queue.event_details if msg == "external model call"]
+    assert details["referencedSamples"] == ["b.pdf", "c.pdf", "d.pdf"]
+
+
+def test_draft_params_accept_diagnostics() -> None:
+    base: dict[str, Any] = {"stage": "revise", "dataPolicy": "local", "brief": {}, "samples": []}
+    assert DraftParams.model_validate({**base, "diagnostics": DIAGNOSTICS}).diagnostics
+    assert DraftParams.model_validate(base).diagnostics is None
+    with pytest.raises(ValidationError):
+        DraftParams.model_validate({**base, "bogus": 1})
 
 
 def revise_section_response(anchor: str) -> dict[str, Any]:

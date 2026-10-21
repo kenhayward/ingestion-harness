@@ -100,8 +100,18 @@ export function effectiveView({ template, document, edits }: ReviewData): Effect
   return { fields, tables, flaggedCount };
 }
 
-function normalise(value: string): string {
-  return value.replace(/\s+/g, '').toUpperCase();
+/**
+ * The comparison form of a check value, the worker's `checks.norm` (held in step by
+ * `packages/shared/test/fixtures/check-norm.json`): NFKC, no zero-width characters, every dash
+ * variant as `-`, no whitespace, upper case.
+ */
+export function normalise(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/\u200b|\u200c|\u200d|\u2060|\ufeff|\u00ad/g, '')
+    .replace(/[\u2010-\u2015\u2212\ufe63\uff0d]/g, '-')
+    .replace(/\s+/g, '')
+    .toUpperCase();
 }
 
 /** Display form of a value: lists comma-separated, null/empty as an em dash. */

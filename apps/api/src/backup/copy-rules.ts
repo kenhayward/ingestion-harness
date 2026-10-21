@@ -242,9 +242,9 @@ async function replaceTargets(side: pg.ClientBase, staging: TargetRow[]) {
  * lacks loses it, so its deliveries fail visibly until an admin picks one; production's
  * unfinished deliveries are failed and its unsent events dropped, so nothing it queued is
  * delivered or reported from here. This server's targets are written to the bridge's registry as
- * well as the cache (on a shared id they replace production's; a production target dropped here
- * keeps its bridge row, which its deliveries name), so the pull after the swap caches this
- * server's rows, not the restored ones.
+ * well as the cache (on a shared id they replace production's, live even where production had
+ * removed it; a production target dropped here keeps its bridge row, which its deliveries name),
+ * so the pull after the swap caches this server's rows, not the restored ones.
  */
 async function keepBridge(
   side: pg.ClientBase,
@@ -287,7 +287,7 @@ async function keepBridge(
      ON CONFLICT (id) DO UPDATE SET
        label = EXCLUDED.label, sink_id = EXCLUDED.sink_id, instance_id = EXCLUDED.instance_id,
        connection_id = EXCLUDED.connection_id, destination = EXCLUDED.destination,
-       updated_at = now()`,
+       removed_at = NULL, updated_at = now()`,
     [JSON.stringify(targets)],
   );
 }

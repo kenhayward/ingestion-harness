@@ -333,4 +333,57 @@ describe('SegmentationGrid with repeating sections', () => {
       'Missed headings: 7, 8, 9 · dissolutionassay',
     );
   });
+
+  it('warns about keys the anchor caught more than once, and nothing without any', () => {
+    const tables = {
+      id: 'result_tables',
+      found: true,
+      page: 3,
+      line: 'Table 1: Study A....25',
+      chars: 900,
+      occurrences: [
+        { page: 3, line: 'Table 1: Study A....25', chars: 20, key: '1', keySource: 'own' as const },
+        { page: 25, line: 'Table 1:   Study A', chars: 880, key: '1', keySource: 'own' as const },
+      ],
+    };
+    const repeated: SegmentationResult = {
+      anchorErrors: {},
+      suggestions: [],
+      samples: [
+        {
+          sampleId: 's1',
+          firstPage: 1,
+          pageCount: 30,
+          error: null,
+          missingRequired: [],
+          repeatedKeys: [{ section: 'result_tables', key: '1', occurrences: [1, 2] }],
+          sections: [tables],
+        },
+        {
+          sampleId: 's2',
+          firstPage: 1,
+          pageCount: 30,
+          error: null,
+          missingRequired: [],
+          sections: [tables],
+        },
+      ],
+    };
+    render(
+      <SegmentationGrid
+        result={repeated}
+        sections={[{ id: 'result_tables', required: true }]}
+        samples={[a, b]}
+        onOpen={vi.fn()}
+      />,
+    );
+    const note = screen.getByRole('note', { name: 'Repeated keys in a.pdf' });
+    expect(note.querySelector('p')?.textContent).toBe(
+      'Keys caught more than once: 1 · result_tables',
+    );
+    expect(note).toHaveTextContent(
+      'Key 1 starts occurrences on p.3 “Table 1: Study A....25” and p.25 “Table 1: Study A”',
+    );
+    expect(screen.queryByRole('note', { name: 'Repeated keys in b.pdf' })).toBeNull();
+  });
 });

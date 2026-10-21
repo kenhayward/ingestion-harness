@@ -11,6 +11,7 @@ import { migrate } from '../../src/db/migrate.js';
 import { PgPublishTargetRepo } from '../../src/publish-targets/pg.js';
 import type { LegacyKeys } from '../../src/publish-targets/repo.js';
 import { publishTargetsContract } from '../publish-targets-contract.js';
+import { cacheS3 } from '../target-views.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
 const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
@@ -22,7 +23,9 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
       await migrate(url!, migrations);
       pool = new pg.Pool({ connectionString: url, max: 5 });
     }
-    await pool.query('TRUNCATE s3_consumer_targets, job_outputs, published_graph_versions');
+    await pool.query(
+      'TRUNCATE s3_consumer_targets, job_outputs, published_graph_versions, job_deliveries',
+    );
     await pool.query('DELETE FROM published_graphs');
     await pool.query('DELETE FROM jobs');
     await pool.query('DELETE FROM documents');
@@ -114,6 +117,23 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
   });
 
   publishTargetsContract('pg', make);
+
+  it('removes a target its finished deliveries name, keeping the row for them', async () => {
+    const { repo } = await make();
+    await cacheS3(repo, { id: 'finance', kind: 'internal', bucket: 'fin', prefix: '' });
+    const jobId = await newJob(pool!);
+    await pool!.query(
+      `INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
+       VALUES (gen_random_uuid(), $1, 'finance', 'failed')`,
+      [jobId],
+    );
+    expect(await repo.remove('finance')).toBe('deleted');
+    expect(await repo.get('finance')).toBeNull();
+    const { rows } = await pool!.query<{ inert: boolean }>(
+      `SELECT inert_at IS NOT NULL AS inert FROM publish_targets WHERE id = 'finance'`,
+    );
+    expect(rows).toEqual([{ inert: true }]);
+  });
 
   it('requires a target for a published output but not a draft one', async () => {
     await make();
