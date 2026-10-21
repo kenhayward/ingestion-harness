@@ -526,3 +526,30 @@ describe('output constraints (shared with the worker)', () => {
     }
   });
 });
+
+describe('occurrence filters (shared with the worker)', () => {
+  const filterFixture = JSON.parse(
+    readFileSync(new URL('./fixtures/occurrence-filter.json', import.meta.url), 'utf8'),
+  ) as {
+    base: Record<string, unknown>;
+    cases: { name: string; valid: boolean; error?: string; pipeline: unknown[] }[];
+  };
+  const definition = (pipeline: unknown[]) => ({ ...filterFixture.base, pipeline });
+
+  it.each(filterFixture.cases.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    const result = TemplateSchema.safeParse(definition(c.pipeline));
+    expect(result.success, JSON.stringify(result.error?.issues)).toBe(c.valid);
+    if (c.error) {
+      const messages = (result.error?.issues ?? []).map((i) => i.message).join('\n');
+      expect(messages).toContain(c.error);
+    }
+  });
+
+  it('keeps the filter as written and leaves it absent when not set', () => {
+    const parsed = TemplateSchema.parse(definition(filterFixture.cases[0]!.pipeline));
+    expect(parsed.pipeline[1]).toMatchObject({
+      occurrences: { match: String.raw`Appearance\s+and\s+Water` },
+    });
+    expect('occurrences' in parsed.pipeline[0]!).toBe(false);
+  });
+});

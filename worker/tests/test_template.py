@@ -434,3 +434,29 @@ def test_output_constraints_match_the_shared_fixture(case: dict[str, Any]) -> No
     else:
         with pytest.raises(ValidationError, match=re.escape(case["error"])):
             Template.model_validate(definition)
+
+
+FILTER_FIXTURE = json.loads(
+    (REPO_ROOT / "packages" / "shared" / "test" / "fixtures" / "occurrence-filter.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    "case", FILTER_FIXTURE["cases"], ids=[c["name"] for c in FILTER_FIXTURE["cases"]]
+)
+def test_occurrence_filters_match_the_shared_fixture(case: dict[str, Any]) -> None:
+    definition = {**FILTER_FIXTURE["base"], "pipeline": case["pipeline"]}
+    if case["valid"]:
+        Template.model_validate(definition)
+    else:
+        with pytest.raises(ValidationError, match=re.escape(case["error"])):
+            Template.model_validate(definition)
+
+
+def test_an_occurrence_filter_round_trips_and_stays_absent_when_not_set() -> None:
+    definition = {**FILTER_FIXTURE["base"], "pipeline": FILTER_FIXTURE["cases"][0]["pipeline"]}
+    dumped = Template.model_validate(definition).model_dump(by_alias=True, exclude_none=True)
+    assert dumped["pipeline"][1]["occurrences"] == {"match": r"Appearance\s+and\s+Water"}
+    assert "occurrences" not in dumped["pipeline"][0]
