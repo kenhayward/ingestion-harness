@@ -123,12 +123,10 @@ export function templateChecks(input: {
     asList(asRecord(input.definition.outputs).tables).map((t) => [asRecord(t).id, asRecord(t)]),
   );
   for (const ids of sameShapeTables(input.definition)) {
-    const first = asList(tableShapes.get(ids[0])?.columns)
-      .map((c) => asRecord(c).id)
-      .join(', ');
+    const first = asList(tableShapes.get(ids[0])?.columns).map((c) => asRecord(c).id)[0];
     checks.push({
       tone: 'warn',
-      text: `${ids.length} tables have the same columns (${first}): one table with columns telling them apart (study, batch) is usually better.`,
+      text: `${ids.length} tables have the same columns (${first}, 2026): one table with columns telling them apart (study, batch) is usually better.`,
       link: { label: 'Open Outputs', subTab: 'outputs' },
       subTabs: ['outputs'],
     });
