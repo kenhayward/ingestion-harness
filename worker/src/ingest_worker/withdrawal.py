@@ -10,12 +10,14 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
 from .bridge.client import BridgeClient
+from .bridge.package import record_delivered
 from .graph_registry import PublishedGraph
 from .pipeline import (
     DocumentError,
     PipelineDeps,
     Targets,
     load_definition,
+    targets_for,
 )
 from .queue import ClaimedJob, JobQueue
 from .specs import LoadedTemplate
@@ -174,7 +176,7 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[
                 job.id, "warn", "republish skipped", {"job": withdrawn.job_id, "reason": str(exc)}
             )
             continue
-        target = targets.get(template.publish_targets()[0])  # the job's version's own target
+        listed, _primary = targets_for(deps, loaded)  # the job's version's own targets
         formats = template.delivery_formats()
         rendered = render_document(template, document, graph)
         delivered = deliver_publication(
@@ -185,11 +187,11 @@ def run_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> list[
             document=document,
             outputs=[o for o in rendered if o.format in formats],
             graph=graph if "rdf" in formats else None,
-            target=target,
+            targets=listed,
             acting=acting,
             approver=queue.reviewer(run.id),
         )
-        queue.record_published(run, delivered.outputs, target, delivered.s3[1])
+        record_delivered(queue, run, delivered, listed)
         deliveries.extend(delivered.deliveries)
         jobs += 1
     queue.event(job.id, "info", REPUBLISHED, {"jobs": jobs})

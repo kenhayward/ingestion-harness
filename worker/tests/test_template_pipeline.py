@@ -15,7 +15,7 @@ import pytest
 import yaml
 from rdflib import RDFS, Graph, Literal, URIRef
 
-from ingest_worker.bridge.models import BridgeError
+from ingest_worker.bridge.models import BridgeError, package_archive_keys
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, PipelineDeps, Target, mark_pages
@@ -1098,7 +1098,7 @@ def test_a_draft_test_run_never_touches_a_target(tmp_path: Path) -> None:
 
 
 def test_a_legacy_spec_always_delivers_to_the_default(specs_dir: Path) -> None:
-    from ingest_worker.pipeline import target_for
+    from ingest_worker.pipeline import targets_for
 
     legacy = load_specs(specs_dir).get("process-validation-protocol", 2)
     default = Target("default", "published")
@@ -1111,8 +1111,8 @@ def test_a_legacy_spec_always_delivers_to_the_default(specs_dir: Path) -> None:
         buckets=Buckets("inbox", "outputs", "runs"),
         targets=targets,
     )
-    assert target_for(deps, legacy) is default
-    assert target_for(replace(deps, targets=None), legacy) is None
+    assert targets_for(deps, legacy) == ([default], default)
+    assert targets_for(replace(deps, targets=None), legacy) == ([], None)
 
 
 # --- delivery through the bridge (delivery bridge phase 2) --------------------------------------
@@ -1199,3 +1199,100 @@ def test_auto_published_jobs_act_as_the_uploader_reviewed_ones_as_the_reviewer(
     assert bridge.requests[-1].acting_user == reviewer
     assert bridge.requests[-1].package.provenance is not None
     assert bridge.requests[-1].package.provenance.approver == reviewer
+
+
+def several_deps(
+    tmp_path: Path, template: dict[str, Any], publish_to: list[str], *, rdf: bool = False
+) -> tuple[PipelineDeps, FakeBridge, FakeQueue]:
+    """`finance_deps` plus an archive target (layout `package`), the version naming `publish_to`
+    and, with `rdf`, the triple store target."""
+    deps, _default, _finance, queue = finance_deps(tmp_path, template)
+    bridge = deps.bridge
+    assert isinstance(bridge, FakeBridge) and isinstance(deps.targets, FakeTargets)
+    bridge.targets["archive"] = ("keep", "arch/")
+    bridge.archives.add("archive")
+    deps.targets.targets["finance-lake"] = Target("finance-lake", "finance", "fin/")
+    deps.targets.targets["archive"] = Target("archive", "keep", "arch/", layout="package")
+    if rdf:
+        deps.targets.triple_store = Target("rdf-default", "ct", "")
+        bridge.rdf.add("rdf-default")
+    queue.templates[("demo", 2)] = {
+        **queue.templates[("demo", 2)],
+        "delivery": {**template["delivery"], "publishTo": publish_to},
+    }
+    return deps, bridge, queue
+
+
+def test_a_two_target_recipe_submits_one_package_to_both_in_list_order_and_rdf_default_last(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = several_deps(
+        tmp_path, DELIVERED_TEMPLATE, ["archive", "finance-lake"], rdf=True
+    )
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.reviewed or queue.failed
+    [request] = [r for r in bridge.requests if r.package.kind == "document"]
+    assert request.targets == ["archive", "finance-lake", "rdf-default"]
+
+
+def test_the_primary_is_the_first_files_layout_target_even_when_an_archive_is_listed_first(
+    tmp_path: Path,
+) -> None:
+    deps, _bridge, queue = several_deps(tmp_path, DELIVERED_TEMPLATE, ["archive", "finance-lake"])
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.reviewed or queue.failed
+    assert ("job-1", "finance-lake", True) in queue.primaries
+    assert ("job-1", "archive", False) in queue.primaries
+
+
+def test_published_rows_are_recorded_per_target_with_archive_keys_for_the_package_layout(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = several_deps(tmp_path, DELIVERED_TEMPLATE, ["finance-lake", "archive"])
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    by_target = {t: outputs for (_, outputs, t) in queue.published}
+    assert set(by_target) == {"finance-lake", "archive"}
+    assert all(o.key.startswith("fin/demo/v2/") for o in by_target["finance-lake"])
+    [request] = [r for r in bridge.requests if r.package.kind == "document"]
+    expected = package_archive_keys("arch/", request.package)
+    assert [(o.output_id, o.key) for o in by_target["archive"]] == expected
+    assert expected[-1] == (
+        "package:manifest",
+        f"arch/packages/{request.package.idempotency_key}/package.json",
+    )
+    # The archive's objects are where the rows say.
+    for _, key in expected:
+        assert ("keep", key) in bridge.objects
+    # One delivery per target, each recorded on its own rows.
+    delivered = {t: d for (_, t, d) in queue.published_deliveries}
+    assert delivered["finance-lake"] != delivered["archive"]
+
+
+def test_an_unknown_id_anywhere_in_the_list_sends_the_job_to_review_naming_it(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = several_deps(
+        tmp_path, DELIVERED_TEMPLATE, ["finance-lake", "gone", "archive"]
+    )
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    [(_, reason)] = queue.reviewed
+    assert reason == "no publishing target gone"
+    assert not queue.published and not bridge.requests
+
+
+def test_the_graphs_copy_is_recorded_on_the_primary_target(tmp_path: Path) -> None:
+    deps, bridge, queue = several_deps(tmp_path, DELIVERED_TEMPLATE, ["archive", "finance-lake"])
+    queue.jobs = [V2]
+    deps.store.put("inbox", V2.object_key, b"%PDF", "application/pdf")
+    run_once(queue, deps, "w1")
+    current = deps.graph_registry.current(SOURCE_SHA, "demo")  # type: ignore[union-attr]
+    assert current is not None and current.target_id == "finance-lake"
+    assert ("finance", f"fin/graphs/{SOURCE_SHA}/demo/v1.ttl") in bridge.objects

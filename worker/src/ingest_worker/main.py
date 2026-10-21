@@ -15,7 +15,7 @@ import httpx
 import psycopg
 
 from .bridge.client import HttpBridgeClient
-from .bridge.package import Delivered
+from .bridge.package import Delivered, record_delivered
 from .bundle import run_export
 from .config import Settings
 from .convert import GotenbergConverter
@@ -145,7 +145,7 @@ def handle_process(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outc
     return Deliver(
         result.outputs,
         result.delivered(),
-        result.target,
+        result.targets,
         result.graph,
         document=result.document,
         template=result.template,
@@ -157,9 +157,9 @@ def handle_publish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outc
     check_cancelled(job, queue)
     deliveries: list[tuple[str, str]] = []
 
-    def record(outputs: list[RenderedOutput], target: Target, delivered: Delivered) -> None:
+    def record(targets: list[Target], delivered: Delivered) -> None:
         # Test runs never get here.
-        queue.record_published(job, outputs, target, delivered.s3[1])
+        record_delivered(queue, job, delivered, targets)
         deliveries.extend(delivered.deliveries)
 
     try:
@@ -263,7 +263,7 @@ def publish_job(
     job: ClaimedJob,
     deps: PipelineDeps,
     queue: JobQueue,
-    on_published: Callable[[list[RenderedOutput], Target, Delivered], None] | None = None,
+    on_published: Callable[[list[Target], Delivered], None] | None = None,
 ) -> list[RenderedOutput]:
     """Approved review: apply the edits and deliver. A test run's approval (a workbench
     reference) keeps the reviewed document but is never delivered to a target."""

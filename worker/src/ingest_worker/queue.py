@@ -94,9 +94,11 @@ class JobQueue(Protocol):
         outputs: list[RenderedOutput],
         target: Target,
         delivery_id: str | None,
+        *,
+        primary: bool = True,
     ) -> None:
-        """Record outputs delivered to `target` (its id and bucket, the keys as written, and the
-        bridge's delivery that writes them)."""
+        """Record outputs delivered to `target` (its id and bucket, the keys as written, the
+        bridge's delivery that writes them, and whether it is the job's primary target)."""
         ...
 
     def delivering(
@@ -231,16 +233,17 @@ class PgJobQueue:
         stage: str,
         target_id: str | None = None,
         delivery_id: str | None = None,
+        primary: bool = True,
     ) -> None:
         for o in outputs:
             self._conn.execute(
                 """INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key,
-                       row_count, target_id, delivery_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (job_id, output_id, stage) DO UPDATE
+                       row_count, target_id, delivery_id, is_primary)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (job_id, output_id, stage, target_id) DO UPDATE
                      SET bucket = EXCLUDED.bucket, object_key = EXCLUDED.object_key,
-                         row_count = EXCLUDED.row_count, target_id = EXCLUDED.target_id,
-                         delivery_id = EXCLUDED.delivery_id, created_at = now(),
+                         row_count = EXCLUDED.row_count, delivery_id = EXCLUDED.delivery_id,
+                         is_primary = EXCLUDED.is_primary, created_at = now(),
                          withdrawn_at = NULL""",
                 (
                     job.id,
@@ -252,6 +255,7 @@ class PgJobQueue:
                     o.row_count,
                     target_id,
                     delivery_id,
+                    primary,
                 ),
             )
 
@@ -282,8 +286,12 @@ class PgJobQueue:
         outputs: list[RenderedOutput],
         target: Target,
         delivery_id: str | None,
+        *,
+        primary: bool = True,
     ) -> None:
-        self._record_outputs(job, outputs, target.bucket, "published", target.id, delivery_id)
+        self._record_outputs(
+            job, outputs, target.bucket, "published", target.id, delivery_id, primary
+        )
 
     def delivering(
         self,

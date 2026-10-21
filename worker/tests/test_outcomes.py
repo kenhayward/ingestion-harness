@@ -79,7 +79,7 @@ def test_a_refused_publish_goes_back_to_review_without_drafts() -> None:
 def test_deliver_hands_the_package_to_the_bridge_then_the_job_is_delivering() -> None:
     queue, bridge = FakeQueue(), FakeBridge({"lake": ("published", "pvp/")})
     target = Target("lake", "published", "pvp/")
-    apply_outcome(JOB, Deliver([CSV, JSON], [CSV], target), queue, deps(bridge))
+    apply_outcome(JOB, Deliver([CSV, JSON], [CSV], [target]), queue, deps(bridge))
     assert queue.drafts == [("job-1", [CSV, JSON])]
     # The bridge's S3 sink writes at the target's prefix + today's key.
     assert list(bridge.objects) == [("published", "pvp/demo/v1/fields/doc-1.csv")]
@@ -102,18 +102,18 @@ def test_delivering_waits_for_the_bridge() -> None:
 
 def test_deliver_without_a_target_only_completes() -> None:
     queue = FakeQueue()
-    apply_outcome(JOB, Deliver([JSON], [JSON], None), queue, deps())
+    apply_outcome(JOB, Deliver([JSON], [JSON], []), queue, deps())
     assert not queue.published and queue.completed == [("job-1", [JSON])]
 
 
 def test_deliver_with_nothing_to_deliver_records_no_publication() -> None:
     queue, bridge = FakeQueue(), FakeBridge()
-    apply_outcome(JOB, Deliver([JSON], [], Target("b", "b", "")), queue, deps(bridge))
+    apply_outcome(JOB, Deliver([JSON], [], [Target("b", "b", "")]), queue, deps(bridge))
     assert not queue.published and not bridge.requests and queue.completed
 
 
 def test_a_cancel_before_delivery_delivers_nothing() -> None:
     queue, bridge = FakeQueue(cancel_when=lambda: True), FakeBridge()
     with pytest.raises(JobCancelled):
-        apply_outcome(JOB, Deliver([CSV], [CSV], Target("b", "b", "")), queue, deps(bridge))
+        apply_outcome(JOB, Deliver([CSV], [CSV], [Target("b", "b", "")]), queue, deps(bridge))
     assert not bridge.requests and not queue.published and not queue.handed_over

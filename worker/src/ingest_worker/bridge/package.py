@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import base64
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from ..errors import DocumentError
 from ..outputs import RenderedOutput, content_type
@@ -26,12 +26,13 @@ from .models import (
     Provenance,
     graph_idempotency_key,
     idempotency_key,
+    package_archive_keys,
 )
 
 if TYPE_CHECKING:
     from ..pipeline import PipelineDeps
     from ..publish_targets import Target
-    from ..queue import ClaimedJob
+    from ..queue import ClaimedJob, JobQueue
     from ..template import Template
 
 PRODUCER = "ct-studio"
@@ -53,13 +54,16 @@ class GraphVersion:
 
 @dataclass(frozen=True)
 class Delivered:
-    """What one package's hand-off gave: the files target's outputs, keyed as it writes them
+    """What one package's hand-off gave: the primary target's outputs, keyed as it writes them
     (its prefix + their key; never the graph's copy), that target's delivery, and every delivery
-    (the files target first)."""
+    in target order. `outputs_by_target` holds what each S3 target records: a files-layout
+    target's outputs at its keys, an archive's every key (package_archive_keys)."""
 
     outputs: list[RenderedOutput]
     s3: tuple[str, str]
     deliveries: list[tuple[str, str]]
+    outputs_by_target: dict[str, list[RenderedOutput]] = field(default_factory=dict)
+    primary: str = ""
 
 
 class ActingUsers(Protocol):
@@ -218,9 +222,10 @@ def deliver_document(
     acting: ActingUser | None,
     approver: ActingUser | None,
     graph: GraphVersion | None = None,
+    primary: Target | None = None,
 ) -> Delivered:
-    """Build the job's package from `outputs` (and `graph`) and deliver it to every target, the
-    files target first (deliver_outputs)."""
+    """Build the job's package from `outputs` (and `graph`) and deliver it to every target
+    (deliver_outputs; `primary`: the target read back from, else the first)."""
     package = build_package(
         job=job,
         template=template,
@@ -230,7 +235,7 @@ def deliver_document(
         deployment=deps.deployment,
         graph=graph,
     )
-    return deliver_outputs(deps, job, package, targets, acting, outputs)
+    return deliver_outputs(deps, job, package, targets, acting, outputs, primary)
 
 
 def deliver_outputs(
@@ -240,11 +245,13 @@ def deliver_outputs(
     targets: list[Target],
     acting: ActingUser | None,
     outputs: list[RenderedOutput],
+    primary: Target | None = None,
 ) -> Delivered:
     """Submit the package to `targets` through the bridge, in one request. Returns the outputs
-    keyed as the first (files) target writes them (its prefix + their key) and the deliveries. A
-    refusal for a person (BridgeRefused, a DocumentError) and an unreachable bridge
-    (BridgeUnavailable, retried) propagate; nothing is recorded by this function."""
+    keyed as the primary target (default: the first) writes them (its prefix + their key), what
+    each S3 target records, and the deliveries. A refusal for a person (BridgeRefused, a
+    DocumentError) and an unreachable bridge (BridgeUnavailable, retried) propagate; nothing is
+    recorded by this function."""
     if deps.bridge is None:
         raise RuntimeError("no delivery bridge is configured: nothing can be delivered")
     result = deps.bridge.deliver(
@@ -254,12 +261,68 @@ def deliver_outputs(
     )
     by_target = {d.target_id: d.delivery_id for d in result.deliveries}
     deliveries = [(t.id, by_target[t.id]) for t in targets]
-    files = targets[0]
+    files = primary or targets[0]
+    keyed = {
+        t.id: archive_outputs(t, package, outputs)
+        if t.layout == "package"
+        else [replace(o, key=f"{t.prefix}{o.key}") for o in outputs]
+        for t in targets
+    }
     return Delivered(
-        outputs=[replace(o, key=f"{files.prefix}{o.key}") for o in outputs],
-        s3=deliveries[0],
+        outputs=keyed[files.id],
+        s3=(files.id, by_target[files.id]),
         deliveries=deliveries,
+        outputs_by_target=keyed,
+        primary=files.id,
     )
+
+
+_ARCHIVE_FORMATS: dict[str, Literal["csv", "json", "rdf"]] = {
+    "package:data": "json",
+    "package:graph": "rdf",
+    "package:manifest": "json",
+}
+
+
+def archive_outputs(
+    target: Target, package: BridgePackage, outputs: list[RenderedOutput]
+) -> list[RenderedOutput]:
+    """What an archive (layout `package`) target records: every key it writes, under the
+    contract's output ids, so withdrawing the job deletes the whole archive. No bytes: the rows
+    are records only."""
+    rendered = {o.output_id: o for o in outputs}
+    formats = {f.output: f.format for f in package.files}
+    rows = []
+    for output_id, key in package_archive_keys(target.prefix, package):
+        source = rendered.get(output_id)
+        fmt = _ARCHIVE_FORMATS.get(output_id) or (
+            "rdf" if formats.get(output_id) == "ttl" else formats.get(output_id, "json")
+        )
+        rows.append(
+            RenderedOutput(
+                output_id=output_id,
+                format=cast(Literal["csv", "json", "rdf"], fmt),
+                key=key,
+                body=b"",
+                row_count=source.row_count if source is not None else None,
+            )
+        )
+    return rows
+
+
+def record_delivered(
+    queue: JobQueue, job: ClaimedJob, delivered: Delivered, targets: list[Target]
+) -> None:
+    """Record what each of the recipe's `targets` was handed (record_published), marking the
+    primary target's rows: they serve Results, the zip and read keys."""
+    delivery_of = dict(delivered.deliveries)
+    for t in targets:
+        outputs = delivered.outputs_by_target.get(t.id)
+        if outputs is None:
+            continue
+        queue.record_published(
+            job, outputs, t, delivery_of.get(t.id), primary=t.id == delivered.primary
+        )
 
 
 def deliver_graph_package(

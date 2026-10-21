@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .bridge.client import BridgeUnavailable
 from .bridge.package import build_graph_package, deliver_graph_package
-from .pipeline import DocumentError, PipelineDeps, Target
+from .pipeline import DocumentError, PipelineDeps, Target, primary_of
 from .publish_targets import DEFAULT_TARGET_ID
 from .queue import ClaimedJob, JobQueue
 from .storage import (
@@ -196,8 +196,8 @@ def delivered_document(deps: PipelineDeps, job: DeliveredJob) -> dict[str, Any] 
 
 
 def job_target(deps: PipelineDeps, source: RebuildSource, job: DeliveredJob) -> Target:
-    """The publishing target of the job's own recipe version (a version not published as a
-    recipe, a legacy spec: the default)."""
+    """The primary publishing target of the job's own recipe version, which holds the graph's
+    copy (a version not published as a recipe, a legacy spec: the default)."""
     if deps.targets is None:
         raise DocumentError("no publishing targets")
     definition = source.published_templates(job.template_id).get(job.template_version)
@@ -207,7 +207,7 @@ def job_target(deps: PipelineDeps, source: RebuildSource, job: DeliveredJob) -> 
         template = Template.model_validate(definition)
     except ValidationError as exc:
         raise DocumentError(f"recipe {job.template_id} v{job.template_version} is invalid") from exc
-    return deps.targets.get(template.publish_targets()[0])
+    return primary_of([deps.targets.get(i) for i in template.publish_targets()])
 
 
 def _publish(
@@ -240,7 +240,8 @@ def _publish(
         document=document,
         outputs=[],
         graph=graph,
-        target=target,
+        # A graph-only re-delivery (backfill, remint) goes to the copy's target only.
+        targets=[target],
         acting=acting,
         approver=queue.reviewer(job.job_id),
     )

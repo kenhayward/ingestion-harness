@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from .bridge.package import record_delivered
 from .outputs import RenderedOutput
 from .pipeline import PipelineDeps, Target, check_cancelled
 from .queue import ClaimedJob, JobQueue
@@ -47,13 +48,13 @@ class AwaitReview:
 @dataclass(frozen=True)
 class Deliver:
     """An extraction that needs no review: its drafts are recorded, then `delivered` is handed
-    to the bridge for `target` (None: a test run, or no targets; the job then succeeds) as one
+    to the bridge for `targets` (empty: a test run, or no targets; the job then succeeds) as one
     package with `document` (the recipe's data; None for legacy specs) and, once handed over,
     `graph`. The job is then delivering until the bridge's events finish it."""
 
     outputs: list[RenderedOutput]
     delivered: list[RenderedOutput]
-    target: Target | None
+    targets: list[Target]
     graph: GraphDelivery | None = None
     document: dict[str, Any] | None = None
     template: Template | None = None
@@ -95,8 +96,7 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         return
     queue.record_drafts(job, outcome.outputs, bucket)
     check_cancelled(job, queue)
-    target = outcome.target
-    if target is None or not outcome.delivered:
+    if not outcome.targets or not outcome.delivered:
         queue.complete(job, outcome.outputs, bucket)
         log.info("job %s %s with %d outputs", job.id, outcome.note, len(outcome.outputs))
         return
@@ -111,10 +111,10 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         document=outcome.document,
         outputs=outcome.delivered,
         graph=outcome.graph.graph if outcome.graph is not None else None,
-        target=target,
+        targets=outcome.targets,
         acting=queue.uploader(job.id),  # auto-published: the uploader acts
         approver=None,
     )
-    queue.record_published(job, delivered.outputs, target, delivered.s3[1])
+    record_delivered(queue, job, delivered, outcome.targets)
     queue.delivering(job, outcome.outputs, bucket, delivered.deliveries)
     log.info("job %s handed %d outputs to the bridge", job.id, len(delivered.outputs))
