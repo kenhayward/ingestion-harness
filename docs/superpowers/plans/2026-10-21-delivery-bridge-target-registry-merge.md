@@ -42,7 +42,42 @@ never heard of.
 
 **Builds on:** [ADR 0017](../../adr/0017-delivery-bridge.md) (its "Two target registries" note);
 the [phase 4 plan](2026-10-21-delivery-bridge-4-several-targets.md); ADR 0008 (read keys);
-ADR 0015 (backup and restore).
+ADR 0015 (backup and restore); and two follow-ups to phase 2 that land on main before this plan
+is carried out (next section).
+
+## Since this plan was first written: #289 and #290
+
+Both change behaviour this plan must keep. The tasks below already account for them.
+
+- **kenhayward/ingestion-harness#290 (target lifecycle and connection guards):**
+  - **Removing a target never deletes a row.**
+    - CT Studio makes it inert (`inert_at`, secret cleared). Finished `job_deliveries` keep naming
+      it, and its id stays taken.
+    - The bridge soft-removes it (`bridge.targets.removed_at`, bridge migration `202610211000`,
+      connection cleared). It hides the target from `GET /v1/targets` and `get`, and answers a
+      `PUT` of a removed id with 409 `name_conflict`.
+    - `DELETE /v1/targets/:id` answers 409 only while an *unfinished* delivery names the target.
+    - The create route moves an auto-picked id past ids that are taken (`<id>-2`, …).
+  - **The key move keeps what an admin chose.** A row that already has a connection keeps it; only
+    its keys are cleared. A new connection never overwrites an existing one named `target-<id>`:
+    it takes `target-<id>-2`, and so on (from `listConnections`).
+  - **Own storage.** The S3 sink refuses the staging bucket and CT Studio's `S3_BUCKET_*` buckets
+    (`bucket <b> is reserved`) on the deployment's own S3. That means the `internal` connection,
+    or any connection whose endpoint is `S3_ENDPOINT` or `S3_PUBLIC_URL`.
+  - **`HttpBridgeApi.readObject`** throws on 404 `target_missing`; any other 404 is a missing
+    object.
+  - **Stricter fakes.**
+    - `FakeBridgeApi` refuses an unknown target and reads outside a target's bucket and prefix,
+      and keeps removed ids taken.
+    - The worker's `FakeBridge` refuses an unknown target (`BridgeUnavailable`) and objects outside
+      a target (`BridgeRefused`).
+    - `testApp` mirrors every target row to the fake (`mirrorTargets`). Tests that add rows
+      through the repo call `c.mirror()`.
+- **kenhayward/ingestion-harness#289 (event resends):**
+  - The bridge drops an event still answered 409 after `UNKNOWN_EVENT_GIVE_UP_HOURS` (24).
+  - The API takes no later event for a final delivery.
+  - No task here touches events or `job_deliveries` updates, so nothing below changes for it.
+    Keep both behaviours when touching the restore (Task 6).
 
 ## Global constraints
 
@@ -69,8 +104,11 @@ ADR 0015 (backup and restore).
 
 ## Decisions this plan makes (recorded in the spec and ADR 0017 by Task 8)
 
-- **CT Studio keeps a cache table, not none.** The FKs and the in-use guard (`23503` in `remove`)
-  need a local row. The table keeps its name, so no FK, query or backup rule is renamed.
+- **CT Studio keeps a cache table, not none.**
+  - The five FKs need a local row.
+  - So does a removed target: since #290, removal makes the row inert and never deletes it. Its id
+    stays taken and its delivery records stay valid.
+  - The table keeps its name, so no FK, query or backup rule is renamed.
 - **The cache's shape** (migration `202610220900_targets_on_bridge.sql`):
   - **Added:** `sink_id text NOT NULL`, `instance_id text`, `destination jsonb NOT NULL DEFAULT '{}'`,
     `on_bridge boolean NOT NULL DEFAULT true` and `synced_at timestamptz`.
@@ -89,7 +127,11 @@ ADR 0015 (backup and restore).
   `force_path_style` and `moved_to_bridge_at`.
   - The migration fills it from the rows `moveTargetsToBridge` had not moved yet, plus the env-keyed
     `default`.
-  - `moveTargetsToBridge` reads it, and deletes a row once moved.
+  - `moveTargetsToBridge` reads it, and deletes a row once moved. It keeps #290's two rules:
+    - A target whose cached `connection_id` is already set keeps that connection. Its legacy row is
+      deleted without creating a connection.
+    - A new connection takes the first free id of `target-<id>`, `target-<id>-2`, … from
+      `listConnections`, and never overwrites one.
   - An old backup restored here runs the migrations, so its keys land there too.
 - **The triple store's endpoint and writer user** were `publish_targets.endpoint` and
   `access_key_id`. They now live in the bridge connection `rdf-default` (the bridge has held them
@@ -98,7 +140,11 @@ ADR 0015 (backup and restore).
 - **Writes go to the bridge first.**
   - Create and patch: the API checks the body and the locks, then `PUT /v1/targets/:id`, then
     caches the `TargetView` the bridge answered. A refusal stores nothing.
-  - Delete: the usage check, then `DELETE` on the bridge, then the cache row (as today).
+  - Delete: the usage check, then `DELETE` on the bridge (409 while an unfinished delivery names
+    it), then the cache row is made inert. That is #290's behaviour; the row is never deleted.
+  - Create with an auto-picked id moves past ids that are taken: `<id>-2`, `<id>-3`, … That covers
+    inert ids, and ids the bridge refuses with 409 `name_conflict` (removed there). An id given in
+    the body that is taken stays a 409.
   - If the cache write fails after the bridge accepted, the next pull heals it. The response says
     so (`500 saved on the bridge; refresh`). This replaces today's roll-back of the row.
 - **`pullTargets(deps): Promise<{ cached: number; missing: string[] }>`** replaces `mirrorTargets`
@@ -106,9 +152,14 @@ ADR 0015 (backup and restore).
   restore.
   - It upserts every bridge target into the cache and sets `on_bridge = true` and `synced_at`.
   - It never touches `inert_at`, `source`, `seeded_at`, `edited_at` or `updated_by`.
+  - It never caches an inert row again. The bridge doesn't list removed targets, and an inert row
+    doesn't count as "missing".
   - A live cached row the bridge no longer lists gets `on_bridge = false` and is logged. It is never
-    deleted (the FKs). Published outputs tags it "Not on the bridge", and a delivery to it fails
-    `target_missing` on the bridge as today.
+    deleted (the FKs).
+    - Published outputs tags it "Not on the bridge".
+    - A delivery to it fails `target_missing` on the bridge, as today.
+    - Reading its outputs answers `publishing target <label> unavailable`, because `readObject`
+      throws on `target_missing` since #290.
 - **Seeding moves to the API alone.**
   - `seedDefault` and `seedRdf` write to the bridge only when the bridge has no such target, or
     CT Studio's `seeded_at` is null. They then cache it.
@@ -119,13 +170,21 @@ ADR 0015 (backup and restore).
     prefix.
 - **The bridge refuses destination fields its sink doesn't declare**: 422 `content_rejected`,
   "`<field>` is not a destination field of `<sink>`". Overrides stay unchecked; they are phase 6.
+  - The S3 sink's reserved-bucket rule from #290 is unchanged: the staging bucket and CT Studio's
+    `S3_BUCKET_*` stay refused on the deployment's own S3.
+  - `ownBucketProblem` keeps refusing the same buckets in CT Studio, reading the bucket through
+    `s3PlaceOf`.
 - **Locking stays in CT Studio.** Only CT Studio's signed client writes the bridge's target routes.
   The bridge needs no usage model.
 - **The copy restore writes the bridge's rows too.**
   - `replaceTargets` upserts this server's kept targets into `bridge.targets` (sink, instance,
     connection, destination, label) as well as into the cache.
   - A dropped external target keeps its bridge row (the bridge's deliveries reference it) and its
-    CT row is marked inert, as today.
+    CT row is marked inert, as today. Its bridge row is soft-removed too (`removed_at`), so the
+    two registries agree that it is gone.
+  - The upsert clears `removed_at` only for a target the restored data has live. A target removed
+    on this server but live in the backup comes back.
+  - A backup from before #290 has no `removed_at`; the bridge's migrations add it as null.
   - Then `pullTargets` runs.
 
 ## Review focus
@@ -146,6 +205,13 @@ ADR 0015 (backup and restore).
    (opt-in Pg).*
 5. **Changing a locked field of a target in use.** The answer must still be 409, and nothing may
    reach the bridge. *Test: Task 4, "a locked change is refused before the bridge is asked".*
+6. **Removed targets stay removed** (#290). A removed target stays inert in CT Studio and removed
+   on the bridge, across a pull and a restore. Its id is never reused, and a new target with its
+   label gets `<id>-2`. *Tests:*
+   - *Task 3, "pull leaves an inert row inert and does not mark it missing";*
+   - *Task 4, "create moves past an id the bridge refuses as removed";*
+   - *Task 6, "a target removed on the bridge stays removed after a copy restore unless the
+     backup has it live".*
 
 ---
 
@@ -155,10 +221,12 @@ ADR 0015 (backup and restore).
 - Modify: `apps/bridge/src/routes/targets.ts:52-75` (`checkTarget`)
 - Modify: `apps/api/src/bridge/client.ts` (`BridgeApi.listTargets`, `HttpBridgeApi`, the CT-local
   `TargetMirror` type → the contract's `TargetView` and `TargetPutRequest`)
-- Modify: `apps/api/test/fake-bridge.ts` (`listTargets`, refusing undeclared fields as the bridge
-  does)
-- Test: `apps/bridge/test/targets-routes.test.ts`; Create: `apps/api/test/bridge-client.test.ts`
-  (`HttpBridgeApi` over a recording `fetch`)
+- Modify: `apps/api/test/fake-bridge.ts`:
+  - `listTargets`, which leaves out removed targets;
+  - `putTarget` returning the view, and still refusing a removed id with 409 `name_conflict`;
+  - refusing undeclared fields, as the bridge does.
+- Test: `apps/bridge/test/targets-routes.test.ts`; `apps/api/test/bridge-client.test.ts` (exists
+  since #290 with the `readObject` cases; add to it); `apps/api/test/fake-bridge.test.ts`
 
 **Interfaces:**
 - Produces: `BridgeApi.listTargets(): Promise<TargetView[]>` (`GET /v1/targets`, signed);
@@ -170,6 +238,7 @@ ADR 0015 (backup and restore).
   - Bridge: "every declared field is accepted" (the S3 six, the RDF `dataset`).
   - API: "listTargets reads GET /v1/targets, signed".
   - API: "putTarget returns the bridge's view".
+  - API: "listTargets leaves out a removed target" (the fake and the bridge agree).
 - [ ] **Step 2: Run them.** `npm test -w apps/bridge -- targets-routes` and `npm test -w apps/api
   -- bridge-client`. Expected: FAIL.
 - [ ] **Step 3: Implement.** `checkTarget` compares `Object.keys(t.destination)` with
@@ -226,6 +295,10 @@ ADR 0015 (backup and restore).
   `moveTargetsToBridge` over the legacy table, and `ensureRdfConnection`. `mirrorTargets`,
   `syncTargetsWithBridge`, `destinationOf` and `mirrorOf` are deleted.
 - Modify: `apps/api/src/server.ts:85-91,243,272,304`
+- Modify: `apps/api/test/helpers.ts`. Since #290, `testApp` mirrors its targets with
+  `mirrorTargets` and offers `c.mirror()`. With `mirrorTargets` gone:
+  - `testApp` seeds the fake bridge from the repo's rows, then runs `pullTargets` back;
+  - `c.mirror()` keeps its name and meaning, for the tests that add rows through the repo.
 - Test: `apps/api/test/publish-targets-contract.ts` (and its memory and Pg runs),
   `apps/api/test/bridge-sync.test.ts` (renamed from `bridge-mirror.test.ts`),
   `apps/api/test/publish-targets-seed.test.ts`
@@ -248,6 +321,11 @@ ADR 0015 (backup and restore).
     seeded, then caches it".
   - "seedRdf compares the seed with the rdf-default connection".
   - "moveTargetsToBridge reads the legacy table and empties a moved row".
+  - "moveTargetsToBridge keeps a connection the cached row already names, and never overwrites a
+    connection named target-<id>": #290's two tests, moved over to the legacy table.
+  - "pull leaves an inert row inert and does not mark it missing".
+  - #290's "one row the bridge refuses is logged and skipped" tests stay, for the move's
+    `putSharedConnection`.
   - "s3PlaceOf is null for a non-S3 sink".
 - [ ] **Step 2: Run them.** `npm test -w apps/api -- publish-targets bridge-sync`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Every reader of `bucket`, `prefix` or `layout` takes `s3PlaceOf`:
@@ -282,6 +360,10 @@ ADR 0015 (backup and restore).
   - "a cache write that fails after the bridge accepted answers 500 saved on the bridge; refresh,
     and the next pull heals it".
   - "a target not on the bridge is listed with onBridge false".
+  - "create moves past an id the bridge refuses as removed": 409 `name_conflict` gives `<id>-2`.
+    #290's "names a new target past the id of a removed one" stays.
+  - "delete makes the cache row inert after the bridge removed it; a 409 from the bridge keeps
+    it": #290's delete tests, unchanged in meaning.
 - [ ] **Step 2: Run them.** `npm test -w apps/api -- publish-targets-routes`. Expected: FAIL.
 - [ ] **Step 3: Implement.** The roll-back paths (`:372-382`, `:486-498`) go.
 - [ ] **Step 4: Run them again,** plus `npm run openapi` and its document diff. Expected: PASS;
@@ -294,7 +376,9 @@ ADR 0015 (backup and restore).
 - Modify: `worker/src/ingest_worker/publish_targets.py` (`TargetRow`, `_COLUMNS`, `LiveTargets.get`
   and `rdf`; `PgPublishTargetStore` loses `seed_default`/`seed_rdf`; add `TargetNotSynced`)
 - Modify: `worker/src/ingest_worker/main.py:384-387`, `worker/src/ingest_worker/admin.py:40-79`
-- Modify: `worker/tests/fakes.py:762-830` (`MemoryPublishTargetStore` rows in the new shape)
+- Modify: `worker/tests/fakes.py:762-830` (`MemoryPublishTargetStore` rows in the new shape). The
+  strict `FakeBridge` from #290 keeps refusing unknown targets and objects outside a target, so a
+  test's store rows and its `FakeBridge` targets must agree.
 - Test: `worker/tests/test_publish_targets.py`, `worker/tests/test_template_pipeline.py`,
   `worker/tests/test_admin.py`
 
@@ -334,9 +418,13 @@ ADR 0015 (backup and restore).
   - "a copy restore writes the kept targets into bridge.targets and the cache".
   - "a dropped external target keeps its bridge row and is inert here".
   - "a restored pre-merge backup's targets come back and its keys move once" (Review focus 4).
-    Restore a dump made at the previous migration, holding an external row not moved yet. Expect
-    the targets on the bridge with their destinations, one connection `target-<id>`, and the
-    legacy row gone.
+    Restore a dump made at the previous migration, holding an external row not moved yet. Expect:
+    - the targets on the bridge with their destinations;
+    - one connection `target-<id>` (or `target-<id>-2` when this server already has a connection
+      of that id);
+    - the legacy row gone.
+  - "a target removed on the bridge stays removed after a copy restore unless the backup has it
+    live" (Review focus 6).
 - [ ] **Step 2: Run them.** `cd apps/api && IH_TEST_DATABASE_URL=<throwaway> npx vitest run --config
   vitest.integration.config.ts --no-file-parallelism test/integration/backup-copy-rules.test.ts
   test/integration/backup-roundtrip.test.ts`. One file at a time: the integration files share
