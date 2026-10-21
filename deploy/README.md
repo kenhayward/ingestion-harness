@@ -117,7 +117,9 @@ deleted once every delivery of them is final and they are older than
 `BRIDGE_PACKAGE_RETENTION_DAYS`.
 
 **After upgrading:** on first start the API moves each external target's keys to the bridge as the
-connection `target-<id>` (named after the target) and clears them from CT Studio. Find and rotate
+connection `target-<id>` (named after the target; `target-<id>-2`, … if a connection of that id
+exists already) and clears them from CT Studio. A target you already gave a connection keeps it,
+and only its old keys are cleared. Find and rotate
 them under *Manage connections*. A target whose keys couldn't be moved (for example,
 `LLM_SECRETS_KEY` was missing) logs a warning and its deliveries fail with `credential_missing`
 until you pick or add a connection for it. Older outputs are read and withdrawn through the bridge

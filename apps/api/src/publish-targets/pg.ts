@@ -84,8 +84,9 @@ const COLUMNS = `id, label, kind, bucket, prefix, endpoint, region, access_key_i
   source, seeded_at, edited_at, updated_by, created_at, connection_id, moved_to_bridge_at`;
 
 /**
- * Rows a copy restore made inert (`inert_at`: a dropped external target its delivery records
- * still name) are kept for the foreign keys only: never listed, offered, read or changed.
+ * Rows made inert (`inert_at`: a removed target, or a dropped external target of a copy restore,
+ * that delivery records may still name) are kept for the foreign keys and to keep their id
+ * taken only: never listed, offered, read or changed.
  */
 const LIVE = 'inert_at IS NULL';
 
@@ -220,16 +221,12 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
         await client.query('ROLLBACK');
         return 'in_use';
       }
-      try {
-        await client.query('DELETE FROM publish_targets WHERE id = $1', [id]);
-      } catch (e) {
-        // A row recorded against it between the count and the delete: the foreign key says in use.
-        if ((e as { code?: string }).code === '23503') {
-          await client.query('ROLLBACK');
-          return 'in_use';
-        }
-        throw e;
-      }
+      // Made inert, not deleted: delivery records (job_deliveries) may still name it, and its id
+      // stays taken, as the bridge never takes a removed target's id again.
+      await client.query(
+        'UPDATE publish_targets SET inert_at = now(), secret_key_enc = NULL WHERE id = $1',
+        [id],
+      );
       await client.query('COMMIT');
       return 'deleted';
     } catch (e) {

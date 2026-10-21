@@ -155,6 +155,15 @@ export function publishTargetsContract(
       await repo.create(lake('finance'), null);
       expect(await repo.remove('finance')).toBe('deleted');
       expect(await repo.get('finance')).toBeNull();
+      expect((await repo.list()).map((t) => t.id)).not.toContain('finance');
+      expect(await repo.remove('finance')).toBe('missing');
+    });
+
+    it("keeps a removed target's id taken (the bridge never reuses it)", async () => {
+      const { repo } = await make();
+      await repo.create(lake('finance'), null);
+      await repo.remove('finance');
+      expect(await repo.create(lake('finance'), null)).toBe('exists');
     });
 
     it('refuses to remove a target a published version names', async () => {
