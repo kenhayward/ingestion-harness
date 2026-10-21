@@ -101,6 +101,7 @@ STEPS_SCHEMA = _body(
             "chunkPages": {"type": ["integer", "null"]},
             "context": {"type": ["array", "null"], "items": _object({"name": _S, "path": _S})},
             "keyColumn": _NS,
+            "occurrenceMatch": _NS,
             "description": _NS,
             "values": _NS,
             "reference": _NS,
@@ -287,6 +288,11 @@ def convert_steps(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
                                 "chunkPages": c.get("chunkPages"),
                                 "context": context or None,
                                 "keyColumn": c.get("keyColumn"),
+                                "occurrences": (
+                                    {"match": c["occurrenceMatch"]}
+                                    if c.get("occurrenceMatch")
+                                    else None
+                                ),
                             }
                         )
                     )
@@ -440,9 +446,34 @@ def fit_step_order(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any
     return {**body, "notes": text, "changes": changes}
 
 
+def fit_filters(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """An occurrence filter on a step reading no repeating section (judged on the draft with the
+    whole body applied) is dropped with a note rather than failing the stage, like keyColumn."""
+    sections = {
+        s.get("id"): s
+        for s in (apply_changes(draft, body["changes"]).get("document") or {}).get("sections") or []
+    }
+    changes: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for c in body["changes"]:
+        step = c.get("step") if c["op"] == "putStep" else None
+        if step and step.get("occurrences"):
+            if not any(sections.get(i, {}).get("repeat") for i in step.get("sections") or []):
+                dropped.append(
+                    f"Ignored occurrenceMatch on {step['id']!r}: it reads no repeating section."
+                )
+                c = {**c, "step": {k: v for k, v in step.items() if k != "occurrences"}}
+        changes.append(c)
+    if not dropped:
+        return body
+    notes = "\n".join([body["notes"], *dropped] if body.get("notes") else dropped)
+    return {**body, "notes": notes, "changes": changes}
+
+
 def fit_steps(body: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
-    """The Steps and Revise stages' repairs: unusable keyColumns dropped, steps put in order."""
-    return fit_step_order(fit_key_columns(body, draft), draft)
+    """The Steps and Revise stages' repairs: unusable keyColumns and occurrence filters dropped,
+    steps put in order."""
+    return fit_step_order(fit_filters(fit_key_columns(body, draft), draft), draft)
 
 
 def _unfinished_mapping(draft: dict[str, Any]) -> bool:
@@ -527,6 +558,8 @@ Task: propose the extraction pipeline that fills every output in the current dra
   - instructions: concrete guidance (where the value is, formats, what to ignore).
   - pageImages: page numbers to show as images when the text loses information, else null.
   - chunkPages: null unless the step fills a long table (table set) from exactly one section.
+    A step reading a repeating section already makes one call per occurrence: leave it null
+    there unless one occurrence runs to many pages.
   - A table step reading a repeating section (repeat true) runs once per occurrence; when
     that section has a key or keyFrom, set keyColumn to the column the occurrence key fills
     (for example batch); otherwise keyColumn is null and the instructions say where the
@@ -544,7 +577,14 @@ Task: propose the extraction pipeline that fills every output in the current dra
   covers a repeated block (the same tables per batch, item or site), a table step reading it
   returns rows from every block and fills each row's identifying columns from that block's
   heading or table caption: say so in its instructions.
-- A table step reading a repeating section runs once per occurrence and fills its table from every occurrence. Never write several steps that each want a different occurrence of the same repeating section: give each kind of block its own repeating section.
+- A table step reading a repeating section runs once per occurrence and fills its table from
+  every occurrence it reads. When several table steps read one repeating section and each wants
+  a different kind of block (the heading names the test, form or product), set occurrenceMatch
+  on each: a regex for words of that kind's heading, as printed in the samples. It is searched,
+  ignoring case, in the first 600 characters of each occurrence with line breaks and repeated
+  spaces read as one space; the other occurrences are skipped without a model call, so the
+  instructions need not say which headings to skip. occurrenceMatch is null when the step
+  wants every occurrence.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in pipeline order; context may only use outputs filled by earlier steps. A putStep
@@ -826,7 +866,8 @@ failures (expected vs actual values on the dev samples).
   - section (putSection, removeSection, setCopies): id, anchor, required, description,
     copiesSelect;
   - step (putStep, removeStep, setPreamble): id, type, fields, table, sections, instructions,
-    pageImages, chunkPages, context, description, values, reference, aliases, preamble.
+    pageImages, chunkPages, context, keyColumn, occurrenceMatch, description, values,
+    reference, aliases, preamble.
   Fill the payload objects you do not use, and keys that do not apply, with empty values:
   "" for text, [] for lists, 0 for numbers (required: true unless a section may be absent).
 - The template must stay valid: every field and table filled by exactly one step; steps only
@@ -835,7 +876,7 @@ failures (expected vs actual values on the dev samples).
   outputs. reason: which feedback item or failure the change addresses.
 - answers: the labels of the feedback items the change answers (for example ["F1", "F3"]);
   [] when it only fixes evaluation failures.
-- run_diagnostics are what the dev test runs of this draft showed: steps whose occurrence calls mostly returned no rows (give each kind of block its own repeating section, or narrow the anchor), columns whose values did not fit (each with a message and examples: fix the column's description or constraint, and make it text only when the values really are not of that type), and headings no anchor matched (fix the anchor, or narrow the key when those headings are blocks the recipe does not read). Address them where they point to a recipe problem; reason names the diagnostic.
+- run_diagnostics are what the dev test runs of this draft showed: steps whose occurrence calls mostly returned no rows (set occurrenceMatch on the steps reading that section so each reads only its kind of block, give each kind its own repeating section, or narrow the anchor), columns whose values did not fit (each with a message and examples: fix the column's description or constraint, and make it text only when the values really are not of that type), and headings no anchor matched (fix the anchor, or narrow the key when those headings are blocks the recipe does not read). Address them where they point to a recipe problem; reason names the diagnostic.
 - notes: anything you could not fix and why.
 Return JSON only.""",
     REVISE_SCHEMA,

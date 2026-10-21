@@ -854,3 +854,95 @@ def test_revise_instructions_explain_run_diagnostics() -> None:
         "they point to a recipe problem; reason names the diagnostic.\n"
     ) in REVISE.instructions
     assert "make the column text or fix its description" not in REVISE.instructions
+
+
+FILTER_DRAFT: dict[str, Any] = {
+    **DRAFT,
+    "document": {
+        "sections": [
+            {"id": "all", "anchor": r"\A"},
+            {"id": "tables", "anchor": r"^Table \d+:", "repeat": True, "key": r"^Table (\d+):"},
+            {"id": "plain", "anchor": "^NOTES"},
+        ]
+    },
+    "outputs": {"fields": [], "tables": [{"id": "rows", "columns": [{"id": "result"}]}]},
+}
+
+
+def test_steps_convert_an_occurrence_match_to_the_steps_filter() -> None:
+    item = step_item(
+        id="rows_step",
+        fields=None,
+        table="rows",
+        sections=["tables"],
+        occurrenceMatch=r"Appearance\s+and\s+Water",
+    )
+    body, errors = run(STEPS, {"notes": "", "changes": [item]}, FILTER_DRAFT)
+    assert errors == []
+    assert body["changes"][0]["step"]["occurrences"] == {"match": r"Appearance\s+and\s+Water"}
+    assert "occurrenceMatch" not in body["changes"][0]["step"]
+
+
+@pytest.mark.parametrize("match", [None, ""])
+def test_steps_without_an_occurrence_match_have_no_filter(match: str | None) -> None:
+    item = step_item(
+        id="rows_step", fields=None, table="rows", sections=["tables"], occurrenceMatch=match
+    )
+    body, errors = run(STEPS, {"notes": "", "changes": [item]}, FILTER_DRAFT)
+    assert errors == []
+    assert "occurrences" not in body["changes"][0]["step"]
+
+
+def test_steps_drop_an_occurrence_match_on_a_step_reading_no_repeating_section() -> None:
+    """Like keyColumn: a filter the step cannot use is dropped with a note, not fed back."""
+    item = step_item(
+        id="rows_step", fields=None, table="rows", sections=["plain"], occurrenceMatch="Notes"
+    )
+    body, errors = run(STEPS, {"notes": "", "changes": [item]}, FILTER_DRAFT)
+    assert errors == []
+    assert "occurrences" not in body["changes"][0]["step"]
+    assert "Ignored occurrenceMatch on 'rows_step': it reads no repeating section." in body["notes"]
+
+
+def test_steps_feed_back_an_occurrence_match_that_is_not_a_pattern() -> None:
+    item = step_item(
+        id="rows_step", fields=None, table="rows", sections=["tables"], occurrenceMatch="Assay (and"
+    )
+    _, errors = run(STEPS, {"notes": "", "changes": [item]}, FILTER_DRAFT)
+    assert any("the occurrence filter is not a valid pattern" in e for e in errors), errors
+
+
+def test_revise_carries_an_occurrence_match_and_reads_empty_as_none() -> None:
+    def change(match: str) -> dict[str, Any]:
+        step = {
+            k: v
+            for k, v in step_item(id="rows_step", table="rows").items()
+            if k not in ("op", "reason")
+        }
+        step = {
+            **{k: "" if v is None else v for k, v in step.items()},
+            "fields": [],
+            "sections": ["tables"],
+            "pageImages": [],
+            "chunkPages": 0,
+            "context": [],
+            "keyColumn": "",
+            "occurrenceMatch": match,
+        }
+        return {"op": "putStep", "step": step, "answers": [], "reason": "r"}
+
+    body, errors = run(REVISE, {"notes": "", "changes": [change("Microbial")]}, FILTER_DRAFT)
+    assert errors == []
+    assert body["changes"][0]["step"]["occurrences"] == {"match": "Microbial"}
+    body, errors = run(REVISE, {"notes": "", "changes": [change("")]}, FILTER_DRAFT)
+    assert errors == []
+    assert "occurrences" not in body["changes"][0]["step"]
+
+
+def test_the_steps_schema_offers_occurrence_match() -> None:
+    item = STEPS.schema["properties"]["changes"]["items"]
+    assert item["properties"]["occurrenceMatch"] == {"type": ["string", "null"]}
+    assert (
+        "occurrenceMatch"
+        in REVISE_SCHEMA["properties"]["changes"]["items"]["properties"]["step"]["properties"]
+    )

@@ -3153,5 +3153,79 @@
       },
       "pipeline": []
     }
+  },
+  {
+    "name": "steps: a putStep with an occurrence filter keeps it",
+    "definition": {
+      "id": "stability",
+      "version": 1,
+      "name": "Stability",
+      "document": {
+        "sections": [
+          { "id": "all", "anchor": "\\A" },
+          { "id": "tables", "anchor": "^Table \\d+:", "repeat": true, "key": "^Table (\\d+):" }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": [
+          {
+            "id": "appearance_results",
+            "columns": [
+              { "id": "table_number", "type": "text" },
+              { "id": "result", "type": "text" }
+            ]
+          }
+        ]
+      },
+      "pipeline": []
+    },
+    "changes": [
+      {
+        "op": "putStep",
+        "step": {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["tables"],
+          "keyColumn": "table_number",
+          "occurrences": { "match": "Appearance\\s+and\\s+Water" }
+        },
+        "reason": "r"
+      }
+    ],
+    "expected": {
+      "id": "stability",
+      "version": 1,
+      "name": "Stability",
+      "document": {
+        "sections": [
+          { "id": "all", "anchor": "\\A" },
+          { "id": "tables", "anchor": "^Table \\d+:", "repeat": true, "key": "^Table (\\d+):" }
+        ]
+      },
+      "outputs": {
+        "fields": [],
+        "tables": [
+          {
+            "id": "appearance_results",
+            "columns": [
+              { "id": "table_number", "type": "text" },
+              { "id": "result", "type": "text" }
+            ]
+          }
+        ]
+      },
+      "pipeline": [
+        {
+          "type": "extract",
+          "id": "appearance",
+          "table": "appearance_results",
+          "sections": ["tables"],
+          "keyColumn": "table_number",
+          "occurrences": { "match": "Appearance\\s+and\\s+Water" }
+        }
+      ]
+    }
   }
 ]
