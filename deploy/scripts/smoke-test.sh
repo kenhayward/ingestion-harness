@@ -8,6 +8,8 @@
 #   FRAME_ANCESTORS  as in the env file: which framing headers the app must send (blank: none).
 #   SMOKE_COMPOSE    the docker compose command of the stack (deploy.sh sets it): lets the test
 #                seed a reviewed job and look at the delivered object; unset, that part is skipped.
+#   SMOKE_ARCHIVE    1 on a test stack: also deliver to an archive target (`smoke-archive`, which
+#                stays: a target that has delivered can never be removed).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -237,12 +239,15 @@ PY
 fi
 
 # --- Several targets (delivery bridge phase 4): an archive target and the default -------------
-# An internal target with layout `package` (kept across runs: a published recipe names it, so it
-# is never removable) and a recipe delivering to `default` and to it. Approving the seeded job
-# writes today's key on `default` and the whole package under packages/<key>/ on the archive,
-# `package.json` last; deleting the job withdraws both.
+# An internal target with layout `package` and a recipe delivering to `default` and to it.
+# Approving the seeded job writes today's key on `default` and the whole package under
+# packages/<key>/ on the archive, `package.json` last; deleting the job withdraws both.
+# Opt-in (SMOKE_ARCHIVE=1, on a test stack): the target can never be removed afterwards (its
+# recipe and the bridge's deliveries name it), and every recipe's Publish to would offer it.
 if [[ -z "${SMOKE_COMPOSE:-}" ]]; then
   echo "skip several targets: SMOKE_COMPOSE is not set"
+elif [[ "${SMOKE_ARCHIVE:-}" != 1 ]]; then
+  echo "skip several targets: set SMOKE_ARCHIVE=1 on a test stack (it adds a permanent target)"
 else
   sc() { $SMOKE_COMPOSE "$@"; }
   got="$(status -b "$ADMIN_JAR" -H 'content-type: application/json' \
