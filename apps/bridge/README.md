@@ -43,6 +43,9 @@ DATABASE_URL=postgres://... BRIDGE_CLIENT_KEY=$(openssl rand -hex 32) npm run de
 | `BRIDGE_PACKAGE_RETENTION_DAYS` | `30` | How long staged packages are kept |
 | `BRIDGE_MAX_ATTEMPTS` | `8` | Retries before a delivery fails |
 | `BRIDGE_LEASE_SECONDS` | `300` | How long a claimed delivery is held before another runner may take it |
+| `S3_ENDPOINT` | (required) | The deployment's own S3 (the `internal` connection) |
+| `S3_PUBLIC_URL` | unset | Another URL that S3 answers on; treated as `S3_ENDPOINT` below |
+| `S3_BUCKET_INBOX` / `_OUTPUTS` / `_RUNS` / `_BACKUPS` | `ingest-…` | CT Studio's own buckets: on the deployment's S3 (any connection to `S3_ENDPOINT` or `S3_PUBLIC_URL`), no target may use them, nor `BRIDGE_STAGING_BUCKET` |
 | `LOG_LEVEL` | `info` | |
 
 Tests: `npx vitest run --project bridge`; Postgres tests run with `IH_TEST_DATABASE_URL` set to a

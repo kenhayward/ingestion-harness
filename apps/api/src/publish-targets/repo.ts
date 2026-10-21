@@ -254,7 +254,10 @@ export interface TargetFactSource {
 
 export class MemoryPublishTargetRepo implements PublishTargetRepo {
   private readonly targets = new Map<string, TargetRecord>();
-  /** Ids a copy restore made inert: the row stays (the id is taken), nothing else sees it. */
+  /**
+   * Ids removed, or made inert by a copy restore: the row stays (the id is taken, so the bridge
+   * never sees it reused), nothing else sees it.
+   */
   private readonly inert = new Set<string>();
   private counter = 0;
 
@@ -317,8 +320,7 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
     if (!r) return 'missing';
     if (r.kind === 'rdf') return 'seeded';
     if (targetInUse(await this.usage(id))) return 'in_use';
-    this.targets.delete(id);
-    this.counter += 1;
+    this.makeInert(id);
     return 'deleted';
   }
 

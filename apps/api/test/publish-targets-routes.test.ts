@@ -623,6 +623,15 @@ describe('DELETE /api/publish-targets/:id', () => {
     expect(c.bridge.targets.has('finance-lake')).toBe(false);
   });
 
+  it('names a new target past the id of a removed one', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    expect((await c.call('DELETE', '/publish-targets/finance-lake')).statusCode).toBe(204);
+    const again = await c.call('POST', '/publish-targets', externalBody());
+    expect(again.statusCode).toBe(201);
+    expect(again.json().id).toBe('finance-lake-2');
+  });
+
   it('keeps a target the bridge still has deliveries for', async () => {
     const c = await setup();
     await c.call('POST', '/publish-targets', externalBody());
@@ -723,6 +732,7 @@ describe('reading published outputs through the bridge, from their recorded targ
   it('serves each output from its own target', async () => {
     const c = await setup();
     await c.targets.create(financeRecord(), null);
+    await c.mirror();
     const a = await delivered(c);
     const b = await delivered(c);
     const onFinance = published(a.id, 'finance-lake', 'finance-lake', 'ingest/');

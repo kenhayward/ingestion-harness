@@ -197,6 +197,37 @@ describe('moveTargetsToBridge', () => {
   });
 });
 
+describe('moveTargetsToBridge and what an admin set first', () => {
+  it('keeps a connection an admin picked before the move ran, and drops the old keys', async () => {
+    const { targets, bridge, log } = await setup();
+    await targets.create(external('finance'), null);
+    await targets.update('finance', { connectionId: 'finance-account' }, null);
+    const result = await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log });
+    expect(result).toEqual({ moved: ['finance'], skipped: [] });
+    expect(bridge.connections.size).toBe(0);
+    const row = (await targets.get('finance'))!;
+    expect(row.connectionId).toBe('finance-account');
+    expect(row.secretKeyEnc).toBeNull();
+    expect(row.movedToBridgeAt).not.toBeNull();
+    expect(bridge.targets.get('finance')?.connectionId).toBe('finance-account');
+  });
+
+  it("does not overwrite an admin's connection already named target-<id>", async () => {
+    const { targets, bridge, log } = await setup();
+    await targets.create(external('finance'), null);
+    bridge.summaries.push({
+      id: 'target-finance',
+      name: 'Made by hand',
+      sinkId: 's3',
+      status: 'ok',
+      statusReason: null,
+    });
+    await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log });
+    expect([...bridge.connections.keys()]).toEqual(['target-finance-2']);
+    expect((await targets.get('finance'))?.connectionId).toBe('target-finance-2');
+  });
+});
+
 describe('syncTargetsWithBridge', () => {
   it('retries until the bridge answers, so a bridge that starts late is caught up', async () => {
     const { targets, bridge, log } = await setup();

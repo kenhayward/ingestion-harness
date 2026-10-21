@@ -85,7 +85,7 @@ export interface DeliveryRepo {
     exceptId: string,
   ): Promise<DeliveryRow | null>;
   getPackage(id: string): Promise<NewPackage | null>;
-  /** Whether any delivery names this target (which then cannot be removed). */
+  /** Whether an unfinished delivery names this target (which then cannot be removed). */
   usesTarget(targetId: string): Promise<boolean>;
   /** Packages past `expiresAt` (at `now`), not pruned, whose deliveries are all final. */
   expiredPackages(now: Date, limit: number): Promise<{ id: string; stagedKey: string }[]>;
@@ -253,7 +253,9 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
   }
 
   async usesTarget(targetId: string): Promise<boolean> {
-    return [...this.deliveries.values()].some((d) => d.targetId === targetId);
+    return [...this.deliveries.values()].some(
+      (d) => d.targetId === targetId && !FINAL_STATUSES.has(d.status),
+    );
   }
 
   private readonly pruned = new Set<string>();

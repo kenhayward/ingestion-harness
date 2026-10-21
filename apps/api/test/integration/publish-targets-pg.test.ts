@@ -21,7 +21,9 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
       await migrate(url!, migrations);
       pool = new pg.Pool({ connectionString: url, max: 5 });
     }
-    await pool.query('TRUNCATE s3_consumer_targets, job_outputs, published_graph_versions');
+    await pool.query(
+      'TRUNCATE s3_consumer_targets, job_outputs, published_graph_versions, job_deliveries',
+    );
     await pool.query('DELETE FROM published_graphs');
     await pool.query('DELETE FROM jobs');
     await pool.query('DELETE FROM documents');
@@ -92,6 +94,43 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
   });
 
   publishTargetsContract('pg', make);
+
+  it('removes a target its finished deliveries name, keeping the row for them', async () => {
+    const { repo } = await make();
+    await repo.create(
+      {
+        id: 'finance',
+        label: 'Finance',
+        kind: 'internal',
+        bucket: 'fin',
+        prefix: '',
+        endpoint: null,
+        region: null,
+        accessKeyId: null,
+        secretKeyEnc: null,
+        accessKeyEnv: null,
+        secretKeyEnv: null,
+        forcePathStyle: false,
+        sse: 'none',
+        kmsKeyId: null,
+        storageClass: null,
+        connectionId: null,
+      },
+      null,
+    );
+    const jobId = await newJob(pool!);
+    await pool!.query(
+      `INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
+       VALUES (gen_random_uuid(), $1, 'finance', 'failed')`,
+      [jobId],
+    );
+    expect(await repo.remove('finance')).toBe('deleted');
+    expect(await repo.get('finance')).toBeNull();
+    const { rows } = await pool!.query<{ inert: boolean }>(
+      `SELECT inert_at IS NOT NULL AS inert FROM publish_targets WHERE id = 'finance'`,
+    );
+    expect(rows).toEqual([{ inert: true }]);
+  });
 
   it('requires a target for a published output but not a draft one', async () => {
     await make();

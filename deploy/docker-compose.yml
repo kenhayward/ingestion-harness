@@ -192,6 +192,9 @@ services:
       BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:${APP_PORT:-8081}/bridge}
       BRIDGE_COOKIE_SECURE: ${BRIDGE_COOKIE_SECURE:-true}
       BRIDGE_STAGING_BUCKET: ${BRIDGE_STAGING_BUCKET:-ingest-bridge}
+      # The deployment's S3 as the data lake reaches it: a connection there keeps off the staging
+      # bucket and CT Studio's own buckets, like one to S3_ENDPOINT.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
       # The triple store's writer password, read by the rdf-default connection (only the bridge
       # writes graphs; RDF_ENDPOINT and the user come from the API's mirror of the target).
       RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
