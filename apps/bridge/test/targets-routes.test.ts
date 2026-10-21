@@ -108,7 +108,7 @@ describe('PUT /v1/targets/:id', () => {
 });
 
 describe('DELETE /v1/targets/:id', () => {
-  it('removes a target, and refuses one that deliveries name', async () => {
+  it('removes a target, and refuses one an unfinished delivery names', async () => {
     const { call, deliveries } = await setup();
     await call('PUT', '/v1/targets/a', finance);
     await call('PUT', '/v1/targets/b', finance);
@@ -131,6 +131,23 @@ describe('DELETE /v1/targets/:id', () => {
     expect(
       (await call('GET', '/v1/targets')).json().targets.map((t: { id: string }) => t.id),
     ).toEqual(['b']);
+    // Once its delivery is final the target goes, and its id is not taken up again.
+    const claimed = (await deliveries.claim(new Date(), 300))!;
+    await deliveries.transition(
+      claimed.id,
+      { status: 'failed', error: { class: 'needs_user', code: 'not_found', message: 'x' } },
+      new Date(),
+      claimed.claimId,
+    );
+    expect((await call('DELETE', '/v1/targets/b')).statusCode).toBe(204);
+    expect((await call('GET', '/v1/targets')).json().targets).toEqual([]);
+    const again = await call('PUT', '/v1/targets/b', finance);
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({
+      class: 'needs_user',
+      code: 'name_conflict',
+      message: 'target b was removed, and its id is not used again: pick another',
+    });
   });
 });
 

@@ -44,7 +44,7 @@ export interface BridgeApi {
     connectionId: string;
     destination: Record<string, string>;
   }): Promise<TargetTestResult>;
-  /** Null when there is no such object. */
+  /** Null when there is no such object; throws (404 `target_missing`) when the bridge lacks the target. */
   readObject(targetId: string, bucket: string, key: string): Promise<Buffer | null>;
   getDelivery(id: string): Promise<DeliveryView | null>;
 }
@@ -179,7 +179,16 @@ export class HttpBridgeApi implements BridgeApi {
       `/v1/targets/${encodeURIComponent(targetId)}/objects:read`,
       { bucket, key },
     );
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      // A 404 is a missing object, unless it is the target the bridge lacks (not mirrored yet).
+      const parsed = BridgeErrorSchema.safeParse(
+        await res
+          .clone()
+          .json()
+          .catch(() => null),
+      );
+      if (!(parsed.success && parsed.data.code === 'target_missing')) return null;
+    }
     await this.expect(res, [200], `a read from target ${targetId}`);
     return Buffer.from(ObjectReadResultSchema.parse(await res.json()).content, 'base64');
   }

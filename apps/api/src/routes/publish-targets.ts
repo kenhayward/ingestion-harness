@@ -337,11 +337,13 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const b = body.data;
       if (b.id === DEFAULT_TARGET_ID) return reply.code(400).send({ error: 'default is reserved' });
       let id = b.id;
+      const picked = id === undefined;
+      const stem = publishTargetIdFrom(b.label);
+      let n = 1;
       if (id === undefined) {
         const taken = new Set((await repo.list()).map((t) => t.id));
-        const stem = publishTargetIdFrom(b.label);
         id = stem;
-        for (let n = 2; taken.has(id); n++) id = `${stem}-${n}`;
+        while (taken.has(id)) id = `${stem}-${++n}`;
       } else if (await repo.get(id)) {
         return reply.code(409).send({ error: `a publishing target ${id} already exists` });
       }
@@ -369,7 +371,12 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         layout: record.layout,
         connectionId: record.connectionId,
       };
-      const created = await repo.create(input, by(req));
+      let created = await repo.create(input, by(req));
+      // A removed target keeps its id (list() does not show it): a picked id moves past it.
+      while (created === 'exists' && picked) {
+        input.id = id = `${stem}-${++n}`;
+        created = await repo.create(input, by(req));
+      }
       if (created === 'exists') {
         return reply.code(409).send({ error: `a publishing target ${id} already exists` });
       }

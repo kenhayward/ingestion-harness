@@ -71,6 +71,21 @@ export function connectionsContract(
       expect(await connections.remove('c2')).toBe('missing');
     });
 
+    it('a removed target no longer holds its connection', async () => {
+      const { connections, targets } = await make();
+      await connections.put(connection('c1'));
+      await targets.put({
+        id: 't1',
+        label: 'T1',
+        sinkId: 's3',
+        instanceId: null,
+        connectionId: 'c1',
+        destination: { bucket: 'b', prefix: '' },
+      });
+      await targets.remove('t1');
+      expect(await connections.remove('c1')).toBe('deleted');
+    });
+
     it('personal needs an owner, shared refuses one', async () => {
       const { connections } = await make();
       await expect(connections.put(connection('p', { kind: 'personal' }))).rejects.toThrow();

@@ -37,6 +37,13 @@ const EnvSchema = z.object({
   BRIDGE_LEASE_SECONDS: z.preprocess(blank, z.coerce.number().int().positive().default(300)),
   /** The deployment's own S3 (SeaweedFS): internal targets and the package staging bucket. */
   S3_ENDPOINT: z.string().url(),
+  /** Another URL the deployment's S3 answers on: a connection there keeps to its bucket rules. */
+  S3_PUBLIC_URL: optional(z.string().url()),
+  /** CT Studio's own buckets on the same S3 (shared env): no target may use them. */
+  S3_BUCKET_INBOX: z.preprocess(blank, z.string().default('ingest-inbox')),
+  S3_BUCKET_OUTPUTS: z.preprocess(blank, z.string().default('ingest-outputs')),
+  S3_BUCKET_RUNS: z.preprocess(blank, z.string().default('ingest-runs')),
+  S3_BUCKET_BACKUPS: z.preprocess(blank, z.string().default('ingest-backups')),
   S3_REGION: z.preprocess(blank, z.string().default('us-east-1')),
   S3_ACCESS_KEY: z.string().min(1),
   S3_SECRET_KEY: z.string().min(1),

@@ -1036,7 +1036,9 @@ export class MemoryRepo implements IngestionRepo {
   ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }> {
     const d = this.deliveries.get(deliveryId);
     if (!d) return { outcome: 'unknown', finished: null };
-    if (update.sequence <= d.lastSequence) return { outcome: 'stale', finished: null };
+    if (update.sequence <= d.lastSequence || FINAL_DELIVERY.has(d.status)) {
+      return { outcome: 'stale', finished: null };
+    }
     Object.assign(d, {
       status: update.status,
       error: update.error,
