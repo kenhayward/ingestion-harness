@@ -855,6 +855,57 @@ describe('revise diagnostics (Part C)', () => {
     expect(shown.columns).toHaveLength(1);
   });
 
+  it('MemoryRepo.listEvents filters by time and message', async () => {
+    const ctx = await project();
+    ctx.repo.events.set('j', [
+      { level: 'info', message: 'segmented', data: 1, at: '2026-10-21T10:00:00.000Z' },
+      { level: 'info', message: 'segmented', data: 2, at: '2026-10-21T10:05:00.000Z' },
+      { level: 'info', message: 'extracted lines', data: 3, at: '2026-10-21T10:06:00.000Z' },
+      { level: 'info', message: 'step progress', data: 4, at: '2026-10-21T10:07:00.000Z' },
+      { level: 'info', message: 'segmented again', data: 5, at: '2026-10-21T10:08:00.000Z' },
+    ]);
+    const data = async (opts?: Parameters<typeof ctx.repo.listEvents>[1]) =>
+      (await ctx.repo.listEvents('j', opts)).map((e) => e.data);
+    expect(await data()).toEqual([1, 2, 3, 4, 5]);
+    expect(await data({ since: '2026-10-21T10:05:00.000Z' })).toEqual([2, 3, 4, 5]);
+    expect(await data({ messages: { exact: ['segmented'], prefixes: ['extracted '] } })).toEqual([
+      1, 2, 3,
+    ]);
+    expect(await data({ messages: {} })).toEqual([]);
+  });
+
+  it('reads only the events it needs, of every run at once', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const b = await ctx.add(2);
+    await run(ctx, a, { startedAt: '2026-10-21T10:00:00.000Z' });
+    await run(ctx, b, { startedAt: '2026-10-21T10:00:00.000Z' });
+    const real = ctx.repo.listEvents.bind(ctx.repo);
+    const asked: unknown[] = [];
+    let release = (): void => {};
+    const bothAsked = new Promise<void>((resolve) => (release = resolve));
+    vi.spyOn(ctx.repo, 'listEvents').mockImplementation(async (jobId, opts) => {
+      asked.push(opts);
+      if (asked.length === 2) release();
+      // Serial reads would never get the second call: give up after a while and say so.
+      await Promise.race([bothAsked, new Promise((r) => setTimeout(r, 500))]);
+      return real(jobId, opts);
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.from.jobIds).toHaveLength(2);
+    expect(asked).toEqual([
+      {
+        since: '2026-10-21T10:00:00.000Z',
+        messages: { exact: ['segmented'], prefixes: ['extracted ', 're-ran ', 'reused cached '] },
+      },
+      expect.anything(),
+    ]);
+    expect(asked[1]).toEqual(asked[0]);
+    const started = Date.now();
+    await preview(ctx);
+    expect(Date.now() - started).toBeLessThan(450);
+  });
+
   it('stamps the diagnostics with the finish time of the run', async () => {
     const ctx = await project();
     const a = await ctx.add(1);

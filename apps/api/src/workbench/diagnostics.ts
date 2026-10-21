@@ -4,6 +4,8 @@ import type { TemplateRecord } from '../templates/repo.js';
 
 /** Approving a run makes its task `publish`, a step re-run `rerun`: both are still its run. */
 const RUN_TASKS: readonly string[] = ['process', 'rerun', 'publish'];
+/** The events runDiagnostics reads besides `segmented`: a step's extraction, re-run or cache hit. */
+const STEP_EVENT_PREFIXES = ['extracted ', 're-ran ', 'reused cached '];
 
 interface DraftIssue {
   step?: unknown;
@@ -43,6 +45,13 @@ async function draftIssues(app: FastifyInstance, jobId: string): Promise<Diagnos
   return out;
 }
 
+interface FoundRun {
+  jobId: string;
+  createdAt: string;
+  finishedAt: string;
+  startedAt: string | null;
+}
+
 /**
  * What the newest finished dev test run of each ready dev sample shows about the open draft
  * (Part C). Only runs of the draft's own version created since its last save count (older runs
@@ -57,10 +66,7 @@ export async function draftDiagnostics(
   if (!dev.length) return null;
   const since = Date.parse(draft.updatedAt);
   const bySha = new Map(dev.map((s) => [s.sha256, s.filename]));
-  const newest = new Map<
-    string,
-    { jobId: string; createdAt: string; finishedAt: string; startedAt: string | null }
-  >();
+  const newest = new Map<string, FoundRun>();
   for (const { job, sha256 } of await app.deps.repo.listProjectRuns(projectId)) {
     if (!bySha.has(sha256)) continue;
     if (!RUN_TASKS.includes(job.task) || !job.test || job.specVersion !== draft.version) continue;
@@ -76,22 +82,20 @@ export async function draftDiagnostics(
       });
     }
   }
-  const runs: DiagnosticRun[] = [];
-  let at = '';
-  for (const [sha256, found] of newest) {
+  const read = async ([sha256, found]: [string, FoundRun]): Promise<DiagnosticRun> => {
     const [events, stepRuns, issues] = await Promise.all([
-      app.deps.repo.listEvents(found.jobId),
+      // A retry reuses the job row: only the latest attempt's events describe this run.
+      app.deps.repo.listEvents(found.jobId, {
+        ...(found.startedAt === null ? {} : { since: found.startedAt }),
+        messages: { exact: ['segmented'], prefixes: STEP_EVENT_PREFIXES },
+      }),
       app.deps.repo.listStepRuns(found.jobId),
       draftIssues(app, found.jobId),
     ]);
-    if (found.finishedAt > at) at = found.finishedAt;
-    runs.push({
+    return {
       jobId: found.jobId,
       sample: bySha.get(sha256)!,
-      events: events
-        // A retry reuses the job row: only the latest attempt's events describe this run.
-        .filter((e) => found.startedAt === null || Date.parse(e.at) >= Date.parse(found.startedAt))
-        .map((e) => ({ message: e.message, data: e.data })),
+      events: events.map((e) => ({ message: e.message, data: e.data })),
       stepRuns: stepRuns.map((r) => ({
         stepId: r.stepId,
         startedAt: r.startedAt,
@@ -99,8 +103,11 @@ export async function draftDiagnostics(
         cached: r.cached,
       })),
       issues,
-    });
-  }
+    };
+  };
+  const runs = await Promise.all([...newest].map(read));
+  let at = '';
+  for (const found of newest.values()) if (found.finishedAt > at) at = found.finishedAt;
   if (!runs.length) return null;
   return runDiagnostics(runs, draft.version, at || new Date().toISOString());
 }

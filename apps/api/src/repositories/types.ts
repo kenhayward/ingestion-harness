@@ -302,6 +302,12 @@ export interface NewEdit {
 }
 
 /** Persistence port. `PgRepo` in production, `MemoryRepo` in unit tests. */
+/** Which of a job's events `IngestionRepo.listEvents` reads. */
+export interface EventFilter {
+  since?: string;
+  messages?: { exact?: string[]; prefixes?: string[] };
+}
+
 export interface IngestionRepo {
   ping(): Promise<void>;
   createDocumentAndJob(
@@ -398,8 +404,14 @@ export interface IngestionRepo {
   getJobParams(id: string): Promise<Record<string, unknown> | null>;
   /** The newest event with each of `messages` for each job (job_events); none: left out. */
   latestEvents(jobIds: string[], messages: readonly string[]): Promise<JobEventRecord[]>;
-  /** Every event of a job, oldest first (job_events). */
-  listEvents(jobId: string): Promise<{ message: string; data: unknown; at: string }[]>;
+  /**
+   * A job's events, oldest first (job_events): every one, or those at or after `since` whose
+   * message is one of `messages.exact` or starts with one of `messages.prefixes`.
+   */
+  listEvents(
+    jobId: string,
+    opts?: EventFilter,
+  ): Promise<{ message: string; data: unknown; at: string }[]>;
   /** When the job's first `message` event at or after `since` whose data contains `match` came. */
   firstEventAt(
     jobId: string,
