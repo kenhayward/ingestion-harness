@@ -15,6 +15,14 @@ import {
 } from '@ih/bridge-contract';
 import { z } from 'zod';
 
+/**
+ * A connection summary as read here: a bridge one version behind sends no `fields` (the values
+ * of its non-secret credential fields), which reads as none rather than failing every sync.
+ */
+const ReadConnectionSummary = ConnectionSummarySchema.extend({
+  fields: ConnectionSummarySchema.shape.fields.default({}),
+});
+
 /** A shared connection written once, by the move of a target's keys to the bridge. */
 export interface SharedConnection {
   id: string;
@@ -149,7 +157,7 @@ export class HttpBridgeApi implements BridgeApi {
       [200],
       'the connection list',
     );
-    return z.strictObject({ connections: z.array(ConnectionSummarySchema) }).parse(await res.json())
+    return z.strictObject({ connections: z.array(ReadConnectionSummary) }).parse(await res.json())
       .connections;
   }
 

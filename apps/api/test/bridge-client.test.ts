@@ -67,3 +67,12 @@ describe('HttpBridgeApi targets', () => {
     expect(JSON.parse(calls[0]!.body)).toEqual(put);
   });
 });
+
+describe('HttpBridgeApi connections', () => {
+  it('reads a summary without `fields` (a bridge one version behind) as no fields', async () => {
+    const summary = { id: 'lake', name: 'Lake', sinkId: 's3', status: 'ok', statusReason: null };
+    const { api, calls } = client(() => ({ connections: [summary] }));
+    expect(await api.listConnections('shared')).toEqual([{ ...summary, fields: {} }]);
+    expect(calls[0]!.path).toBe('/v1/connections?kind=shared');
+  });
+});
