@@ -37581,6 +37581,15 @@
                                     "items": {
                                       "type": "string"
                                     }
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "samples": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
                                   }
                                 },
                                 "required": [
@@ -37588,7 +37597,9 @@
                                   "target",
                                   "column",
                                   "issues",
-                                  "examples"
+                                  "examples",
+                                  "message",
+                                  "samples"
                                 ]
                               }
                             },
