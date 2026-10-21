@@ -244,12 +244,13 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
             names this setting. Mainly a property of the model, so set it to what the model and
             its context window allow.
 
-            \`maxConcurrentCalls\` (1 to 32) is how many calls a worker may send this model at
-            once: a step's occurrence and chunk calls, and OCR pages. Null: one at a time (OCR
-            keeps \`ocr.concurrency\` of the config file). Set it no higher than the model's
-            server serves at once (LM Studio's parallel requests); each worker replica counts
-            on its own. A setting left out of the body is kept; null clears it. A model id
-            containing \`/\` is URL-encoded.
+            \`maxConcurrentCalls\` (1 to 32) is how many calls the workers together may send this
+            model at once: a step's occurrence and chunk calls, and OCR pages. Each call holds
+            one of the model's slots (a Postgres advisory lock of its worker, freed if the worker
+            dies) and waits while every slot is in use. Null: no slots, one call at a time in
+            each worker (OCR keeps \`ocr.concurrency\` of the config file). Set it to what the
+            model's server serves at once (LM Studio's parallel requests). A setting left out of
+            the body is kept; null clears it. A model id containing \`/\` is URL-encoded.
           `,
         ),
         params: NameParams.extend({

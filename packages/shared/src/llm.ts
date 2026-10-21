@@ -21,8 +21,9 @@ export const LlmModelViewSchema = z.object({
    */
   maxOutputTokens: z.number().int().nullable(),
   /**
-   * How many calls a worker may send this model at once (a step's occurrences and chunks, OCR
-   * pages); null: one at a time (OCR: `ocr.concurrency` of the config file).
+   * How many calls the workers together may send this model at once (a step's occurrences and
+   * chunks, OCR pages; worker `call_slots`); null: one at a time in each worker (OCR:
+   * `ocr.concurrency` of the config file).
    */
   maxConcurrentCalls: z.number().int().nullable(),
 });

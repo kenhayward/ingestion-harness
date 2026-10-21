@@ -85,14 +85,14 @@ export function AdminModelsHelp() {
           unless changed). Raise it when drafting replies are cut off.
         </li>
         <li>
-          <strong>Parallel calls</strong> beside a model is how many requests a worker may send it
-          at once (empty or 1: one at a time). They are the calls within one step of one document: a
-          step's repeating sections or its chunks of pages, and the pages being OCR'd. The steps
-          themselves still run one after another, since a step can read what earlier steps found.
-          Set it no higher than the model's server handles at once (in LM Studio, its parallel
-          requests setting); each worker replica sends its own calls, so they add up. Some servers
-          answer slightly differently when they batch requests, so compare a test run before relying
-          on a higher value.
+          <strong>Parallel calls</strong> beside a model is how many requests CT Studio may send it
+          at once, all workers together (empty: one at a time in each worker). They are the calls
+          within one step of one document: a step's repeating sections or its chunks of pages, and
+          the pages being OCR'd. The steps themselves still run one after another, since a step can
+          read what earlier steps found. Set it to what the model's server handles at once (in LM
+          Studio, its parallel requests setting); a call waits for a free slot when every one is in
+          use. Some servers answer slightly differently when they batch requests, so compare a test
+          run before relying on a higher value.
         </li>
         <li>
           <strong>Tool calls</strong> (on by default) let Workbench drafting work things out as it
