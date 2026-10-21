@@ -37,7 +37,9 @@ it. The job then waits in `delivering`, which cannot be cancelled. The bridge ru
 target (the S3 sink writes each file at the target's prefix + its name), retries what can be
 retried, and posts every status change to `POST /api/bridge/events`; the API records each event
 once and in order (`job_deliveries.last_sequence`) and finishes the job when every delivery is
-final, exactly once (it holds the job's row). A reconcile asks the bridge about deliveries silent
+final, exactly once (it holds the job's row); a final delivery takes no later event. An event
+for a delivery the API still does not know after a day (its job deleted during the hand-off) is
+dropped by the bridge with a warning. A reconcile asks the bridge about deliveries silent
 for ten minutes, so a lost event cannot strand a job; a delivery the bridge has no record of (its
 data lost or restored) is failed (`not_found`), which finishes the job. A package over
 `BRIDGE_MAX_PACKAGE_MB` is refused with `content_rejected` (413) and the job goes to review. The

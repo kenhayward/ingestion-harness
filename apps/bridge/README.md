@@ -16,7 +16,9 @@ through the contract. It keeps its own tables in Postgres schema `bridge`
   retryable failures with backoff (30 s doubling, at most an hour, `BRIDGE_MAX_ATTEMPTS`), stops
   for a person on `needs_user` errors, and skips a repeat that a sink can neither replace nor
   withdraw.
-- Every status change goes to an outbox, sent signed to `BRIDGE_EVENTS_URL`.
+- Every status change goes to an outbox, sent signed to `BRIDGE_EVENTS_URL`. An event the producer does not
+  take is retried with backoff; one it still answers 409 (no such delivery) after 24 hours is
+  dropped with a warning (the producer's reconcile reads any delivery it does know).
 - `GET /v1/deliveries/:id`, `GET /v1/sinks`, `GET /v1/targets`; `GET /healthz`, `GET /readyz`.
 - The OpenAPI document is served at `/docs/openapi.json` and committed as `openapi.json`
   (`npm run openapi -w @ih/bridge` after changing a route).
