@@ -1,5 +1,7 @@
+import { TRIPLE_STORE_TARGET_ID } from '@ih/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { decryptSecret, type SecretsKeys } from '../llm/secrets.js';
+import { INTERNAL_CONNECTION_ID } from '../publish-targets/place.js';
 import type { PublishTargetRepo, SeedOutcome } from '../publish-targets/repo.js';
 import {
   ensureRdfConnection,
@@ -67,7 +69,8 @@ export const movedConnectionId = (targetId: string): string => `target-${targetI
  * default) become an env connection: the bridge reads the same allowlisted variables in its own
  * container. A row an earlier move already took is dropped. A row whose secret cannot be
  * decrypted, that has no keys, or whose connection the bridge refuses is skipped and logged; it
- * stays for the next try.
+ * stays for the next try. A row of a target that is not external (an internal one never delivers
+ * with its own keys) or not live (inert after a copy restore: production's keys) is dropped.
  */
 export async function moveTargetsToBridge(
   deps: SyncDeps & { secrets: SecretsKeys | null },
@@ -80,7 +83,10 @@ export async function moveTargetsToBridge(
       continue;
     }
     const t = await deps.targets.get(k.id);
-    if (!t || t.kind !== 'external') continue;
+    if (!t || t.kind !== 'external') {
+      await deps.targets.dropLegacyKeys(k.id);
+      continue;
+    }
     const fields: Record<string, string> = {};
     if (k.endpoint) fields.endpoint = k.endpoint;
     if (k.region) fields.region = k.region;
@@ -144,6 +150,53 @@ export async function moveTargetsToBridge(
   return { moved, skipped };
 }
 
+/**
+ * After a restore, before the pull: every live cached target the bridge lacks is written to the
+ * bridge from the cache, so a backup from before the merge (whose targets the bridge never held)
+ * gets its targets back rather than having them marked missing. Internal targets deliver with
+ * the built-in connection, the triple store with its own; an external one with the connection
+ * it names, but only once its keys have moved (a row still in `publish_target_legacy_keys` is
+ * left to the next move). A row never synced (the unseeded default) is left to the seed; one the
+ * bridge refuses is logged and skipped.
+ */
+export async function putMissingTargets(deps: TargetSyncDeps): Promise<string[]> {
+  const listed = new Set((await deps.bridge.listTargets()).map((v) => v.id));
+  const unmoved = new Set((await deps.targets.legacyKeys()).map((k) => k.id));
+  const put: string[] = [];
+  for (const c of await deps.targets.cachedIds()) {
+    if (!c.live || listed.has(c.id) || unmoved.has(c.id)) continue;
+    const t = await deps.targets.get(c.id);
+    if (!t || t.syncedAt === null) continue;
+    const connectionId =
+      t.kind === 'internal'
+        ? INTERNAL_CONNECTION_ID
+        : t.kind === 'rdf'
+          ? TRIPLE_STORE_TARGET_ID
+          : t.connectionId;
+    try {
+      if (t.kind === 'rdf' && deps.rdfSeed) await ensureRdfConnection(deps.bridge, deps.rdfSeed);
+      const view = await deps.bridge.putTarget(t.id, {
+        label: t.label,
+        sinkId: t.sinkId,
+        instanceId: t.instanceId,
+        connectionId,
+        destination: t.destination,
+      });
+      await deps.targets.cache(view, {});
+    } catch (err) {
+      const why = refusal(err);
+      if (why === null) throw err;
+      deps.log.warn(
+        { target: t.id },
+        `publishing target ${t.id} could not be written back to the bridge after the restore: the bridge refused it (${why})`,
+      );
+      continue;
+    }
+    put.push(t.id);
+  }
+  return put;
+}
+
 export interface TargetSyncDeps extends SyncDeps {
   secrets: SecretsKeys | null;
   /** The default from `.env`. */
@@ -158,11 +211,17 @@ export interface TargetSyncResult {
   /** `refused`: the bridge refused the seed (logged); the rest of the pass went on. */
   seeded: { default: SeedOutcome | 'refused'; rdf: SeedOutcome | 'refused' | null };
   pulled: { cached: number; missing: string[] };
+  /** After a restore only: the cached targets written back to the bridge (`putMissingTargets`). */
+  restored?: string[];
 }
 
-/** One pass: move what is left to move, seed from `.env`, then pull the whole registry. */
-async function syncOnce(deps: TargetSyncDeps): Promise<TargetSyncResult> {
+/**
+ * One pass: move what is left to move, (after a restore) write back what the bridge lacks, seed
+ * from `.env`, then pull the whole registry.
+ */
+async function syncOnce(deps: TargetSyncDeps, afterRestore: boolean): Promise<TargetSyncResult> {
   const { moved, skipped } = await moveTargetsToBridge(deps);
+  const restored = afterRestore ? await putMissingTargets(deps) : undefined;
   const refusedOr = async (what: string, seed: () => Promise<SeedOutcome>) => {
     try {
       return await seed();
@@ -178,7 +237,10 @@ async function syncOnce(deps: TargetSyncDeps): Promise<TargetSyncResult> {
     default: await refusedOr('publishing target default', () => seedDefault(deps, deps.seed)),
     rdf: rdfSeed ? await refusedOr('the triple store target', () => seedRdf(deps, rdfSeed)) : null,
   };
-  return { moved, skipped, seeded, pulled: await pullTargets(deps) };
+  const pulled = await pullTargets(deps);
+  return restored
+    ? { moved, skipped, restored, seeded, pulled }
+    : { moved, skipped, seeded, pulled };
 }
 
 /**
@@ -186,15 +248,28 @@ async function syncOnce(deps: TargetSyncDeps): Promise<TargetSyncResult> {
  * the background; publishing waits on the bridge anyway, and the worker retries a delivery the
  * bridge cannot take yet.
  */
-export async function startTargetSync(
+export function startTargetSync(
   deps: TargetSyncDeps,
-  opts: { retryMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+  opts: SyncOptions = {},
+): Promise<TargetSyncResult> {
+  return syncUntilDone(deps, opts, false);
+}
+
+interface SyncOptions {
+  retryMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+async function syncUntilDone(
+  deps: TargetSyncDeps,
+  opts: SyncOptions,
+  afterRestore: boolean,
 ): Promise<TargetSyncResult> {
   const retryMs = opts.retryMs ?? 15_000;
   const sleep = opts.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   for (;;) {
     try {
-      return await syncOnce(deps);
+      return await syncOnce(deps, afterRestore);
     } catch (err) {
       deps.log.warn({ err }, `publishing targets could not be synced with the bridge yet`);
       await sleep(retryMs);
@@ -203,13 +278,15 @@ export async function startTargetSync(
 }
 
 /**
- * After a restore swapped the database in: the same pass. A restored target's keys from before
- * the bridge move there, the triple store target is seeded again from RDF_ENDPOINT when the
- * restored database lacks it (a backup from before it), and the cache takes the registry again.
+ * After a restore swapped the database in: the same pass, plus one step. A restored target's
+ * keys from before the bridge move there; the restored cache's live targets the bridge lacks are
+ * written back to it (`putMissingTargets`: a backup from before the merge); the triple store
+ * target is seeded again from RDF_ENDPOINT when the restored database lacks it (a backup from
+ * before it); and the cache takes the registry again.
  */
 export function resyncAfterRestore(
   deps: TargetSyncDeps,
-  opts: Parameters<typeof startTargetSync>[1] = {},
+  opts: SyncOptions = {},
 ): Promise<TargetSyncResult> {
-  return startTargetSync(deps, opts);
+  return syncUntilDone(deps, opts, true);
 }

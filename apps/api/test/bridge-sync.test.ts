@@ -179,6 +179,19 @@ describe('moveTargetsToBridge', () => {
     expect(await targets.legacyKeys()).toEqual([]);
   });
 
+  it('drops the legacy row of an inert or non-external target, moving nothing', async () => {
+    const { targets, bridge, log } = setup();
+    await cacheS3(targets, { id: 'gone' });
+    targets.makeInert('gone');
+    targets.putLegacyKeys(legacy('gone'));
+    await cacheS3(targets, { id: 'archive', kind: 'internal' });
+    targets.putLegacyKeys(legacy('archive'));
+    const result = await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log });
+    expect(result).toEqual({ moved: [], skipped: [] });
+    expect(await targets.legacyKeys()).toEqual([]);
+    expect(bridge.connectionPuts).toBe(0);
+  });
+
   it('env-keyed keys become an env connection', async () => {
     const { targets, bridge, log } = setup();
     await cacheS3(targets, { id: 'default', label: 'Default', bucket: 'ingest-published' });
@@ -332,6 +345,70 @@ describe('after a restore swaps the database in', () => {
     // The restored default was on the bridge: it is not written again.
     expect(bridge.targets.get('default')?.label).toBe('Main');
     expect((await targets.get('default'))?.label).toBe('Main');
+  });
+
+  it('writes back the live cached targets the bridge lacks, before the pull', async () => {
+    const { targets, bridge, log, warnings } = setup();
+    // A backup from before the merge: the cache holds its targets, the bridge none of them.
+    await cacheS3(targets, { id: 'archive', kind: 'internal', bucket: 'arch', layout: 'package' });
+    await cacheS3(targets, { id: 'lake', connectionId: 'target-lake' });
+    await targets.cache(rdfView('restored'), { source: 'env', seededAt: '2026-10-01T00:00:00Z' });
+    // Keys not moved (they cannot be decrypted): left to the next move, not written back.
+    await cacheS3(targets, { id: 'stuck' });
+    targets.putLegacyKeys(legacy('stuck', { secretKeyEnc: 'v1:not-ours' }));
+    await cacheS3(targets, { id: 'gone' });
+    targets.makeInert('gone');
+    const result = await resyncAfterRestore(
+      { targets, bridge, secrets: KEYS, log, seed: SEED, rdfSeed: RDF },
+      { retryMs: 5, sleep: async () => undefined },
+    );
+    expect(result.restored).toEqual(['archive', 'lake', 'rdf-default']);
+    expect(bridge.targets.get('archive')).toMatchObject({
+      connectionId: 'internal',
+      destination: { bucket: 'arch', layout: 'package' },
+    });
+    expect(bridge.targets.get('lake')?.connectionId).toBe('target-lake');
+    // The triple store keeps its restored dataset (the seed then finds it held).
+    expect(bridge.targets.get('rdf-default')).toMatchObject({
+      connectionId: 'rdf-default',
+      destination: { dataset: 'restored' },
+    });
+    expect(result.seeded.rdf).toBe('differs');
+    expect(bridge.targets.has('stuck')).toBe(false);
+    expect(bridge.targets.has('gone')).toBe(false);
+    expect(result.pulled.missing).toEqual(['stuck']);
+    expect(warnings.some((w) => w.includes('stuck'))).toBe(true);
+  });
+
+  it('at start a cached target the bridge lacks is only marked missing', async () => {
+    const { targets, bridge, log } = setup();
+    await cacheS3(targets, { id: 'archive', kind: 'internal' });
+    const result = await startTargetSync(
+      { targets, bridge, secrets: KEYS, log, seed: SEED, rdfSeed: null },
+      { retryMs: 5, sleep: async () => undefined },
+    );
+    expect(result.restored).toBeUndefined();
+    expect(bridge.targets.has('archive')).toBe(false);
+    expect(result.pulled.missing).toEqual(['archive']);
+  });
+
+  it('a target the bridge refuses is logged and skipped; the others are written back', async () => {
+    const { targets, bridge, log, warnings } = setup();
+    await cacheS3(targets, { id: 'odd' });
+    await cacheS3(targets, { id: 'fine' });
+    const put = bridge.putTarget.bind(bridge);
+    bridge.putTarget = async (id, t) => {
+      if (id === 'odd') throw FakeBridgeApi.refusal('no such sink');
+      return put(id, t);
+    };
+    const result = await resyncAfterRestore(
+      { targets, bridge, secrets: KEYS, log, seed: SEED, rdfSeed: null },
+      { retryMs: 5, sleep: async () => undefined },
+    );
+    expect(result.restored).toEqual(['fine']);
+    expect(warnings).toContain(
+      'publishing target odd could not be written back to the bridge after the restore: the bridge refused it (no such sink)',
+    );
   });
 
   it('without RDF_ENDPOINT seeds no triple store', async () => {

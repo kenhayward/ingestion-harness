@@ -26,12 +26,15 @@ export const KEPT_TABLES = [
 export type KeptTable = (typeof KEPT_TABLES)[number];
 
 /**
- * Rows of each kept table as `row_to_json`, plus this server's live publishing targets and the
- * delivery bridge's connections (their secrets are under this server's BRIDGE_SECRETS_KEY, so
- * production's could not be read here anyway).
+ * Rows of each kept table as `row_to_json`, plus this server's live publishing targets (cache
+ * rows: the bridge's label, sink, instance, connection and destination, and CT Studio's own
+ * facts), their keys from before the bridge not moved yet (under this server's LLM_SECRETS_KEY)
+ * and the delivery bridge's connections (their secrets are under this server's
+ * BRIDGE_SECRETS_KEY, so production's could not be read here anyway).
  */
 export type KeptState = Record<KeptTable, unknown[]> & {
   targets: unknown[];
+  legacyKeys: unknown[];
   bridgeConnections: unknown[];
 };
 
@@ -63,10 +66,15 @@ export async function readKeptState(live: pg.ClientBase): Promise<KeptState> {
     live,
     'SELECT row_to_json(t) AS r FROM publish_targets t WHERE inert_at IS NULL',
   );
+  const legacyKeys = await rowsOf(
+    live,
+    `SELECT row_to_json(k) AS r FROM publish_target_legacy_keys k
+       JOIN publish_targets t ON t.id = k.id WHERE t.inert_at IS NULL`,
+  );
   const bridgeConnections = (await hasBridge(live))
     ? await rowsOf(live, 'SELECT row_to_json(c) AS r FROM bridge.connections c')
     : [];
-  return { ...kept, targets, bridgeConnections };
+  return { ...kept, targets, legacyKeys, bridgeConnections };
 }
 
 /** Whether the database has the delivery bridge's schema (a backup from before it has not). */
@@ -116,8 +124,15 @@ async function apply(side: pg.ClientBase, kept: KeptState): Promise<CopyResult> 
   // 3a. Production's kept-table rows go, children first (s3_consumer_targets names targets).
   for (const table of [...KEPT_TABLES].reverse()) await side.query(`DELETE FROM ${table}`);
 
-  // 4. Publishing targets.
+  // 4. Publishing targets, and their keys from before the bridge: production's never survive
+  // (they are its external targets' credentials); this server's not moved yet are kept.
   const targets = await replaceTargets(side, kept.targets as TargetRow[]);
+  await side.query('DELETE FROM publish_target_legacy_keys');
+  await side.query(
+    `INSERT INTO publish_target_legacy_keys
+     SELECT * FROM json_populate_recordset(null::publish_target_legacy_keys, $1::json)`,
+    [JSON.stringify(kept.legacyKeys)],
+  );
 
   // 3b. This server's rows, parents first (its consumers' targets now exist).
   for (const table of KEPT_TABLES) {
@@ -133,8 +148,8 @@ async function apply(side: pg.ClientBase, kept: KeptState): Promise<CopyResult> 
   await side.query('UPDATE llm_config_state SET version = version + 1');
   await side.query('UPDATE publish_targets_state SET version = version + 1');
 
-  // 4b. The delivery bridge: this server's connections, production's work stopped.
-  if (await hasBridge(side)) await keepBridge(side, kept.bridgeConnections);
+  // 4b. The delivery bridge: this server's connections and targets, production's work stopped.
+  if (await hasBridge(side)) await keepBridge(side, kept.bridgeConnections, kept.targets);
 
   // 5. What the report lists for an admin to fix.
   return {
@@ -147,7 +162,8 @@ async function apply(side: pg.ClientBase, kept: KeptState): Promise<CopyResult> 
 /**
  * Staging's targets replace production's on a shared id and are added otherwise; production's
  * external-only targets, and its triple store target when this server has none, become inert
- * (no endpoint, no credentials or writer user), so nothing here delivers to production. The delivery records of every
+ * (no connection, and their keys from before the bridge are dropped with the rest of
+ * production's), so nothing here delivers to production. The delivery records of every
  * target whose objects are not in this server's own SeaweedFS under that id (an inert one, or a
  * shared id that is not internal on both sides) are withdrawn, and their graph records dropped.
  */
@@ -192,10 +208,7 @@ async function replaceTargets(side: pg.ClientBase, staging: TargetRow[]) {
   }
   const droppedIds = dropped.map((t) => t.id).sort();
   await side.query(
-    `UPDATE publish_targets
-        SET inert_at = now(), endpoint = NULL, region = NULL, access_key_id = NULL,
-            secret_key_enc = NULL, access_key_env = NULL, secret_key_env = NULL, kms_key_id = NULL
-      WHERE id = ANY($1::text[])`,
+    'UPDATE publish_targets SET inert_at = now(), connection_id = NULL WHERE id = ANY($1::text[])',
     [droppedIds],
   );
 
@@ -226,9 +239,16 @@ async function replaceTargets(side: pg.ClientBase, staging: TargetRow[]) {
  * secrets are under production's key); a restored bridge target naming a connection this server
  * lacks loses it, so its deliveries fail visibly until an admin picks one; production's
  * unfinished deliveries are failed and its unsent events dropped, so nothing it queued is
- * delivered or reported from here. The cache takes the bridge's targets again after the swap.
+ * delivered or reported from here. This server's targets are written to the bridge's registry as
+ * well as the cache (on a shared id they replace production's; a production target dropped here
+ * keeps its bridge row, which its deliveries name), so the pull after the swap caches this
+ * server's rows, not the restored ones.
  */
-async function keepBridge(side: pg.ClientBase, connections: unknown[]): Promise<void> {
+async function keepBridge(
+  side: pg.ClientBase,
+  connections: unknown[],
+  targets: unknown[],
+): Promise<void> {
   await side.query(
     `UPDATE bridge.deliveries
         SET status = 'failed', lease_until = NULL, claim_id = NULL, updated_at = now(),
@@ -255,6 +275,18 @@ async function keepBridge(side: pg.ClientBase, connections: unknown[]): Promise<
   await side.query(
     `UPDATE bridge.targets t SET connection_id = k.connection_id
        FROM kept_target_connections k WHERE k.id = t.id`,
+  );
+  // A connection this server's bridge lacks (the default before its seed names none) is left out.
+  await side.query(
+    `INSERT INTO bridge.targets AS b (id, label, sink_id, instance_id, connection_id, destination)
+     SELECT k.id, k.label, k.sink_id, k.instance_id,
+            (SELECT c.id FROM bridge.connections c WHERE c.id = k.connection_id), k.destination
+       FROM json_populate_recordset(null::publish_targets, $1::json) k
+     ON CONFLICT (id) DO UPDATE SET
+       label = EXCLUDED.label, sink_id = EXCLUDED.sink_id, instance_id = EXCLUDED.instance_id,
+       connection_id = EXCLUDED.connection_id, destination = EXCLUDED.destination,
+       updated_at = now()`,
+    [JSON.stringify(targets)],
   );
 }
 
