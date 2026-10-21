@@ -74,7 +74,9 @@ def run_check(check: Check, results: dict[str, Any]) -> dict[str, list[dict[str,
 
     references: list[tuple[str, set[str]]] = []  # (reference value, normalised aliases)
     for item in _select(results, prefix):
-        for ref in (str(v) for v in _select(item, ref_rest) if v is not None) if ref_rest else []:
+        # No path below the container: each item is itself a reference value (a list field).
+        found = _select(item, ref_rest) if ref_rest else [item]
+        for ref in (str(v) for v in found if v is not None and not isinstance(v, dict | list)):
             aliases = {norm(a) for a in select_values(item, alias_rest)} if alias_rest else set()
             if all(norm(ref) != norm(r) for r, _ in references):
                 references.append((ref, aliases))

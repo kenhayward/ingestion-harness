@@ -69,3 +69,15 @@ def test_near_matching_respects_max_distance() -> None:
     strict = CHECK.model_copy(update={"max_distance": 0})
     rows = {r["value"]: r for r in run_check(strict, RESULTS)["rows"]}
     assert rows["G1T230212"]["status"] == "unmatched"
+
+
+def test_list_field_reference() -> None:
+    results = {
+        "summary": {"studies": {"value": ["Study-1", "Study-2"]}},
+        "t": {"rows": [{"s": "Study-1"}, {"s": "Study-9"}]},
+    }
+    check = Check.model_validate(
+        {"id": "studies", "values": "t.rows[*].s", "reference": "summary.studies.value[*]", "maxDistance": 0}
+    )
+    rows = {r["value"]: r["status"] for r in run_check(check, results)["rows"]}
+    assert rows == {"Study-1": "match", "Study-9": "unmatched", "Study-2": "unused"}
