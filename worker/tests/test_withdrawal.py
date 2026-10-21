@@ -426,3 +426,58 @@ def test_withdraw_of_an_output_delivered_before_the_bridge_deletes_it_through_th
     assert isinstance(deps.bridge, FakeBridge)
     assert deps.bridge.deletes == [("default", [("published", key)])]
     assert target.get_optional("published", key) is None
+
+
+def with_archive(deps: PipelineDeps) -> MemoryObjectStore:
+    """Adds an archive target (layout package, prefix arch/) with its own store."""
+    assert isinstance(deps.targets, FakeTargets) and isinstance(deps.bridge, FakeBridge)
+    archive = MemoryObjectStore()
+    deps.targets.targets["archive"] = Target("archive", "keep", "arch/", layout="package")
+    deps.bridge.targets["archive"] = ("keep", "arch/")
+    deps.bridge.archives.add("archive")
+    deps.bridge.stores["archive"] = archive
+    return archive
+
+
+def test_republish_delivers_to_every_listed_target(tmp_path: Path) -> None:
+    deps, _default = setup(tmp_path)
+    archive = with_archive(deps)
+    v1 = {**TEMPLATE, "delivery": {**TEMPLATE["delivery"], "publishTo": ["archive", "default"]}}
+    queue = FakeQueue(
+        jobs=[background("republish", {"templateId": "letter"})],
+        templates={("letter", 1): v1},
+    )
+    run_once(queue, deps, "w1")
+    assert queue.finished, queue.reviewed or queue.failed
+    assert {t for (_, _, t) in queue.published} == {"archive", "default"}
+    assert {(t, p) for (_, t, p) in queue.primaries} == {("archive", False), ("default", True)}
+    assert any(k[1].endswith("package.json") for k in archive.objects)
+
+
+def test_withdraw_deletes_the_archives_keys_at_every_target(tmp_path: Path) -> None:
+    deps, default = setup(tmp_path)
+    archive = with_archive(deps)
+    v1 = {**TEMPLATE, "delivery": {**TEMPLATE["delivery"], "publishTo": ["default", "archive"]}}
+    queue = FakeQueue(
+        jobs=[background("republish", {"templateId": "letter"})],
+        templates={("letter", 1): v1},
+    )
+    run_once(queue, deps, "w1")
+    assert archive.objects and default.objects
+    # What deleting the job sends: every published row, at its own target.
+    rows = [
+        {"bucket": target.bucket, "key": o.key, "target": target.id}
+        for (_, outputs, target_id) in queue.published
+        for target in [deps.targets.get(target_id)]  # type: ignore[union-attr]
+        for o in outputs
+    ]
+    graphs = [
+        {"bucket": "published", "key": k[1], "target": "default"}
+        for k in default.objects
+        if "/graphs/" in k[1]
+    ]
+    withdraw = FakeQueue(jobs=[background("withdraw", {"objects": rows + graphs, "graphs": []})])
+    run_once(withdraw, deps, "w1")
+    assert withdraw.finished, withdraw.reviewed or withdraw.failed
+    assert not archive.objects
+    assert not [k for k in default.objects if "/graphs/" not in k[1]]

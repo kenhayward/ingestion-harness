@@ -17,6 +17,7 @@ from ingest_worker.bridge.models import (
     CreateDeliveriesRequest,
     CreateDeliveriesResult,
     DeliveryRef,
+    package_archive_keys,
 )
 from ingest_worker.embeddings import EmbeddingTerm
 from ingest_worker.llm.base import (
@@ -184,6 +185,8 @@ class FakeQueue:
     published: list[tuple[str, list[RenderedOutput], str]] = field(default_factory=list)
     #: The delivery id each published record carried (job id, target id, delivery id).
     published_deliveries: list[tuple[str, str, str | None]] = field(default_factory=list)
+    #: (job id, target id, whether it is the primary target) per record_published.
+    primaries: list[tuple[str, str, bool]] = field(default_factory=list)
     #: Jobs handed to the bridge (job id, outputs, [(target id, delivery id)]).
     handed_over: list[tuple[str, list[RenderedOutput], list[tuple[str, str]]]] = field(
         default_factory=list
@@ -259,9 +262,12 @@ class FakeQueue:
         outputs: list[RenderedOutput],
         target: Target,
         delivery_id: str | None,
+        *,
+        primary: bool = True,
     ) -> None:
         self.published.append((job.id, outputs, target.id))
         self.published_deliveries.append((job.id, target.id, delivery_id))
+        self.primaries.append((job.id, target.id, primary))
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         return self.edits.get(job_id, [])
@@ -860,6 +866,8 @@ class FakeBridge:
         rdf: set[str] | None = None,
     ) -> None:
         self.targets = dict(targets or {})
+        #: Targets with layout `package`: a delivery writes the package as an archive there.
+        self.archives: set[str] = set()
         self.stores = dict(stores or {})
         self.rdf = set(rdf or ())
         self.graphs: dict[str, str] = {}
@@ -890,6 +898,10 @@ class FakeBridge:
                     self.graphs[request.package.rdf.graph_name] = request.package.rdf.turtle
                 continue
             bucket, prefix = self.targets.get(target_id, ("", ""))
+            if target_id in self.archives:
+                for _, key in package_archive_keys(prefix, request.package):
+                    self._write(target_id, bucket, key, b"archived", "application/octet-stream")
+                continue
             for f in request.package.files:
                 body = base64.b64decode(f.content)
                 self._write(target_id, bucket, prefix + f.name, body, f.content_type)

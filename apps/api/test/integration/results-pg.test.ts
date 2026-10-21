@@ -119,4 +119,34 @@ describe.skipIf(!url)('published results against Postgres', { timeout: 30_000 },
       await names({ limit: 50, show: 'auto', before: auto!.publishedAt, beforeId: auto!.jobId }),
     ).toEqual(['clean.pdf', 'auto.pdf']);
   });
+
+  it('Results lists each output once, from the primary target; the archive rows still count', async () => {
+    const job = await published('archived.pdf', '2026-10-21T10:00:00.000Z', {
+      reviewed: true,
+      issues: null,
+    });
+    await pool.query(
+      `INSERT INTO publish_targets (id, label, kind, bucket, layout)
+       VALUES ('archive', 'Archive', 'internal', 'keep', 'package') ON CONFLICT (id) DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key, target_id,
+         is_primary)
+       VALUES ($1, 'document', 'published', 'json', 'keep', $2, 'archive', false),
+              ($1, 'package:manifest', 'published', 'json', 'keep', $3, 'archive', false)`,
+      [job.id, `arch/packages/k/files/${job.id}.json`, 'arch/packages/k/package.json'],
+    );
+    const rows = await repo.listPublished({ templateId: type, limit: 50, q: `archived` });
+    const row = rows.find((r) => r.jobId === job.id)!;
+    expect(row.outputs.map((o) => o.outputId)).toEqual(['document']);
+    const detail = (await repo.getJob(job.id))!;
+    expect(detail.outputs.filter((o) => o.stage === 'published').map((o) => o.targetId)).toEqual([
+      'default',
+    ]);
+    const { rows: usage } = await pool.query(
+      `SELECT count(*)::int AS n FROM job_outputs WHERE target_id = 'archive' AND job_id = $1`,
+      [job.id],
+    );
+    expect(usage[0].n).toBe(2);
+  });
 });

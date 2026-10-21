@@ -225,3 +225,19 @@ def graph_idempotency_key(graph_name: str, version: int) -> str:
     """What a graph package is about: one graph name at one version (as TypeScript's
     graphIdempotencyKey)."""
     return hashlib.sha256(f"graph\n{graph_name}\n{version}".encode()).hexdigest()
+
+
+def package_archive_keys(prefix: str, package: BridgePackage) -> list[tuple[str, str]]:
+    """Every key a package-layout (archive) target writes for `package`, in write order with
+    `package.json` last, each with the output id it is recorded under (as TypeScript's
+    packageArchiveKeys): a file's own output id, else `package:data`, `package:graph`,
+    `package:image:<id>` and `package:manifest`."""
+    root = f"{prefix}packages/{package.idempotency_key}/"
+    keys = [(f.output, f"{root}files/{f.name}") for f in package.files]
+    if package.data is not None:
+        keys.append(("package:data", f"{root}data.json"))
+    if package.rdf is not None:
+        keys.append(("package:graph", f"{root}graph.ttl"))
+    keys += [(f"package:image:{i.id}", f"{root}images/{i.id}") for i in package.images or []]
+    keys.append(("package:manifest", f"{root}package.json"))
+    return keys

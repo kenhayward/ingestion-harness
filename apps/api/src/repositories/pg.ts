@@ -47,6 +47,7 @@ import {
   finishEvent,
   type JobDelivery,
   type JobFinish,
+  type EventFilter,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -703,6 +704,25 @@ export class PgRepo implements IngestionRepo {
     }));
   }
 
+  async listEvents(
+    jobId: string,
+    opts: EventFilter = {},
+  ): Promise<{ message: string; data: unknown; at: string }[]> {
+    const { messages } = opts;
+    // A prefix is matched literally: LIKE's wildcards in it are escaped.
+    const prefixes = (messages?.prefixes ?? []).map((p) => p.replace(/[!%_]/g, (c) => `!${c}`));
+    const { rows } = await this.pool.query<{ message: string; data: unknown; at: Date }>(
+      `SELECT message, data, at FROM job_events
+        WHERE job_id = $1
+          AND ($2::timestamptz IS NULL OR at >= $2)
+          AND ($3::boolean OR message = ANY($4::text[])
+               OR EXISTS (SELECT 1 FROM unnest($5::text[]) AS p WHERE message LIKE p || '%' ESCAPE '!'))
+        ORDER BY at, id`,
+      [jobId, opts.since ?? null, messages === undefined, messages?.exact ?? [], prefixes],
+    );
+    return rows.map((r) => ({ message: r.message, data: r.data, at: r.at.toISOString() }));
+  }
+
   async firstEventAt(
     jobId: string,
     message: string,
@@ -781,8 +801,11 @@ export class PgRepo implements IngestionRepo {
       row_count: number | null;
       target_id: string | null;
     }>(
+      // Readers see the drafts and what the primary target holds; an archive's rows are for
+      // withdrawal and target usage only.
       `SELECT output_id, stage, format, bucket, object_key, row_count, target_id FROM job_outputs
-        WHERE job_id = $1 AND withdrawn_at IS NULL ORDER BY stage, output_id`,
+        WHERE job_id = $1 AND withdrawn_at IS NULL AND (stage = 'draft' OR is_primary)
+        ORDER BY stage, output_id`,
       [id],
     );
     return {
@@ -833,7 +856,8 @@ export class PgRepo implements IngestionRepo {
                        ORDER BY o.output_id) AS outputs
          FROM jobs j
          JOIN documents d ON d.id = j.document_id
-         JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published' AND o.withdrawn_at IS NULL
+         JOIN job_outputs o ON o.job_id = j.id AND o.stage = 'published' AND o.is_primary
+                          AND o.withdrawn_at IS NULL
         WHERE NOT j.test AND ($1::text IS NULL OR d.spec_id = $1)
           AND ($5::text IS NULL OR d.filename ILIKE '%' || $5 || '%' ESCAPE '!')
           AND ($6::text IS DISTINCT FROM 'reviewed' OR j.reviewed_at IS NOT NULL)
@@ -1485,13 +1509,13 @@ export class PgRepo implements IngestionRepo {
     jobId: string,
     rows: { targetId: string; deliveryId: string }[],
   ): Promise<void> {
-    for (const r of rows) {
-      await this.pool.query(
-        `INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
-         VALUES ($1, $2, $3, 'queued') ON CONFLICT (delivery_id) DO NOTHING`,
-        [r.deliveryId, jobId, r.targetId],
-      );
-    }
+    // One statement, so one round (one created_at), as the worker's hand-off records them.
+    await this.pool.query(
+      `INSERT INTO job_deliveries (delivery_id, job_id, target_id, status)
+       SELECT d, $1, t, 'queued' FROM unnest($2::uuid[], $3::text[]) AS r(d, t)
+       ON CONFLICT (delivery_id) DO NOTHING`,
+      [jobId, rows.map((r) => r.deliveryId), rows.map((r) => r.targetId)],
+    );
   }
 
   async applyDeliveryUpdate(
@@ -1620,10 +1644,18 @@ const toDelivery = (r: DeliveryRow): JobDelivery => ({
   updatedAt: r.updated_at.toISOString(),
 });
 
+/**
+ * The deliveries of a job's latest round: every row recorded with its last hand-off (one
+ * transaction, so one `created_at`), however many go to one target (a republish, ontology loads).
+ * An approval again starts a new round; the rounds before stay for the record but no longer judge
+ * the job.
+ */
 async function deliveriesIn(db: pg.Pool | pg.PoolClient, jobId: string): Promise<JobDelivery[]> {
   const { rows } = await db.query<DeliveryRow>(
-    `SELECT ${DELIVERY_COLUMNS} FROM job_deliveries d WHERE d.job_id = $1
-      ORDER BY d.created_at, d.delivery_id`,
+    `SELECT ${DELIVERY_COLUMNS} FROM job_deliveries d
+      WHERE d.job_id = $1
+        AND d.created_at = (SELECT max(created_at) FROM job_deliveries WHERE job_id = $1)
+      ORDER BY d.delivery_id`,
     [jobId],
   );
   return rows.map(toDelivery);

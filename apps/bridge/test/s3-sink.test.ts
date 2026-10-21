@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { SinkDescribeSchema, type BridgePackage } from '@ih/bridge-contract';
+import {
+  archivedPackageOf,
+  packageArchiveKeys,
+  SinkDescribeSchema,
+  type BridgePackage,
+} from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { S3PackageStore } from '../src/packages/s3.js';
 import { MemoryObjectStore, type ObjectStorePort, type S3StoreOptions } from '../src/s3/store.js';
@@ -83,7 +88,12 @@ describe('S3Sink', () => {
       'sse',
       'kmsKeyId',
       'storageClass',
+      'layout',
     ]);
+    expect(d.destinationFields.find((f) => f.id === 'layout')).toMatchObject({
+      kind: 'fixed',
+      required: false,
+    });
   });
 
   it('takes a package with a graph: writes graph-version at prefix + its name, ignores rdf', async () => {
@@ -291,6 +301,111 @@ describe('S3Sink', () => {
     expect(
       (await errorOf(offline.testConnection({ instanceId: '', credential: CREDENTIAL }))).code,
     ).toBe('instance_unavailable');
+  });
+});
+
+describe('S3Sink, the package layout (archives)', () => {
+  const rdfPackage = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../../packages/bridge-contract/test/fixtures/package-document-rdf.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ) as BridgePackage;
+  const archive = { bucket: 'arch', prefix: 'keep/', layout: 'package' };
+
+  it('a package-layout target writes the parts, then package.json', async () => {
+    const objects = new MemoryObjectStore();
+    const { sink } = sinkOver(objects);
+    const result = await sink.deliver(
+      deliverRequest({ credential: CREDENTIAL, destination: archive, package: rdfPackage }),
+    );
+    const keys = packageArchiveKeys('keep/', rdfPackage).map((k) => k.key);
+    expect([...objects.objects.keys()]).toEqual(keys.map((k) => `arch/${k}`));
+    const root = `keep/packages/${rdfPackage.idempotencyKey}/`;
+    const first = rdfPackage.files[0]!;
+    expect(await objects.get('arch', `${root}files/${first.name}`)).toEqual(
+      Buffer.from(first.content, 'base64'),
+    );
+    expect(objects.objects.get(`arch/${root}files/${first.name}`)?.contentType).toBe(
+      first.contentType,
+    );
+    expect((await objects.get('arch', `${root}graph.ttl`))!.toString('utf8')).toBe(
+      rdfPackage.rdf!.turtle,
+    );
+    expect(JSON.parse((await objects.get('arch', `${root}data.json`))!.toString('utf8'))).toEqual(
+      rdfPackage.data,
+    );
+    const manifest = JSON.parse((await objects.get('arch', `${root}package.json`))!.toString());
+    expect(manifest).toEqual(archivedPackageOf(rdfPackage));
+    expect(result).toMatchObject({ status: 'succeeded' });
+    expect(
+      (result as { receipt: { written: { id: string }[] } }).receipt.written.map((w) => w.id),
+    ).toEqual(keys);
+  });
+
+  it('re-delivering the same key overwrites the same objects', async () => {
+    const objects = new MemoryObjectStore();
+    const { sink } = sinkOver(objects);
+    const req = deliverRequest({
+      credential: CREDENTIAL,
+      destination: archive,
+      package: rdfPackage,
+    });
+    await sink.deliver(req);
+    const before = [...objects.objects.keys()];
+    await sink.deliver(req);
+    expect([...objects.objects.keys()]).toEqual(before);
+  });
+
+  it('a failure part-way leaves no package.json, and is retryable', async () => {
+    class FailsOnGraph extends MemoryObjectStore {
+      override async put(bucket: string, key: string, body: Buffer, type: string): Promise<void> {
+        if (key.endsWith('graph.ttl'))
+          throw s3Failure('InternalError', { $metadata: { httpStatusCode: 500 } });
+        return super.put(bucket, key, body, type);
+      }
+    }
+    const objects = new FailsOnGraph();
+    const { sink } = sinkOver(objects);
+    const error = await errorOf(
+      sink.deliver(
+        deliverRequest({ credential: CREDENTIAL, destination: archive, package: rdfPackage }),
+      ),
+    );
+    expect(error.code).toBe('instance_unavailable');
+    expect([...objects.objects.keys()].some((k) => k.endsWith('package.json'))).toBe(false);
+  });
+
+  it("a files-layout target (explicit or blank) writes today's keys", async () => {
+    for (const layout of ['files', '']) {
+      const objects = new MemoryObjectStore();
+      const { sink } = sinkOver(objects);
+      await sink.deliver(
+        deliverRequest({
+          credential: CREDENTIAL,
+          destination: { bucket: 'pub', prefix: 'out/', layout },
+          package: pkg([csv]),
+        }),
+      );
+      expect([...objects.objects.keys()]).toEqual(['pub/out/demo/v1/fields/doc1.csv']);
+    }
+  });
+
+  it('an unknown layout is refused', async () => {
+    const { sink } = sinkOver(new MemoryObjectStore());
+    const error = await errorOf(
+      sink.deliver(
+        deliverRequest({
+          credential: CREDENTIAL,
+          destination: { bucket: 'pub', layout: 'zip' },
+          package: pkg([csv]),
+        }),
+      ),
+    );
+    expect([error.code, error.message]).toEqual(['content_rejected', 'unknown layout zip']);
   });
 });
 

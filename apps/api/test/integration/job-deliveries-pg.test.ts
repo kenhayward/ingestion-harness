@@ -92,6 +92,53 @@ describe.skipIf(!url)('job deliveries against Postgres', { timeout: 30_000 }, ()
     expect(await applyEvent({ repo, targets }, event(randomUUID(), 1))).toBe('unknown');
   });
 
+  it("a later round's success replaces the earlier needs_user", async () => {
+    const job = await delivering();
+    await pool.query(
+      `INSERT INTO publish_targets (id, label, kind, bucket) VALUES ('lake-2', 'Lake 2', 'internal', 'lake-2')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    const [a1, b1, a2, b2] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a1 },
+      { targetId: 'lake-2', deliveryId: b1 },
+    ]);
+    await applyEvent({ repo, targets }, event(a1, 2));
+    await applyEvent(
+      { repo, targets },
+      event(b1, 2, {
+        status: 'needs_user',
+        receipt: null,
+        error: { class: 'needs_user', code: 'credential_rejected', message: 'access denied' },
+      }),
+    );
+    expect(await statusOf(job.id)).toBe('awaiting_review');
+    await pool.query(`UPDATE jobs SET status = 'delivering' WHERE id = $1`, [job.id]);
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a2 },
+      { targetId: 'lake-2', deliveryId: b2 },
+    ]);
+    expect((await repo.deliveriesOf(job.id)).map((d) => d.deliveryId)).toEqual([a2, b2]);
+    await applyEvent({ repo, targets }, event(a2, 2));
+    expect(await statusOf(job.id)).toBe('delivering');
+    await applyEvent({ repo, targets }, event(b2, 2));
+    expect(await statusOf(job.id)).toBe('succeeded');
+  });
+
+  it('several deliveries to one target in a round all count (a republish, ontology loads)', async () => {
+    const job = await delivering();
+    const [a, b] = [randomUUID(), randomUUID()];
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a },
+      { targetId: 'default', deliveryId: b },
+    ]);
+    expect(await repo.deliveriesOf(job.id)).toHaveLength(2);
+    await applyEvent({ repo, targets }, event(a, 2));
+    expect(await statusOf(job.id)).toBe('delivering');
+    await applyEvent({ repo, targets }, event(b, 2));
+    expect(await statusOf(job.id)).toBe('succeeded');
+  });
+
   it('a needs_user delivery puts the job back in review with the target label', async () => {
     const job = await delivering();
     const d = randomUUID();

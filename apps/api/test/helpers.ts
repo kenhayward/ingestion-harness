@@ -110,7 +110,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
         .map((r) => ({
           id: r.id,
           version: r.version,
-          definition: r.definition as { delivery?: { publishTo?: string } },
+          definition: r.definition as { delivery?: { publishTo?: string | string[] } },
         })),
     deliveredCount: async (id) =>
       [...usedRepo.outputs.values()]

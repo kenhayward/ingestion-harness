@@ -1,9 +1,10 @@
 import type { SampleView, SegmentationResult } from '@ih/shared';
-import { SampleTag } from './tags.js';
+import { SampleTag, SectionChip } from './tags.js';
 import { Fragment } from 'react';
 import {
   cellFlag,
   cellShare,
+  missedKeysText,
   occurrenceSummary,
   sectionHits,
   type CellFlag,
@@ -101,6 +102,11 @@ export function SegmentationGrid({
               const view = byId.get(row.sampleId);
               const name = view?.filename ?? row.sampleId;
               const keyIssues = row.keyIssues ?? [];
+              const missedText = missedKeysText(row);
+              const firstMissed = row.missedKeys?.[0];
+              const missedSections = [
+                ...new Set((row.missedKeys ?? []).flatMap((m) => m.sections)),
+              ];
               return (
                 <Fragment key={row.sampleId}>
                   <tr aria-label={name}>
@@ -189,6 +195,26 @@ export function SegmentationGrid({
                               </li>
                             ))}
                           </ul>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {missedText && (
+                    <tr className="seg-key-issues">
+                      <td colSpan={Math.max(1, sections.length) + 1}>
+                        <div role="note" aria-label={`Missed headings in ${name}`}>
+                          <p className="tone-text-warn">
+                            {missedText}
+                            {' · '}
+                            {missedSections.map((id) => (
+                              <SectionChip
+                                key={id}
+                                id={id}
+                                index={rawSections.findIndex((o) => o.id === id)}
+                              />
+                            ))}
+                          </p>
+                          <small className="muted">{firstMissed?.line}</small>
                         </div>
                       </td>
                     </tr>

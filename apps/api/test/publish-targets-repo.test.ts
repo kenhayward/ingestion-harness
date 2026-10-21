@@ -1,4 +1,9 @@
-import { MemoryPublishTargetRepo, type PublishedDefinition } from '../src/publish-targets/repo.js';
+import { describe, expect, it } from 'vitest';
+import {
+  MemoryPublishTargetRepo,
+  primaryTargetOf,
+  type PublishedDefinition,
+} from '../src/publish-targets/repo.js';
 import { publishTargetsContract } from './publish-targets-contract.js';
 
 publishTargetsContract('memory', async () => {
@@ -30,4 +35,16 @@ publishTargetsContract('memory', async () => {
       inert: async (id) => repo.makeInert(id),
     },
   };
+});
+
+describe('primaryTargetOf', () => {
+  const t = (id: string, layout: 'files' | 'package') => ({ id, layout });
+  it('picks the first files-layout target in list order', () => {
+    const targets = [t('archive', 'package'), t('lake', 'files'), t('default', 'files')];
+    expect(primaryTargetOf(['archive', 'lake', 'default'], targets)).toBe('lake');
+    expect(primaryTargetOf(['default', 'lake'], targets)).toBe('default');
+  });
+  it('is undefined when every listed target is an archive or unknown', () => {
+    expect(primaryTargetOf(['archive', 'nope'], [t('archive', 'package')])).toBeUndefined();
+  });
 });

@@ -217,6 +217,16 @@ export const SectionCellSchema = z.object({
 });
 export type SectionCell = z.infer<typeof SectionCellSchema>;
 
+/** A repeating-section key a key pattern finds that no anchor caught (worker segment.missed_keys). */
+export const MissedKeySchema = z.object({
+  /** The repeating sections sharing the key pattern. */
+  sections: z.array(z.string()),
+  key: z.string(),
+  /** The line the key was read from, cut at 120 characters. */
+  line: z.string(),
+});
+export type MissedKey = z.infer<typeof MissedKeySchema>;
+
 export const SegmentedSampleSchema = z.object({
   sampleId: z.string(),
   /** 1-based first page of the kept copy (copy selection). */
@@ -228,6 +238,10 @@ export const SegmentedSampleSchema = z.object({
   sections: z.array(SectionCellSchema),
   /** The key check of sections with keyFrom (worker segment.key_issues); [] for older grids. */
   keyIssues: z.array(z.string()).optional(),
+  /** Keys no anchor caught (the first 20); absent when none and in older grids. */
+  missedKeys: z.array(MissedKeySchema).optional(),
+  /** All missed keys, only when `missedKeys` was cut at 20. */
+  missedKeysTotal: z.number().int().positive().optional(),
 });
 export type SegmentedSample = z.infer<typeof SegmentedSampleSchema>;
 

@@ -10,9 +10,10 @@ import {
   type ModelChoice,
   type ProposalView,
   type RevisePreview,
+  type RunDiagnostics,
   type SentFailure,
 } from '@ih/shared';
-import { choiceName, draftingModelName } from '../jobs/derive.js';
+import { choiceName, draftingModelName, formatDuration } from '../jobs/derive.js';
 
 /** Pure helpers of the Revise tab (handoff §9). */
 
@@ -221,4 +222,22 @@ export function revisionLine(r: EarlierRevision, choices: readonly ModelChoice[]
   if (r.status === 'rejected')
     return [...head, `rejected (${count(r.total, 'change')})`].join(` ${DOT} `);
   return [...head, UNDECIDED[r.status] ?? r.status].join(` ${DOT} `);
+}
+
+/** One line per diagnostic the next revision sends (steps, columns, missed headings). */
+export function diagnosticLines(d: RunDiagnostics): string[] {
+  const steps = d.steps.map(
+    (s) =>
+      `${s.step} on ${s.sample}: ${s.emptyCalls} of ${s.calls} calls returned no rows (${formatDuration(s.seconds)})`,
+  );
+  const columns = d.columns.map((c) => {
+    const where = c.column === null ? c.target : `${c.target}.${c.column}`;
+    const e = c.examples[0];
+    return `${where}: ${count(c.issues, 'value')} did not fit${e === undefined ? '' : ` (e.g. ${e})`}`;
+  });
+  const missed = d.missedKeys.map(
+    (m) =>
+      `${m.sample}: headings ${m.keys.slice(0, 3).join(', ')}${m.total > 3 ? ` (+${m.total - 3})` : ''} matched no anchor`,
+  );
+  return [...steps, ...columns, ...missed];
 }

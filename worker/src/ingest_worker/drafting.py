@@ -501,6 +501,7 @@ def build_context(
     feedback: list[dict[str, Any]] | None = None,
     failures: list[dict[str, Any]] | None = None,
     failures_from: FailuresFrom | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> str:
     """Everything a drafting model sees, in one string. Refuses holdout (non-dev) samples."""
     for s in samples:
@@ -530,6 +531,15 @@ def build_context(
             f"{header}\n"
             f"{json.dumps(failures, indent=1, ensure_ascii=False)}\n"
             "</evaluation_failures>"
+        )
+    if diagnostics:
+        version = (diagnostics.get("from") or {}).get("draftVersion")
+        # Job ids and the run time are for people (the preview), not the model.
+        rows = {k: diagnostics.get(k) or [] for k in ("steps", "columns", "missedKeys")}
+        blocks.append(
+            f'<run_diagnostics draftVersion="{version}">\n'
+            f"{json.dumps(rows, indent=1, ensure_ascii=False)}\n"
+            "</run_diagnostics>"
         )
     if example_yaml:
         blocks.append(f"<example_template>\n{example_yaml.strip()}\n</example_template>")
@@ -582,6 +592,8 @@ class DraftParams(BaseModel):
     failures: list[dict[str, Any]] = Field(default_factory=list)
     feedback_ids: list[str] = Field(default_factory=list, alias="feedbackIds")
     failures_from: FailuresFrom | None = Field(default=None, alias="failuresFrom")
+    #: Revise: what the latest dev runs of the draft showed (TS RunDiagnostics; dev samples only).
+    diagnostics: dict[str, Any] | None = None
     #: The mapping stage (ADR 0011): the brief's vocabulary, its guidance, observed values.
     mapping: dict[str, Any] | None = None
     #: Survey (ontology suggestions): the library's newest ready versions and the brief's
@@ -606,6 +618,41 @@ def select_failures(failures: list[dict[str, Any]], dev_files: set[str]) -> list
         (f for f in failures if f.get("sample") in dev_files),
         key=lambda f: float(f.get("score", 0)),
     )[:MAX_CONTEXT_SAMPLES]
+
+
+def dev_diagnostics(
+    diagnostics: dict[str, Any] | None, dev_files: set[str]
+) -> dict[str, Any] | None:
+    """Run diagnostics (TS RunDiagnostics) keeping only rows of dev samples: the API reads dev
+    runs only, so this is a defensive no-op on its input. A column row counts every sample it
+    names, so one naming any other sample is dropped whole. None when no row is left."""
+    if not diagnostics:
+        return None
+
+    def rows(key: str) -> list[dict[str, Any]]:
+        value = diagnostics.get(key)
+        return [r for r in value if isinstance(r, dict)] if isinstance(value, list) else []
+
+    steps = [r for r in rows("steps") if r.get("sample") in dev_files]
+    columns = [
+        r
+        for r in rows("columns")
+        if isinstance(r.get("samples"), list)
+        and r["samples"]
+        and all(name in dev_files for name in r["samples"])
+    ]
+    missed = [r for r in rows("missedKeys") if r.get("sample") in dev_files]
+    if not (steps or columns or missed):
+        return None
+    return {**diagnostics, "steps": steps, "columns": columns, "missedKeys": missed}
+
+
+def diagnostics_samples(diagnostics: dict[str, Any] | None) -> set[str]:
+    """Every sample file name run diagnostics name (for the external-call audit)."""
+    if not diagnostics:
+        return set()
+    names = {str(r["sample"]) for r in diagnostics["steps"] + diagnostics["missedKeys"]}
+    return names | {str(n) for r in diagnostics["columns"] for n in r["samples"]}
 
 
 def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str, Any]:
@@ -645,6 +692,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
     dev_feedback = [f for f in params.feedback if not f.get("sample") or f["sample"] in names]
     # The worst-scoring failures are the most worth fixing; the cap keeps the prompt bounded.
     dev_failures = select_failures(params.failures, names)
+    diagnostics = dev_diagnostics(params.diagnostics, names)
     # The prompt labels feedback F1..Fn in this order; answers name those labels (RV2).
     labels = {f"F{n}": str(f["id"]) for n, f in enumerate(dev_feedback, 1) if f.get("id")}
     context = build_context(
@@ -656,6 +704,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         feedback=dev_feedback,
         failures=dev_failures,
         failures_from=params.failures_from,
+        diagnostics=diagnostics,
     )
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":
@@ -667,9 +716,10 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
                 "stage": stage.id,
                 "model": model_ref,
                 "samples": [s.sample_id for s in samples],
-                # Failures and feedback can name dev samples whose text is not sent.
+                # Failures, feedback and diagnostics can name dev samples whose text is not sent.
                 "referencedSamples": sorted(
                     {str(f["sample"]) for f in dev_feedback + dev_failures if f.get("sample")}
+                    | diagnostics_samples(diagnostics)
                 ),
             },
         )
@@ -840,6 +890,7 @@ def anchor_check(
                 f"{', '.join(missed)}"
             )
     misses += repeated_blocks(rows, put_ids, names)
+    misses += missed_key_feedback(rows, put_ids, names, block["sections"])
     return grid, misses
 
 
@@ -866,6 +917,45 @@ def repeated_blocks(
             "block's heading section if there is one; keep plain sections for parts that "
             "occur once."
         )
+    return out
+
+
+def missed_key_feedback(
+    rows: list[dict[str, Any]],
+    put_ids: set[str],
+    names: dict[str, str],
+    sections: list[dict[str, Any]],
+) -> list[str]:
+    """Headings a proposed repeating section's key pattern finds that no anchor caught, per
+    sample and group of sections sharing the key: usually a title that wraps over lines."""
+    keys = {s["id"]: s.get("key") for s in sections}
+    out: list[str] = []
+    for row in rows:
+        groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+        for entry in row.get("missedKeys", []):
+            groups.setdefault(tuple(entry["sections"]), []).append(entry)
+        for ids, entries in groups.items():
+            if not put_ids.intersection(ids):
+                continue
+            # missedKeysTotal counts the whole sample's keys, so it is exact for one group only.
+            total = row.get("missedKeysTotal", len(entries)) if len(groups) == 1 else len(entries)
+            named = [e["key"] for e in entries[:10]]
+            more = f" (and {total - len(named)} more)" if total > len(named) else ""
+            pattern = next((keys[i] for i in ids if keys.get(i)), "")
+            quoted = ", ".join(f'"{i}"' for i in ids)
+            out.append(
+                f"sections {quoted} have key {pattern}, which finds keys "
+                f"{', '.join(named)}{more} in "
+                f"{names.get(row['sampleId'], row['sampleId'])} that no anchor matched, "
+                f'e.g. "{entries[0]["line"]}". '
+                "If these are headings of the kind this section reads, widen the anchor: "
+                "headings may wrap over several lines, so look ahead across them (for example "
+                r"^\s*Table\s+\d+:(?=(?:(?!<first column header>)[\s\S]){0,400}?"
+                r"<last word of the title>[ \t]*$)) rather than requiring the whole title on one "
+                "line, and keep contents entries out. If they are headings of a kind the recipe "
+                "does not read, make the key match only this kind's headings so they are not "
+                "counted."
+            )
     return out
 
 

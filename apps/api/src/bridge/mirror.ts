@@ -22,6 +22,7 @@ export function destinationOf(t: TargetRecord): Record<string, string> {
     sse: t.sse,
     kmsKeyId: t.kmsKeyId ?? '',
     storageClass: t.storageClass ?? '',
+    layout: t.layout,
   };
 }
 

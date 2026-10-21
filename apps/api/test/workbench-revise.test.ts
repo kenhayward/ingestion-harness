@@ -276,7 +276,9 @@ describe('revise', () => {
     const { start, feedback, templates } = await project();
     const none = await start('revise');
     expect(none.statusCode).toBe(409);
-    expect(none.json().error).toBe('add feedback before asking for a revision');
+    expect(none.json().error).toBe(
+      'add feedback or run the dev samples before asking for a revision',
+    );
     await feedback({ target: 'field', targetId: 'sender', body: 'Letterhead' });
     expect((await start('revise')).statusCode).toBe(202); // survey not done: revise is outside the order
     await templates.publish('letter', 1);
@@ -362,7 +364,9 @@ describe('revise', () => {
     await setRole(b.id, 'holdout');
     const res = await start('revise');
     expect(res.statusCode).toBe(409);
-    expect(res.json().error).toBe('add feedback before asking for a revision');
+    expect(res.json().error).toBe(
+      'add feedback or run the dev samples before asking for a revision',
+    );
   });
 
   it('works from feedback alone before any evaluation', async () => {
@@ -564,6 +568,7 @@ describe('revise preview (RV1)', () => {
       model: null,
       draft: { version: 1, definition: (await ctx.templates.get('letter', 1))!.definition },
       samples: [],
+      diagnostics: null,
       limits: { samples: 8, fieldDiffs: 20, rowDiffs: 5 },
       notSent: { holdoutSamples: 0, holdoutRun: null },
     });
@@ -620,5 +625,334 @@ describe('revise preview (RV1)', () => {
     const ctx = await project();
     await ctx.templates.publish('letter', 1);
     expect((await preview(ctx)).draft).toBeNull();
+  });
+});
+
+describe('revise diagnostics (Part C)', () => {
+  const EMPTY = { calls: 6, emptyCalls: 5 };
+
+  /** A finished test run of the open draft on `s`, with the events, step runs and issues given. */
+  async function run(
+    ctx: Awaited<ReturnType<typeof project>>,
+    s: SampleView,
+    opts: {
+      version?: number;
+      issues?: unknown[];
+      status?: 'awaiting_review' | 'succeeded';
+      task?: 'process' | 'rerun' | 'publish';
+      startedAt?: string;
+      events?: { message: string; data: unknown; at: string }[];
+    } = {},
+  ) {
+    const job = await ctx.repo.createWorkbenchJob(
+      {
+        id: crypto.randomUUID(),
+        filename: s.filename,
+        sha256: s.sha256,
+        sizeBytes: 1,
+        specId: 'letter',
+        specVersion: opts.version ?? 1,
+        bucket: 'inbox',
+        objectKey: `letter/${s.id}`,
+      },
+      { projectId: 'letter', task: 'process' },
+    );
+    const key = outputKey('letter', 1, 'document', job.documentId, 'json');
+    await ctx.store.put(
+      'outputs',
+      key,
+      Buffer.from(JSON.stringify({ fields: {}, tables: {}, issues: opts.issues ?? [] })),
+      'application/json',
+    );
+    ctx.repo.outputs.set(job.id, [
+      {
+        outputId: 'document',
+        stage: 'draft',
+        format: 'json',
+        bucket: 'outputs',
+        key,
+        rowCount: null,
+        targetId: null,
+      },
+    ]);
+    ctx.repo.jobs.set(job.id, {
+      ...ctx.repo.jobs.get(job.id)!,
+      test: true,
+      status: opts.status ?? 'awaiting_review',
+      task: opts.task ?? 'process',
+      ...(opts.startedAt ? { startedAt: opts.startedAt } : {}),
+    });
+    if (opts.events) {
+      ctx.repo.events.set(
+        job.id,
+        opts.events.map((e) => ({ level: 'info', ...e })),
+      );
+    } else ctx.repo.addEvent(job.id, 'info', 'extracted lines', EMPTY);
+    ctx.repo.stepRuns.set(job.id, [
+      {
+        id: 1,
+        stepId: 'lines',
+        trigger: 'process',
+        model: null,
+        attempts: 1,
+        inputTokens: null,
+        outputTokens: null,
+        status: 'succeeded',
+        error: null,
+        startedAt: '2026-10-21T10:00:00.000Z',
+        finishedAt: '2026-10-21T10:00:30.000Z',
+      },
+    ]);
+    return job;
+  }
+  const preview = async (ctx: Awaited<ReturnType<typeof project>>) =>
+    (
+      await ctx.app.inject('/api/workbench/projects/letter/stages/revise/preview')
+    ).json() as RevisePreview;
+
+  it('revise preview carries diagnostics from the latest dev run', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const job = await run(ctx, a, {
+      issues: [{ step: 'lines', target: 'items', column: 'qty', raw: 'x', message: 'bad' }],
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.from).toMatchObject({ draftVersion: 1, jobIds: [job.id] });
+    expect(shown.steps).toEqual([
+      { step: 'lines', sample: 's1.pdf', calls: 6, emptyCalls: 5, seconds: 30 },
+    ]);
+    expect(shown.columns).toMatchObject([
+      { step: 'lines', target: 'items', column: 'qty', message: 'bad', samples: ['s1.pdf'] },
+    ]);
+  });
+
+  it('diagnostics ignore runs from before the last save of the draft', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    await new Promise((resolve) => setTimeout(resolve, 5)); // clocks tick in milliseconds
+    await ctx.templates.updateDraft('letter', 1, letter(1));
+    expect((await preview(ctx)).diagnostics).toBeNull();
+  });
+
+  it('diagnostics ignore runs of other versions and unfinished runs', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a, { version: 2 });
+    const queued = await run(ctx, a);
+    ctx.repo.jobs.set(queued.id, { ...ctx.repo.jobs.get(queued.id)!, status: 'running' });
+    expect((await preview(ctx)).diagnostics).toBeNull();
+  });
+
+  it('diagnostics never read holdout runs', async () => {
+    const ctx = await project();
+    const h = await ctx.add(1);
+    await ctx.setRole(h.id, 'holdout');
+    // Both runs would be flagged (mostly empty calls, a column issue): only the dev one counts.
+    const issues = [{ step: 'lines', target: 'items', column: 'qty', raw: 'x', message: 'bad' }];
+    const held = await run(ctx, h, { issues });
+    const d = await ctx.add(2);
+    const devRun = await run(ctx, d, { issues });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.from.jobIds).toEqual([devRun.id]);
+    expect(shown.from.jobIds).not.toContain(held.id);
+    expect(JSON.stringify(shown)).not.toContain(h.filename);
+    expect(shown.steps.map((s) => s.sample)).toEqual([d.filename]);
+  });
+
+  it('revise starts with diagnostics and no feedback', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    const res = await ctx.start('revise');
+    expect(res.statusCode).toBe(202);
+    const params = paramsOf(ctx, res.json().id);
+    expect(params.feedback).toEqual([]);
+    expect(params.diagnostics).toMatchObject({ from: { draftVersion: 1 } });
+  });
+
+  it('revise without feedback or diagnostics is 409', async () => {
+    const ctx = await project();
+    await ctx.add(1);
+    const res = await ctx.start('revise');
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe(
+      'add feedback or run the dev samples before asking for a revision',
+    );
+  });
+
+  it('reads an approved run (task publish) and a re-run job back in review', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const b = await ctx.add(2);
+    const approved = await run(ctx, a, { task: 'publish', status: 'succeeded' });
+    const rerun = await run(ctx, b, { task: 'rerun' });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect([...shown.from.jobIds].sort()).toEqual([approved.id, rerun.id].sort());
+  });
+
+  it('takes the newest of two qualifying runs of one sample', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    const newer = await run(ctx, a, { task: 'publish', status: 'succeeded' });
+    expect((await preview(ctx)).diagnostics!.from.jobIds).toEqual([newer.id]);
+  });
+
+  it('reads only the events of the latest attempt of a retried run', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const seg = (key: string) => ({
+      missedKeys: [{ sections: ['kinds'], key, line: key }],
+      missedKeysTotal: 1,
+    });
+    await run(ctx, a, {
+      startedAt: '2026-10-21T10:05:00.000Z',
+      events: [
+        { message: 'segmented', data: seg('OLD-1'), at: '2026-10-21T10:01:00.000Z' },
+        { message: 'extracted lines', data: EMPTY, at: '2026-10-21T10:02:00.000Z' },
+        { message: 'segmented', data: seg('NEW-1'), at: '2026-10-21T10:06:00.000Z' },
+        {
+          message: 'extracted lines',
+          data: { calls: 6, emptyCalls: 0 },
+          at: '2026-10-21T10:07:00.000Z',
+        },
+      ],
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.missedKeys).toHaveLength(1);
+    expect(shown.missedKeys[0]!.keys).toEqual(['NEW-1']);
+    expect(shown.steps).toEqual([]);
+  });
+
+  it('reports the missed headings of a re-run job once (its last segmented event)', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const seg = { missedKeys: [{ sections: ['kinds'], key: '7', line: '7' }], missedKeysTotal: 1 };
+    await run(ctx, a, {
+      task: 'rerun',
+      startedAt: '2026-10-21T10:00:00.000Z',
+      events: [
+        { message: 'segmented', data: seg, at: '2026-10-21T10:01:00.000Z' },
+        { message: 'segmented', data: seg, at: '2026-10-21T10:09:00.000Z' },
+      ],
+    });
+    expect((await preview(ctx)).diagnostics!.missedKeys).toHaveLength(1);
+  });
+
+  it('leaves out shacl and segment issues and keeps numeric raw values as text', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a, {
+      issues: [
+        { step: 'shacl', target: 'items', column: 'qty', raw: 'x', message: 'w' },
+        { step: 'segment', target: 'items', raw: 'y', message: 'w' },
+        { step: 'lines', target: 'items', column: 'qty', raw: 12, message: 'range' },
+      ],
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.columns).toMatchObject([{ step: 'lines', column: 'qty', examples: ['12'] }]);
+    expect(shown.columns).toHaveLength(1);
+  });
+
+  it('MemoryRepo.listEvents filters by time and message', async () => {
+    const ctx = await project();
+    ctx.repo.events.set('j', [
+      { level: 'info', message: 'segmented', data: 1, at: '2026-10-21T10:00:00.000Z' },
+      { level: 'info', message: 'segmented', data: 2, at: '2026-10-21T10:05:00.000Z' },
+      { level: 'info', message: 'extracted lines', data: 3, at: '2026-10-21T10:06:00.000Z' },
+      { level: 'info', message: 'step progress', data: 4, at: '2026-10-21T10:07:00.000Z' },
+      { level: 'info', message: 'segmented again', data: 5, at: '2026-10-21T10:08:00.000Z' },
+    ]);
+    const data = async (opts?: Parameters<typeof ctx.repo.listEvents>[1]) =>
+      (await ctx.repo.listEvents('j', opts)).map((e) => e.data);
+    expect(await data()).toEqual([1, 2, 3, 4, 5]);
+    expect(await data({ since: '2026-10-21T10:05:00.000Z' })).toEqual([2, 3, 4, 5]);
+    expect(await data({ messages: { exact: ['segmented'], prefixes: ['extracted '] } })).toEqual([
+      1, 2, 3,
+    ]);
+    expect(await data({ messages: {} })).toEqual([]);
+  });
+
+  it('reads only the events it needs, of every run at once', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const b = await ctx.add(2);
+    await run(ctx, a, { startedAt: '2026-10-21T10:00:00.000Z' });
+    await run(ctx, b, { startedAt: '2026-10-21T10:00:00.000Z' });
+    const real = ctx.repo.listEvents.bind(ctx.repo);
+    const asked: unknown[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let release = (): void => {};
+    const bothAsked = new Promise<void>((resolve) => (release = resolve));
+    vi.spyOn(ctx.repo, 'listEvents').mockImplementation(async (jobId, opts) => {
+      asked.push(opts);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        if (asked.length === 2) release();
+        // Serial reads never get the second call while the first waits: the timer stops a hang.
+        await Promise.race([bothAsked, new Promise((r) => setTimeout(r, 200))]);
+        return await real(jobId, opts);
+      } finally {
+        inFlight -= 1;
+      }
+    });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.from.jobIds).toHaveLength(2);
+    expect(asked).toEqual([
+      {
+        since: '2026-10-21T10:00:00.000Z',
+        messages: { exact: ['segmented'], prefixes: ['extracted ', 're-ran ', 'reused cached '] },
+      },
+      expect.anything(),
+    ]);
+    expect(asked[1]).toEqual(asked[0]);
+    expect(maxInFlight).toBe(2);
+  });
+
+  it('are advisory: a store outage leaves them out and revise still starts', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    // The outputs bucket (the runs' documents) is down; prepared text in runs still reads.
+    const real = ctx.store.get.bind(ctx.store);
+    vi.spyOn(ctx.store, 'get').mockImplementation(async (bucket, key) => {
+      if (bucket === 'outputs') throw new Error('store down');
+      return real(bucket, key);
+    });
+    const res = await ctx.app.inject('/api/workbench/projects/letter/stages/revise/preview');
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as RevisePreview).diagnostics).toBeNull();
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Take the letterhead name' });
+    const started = await ctx.start('revise');
+    expect(started.statusCode).toBe(202);
+    expect(paramsOf(ctx, started.json().id)).not.toHaveProperty('diagnostics');
+  });
+
+  it('keeps the runs it could read when another cannot be read', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const b = await ctx.add(2);
+    const broken = await run(ctx, a);
+    const fine = await run(ctx, b);
+    const real = ctx.repo.listStepRuns.bind(ctx.repo);
+    vi.spyOn(ctx.repo, 'listStepRuns').mockImplementation(async (jobId) => {
+      if (jobId === broken.id) throw new Error('db hiccup');
+      return real(jobId);
+    });
+    expect((await preview(ctx)).diagnostics!.from.jobIds).toEqual([fine.id]);
+  });
+
+  it('stamps the diagnostics with the finish time of the run', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const job = await run(ctx, a);
+    ctx.repo.jobs.set(job.id, {
+      ...ctx.repo.jobs.get(job.id)!,
+      finishedAt: '2099-01-01T00:00:00.000Z',
+    });
+    expect((await preview(ctx)).diagnostics!.from.at).toBe('2099-01-01T00:00:00.000Z');
   });
 });
