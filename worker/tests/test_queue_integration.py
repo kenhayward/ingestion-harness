@@ -319,8 +319,9 @@ def test_published_outputs_record_their_publishing_target(
 
     q, job = queue_and_job
     q._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, bucket)
-           VALUES ('finance-lake', 'Finance lake', 'internal', 'finance')
+        """INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+           VALUES ('finance-lake', 'Finance lake', 'internal', 's3', 'internal',
+                   '{"bucket": "finance"}')
            ON CONFLICT (id) DO NOTHING"""
     )
     key = f"fin/demo/v2/fields/{job.document_id}.csv"
@@ -450,9 +451,11 @@ def test_published_outputs_are_recorded_per_target_with_the_primary_marked(
 
     q, job = queue_and_job
     q._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, bucket, layout)
-           VALUES ('finance-lake', 'Finance lake', 'internal', 'finance', 'files'),
-                  ('archive', 'Archive', 'internal', 'keep', 'package')
+        """INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+           VALUES ('finance-lake', 'Finance lake', 'internal', 's3', 'internal',
+                   '{"bucket": "finance", "layout": "files"}'),
+                  ('archive', 'Archive', 'internal', 's3', 'internal',
+                   '{"bucket": "keep", "layout": "package"}')
            ON CONFLICT (id) DO NOTHING"""
     )
     fin = RenderedOutput("fields", "csv", "fin/demo/v2/fields/d.csv", b"", 1)
@@ -491,8 +494,9 @@ def test_a_new_primary_demotes_the_jobs_rows_at_other_targets(
 
     q, job = queue_and_job
     q._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, bucket)
-           VALUES ('lake-a', 'Lake A', 'internal', 'lake-a'), ('lake-b', 'Lake B', 'internal', 'lake-b')
+        """INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+           VALUES ('lake-a', 'Lake A', 'internal', 's3', 'internal', '{"bucket": "lake-a"}'),
+                  ('lake-b', 'Lake B', 'internal', 's3', 'internal', '{"bucket": "lake-b"}')
            ON CONFLICT (id) DO NOTHING"""
     )
     out = RenderedOutput("fields", "csv", "demo/v1/fields/d.csv", b"", 1)

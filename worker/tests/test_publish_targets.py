@@ -208,8 +208,9 @@ def test_inert_target_is_missing(pg: PgPublishTargetStore) -> None:
     """A copy restore's external targets of the backup stay as inert rows (foreign keys):
     nothing can use them, so to the worker they do not exist."""
     pg._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, destination, source, inert_at, synced_at)
-           VALUES ('prod-lake', 'Production lake', 'external', '{"bucket": "lake"}', 'ui',
+        """INSERT INTO publish_targets
+             (id, label, kind, sink_id, destination, source, inert_at, synced_at)
+           VALUES ('prod-lake', 'Production lake', 'external', 's3', '{"bucket": "lake"}', 'ui',
                    now(), now())"""
     )
     with pytest.raises(TargetMissing):

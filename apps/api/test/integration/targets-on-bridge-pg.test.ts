@@ -76,7 +76,7 @@ const LEGACY_ROWS: Record<string, unknown>[] = [
   },
 ];
 
-/** The old columns this migration relaxes (a later migration drops them). */
+/** The old columns this migration relaxes (202610220930 drops them). */
 const OLD_COLUMNS = [
   'bucket',
   'prefix',
@@ -215,7 +215,7 @@ describe.skipIf(!url)(
       });
     });
 
-    it('copies the legacy keys to publish_target_legacy_keys; the old columns stay, nullable', async () => {
+    it('copies the legacy keys to publish_target_legacy_keys; the old columns are dropped', async () => {
       const legacy = await db.query(
         `SELECT id, endpoint, region, access_key_id, secret_key_enc, access_key_env, secret_key_env,
               force_path_style, moved_to_bridge_at
@@ -252,8 +252,19 @@ describe.skipIf(!url)(
           AND column_name = ANY($1::text[])`,
         [OLD_COLUMNS],
       );
-      expect(columns.rows.map((r) => r.column_name).sort()).toEqual([...OLD_COLUMNS].sort());
-      expect(columns.rows.filter((r) => r.is_nullable !== 'YES')).toEqual([]);
+      // 202610220930: the bridge holds them now (the keys not moved yet are in the legacy table).
+      expect(columns.rows).toEqual([]);
+      const layoutCheck = await db.query(
+        "SELECT 1 FROM pg_constraint WHERE conname = 'publish_targets_layout_check'",
+      );
+      expect(layoutCheck.rowCount).toBe(0);
+      // Every row names its sink: there is no default any more.
+      const sink = await db.query<{ column_default: string | null }>(
+        `SELECT column_default FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'publish_targets'
+            AND column_name = 'sink_id'`,
+      );
+      expect(sink.rows).toEqual([{ column_default: null }]);
 
       // A cache row is written without them.
       await db.query(
