@@ -2,6 +2,7 @@ import type { StepProgress, TestRun } from '@ih/shared';
 import { StatusPill } from '../ui/StatusPill.js';
 import {
   batchSegments,
+  cancellableRuns,
   progressText,
   runAction,
   runDetail,
@@ -26,15 +27,17 @@ function StepBar({ progress }: { progress: StepProgress }) {
   );
 }
 
-/** One run per row: file, status, detail (with step progress), duration, Review or Retry. */
+/** One run per row: file, status, detail (with step progress), duration, Review, Retry or Cancel. */
 export function RunRows({
   runs,
   now,
   onRetry,
+  onCancel,
 }: {
   runs: readonly TestRun[];
   now: number;
   onRetry: (run: TestRun) => void;
+  onCancel: (run: TestRun) => void;
 }) {
   return (
     <>
@@ -68,6 +71,15 @@ export function RunRows({
                   onClick={() => onRetry(run)}
                 >
                   Retry
+                </button>
+              )}
+              {action === 'cancel' && (
+                <button
+                  type="button"
+                  aria-label={`Cancel ${run.filename}`}
+                  onClick={() => onCancel(run)}
+                >
+                  Cancel
                 </button>
               )}
             </td>
@@ -104,15 +116,21 @@ export function RunBatchCard({
   subtitle,
   now,
   onRetry,
+  onCancel,
+  onCancelBatch,
 }: {
   batch: RunBatch;
   title: string;
   subtitle: string;
   now: number;
   onRetry: (run: TestRun) => void;
+  onCancel: (run: TestRun) => void;
+  /** Cancels the batch's queued and running runs (after a confirm). */
+  onCancelBatch: (runs: TestRun[]) => void;
 }) {
   const segments = batchSegments(batch);
   const summary = segmentsText(segments);
+  const live = cancellableRuns(batch.runs);
   return (
     <section className={`card runs-batch${batch.active ? ' is-live' : ''}`} aria-label={title}>
       <header className="runs-batch-head">
@@ -131,13 +149,18 @@ export function RunBatchCard({
             ))}
           </span>
           <span className="runs-stack-legend muted">{summary}</span>
+          {live.length > 0 && (
+            <button type="button" onClick={() => onCancelBatch(live)}>
+              Cancel batch…
+            </button>
+          )}
         </div>
       </header>
       <div className="table-scroll">
         <table className="runs-table" aria-label={`Runs of ${title}`}>
           <RunHead />
           <tbody>
-            <RunRows runs={batch.runs} now={now} onRetry={onRetry} />
+            <RunRows runs={batch.runs} now={now} onRetry={onRetry} onCancel={onCancel} />
           </tbody>
         </table>
       </div>
