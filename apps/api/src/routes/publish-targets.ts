@@ -33,6 +33,7 @@ const ADMINS_ONLY = error('`admins only`.');
 const NOT_FOUND_MESSAGE = 'publishing target not found';
 const NOT_FOUND = error(`\`${NOT_FOUND_MESSAGE}\`.`);
 const BRIDGE_DOWN = 'the delivery bridge could not be reached';
+const CACHE_FAILED = 'saved on the bridge; refresh';
 const IdParams = z.object({ id: z.string().describe('The publishing target id.') });
 const LOCKED = ['bucket', 'prefix', 'layout'] as const;
 const base = (operationId: string, summary: string, description: string) => ({
@@ -297,6 +298,24 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       };
     });
   };
+  /**
+   * Caches the bridge's answer after it accepted a write. A failure leaves the bridge ahead of
+   * the cache: the admin is told to refresh, and the next pull heals it. Null when cached.
+   */
+  const cacheAnswer = async (
+    view: Parameters<typeof repo.cache>[0],
+    facts: Parameters<typeof repo.cache>[1],
+    reply: FastifyReply,
+    log: FastifyRequest['log'],
+  ): Promise<FastifyReply | null> => {
+    try {
+      await repo.cache(view, facts);
+      return null;
+    } catch (err) {
+      log.error({ err, target: view.id }, 'the bridge accepted a target the cache could not store');
+      return reply.code(500).send({ error: CACHE_FAILED });
+    }
+  };
   /** One target's view as the list shows it (after a write). */
   const viewOf = async (id: string): Promise<PublishTargetView | undefined> =>
     (await withConnections((await repo.list()).filter((v) => v.id === id)))[0];
@@ -381,8 +400,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
             the delivery bridge's shared connections (\`connectionId\`). The id is made from
             the label when not given (\`-2\`, \`-3\`… when taken); \`default\` is reserved. Use the
             same id on every deployment for the same recipient: recipes carry it. The target is
-            mirrored to the bridge; when the bridge refuses it (422, its message) or cannot be
-            reached (502), nothing is stored. No credential is accepted here.
+            written to the bridge first and this deployment caches the bridge's answer; when the
+            bridge refuses it (422, its message) or cannot be reached (502), nothing is stored.
+            When only the cache write fails (500), the bridge has the target: refresh. No credential is accepted here.
           `,
         ),
         body: TargetCreateBodySchema,
@@ -392,6 +412,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           403: ADMINS_ONLY,
           409: error('`a publishing target {id} already exists`.'),
           422: error("The bridge's refusal, e.g. `there is no connection {id}`."),
+          500: error(`\`${CACHE_FAILED}\`: the bridge has it; the next refresh caches it.`),
           502: error(
             `\`could not create bucket {bucket}: {message}\`, or \`${BRIDGE_DOWN}\`; nothing is stored.`,
           ),
@@ -424,7 +445,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         return bridgeFailure(reply, err);
       }
-      await repo.cache(view, { source: 'ui', by: by(req) });
+      const failed = await cacheAnswer(view, { source: 'ui', by: by(req) }, reply, req.log);
+      if (failed) return failed;
       req.log.info({ target: id, kind: settings.kind }, 'publishing target added');
       return reply.code(201).send(await viewOf(id));
     },
@@ -446,7 +468,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       return bridgeFailure(reply, err);
     }
-    await repo.cache(view, { by: by(req) });
+    const failed = await cacheAnswer(view, { by: by(req) }, reply, req.log);
+    if (failed) return failed;
     req.log.info({ target: stored.id }, 'triple store target renamed');
     return viewOf(stored.id);
   };
@@ -467,8 +490,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
             withdrawal still to run names it) its bucket and prefix cannot change (409): add a
             new target and publish a version naming it instead. The label, connection,
             encryption and storage class may always change, so keys are rotated without a new
-            version. The change is mirrored to the bridge; when the bridge refuses it (422) or
-            cannot be reached (502), the target is left as it was.
+            version. The change is written to the bridge first and the cache takes its answer;
+            when the bridge refuses it (422) or cannot be reached (502), the target is left as it
+            was. When only the cache write fails (500), the bridge has the change: refresh.
           `,
         ),
         params: IdParams,
@@ -480,6 +504,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           404: NOT_FOUND,
           409: error('`{label} is used by {what}: add a new target instead`.'),
           422: error("The bridge's refusal, e.g. `there is no connection {id}`."),
+          500: error(`\`${CACHE_FAILED}\`: the bridge has it; the next refresh caches it.`),
           502: error(
             `\`could not create bucket {bucket}: {message}\`, or \`${BRIDGE_DOWN}\`; nothing is changed.`,
           ),
@@ -527,7 +552,8 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       } catch (err) {
         return bridgeFailure(reply, err);
       }
-      await repo.cache(view, { by: by(req) });
+      const failed = await cacheAnswer(view, { by: by(req) }, reply, req.log);
+      if (failed) return failed;
       const fields = Object.keys(patch).filter((k) => patch[k as keyof typeof patch] !== undefined);
       req.log.info({ target: stored.id, fields }, 'publishing target changed');
       return viewOf(stored.id);

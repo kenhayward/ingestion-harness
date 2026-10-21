@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JobOutput, JobSummary, PublishTargetView } from '@ih/shared';
 import { BridgeApiError } from '../src/bridge/client.js';
+import { pullTargets } from '../src/bridge/sync.js';
 import type { SecretsKeys } from '../src/llm/secrets.js';
 import { seedRdf as seedRdfOnBridge } from '../src/publish-targets/seed.js';
 import { MemoryObjectStore } from '../src/storage/object-store.js';
@@ -1042,5 +1043,69 @@ describe('a recipe naming several publishing targets', () => {
     ]);
     await c.templates.create('letter', 2, letter(2, ['finance-lake', 'default']), 'draft');
     expect(await issuesOf(c, 2)).toEqual([]);
+  });
+});
+
+describe('the bridge is authoritative; the cache follows', () => {
+  it('a locked change is refused before the bridge is asked', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', externalBody());
+    await publishLetter(c, 1, 'finance-lake');
+    const puts = c.bridge.targetPuts;
+    const res = await c.call('PATCH', '/publish-targets/finance-lake', { bucket: 'elsewhere' });
+    expect(res.statusCode).toBe(409);
+    expect(c.bridge.targetPuts).toBe(puts);
+    expect(c.bridge.targets.get('finance-lake')!.destination).toMatchObject({
+      bucket: 'finance-lake',
+    });
+  });
+
+  it('with the bridge down, the list is the cache and writes change nothing', async () => {
+    const c = await setup();
+    await cacheS3(c.targets, financeTarget(), { source: 'ui', by: 'Ken' });
+    const before = JSON.stringify(await c.targets.list());
+    c.bridge.failReads = new BridgeApiError(0, null, 'the bridge could not be reached');
+    const list = await c.call('GET', '/publish-targets');
+    expect(list.statusCode).toBe(200);
+    expect((list.json() as { targets: PublishTargetView[] }).targets.map((t) => t.id)).toEqual([
+      'default',
+      'finance-lake',
+    ]);
+    for (const [method, url, payload] of [
+      ['POST', '/publish-targets', externalBody({ label: 'Another' })],
+      ['PATCH', '/publish-targets/finance-lake', { label: 'Renamed' }],
+    ] as const) {
+      c.bridge.failNext = new BridgeApiError(0, null, 'the bridge could not be reached');
+      const res = await c.call(method, url, payload);
+      expect([url, res.statusCode]).toEqual([url, 502]);
+    }
+    c.bridge.failReads = null;
+    expect(JSON.stringify(await c.targets.list())).toBe(before);
+  });
+
+  it('a cache write that fails after the bridge accepted answers 500 saved on the bridge; refresh, and the next pull heals it', async () => {
+    const c = await setup();
+    const real = c.targets.cache.bind(c.targets);
+    c.targets.cache = async () => {
+      throw new Error('database is down');
+    };
+    const res = await c.call('POST', '/publish-targets', externalBody());
+    expect(res.statusCode).toBe(500);
+    expect(res.json().error).toBe('saved on the bridge; refresh');
+    expect(c.bridge.targets.has('finance-lake')).toBe(true);
+    expect(await c.targets.get('finance-lake')).toBeNull();
+
+    c.targets.cache = real;
+    await pullTargets({ targets: c.targets, bridge: c.bridge, log: c.app.log });
+    expect(await c.targets.get('finance-lake')).toMatchObject({ label: 'Finance lake' });
+  });
+
+  it('a target not on the bridge is listed with onBridge false', async () => {
+    const c = await setup();
+    await cacheS3(c.targets, financeTarget(), { source: 'ui', by: 'Ken' });
+    await pullTargets({ targets: c.targets, bridge: c.bridge, log: c.app.log });
+    const res = await c.call('GET', '/publish-targets');
+    const { targets } = res.json() as { targets: PublishTargetView[] };
+    expect(targets.find((t) => t.id === 'finance-lake')).toMatchObject({ onBridge: false });
   });
 });
