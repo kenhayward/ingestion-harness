@@ -54,7 +54,7 @@ function batch(active = true): RunBatch {
   };
 }
 
-const renderCard = (b = batch(), onRetry = vi.fn()) =>
+const renderCard = (b = batch(), onRetry = vi.fn(), onCancel = vi.fn(), onCancelBatch = vi.fn()) =>
   render(
     <RunBatchCard
       batch={b}
@@ -62,6 +62,8 @@ const renderCard = (b = batch(), onRetry = vi.fn()) =>
       subtitle="4 dev samples · started by ken · template's models"
       now={Date.parse(at(72))}
       onRetry={onRetry}
+      onCancel={onCancel}
+      onCancelBatch={onCancelBatch}
     />,
   );
 const row = (file: string) =>
@@ -124,5 +126,20 @@ describe('RunBatchCard', () => {
       within(row('stark.pdf')).getByRole('button', { name: 'Retry stark.pdf' }),
     );
     expect(onRetry).toHaveBeenCalledWith(expect.objectContaining({ filename: 'stark.pdf' }));
+  });
+
+  it('offers Cancel on a running run and Cancel batch with only the unfinished runs', async () => {
+    const onCancel = vi.fn();
+    const onCancelBatch = vi.fn();
+    renderCard(batch(), vi.fn(), onCancel, onCancelBatch);
+    await userEvent.click(
+      within(row('hooli.pdf')).getByRole('button', { name: 'Cancel hooli.pdf' }),
+    );
+    expect(onCancel).toHaveBeenCalledWith(expect.objectContaining({ filename: 'hooli.pdf' }));
+    expect(within(row('acme.pdf')).queryByRole('button', { name: /^Cancel/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel batch…' }));
+    expect(onCancelBatch).toHaveBeenCalledWith([
+      expect.objectContaining({ filename: 'hooli.pdf' }),
+    ]);
   });
 });

@@ -196,7 +196,7 @@ export function runDuration(run: TestRun, now: number): string {
   return jobDuration(run, now) ?? '—';
 }
 
-export type RunAction = 'review-now' | 'review' | 'retry' | null;
+export type RunAction = 'review-now' | 'review' | 'retry' | 'cancel' | null;
 
 const ACTIONS: Record<JobStatus, RunAction> = {
   awaiting_review: 'review-now',
@@ -204,12 +204,16 @@ const ACTIONS: Record<JobStatus, RunAction> = {
   failed: 'retry',
   needs_review: 'retry',
   cancelled: 'retry',
-  queued: null,
-  running: null,
+  queued: 'cancel',
+  running: 'cancel',
   rejected: null,
   delivering: null,
 };
 export const runAction = (run: TestRun): RunAction => ACTIONS[run.status];
+
+/** The runs that can still be cancelled (queued or running), in their order. */
+export const cancellableRuns = (runs: readonly TestRun[]): TestRun[] =>
+  runs.filter((run) => runAction(run) === 'cancel');
 
 export interface SampleChoice {
   sample: SampleView;

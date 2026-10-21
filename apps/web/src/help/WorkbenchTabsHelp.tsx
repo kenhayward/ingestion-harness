@@ -436,6 +436,13 @@ export function WbRunsHelp() {
         run; <strong>Retry</strong> runs a failed one again. Older batches are behind{' '}
         <strong>Show</strong>.
       </p>
+      <h3>Cancelling</h3>
+      <p>
+        <strong>Cancel</strong> on a queued or running row stops that run, and{' '}
+        <strong>Cancel batch…</strong> stops every run of the batch that has not finished; both ask
+        first. A running run stops at its next safe point, finished runs are left as they are, and a
+        cancelled run can be retried.
+      </p>
     </>
   );
 }

@@ -4,6 +4,7 @@ import type { Api } from '../api/client.js';
 import { choiceName } from '../jobs/derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
+import { CancelRunsDialog, type CancelRequest } from './CancelRunsDialog.js';
 import { RunBatchCard, RunHead, RunRows } from './RunBatchCard.js';
 import { RunSamples } from './RunSamples.js';
 import {
@@ -28,7 +29,8 @@ interface Loaded {
 
 /**
  * Test runs (handoff §11, TR1–TR4): pick dev samples, run the draft on them as one batch, follow
- * each batch's runs (status, step progress, duration) and open them in Review or retry them.
+ * each batch's runs (status, step progress, duration) and open them in Review, retry them, or
+ * cancel queued and running ones (one run, or a whole batch).
  * Polls while a run is queued or running, or a dev sample is still preparing.
  */
 export function RunsTab({
@@ -59,6 +61,8 @@ export function RunsTab({
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [asking, setAsking] = useState(false);
   const [retrying, setRetrying] = useState<TestRun | null>(null);
+  const [cancelling, setCancelling] = useState<CancelRequest | null>(null);
+  const cancelRun = (run: TestRun) => setCancelling({ runs: [run], batch: false });
   const [showOlder, setShowOlder] = useState(false);
   const [showOthers, setShowOthers] = useState(false);
   const choices = useModelChoices(api);
@@ -172,6 +176,8 @@ export function RunsTab({
             subtitle={batchSubtitle(batch, choices)}
             now={now}
             onRetry={setRetrying}
+            onCancel={cancelRun}
+            onCancelBatch={(runs) => setCancelling({ runs, batch: true })}
           />
         );
       })}
@@ -210,7 +216,7 @@ export function RunsTab({
               <table className="runs-table" aria-label="Other runs">
                 <RunHead />
                 <tbody>
-                  <RunRows runs={others} now={now} onRetry={setRetrying} />
+                  <RunRows runs={others} now={now} onRetry={setRetrying} onCancel={cancelRun} />
                 </tbody>
               </table>
             </div>
@@ -236,6 +242,17 @@ export function RunsTab({
             await load();
           }}
           onClose={() => setAsking(false)}
+        />
+      )}
+      {cancelling && (
+        <CancelRunsDialog
+          request={cancelling}
+          cancel={(id) => api.cancelJob(id)}
+          onDone={() => {
+            onChanged();
+            void load();
+          }}
+          onClose={() => setCancelling(null)}
         />
       )}
       {retrying && (

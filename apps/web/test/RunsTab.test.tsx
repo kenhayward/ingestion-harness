@@ -270,6 +270,81 @@ describe('RunsTab', () => {
     expect(api.retryJob).toHaveBeenCalledWith(failed.id, null);
   });
 
+  it('cancels one run after a confirm, then reloads and tells the page', async () => {
+    const running = testRunView({ batchId: 'b1', filename: 's1.pdf', status: 'running' });
+    const api = fakeApi({ listTestRuns: vi.fn(async () => [running]) });
+    const { onChanged } = tab(api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel s1.pdf' }));
+    const dialog = screen.getByRole('dialog', { name: 'Cancel the run of s1.pdf?' });
+    expect(dialog).toHaveTextContent('You can retry a cancelled run.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Keep running' }));
+    expect(api.cancelJob).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel s1.pdf' }));
+    const again = screen.getByRole('dialog', { name: 'Cancel the run of s1.pdf?' });
+    await userEvent.click(within(again).getByRole('button', { name: 'Cancel run' }));
+    expect(api.cancelJob).toHaveBeenCalledWith(running.id);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onChanged).toHaveBeenCalled();
+    expect(api.listTestRuns).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels every queued or running run of a batch, leaving finished ones', async () => {
+    const runs = [
+      testRunView({ batchId: 'b1', filename: 's1.pdf', status: 'running' }),
+      testRunView({ batchId: 'b1', filename: 's2.pdf', status: 'queued' }),
+      testRunView({ batchId: 'b1', filename: 's3.pdf', status: 'succeeded' }),
+    ];
+    const api = fakeApi({ listTestRuns: vi.fn(async () => runs) });
+    tab(api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel batch…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Cancel 2 runs in this batch?' });
+    expect(dialog).toHaveTextContent('s1.pdf, s2.pdf');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel 2 runs' }));
+    expect(api.cancelJob).toHaveBeenCalledTimes(2);
+    expect(api.cancelJob).toHaveBeenCalledWith(runs[0]!.id);
+    expect(api.cancelJob).toHaveBeenCalledWith(runs[1]!.id);
+  });
+
+  it('offers no batch cancel once every run of the batch has finished', async () => {
+    const done = testRunView({ batchId: 'b1', filename: 's1.pdf', status: 'succeeded' });
+    tab(fakeApi({ listTestRuns: vi.fn(async () => [done]) }));
+    expect(await screen.findByRole('cell', { name: 's1.pdf' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel batch…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cancel s1.pdf' })).toBeNull();
+  });
+
+  it('treats a run that finished meanwhile as done, and shows any other refusal', async () => {
+    const runs = [
+      testRunView({ batchId: 'b1', filename: 's1.pdf', status: 'running' }),
+      testRunView({ batchId: 'b1', filename: 's2.pdf', status: 'queued' }),
+    ];
+    const api = fakeApi({
+      listTestRuns: vi.fn(async () => runs),
+      cancelJob: vi.fn(async (id: string) => {
+        if (id === runs[0]!.id) {
+          throw new ApiError('only queued or running jobs can be cancelled', 409);
+        }
+        throw new Error('network down');
+      }),
+    });
+    tab(api);
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel batch…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Cancel 2 runs in this batch?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel 2 runs' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Could not cancel s2.pdf: network down',
+    );
+    expect(within(dialog).getByRole('alert')).not.toHaveTextContent('s1.pdf');
+  });
+
+  it('still cancels runs of a retired document type', async () => {
+    const running = testRunView({ batchId: 'b1', filename: 's1.pdf', status: 'running' });
+    tab(fakeApi({ listTestRuns: vi.fn(async () => [running]) }), { retired: 'Letter is retired' });
+    expect(await screen.findByRole('button', { name: 'Cancel s1.pdf' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cancel batch…' })).toBeEnabled();
+  });
+
   it('retries a run outside a batch with its own model: no picker, no model sent', async () => {
     const ref = testRunView({
       batchId: null,
