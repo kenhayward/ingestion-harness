@@ -815,6 +815,21 @@ describe('revise diagnostics (Part C)', () => {
     expect(shown.steps).toEqual([]);
   });
 
+  it('reports the missed headings of a re-run job once (its last segmented event)', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const seg = { missedKeys: [{ sections: ['kinds'], key: '7', line: '7' }], missedKeysTotal: 1 };
+    await run(ctx, a, {
+      task: 'rerun',
+      startedAt: '2026-10-21T10:00:00.000Z',
+      events: [
+        { message: 'segmented', data: seg, at: '2026-10-21T10:01:00.000Z' },
+        { message: 'segmented', data: seg, at: '2026-10-21T10:09:00.000Z' },
+      ],
+    });
+    expect((await preview(ctx)).diagnostics!.missedKeys).toHaveLength(1);
+  });
+
   it('leaves out shacl and segment issues and keeps numeric raw values as text', async () => {
     const ctx = await project();
     const a = await ctx.add(1);

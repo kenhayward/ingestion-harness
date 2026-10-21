@@ -135,10 +135,10 @@ export function runDiagnostics(
   for (const run of runs) {
     steps.push(...flaggedSteps(run));
 
-    for (const e of run.events) {
-      if (e.message !== 'segmented') continue;
-      const parsed = SegmentedDataSchema.safeParse(e.data);
-      if (!parsed.success || !parsed.data.missedKeys?.length) continue;
+    // A step re-run segments again: like a step's, the last segmented event decides.
+    const segmented = run.events.filter((e) => e.message === 'segmented').at(-1);
+    const parsed = segmented ? SegmentedDataSchema.safeParse(segmented.data) : null;
+    if (parsed?.success && parsed.data.missedKeys?.length) {
       const entries = parsed.data.missedKeys;
       const sections: string[] = [];
       for (const m of entries)

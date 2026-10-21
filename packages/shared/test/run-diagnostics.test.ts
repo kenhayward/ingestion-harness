@@ -159,6 +159,20 @@ describe('runDiagnostics', () => {
     expect(d?.from.jobIds).toEqual(['j1', 'j2']);
   });
 
+  it('keeps only the last segmented event of a run (a step re-run segments again)', () => {
+    const seg = (key: string) => ({
+      message: 'segmented',
+      data: { missedKeys: [{ sections: ['x'], key, line: 'l' }] },
+    });
+    const d = runDiagnostics([run({ events: [seg('1'), seg('2')] })], 1);
+    expect(d?.missedKeys).toEqual([{ sample: 'a.pdf', sections: ['x'], keys: ['2'], total: 1 }]);
+    const cleared = runDiagnostics(
+      [run({ events: [seg('1'), { message: 'segmented', data: {} }] })],
+      1,
+    );
+    expect(cleared).toBeNull();
+  });
+
   it('caps rows and counts them; null counts zero', () => {
     const issues = Array.from({ length: 30 }, (_, i) => ({
       step: 's',
