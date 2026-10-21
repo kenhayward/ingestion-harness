@@ -906,6 +906,39 @@ describe('revise diagnostics (Part C)', () => {
     expect(Date.now() - started).toBeLessThan(450);
   });
 
+  it('are advisory: a store outage leaves them out and revise still starts', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    await run(ctx, a);
+    // The outputs bucket (the runs' documents) is down; prepared text in runs still reads.
+    const real = ctx.store.get.bind(ctx.store);
+    vi.spyOn(ctx.store, 'get').mockImplementation(async (bucket, key) => {
+      if (bucket === 'outputs') throw new Error('store down');
+      return real(bucket, key);
+    });
+    const res = await ctx.app.inject('/api/workbench/projects/letter/stages/revise/preview');
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as RevisePreview).diagnostics).toBeNull();
+    await ctx.feedback({ target: 'field', targetId: 'sender', body: 'Take the letterhead name' });
+    const started = await ctx.start('revise');
+    expect(started.statusCode).toBe(202);
+    expect(paramsOf(ctx, started.json().id)).not.toHaveProperty('diagnostics');
+  });
+
+  it('keeps the runs it could read when another cannot be read', async () => {
+    const ctx = await project();
+    const a = await ctx.add(1);
+    const b = await ctx.add(2);
+    const broken = await run(ctx, a);
+    const fine = await run(ctx, b);
+    const real = ctx.repo.listStepRuns.bind(ctx.repo);
+    vi.spyOn(ctx.repo, 'listStepRuns').mockImplementation(async (jobId) => {
+      if (jobId === broken.id) throw new Error('db hiccup');
+      return real(jobId);
+    });
+    expect((await preview(ctx)).diagnostics!.from.jobIds).toEqual([fine.id]);
+  });
+
   it('stamps the diagnostics with the finish time of the run', async () => {
     const ctx = await project();
     const a = await ctx.add(1);

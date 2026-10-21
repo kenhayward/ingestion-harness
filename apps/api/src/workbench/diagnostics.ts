@@ -82,16 +82,24 @@ export async function draftDiagnostics(
       });
     }
   }
-  const read = async ([sha256, found]: [string, FoundRun]): Promise<DiagnosticRun> => {
-    const [events, stepRuns, issues] = await Promise.all([
-      // A retry reuses the job row: only the latest attempt's events describe this run.
-      app.deps.repo.listEvents(found.jobId, {
-        ...(found.startedAt === null ? {} : { since: found.startedAt }),
-        messages: { exact: ['segmented'], prefixes: STEP_EVENT_PREFIXES },
-      }),
-      app.deps.repo.listStepRuns(found.jobId),
-      draftIssues(app, found.jobId),
-    ]);
+  const read = async ([sha256, found]: [string, FoundRun]): Promise<DiagnosticRun | null> => {
+    let parts;
+    try {
+      parts = await Promise.all([
+        // A retry reuses the job row: only the latest attempt's events describe this run.
+        app.deps.repo.listEvents(found.jobId, {
+          ...(found.startedAt === null ? {} : { since: found.startedAt }),
+          messages: { exact: ['segmented'], prefixes: STEP_EVENT_PREFIXES },
+        }),
+        app.deps.repo.listStepRuns(found.jobId),
+        draftIssues(app, found.jobId),
+      ]);
+    } catch (err) {
+      // Diagnostics are advisory: a run that cannot be read is left out, never blocking revise.
+      app.log.warn({ err, jobId: found.jobId }, 'run diagnostics: could not read a run');
+      return null;
+    }
+    const [events, stepRuns, issues] = parts;
     return {
       jobId: found.jobId,
       sample: bySha.get(sha256)!,
@@ -105,9 +113,11 @@ export async function draftDiagnostics(
       issues,
     };
   };
-  const runs = await Promise.all([...newest].map(read));
+  const results = await Promise.all([...newest].map(read));
+  const runs = results.filter((r): r is DiagnosticRun => r !== null);
   let at = '';
-  for (const found of newest.values()) if (found.finishedAt > at) at = found.finishedAt;
+  for (const found of newest.values())
+    if (found.finishedAt > at && runs.some((r) => r.jobId === found.jobId)) at = found.finishedAt;
   if (!runs.length) return null;
   return runDiagnostics(runs, draft.version, at || new Date().toISOString());
 }
