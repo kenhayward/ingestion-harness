@@ -2,7 +2,8 @@
 
 A check compares every value found at `values` with the reference values at `reference`
 (plus optional per-reference `aliases`, e.g. OCR spelling variants the LLM reported). Values are
-compared case- and whitespace-insensitively and classified as:
+compared after NFKC, ignoring case, whitespace, zero-width characters and dash variants, and
+classified as:
 
     match      equal to a reference value
     alias      equal to an alias of a reference value
@@ -67,10 +68,14 @@ def edit_distance(a: str, b: str) -> int:
 
 _DASHES = re.compile(r"[\u2010-\u2015\u2212\ufe63\uff0d]")
 
+_INVISIBLE = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u00ad]")
+
 
 def norm(value: str) -> str:
-    """Comparison form: NFKC, every Unicode dash as `-`, no whitespace, upper case."""
-    return "".join(_DASHES.sub("-", unicodedata.normalize("NFKC", value)).split()).upper()
+    """Comparison form: NFKC, no zero-width characters, every Unicode dash as `-`, no whitespace,
+    upper case. Held in step with the web's `normalise` by `check-norm.json`."""
+    folded = _INVISIBLE.sub("", unicodedata.normalize("NFKC", value))
+    return "".join(_DASHES.sub("-", folded).split()).upper()
 
 
 def run_check(check: Check, results: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:

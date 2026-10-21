@@ -544,7 +544,7 @@ Task: propose the extraction pipeline that fills every output in the current dra
   covers a repeated block (the same tables per batch, item or site), a table step reading it
   returns rows from every block and fills each row's identifying columns from that block's
   heading or table caption: say so in its instructions.
-- A table step reading a repeating section runs once per occurrence. Never write several steps that each want one occurrence of the same repeating section: one step per section, and one repeating section per kind of block.
+- A table step reading a repeating section runs once per occurrence and fills its table from every occurrence. Never write several steps that each want a different occurrence of the same repeating section: give each kind of block its own repeating section.
 - removeStep: drop a step from the current draft.
 - setPreamble: domain guidance placed at the top of every extraction prompt (from the brief).
 - Steps run in pipeline order; context may only use outputs filled by earlier steps. A putStep

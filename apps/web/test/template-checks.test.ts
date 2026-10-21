@@ -182,6 +182,7 @@ describe('shared repeating sections and same-shape tables', () => {
   it('warns once for table steps sharing one repeating section', () => {
     const def = {
       document: { sections: sections(['result_tables']) },
+      outputs: { tables: tables(60, 1) },
       pipeline: tableSteps(60, 'result_tables'),
     };
     expect(sharedRepeatSteps(def)).toEqual([
@@ -192,7 +193,7 @@ describe('shared repeating sections and same-shape tables', () => {
     expect(found).toEqual([
       {
         tone: 'warn',
-        text: '60 steps read the repeating section result_tables: each runs once per occurrence, so a step meant for one block reads them all. Give each kind of block its own repeating section.',
+        text: '60 steps read the repeating section result_tables and fill tables of the same shape: each runs once per occurrence, so steps meant for one block each read them all. Give each kind of block its own repeating section.',
         link: { label: 'Open Sections', subTab: 'sections' },
         subTabs: ['sections', 'pipeline'],
       },
@@ -203,17 +204,27 @@ describe('shared repeating sections and same-shape tables', () => {
     expect(
       sharedRepeatSteps({
         document: { sections: sections(['r']) },
+        outputs: { tables: tables(2, 1) },
         pipeline: tableSteps(2, 'r'),
+      }),
+    ).toEqual([]);
+    // Several different kinds of table from one repeating section is legitimate.
+    expect(
+      sharedRepeatSteps({
+        document: { sections: sections(['r']) },
+        outputs: { tables: tables(3, 3) },
+        pipeline: tableSteps(3, 'r'),
       }),
     ).toEqual([]);
     const ids = ['a', 'b', 'c', 'd', 'e'];
     expect(
       sharedRepeatSteps({
         document: { sections: sections(ids) },
+        outputs: { tables: tables(5, 1) },
         pipeline: ids.map((id) => ({
           type: 'extract',
           id: `s${id}`,
-          table: `t${id}`,
+          table: `t${ids.indexOf(id)}`,
           sections: [id],
         })),
       }),
@@ -227,12 +238,17 @@ describe('shared repeating sections and same-shape tables', () => {
       fields: ['f'],
       sections: ['r'],
     }));
-    expect(sharedRepeatSteps({ document: { sections: sections(['r']) }, pipeline: steps })).toEqual(
-      [],
-    );
+    expect(
+      sharedRepeatSteps({
+        document: { sections: sections(['r']) },
+        outputs: { tables: tables(4, 1) },
+        pipeline: steps,
+      }),
+    ).toEqual([]);
     expect(
       sharedRepeatSteps({
         document: { sections: [{ id: 'r' }] },
+        outputs: { tables: tables(4, 1) },
         pipeline: tableSteps(4, 'r'),
       }),
     ).toEqual([]);

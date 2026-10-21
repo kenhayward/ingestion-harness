@@ -837,7 +837,7 @@ def test_stage_guidance() -> None:
         "block."
     ) in " ".join(OUTPUTS.instructions.split())
     assert (
-        "A table step reading a repeating section runs once per occurrence. Never write several "
-        "steps that each want one occurrence of the same repeating section: one step per "
-        "section, and one repeating section per kind of block."
+        "A table step reading a repeating section runs once per occurrence and fills its table "
+        "from every occurrence. Never write several steps that each want a different occurrence "
+        "of the same repeating section: give each kind of block its own repeating section."
     ) in " ".join(STEPS.instructions.split())
