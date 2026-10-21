@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from ingest_worker.config import REPO_ROOT
 from ingest_worker.draft_stages import REVISE_SCHEMA
@@ -18,6 +19,7 @@ from ingest_worker.drafting import (
     MAX_SAMPLE_CHARS,
     SURVEY,
     SURVEY_SCHEMA,
+    DraftParams,
     DraftSample,
     anchor_check,
     build_context,
@@ -995,6 +997,32 @@ def test_revise_failures_header_names_the_iteration_they_came_from(
         failuresFrom={"templateVersion": 3, "model": model},
     )
     assert f'<evaluation_failures templateVersion="3" model="{shown}">' in prompt
+
+
+DIAGNOSTICS: dict[str, Any] = {
+    "from": {"draftVersion": 4, "jobIds": ["j1"], "at": "2026-10-21T10:00:00.000Z"},
+    "steps": [{"step": "head", "sample": "a.pdf", "calls": 5, "emptyCalls": 4, "seconds": 1.5}],
+    "columns": [],
+    "missedKeys": [],
+}
+
+
+def test_context_includes_run_diagnostics(fixture_specs_dir: Path) -> None:
+    prompt = revise_prompt(fixture_specs_dir, diagnostics=DIAGNOSTICS)
+    assert '<run_diagnostics draftVersion="4">' in prompt
+    assert '"emptyCalls": 4' in prompt and "</run_diagnostics>" in prompt
+    assert "<run_diagnostics" not in revise_prompt(fixture_specs_dir)
+    assert "<run_diagnostics" not in build_context(
+        brief={}, draft=None, samples=[], example_yaml=None, diagnostics=None
+    )
+
+
+def test_draft_params_accept_diagnostics() -> None:
+    base: dict[str, Any] = {"stage": "revise", "dataPolicy": "local", "brief": {}, "samples": []}
+    assert DraftParams.model_validate({**base, "diagnostics": DIAGNOSTICS}).diagnostics
+    assert DraftParams.model_validate(base).diagnostics is None
+    with pytest.raises(ValidationError):
+        DraftParams.model_validate({**base, "bogus": 1})
 
 
 def revise_section_response(anchor: str) -> dict[str, Any]:

@@ -828,3 +828,8 @@ def test_a_context_cycle_is_left_for_the_check_to_report() -> None:
     body, errors = run(STEPS, data, draft)
     assert [c["op"] for c in body["changes"]] == ["putStep", "putStep"]
     assert any("not filled by an earlier step" in e for e in errors)
+
+
+def test_revise_instructions_explain_run_diagnostics() -> None:
+    assert "run_diagnostics are what the dev test runs of this draft showed" in REVISE.instructions
+    assert "Fix what they show; reason names the diagnostic." in REVISE.instructions

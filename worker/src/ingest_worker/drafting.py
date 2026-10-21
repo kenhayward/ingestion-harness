@@ -501,6 +501,7 @@ def build_context(
     feedback: list[dict[str, Any]] | None = None,
     failures: list[dict[str, Any]] | None = None,
     failures_from: FailuresFrom | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> str:
     """Everything a drafting model sees, in one string. Refuses holdout (non-dev) samples."""
     for s in samples:
@@ -530,6 +531,13 @@ def build_context(
             f"{header}\n"
             f"{json.dumps(failures, indent=1, ensure_ascii=False)}\n"
             "</evaluation_failures>"
+        )
+    if diagnostics:
+        version = (diagnostics.get("from") or {}).get("draftVersion")
+        blocks.append(
+            f'<run_diagnostics draftVersion="{version}">\n'
+            f"{json.dumps(diagnostics, indent=1, ensure_ascii=False)}\n"
+            "</run_diagnostics>"
         )
     if example_yaml:
         blocks.append(f"<example_template>\n{example_yaml.strip()}\n</example_template>")
@@ -582,6 +590,8 @@ class DraftParams(BaseModel):
     failures: list[dict[str, Any]] = Field(default_factory=list)
     feedback_ids: list[str] = Field(default_factory=list, alias="feedbackIds")
     failures_from: FailuresFrom | None = Field(default=None, alias="failuresFrom")
+    #: Revise: what the latest dev runs of the draft showed (TS RunDiagnostics; dev samples only).
+    diagnostics: dict[str, Any] | None = None
     #: The mapping stage (ADR 0011): the brief's vocabulary, its guidance, observed values.
     mapping: dict[str, Any] | None = None
     #: Survey (ontology suggestions): the library's newest ready versions and the brief's
@@ -656,6 +666,7 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
         feedback=dev_feedback,
         failures=dev_failures,
         failures_from=params.failures_from,
+        diagnostics=params.diagnostics,
     )
     check_cancelled(job, queue)
     if deps.models.location(provider.name) == "external":

@@ -833,6 +833,7 @@ failures (expected vs actual values on the dev samples).
   outputs. reason: which feedback item or failure the change addresses.
 - answers: the labels of the feedback items the change answers (for example ["F1", "F3"]);
   [] when it only fixes evaluation failures.
+- run_diagnostics are what the dev test runs of this draft showed: steps whose occurrence calls mostly returned no rows (give each kind of block its own repeating section, or narrow the anchor), columns whose values did not fit their type (examples given: make the column text or fix its description), and headings no anchor matched (fix the anchor). Fix what they show; reason names the diagnostic.
 - notes: anything you could not fix and why.
 Return JSON only.""",
     REVISE_SCHEMA,
