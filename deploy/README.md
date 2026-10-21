@@ -87,7 +87,8 @@ deploy/scripts/compose.sh down        # keeps data volumes; `down -v` wipes them
 Every publication goes through the `bridge` service: the worker hands it one package per
 document, the bridge writes the files to the target (S3 built in, at the same keys as before) and
 reports each delivery back to the API. It keeps the credentials for external publishing targets;
-CT Studio no longer stores them. `deploy.sh` runs its migrations (`migrate-bridge`, schema
+CT Studio no longer stores them. It is also the one target registry: CT Studio caches the bridge's
+targets, pulling them when the API starts and after a restore. `deploy.sh` runs its migrations (`migrate-bridge`, schema
 `bridge` in the same Postgres) before starting it.
 
 **Two keys, both required** (`openssl rand -base64 32` each):
@@ -320,12 +321,14 @@ errors, and the Zscaler root CA will need adding to the images.
   out, no published ports). The worker reaches it at `CONVERTER_URL` (default
   `http://converter:3000`; set it empty to disable Word documents, which then need review).
   Converted PDFs are cached in the runs bucket under `converted/`.
-- **Publishing targets:** the worker writes published outputs to the recipe's target and the API
-  reads them back for the Results page. `TARGET_S3_*` only seed the `default` target on the first
-  start (empty values fall back to the internal SeaweedFS, `S3_*`); afterwards add and edit targets
-  under Administration > Published outputs (keys entered there are encrypted under
-  `LLM_SECRETS_KEY`). For an external target, give the credentials write access for the worker and
-  at least read access for the API.
+- **Publishing targets:** the bridge writes published outputs to the recipe's targets and the API
+  reads them back through it for the Results page. `TARGET_S3_*` only seed the `default` target on
+  the first start (empty values fall back to the internal SeaweedFS, `S3_*`); the API's first sync
+  with the bridge seeds it (and `rdf-default`), and the worker no longer seeds targets: a worker
+  that starts before the API waits for the sync, retrying the job without spending its attempts.
+  Afterwards add and edit targets under Administration > Published outputs; an external target's
+  keys live in a bridge connection (*Manage connections*). Give them write access for the bridge's
+  deliveries and read access for the Results page's read-back.
 - **A stand-in external S3** for trying an external publishing target: `deploy/scripts/external-s3.sh up`
   (or `.ps1`) runs a throwaway SeaweedFS (`ih-external-s3`, the same pinned image as compose, its
   own keys `IH_EXTERNAL_S3_ACCESS_KEY`/`_SECRET_KEY`, default `ext-test-access`/`ext-test-secret`)

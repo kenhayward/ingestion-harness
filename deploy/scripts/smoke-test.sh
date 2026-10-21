@@ -236,6 +236,27 @@ PY
   done
   [[ "$(object_at)" == absent ]] || fail "deleting the job must withdraw its published object"
   echo "ok   deleting the job withdrew the object through the bridge"
+  # One target registry: the targets CT Studio lists are the bridge's, cached. `default` is on the
+  # bridge, with the S3 sink and the destination the deployment configured.
+  listed="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/publish-targets")" || fail "list the targets"
+  on_bridge="$(sc exec -T worker python -c '
+import json, os, sys
+t = next((t for t in json.load(sys.stdin)["targets"] if t["id"] == "default"), None)
+want = {"bucket": os.environ.get("TARGET_S3_BUCKET") or "ingest-published",
+        "prefix": os.environ.get("TARGET_S3_PREFIX", "")}
+if t is None:
+    print("no default target")
+elif t.get("onBridge") is not True:
+    print("default is not on the bridge: onBridge=%r" % t.get("onBridge"))
+elif t.get("sinkId") != "s3":
+    print("default sinkId=%r, expected s3" % t.get("sinkId"))
+elif any((t.get("destination") or {}).get(k) != v for k, v in want.items()):
+    print("default destination %r, expected %r" % (t.get("destination"), want))
+else:
+    print("ok")
+' <<<"$listed")" || fail "read the listed targets: $on_bridge"
+  [[ "$on_bridge" == ok ]] || fail "the listed targets must be the bridge's: $on_bridge"
+  echo "ok   the listed default target is the bridge's, with its destination"
 fi
 
 # --- Several targets (delivery bridge phase 4): an archive target and the default -------------
