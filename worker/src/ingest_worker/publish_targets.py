@@ -134,6 +134,8 @@ class TargetRow:
     kms_key_id: str | None
     storage_class: str | None
     seeded_at: datetime | None
+    #: `files` (each file at its key) or `package` (an archive of whole packages).
+    layout: str = "files"
 
 
 def seed_differences(stored: TargetRow, seed: DefaultSeed) -> list[str]:
@@ -156,6 +158,9 @@ class Target:
     id: str
     bucket: str
     prefix: str = ""
+    #: `files`: the package's files at prefix + their names (today's keys). `package`: the whole
+    #: package archived under prefix + `packages/<idempotency key>/` (package_archive_keys).
+    layout: str = "files"
 
 
 class PublishTargetStore(Protocol):
@@ -176,7 +181,8 @@ class PublishTargetStore(Protocol):
 
 _COLUMNS = (
     "id, label, kind, bucket, prefix, endpoint, region, access_key_id, secret_key_enc,"
-    " access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, seeded_at"
+    " access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, seeded_at,"
+    " layout"
 )
 
 
@@ -360,7 +366,7 @@ class LiveTargets:
         row = self._rows.get(target_id)
         if row is None:
             raise TargetMissing(target_id)
-        return Target(row.id, row.bucket, row.prefix)
+        return Target(row.id, row.bucket, row.prefix, row.layout)
 
     def rdf(self) -> Target | None:
         """The triple store target (its dataset as the bucket), or None without RDF_ENDPOINT."""

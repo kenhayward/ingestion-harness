@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 21 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">Wednesday 21 October 2026: several publishing targets per recipe.</p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Major changes</h4>
+        <ul>
+          <li>
+            <a href="#several-targets">Several targets per recipe</a>
+            <span>— one approval delivers to every target the recipe names</span>
+          </li>
+          <li>
+            <a href="#archives">Archive targets</a>
+            <span>— an S3 target that keeps each publication whole</span>
+          </li>
+        </ul>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#approving-again">Approving again after a delivery needed attention</a>
+            <span>— the job is judged on the latest delivery to each target</span>
+          </li>
+        </ul>
+      </nav>
+
+      <h2 id="several-targets">Several targets per recipe</h2>
+      <p>
+        The <em>Publish to</em> setting on a recipe&apos;s General tab is now a list: tick every
+        target its published outputs should go to. One approval delivers the same publication to
+        each of them, and the job shows how each delivery went. A job is published once every target
+        has it; if one needs attention, the job goes back to review, and approving again delivers to
+        every target once more.
+      </p>
+      <p>
+        The first ticked target with the Files layout is the <strong>Primary</strong> one: Results,
+        downloads and data-lake keys read from it. Use the arrows to change the order. A recipe that
+        keeps a single target is stored exactly as before.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="archives">Archive targets</h2>
+      <p>
+        A publishing target now has a <strong>Layout</strong>. <em>Files</em> writes each output at
+        its own key, as before. <em>Archive (whole package)</em> keeps each publication whole, in a
+        folder of its own: every file, the fields and tables as <code>data.json</code>, the graph as
+        <code>graph.ttl</code>, and <code>package.json</code> describing them. Publishing the same
+        file under the same recipe version again replaces it, and deleting the job removes it. The
+        layout is locked while anything uses the target, like its bucket and prefix.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="approving-again">Approving again after a delivery needed attention</h2>
+      <p>
+        When one target&apos;s delivery needed attention and the job was approved again, the old
+        problem could send the job straight back to review, and the job page listed a target twice.
+        Each target now counts only its latest delivery.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>

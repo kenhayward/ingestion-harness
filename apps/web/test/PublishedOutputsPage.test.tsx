@@ -29,6 +29,7 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     kind: 'internal',
     bucket: 'ingest-published',
     prefix: '',
+    layout: 'files',
     endpoint: null,
     connectionId: null,
     connection: null,
@@ -338,10 +339,49 @@ describe('PublishedOutputsPage', () => {
       expect(api.createPublishTarget).toHaveBeenCalledWith({
         id: 'archive-2026',
         label: 'Archive 2026',
+        layout: 'files',
         kind: 'internal',
         bucket: 'archive-bucket',
         prefix: 'out',
       }),
+    );
+  });
+
+  it('adds an archive: Layout Archive (whole package)', async () => {
+    const api = page([target()], { createPublishTarget: vi.fn(async () => external()) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add publishing target' });
+    await userEvent.type(within(dialog).getByLabelText('Label'), 'Keep');
+    await userEvent.type(within(dialog).getByLabelText('Bucket'), 'keep-bucket');
+    await userEvent.selectOptions(within(dialog).getByLabelText('Layout'), 'package');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+    await waitFor(() =>
+      expect(api.createPublishTarget).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'keep', layout: 'package' }),
+      ),
+    );
+  });
+
+  it('shows an archive on its row, and locks its layout while in use', async () => {
+    page([
+      external({
+        layout: 'package',
+        usage: { ...NO_USE, publishedVersions: 1, documentTypes: ['po'] },
+      }),
+    ]);
+    expect(await row('Finance lake')).toHaveTextContent('Archive');
+    const r = await open('Finance lake');
+    expect(within(r).getByLabelText('Layout')).toBeDisabled();
+    expect(within(r).getByLabelText('Layout')).toHaveValue('package');
+  });
+
+  it('saves a new layout while nothing uses the target', async () => {
+    const api = page([external()]);
+    const r = await open('Finance lake');
+    await userEvent.selectOptions(within(r).getByLabelText('Layout'), 'package');
+    await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(api.updatePublishTarget).toHaveBeenCalledWith('finance-lake', { layout: 'package' }),
     );
   });
 
@@ -366,6 +406,7 @@ describe('PublishedOutputsPage', () => {
     const body = {
       id: 'finance-lake',
       label: 'Finance lake',
+      layout: 'files',
       kind: 'external',
       bucket: 'finance-bucket',
       prefix: '',

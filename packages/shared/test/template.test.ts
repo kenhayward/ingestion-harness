@@ -15,7 +15,7 @@ import {
   type DeliveryTarget,
   type OutputMapping,
 } from '../src/template.js';
-import { deliveryPublishTo } from '../src/publish-targets.js';
+import { MAX_PUBLISH_TARGETS, publishTargetsOf } from '../src/publish-targets.js';
 
 /** definitionCanonical sha256 of the fixture's full mapping, pinned before value nodes. */
 const PINNED_SHA = '57cc1aac4720265403d78c4d61becfd388ee617a698d653ccc99582b13f44929';
@@ -354,26 +354,50 @@ describe('delivery.publishTo (publishing targets, shared with the worker)', () =
     JSON.parse(
       readFileSync(new URL('./fixtures/publish-targets.json', import.meta.url), 'utf8'),
     ) as {
-      delivery: { name: string; definition: object; formats: string[]; publishTo: string }[];
+      delivery: { name: string; definition: object; formats: string[]; publishTargets: string[] }[];
     }
   ).delivery;
   it.each(cases.map((c) => [c.name, c] as const))('%s', (_n, c) => {
     const t = TemplateSchema.parse({ ...valid, ...c.definition });
     expect(deliveryFormats(t)).toEqual(c.formats);
-    expect(deliveryPublishTo(t)).toBe(c.publishTo);
+    expect(publishTargetsOf(t)).toEqual(c.publishTargets);
   });
   it('names the default target when none is set', () => {
-    expect(deliveryPublishTo({})).toBe('default');
+    expect(publishTargetsOf({})).toEqual(['default']);
   });
   it('refuses a bad target id', () => {
     const r = TemplateSchema.safeParse({ ...valid, delivery: { publishTo: 'Bad Id' } });
     expect(r.success).toBe(false);
+  });
+  it.each([
+    ['an empty list', []],
+    [
+      `${MAX_PUBLISH_TARGETS + 1} ids`,
+      Array.from({ length: MAX_PUBLISH_TARGETS + 1 }, (_, i) => `t${i}`),
+    ],
+    ['a duplicate', ['lake', 'archive', 'lake']],
+    ['a bad id in a list', ['lake', 'Bad Id']],
+  ])('refuses %s', (_n, publishTo) => {
+    const r = TemplateSchema.safeParse({ ...valid, delivery: { publishTo } });
+    expect(r.success).toBe(false);
+  });
+  it(`takes up to ${MAX_PUBLISH_TARGETS} distinct ids`, () => {
+    const publishTo = Array.from({ length: MAX_PUBLISH_TARGETS }, (_, i) => `t${i}`);
+    expect(TemplateSchema.safeParse({ ...valid, delivery: { publishTo } }).success).toBe(true);
   });
   it('keeps publishTo when a delivery switch changes', () => {
     const def = { ...valid, delivery: { publishTo: 'finance-lake' } };
     const rdf = setDeliveryTarget(def, 'rdf', true) as { delivery: unknown };
     expect(rdf.delivery).toEqual({ formats: ['csv', 'json', 'rdf'], publishTo: 'finance-lake' });
     expect(setDeliveryTarget(rdf, 'rdf', false)).toEqual(def);
+  });
+  it('keeps a list of targets when a delivery switch changes', () => {
+    const def = { ...valid, delivery: { publishTo: ['archive', 'default'] } };
+    const rdf = setDeliveryTarget(def, 'rdf', true) as { delivery: unknown };
+    expect(rdf.delivery).toEqual({
+      formats: ['csv', 'json', 'rdf'],
+      publishTo: ['archive', 'default'],
+    });
   });
 });
 

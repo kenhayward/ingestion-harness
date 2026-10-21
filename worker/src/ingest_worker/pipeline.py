@@ -127,9 +127,10 @@ class ProcessResult:
     #: The document's graph, published once its outputs are delivered without review (None: no
     #: graph is delivered).
     graph: GraphDelivery | None = None
-    #: The publishing target of the job's recipe version (legacy specs: the default), resolved
-    #: before extraction; None for test runs and without targets (nothing is delivered).
-    target: Target | None = None
+    #: The publishing targets of the job's recipe version, in its order (legacy specs: the
+    #: default), resolved before extraction; empty for test runs and without targets (nothing is
+    #: delivered).
+    targets: list[Target] = field(default_factory=list)
     #: The rendered document (a recipe's fields, tables, provenance): the package's data. None
     #: for legacy specs.
     document: dict[str, Any] | None = None
@@ -479,12 +480,29 @@ def target_named(deps: PipelineDeps, target_id: str) -> Target | None:
     return None if deps.targets is None else deps.targets.get(target_id)
 
 
-def target_for(deps: PipelineDeps, loaded: Any) -> Target | None:
-    """The publishing target of a loaded recipe version (`delivery.publishTo`, else the default);
-    legacy specs always deliver to the default."""
-    if isinstance(loaded, LoadedTemplate):
-        return target_named(deps, loaded.template.publish_to())
-    return target_named(deps, DEFAULT_TARGET_ID)
+def primary_of(targets: list[Target]) -> Target:
+    """The target a job reads back from (Results, the zip, read keys, the graph's copy): the
+    first in the recipe's list whose layout is `files`. A list of archives only is refused when
+    the recipe is published; one met here goes to review."""
+    primary = next((t for t in targets if t.layout == "files"), None)
+    if primary is None:
+        raise DocumentError("needs a target with the files layout")
+    return primary
+
+
+def targets_for(deps: PipelineDeps, loaded: Any) -> tuple[list[Target], Target | None]:
+    """The publishing targets of a loaded recipe version, in its order (`delivery.publishTo`,
+    else the default; legacy specs always deliver to the default), and the primary one. An
+    unknown id anywhere raises TargetMissing. ([], None): no targets, nothing is delivered."""
+    if deps.targets is None:
+        return [], None
+    ids = (
+        loaded.template.publish_targets()
+        if isinstance(loaded, LoadedTemplate)
+        else [DEFAULT_TARGET_ID]
+    )
+    targets = [deps.targets.get(i) for i in ids]
+    return targets, primary_of(targets)
 
 
 def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any:
@@ -517,11 +535,11 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Process
     loaded = load_definition(job, deps, queue)
     # Before any model call: a missing target sends the job to review without an LLM run. Test
     # runs deliver nothing and resolve none.
-    target = None if job.test else target_for(deps, loaded)
+    targets = [] if job.test else targets_for(deps, loaded)[0]
     if isinstance(loaded, LoadedTemplate):
         from .template_pipeline import process_template_job
 
-        return replace(process_template_job(job, deps, queue, loaded), target=target)
+        return replace(process_template_job(job, deps, queue, loaded), targets=targets)
     spec = loaded.spec
 
     resolved = resolve_models(job, deps, spec.extractions)
@@ -559,7 +577,7 @@ def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Process
     for o in outputs:
         ctype = content_type(o.format)
         deps.store.put(deps.buckets.outputs, o.key, o.body, ctype)
-    return ProcessResult(outputs, target=target)
+    return ProcessResult(outputs, targets=targets)
 
 
 def ocr_pages(

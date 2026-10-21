@@ -13,6 +13,24 @@ export const TRIPLE_STORE_TARGET_ID = 'rdf-default';
 export const TARGET_ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const TargetIdSchema = z.string().regex(TARGET_ID, 'a publishing target id');
 
+/** The most targets one recipe delivers to (delivery bridge phase 4). */
+export const MAX_PUBLISH_TARGETS = 8;
+
+/**
+ * A recipe's `delivery.publishTo`: one target id, or a list of 1 to `MAX_PUBLISH_TARGETS`
+ * distinct ids in order. A one-item list means the same as the string; the editor writes the
+ * string, so recipes that keep one target keep their hash.
+ */
+export const PublishToSchema = z.union([
+  TargetIdSchema,
+  z
+    .array(TargetIdSchema)
+    .min(1)
+    .max(MAX_PUBLISH_TARGETS)
+    .refine((ids) => new Set(ids).size === ids.length, 'a target is listed twice'),
+]);
+export type PublishTo = z.infer<typeof PublishToSchema>;
+
 /** An id made from a label (slug; `target` when nothing is left or it is the reserved `default`). */
 export function publishTargetIdFrom(label: string): string {
   const slug = label
@@ -30,6 +48,14 @@ export const TARGET_KINDS = ['internal', 'external'] as const;
 export type TargetKind = (typeof TARGET_KINDS)[number];
 /** Every kind a stored target has: S3, or the triple store seeded from `RDF_ENDPOINT`. */
 export const PUBLISH_TARGET_KINDS = ['internal', 'external', 'rdf'] as const;
+
+/**
+ * How an S3 target writes a package: `files`, each rendered file at its key (today's keys), or
+ * `package`, the whole package as an archive under `packages/{idempotency key}/`. The triple
+ * store is always `files`.
+ */
+export const TARGET_LAYOUTS = ['files', 'package'] as const;
+export type TargetLayout = (typeof TARGET_LAYOUTS)[number];
 export type PublishTargetKind = (typeof PUBLISH_TARGET_KINDS)[number];
 export const SSE_MODES = ['none', 'AES256', 'aws:kms'] as const;
 export const STORAGE_CLASSES = [
@@ -94,6 +120,7 @@ export const PublishTargetViewSchema = z.object({
   sse: z.enum(SSE_MODES),
   kmsKeyId: z.string().nullable(),
   storageClass: z.string().nullable(),
+  layout: z.enum(TARGET_LAYOUTS),
   source: z.enum(['env', 'ui']),
   editedAt: z.string().nullable(),
   updatedBy: z.string().nullable(),
@@ -132,6 +159,7 @@ const TARGET_FIELDS = {
   sse: z.enum(SSE_MODES),
   kmsKeyId: z.string().min(1).optional(),
   storageClass: z.enum(STORAGE_CLASSES).optional(),
+  layout: z.enum(TARGET_LAYOUTS),
 };
 
 const TargetFieldsSchema = z
@@ -139,6 +167,7 @@ const TargetFieldsSchema = z
     ...TARGET_FIELDS,
     prefix: TARGET_FIELDS.prefix.default(''),
     sse: TARGET_FIELDS.sse.default('none'),
+    layout: TARGET_FIELDS.layout.default('files'),
   })
   .strict();
 
@@ -211,10 +240,17 @@ export const TargetChoiceSchema = z.object({
   label: z.string(),
   kind: z.enum(TARGET_KINDS),
   bucket: z.string(),
+  prefix: z.string(),
+  layout: z.enum(TARGET_LAYOUTS),
 });
 export type TargetChoice = z.infer<typeof TargetChoiceSchema>;
 
-/** The target a recipe delivers to; absent means `default`. */
-export function deliveryPublishTo(definition: { delivery?: { publishTo?: string } }): string {
-  return definition.delivery?.publishTo ?? DEFAULT_TARGET_ID;
+/**
+ * The targets a recipe delivers to, in its order; absent means `["default"]`. The triple store
+ * (`rdf-default`) is never listed: the worker adds it when the recipe delivers `rdf`.
+ */
+export function publishTargetsOf(definition: { delivery?: { publishTo?: PublishTo } }): string[] {
+  const to = definition.delivery?.publishTo;
+  if (to === undefined) return [DEFAULT_TARGET_ID];
+  return typeof to === 'string' ? [to] : [...to];
 }

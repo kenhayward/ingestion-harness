@@ -62,6 +62,18 @@ const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled'
 const RUN_TASKS: JobSummary['task'][] = ['process', 'rerun', 'publish'];
 
 /** In-memory repo for unit tests and local UI work without Postgres. */
+/**
+ * A job_outputs row: a published one recorded for a target other than the job's primary one
+ * (an archive) has `isPrimary: false`, and only withdrawal and target usage see it.
+ */
+export type StoredOutput = JobOutput & { isPrimary?: boolean };
+
+/** A job's outputs as readers see them: drafts, and what its primary target holds. */
+const shown = (outputs: readonly StoredOutput[] = []): JobOutput[] =>
+  outputs
+    .filter((o) => o.stage !== 'published' || o.isPrimary !== false)
+    .map(({ isPrimary: _primary, ...o }) => o);
+
 export class MemoryRepo implements IngestionRepo {
   readonly jobs = new Map<string, JobSummary>();
   /** Segment jobs (document-less, ADR 0007): kept apart so no JobSummary path sees them. */
@@ -78,7 +90,7 @@ export class MemoryRepo implements IngestionRepo {
   readonly exportJobs = new Map<string, ProjectJob & { params: Record<string, unknown> }>();
   /** jobs.params of workbench jobs. */
   readonly jobParams = new Map<string, Record<string, unknown>>();
-  readonly outputs = new Map<string, JobOutput[]>();
+  readonly outputs = new Map<string, StoredOutput[]>();
   /** Published outputs a retirement withdrew (Postgres: job_outputs.withdrawn_at). */
   readonly withdrawnOutputs = new Map<string, JobOutput[]>();
   /** Graph versions as the worker records them (published_graph_versions); tests add them. */
@@ -423,7 +435,7 @@ export class MemoryRepo implements IngestionRepo {
 
   async getJob(id: string): Promise<JobDetail | null> {
     const job = this.jobs.get(id);
-    return job ? { ...this.withModels(job), outputs: this.outputs.get(id) ?? [] } : null;
+    return job ? { ...this.withModels(job), outputs: shown(this.outputs.get(id)) } : null;
   }
 
   async getJobParams(id: string): Promise<Record<string, unknown> | null> {
@@ -457,7 +469,7 @@ export class MemoryRepo implements IngestionRepo {
       .filter((j) => show !== 'reviewed' || j.reviewedAt !== null)
       .filter((j) => show !== 'auto' || j.reviewedAt === null)
       .flatMap((j): ResultSummary[] => {
-        const published = (this.outputs.get(j.id) ?? []).filter((o) => o.stage === 'published');
+        const published = shown(this.outputs.get(j.id)).filter((o) => o.stage === 'published');
         const at = this.publishedAt.get(j.id) ?? j.updatedAt;
         if (published.length === 0 || !isBefore(at, j.id)) return [];
         return [
@@ -903,7 +915,7 @@ export class MemoryRepo implements IngestionRepo {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))) {
       if (!latest.has(j.referenceId!)) latest.set(j.referenceId!, j);
     }
-    return [...latest.values()].map((j) => ({ ...j, outputs: this.outputs.get(j.id) ?? [] }));
+    return [...latest.values()].map((j) => ({ ...j, outputs: shown(this.outputs.get(j.id)) }));
   }
 
   async metricsData(templateId: string): Promise<MetricsData> {
@@ -985,13 +997,19 @@ export class MemoryRepo implements IngestionRepo {
 
   /** job_deliveries, by delivery id. */
   readonly deliveries = new Map<string, JobDelivery>();
+  /** The hand-off (round) each delivery was recorded with: `recordDeliveries` calls, per job. */
+  private readonly roundOf = new Map<string, number>();
+  private readonly rounds = new Map<string, number>();
 
   async recordDeliveries(
     jobId: string,
     rows: { targetId: string; deliveryId: string }[],
   ): Promise<void> {
+    const round = (this.rounds.get(jobId) ?? 0) + 1;
+    this.rounds.set(jobId, round);
     for (const r of rows) {
       if (this.deliveries.has(r.deliveryId)) continue;
+      this.roundOf.set(r.deliveryId, round);
       this.deliveries.set(r.deliveryId, {
         deliveryId: r.deliveryId,
         jobId,
@@ -1047,8 +1065,13 @@ export class MemoryRepo implements IngestionRepo {
     return { outcome: 'applied', finished: outcome };
   }
 
+  /** The deliveries of the job's latest round (a re-approval's round replaces the one before). */
   async deliveriesOf(jobId: string): Promise<JobDelivery[]> {
-    return [...this.deliveries.values()].filter((d) => d.jobId === jobId).map((d) => ({ ...d }));
+    const mine = [...this.deliveries.values()].filter((d) => d.jobId === jobId);
+    const latest = Math.max(0, ...mine.map((d) => this.roundOf.get(d.deliveryId) ?? 0));
+    return mine
+      .filter((d) => (this.roundOf.get(d.deliveryId) ?? 0) === latest)
+      .map((d) => ({ ...d }));
   }
 
   async stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]> {

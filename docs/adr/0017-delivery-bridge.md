@@ -45,8 +45,13 @@ system's API, would put secrets and private code in a public product.
   `BRIDGE_SECRETS_KEY` (keep it with `LLM_SECRETS_KEY`: a restore needs both). The API and the
   worker need the bridge to publish: a bridge that is down makes the worker retry the job, never
   record it as published.
-- Two target registries until phase 4 merges them: CT Studio's (`publish_targets`, mirrored) and
-  the bridge's (authoritative for sink, destination and connection).
+- Two target registries until a separate plan merges them, after phase 4 and before phase 6:
+  CT Studio's (`publish_targets`, mirrored) and the bridge's (authoritative for sink, destination
+  and connection).
+- **Phase 4** lets a recipe deliver to several targets (`publishTo` as a list; the first
+  files-layout target is the primary one, read back from), adds the S3 `package` layout for
+  archives (`{prefix}packages/{idempotencyKey}/`, `package.json` last), records published outputs
+  per target (`job_outputs.is_primary`), and judges a job on each target's latest delivery.
 - The graph's versioned copy was written synchronously in phase 2, and Fuseki by the worker.
   **Phase 3** moved both into the package: the version is committed first, then one package
   carries the graph (`rdf`) and its copy (`graph-version`) to the S3 target and the triple store

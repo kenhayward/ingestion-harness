@@ -512,7 +512,8 @@ Phase 2 (S3 behind the bridge) made these calls, recorded in
 - **`publish_targets` stays CT Studio's registry, mirrored to the bridge.** CT Studio keeps the
   table (labels, locking, recipe validation, S3 read-key grants) and mirrors every write to the
   bridge (`PUT /v1/targets/{id}`) as one unit: a bridge refusal or outage leaves the row unchanged.
-  The bridge becomes the registry in phase 4, with several targets per recipe.
+  Merging the two registries (the bridge becoming the one registry) is its own plan, after
+  phase 4 and before phase 6.
 - **Target object routes instead of per-delivery files.** Read-back, withdraw and the RDF graph
   copy use `POST /v1/targets/{id}/objects:read|put|delete`, confined to the target's bucket and
   prefix. Outputs written before the bridge have no delivery id, so reading them by delivery was
@@ -558,6 +559,35 @@ Phase 3 (RDF behind the bridge) made these calls
 - **Graph drops use the target object route** (`objects:delete` with the dataset and the graph
   IRI): withdraw and remint. No RDF-specific route was added.
 - **The worker no longer reaches Fuseki.** The API keeps its direct access for backup and restore.
+
+## Phase 4 as built
+
+Phase 4 (several targets per recipe) made these calls
+([plan](../plans/2026-10-21-delivery-bridge-4-several-targets.md)):
+
+- **`publishTo` is one id or a list** of 1 to 8 distinct ids (`PublishToSchema`,
+  `MAX_PUBLISH_TARGETS`), read everywhere through `publishTargetsOf` / `Template.publish_targets()`
+  (shared fixture `publish-targets.json`). The editor writes a string for one target and a list
+  for two or more, so a recipe that keeps one target keeps its hash. `rdf-default` stays implicit.
+- **One primary target per job:** the first files-layout target in the list. It holds the graph's
+  versioned copy and serves Results, the zip and read keys. A list of archives only is the issue
+  "needs a target with the files layout".
+- **`publish_targets` stays CT Studio's registry, mirrored**, and gains `layout` (`files` |
+  `package`, a fixed field that locks with the bucket and prefix; the triple store is always
+  `files`). The mirror sends it as the S3 sink's destination value `layout`.
+- **The package layout** writes `{prefix}packages/{idempotencyKey}/`: `files/<name>`, `data.json`,
+  `graph.ttl`, `images/<id>`, and `package.json` (the package without its bytes,
+  `ArchivedPackageSchema`) last. `packageArchiveKeys` / `package_archive_keys` (fixture
+  `archive-keys.json`) list the keys with the output ids CT Studio records (`package:data`,
+  `package:graph`, `package:image:<id>`, `package:manifest`, else the file's own output id).
+- **`job_outputs` records the published stage per target**: unique on
+  `(job_id, output_id, stage, target_id) NULLS NOT DISTINCT`, with `is_primary`. Readers (the job's
+  outputs, the Results list, Linked data counts) see the primary rows; withdrawal, target usage
+  and backup see every row, so deleting a job removes the archive too.
+- **Job state counts each target's latest delivery** (`deliveriesOf`): a re-approval's round
+  replaces the one before, so an earlier `needs_user` no longer sends the job back to review.
+- **Graph-only re-deliveries** (backfill, remint) go to the primary target and the triple store,
+  not to archives.
 
 ## Left to the builder
 

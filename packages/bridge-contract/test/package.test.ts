@@ -1,7 +1,15 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { graphIdempotencyKey, idempotencyKey, PackageSchema, partsOf } from '../src/index.js';
+import {
+  archivedPackageOf,
+  ArchivedPackageSchema,
+  graphIdempotencyKey,
+  idempotencyKey,
+  packageArchiveKeys,
+  PackageSchema,
+  partsOf,
+} from '../src/index.js';
 import { docPackage, file } from './builders.js';
 
 describe('idempotency key', () => {
@@ -67,5 +75,54 @@ describe('graph packages', () => {
     const pkg = PackageSchema.parse(fixture('package-document-rdf.json'));
     expect(partsOf(pkg)).toEqual(['files', 'data', 'rdf']);
     expect(pkg.files.map((f) => f.output)).toContain('graph-version');
+  });
+});
+
+describe('the package layout (S3 archives)', () => {
+  const read = (name: string) =>
+    JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
+  const fx = read('archive-keys.json') as {
+    package: string;
+    prefix: string;
+    keys: { outputId: string; key: string }[];
+  };
+  const pkg = PackageSchema.parse(read(fx.package));
+
+  it('archive keys match the fixture, package.json last', () => {
+    expect(packageArchiveKeys(fx.prefix, pkg)).toEqual(fx.keys);
+  });
+
+  it('the archived package parses, and it holds no bytes', () => {
+    const archived = archivedPackageOf(pkg);
+    expect(ArchivedPackageSchema.parse(archived)).toEqual(archived);
+    const text = JSON.stringify(archived);
+    for (const f of pkg.files) expect(text).not.toContain(f.content);
+    expect(text).not.toContain(pkg.rdf!.turtle);
+    expect(archived.files[0]).toEqual({
+      output: 'fields',
+      format: pkg.files[0]!.format,
+      contentType: pkg.files[0]!.contentType,
+      name: 'invoice/v3/fields/doc1.csv',
+      path: 'files/invoice/v3/fields/doc1.csv',
+    });
+    expect(archived.data).toEqual({ path: 'data.json' });
+    expect(archived.rdf).toEqual({
+      graphName: pkg.rdf!.graphName,
+      version: pkg.rdf!.version,
+      path: 'graph.ttl',
+    });
+    expect(archived.idempotencyKey).toBe(pkg.idempotencyKey);
+  });
+
+  it('leaves out the parts a package does not carry', () => {
+    const plain = { ...pkg, data: null, rdf: null };
+    expect(packageArchiveKeys('', plain).map((k) => k.outputId)).toEqual([
+      'fields',
+      'lines',
+      'document',
+      'graph-version',
+      'package:manifest',
+    ]);
+    expect(archivedPackageOf(plain)).toMatchObject({ data: null, rdf: null });
   });
 });

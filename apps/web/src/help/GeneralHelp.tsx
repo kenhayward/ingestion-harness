@@ -22,11 +22,13 @@ export function GeneralHelp() {
 
       <h3>Publish to</h3>
       <p>
-        Where this recipe&apos;s published outputs are delivered: one of the publishing targets an
-        administrator set up under Administration &gt; Published outputs. Left on Default, they go
-        to the default target. A target named here that this deployment does not have blocks
-        publishing until you pick another. Outputs already delivered stay where they were delivered;
-        a new version delivers to its own target from then on.
+        Where this recipe&apos;s published outputs are delivered: one or more of the publishing
+        targets an administrator set up under Administration &gt; Published outputs. Tick each
+        target; left alone, they go to the default target. Order matters only for the{' '}
+        <strong>Primary</strong> target, the first one with the Files layout: Results and downloads
+        read from it, so pick at least one besides an archive. A target named here that this
+        deployment does not have blocks publishing until you untick it. Outputs already delivered
+        stay where they were delivered; a new version delivers to its own targets from then on.
       </p>
 
       <h3>Preamble</h3>

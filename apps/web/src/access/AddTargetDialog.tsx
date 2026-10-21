@@ -5,6 +5,7 @@ import {
   STORAGE_CLASSES,
   type TargetCreateBody,
   type TargetKind,
+  type TargetLayout,
   type TargetTestResult,
 } from '@ih/shared';
 import type { Api } from '../api/client.js';
@@ -12,7 +13,7 @@ import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
 import { ConnectionPicker } from './ConnectionPicker.js';
-import { TestOutcome } from './TargetRow.js';
+import { LAYOUT_LABELS, TestOutcome } from './TargetRow.js';
 
 const KINDS: readonly { value: TargetKind; label: string }[] = [
   { value: 'internal', label: 'Internal' },
@@ -35,6 +36,7 @@ export function AddTargetDialog({
   const [id, setId] = useState<string | null>(null);
   const [bucket, setBucket] = useState('');
   const [prefix, setPrefix] = useState('');
+  const [layout, setLayout] = useState<TargetLayout>('files');
   const [connectionId, setConnectionId] = useState('');
   const [sse, setSse] = useState<(typeof SSE_MODES)[number]>('none');
   const [kms, setKms] = useState('');
@@ -51,6 +53,7 @@ export function AddTargetDialog({
       label: label.trim(),
       bucket: bucket.trim(),
       prefix: prefix.trim(),
+      layout,
     };
     if (kind === 'internal') return { ...common, kind } as TargetCreateBody;
     return {
@@ -180,6 +183,16 @@ export function AddTargetDialog({
                 spellCheck={false}
                 onChange={(e) => setPrefix(e.target.value)}
               />
+            </label>
+            <label>
+              Layout
+              <select value={layout} onChange={(e) => setLayout(e.target.value as TargetLayout)}>
+                {(Object.keys(LAYOUT_LABELS) as TargetLayout[]).map((l) => (
+                  <option key={l} value={l}>
+                    {LAYOUT_LABELS[l]}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
         </fieldset>

@@ -1,6 +1,9 @@
 import {
+  archivedPackageOf,
   bridgeError,
+  packageArchiveKeys,
   type BridgeError,
+  type BridgePackage,
   type BrowseResult,
   type ConnectionTestRequest,
   type ConnectionTestResult,
@@ -44,6 +47,8 @@ const DESCRIBE: SinkDescribe = {
     field('sse', 'Encryption'),
     field('kmsKeyId', 'KMS key id'),
     field('storageClass', 'Storage class'),
+    // `files` (blank): each file at prefix + its name. `package`: an archive of whole packages.
+    field('layout', 'Layout'),
   ],
   // Browsing S3 comes later. It writes the rendered files (a graph's versioned copy among them,
   // `graph-version`); a package's data and its graph (the same content, structured) are accepted
@@ -58,6 +63,42 @@ const DESCRIBE: SinkDescribe = {
 };
 
 type S3Place = TargetPlace;
+
+interface S3Object {
+  key: string;
+  label: string;
+  body: Buffer;
+  contentType: string;
+}
+
+/**
+ * An archive's objects, in the contract's write order (`packageArchiveKeys`): the parts first,
+ * `package.json` last, so a delivery that fails part-way leaves no manifest, and a retry
+ * overwrites the same keys.
+ */
+function archiveObjects(prefix: string, p: BridgePackage): S3Object[] {
+  const json = (v: unknown) => Buffer.from(JSON.stringify(v, null, 2), 'utf8');
+  const bodies: Buffer[] = [
+    ...p.files.map((f) => Buffer.from(f.content, 'base64')),
+    ...(p.data ? [json(p.data)] : []),
+    ...(p.rdf ? [Buffer.from(p.rdf.turtle, 'utf8')] : []),
+    ...(p.images ?? []).map((i) => Buffer.from(i.content, 'base64')),
+    json(archivedPackageOf(p)),
+  ];
+  const types: string[] = [
+    ...p.files.map((f) => f.contentType),
+    ...(p.data ? ['application/json'] : []),
+    ...(p.rdf ? ['text/turtle; charset=utf-8'] : []),
+    ...(p.images ?? []).map((i) => i.contentType),
+    'application/json',
+  ];
+  return packageArchiveKeys(prefix, p).map((k, i) => ({
+    key: k.key,
+    label: k.outputId,
+    body: bodies[i]!,
+    contentType: types[i]!,
+  }));
+}
 
 /**
  * The credential of the seeded `internal` connection: the bridge's own S3 settings. Only the
@@ -129,17 +170,29 @@ export class S3Sink implements SinkPort, TargetObjects {
 
   async deliver(req: SinkDeliverRequest): Promise<SinkDeliverResult> {
     const place = { credential: req.credential, destination: req.destination };
+    const layout = req.destination.layout || 'files';
+    if (layout !== 'files' && layout !== 'package') {
+      throw new SinkError(bridgeError('content_rejected', `unknown layout ${layout}`));
+    }
     const store = this.storeFor(this.options(place));
     const { bucket, prefix } = this.where(place);
+    const objects =
+      layout === 'package'
+        ? archiveObjects(prefix, req.package)
+        : req.package.files.map((f) => ({
+            key: prefix + f.name,
+            label: f.output,
+            body: Buffer.from(f.content, 'base64'),
+            contentType: f.contentType,
+          }));
     const written = [];
-    for (const file of req.package.files) {
-      const key = prefix + file.name;
+    for (const o of objects) {
       try {
-        await store.put(bucket, key, Buffer.from(file.content, 'base64'), file.contentType);
+        await store.put(bucket, o.key, o.body, o.contentType);
       } catch (err) {
         throw new SinkError(s3Error(err, bucket));
       }
-      written.push({ kind: 'object', id: key, label: file.output, url: null });
+      written.push({ kind: 'object', id: o.key, label: o.label, url: null });
     }
     return { status: 'succeeded', receipt: { written } };
   }

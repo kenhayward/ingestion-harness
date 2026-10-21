@@ -54,10 +54,11 @@ from .pipeline import (
     advisory_event,
     page_images,
     prepare_document,
+    primary_of,
     resolve_models,
     run_check_with_event,
     run_step_extraction,
-    target_for,
+    targets_for,
 )
 from .queue import ClaimedJob, JobQueue
 from .rdf import GraphContext, ShaclReport, render, to_turtle, validate, with_version
@@ -279,14 +280,14 @@ def publish_template_job(
     loaded: LoadedTemplate,
     *,
     deliver: bool = True,
-    on_published: Callable[[list[RenderedOutput], Target, Delivered], None] | None = None,
+    on_published: Callable[[list[Target], Delivered], None] | None = None,
 ) -> list[RenderedOutput]:
     """Apply the reviewer's edits to the draft (never modified), keep the reviewed document in
-    the runs bucket and, when `deliver`, publish it to the publishing target of the job's recipe
+    the runs bucket and, when `deliver`, publish it to the publishing targets of the job's recipe
     version (resolved first: a missing target writes nothing). Approved test runs (workbench
     references) pass `deliver=False`: reviewed, never delivered, no target resolved."""
     template = loaded.template
-    target = target_for(deps, loaded) if deliver else None
+    targets = targets_for(deps, loaded)[0] if deliver else []
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     draft = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
     edits = queue.review_edits(job.id)
@@ -323,7 +324,7 @@ def publish_template_job(
     graph, rendered = done.graph, done.outputs
     formats = template.delivery_formats()
     published: list[RenderedOutput] = []
-    if target is not None:  # None: no publishing targets, nothing is delivered
+    if targets:  # none: no publishing targets, nothing is delivered
         reviewer = queue.reviewer(job.id)
         delivered = deliver_publication(
             job,
@@ -333,13 +334,13 @@ def publish_template_job(
             document=document,
             outputs=[o for o in rendered if o.format in formats],
             graph=graph if "rdf" in formats else None,
-            target=target,
+            targets=targets,
             acting=reviewer or queue.uploader(job.id),
             approver=reviewer,
         )
         published = delivered.outputs
         if on_published is not None:
-            on_published(published, target, delivered)
+            on_published(targets, delivered)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
 
@@ -353,7 +354,7 @@ def deliver_publication(
     document: dict[str, Any] | None,
     outputs: list[RenderedOutput],
     graph: RenderedGraph | None,
-    target: Target,
+    targets: list[Target],
     acting: ActingUser | None,
     approver: ActingUser | None,
 ) -> Delivered:
@@ -361,8 +362,10 @@ def deliver_publication(
     ontologies not loaded yet under its base go to the triple store first, as graph packages (a
     refused one goes to review before any version is spent); then the graph's next version is
     committed (prepare_graph); then one package carries the outputs, the graph and its versioned
-    copy to `target` and, when there is one, the triple store (`rdf-default`). The returned
-    deliveries include the ontology loads."""
+    copy to every target in `targets` (in order; the copy is recorded on the primary one) and,
+    when there is one, the triple store (`rdf-default`). The returned deliveries include the
+    ontology loads."""
+    primary = primary_of(targets)
     publishes_graph = (
         graph is not None
         and template is not None
@@ -384,18 +387,19 @@ def deliver_publication(
             )
             loads.append((triples.id, delivery_id))
     version = (
-        prepare_graph(job, deps, queue, template, document, graph, target)  # type: ignore[arg-type]
+        prepare_graph(job, deps, queue, template, document, graph, primary)  # type: ignore[arg-type]
         if publishes_graph and graph is not None
         else None
     )
-    targets = [target] + ([triples] if version is not None and triples is not None else [])
+    to = targets + ([triples] if version is not None and triples is not None else [])
     delivered = deliver_document(
         deps,
         job,
         template=template,
         document=document,
         outputs=outputs,
-        targets=targets,
+        targets=to,
+        primary=primary,
         acting=acting,
         approver=approver,
         graph=version,
