@@ -326,6 +326,7 @@ class StoreHarness(Protocol):
     def set_key(self, name: str, encrypted: str) -> None: ...
     def disable_model(self, provider: str, model_id: str) -> None: ...
     def set_output_limit(self, provider: str, model_id: str, limit: int | None) -> None: ...
+    def set_parallel_calls(self, provider: str, model_id: str, calls: int | None) -> None: ...
 
 
 class MemoryHarness:
@@ -358,6 +359,9 @@ class MemoryHarness:
 
     def set_output_limit(self, provider: str, model_id: str, limit: int | None) -> None:
         self.store.set_output_limit(provider, model_id, limit)
+
+    def set_parallel_calls(self, provider: str, model_id: str, calls: int | None) -> None:
+        self.store.set_parallel_calls(provider, model_id, calls)
 
 
 class PgHarness:
@@ -413,6 +417,12 @@ class PgHarness:
         self.conn.execute(
             "UPDATE llm_models SET max_output_tokens = %s WHERE provider = %s AND model_id = %s",
             (limit, provider, model_id),
+        )
+
+    def set_parallel_calls(self, provider: str, model_id: str, calls: int | None) -> None:
+        self.conn.execute(
+            "UPDATE llm_models SET max_concurrent_calls = %s WHERE provider = %s AND model_id = %s",
+            (calls, provider, model_id),
         )
 
     def set_key(self, name: str, encrypted: str) -> None:
@@ -731,6 +741,42 @@ def test_an_unknown_ref_has_no_output_limit() -> None:
     seed = seeded([endpoint("local", models=["a"])], {"default": "local/a"})
     registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
     assert registry.max_output_tokens("nope/x") is None
+
+
+# --- a model's parallel calls (Administration > Models) -------------------------------------
+
+
+def test_an_offered_models_parallel_calls_load_and_move_the_version(
+    harness: StoreHarness,
+) -> None:
+    store = harness.store
+    store.seed(Seed([endpoint("local", models=["a", "b"])]))
+    before = store.version()
+    harness.set_parallel_calls("local", "b", 4)
+    assert store.version() != before  # workers rebuild
+    (local,) = store.load().endpoints
+    assert local.max_concurrent_calls == {"b": 4}
+    harness.set_parallel_calls("local", "b", None)
+    (local,) = store.load().endpoints
+    assert local.max_concurrent_calls == {}
+
+
+@pytest.mark.parametrize(
+    ("ref", "calls"),
+    [
+        ("local/b", 4),
+        ("big", 4),  # a model choice
+        ("local/a", None),  # not set: the caller's default (one at a time; OCR its config)
+        ("nope/x", None),
+    ],
+)
+def test_the_registry_gives_a_refs_parallel_calls(ref: str, calls: int | None) -> None:
+    seed = seeded(
+        [endpoint("local", models=["a", "b"], maxConcurrentCalls={"b": 4})],
+        {"default": "local/a", "big": "local/b"},
+    )
+    registry = registry_from_seed(seed, None, env={}, factories=fake_factories())
+    assert registry.max_concurrent_calls(ref) == calls
 
 
 # --- the embedding model (ADR 0011) -----------------------------------------------------------

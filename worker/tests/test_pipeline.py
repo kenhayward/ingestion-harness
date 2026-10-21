@@ -515,6 +515,33 @@ def test_ocr_runs_pages_concurrently_and_keeps_page_order(setup) -> None:  # typ
     assert prompt.index("INVOICE INV-001") < prompt.index("Subtotal 13.00")
 
 
+def test_the_ocr_models_parallel_calls_win_over_the_config_files(setup) -> None:  # type: ignore[no-untyped-def]
+    """Administration > Models sets the OCR model's parallel calls like any model's; the config
+    file's ocr.concurrency is the default when it is not set."""
+    provider, _, deps = setup
+    ocr = ConcurrentOcr()
+    with_ocr(deps, ocr)
+    deps.models = ModelRegistry(
+        {"anthropic": provider, "local": ocr},
+        {
+            "anthropic": ProviderConfig(name="anthropic", kind="anthropic"),
+            "local": ProviderConfig(
+                name="local", kind="openai-chat", maxConcurrentCalls={"olmocr-2-7b-1025": 2}
+            ),
+        },
+        {"default": "anthropic/claude-opus-5-5"},
+    )
+    deps.ocr = OcrSettings(model="local/olmocr-2-7b-1025", concurrency=4)
+    deps.extract_text = lambda _pdf: [""] * 6
+    provider.responses = [HEADER, LINES]
+
+    queue = FakeQueue(jobs=[job()])
+    run_once(queue, deps, "w1")
+
+    assert queue.completed, queue.reviewed or queue.failed
+    assert ocr.max_in_flight == 2
+
+
 def test_ocr_reuses_pages_already_transcribed_for_this_job(setup) -> None:  # type: ignore[no-untyped-def]
     """A retried job must not pay for OCR again (60-page scans take minutes)."""
     provider, store, deps = setup

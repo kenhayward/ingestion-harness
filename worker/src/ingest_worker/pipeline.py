@@ -4,11 +4,13 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
@@ -679,7 +681,9 @@ def ocr_pages(
     # and the first exception (transient or DocumentError) propagates.
     if progress is not None and todo:
         progress(len(cached), len(targets))  # the first page can take the whole run
-    with ThreadPoolExecutor(max_workers=max(1, settings.concurrency)) as pool:
+    # The OCR model's parallel calls (Administration > Models), else ocr.concurrency.
+    concurrency = deps.models.max_concurrent_calls(model_ref) or settings.concurrency
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         for done, page in enumerate(pool.map(run, todo), start=1):
             pages[page.index] = page.text
             if progress is not None:
@@ -714,6 +718,42 @@ def _ocr_cache_keyer(digest: str, model_ref: str, settings: OcrSettings) -> Call
 #: progress(attempt, chunk, occurrence) before each model call; chunk is {index, count} and
 #: occurrence {n, of, key}, each None when the step has none.
 StepProgress = Callable[[int, dict[str, int] | None, dict[str, Any] | None], None]
+
+
+def run_in_order[T](calls: list[Callable[[], T]], limit: int) -> list[T]:
+    """Each call's result in the calls' order, at most `limit` running at once (one: one after
+    another, in this thread). The first failure in the calls' order is raised, as a run one at a
+    time would raise it, and once a call fails no call not yet started is started."""
+    if limit <= 1 or len(calls) <= 1:
+        return [c() for c in calls]
+    with ThreadPoolExecutor(max_workers=min(limit, len(calls))) as pool:
+        futures = [pool.submit(c) for c in calls]
+
+        def stop_on_failure(done: Future[T]) -> None:
+            if not done.cancelled() and done.exception() is not None:
+                for f in futures:
+                    f.cancel()  # only those not started yet
+
+        for f in futures:
+            f.add_done_callback(stop_on_failure)
+        # Calls start in order, so every call cancelled comes after the one that failed.
+        return [f.result() for f in futures]
+
+
+def _serialised(progress: StepProgress | None) -> StepProgress | None:
+    """`progress` called by one thread at a time."""
+    if progress is None:
+        return None
+    lock = threading.Lock()
+    report = progress
+
+    def serialised(
+        attempt: int, chunk: dict[str, int] | None, occurrence: dict[str, Any] | None
+    ) -> None:
+        with lock:
+            report(attempt, chunk, occurrence)
+
+    return serialised
 
 
 def _attempt_reporter(
@@ -884,9 +924,15 @@ def run_step_extraction(
         # An entry that no longer satisfies the schema is a miss; the fresh result replaces it.
 
     schema = _without_column(ex.schema_, key_column) if key_column else ex.schema_
-    merged: ExtractionResult | None = None
-    call_rows: list[int] = []
-    for audit_id, prompt, chunk, occurrence in rendered:
+    # Progress events come from every call running at once: one at a time, as a sequential run.
+    reporter = _serialised(progress)
+
+    def call(
+        audit_id: str,
+        prompt: str,
+        chunk: dict[str, Any] | None,
+        occurrence: Occurrence | None,
+    ) -> ExtractionResult:
         where = f" [chunk {chunk['index']}/{chunk['count']}]" if chunk else ""
         if occurrence is not None:
             where = f" [occurrence {occurrence.index}/{occurrence.count}]{where}"
@@ -900,7 +946,7 @@ def run_step_extraction(
                 max_attempts=ex.max_attempts,
                 images=images,
                 max_tokens=ex.max_tokens,
-                on_attempt=_attempt_reporter(progress, chunk, occurrence, repeat),
+                on_attempt=_attempt_reporter(reporter, chunk, occurrence, repeat),
                 check=check,
             )
         except ExtractionFailedError as exc:
@@ -925,11 +971,20 @@ def run_step_extraction(
                 )
             ) from exc
         _audit(deps, job.id, audit_id, result.attempts)
-        if "rows" in result.data:
-            call_rows.append(len(result.data["rows"]))
         if key_column and occurrence is not None:
             for row in result.data["rows"]:
                 row[key_column] = occurrence.key
+        return result
+
+    # The calls read separate occurrences and pages, so they may run at once, up to the model's
+    # parallel calls (Administration > Models); merged below in plan order, as one at a time.
+    limit = deps.models.max_concurrent_calls(f"{provider.name}/{model_id}") or 1
+    results = run_in_order([partial(call, *r) for r in rendered], limit)
+    merged: ExtractionResult | None = None
+    call_rows: list[int] = []
+    for result in results:
+        if "rows" in result.data:
+            call_rows.append(len(result.data["rows"]))
         if merged is None:
             merged = result
         else:
