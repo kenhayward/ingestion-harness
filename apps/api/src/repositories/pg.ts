@@ -47,6 +47,7 @@ import {
   finishEvent,
   type JobDelivery,
   type JobFinish,
+  type EventFilter,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -701,6 +702,25 @@ export class PgRepo implements IngestionRepo {
       data: r.data,
       at: r.at.toISOString(),
     }));
+  }
+
+  async listEvents(
+    jobId: string,
+    opts: EventFilter = {},
+  ): Promise<{ message: string; data: unknown; at: string }[]> {
+    const { messages } = opts;
+    // A prefix is matched literally: LIKE's wildcards in it are escaped.
+    const prefixes = (messages?.prefixes ?? []).map((p) => p.replace(/[!%_]/g, (c) => `!${c}`));
+    const { rows } = await this.pool.query<{ message: string; data: unknown; at: Date }>(
+      `SELECT message, data, at FROM job_events
+        WHERE job_id = $1
+          AND ($2::timestamptz IS NULL OR at >= $2)
+          AND ($3::boolean OR message = ANY($4::text[])
+               OR EXISTS (SELECT 1 FROM unnest($5::text[]) AS p WHERE message LIKE p || '%' ESCAPE '!'))
+        ORDER BY at, id`,
+      [jobId, opts.since ?? null, messages === undefined, messages?.exact ?? [], prefixes],
+    );
+    return rows.map((r) => ({ message: r.message, data: r.data, at: r.at.toISOString() }));
   }
 
   async firstEventAt(

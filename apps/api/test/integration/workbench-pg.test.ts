@@ -297,6 +297,30 @@ describe.skipIf(!url)('workbench SQL against Postgres', { timeout: 30_000 }, () 
     expect(await first({ ...model, attempt: 2 })).toBeNull();
   });
 
+  it("lists a job's events since a time and by message", async () => {
+    const projectId = await newProject();
+    const job = await repo.createDraftJob(projectId, { stage: 'survey' });
+    const add = (message: string, n: number, at: string) =>
+      pool.query(
+        `INSERT INTO job_events (job_id, level, message, data, at) VALUES ($1, 'info', $2, $3, $4)`,
+        [job.id, message, JSON.stringify({ n }), at],
+      );
+    await add('segmented', 1, '2026-10-21T10:00:00.000Z');
+    await add('segmented', 2, '2026-10-21T10:05:00.000Z');
+    await add('extracted lines', 3, '2026-10-21T10:06:00.000Z');
+    await add('step progress', 4, '2026-10-21T10:07:00.000Z');
+    await add('extracted_x', 5, '2026-10-21T10:08:00.000Z'); // `_` is literal in a prefix
+    await add('segmented again', 6, '2026-10-21T10:09:00.000Z');
+    const ns = async (opts?: Parameters<typeof repo.listEvents>[1]) =>
+      (await repo.listEvents(job.id, opts)).map((e) => (e.data as { n: number }).n);
+    expect(await ns()).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(await ns({ since: '2026-10-21T10:05:00.000Z' })).toEqual([2, 3, 4, 5, 6]);
+    const messages = { exact: ['segmented'], prefixes: ['extracted ', 're-ran '] };
+    expect(await ns({ messages })).toEqual([1, 2, 3]);
+    expect(await ns({ since: '2026-10-21T10:01:00.000Z', messages })).toEqual([2, 3]);
+    expect(await ns({ messages: {} })).toEqual([]);
+  });
+
   it('lists a draft job with its attempts, says when the queue is paused, and cancels', async () => {
     const projectId = await newProject();
     const job = await repo.createDraftJob(projectId, { stage: 'survey' });

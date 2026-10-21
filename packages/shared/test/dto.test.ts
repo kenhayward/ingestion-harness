@@ -383,6 +383,7 @@ describe.each([
       draft: { version: 4, definition: { id: 'letter' } },
       samples: ['a.pdf'],
       limits: { samples: 8, fieldDiffs: 20, rowDiffs: 5 },
+      diagnostics: null,
       notSent: {
         holdoutSamples: 2,
         holdoutRun: {

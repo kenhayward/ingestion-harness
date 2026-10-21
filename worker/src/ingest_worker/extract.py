@@ -35,6 +35,9 @@ class ExtractionResult:
     cached: bool = False
     #: Tool calls the model made before answering (drafting with tools; 0 otherwise).
     tool_calls: int = 0
+    #: Rows each model call's validated reply returned, in call order (a step reading a repeating
+    #: section calls once per occurrence); empty for a cache hit and for steps without rows.
+    call_rows: tuple[int, ...] = ()
 
 
 class ExtractionFailedError(Exception):
