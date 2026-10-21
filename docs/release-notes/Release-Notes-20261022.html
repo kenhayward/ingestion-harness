@@ -174,7 +174,10 @@
         <ul>
           <li>
             <a href="#waiting">A worker that starts first waits</a>
-            <span>— no job is delivered to a target CT Studio hasn&apos;t synced yet</span>
+            <span
+              >— no job is delivered to a target CT Studio hasn&apos;t synced yet, and none waits
+              more than 30 minutes</span
+            >
           </li>
           <li>
             <a href="#restores">Restores and targets</a>
@@ -198,13 +201,22 @@
         doesn&apos;t know. For integrators: the bridge contract package is now 0.3.0 (connection
         summaries carry <code>fields</code>).
       </p>
+      <p>
+        A target of another kind of sink is listed, read-only, but recipes can&apos;t deliver to it
+        yet: a recipe naming one can&apos;t be published (<em
+          >&lt;id&gt; is a &lt;sink&gt; target: recipes can&apos;t deliver to it yet</em
+        >), and a copy restore treats production&apos;s like its external targets.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
       <h2 id="waiting">A worker that starts first waits</h2>
       <p>
         Only the API creates the <code>default</code> and triple store targets now, on its first
         start. A worker that starts earlier waits for them, and the job is retried without using up
-        its attempts.
+        its attempts. It waits before any model call, so waiting never re-runs a paid extraction. A
+        job that has waited 30 minutes fails with
+        <em>publishing target &lt;id&gt; has not synced with the delivery bridge for 30 minutes</em
+        >: check that the bridge is running and read the API&apos;s log.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
