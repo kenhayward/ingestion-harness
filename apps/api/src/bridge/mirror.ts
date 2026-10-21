@@ -1,9 +1,10 @@
+import type { TargetPutRequest } from '@ih/bridge-contract';
 import { TRIPLE_STORE_TARGET_ID } from '@ih/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { decryptSecret, type SecretsKeys } from '../llm/secrets.js';
 import type { PublishTargetRepo, TargetRecord } from '../publish-targets/repo.js';
 import type { RdfSeed } from '../publish-targets/seed.js';
-import { BridgeApiError, type BridgeApi, type TargetMirror } from './client.js';
+import { BridgeApiError, type BridgeApi } from './client.js';
 
 /**
  * CT Studio keeps `publish_targets` as its recipient registry (their usage, locking, read-key
@@ -31,7 +32,7 @@ export function connectionIdOf(t: TargetRecord): string | null {
   return t.kind === 'internal' ? INTERNAL_CONNECTION_ID : t.connectionId;
 }
 
-export function mirrorOf(t: TargetRecord): TargetMirror {
+export function mirrorOf(t: TargetRecord): TargetPutRequest {
   if (t.kind === 'rdf') {
     // The triple store: its dataset, written with its own connection (the endpoint and the
     // writer's user; the password from the bridge's RDF_PASSWORD, or one an admin stored).

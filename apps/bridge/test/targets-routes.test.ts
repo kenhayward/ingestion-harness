@@ -8,6 +8,7 @@ import { MemoryObjectStore } from '../src/s3/store.js';
 import { encryptSecret } from '../src/secrets.js';
 import { FakeSink } from '../src/sinks/fake.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
+import { RdfSink } from '../src/sinks/rdf.js';
 import { S3Sink } from '../src/sinks/s3.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { connection } from './connections-contract.js';
@@ -34,12 +35,17 @@ async function setup() {
     secretEnc: encryptSecret('finance-secret', SECRETS),
   });
   await connections.put(connection('other-sink', { sinkId: 'fake' }));
+  await connections.put(connection('triples', { sinkId: 'rdf' }));
   const app = await testBridge({
     targets,
     connections,
     deliveries,
     credentials: new Credentials({ connections, secrets: SECRETS, env: {} }),
-    sinks: new MapSinkRegistry({ s3, fake: new FakeSink() }),
+    sinks: new MapSinkRegistry({
+      s3,
+      fake: new FakeSink(),
+      rdf: new RdfSink({ store: () => ({}) as never }),
+    }),
   });
   const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) =>
     signedInject(app, KEY, { method, url, body });
@@ -86,6 +92,47 @@ describe('PUT /v1/targets/:id', () => {
     }
     expect((await call('PUT', '/v1/targets/x', { label: 'no sink' })).statusCode).toBe(400);
     expect((await call('GET', '/v1/targets')).json().targets).toEqual([]);
+  });
+
+  it('refuses an undeclared destination field, naming it', async () => {
+    const { call } = await setup();
+    const res = await call('PUT', '/v1/targets/x', {
+      ...finance,
+      destination: { bucket: 'b', colour: 'red' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      class: 'needs_user',
+      code: 'content_rejected',
+      message: 'colour is not a destination field of s3',
+    });
+  });
+
+  it('accepts every declared destination field', async () => {
+    const { call } = await setup();
+    const s3 = {
+      bucket: 'b',
+      prefix: 'p/',
+      sse: 'none',
+      kmsKeyId: '',
+      storageClass: '',
+      layout: 'flat',
+    };
+    expect((await call('PUT', '/v1/targets/a', { ...finance, destination: s3 })).statusCode).toBe(
+      200,
+    );
+  });
+
+  it('accepts the rdf dataset field', async () => {
+    const { call } = await setup();
+    const res = await call('PUT', '/v1/targets/g', {
+      label: 'Graph',
+      sinkId: 'rdf',
+      instanceId: null,
+      connectionId: 'triples',
+      destination: { dataset: 'ds' },
+    });
+    expect(res.statusCode).toBe(200);
   });
 
   it('refuses an internal target on its own staging bucket, which holds every package', async () => {

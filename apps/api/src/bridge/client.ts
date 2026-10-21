@@ -5,22 +5,15 @@ import {
   ObjectReadResultSchema,
   signRequest,
   TargetTestResultSchema,
+  TargetViewSchema,
   type BridgeError,
   type ConnectionSummary,
   type DeliveryView,
+  type TargetPutRequest,
   type TargetTestResult,
+  type TargetView,
 } from '@ih/bridge-contract';
 import { z } from 'zod';
-
-/** A target as CT Studio mirrors it to the bridge: an S3 target, or the triple store. */
-export interface TargetMirror {
-  label: string;
-  sinkId: 's3' | 'rdf';
-  instanceId: null;
-  /** Null: no connection yet; deliveries to the target then fail visibly. */
-  connectionId: string | null;
-  destination: Record<string, string>;
-}
 
 /** A shared connection written once, by the move of a target's keys to the bridge. */
 export interface SharedConnection {
@@ -35,7 +28,9 @@ export interface SharedConnection {
 
 /** CT Studio's API's calls to the delivery bridge, every one signed with BRIDGE_CLIENT_KEY. */
 export interface BridgeApi {
-  putTarget(id: string, t: TargetMirror): Promise<void>;
+  listTargets(): Promise<TargetView[]>;
+  /** Creates or replaces the target; answers the bridge's view of it. */
+  putTarget(id: string, t: TargetPutRequest): Promise<TargetView>;
   deleteTarget(id: string): Promise<'deleted' | 'in_use'>;
   putSharedConnection(c: SharedConnection): Promise<void>;
   listConnections(kind: 'shared'): Promise<ConnectionSummary[]>;
@@ -115,12 +110,18 @@ export class HttpBridgeApi implements BridgeApi {
     );
   }
 
-  async putTarget(id: string, t: TargetMirror): Promise<void> {
-    await this.expect(
+  async listTargets(): Promise<TargetView[]> {
+    const res = await this.expect(await this.call('GET', '/v1/targets'), [200], 'the target list');
+    return z.strictObject({ targets: z.array(TargetViewSchema) }).parse(await res.json()).targets;
+  }
+
+  async putTarget(id: string, t: TargetPutRequest): Promise<TargetView> {
+    const res = await this.expect(
       await this.call('PUT', `/v1/targets/${encodeURIComponent(id)}`, t),
       [200],
       `target ${id}`,
     );
+    return TargetViewSchema.parse(await res.json());
   }
 
   async deleteTarget(id: string): Promise<'deleted' | 'in_use'> {
