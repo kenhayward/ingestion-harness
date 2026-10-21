@@ -746,8 +746,16 @@ describe('revise diagnostics (Part C)', () => {
     const ctx = await project();
     const h = await ctx.add(1);
     await ctx.setRole(h.id, 'holdout');
-    await run(ctx, h);
-    expect((await preview(ctx)).diagnostics).toBeNull();
+    // Both runs would be flagged (mostly empty calls, a column issue): only the dev one counts.
+    const issues = [{ step: 'lines', target: 'items', column: 'qty', raw: 'x', message: 'bad' }];
+    const held = await run(ctx, h, { issues });
+    const d = await ctx.add(2);
+    const devRun = await run(ctx, d, { issues });
+    const shown = (await preview(ctx)).diagnostics!;
+    expect(shown.from.jobIds).toEqual([devRun.id]);
+    expect(shown.from.jobIds).not.toContain(held.id);
+    expect(JSON.stringify(shown)).not.toContain(h.filename);
+    expect(shown.steps.map((s) => s.sample)).toEqual([d.filename]);
   });
 
   it('revise starts with diagnostics and no feedback', async () => {
