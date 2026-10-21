@@ -112,3 +112,13 @@ export function keyFromOptions(
     .filter((s) => s.id && s.id !== self && s.repeat && s.key && !s.keyFrom)
     .map((s) => s.id);
 }
+
+/** The grid's note for headings no anchor caught: the first 10 keys and how many more (null: none). */
+export function missedKeysText(row: SegmentedSample): string | null {
+  const missed = row.missedKeys ?? [];
+  if (missed.length === 0) return null;
+  const total = row.missedKeysTotal ?? missed.length;
+  const keys = missed.slice(0, 10).map((m) => m.key);
+  const more = total - keys.length;
+  return `Missed headings: ${keys.join(', ')}${more > 0 ? ` (+${more})` : ''}`;
+}

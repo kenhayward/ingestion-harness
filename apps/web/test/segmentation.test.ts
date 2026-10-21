@@ -9,6 +9,7 @@ import {
   hitTone,
   initialSelection,
   landingText,
+  missedKeysText,
   move,
   sectionHits,
   suggestionFor,
@@ -202,5 +203,35 @@ describe('repeating sections', () => {
     ];
     expect(keyFromOptions(sections, 'appearance')).toEqual(['batch']);
     expect(keyFromOptions(sections, 'batch')).toEqual([]);
+  });
+
+  describe('missedKeysText', () => {
+    const row = (
+      missedKeys?: { sections: string[]; key: string; line: string }[],
+      total?: number,
+    ) =>
+      ({
+        sampleId: 's1',
+        firstPage: 1,
+        pageCount: 1,
+        error: null,
+        missingRequired: [],
+        sections: [],
+        ...(missedKeys ? { missedKeys } : {}),
+        ...(total ? { missedKeysTotal: total } : {}),
+      }) as SegmentedSample;
+    const miss = (key: string) => ({ sections: ['t'], key, line: `Table ${key}` });
+    it.each([
+      [undefined, undefined, null],
+      [[], undefined, null],
+      [['1', '2', '3', '9'].map(miss), undefined, 'Missed headings: 1, 2, 3, 9'],
+      [
+        Array.from({ length: 20 }, (_, i) => miss(String(i + 1))),
+        30,
+        'Missed headings: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 (+20)',
+      ],
+    ])('missedKeysText(%j, total %s)', (missed, total, text) => {
+      expect(missedKeysText(row(missed, total))).toBe(text);
+    });
   });
 });
