@@ -1544,7 +1544,8 @@ export class PgRepo implements IngestionRepo {
       const updated = await client.query(
         `UPDATE job_deliveries
             SET status = $2, error = $3, receipt = $4, last_sequence = $5, updated_at = now()
-          WHERE delivery_id = $1 AND last_sequence < $5`,
+          WHERE delivery_id = $1 AND last_sequence < $5
+            AND status NOT IN ('succeeded', 'skipped', 'needs_user', 'failed')`,
         [
           deliveryId,
           update.status,
