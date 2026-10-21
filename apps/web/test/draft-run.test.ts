@@ -186,6 +186,33 @@ describe('draftRunView (issue #151)', () => {
     ]);
   });
 
+  it('names the Pipeline stage check after the occurrences, and its second round', () => {
+    const first = draftRunView(
+      'steps',
+      running(progress({ stage: 'steps', phase: 'anchors', attempt: null, of: null }, 40)),
+      T0 + 41_000,
+    );
+    expect(states(first)).toEqual([
+      'Waiting for a worker:done',
+      'Reading the dev samples:done',
+      'Drafting with the model:done',
+      "Checking the steps on the samples' occurrences:current",
+    ]);
+    const second = draftRunView(
+      'steps',
+      running(progress({ stage: 'steps', round: 2 }, 50)),
+      T0 + 51_000,
+    );
+    expect(states(second)).toEqual([
+      'Waiting for a worker:done',
+      'Reading the dev samples:done',
+      'Drafting with the model:done',
+      "Checking the steps on the samples' occurrences:done",
+      'Setting occurrence filters:current',
+      'Checking the filters:pending',
+    ]);
+  });
+
   it('shows the ontology suggestions step once the survey reaches it', () => {
     const v = draftRunView(
       'survey',

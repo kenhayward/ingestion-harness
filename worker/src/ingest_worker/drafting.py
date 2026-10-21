@@ -32,6 +32,7 @@ from .llm.base import (
     ToolCapable,
 )
 from .mapping_stage import MAPPING as MAPPING_STAGE
+from .occurrence_check import occurrence_round
 from .ontology_suggest import LibraryVersion, SuggestCandidate, SuggestPin, queue_suggestions
 from .pipeline import (
     DocumentError,
@@ -816,6 +817,24 @@ def run_draft(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> dict[str,
             if grid is None:
                 raise DocumentError(final_misses[0])
         body = {**body, "anchorCheck": grid}
+    elif stage.id == "steps" and samples:
+        # Steps reading every occurrence of a section whose blocks come in kinds: one round to
+        # set occurrence filters (also drops chunkPages short occurrences do not need).
+        report("anchors")
+        pages = [(s.filename, s.pages) for s in samples]
+        body, findings = occurrence_round(pages, draft, body)
+        if findings:
+            check_cancelled(job, queue)
+            feedback = "\n".join(findings)
+            result, body = propose(
+                f"{prompt}\n\nYour pipeline was checked on the dev samples' occurrences:\n"
+                f"<occurrence_check>\n{feedback}\n</occurrence_check>\n"
+                "Propose the full set of changes again.",
+                "draft-steps-occurrences",
+                round=2,
+            )
+            report("anchors", round=2)
+            body, _ = occurrence_round(pages, draft, body)
     elif (
         stage.id == "revise"
         and samples

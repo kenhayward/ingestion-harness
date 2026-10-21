@@ -736,6 +736,16 @@ def _without_column(schema: dict[str, Any], column: str) -> dict[str, Any]:
 CONTINUATION_HEAD_CHARS = 300
 
 
+def content_pages(text: str) -> list[str]:
+    """A section's (or occurrence's) pages as chunking reads them, each stripped. A page holding
+    only its marker (the next occurrence starts at its top) has nothing to read and is left out."""
+    return [
+        p.strip()
+        for p in text.split(PAGE_BREAK)
+        if p.strip() and not re.fullmatch(r"\[page \d+\]", p.strip())
+    ]
+
+
 def _chunks(
     ex: Extraction, sections: dict[str, str]
 ) -> list[tuple[str, dict[str, str], dict[str, Any] | None]]:
@@ -743,12 +753,7 @@ def _chunks(
     if ex.chunk_pages is None:
         return [("", sections, None)]
     section_id = ex.sections[0]
-    # A page holding only its marker (the next occurrence starts at its top) has nothing to read.
-    pages = [
-        p.strip()
-        for p in sections[section_id].split(PAGE_BREAK)
-        if p.strip() and not re.fullmatch(r"\[page \d+\]", p.strip())
-    ]
+    pages = content_pages(sections[section_id])
     size = ex.chunk_pages
     groups = [PAGE_BREAK.join(pages[i : i + size]) for i in range(0, len(pages), size)] or [""]
     return [

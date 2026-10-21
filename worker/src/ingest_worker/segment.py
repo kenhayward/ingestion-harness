@@ -288,7 +288,12 @@ def occurrence_head(text: str) -> str:
 
 def occurrence_matches(pattern: str, occurrence: Occurrence) -> bool:
     """A step's occurrence filter: `pattern` searched in the occurrence's head, ignoring case."""
-    return re.search(pattern, occurrence_head(occurrence.text), re.IGNORECASE) is not None
+    return head_matches(pattern, occurrence_head(occurrence.text))
+
+
+def head_matches(pattern: str, head: str) -> bool:
+    """`pattern` searched, ignoring case, in an occurrence head (occurrence_head)."""
+    return re.search(pattern, head, re.IGNORECASE) is not None
 
 
 @dataclass(frozen=True)

@@ -28,12 +28,25 @@ const ANCHORS: Step = { key: 'anchors-1', label: 'Testing the anchors on the sam
 const MODEL_2: Step = { key: 'model-2', label: 'Fixing the anchors that missed' };
 const ANCHORS_2: Step = { key: 'anchors-2', label: 'Testing the fixed anchors' };
 const SUGGESTIONS: Step = { key: 'suggestions-1', label: 'Queuing ontology suggestions' };
+// The Pipeline stage's check of its steps on the dev samples' occurrences (phase `anchors`).
+const OCCURRENCES: Step = {
+  key: 'anchors-1',
+  label: "Checking the steps on the samples' occurrences",
+};
+const FILTERS_2: Step = { key: 'model-2', label: 'Setting occurrence filters' };
+const OCCURRENCES_2: Step = { key: 'anchors-2', label: 'Checking the filters' };
 
 /** The phases a stage goes through, as far as this run's progress shows them. */
 function stepsOf(stage: DraftStage, progress: DraftProgress | null): Step[] {
   const steps = [QUEUED, READING, MODEL];
-  if (stage === 'sections' || progress?.phase === 'anchors') steps.push(ANCHORS);
-  if (progress && progress.round > 1) steps.push(MODEL_2, ANCHORS_2);
+  const pipeline = stage === 'steps';
+  const round2 = progress !== null && progress.round > 1;
+  if (stage === 'sections' || progress?.phase === 'anchors' || round2) {
+    steps.push(pipeline ? OCCURRENCES : ANCHORS);
+  }
+  if (round2) {
+    steps.push(...(pipeline ? [FILTERS_2, OCCURRENCES_2] : [MODEL_2, ANCHORS_2]));
+  }
   if (progress?.phase === 'suggestions') steps.push(SUGGESTIONS);
   return steps;
 }
