@@ -49,6 +49,7 @@ from .segment import (
     Occurrence,
     Segmented,
     missed_payload,
+    occurrence_head,
     segment_occurrences,
     select_copy,
 )
@@ -790,10 +791,20 @@ def run_step_extraction(
         columns = [c for c in table.get("columns", []) if c.get("id") != key_column]
         prompt_context = {**prompt_context, "table": {**table, "columns": columns}}
 
-    def occurrence_context(o: Occurrence | None) -> dict[str, Any] | None:
+    def occurrence_context(
+        o: Occurrence | None, chunk: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
         if o is None or repeat is None:
             return None
-        return {"index": o.index, "count": o.count, "key": o.key, "section": repeat.section_id}
+        # A continuation chunk has no heading of its own: say how the occurrence begins.
+        head = occurrence_head(o.text) if chunk is not None and chunk["index"] > 1 else None
+        return {
+            "index": o.index,
+            "count": o.count,
+            "key": o.key,
+            "section": repeat.section_id,
+            "head": head,
+        }
 
     rendered = [
         (
@@ -805,7 +816,7 @@ def run_step_extraction(
                 ex.sections,
                 chunk,
                 prompt_context,
-                occurrence=occurrence_context(occurrence),
+                occurrence=occurrence_context(occurrence, chunk),
             ),
             chunk,
             occurrence,

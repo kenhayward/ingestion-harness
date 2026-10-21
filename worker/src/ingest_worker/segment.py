@@ -273,6 +273,24 @@ class Occurrence:
     text: str
 
 
+#: Characters of an occurrence's start a step's occurrence filter is judged on (a title wrapped
+#: over two or three lines fits; the table body below it mostly does not).
+OCCURRENCE_HEAD_CHARS = 600
+
+_PAGE_MARKS = re.compile(r"^\[page \d+\]$", re.MULTILINE)
+
+
+def occurrence_head(text: str) -> str:
+    """The start of an occurrence as one line: page markers dropped, every run of whitespace
+    (line breaks and page breaks included) read as one space, cut at OCCURRENCE_HEAD_CHARS."""
+    return " ".join(_PAGE_MARKS.sub(" ", text).split())[:OCCURRENCE_HEAD_CHARS].strip()
+
+
+def occurrence_matches(pattern: str, occurrence: Occurrence) -> bool:
+    """A step's occurrence filter: `pattern` searched in the occurrence's head, ignoring case."""
+    return re.search(pattern, occurrence_head(occurrence.text), re.IGNORECASE) is not None
+
+
 @dataclass(frozen=True)
 class Segmented:
     #: Each section's text; a repeating section's occurrences joined by a blank line.
