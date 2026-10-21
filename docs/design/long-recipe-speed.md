@@ -149,6 +149,8 @@ findings as feedback.
 
 ### Fix B: keep one output per printed table, read one occurrence (engine change)
 
+*Built as a heading filter (2026-10-21):* a step's `occurrences: {match}` reads only the occurrences whose heading matches, and the Pipeline stage proposes it ([plan](../superpowers/plans/2026-10-21-occurrence-filter.md)). Selecting by key (`keys`) can join the same object later.
+
 If 60 outputs are wanted after all (a consumer expects one file per printed table), the engine
 needs a way for a step to read **only the occurrence with a given key**, for example on the step:
 
