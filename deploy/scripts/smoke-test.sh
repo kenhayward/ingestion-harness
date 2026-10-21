@@ -236,6 +236,95 @@ PY
   echo "ok   deleting the job withdrew the object through the bridge"
 fi
 
+# --- Several targets (delivery bridge phase 4): an archive target and the default -------------
+# An internal target with layout `package` (kept across runs: a published recipe names it, so it
+# is never removable) and a recipe delivering to `default` and to it. Approving the seeded job
+# writes today's key on `default` and the whole package under packages/<key>/ on the archive,
+# `package.json` last; deleting the job withdraws both.
+if [[ -z "${SMOKE_COMPOSE:-}" ]]; then
+  echo "skip several targets: SMOKE_COMPOSE is not set"
+else
+  sc() { $SMOKE_COMPOSE "$@"; }
+  got="$(status -b "$ADMIN_JAR" -H 'content-type: application/json' \
+    -d '{"id": "smoke-archive", "label": "Smoke archive", "kind": "internal", "bucket": "smoke-archive", "layout": "package"}' \
+    "$BASE_URL/api/publish-targets")"
+  [[ "$got" == 201 || "$got" == 409 ]] || fail "create the archive target, got $got"
+  seeded="$(sc exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -qAt -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+INSERT INTO templates (id, version, status, definition, published_at)
+VALUES ('smoke-several', 1, 'published', '{"id": "smoke-several", "version": 1,
+  "name": "Smoke test (several targets)", "document": {"sections": [{"id": "all", "anchor": "\\A"}]},
+  "outputs": {"fields": [{"id": "sender", "type": "text"}]},
+  "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
+  "review": {"required": "always"}, "delivery": {"publishTo": ["default", "smoke-archive"]}}', now())
+ON CONFLICT DO NOTHING;
+WITH doc AS (
+  INSERT INTO documents (filename, sha256, size_bytes, spec_id, spec_version, bucket, object_key)
+  VALUES ('smoke-several.pdf', encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 4,
+          'smoke-several', 1, 'ingest-inbox', 'smoke-several/v1/smoke.pdf')
+  RETURNING id, sha256
+), job AS (
+  INSERT INTO jobs (document_id, status, task, review_reasons)
+  SELECT id, 'awaiting_review', 'process', '["smoke test"]' FROM doc RETURNING id, document_id
+)
+SELECT job.id || ' ' || doc.id || ' ' || doc.sha256 FROM job JOIN doc ON doc.id = job.document_id;
+SQL
+)" || fail "seed a reviewed job for several targets: $seeded"
+  read -r sev_job sev_doc sev_sha <<<"$seeded"
+  [[ -n "$sev_job" && -n "$sev_doc" && -n "$sev_sha" ]] || fail "seed a reviewed job: $seeded"
+  # Writes the draft (with `draft`), else says where each target's object is: present or absent.
+  several() {
+    sc exec -T worker python - "$1" "$sev_doc" "$sev_job" "$sev_sha" <<'PY'
+import hashlib, json, os, sys
+from ingest_worker.storage import S3ObjectStore
+what, doc, job, sha = sys.argv[1:5]
+store = S3ObjectStore(os.environ["S3_ENDPOINT"], os.environ.get("S3_REGION") or "us-east-1",
+                      os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"])
+if what == "draft":
+    draft = {"document_id": doc, "job_id": job, "source_sha256": sha,
+             "template": {"id": "smoke-several", "version": 1, "name": "Smoke test (several targets)"},
+             "extracted_at": "2026-10-21T00:00:00+00:00", "page_count": 1, "models": {},
+             "fields": {"sender": {"value": "Smoke", "evidence": None, "page": 1}},
+             "tables": {}, "checks": {}, "issues": [], "review_required": True,
+             "review_reasons": ["smoke test"]}
+    bucket = os.environ.get("S3_BUCKET_OUTPUTS") or "ingest-outputs"
+    key = f"smoke-several/v1/document/{doc}.json"
+    store.put(bucket, key, json.dumps(draft).encode(), "application/json")
+    sys.exit()
+key = hashlib.sha256(f"{sha}\nsmoke-several\n1".encode()).hexdigest()
+at = {
+    "default": (os.environ.get("TARGET_S3_BUCKET") or "ingest-published",
+                os.environ.get("TARGET_S3_PREFIX", "") + f"smoke-several/v1/document/{doc}.json"),
+    "archive": ("smoke-archive", f"packages/{key}/package.json"),
+}
+print(" ".join("present" if store.get_optional(*at[t]) is not None else "absent"
+               for t in ("default", "archive")))
+PY
+  }
+  several draft || fail "write the draft for several targets"
+  [[ "$(status -b "$ADMIN_JAR" -H 'content-type: application/json' -d '{}' \
+    "$BASE_URL/api/jobs/$sev_job/approve")" == 200 ]] || fail "approve the several-targets job"
+  job_status=""
+  for ((i = 1; i <= 90; i++)); do
+    job_status="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$sev_job" | json_field status | head -1)"
+    [[ "$job_status" == succeeded || "$job_status" == failed || "$job_status" == needs_review ]] && break
+    sleep 2
+  done
+  [[ "$job_status" == succeeded ]] ||
+    fail "the several-targets job must succeed, got '$job_status': $(curl -sS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$sev_job")"
+  [[ "$(several where)" == "present present" ]] ||
+    fail "expected today's key on default and package.json on the archive, got: $(several where)"
+  echo "ok   one job delivered to the default target and to an archive"
+  [[ "$(status -b "$ADMIN_JAR" -X DELETE "$BASE_URL/api/jobs/$sev_job")" == 204 ]] ||
+    fail "delete the several-targets job"
+  for ((i = 1; i <= 60; i++)); do
+    [[ "$(several where)" == "absent absent" ]] && break
+    sleep 2
+  done
+  [[ "$(several where)" == "absent absent" ]] ||
+    fail "deleting the job must withdraw it at both targets, got: $(several where)"
+  echo "ok   deleting the job withdrew it at both targets, the archive included"
+fi
+
 # --- RDF through the bridge (delivery bridge phase 3): a reviewed job of a mapped recipe ------
 # With a triple store (rdf-default, from RDF_ENDPOINT) and a Linked data base: approving it
 # delivers its outputs and its graph's versioned copy to the default target and its graph to the
