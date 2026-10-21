@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -50,6 +51,14 @@ def test_internal_target_buckets_come_from_the_store() -> None:
     assert target_buckets(lambda: rows, ["fallback"]) == ["pub", "other"]
 
 
+def test_init_buckets_lists_internal_targets_buckets_from_their_destinations() -> None:
+    rdf = TargetRow("rdf-default", "Triple store", "rdf", "rdf", {"dataset": "ct"})
+    other_sink = TargetRow("hook", "Hook", "sink", "webhook", {"url": "https://x"})
+    inert = replace(row("old", "internal", "gone"), inert=True)
+    rows = [row("default", "internal", "pub"), rdf, other_sink, inert, row("c", "external", "lake")]
+    assert target_buckets(lambda: rows, ["fallback"]) == ["pub"]
+
+
 def test_target_buckets_fall_back_when_the_store_is_unavailable() -> None:
     def down() -> list[TargetRow]:
         raise ConnectionError("no database")
@@ -68,19 +77,8 @@ def row(id: str, kind: str, bucket: str) -> TargetRow:
         id=id,
         label=id,
         kind=kind,  # type: ignore[arg-type]
-        bucket=bucket,
-        prefix="",
-        endpoint=None,
-        region=None,
-        access_key_id=None,
-        secret_key_enc=None,
-        access_key_env=None,
-        secret_key_env=None,
-        path_style=True,
-        sse="none",
-        kms_key_id=None,
-        storage_class=None,
-        seeded_at=None,
+        sink_id="s3",
+        destination={"bucket": bucket, "prefix": "", "layout": ""},
     )
 
 

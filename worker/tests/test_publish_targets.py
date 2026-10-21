@@ -1,14 +1,16 @@
-"""Publishing targets in the worker: seeding from .env, and reading them (their credentials
-live on the delivery bridge).
+"""Publishing targets in the worker: reading the API's cache of the bridge's registry (the
+credentials live on the delivery bridge; the API does the seeding).
 
-The seed and prefix cases come from the fixture the API's tests read too."""
+The prefix cases come from the fixture the API's tests read too."""
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 from collections.abc import Iterator
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -16,12 +18,11 @@ import pytest
 from ingest_worker.config import REPO_ROOT
 from ingest_worker.pipeline import DocumentError, Target
 from ingest_worker.publish_targets import (
-    DefaultSeed,
     LiveTargets,
     PgPublishTargetStore,
     TargetMissing,
+    TargetNotSynced,
     TargetRow,
-    default_seed,
     normalise_prefix,
 )
 
@@ -37,19 +38,8 @@ def test_normalise_prefix_matches_the_shared_fixture(case: dict[str, str]) -> No
     assert normalise_prefix(case["input"]) == case["expected"]
 
 
-@pytest.mark.parametrize("case", FIXTURE["seed"], ids=lambda c: str(c["name"]))
-def test_default_seed_matches_the_shared_fixture(case: dict[str, Any]) -> None:
-    e = case["expected"]
-    assert default_seed(case["env"]) == DefaultSeed(
-        kind=e["kind"],
-        bucket=e["bucket"],
-        prefix=e["prefix"],
-        endpoint=e["endpoint"],
-        region=e["region"],
-        access_key_env=e["accessKeyEnv"],
-        secret_key_env=e["secretKeyEnv"],
-        force_path_style=e["forcePathStyle"],
-    )
+NOW = datetime(2026, 10, 21, tzinfo=UTC)
+S3 = {"bucket": "ingest-published", "prefix": "", "sse": "none", "layout": ""}
 
 
 def row(**kw: Any) -> TargetRow:
@@ -57,19 +47,9 @@ def row(**kw: Any) -> TargetRow:
         id="default",
         label="Default",
         kind="internal",
-        bucket="ingest-published",
-        prefix="",
-        endpoint=None,
-        region=None,
-        access_key_id=None,
-        secret_key_enc=None,
-        access_key_env=None,
-        secret_key_env=None,
-        path_style=True,
-        sse="none",
-        kms_key_id=None,
-        storage_class=None,
-        seeded_at=None,
+        sink_id="s3",
+        destination=S3,
+        synced_at=NOW,
     )
     return replace(base, **kw)
 
@@ -80,8 +60,46 @@ def live(rows: list[TargetRow]) -> tuple[LiveTargets, MemoryPublishTargetStore]:
 
 
 def test_a_target_is_its_id_bucket_and_prefix_only() -> None:
-    targets, _ = live([row(prefix="pvp/")])
+    targets, _ = live([row(destination={**S3, "prefix": "pvp/"})])
     assert targets.get("default") == Target("default", "ingest-published", "pvp/")
+
+
+def test_get_builds_the_s3_place_from_the_destination() -> None:
+    targets, _ = live(
+        [
+            row(id="blank", destination={"bucket": "b", "prefix": "p/", "layout": ""}),
+            row(id="files", destination={"bucket": "b", "layout": "files"}),
+            row(id="archive", destination={"bucket": "b", "prefix": "a/", "layout": "package"}),
+            row(id="bare", destination={"bucket": "b"}),
+        ]
+    )
+    assert targets.get("blank") == Target("blank", "b", "p/", "files")
+    assert targets.get("files") == Target("files", "b", "", "files")
+    assert targets.get("archive") == Target("archive", "b", "a/", "package")
+    assert targets.get("bare") == Target("bare", "b", "", "files")
+
+
+def test_rdf_reads_the_dataset_from_the_destination() -> None:
+    triples = row(id="rdf-default", kind="rdf", sink_id="rdf", destination={"dataset": "kb"})
+    targets, _ = live([row(), triples])
+    assert targets.rdf() == Target("rdf-default", "kb", "")
+    assert live([row()])[0].rdf() is None
+
+
+def test_a_non_s3_sink_is_no_s3_target() -> None:
+    hook = row(id="hook", kind="sink", sink_id="webhook", destination={"url": "https://x"})
+    targets, _ = live([hook])
+    with pytest.raises(TargetMissing):
+        targets.get("hook")
+
+
+def test_a_target_not_synced_yet_is_not_ready_and_is_no_document_error() -> None:
+    targets, store = live([row(synced_at=None)])
+    with pytest.raises(TargetNotSynced, match="default"):
+        targets.get("default")
+    assert not issubclass(TargetNotSynced, DocumentError)  # retried, never sent to review
+    store.set_rows([row()])
+    assert targets.get("default").bucket == "ingest-published"
 
 
 def test_an_unknown_target_is_missing_never_the_default() -> None:
@@ -95,7 +113,7 @@ def test_refresh_reloads_only_when_the_version_moved() -> None:
     targets, store = live([row()])
     targets.get("default")
     assert targets.refresh() is False
-    store.set_rows([row(bucket="moved")])
+    store.set_rows([row(destination={**S3, "bucket": "moved"})])
     assert targets.refresh() is True
     assert targets.get("default").bucket == "moved"
 
@@ -103,17 +121,20 @@ def test_refresh_reloads_only_when_the_version_moved() -> None:
 def test_get_refreshes_before_resolving() -> None:
     targets, store = live([row()])
     assert targets.get("default").bucket == "ingest-published"
-    store.set_rows([row(bucket="moved")])
+    store.set_rows([row(destination={**S3, "bucket": "moved"})])
     assert targets.get("default").bucket == "moved"
 
 
-def test_memory_store_seeds_once() -> None:
-    store = MemoryPublishTargetStore([row()])
-    seed = default_seed({"S3_ENDPOINT": "e", "S3_ACCESS_KEY": "k", "S3_SECRET_KEY": "s"})
-    assert store.seed_default(seed) == "seeded"
-    assert store.seed_default(seed) == "kept"
-    assert store.seed_default(replace(seed, bucket="other")) == "differs"
-    assert store.load()[0].bucket == "ingest-published"
+def test_the_worker_seeds_nothing() -> None:
+    import ingest_worker.main as main
+    import ingest_worker.publish_targets as pt
+
+    for name in ("seed_default_target", "seed_rdf_target", "default_seed", "rdf_seed"):
+        assert not hasattr(pt, name) and not hasattr(main, name)
+    assert not hasattr(PgPublishTargetStore, "seed_default")
+    assert not hasattr(PgPublishTargetStore, "seed_rdf")
+    source = inspect.getsource(main)
+    assert "seed_default_target" not in source and "seed_rdf_target" not in source
 
 
 def test_fake_targets_get() -> None:
@@ -135,41 +156,31 @@ def pg() -> Iterator[PgPublishTargetStore]:
     import psycopg
 
     conn = psycopg.connect(url, autocommit=True)
-    conn.execute("DELETE FROM publish_targets WHERE id <> 'default'")
+    conn.execute("DELETE FROM publish_targets WHERE id IN ('prod-lake', 'rdf-default')")
     conn.execute(
-        "UPDATE publish_targets SET seeded_at = NULL, kind = 'internal',"
-        " bucket = 'ingest-published', prefix = '', endpoint = NULL WHERE id = 'default'"
+        "UPDATE publish_targets SET kind = 'internal', sink_id = 's3', synced_at = now(),"
+        ' destination = \'{"bucket": "ingest-published", "prefix": "pvp/"}\''
+        " WHERE id = 'default'"
     )
     yield PgPublishTargetStore(conn)
     conn.close()
 
 
 @pytest.mark.integration
-def test_pg_store_seeds_the_default_once_and_moves_the_version(pg: PgPublishTargetStore) -> None:
-    before = pg.version()
-    seed = default_seed(
-        {
-            "S3_ENDPOINT": "http://seaweed:8333",
-            "S3_ACCESS_KEY": "k",
-            "S3_SECRET_KEY": "s",
-            "TARGET_S3_PREFIX": "pvp",
-        }
-    )
-    assert pg.seed_default(seed) == "seeded"
-    assert pg.version() > before
+def test_pg_store_reads_the_cache_columns_and_moves_the_version(pg: PgPublishTargetStore) -> None:
     [r] = [r for r in pg.load() if r.id == "default"]
-    assert (r.kind, r.prefix, r.seeded_at is not None, r.path_style) == (
-        "internal",
-        "pvp",  # verbatim, as .env had it
-        True,
-        True,
-    )
+    assert (r.kind, r.sink_id, r.inert, r.synced_at is not None) == ("internal", "s3", False, True)
+    assert LiveTargets(pg).get("default") == Target("default", "ingest-published", "pvp/", "files")
+    before = pg.version()
+    pg._conn.execute("UPDATE publish_targets SET label = 'Renamed' WHERE id = 'default'")
+    assert pg.version() > before
 
-    after = pg.version()
-    assert pg.seed_default(seed) == "kept"
-    assert pg.version() == after
-    assert pg.seed_default(replace(seed, bucket="other")) == "differs"
-    assert pg.version() == after
+
+@pytest.mark.integration
+def test_pg_target_not_synced_yet_waits(pg: PgPublishTargetStore) -> None:
+    pg._conn.execute("UPDATE publish_targets SET synced_at = NULL WHERE id = 'default'")
+    with pytest.raises(TargetNotSynced):
+        LiveTargets(pg).get("default")
 
 
 @pytest.mark.integration
@@ -177,25 +188,21 @@ def test_inert_target_is_missing(pg: PgPublishTargetStore) -> None:
     """A copy restore's external targets of the backup stay as inert rows (foreign keys):
     nothing can use them, so to the worker they do not exist."""
     pg._conn.execute(
-        """INSERT INTO publish_targets (id, label, kind, bucket, endpoint, region, source, inert_at)
-           VALUES ('prod-lake', 'Production lake', 'external', 'lake', 'https://s3.example',
-                   'eu-west-1', 'ui', now())"""
+        """INSERT INTO publish_targets (id, label, kind, destination, source, inert_at, synced_at)
+           VALUES ('prod-lake', 'Production lake', 'external', '{"bucket": "lake"}', 'ui',
+                   now(), now())"""
     )
-    assert "prod-lake" not in [r.id for r in pg.load()]
     with pytest.raises(TargetMissing):
         LiveTargets(pg).get("prod-lake")
 
 
-def test_seeding_reports_the_fields_env_now_disagrees_on() -> None:
-    from ingest_worker.publish_targets import seed_default_target
-
-    store = MemoryPublishTargetStore([row()])
-    env = {"S3_ENDPOINT": "e", "S3_ACCESS_KEY": "k", "S3_SECRET_KEY": "s"}
-    assert seed_default_target(store, env) == []  # seeded
-    assert seed_default_target(store, env) == []  # kept
-    moved = {**env, "TARGET_S3_BUCKET": "other", "TARGET_S3_PREFIX": "p"}
-    assert seed_default_target(store, moved) == ["bucket", "prefix"]
-    assert store.load()[0].bucket == "ingest-published"  # the database wins
+@pytest.mark.integration
+def test_pg_triple_store_is_read_from_its_destination(pg: PgPublishTargetStore) -> None:
+    pg._conn.execute(
+        """INSERT INTO publish_targets (id, label, kind, sink_id, destination, source, synced_at)
+           VALUES ('rdf-default', 'Triple store', 'rdf', 'rdf', '{"dataset": "kb"}', 'env', now())"""
+    )
+    assert LiveTargets(pg).rdf() == Target("rdf-default", "kb", "")
 
 
 class _Conn:
@@ -248,56 +255,8 @@ def test_the_worker_rides_out_a_database_restart_while_refreshing_targets() -> N
     assert refresh_targets(Moved()) is True  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("case", FIXTURE["rdfSeed"], ids=lambda c: str(c["name"]))
-def test_rdf_seed_matches_the_shared_fixture(case: dict[str, Any]) -> None:
-    from ingest_worker.publish_targets import RdfSeed, rdf_seed
-
-    e = case["expected"]
-    assert rdf_seed(case["env"]) == (None if e is None else RdfSeed(**e))
-
-
-def test_rdf_default_is_seeded_from_rdf_endpoint_and_resolved_by_rdf() -> None:
-    from ingest_worker.publish_targets import seed_rdf_target
-
-    store = MemoryPublishTargetStore([row()])
-    targets = LiveTargets(store)
-    assert targets.rdf() is None
-    env = {"RDF_ENDPOINT": "http://fuseki:3030", "RDF_DATASET": "kb"}
-    assert seed_rdf_target(store, env) == []
-    assert targets.rdf() == Target("rdf-default", "kb", "")
-    [r] = [r for r in store.load() if r.id == "rdf-default"]
-    assert (r.kind, r.label, r.endpoint, r.access_key_id) == (
-        "rdf",
-        "Triple store",
-        "http://fuseki:3030",
-        "ct-writer",
-    )
-    # Once seeded, .env is only compared.
-    assert seed_rdf_target(store, {**env, "RDF_DATASET": "other"}) == ["dataset"]
-    assert targets.rdf() == Target("rdf-default", "kb", "")
-
-
-def test_without_rdf_endpoint_there_is_no_triple_store() -> None:
-    from ingest_worker.publish_targets import seed_rdf_target
-
-    store = MemoryPublishTargetStore([row()])
-    assert seed_rdf_target(store, {"RDF_ENDPOINT": ""}) == []
-    assert LiveTargets(store).rdf() is None
+def test_fake_targets_rdf() -> None:
     assert FakeTargets({}).rdf() is None
     assert FakeTargets({}, rdf=Target("rdf-default", "ct", "")).rdf() == Target(
         "rdf-default", "ct", ""
     )
-
-
-@pytest.mark.integration
-def test_pg_store_seeds_rdf_default_once(pg: PgPublishTargetStore) -> None:
-    from ingest_worker.publish_targets import RdfSeed
-
-    pg._conn.execute("DELETE FROM publish_targets WHERE id = 'rdf-default'")
-    seed = RdfSeed(endpoint="http://fuseki:3030", dataset="ct", user="ct-writer")
-    assert pg.seed_rdf(seed) == "seeded"
-    assert pg.seed_rdf(seed) == "kept"
-    assert pg.seed_rdf(RdfSeed(endpoint="http://other:3030", dataset="ct", user="ct-writer")) == (
-        "differs"
-    )
-    assert LiveTargets(pg).rdf() == Target("rdf-default", "ct", "")

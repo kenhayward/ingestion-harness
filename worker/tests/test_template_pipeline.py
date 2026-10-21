@@ -1033,6 +1033,40 @@ def test_a_version_naming_no_target_delivers_to_the_default(tmp_path: Path) -> N
     assert current is not None and current.target_id == "default"
 
 
+def test_a_target_not_synced_yet_is_retried_and_nothing_is_delivered(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from ingest_worker.publish_targets import LiveTargets, TargetRow
+
+    from .fakes import MemoryPublishTargetStore
+
+    deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
+    bridge = deps.bridge
+    assert isinstance(bridge, FakeBridge)
+    destination = {"bucket": "published", "prefix": "pvp/", "layout": ""}
+    store = MemoryPublishTargetStore(
+        [TargetRow("default", "Default", "internal", "s3", destination, synced_at=None)]
+    )
+    deps = replace(deps, targets=LiveTargets(store))
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    [(_, error)] = queue.failed  # failed = re-queued with backoff while attempts remain
+    assert error.startswith("TargetNotSynced")
+    assert not queue.reviewed and not queue.finished and not queue.published
+    assert bridge.requests == [] and not default.objects and not finance.objects
+    # Once the API has synced the row, the retry delivers.
+    store.set_rows(
+        [
+            TargetRow(
+                "default", "Default", "internal", "s3", destination, synced_at=datetime.now(UTC)
+            )
+        ]
+    )
+    queue.jobs = [JOB]
+    run_once(queue, deps, "w1")
+    assert queue.finished and queue.published
+
+
 def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: Path) -> None:
     deps, default, finance, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
     assert isinstance(deps.targets, FakeTargets)

@@ -59,8 +59,6 @@ from .plugins import plugins
 from .publish_targets import (
     LiveTargets,
     PgPublishTargetStore,
-    seed_default_target,
-    seed_rdf_target,
 )
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
@@ -379,11 +377,9 @@ class _Worker:
             if llm_config.ocr and ocr_config is not None
             else None
         )
-        # Publishing targets: .env seeds the default once, then the database decides (own
+        # Publishing targets: the API's cache of the bridge's registry, read only (own
         # connection, re-opened when lost; refreshed with the LLM config).
         self.target_store = PgPublishTargetStore.connect(settings.database_url)
-        seed_default_target(self.target_store, os.environ)
-        seed_rdf_target(self.target_store, os.environ)
         self.targets = LiveTargets(self.target_store)
         # The ontology library and the Linked data settings share one autocommit connection.
         self.library = psycopg.connect(settings.database_url, autocommit=True)

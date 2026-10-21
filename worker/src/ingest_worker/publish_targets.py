@@ -1,16 +1,16 @@
 """Publishing targets (S3 destinations of published outputs) read from the database.
 
-The API owns the table (migration 202610170019, apps/api/src/publish-targets/); the worker only reads it,
-and seeds the `default` row from `.env` when it is first to start. The seed rule, the prefix rule
-and the delivery cases are held in step with the API by
-packages/shared/test/fixtures/publish-targets.json.
+The delivery bridge's registry is authoritative; `publish_targets` is CT Studio's cache of it,
+written only by the API (apps/api/src/publish-targets/), which also seeds `default` and
+`rdf-default`. The worker only reads the cache. The prefix rule and the delivery cases are held
+in step with the API by packages/shared/test/fixtures/publish-targets.json.
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
@@ -25,12 +25,11 @@ log = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 DEFAULT_TARGET_ID = "default"
-DEFAULT_BUCKET = "ingest-published"
-#: The triple store target, seeded from `RDF_ENDPOINT` (TRIPLE_STORE_TARGET_ID in TS).
+#: The triple store target (TRIPLE_STORE_TARGET_ID in TS).
 TRIPLE_STORE_TARGET_ID = "rdf-default"
+S3_SINK_ID = "s3"
 
-TargetKind = Literal["internal", "external", "rdf"]
-SeedOutcome = Literal["seeded", "kept", "differs"]
+TargetKind = Literal["internal", "external", "rdf", "sink"]
 
 
 def normalise_prefix(prefix: str) -> str:
@@ -40,113 +39,20 @@ def normalise_prefix(prefix: str) -> str:
 
 
 @dataclass(frozen=True)
-class DefaultSeed:
-    """The default target as `.env` describes it (DefaultSeed in TS)."""
-
-    kind: TargetKind
-    bucket: str
-    prefix: str
-    endpoint: str | None
-    region: str | None
-    access_key_env: str | None
-    secret_key_env: str | None
-    force_path_style: bool
-
-
-def default_seed(env: Mapping[str, str]) -> DefaultSeed:
-    """The `TARGET_S3_*` settings as a target (defaultSeed in TS). Internal when the target's
-    endpoint and keys are blank or equal to `S3_*`; else external, reading its keys from the same
-    variables as before (a blank target key falls back to `S3_*`)."""
-
-    def value(name: str) -> str | None:
-        return env.get(name) or None
-
-    s3_endpoint, t_endpoint = value("S3_ENDPOINT"), value("TARGET_S3_ENDPOINT")
-    t_access, t_secret = value("TARGET_S3_ACCESS_KEY"), value("TARGET_S3_SECRET_KEY")
-    same_endpoint = t_endpoint is None or t_endpoint == s3_endpoint
-    own_access = t_access is not None and t_access != value("S3_ACCESS_KEY")
-    own_secret = t_secret is not None and t_secret != value("S3_SECRET_KEY")
-    bucket = value("TARGET_S3_BUCKET") or DEFAULT_BUCKET
-    # Verbatim, never normalised (as in TS): `ingest` has always meant keys like `ingestletter/…`.
-    prefix = env.get("TARGET_S3_PREFIX", "")
-    if same_endpoint and not own_access and not own_secret:
-        return DefaultSeed("internal", bucket, prefix, None, None, None, None, True)
-    return DefaultSeed(
-        kind="external",
-        bucket=bucket,
-        prefix=prefix,
-        endpoint=t_endpoint or s3_endpoint,
-        region=value("TARGET_S3_REGION") or value("S3_REGION") or "us-east-1",
-        access_key_env="TARGET_S3_ACCESS_KEY" if t_access else "S3_ACCESS_KEY",
-        secret_key_env="TARGET_S3_SECRET_KEY" if t_secret else "S3_SECRET_KEY",
-        force_path_style=True,
-    )
-
-
-@dataclass(frozen=True)
-class RdfSeed:
-    """The triple store target as `.env` describes it (RdfSeed in TS)."""
-
-    endpoint: str
-    dataset: str
-    user: str
-
-
-def rdf_seed(env: Mapping[str, str]) -> RdfSeed | None:
-    """`RDF_ENDPOINT` as the triple store target (rdfSeed in TS); None when it is blank."""
-    endpoint = env.get("RDF_ENDPOINT") or None
-    if endpoint is None:
-        return None
-    return RdfSeed(
-        endpoint=endpoint,
-        dataset=env.get("RDF_DATASET") or "ct",
-        user=env.get("RDF_USER") or "ct-writer",
-    )
-
-
-def rdf_seed_differences(stored: TargetRow, seed: RdfSeed) -> list[str]:
-    """What the stored triple store target and `.env` now disagree on."""
-    pairs = [
-        ("endpoint", stored.endpoint, seed.endpoint),
-        ("dataset", stored.bucket, seed.dataset),
-        ("user", stored.access_key_id, seed.user),
-    ]
-    return [name for name, have, want in pairs if have != want]
-
-
-@dataclass(frozen=True)
 class TargetRow:
-    """A `publish_targets` row."""
+    """A `publish_targets` row (the cache of a bridge target)."""
 
     id: str
     label: str
     kind: TargetKind
-    bucket: str
-    prefix: str
-    endpoint: str | None
-    region: str | None
-    access_key_id: str | None
-    secret_key_enc: str | None
-    access_key_env: str | None
-    secret_key_env: str | None
-    path_style: bool
-    sse: str
-    kms_key_id: str | None
-    storage_class: str | None
-    seeded_at: datetime | None
-    #: `files` (each file at its key) or `package` (an archive of whole packages).
-    layout: str = "files"
-
-
-def seed_differences(stored: TargetRow, seed: DefaultSeed) -> list[str]:
-    """The fields of the stored default that differ from what `.env` now says."""
-    pairs = [
-        ("kind", stored.kind, seed.kind),
-        ("endpoint", stored.endpoint, seed.endpoint),
-        ("bucket", stored.bucket, seed.bucket),
-        ("prefix", stored.prefix, seed.prefix),
-    ]
-    return [name for name, have, want in pairs if have != want]
+    sink_id: str
+    #: The sink's destination: S3 {bucket, prefix, sse, kmsKeyId, storageClass, layout}
+    #: (a blank layout means `files`); rdf {dataset}.
+    destination: dict[str, str]
+    #: A copy restore's dropped external target, kept for the foreign keys only.
+    inert: bool = False
+    #: When the cache last took the row from the bridge; None: not yet (the worker waits).
+    synced_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -170,20 +76,8 @@ class PublishTargetStore(Protocol):
         """Moves whenever a target is written."""
         ...
 
-    def seed_default(self, seed: DefaultSeed) -> SeedOutcome:
-        """Write `.env` into the default row, once: 'seeded', else 'kept' or 'differs'."""
-        ...
 
-    def seed_rdf(self, seed: RdfSeed) -> SeedOutcome:
-        """Insert the triple store target from `.env`, once: 'seeded', else 'kept' or 'differs'."""
-        ...
-
-
-_COLUMNS = (
-    "id, label, kind, bucket, prefix, endpoint, region, access_key_id, secret_key_enc,"
-    " access_key_env, secret_key_env, force_path_style, sse, kms_key_id, storage_class, seeded_at,"
-    " layout"
-)
+_COLUMNS = "id, label, kind, sink_id, destination, inert_at IS NOT NULL, synced_at"
 
 
 class PgPublishTargetStore:
@@ -227,11 +121,7 @@ class PgPublishTargetStore:
 
     def load(self) -> list[TargetRow]:
         def work(conn: psycopg.Connection[Any]) -> list[TargetRow]:
-            # An inert row (a copy restore's dropped external target, kept for the foreign keys
-            # only) does not exist here: nothing resolves or delivers to it (TargetMissing).
-            rows = conn.execute(
-                f"SELECT {_COLUMNS} FROM publish_targets WHERE inert_at IS NULL ORDER BY id"
-            ).fetchall()
+            rows = conn.execute(f"SELECT {_COLUMNS} FROM publish_targets ORDER BY id").fetchall()
             return [TargetRow(*r) for r in rows]
 
         return self._run(work)
@@ -243,104 +133,22 @@ class PgPublishTargetStore:
 
         return self._run(work)
 
-    def seed_default(self, seed: DefaultSeed) -> SeedOutcome:
-        return self._run(lambda conn: self._seed(conn, seed))
-
-    def _seed(self, conn: psycopg.Connection[Any], seed: DefaultSeed) -> SeedOutcome:
-        with conn.transaction():
-            row = conn.execute(
-                f"SELECT {_COLUMNS} FROM publish_targets WHERE id = %s FOR UPDATE",
-                (DEFAULT_TARGET_ID,),
-            ).fetchone()
-            if row is None:
-                raise RuntimeError("the default publishing target row is missing")
-            current = TargetRow(*row)
-            if current.seeded_at is not None:
-                return "differs" if seed_differences(current, seed) else "kept"
-            conn.execute(
-                """UPDATE publish_targets
-                   SET kind = %s, bucket = %s, prefix = %s, endpoint = %s, region = %s,
-                       access_key_env = %s, secret_key_env = %s, force_path_style = %s,
-                       access_key_id = NULL, secret_key_enc = NULL, source = 'env',
-                       seeded_at = now()
-                   WHERE id = %s""",
-                (
-                    seed.kind,
-                    seed.bucket,
-                    seed.prefix,
-                    seed.endpoint,
-                    seed.region,
-                    seed.access_key_env,
-                    seed.secret_key_env,
-                    seed.force_path_style,
-                    DEFAULT_TARGET_ID,
-                ),
-            )
-            return "seeded"
-
-    def seed_rdf(self, seed: RdfSeed) -> SeedOutcome:
-        def work(conn: psycopg.Connection[Any]) -> SeedOutcome:
-            # The API seeds the same row (seedRdf): whichever starts first writes it.
-            inserted = conn.execute(
-                """INSERT INTO publish_targets (id, label, kind, bucket, prefix, endpoint,
-                       access_key_id, connection_id, source, seeded_at)
-                   VALUES (%s, 'Triple store', 'rdf', %s, '', %s, %s, %s, 'env', now())
-                   ON CONFLICT (id) DO NOTHING""",
-                (
-                    TRIPLE_STORE_TARGET_ID,
-                    seed.dataset,
-                    seed.endpoint,
-                    seed.user,
-                    TRIPLE_STORE_TARGET_ID,
-                ),
-            )
-            if inserted.rowcount:
-                return "seeded"
-            row = conn.execute(
-                f"SELECT {_COLUMNS} FROM publish_targets WHERE id = %s",
-                (TRIPLE_STORE_TARGET_ID,),
-            ).fetchone()
-            return "differs" if row and rdf_seed_differences(TargetRow(*row), seed) else "kept"
-
-        return self._run(work)
-
-
-def seed_rdf_target(store: PublishTargetStore, env: Mapping[str, str]) -> list[str]:
-    """Seed the triple store target from `RDF_ENDPOINT` (first start only; nothing when it is
-    blank). Afterwards the database wins: what `.env` now disagrees on is logged and returned."""
-    seed = rdf_seed(env)
-    if seed is None or store.seed_rdf(seed) != "differs":
-        return []
-    stored = next(r for r in store.load() if r.id == TRIPLE_STORE_TARGET_ID)
-    fields = rdf_seed_differences(stored, seed)
-    log.warning(
-        "the triple store target differs from .env (RDF_*) in %s: the stored target is used",
-        ", ".join(fields),
-    )
-    return fields
-
-
-def seed_default_target(store: PublishTargetStore, env: Mapping[str, str]) -> list[str]:
-    """Seed the default target from `.env` (first start only). Afterwards the database wins: the
-    fields `.env` now disagrees on are logged as a warning and returned, nothing is changed."""
-    seed = default_seed(env)
-    if store.seed_default(seed) != "differs":
-        return []
-    stored = next(r for r in store.load() if r.id == DEFAULT_TARGET_ID)
-    fields = seed_differences(stored, seed)
-    log.warning(
-        "the default publishing target differs from .env (TARGET_S3_*) in %s: the stored "
-        "target is used; change it under Administration > Published outputs",
-        ", ".join(fields),
-    )
-    return fields
-
 
 class TargetMissing(DocumentError):
     """A recipe names a publishing target that does not exist (never a fallback to default)."""
 
     def __init__(self, target_id: str) -> None:
         super().__init__(f"no publishing target {target_id}")
+        self.target_id = target_id
+
+
+class TargetNotSynced(Exception):
+    """A target the cache has not yet taken from the bridge (the API syncs it shortly after it
+    starts). Not a DocumentError: the job fails and is retried with backoff, like an unreachable
+    bridge, instead of going to review."""
+
+    def __init__(self, target_id: str) -> None:
+        super().__init__(f"publishing target {target_id} is not synced from the bridge yet")
         self.target_id = target_id
 
 
@@ -362,16 +170,23 @@ class LiveTargets:
         return True
 
     def get(self, target_id: str) -> Target:
+        """The S3 place of a target (s3PlaceOf in TS: a blank layout is `files`). TargetMissing
+        for an unknown or inert id and for a sink that is not S3 (those record receipts, not
+        keys); TargetNotSynced while the cache has not taken the row from the bridge."""
         self.refresh()
         row = self._rows.get(target_id)
-        if row is None:
+        if row is None or row.inert or row.sink_id != S3_SINK_ID:
             raise TargetMissing(target_id)
-        return Target(row.id, row.bucket, row.prefix, row.layout)
+        if row.synced_at is None:
+            raise TargetNotSynced(target_id)
+        d = row.destination
+        layout = "package" if d.get("layout") == "package" else "files"
+        return Target(row.id, d.get("bucket", ""), d.get("prefix", ""), layout)
 
     def rdf(self) -> Target | None:
-        """The triple store target (its dataset as the bucket), or None without RDF_ENDPOINT."""
+        """The triple store target (its dataset as the bucket), or None without one."""
         self.refresh()
         row = self._rows.get(TRIPLE_STORE_TARGET_ID)
-        if row is None or row.kind != "rdf":
+        if row is None or row.inert or row.kind != "rdf" or row.synced_at is None:
             return None
-        return Target(row.id, row.bucket, "")
+        return Target(row.id, row.destination.get("dataset", ""), "")
