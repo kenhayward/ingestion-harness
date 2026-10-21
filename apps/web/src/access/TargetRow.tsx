@@ -4,6 +4,7 @@ import {
   STORAGE_CLASSES,
   targetInUse,
   type PublishTargetView,
+  type TargetLayout,
   type TargetPatchBody,
   type TargetTestResult,
 } from '@ih/shared';
@@ -39,6 +40,12 @@ export function TestOutcome({ result }: { result: TargetTestResult | null }) {
   return <p role="alert">{`Failed at ${result.step ?? 'connect'}: ${result.message}`}</p>;
 }
 
+/** How a target writes what it is given (an archive keeps whole packages). */
+export const LAYOUT_LABELS: Record<TargetLayout, string> = {
+  files: 'Files',
+  package: 'Archive (whole package)',
+};
+
 /**
  * One publishing target: a row that opens on its settings. Bucket and prefix are read-only while
  * anything uses the target; label, connection and encryption always change. Credentials live on
@@ -57,6 +64,7 @@ export function TargetRow({
   const [label, setLabel] = useState(t.label);
   const [bucket, setBucket] = useState(t.bucket);
   const [prefix, setPrefix] = useState(t.prefix);
+  const [layout, setLayout] = useState(t.layout);
   const [connectionId, setConnectionId] = useState(t.connectionId ?? '');
   const [sse, setSse] = useState<string>(t.sse);
   const [kms, setKms] = useState(t.kmsKeyId ?? '');
@@ -83,6 +91,7 @@ export function TargetRow({
     if (!locked) {
       if (bucket.trim() !== t.bucket) c.bucket = bucket.trim();
       if (prefix.trim() !== t.prefix) c.prefix = prefix.trim();
+      if (layout !== t.layout) c.layout = layout;
     }
     if (external) {
       if (connectionId && connectionId !== (t.connectionId ?? '')) c.connectionId = connectionId;
@@ -136,6 +145,7 @@ export function TargetRow({
         <span className="tag tone-neutral">
           {tripleStore ? 'Triple store' : external ? 'External' : 'Internal'}
         </span>
+        {t.layout === 'package' && <span className="tag tone-neutral">Archive</span>}
         <span className="mono muted">
           {tripleStore ? `${t.endpoint ?? ''} · dataset ${t.bucket}` : `${t.bucket}/${t.prefix}`}
         </span>
@@ -186,6 +196,20 @@ export function TargetRow({
                   placeholder="none"
                   onChange={(ev) => setPrefix(ev.target.value)}
                 />
+              </label>
+              <label>
+                Layout
+                <select
+                  value={layout}
+                  disabled={locked}
+                  onChange={(ev) => setLayout(ev.target.value as TargetLayout)}
+                >
+                  {(Object.keys(LAYOUT_LABELS) as TargetLayout[]).map((l) => (
+                    <option key={l} value={l}>
+                      {LAYOUT_LABELS[l]}
+                    </option>
+                  ))}
+                </select>
               </label>
             </>
           )}

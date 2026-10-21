@@ -630,10 +630,8 @@ export function TemplateEditor({
                     <span>Publish to</span>
                     <PublishToPicker
                       choices={targets}
-                      value={publishTargetsOf(def)[0]}
-                      onChange={(id) =>
-                        update(['delivery'], withPublishTo(def.delivery, id ? [id] : []))
-                      }
+                      value={publishTargetsOf(def)}
+                      onChange={(ids) => update(['delivery'], withPublishTo(def.delivery, ids))}
                     />
                   </div>
                   <Area
@@ -1559,34 +1557,82 @@ function TableOutputs({
   );
 }
 
-/** The recipe's publishing target: empty = the default target; a stored id nobody offers stays visible. */
+/**
+ * The recipe's publishing targets, a checklist in the recipe's order (picked first, then the
+ * rest), each with Move up and Move down. The first files-layout target is the primary one:
+ * Results, the zip and read keys read from it. A stored id nobody offers stays visible.
+ */
 function PublishToPicker({
   choices,
   value,
   onChange,
 }: {
   choices: readonly TargetChoice[];
-  value: string | undefined;
-  onChange: (id: string) => void;
+  value: readonly string[];
+  onChange: (ids: string[]) => void;
 }) {
-  const describe = (c: TargetChoice) => `${c.label} · ${c.kind} · ${c.bucket}`;
-  const def = choices.find((c) => c.id === DEFAULT_TARGET_ID);
-  const defaultLabel = def ? describe(def) : 'Default';
-  const stored = value && value !== DEFAULT_TARGET_ID ? value : '';
+  const byId = new Map(choices.map((c) => [c.id, c]));
   // Loading: a stored id is not yet known to be missing, so it is not flagged until choices arrive.
-  const missing = stored && choices.length > 0 && !choices.some((c) => c.id === stored);
+  const loaded = choices.length > 0;
+  const nameOf = (id: string) =>
+    byId.get(id)?.label ?? (id === DEFAULT_TARGET_ID && !loaded ? 'Default' : id);
+  const describe = (id: string) => {
+    const c = byId.get(id);
+    if (!c) return loaded ? `${id} (not on this deployment)` : nameOf(id);
+    const where = `${c.bucket}${c.prefix ? `/${c.prefix}` : ''}`;
+    return `${c.label} · ${c.kind} · ${where}${c.layout === 'package' ? ' · archive' : ''}`;
+  };
+  const rows = [...value, ...choices.map((c) => c.id).filter((id) => !value.includes(id))];
+  const primary = value.find((id) => byId.get(id)?.layout === 'files');
   return (
-    <select aria-label="Publish to" value={stored} onChange={(e) => onChange(e.target.value)}>
-      <option value="">{`Default (${defaultLabel})`}</option>
-      {choices
-        .filter((c) => c.id !== DEFAULT_TARGET_ID)
-        .map((c) => (
-          <option key={c.id} value={c.id}>
-            {describe(c)}
-          </option>
-        ))}
-      {missing && <option value={stored}>{`${stored} (not on this deployment)`}</option>}
-      {stored && choices.length === 0 && <option value={stored}>{stored}</option>}
-    </select>
+    <fieldset className="publish-to" aria-label="Publish to">
+      <ul>
+        {rows.map((id) => {
+          const at = value.indexOf(id);
+          const on = at >= 0;
+          return (
+            <li key={id}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={on && value.length === 1}
+                  onChange={() => onChange(on ? value.filter((x) => x !== id) : [...value, id])}
+                />{' '}
+                {describe(id)}
+              </label>
+              {id === primary && <small className="badge">Primary</small>}
+              {on && value.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Move ${nameOf(id)} up`}
+                    disabled={at === 0}
+                    onClick={() => onChange(moveItem([...value], at, -1))}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Move ${nameOf(id)} down`}
+                    disabled={at === value.length - 1}
+                    onClick={() => onChange(moveItem([...value], at, 1))}
+                  >
+                    ↓
+                  </button>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {loaded && !primary && (
+        <p className="field-error">
+          needs a target with the files layout: Results, the zip and read keys read from it
+        </p>
+      )}
+    </fieldset>
   );
 }

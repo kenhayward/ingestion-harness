@@ -4626,6 +4626,27 @@ button.endpoint-toggle {
   }
 }
 
+/* The recipe's publishing targets: a checklist in delivery order. */
+.publish-to {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.publish-to ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.publish-to li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Ontologies (ADR 0011) */
 .ontologies-page {
   display: flex;

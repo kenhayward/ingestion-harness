@@ -4,7 +4,19 @@ export function PublishedOutputsHelp() {
     <>
       <p>
         A <strong>publishing target</strong> is a place published outputs are delivered to: a bucket
-        and a folder (prefix) in it. Each recipe delivers to exactly one target.
+        and a folder (prefix) in it. A recipe delivers to one target or to several.
+      </p>
+
+      <h3>Files or an archive</h3>
+      <p>
+        A target&apos;s <strong>Layout</strong> says how it writes what it is given. With{' '}
+        <strong>Files</strong> each output lands at its own key, as before. With{' '}
+        <strong>Archive (whole package)</strong> the target keeps each publication whole, under{' '}
+        <code>packages/&lt;key&gt;/</code>: every file, the fields and tables as{' '}
+        <code>data.json</code>, the graph as <code>graph.ttl</code>, and <code>package.json</code>{' '}
+        describing them, written last. Publishing the same file under the same recipe version again
+        replaces it. Results and downloads read from a Files target, so a recipe that delivers to an
+        archive also names one.
       </p>
 
       <h3>Internal and external</h3>
@@ -44,8 +56,9 @@ export function PublishedOutputsHelp() {
 
       <h3>Choosing a target for a recipe</h3>
       <p>
-        A recipe names its target on its General tab. The choice is part of the recipe, so it
-        changes only with a new version: published versions keep delivering where they did.
+        A recipe names its targets on its General tab. The choice is part of the recipe, so it
+        changes only with a new version: published versions keep delivering where they did. Each job
+        shows how its delivery to every target went; a job is published once every target has it.
       </p>
 
       <h3>Ids name recipients</h3>
@@ -58,9 +71,9 @@ export function PublishedOutputsHelp() {
       <h3>Locked once in use</h3>
       <p>
         While a published recipe version, a delivered output or an S3 key consumer uses a target,
-        its bucket and prefix are locked: add a new target and publish a new version of the recipe
-        instead. The label, connection and encryption settings can always change, so rotated keys
-        need no new version. A target that is in use cannot be removed.
+        its bucket, prefix and layout are locked: add a new target and publish a new version of the
+        recipe instead. The label, connection and encryption settings can always change, so rotated
+        keys need no new version. A target that is in use cannot be removed.
       </p>
 
       <h3>S3 keys for the data lake</h3>
