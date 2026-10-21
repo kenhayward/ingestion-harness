@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -234,6 +235,8 @@ class RepeatPlan:
     section_id: str
     occurrences: list[Occurrence]
     key_column: str | None
+    #: With an occurrence filter, how many occurrences the section had before it (None: no filter).
+    of: int | None = None
 
 
 #: Matches the lines added by mark_pages.
@@ -701,16 +704,19 @@ def _attempt_reporter(
     progress: StepProgress | None,
     chunk: dict[str, int] | None,
     occurrence: Occurrence | None,
+    repeat: RepeatPlan | None = None,
 ) -> Callable[[int], None] | None:
-    """Bind a chunk and an occurrence to the step's progress callback (None: no reporting)."""
+    """Bind a chunk and an occurrence to the step's progress callback (None: no reporting). A
+    filtered step counts the occurrences it reads (n of the matched ones), as people read it."""
     if progress is None:
         return None
     report = progress
-    where = (
-        None
-        if occurrence is None
-        else {"n": occurrence.index, "of": occurrence.count, "key": occurrence.key}
-    )
+    where: dict[str, Any] | None = None
+    if occurrence is not None:
+        n, of = occurrence.index, occurrence.count
+        if repeat is not None and repeat.of is not None:
+            n, of = repeat.occurrences.index(occurrence) + 1, len(repeat.occurrences)
+        where = {"n": n, "of": of, "key": occurrence.key}
     return lambda attempt: report(attempt, chunk, where)
 
 
@@ -737,7 +743,12 @@ def _chunks(
     if ex.chunk_pages is None:
         return [("", sections, None)]
     section_id = ex.sections[0]
-    pages = [p.strip() for p in sections[section_id].split(PAGE_BREAK) if p.strip()]
+    # A page holding only its marker (the next occurrence starts at its top) has nothing to read.
+    pages = [
+        p.strip()
+        for p in sections[section_id].split(PAGE_BREAK)
+        if p.strip() and not re.fullmatch(r"\[page \d+\]", p.strip())
+    ]
     size = ex.chunk_pages
     groups = [PAGE_BREAK.join(pages[i : i + size]) for i in range(0, len(pages), size)] or [""]
     return [
@@ -868,7 +879,7 @@ def run_step_extraction(
                 max_attempts=ex.max_attempts,
                 images=images,
                 max_tokens=ex.max_tokens,
-                on_attempt=_attempt_reporter(progress, chunk, occurrence),
+                on_attempt=_attempt_reporter(progress, chunk, occurrence, repeat),
                 check=check,
             )
         except ExtractionFailedError as exc:

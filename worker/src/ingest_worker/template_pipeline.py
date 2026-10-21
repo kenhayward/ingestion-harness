@@ -63,6 +63,7 @@ from .pipeline import (
 from .queue import ClaimedJob, JobQueue
 from .rdf import GraphContext, ShaclReport, render, to_turtle, validate, with_version
 from .review import apply_edits, run_checks
+from .segment import occurrence_matches
 from .shacl import load_graphs, outputs_by_property
 from .specs import Extraction, LoadedTemplate
 from .step_cache import StepCache
@@ -527,11 +528,24 @@ def context_values(
 
 
 def repeat_plan(template: Template, step: FillingStep, doc: Prepared) -> RepeatPlan | None:
-    """The occurrences a step reading a repeating section runs over (None: a plain step)."""
+    """The occurrences a step reading a repeating section runs over (None: a plain step): with
+    an occurrence filter, only those whose head matches it."""
     section = template.repeating_section(step)
     if section is None:
         return None
-    return RepeatPlan(section.id, doc.occurrences.get(section.id, []), step.key_column)
+    return filtered_plan(
+        RepeatPlan(section.id, doc.occurrences.get(section.id, []), step.key_column), step
+    )
+
+
+def filtered_plan(plan: RepeatPlan, step: FillingStep) -> RepeatPlan:
+    """`plan` keeping only the occurrences the step's occurrence filter matches (unchanged
+    without one); `of` records how many there were."""
+    if step.occurrences is None:
+        return plan
+    pattern = step.occurrences.match
+    kept = [o for o in plan.occurrences if occurrence_matches(pattern, o)]
+    return replace(plan, occurrences=kept, of=len(plan.occurrences))
 
 
 def segment_issues(doc: Prepared) -> list[dict[str, Any]]:
@@ -671,6 +685,8 @@ def run_step(
         },
     )
     event: dict[str, Any] = {"model": result.model_ref, "attempts": len(result.attempts)}
+    if repeat is not None and repeat.of is not None:
+        event["occurrences"] = {"matched": len(repeat.occurrences), "of": repeat.of}
     # A step reading a repeating section calls once per occurrence: count the empty replies.
     if repeat is not None and not result.cached:
         event["calls"] = len(result.call_rows)
