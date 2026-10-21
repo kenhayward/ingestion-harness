@@ -1068,7 +1068,9 @@ def test_a_target_not_synced_yet_is_retried_and_nothing_is_delivered(tmp_path: P
     assert queue.finished and queue.published
 
 
-def test_a_job_delivering_rdf_waits_for_an_unsynced_triple_store(tmp_path: Path) -> None:
+def test_a_job_delivering_rdf_waits_for_an_unsynced_triple_store_before_any_model_call(
+    tmp_path: Path,
+) -> None:
     from ingest_worker.publish_targets import LiveTargets, TargetRow
 
     from .fakes import MemoryPublishTargetStore
@@ -1076,7 +1078,7 @@ def test_a_job_delivering_rdf_waits_for_an_unsynced_triple_store(tmp_path: Path)
     deps, default, _, queue = finance_deps(tmp_path, DELIVERED_TEMPLATE)
     bridge = deps.bridge
     assert isinstance(bridge, FakeBridge)
-    deps.models._providers["local"].responses = list(RESPONSES) * 3  # type: ignore[attr-defined]
+    provider = deps.models._providers["local"]  # type: ignore[attr-defined]
     synced = datetime.now(UTC)
     s3 = {"bucket": "published", "prefix": "pvp/", "layout": ""}
     rows = [TargetRow("default", "Default", "internal", "s3", s3, synced_at=synced)]
@@ -1088,17 +1090,19 @@ def test_a_job_delivering_rdf_waits_for_an_unsynced_triple_store(tmp_path: Path)
     assert error.startswith("TargetNotSynced") and "rdf-default" in error
     assert not queue.failed and not queue.reviewed and not queue.finished
     assert bridge.requests == [] and not default.objects
+    assert provider.calls == []  # the wait comes before extraction: no paid call is repeated
     # Present but unsynced waits as well; once synced the retry delivers with its graph load.
     rdf = TargetRow("rdf-default", "Triple store", "rdf", "rdf", {"dataset": "ct"})
     store.set_rows([*rows, rdf])
     queue.jobs = [JOB]
     run_once(queue, deps, "w1")
-    assert len(queue.waited) == 2 and bridge.requests == []
+    assert len(queue.waited) == 2 and bridge.requests == [] and provider.calls == []
     bridge.rdf.add("rdf-default")
     store.set_rows([*rows, replace(rdf, synced_at=synced)])
     queue.jobs = [JOB]
     run_once(queue, deps, "w1")
     assert queue.finished and bridge.graphs
+    assert JOB.id not in queue.waiting_since  # past target resolution: no longer waiting
 
 
 def test_a_missing_target_goes_to_review_before_anything_is_delivered(tmp_path: Path) -> None:

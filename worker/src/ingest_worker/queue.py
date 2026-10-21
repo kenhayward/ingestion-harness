@@ -55,6 +55,9 @@ class ClaimedJob:
     filename: str = ""
     #: sha256 of the uploaded file ('' without a document): the package's idempotency key.
     source_sha256: str = ""
+    #: Seconds the job had waited for a target sync when claimed (jobs.waiting_since; None: not
+    #: waiting). Past TARGET_SYNC_MAX_WAIT_S the job fails instead of waiting again.
+    waited_s: float | None = None
 
 
 class JobQueue(Protocol):
@@ -141,7 +144,17 @@ class JobQueue(Protocol):
         ...
 
     def wait(self, job: ClaimedJob, reason: str, delay_s: float) -> None:
-        """Re-queue after `delay_s` without spending an attempt (the claim's is given back)."""
+        """Re-queue after `delay_s` without spending an attempt (the claim's is given back). The
+        first wait records when the job started waiting (jobs.waiting_since)."""
+        ...
+
+    def stop_waiting(self, job: ClaimedJob) -> None:
+        """The job got past what it waited for: clear jobs.waiting_since. Every status the
+        worker writes other than a wait clears it as well."""
+        ...
+
+    def give_up(self, job: ClaimedJob, error: str) -> None:
+        """Mark failed whatever attempts remain (a wait past its ceiling)."""
         ...
 
     def event(
@@ -179,7 +192,8 @@ WITH next AS (
 SELECT c.id::text, COALESCE(c.document_id::text, ''), COALESCE(d.spec_id, c.project_id, ''),
        COALESCE(d.spec_version, 0), COALESCE(d.bucket, ''), COALESCE(d.object_key, ''),
        c.model_override, c.attempts, c.max_attempts, c.task, c.test, c.rerun, c.locked_at,
-       c.project_id, c.params, COALESCE(d.filename, ''), COALESCE(d.sha256, '')
+       c.project_id, c.params, COALESCE(d.filename, ''), COALESCE(d.sha256, ''),
+       EXTRACT(EPOCH FROM now() - c.waiting_since)::float8
   FROM claimed c LEFT JOIN documents d ON d.id = c.document_id
 """
 
@@ -273,7 +287,8 @@ class PgJobQueue:
         with self._conn.transaction():
             cur = self._conn.execute(
                 f"""UPDATE jobs SET status = 'awaiting_review', review_reasons = %(reasons)s,
-                           error = NULL, locked_by = NULL, locked_at = NULL, updated_at = now()
+                           error = NULL, locked_by = NULL, locked_at = NULL, updated_at = now(),
+                           waiting_since = NULL
                      WHERE {_MINE}""",
                 {"reasons": json.dumps(reasons), "id": job.id, "claimed": job.claimed_at},
             )
@@ -398,7 +413,7 @@ class PgJobQueue:
         if job.attempts < job.max_attempts:
             self._conn.execute(
                 f"""UPDATE jobs SET status = 'queued', error = %(error)s, locked_by = NULL,
-                           locked_at = NULL, updated_at = now(),
+                           locked_at = NULL, updated_at = now(), waiting_since = NULL,
                            run_after = now() + make_interval(secs => %(backoff)s)
                      WHERE {_MINE}""",
                 {
@@ -416,16 +431,27 @@ class PgJobQueue:
             f"""UPDATE jobs SET status = 'queued', error = %(error)s, locked_by = NULL,
                        locked_at = NULL, heartbeat_at = NULL, updated_at = now(),
                        attempts = GREATEST(attempts - 1, 0),
+                       waiting_since = COALESCE(waiting_since, now()),
                        run_after = now() + make_interval(secs => %(delay)s)
                  WHERE {_MINE}""",
             {"error": reason, "delay": delay_s, "id": job.id, "claimed": job.claimed_at},
         )
 
+    def stop_waiting(self, job: ClaimedJob) -> None:
+        self._conn.execute(
+            f"UPDATE jobs SET waiting_since = NULL WHERE {_MINE} AND waiting_since IS NOT NULL",
+            {"id": job.id, "claimed": job.claimed_at},
+        )
+
+    def give_up(self, job: ClaimedJob, error: str) -> None:
+        self._finish(job, "failed", error)
+
     def _finish(self, job: ClaimedJob, status: str, error: str | None) -> bool:
         """Final status for this run. False when the job is no longer its claim (cancelled)."""
         cur = self._conn.execute(
             f"""UPDATE jobs SET status = %(status)s, error = %(error)s, locked_by = NULL,
-                       locked_at = NULL, updated_at = now() WHERE {_MINE}""",
+                       locked_at = NULL, updated_at = now(), waiting_since = NULL
+                 WHERE {_MINE}""",
             {"status": status, "error": error, "id": job.id, "claimed": job.claimed_at},
         )
         return cur.rowcount > 0

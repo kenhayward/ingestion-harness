@@ -529,3 +529,44 @@ def test_waiting_requeues_without_spending_an_attempt(
     q.wait(claimed, "x", 15)
     row = q._conn.execute("SELECT status FROM jobs WHERE id = %s", (job_id,)).fetchone()
     assert row == ("running",)
+
+
+def test_waiting_since_is_set_on_the_first_wait_and_cleared_past_it(
+    queue_with_queued_job: tuple[PgJobQueue, str],
+) -> None:
+    q, job_id = queue_with_queued_job
+
+    def since() -> object:
+        row = q._conn.execute("SELECT waiting_since FROM jobs WHERE id = %s", (job_id,)).fetchone()
+        assert row is not None
+        return row[0]
+
+    def claim_now() -> ClaimedJob:
+        q._conn.execute("UPDATE jobs SET run_after = now() WHERE id = %s", (job_id,))
+        claimed = q.claim("w1")
+        assert claimed is not None and claimed.id == job_id
+        return claimed
+
+    first = claim_now()
+    assert first.waited_s is None and since() is None
+    q.wait(first, "TargetNotSynced: default", 15)
+    started = since()
+    assert started is not None
+    q._conn.execute(
+        "UPDATE jobs SET waiting_since = waiting_since - interval '10 minutes' WHERE id = %s",
+        (job_id,),
+    )
+    second = claim_now()
+    assert second.waited_s is not None and 600 <= second.waited_s < 700
+    q.wait(second, "TargetNotSynced: default", 15)  # a later wait keeps when it started
+    assert since() is not None and since() < started  # type: ignore[operator]
+    third = claim_now()
+    q.stop_waiting(third)  # past target resolution
+    assert since() is None
+    q.wait(third, "TargetNotSynced: default", 15)
+    fourth = claim_now()
+    q.give_up(fourth, "publishing target default has not synced")  # finishing clears it too
+    row = q._conn.execute(
+        "SELECT status, waiting_since, error FROM jobs WHERE id = %s", (job_id,)
+    ).fetchone()
+    assert row == ("failed", None, "publishing target default has not synced")

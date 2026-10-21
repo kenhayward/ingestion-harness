@@ -211,6 +211,8 @@ def _completes[R](
 
 #: How long a job waits for a target the API has not synced yet.
 TARGET_SYNC_WAIT_S = 15
+#: How long a job waits for a target sync in all (jobs.waiting_since) before it fails.
+TARGET_SYNC_MAX_WAIT_S = 1800
 
 
 #: Every task's handler, by `jobs.task` (the database's jobs_task_check lists the same tasks).
@@ -242,6 +244,16 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
         log.info("job %s cancelled, deleted or re-queued: stopping", job.id)
         _quietly(job, lambda: queue.event(job.id, "warn", "cancelled"))
     except TargetNotSynced as exc:
+        if job.waited_s is not None and job.waited_s >= TARGET_SYNC_MAX_WAIT_S:
+            # Waited too long: the bridge or the API's sync is down, not just starting.
+            error = (
+                f"publishing target {exc.target_id} has not synced with the delivery bridge for "
+                f"{TARGET_SYNC_MAX_WAIT_S // 60} minutes: check the bridge and the API's log"
+            )
+            log.error("job %s failed: %s", job.id, error)
+            _quietly(job, lambda: queue.event(job.id, "error", "failed", {"error": error}))
+            _quietly(job, lambda: queue.give_up(job, error))
+            return
         # The API has not synced the target yet: wait, without spending one of the job's attempts.
         log.info("job %s waits: %s", job.id, exc)
         why, note = str(exc), f"{type(exc).__name__}: {exc}"

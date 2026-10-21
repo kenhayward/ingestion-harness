@@ -55,10 +55,10 @@ from .pipeline import (
     page_images,
     prepare_document,
     primary_of,
+    resolve_delivery,
     resolve_models,
     run_check_with_event,
     run_step_extraction,
-    targets_for,
 )
 from .queue import ClaimedJob, JobQueue
 from .rdf import GraphContext, ShaclReport, render, to_turtle, validate, with_version
@@ -287,7 +287,7 @@ def publish_template_job(
     version (resolved first: a missing target writes nothing). Approved test runs (workbench
     references) pass `deliver=False`: reviewed, never delivered, no target resolved."""
     template = loaded.template
-    targets = targets_for(deps, loaded)[0] if deliver else []
+    targets = resolve_delivery(job, deps, queue, loaded) if deliver else []
     draft_key = output_key(template.id, template.version, "document", job.document_id, "json")
     draft = json.loads(deps.store.get(deps.buckets.outputs, draft_key))
     edits = queue.review_edits(job.id)
