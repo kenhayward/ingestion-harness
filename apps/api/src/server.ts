@@ -33,12 +33,12 @@ import { PgLinkedDataRepo } from './linked-data/repo.js';
 import { PgMaintenanceRepo } from './maintenance/repo.js';
 import { HttpBridgeApi } from './bridge/client.js';
 import { HandoffCodes } from './bridge/handoff.js';
-import { resyncAfterRestore, syncTargetsWithBridge } from './bridge/mirror.js';
+import { resyncAfterRestore, startTargetSync } from './bridge/sync.js';
 import { reconcileOnce } from './bridge/reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
 import { PgPluginCatalogue } from './plugins/catalogue.js';
-import { defaultSeed, rdfSeed, seedDifferences } from './publish-targets/seed.js';
+import { defaultSeed, rdfSeed } from './publish-targets/seed.js';
 import { TargetStores } from './publish-targets/stores.js';
 import { PgRepo } from './repositories/pg.js';
 import { PgS3KeyRepo } from './s3keys/pg.js';
@@ -81,17 +81,15 @@ const jobWatch = new PgJobWatch(config.DATABASE_URL, (err) => logWatchError(err)
 
 // Throws on a malformed key: better a failed start than keys that can't be read back.
 const llmSecrets = secretsKeys(process.env);
-// Publishing targets (migration 202610170019): .env seeds `default` once; the database wins afterwards.
+// Publishing targets: the delivery bridge's registry, cached in publish_targets. .env seeds
+// `default` (and the triple store from RDF_ENDPOINT) on the bridge once; the bridge wins afterwards.
 const targets = new PgPublishTargetRepo(makePool(2));
 const plugins = new PgPluginCatalogue(makePool(1));
 const seed = defaultSeed(config);
-const seedOutcome = await targets.seedDefault(seed);
-// The triple store target (delivery bridge phase 3): seeded once from RDF_ENDPOINT, when set.
 const tripleStoreSeed = rdfSeed(config);
-const rdfSeedOutcome = tripleStoreSeed ? await targets.seedRdf(tripleStoreSeed) : null;
 // Internal targets' buckets are created on this deployment's SeaweedFS when they are saved.
 const targetStores = new TargetStores({ internal: s3 });
-// The delivery bridge publishes; targets are mirrored to it and their keys moved there once.
+// The delivery bridge publishes and holds the targets; their old keys are moved there once.
 const bridge = new HttpBridgeApi(config.BRIDGE_URL, config.BRIDGE_CLIENT_KEY);
 const bridgeAuth = {
   key: config.BRIDGE_CLIENT_KEY,
@@ -236,17 +234,17 @@ backup?.enableRestore({
   live: new PgLiveDatabase(makePool(2)),
   openSide: (url) => PgSideDatabase.open(url),
   lakeIssuer: new SeaweedIamIssuer(s3),
-  // The triple store target is seeded again (a backup from before it lacks it), and the
-  // restored targets are mirrored to the bridge again (a restored target's keys from before the
-  // bridge are moved there), so its registry matches the database now in place.
+  // A restored target's keys from before the bridge are moved there, the triple store target is
+  // seeded again (a backup from before it lacks it), and the cache takes the bridge's registry.
   onSwapped: () =>
     void resyncAfterRestore({
       targets,
       bridge,
       secrets: llmSecrets,
       log: app.log,
+      seed,
       rdfSeed: tripleStoreSeed,
-    }).catch((err: unknown) => app.log.error({ err }, 'restored targets could not be mirrored')),
+    }).catch((err: unknown) => app.log.error({ err }, 'restored targets could not be synced')),
 });
 
 let stopReconciler = () => {};
@@ -261,18 +259,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 if (seeded.length) app.log.info({ seeded }, 'imported template files into the database');
-if (seedOutcome === 'seeded') app.log.info('publishing target default seeded from .env');
-if (rdfSeedOutcome === 'seeded') app.log.info('triple store target seeded from RDF_ENDPOINT');
-if (rdfSeedOutcome === 'differs') {
-  app.log.warn(
-    'the triple store target differs from RDF_ENDPOINT/RDF_DATASET/RDF_USER: .env is ignored now',
-  );
-}
-if (seedOutcome === 'differs') {
-  const stored = await targets.get('default');
-  const fields = stored ? seedDifferences(stored, seed).join(', ') : '';
-  app.log.warn(`publishing target default differs from .env (${fields}): .env is ignored now`);
-}
 // A new password for the admin from the log on every start (deploy/restart); the previous one
 // and its sessions end (ADR 0013). Rotated before listening, so a failure stops startup rather
 // than serving without an admin.
@@ -300,13 +286,20 @@ setInterval(
       .catch((err: unknown) => app.log.warn({ err }, 'delivery reconcile failed')),
   60_000,
 ).unref();
-// Targets' keys move to the bridge once (after the seed above), and every target is mirrored.
-void syncTargetsWithBridge({ targets, bridge, secrets: llmSecrets, log: app.log }).then(
-  ({ moved, skipped }) => {
-    if (moved.length) app.log.info({ moved }, 'publishing target keys moved to the bridge');
-    if (skipped.length) app.log.warn({ skipped }, 'publishing targets left without keys');
-  },
-);
+// In the background, retried until the bridge answers: old keys move to the bridge once, .env
+// seeds the default and the triple store there, and the cache takes the bridge's registry.
+void startTargetSync({
+  targets,
+  bridge,
+  secrets: llmSecrets,
+  log: app.log,
+  seed,
+  rdfSeed: tripleStoreSeed,
+}).then(({ moved, skipped, pulled }) => {
+  if (moved.length) app.log.info({ moved }, 'publishing target keys moved to the bridge');
+  if (skipped.length) app.log.warn({ skipped }, 'publishing targets left without keys');
+  app.log.info({ cached: pulled.cached }, 'publishing targets synced from the bridge');
+});
 // Fill the project list cache in the background (a cold cache takes seconds at scale).
 warmListCache(app).catch((err) => app.log.warn({ err }, 'project list cache warm-up failed'));
 // The mapping memory's backfill and repair: every recipe's votes recorded again.

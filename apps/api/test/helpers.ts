@@ -16,8 +16,8 @@ import { S3KeyService } from '../src/s3keys/service.js';
 import { SpecRegistry } from '../src/specs/spec-registry.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { TargetStores } from '../src/publish-targets/stores.js';
+import { cacheS3 } from './target-views.js';
 import { HandoffCodes } from '../src/bridge/handoff.js';
-import { mirrorTargets } from '../src/bridge/mirror.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 
 /** The key test bridges sign their calls to the API with (BRIDGE_CLIENT_KEY). */
@@ -127,16 +127,12 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
           withdrawTargets(j.params).includes(id),
       ).length,
   });
-  await targets.seedDefault({
-    kind: 'internal',
-    bucket: 'published',
-    prefix: 'pub/',
-    endpoint: null,
-    region: null,
-    accessKeyEnv: null,
-    secretKeyEnv: null,
-    forcePathStyle: true,
-  });
+  // The default as the API's seed leaves it (written to the bridge, then cached).
+  await cacheS3(
+    targets,
+    { id: 'default', label: 'Default', kind: 'internal', bucket: 'published', prefix: 'pub/' },
+    { source: 'env', seededAt: new Date().toISOString() },
+  );
   const targetStores = new TargetStores({ internal: TEST_INTERNAL_S3, make: () => targetStore });
   const bridge = new FakeBridgeApi();
   bridge.fallback = targetStore;
@@ -184,8 +180,18 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
   installConformance(app);
   const targetRepo = (deps.targets ?? targets) as MemoryPublishTargetRepo;
   const theBridge = (deps.bridge ?? bridge) as FakeBridgeApi;
-  /** Mirrors every target row to the fake bridge, as the API does at start and on each write. */
-  const mirror = () => mirrorTargets({ targets: targetRepo, bridge: theBridge, log: app.log });
+  /**
+   * Puts every live cached target the fake bridge lacks on it (removed ids stay removed), without
+   * counting puts: the cache then reads as a pull from a bridge that holds these targets.
+   */
+  const mirror = async (): Promise<void> => {
+    for (const { id } of await targetRepo.list()) {
+      const r = await targetRepo.get(id);
+      if (!r || theBridge.targets.has(id) || theBridge.removed.has(id)) continue;
+      const { label, sinkId, instanceId, connectionId, destination } = r;
+      theBridge.targets.set(id, { label, sinkId, instanceId, connectionId, destination });
+    }
+  };
   await mirror();
   // A test passing its own `llm` keeps it; the default one is a MemoryLlmConfigRepo.
   const llmRepo = (deps.llm ?? llm) as MemoryLlmConfigRepo;
@@ -198,7 +204,7 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     targets: targetRepo,
     targetStores: deps.targetStores ?? targetStores,
     bridge: theBridge,
-    /** Mirrors target rows a test added through the repo (the routes mirror their own). */
+    /** Puts target rows a test cached through the repo on the fake bridge (routes write their own). */
     mirror,
     templates,
     workbench,

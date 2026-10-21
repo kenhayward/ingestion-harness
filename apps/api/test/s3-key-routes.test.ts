@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryAccessRepo } from '../src/access/repo.js';
-import { MemoryPublishTargetRepo, type NewTarget } from '../src/publish-targets/repo.js';
+import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
+import { cacheS3 } from './target-views.js';
 import { MemoryS3KeyIssuer } from '../src/s3keys/issuer.js';
 import { MemoryS3KeyRepo } from '../src/s3keys/repo.js';
 import { S3KeyService } from '../src/s3keys/service.js';
@@ -26,43 +27,24 @@ class NoTargets extends MemoryPublishTargetRepo {
   }
 }
 
-const target = (over: Partial<NewTarget>): NewTarget => ({
-  id: 'finance',
-  label: 'Finance lake',
-  kind: 'internal',
-  bucket: 'finance-lake',
-  prefix: 'out/',
-  endpoint: null,
-  region: null,
-  accessKeyId: null,
-  secretKeyEnc: null,
-  accessKeyEnv: null,
-  secretKeyEnv: null,
-  forcePathStyle: false,
-  sse: 'none',
-  kmsKeyId: null,
-  storageClass: null,
-  ...over,
-});
-
 async function setup(targets: MemoryPublishTargetRepo = new MemoryPublishTargetRepo()) {
   const access = new MemoryAccessRepo();
   const issuer = new DownIssuer();
-  await targets.create(target({}), null);
-  await targets.create(
-    target({
-      id: 'ext',
-      label: 'Partner',
-      kind: 'external',
-      bucket: 'partner',
-      prefix: '',
-      endpoint: 'https://s3.example.com',
-      region: 'eu-west-2',
-      accessKeyId: 'AK',
-      secretKeyEnc: 'v1:x',
-    }),
-    null,
-  );
+  await cacheS3(targets, {
+    id: 'finance',
+    label: 'Finance lake',
+    kind: 'internal',
+    bucket: 'finance-lake',
+    prefix: 'out/',
+  });
+  await cacheS3(targets, {
+    id: 'ext',
+    label: 'Partner',
+    kind: 'external',
+    bucket: 'partner',
+    prefix: '',
+    connectionId: 'partner',
+  });
   const s3Keys = new S3KeyService({
     repo: new MemoryS3KeyRepo(),
     issuer,

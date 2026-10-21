@@ -71,8 +71,9 @@ def _pg(reset: bool = True) -> PgGraphRegistry:
     if reset:
         _reset(conn)
         conn.execute(
-            """INSERT INTO publish_targets (id, label, kind, bucket)
-               VALUES ('finance-lake', 'Finance lake', 'internal', 'finance')
+            """INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+               VALUES ('finance-lake', 'Finance lake', 'internal', 's3', 'internal',
+                       '{"bucket": "finance"}')
                ON CONFLICT (id) DO NOTHING"""
         )
     return PgGraphRegistry(conn)

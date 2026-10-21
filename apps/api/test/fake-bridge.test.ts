@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { TargetMirror } from '../src/bridge/client.js';
+import type { TargetPutRequest } from '@ih/bridge-contract';
 import { FakeBridgeApi } from './fake-bridge.js';
 
-const lake: TargetMirror = {
+const lake: TargetPutRequest = {
   label: 'Lake',
   sinkId: 's3',
   instanceId: null,

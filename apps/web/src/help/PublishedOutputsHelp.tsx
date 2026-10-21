@@ -7,6 +7,12 @@ export function PublishedOutputsHelp() {
         and a folder (prefix) in it. A recipe delivers to one target or to several.
       </p>
 
+      <p>
+        The delivery bridge holds the targets and CT Studio shows them. A target the bridge no
+        longer has is marked <strong>Not on the bridge</strong>: it cannot be changed here, and
+        deliveries to it fail until it is added back.
+      </p>
+
       <h3>Files or an archive</h3>
       <p>
         A target&apos;s <strong>Layout</strong> says how it writes what it is given. With{' '}

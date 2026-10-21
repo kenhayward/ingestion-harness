@@ -509,6 +509,22 @@ def targets_for(deps: PipelineDeps, loaded: Any) -> tuple[list[Target], Target |
     return targets, primary_of(targets)
 
 
+def resolve_delivery(
+    job: ClaimedJob, deps: PipelineDeps, queue: JobQueue, loaded: Any
+) -> list[Target]:
+    """Before any model call: the job's publishing targets (targets_for) and, when its version
+    delivers `rdf`, the triple store, so a target not synced yet (TargetNotSynced) makes the job
+    wait before its extraction is paid for, not after. A job waiting before is waiting no more."""
+    targets = targets_for(deps, loaded)[0]
+    if deps.targets is not None and isinstance(loaded, LoadedTemplate):
+        template = loaded.template
+        if template.semantics is not None and "rdf" in template.delivery_formats():
+            deps.targets.rdf()
+    if job.waited_s is not None:
+        queue.stop_waiting(job)
+    return targets
+
+
 def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any:
     """The job's document type: a database template if one exists, else a file (spec or
     template) from the specs directory."""
@@ -537,9 +553,9 @@ def load_definition(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Any
 
 def process_job(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> ProcessResult:
     loaded = load_definition(job, deps, queue)
-    # Before any model call: a missing target sends the job to review without an LLM run. Test
-    # runs deliver nothing and resolve none.
-    targets = [] if job.test else targets_for(deps, loaded)[0]
+    # Before any model call: a missing target sends the job to review, and one not synced yet
+    # makes it wait, without an LLM run. Test runs deliver nothing and resolve none.
+    targets = [] if job.test else resolve_delivery(job, deps, queue, loaded)
     if isinstance(loaded, LoadedTemplate):
         from .template_pipeline import process_template_job
 

@@ -5,22 +5,23 @@ import {
   ObjectReadResultSchema,
   signRequest,
   TargetTestResultSchema,
+  TargetViewSchema,
   type BridgeError,
   type ConnectionSummary,
   type DeliveryView,
+  type TargetPutRequest,
   type TargetTestResult,
+  type TargetView,
 } from '@ih/bridge-contract';
 import { z } from 'zod';
 
-/** A target as CT Studio mirrors it to the bridge: an S3 target, or the triple store. */
-export interface TargetMirror {
-  label: string;
-  sinkId: 's3' | 'rdf';
-  instanceId: null;
-  /** Null: no connection yet; deliveries to the target then fail visibly. */
-  connectionId: string | null;
-  destination: Record<string, string>;
-}
+/**
+ * A connection summary as read here: a bridge one version behind sends no `fields` (the values
+ * of its non-secret credential fields), which reads as none rather than failing every sync.
+ */
+const ReadConnectionSummary = ConnectionSummarySchema.extend({
+  fields: ConnectionSummarySchema.shape.fields.default({}),
+});
 
 /** A shared connection written once, by the move of a target's keys to the bridge. */
 export interface SharedConnection {
@@ -35,7 +36,9 @@ export interface SharedConnection {
 
 /** CT Studio's API's calls to the delivery bridge, every one signed with BRIDGE_CLIENT_KEY. */
 export interface BridgeApi {
-  putTarget(id: string, t: TargetMirror): Promise<void>;
+  listTargets(): Promise<TargetView[]>;
+  /** Creates or replaces the target; answers the bridge's view of it. */
+  putTarget(id: string, t: TargetPutRequest): Promise<TargetView>;
   deleteTarget(id: string): Promise<'deleted' | 'in_use'>;
   putSharedConnection(c: SharedConnection): Promise<void>;
   listConnections(kind: 'shared'): Promise<ConnectionSummary[]>;
@@ -55,6 +58,8 @@ export class BridgeApiError extends Error {
     readonly status: number,
     readonly error: BridgeError | null,
     message: string,
+    /** The bridge did not answer in time: it may have done what it was asked. */
+    readonly timedOut = false,
   ) {
     super(message);
     this.name = 'BridgeApiError';
@@ -95,6 +100,10 @@ export class HttpBridgeApi implements BridgeApi {
         signal: AbortSignal.timeout(30_000),
       });
     } catch (err) {
+      const name = (err as Error).name;
+      if (name === 'TimeoutError' || name === 'AbortError') {
+        throw new BridgeApiError(0, null, 'the bridge did not answer in time', true);
+      }
       throw new BridgeApiError(
         0,
         null,
@@ -115,12 +124,18 @@ export class HttpBridgeApi implements BridgeApi {
     );
   }
 
-  async putTarget(id: string, t: TargetMirror): Promise<void> {
-    await this.expect(
+  async listTargets(): Promise<TargetView[]> {
+    const res = await this.expect(await this.call('GET', '/v1/targets'), [200], 'the target list');
+    return z.strictObject({ targets: z.array(TargetViewSchema) }).parse(await res.json()).targets;
+  }
+
+  async putTarget(id: string, t: TargetPutRequest): Promise<TargetView> {
+    const res = await this.expect(
       await this.call('PUT', `/v1/targets/${encodeURIComponent(id)}`, t),
       [200],
       `target ${id}`,
     );
+    return TargetViewSchema.parse(await res.json());
   }
 
   async deleteTarget(id: string): Promise<'deleted' | 'in_use'> {
@@ -148,7 +163,7 @@ export class HttpBridgeApi implements BridgeApi {
       [200],
       'the connection list',
     );
-    return z.strictObject({ connections: z.array(ConnectionSummarySchema) }).parse(await res.json())
+    return z.strictObject({ connections: z.array(ReadConnectionSummary) }).parse(await res.json())
       .connections;
   }
 

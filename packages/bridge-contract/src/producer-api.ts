@@ -161,5 +161,11 @@ export const ConnectionSummarySchema = z.strictObject({
   sinkId: z.string(),
   status: z.enum(['ok', 'needs_attention', 'untested']),
   statusReason: z.string().nullable(),
+  /**
+   * The values it stores for its sink's credential fields declared `secret: false` (S3's endpoint
+   * and access key id, the triple store's endpoint and user). Never a secret field, a secret read
+   * from the environment, or a field the sink does not declare.
+   */
+  fields: z.record(z.string(), z.string()),
 });
 export type ConnectionSummary = z.infer<typeof ConnectionSummarySchema>;

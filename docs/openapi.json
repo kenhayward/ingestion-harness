@@ -76251,14 +76251,33 @@
                             "enum": [
                               "internal",
                               "external",
-                              "rdf"
+                              "rdf",
+                              "sink"
                             ]
                           },
-                          "bucket": {
+                          "sinkId": {
                             "type": "string"
                           },
+                          "destination": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "onBridge": {
+                            "type": "boolean"
+                          },
+                          "bucket": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "prefix": {
-                            "type": "string"
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "endpoint": {
                             "type": [
@@ -76311,11 +76330,18 @@
                             ]
                           },
                           "sse": {
-                            "type": "string",
-                            "enum": [
-                              "none",
-                              "AES256",
-                              "aws:kms"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "AES256",
+                                  "aws:kms"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
                           },
                           "kmsKeyId": {
@@ -76331,10 +76357,17 @@
                             ]
                           },
                           "layout": {
-                            "type": "string",
-                            "enum": [
-                              "files",
-                              "package"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "files",
+                                  "package"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
                           },
                           "source": {
@@ -76398,6 +76431,9 @@
                           "id",
                           "label",
                           "kind",
+                          "sinkId",
+                          "destination",
+                          "onBridge",
                           "bucket",
                           "prefix",
                           "endpoint",
@@ -76566,7 +76602,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** An internal target (a bucket on this deployment's SeaweedFS, whose\nbucket is created here when missing) or an external S3 bucket reached with one of\nthe delivery bridge's shared connections (`connectionId`). The id is made from\nthe label when not given (`-2`, `-3`… when taken); `default` is reserved. Use the\nsame id on every deployment for the same recipient: recipes carry it. The target is\nmirrored to the bridge; when the bridge refuses it (422, its message) or cannot be\nreached (502), nothing is stored. No credential is accepted here.",
+        "description": "**Admins only.** An internal target (a bucket on this deployment's SeaweedFS, whose\nbucket is created here when missing) or an external S3 bucket reached with one of\nthe delivery bridge's shared connections (`connectionId`). The id is made from\nthe label when not given (`-2`, `-3`… when taken); `default` is reserved. Use the\nsame id on every deployment for the same recipient: recipes carry it. The target is\nwritten to the bridge first and this deployment caches the bridge's answer; when the\nbridge refuses it (422, its message) or cannot be reached (502), nothing is stored.\nWhen only the cache write fails (500), the bridge has the target: refresh. No credential is accepted here.",
         "requestBody": {
           "required": true,
           "content": {
@@ -76669,14 +76705,33 @@
                       "enum": [
                         "internal",
                         "external",
-                        "rdf"
+                        "rdf",
+                        "sink"
                       ]
                     },
-                    "bucket": {
+                    "sinkId": {
                       "type": "string"
                     },
+                    "destination": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "onBridge": {
+                      "type": "boolean"
+                    },
+                    "bucket": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "prefix": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "endpoint": {
                       "type": [
@@ -76729,11 +76784,18 @@
                       ]
                     },
                     "sse": {
-                      "type": "string",
-                      "enum": [
-                        "none",
-                        "AES256",
-                        "aws:kms"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "AES256",
+                            "aws:kms"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "kmsKeyId": {
@@ -76749,10 +76811,17 @@
                       ]
                     },
                     "layout": {
-                      "type": "string",
-                      "enum": [
-                        "files",
-                        "package"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "files",
+                            "package"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "source": {
@@ -76816,6 +76885,9 @@
                     "id",
                     "label",
                     "kind",
+                    "sinkId",
+                    "destination",
+                    "onBridge",
                     "bucket",
                     "prefix",
                     "endpoint",
@@ -77028,6 +77100,37 @@
                     "error"
                   ],
                   "description": "The bridge's refusal, e.g. `there is no connection {id}`."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`saved on the bridge; refresh`: the bridge has it; the next refresh caches it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`saved on the bridge; refresh`: the bridge has it; the next refresh caches it."
                 }
               }
             }
@@ -77347,7 +77450,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Fields left out are kept; `null` clears the KMS key or storage\nclass, and the KMS key is cleared whenever the encryption is not `aws:kms`. An\ninternal target cannot move onto CT Studio's own inbox, outputs, runs or backups\nbucket (400). While the target is in use (a published recipe version names it, an\noutput or graph copy was delivered to it, an S3 key consumer is granted it, or a\nwithdrawal still to run names it) its bucket and prefix cannot change (409): add a\nnew target and publish a version naming it instead. The label, connection,\nencryption and storage class may always change, so keys are rotated without a new\nversion. The change is mirrored to the bridge; when the bridge refuses it (422) or\ncannot be reached (502), the target is left as it was.",
+        "description": "**Admins only.** Fields left out are kept; `null` clears the KMS key or storage\nclass, and the KMS key is cleared whenever the encryption is not `aws:kms`. An\ninternal target cannot move onto CT Studio's own inbox, outputs, runs or backups\nbucket (400). While the target is in use (a published recipe version names it, an\noutput or graph copy was delivered to it, an S3 key consumer is granted it, or a\nwithdrawal still to run names it) its bucket and prefix cannot change (409): add a\nnew target and publish a version naming it instead. The label, connection,\nencryption and storage class may always change, so keys are rotated without a new\nversion. The change is written to the bridge first and the cache takes its answer;\nwhen the bridge refuses it (422) or cannot be reached (502), the target is left as it\nwas. When only the cache write fails (500), the bridge has the change: refresh.",
         "requestBody": {
           "required": true,
           "content": {
@@ -77456,14 +77559,33 @@
                       "enum": [
                         "internal",
                         "external",
-                        "rdf"
+                        "rdf",
+                        "sink"
                       ]
                     },
-                    "bucket": {
+                    "sinkId": {
                       "type": "string"
                     },
+                    "destination": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "onBridge": {
+                      "type": "boolean"
+                    },
+                    "bucket": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "prefix": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "endpoint": {
                       "type": [
@@ -77516,11 +77638,18 @@
                       ]
                     },
                     "sse": {
-                      "type": "string",
-                      "enum": [
-                        "none",
-                        "AES256",
-                        "aws:kms"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "AES256",
+                            "aws:kms"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "kmsKeyId": {
@@ -77536,10 +77665,17 @@
                       ]
                     },
                     "layout": {
-                      "type": "string",
-                      "enum": [
-                        "files",
-                        "package"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "files",
+                            "package"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
                       ]
                     },
                     "source": {
@@ -77603,6 +77739,9 @@
                     "id",
                     "label",
                     "kind",
+                    "sinkId",
+                    "destination",
+                    "onBridge",
                     "bucket",
                     "prefix",
                     "endpoint",
@@ -77850,6 +77989,37 @@
               }
             }
           },
+          "500": {
+            "description": "`saved on the bridge; refresh`: the bridge has it; the next refresh caches it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`saved on the bridge; refresh`: the bridge has it; the next refresh caches it."
+                }
+              }
+            }
+          },
           "502": {
             "description": "`could not create bucket {bucket}: {message}`, or `the delivery bridge could not be reached`; nothing is changed.",
             "content": {
@@ -77935,7 +78105,7 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it, no S3 key consumer is granted it and no withdrawal still\nto run names it. The `default` target is never removed. It is removed from the\nbridge first: one the bridge still has deliveries for stays (409), and nothing is\nremoved while the bridge cannot be reached (502).",
+        "description": "**Admins only.** Only a target nothing uses: no published recipe version names it,\nnothing was delivered to it, no S3 key consumer is granted it and no withdrawal still\nto run names it. The `default` target is never removed. It is removed from the\nbridge first: one the bridge still has unfinished deliveries for stays (409), and\nnothing is removed while the bridge cannot be reached (502). A removed target is kept\ninert, never deleted: finished delivery records still name it, and its id is not\nused again (a new target with the same label gets `<id>-2`).",
         "parameters": [
           {
             "schema": {
@@ -78113,6 +78283,37 @@
                     "error"
                   ],
                   "description": "`default cannot be removed`, `{label} is used by {what}`, or `{label} has deliveries on the bridge`."
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`removed on the bridge; remove again`: the bridge removed it (or did not answer in time) but CT Studio could not; removing again finishes it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`removed on the bridge; remove again`: the bridge removed it (or did not answer in time) but CT Studio could not; removing again finishes it."
                 }
               }
             }

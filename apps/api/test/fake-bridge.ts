@@ -1,17 +1,45 @@
-import type { ConnectionSummary, DeliveryView, TargetTestResult } from '@ih/bridge-contract';
-import type { BridgeApi, SharedConnection, TargetMirror } from '../src/bridge/client.js';
+import type {
+  ConnectionSummary,
+  DeliveryView,
+  TargetPutRequest,
+  TargetTestResult,
+  TargetView,
+} from '@ih/bridge-contract';
+import type { BridgeApi, SharedConnection } from '../src/bridge/client.js';
 import { BridgeApiError } from '../src/bridge/client.js';
+
+/** The destination fields each sink declares, as the bridge's sinks describe them. */
+const DESTINATION_FIELDS: Record<string, string[]> = {
+  s3: ['bucket', 'prefix', 'sse', 'kmsKeyId', 'storageClass', 'layout'],
+  rdf: ['dataset'],
+};
+
+/** The credential fields each sink declares `secret: false` (what a summary may show). */
+const PUBLIC_FIELDS: Record<string, string[]> = {
+  s3: ['endpoint', 'region', 'accessKeyId', 'forcePathStyle'],
+  rdf: ['endpoint', 'user'],
+};
 
 /**
  * The delivery bridge in memory, as CT Studio's API sees it: mirrored targets, connections,
  * the objects targets hold (`bucket/key`, per target), deliveries, and scripted failures.
  */
 export class FakeBridgeApi implements BridgeApi {
-  readonly targets = new Map<string, TargetMirror>();
+  readonly targets = new Map<string, TargetPutRequest>();
   readonly connections = new Map<string, SharedConnection>();
-  /** Connection summaries listConnections answers (the internal one by default). */
+  /**
+   * Connection summaries listConnections answers (the internal one by default), followed by
+   * those of the connections written here that are not listed in it.
+   */
   summaries: ConnectionSummary[] = [
-    { id: 'internal', name: 'This deployment', sinkId: 's3', status: 'ok', statusReason: null },
+    {
+      id: 'internal',
+      name: 'This deployment',
+      sinkId: 's3',
+      status: 'ok',
+      statusReason: null,
+      fields: {},
+    },
   ];
   /** Objects by target id, then `bucket/key`. */
   readonly objects = new Map<string, Map<string, Buffer>>();
@@ -56,7 +84,12 @@ export class FakeBridgeApi implements BridgeApi {
     this.objects.set(targetId, objects);
   }
 
-  async putTarget(id: string, t: TargetMirror): Promise<void> {
+  async listTargets(): Promise<TargetView[]> {
+    this.fail();
+    return [...this.targets].map(([id, t]) => ({ id, ...structuredClone(t) }));
+  }
+
+  async putTarget(id: string, t: TargetPutRequest): Promise<TargetView> {
     this.fail();
     if (this.removed.has(id)) {
       const message = `target ${id} was removed, and its id is not used again: pick another`;
@@ -67,7 +100,14 @@ export class FakeBridgeApi implements BridgeApi {
       );
     }
     this.targetPuts += 1;
+    const undeclared = Object.keys(t.destination).find(
+      (k) => !(DESTINATION_FIELDS[t.sinkId] ?? []).includes(k),
+    );
+    if (undeclared) {
+      throw FakeBridgeApi.refusal(`${undeclared} is not a destination field of ${t.sinkId}`);
+    }
     this.targets.set(id, structuredClone(t));
+    return { id, ...structuredClone(t) };
   }
 
   async deleteTarget(id: string): Promise<'deleted' | 'in_use'> {
@@ -86,19 +126,21 @@ export class FakeBridgeApi implements BridgeApi {
   /** The summaries given, then every connection put (as the bridge lists what it holds). */
   async listConnections(): Promise<ConnectionSummary[]> {
     this.fail();
-    const listed = new Set(this.summaries.map((s) => s.id));
-    return structuredClone([
-      ...this.summaries,
-      ...[...this.connections.values()]
-        .filter((c) => !listed.has(c.id))
-        .map((c) => ({
+    const written = [...this.connections.values()]
+      .filter((c) => !this.summaries.some((s) => s.id === c.id))
+      .map((c): ConnectionSummary => {
+        const sinkId = c.sinkId ?? 's3';
+        const shown = PUBLIC_FIELDS[sinkId] ?? [];
+        return {
           id: c.id,
           name: c.name,
-          sinkId: c.sinkId ?? 's3',
-          status: 'untested' as const,
+          sinkId,
+          status: 'untested',
           statusReason: null,
-        })),
-    ]);
+          fields: Object.fromEntries(Object.entries(c.fields).filter(([k]) => shown.includes(k))),
+        };
+      });
+    return structuredClone([...this.summaries, ...written]);
   }
 
   async testTarget(id: string): Promise<TargetTestResult> {

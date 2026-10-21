@@ -59,8 +59,7 @@ from .plugins import plugins
 from .publish_targets import (
     LiveTargets,
     PgPublishTargetStore,
-    seed_default_target,
-    seed_rdf_target,
+    TargetNotSynced,
 )
 from .queue import ClaimedJob, JobQueue, PgJobQueue
 from .rdf_rebuild import PgRebuildSource, run_rebuild_job
@@ -210,6 +209,12 @@ def _completes[R](
     return handle
 
 
+#: How long a job waits for a target the API has not synced yet.
+TARGET_SYNC_WAIT_S = 15
+#: How long a job waits for a target sync in all (jobs.waiting_since) before it fails.
+TARGET_SYNC_MAX_WAIT_S = 1800
+
+
 #: Every task's handler, by `jobs.task` (the database's jobs_task_check lists the same tasks).
 TASKS: dict[str, TaskHandler] = {
     "process": handle_process,
@@ -238,6 +243,24 @@ def _run_claimed(job: ClaimedJob, queue: JobQueue, deps: PipelineDeps) -> None:
     except JobCancelled:
         log.info("job %s cancelled, deleted or re-queued: stopping", job.id)
         _quietly(job, lambda: queue.event(job.id, "warn", "cancelled"))
+    except TargetNotSynced as exc:
+        if job.waited_s is not None and job.waited_s >= TARGET_SYNC_MAX_WAIT_S:
+            # Waited too long: the bridge or the API's sync is down, not just starting.
+            error = (
+                f"publishing target {exc.target_id} has not synced with the delivery bridge for "
+                f"{TARGET_SYNC_MAX_WAIT_S // 60} minutes: check the bridge and the API's log"
+            )
+            log.error("job %s failed: %s", job.id, error)
+            _quietly(job, lambda: queue.event(job.id, "error", "failed", {"error": error}))
+            _quietly(job, lambda: queue.give_up(job, error))
+            return
+        # The API has not synced the target yet: wait, without spending one of the job's attempts.
+        log.info("job %s waits: %s", job.id, exc)
+        why, note = str(exc), f"{type(exc).__name__}: {exc}"
+        _quietly(
+            job, lambda: queue.event(job.id, "warn", "waiting for target sync", {"reason": why})
+        )
+        _quietly(job, lambda: queue.wait(job, note, TARGET_SYNC_WAIT_S))
     except DocumentError as exc:
         reason = str(exc)
         log.warning("job %s needs review: %s", job.id, reason)
@@ -379,12 +402,12 @@ class _Worker:
             if llm_config.ocr and ocr_config is not None
             else None
         )
-        # Publishing targets: .env seeds the default once, then the database decides (own
+        # Publishing targets: the API's cache of the bridge's registry, read only (own
         # connection, re-opened when lost; refreshed with the LLM config).
         self.target_store = PgPublishTargetStore.connect(settings.database_url)
-        seed_default_target(self.target_store, os.environ)
-        seed_rdf_target(self.target_store, os.environ)
-        self.targets = LiveTargets(self.target_store)
+        self.targets = LiveTargets(
+            self.target_store, rdf_expected=bool(os.environ.get("RDF_ENDPOINT"))
+        )
         # The ontology library and the Linked data settings share one autocommit connection.
         self.library = psycopg.connect(settings.database_url, autocommit=True)
         # The plugins this image can run, for the API's recipe checks and the editor (recipe

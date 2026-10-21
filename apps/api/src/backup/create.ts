@@ -11,6 +11,7 @@ import {
   type BackupView,
   type BucketRole,
 } from '@ih/shared';
+import { s3PlaceOf } from '../publish-targets/place.js';
 import type { PublishTargetRepo } from '../publish-targets/repo.js';
 import type { ListedObject } from '../storage/object-store.js';
 import { ArchiveWriter } from './archive.js';
@@ -34,7 +35,10 @@ export async function internalTargetBuckets(
   extra: string[] = [],
 ): Promise<string[]> {
   const out: string[] = [];
-  const internal = (await targets.list()).filter((t) => t.kind === 'internal').map((t) => t.bucket);
+  const internal = (await targets.list()).flatMap((t) => {
+    const place = t.kind === 'internal' ? s3PlaceOf(t) : null;
+    return place ? [place.bucket] : [];
+  });
   for (const bucket of [...internal, ...extra]) {
     if (!own.includes(bucket) && !out.includes(bucket)) out.push(bucket);
   }
