@@ -1,15 +1,21 @@
+import { readFileSync } from 'node:fs';
 import type { FastifyBaseLogger } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import {
   connectionIdOf,
   destinationOf,
+  mirrorOf,
   mirrorTargets,
   moveTargetsToBridge,
   resyncAfterRestore,
   syncTargetsWithBridge,
 } from '../src/bridge/mirror.js';
 import { encryptSecret, type SecretsKeys } from '../src/llm/secrets.js';
-import { MemoryPublishTargetRepo, type NewTarget } from '../src/publish-targets/repo.js';
+import {
+  MemoryPublishTargetRepo,
+  type NewTarget,
+  type TargetRecord,
+} from '../src/publish-targets/repo.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 
 const KEYS: SecretsKeys = { current: Buffer.alloc(32, 5), previous: null };
@@ -335,5 +341,72 @@ describe('one row the bridge refuses', () => {
       'publishing target finance: the bridge refused its connection (endpoint not allowed), so its keys were not moved; enter them on the connections page',
     ]);
     expect(bridge.targets.has('archive')).toBe(true);
+  });
+});
+
+/**
+ * Shared with integration/targets-on-bridge-pg.test.ts: the migration's backfill gives each row
+ * what the mirror sent the bridge for it.
+ */
+interface DestinationCase {
+  name: string;
+  row: Record<string, unknown>;
+  mirror: ReturnType<typeof mirrorOf>;
+}
+const destinationCases = (
+  JSON.parse(
+    readFileSync(
+      new URL('../../../packages/shared/test/fixtures/target-destinations.json', import.meta.url),
+      'utf8',
+    ),
+  ) as { cases: DestinationCase[] }
+).cases;
+
+/** A fixture row (publish_targets columns) as the repo reads it. */
+function recordOf(row: Record<string, unknown>): TargetRecord {
+  const s = (k: string) => row[k] as string;
+  const n = (k: string) => (row[k] ?? null) as string | null;
+  return {
+    id: s('id'),
+    label: s('label'),
+    kind: s('kind') as TargetRecord['kind'],
+    bucket: s('bucket'),
+    prefix: s('prefix'),
+    endpoint: n('endpoint'),
+    region: n('region'),
+    accessKeyId: n('access_key_id'),
+    secretKeyEnc: n('secret_key_enc'),
+    accessKeyEnv: n('access_key_env'),
+    secretKeyEnv: n('secret_key_env'),
+    forcePathStyle: row.force_path_style as boolean,
+    sse: s('sse') as TargetRecord['sse'],
+    kmsKeyId: n('kms_key_id'),
+    storageClass: n('storage_class'),
+    layout: s('layout') as TargetRecord['layout'],
+    source: s('source') as TargetRecord['source'],
+    seededAt: n('seeded_at'),
+    editedAt: null,
+    updatedBy: null,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    connectionId: n('connection_id'),
+    movedToBridgeAt: n('moved_to_bridge_at'),
+  };
+}
+
+describe('the backfilled destination is what destinationOf sent', () => {
+  it('covers internal, external, archive and rdf rows', () => {
+    expect(destinationCases.map((c) => c.row.kind).sort()).toEqual([
+      'external',
+      'internal',
+      'internal',
+      'rdf',
+    ]);
+    expect(destinationCases.some((c) => c.row.layout === 'package')).toBe(true);
+  });
+
+  it.each(destinationCases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    const record = recordOf(c.row);
+    expect(mirrorOf(record)).toEqual(c.mirror);
+    if (c.mirror.sinkId === 's3') expect(destinationOf(record)).toEqual(c.mirror.destination);
   });
 });
