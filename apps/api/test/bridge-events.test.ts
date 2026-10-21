@@ -229,6 +229,83 @@ describe('applyEvent', () => {
   });
 });
 
+describe("job state on each target's latest delivery", () => {
+  const needsUser = (d: string, seq: number) =>
+    event(d, seq, {
+      status: 'needs_user',
+      receipt: null,
+      error: { class: 'needs_user', code: 'credential_rejected', message: 'access denied' },
+    });
+
+  it("a later round's success replaces the earlier needs_user", async () => {
+    const { repo, job, deps } = await setup();
+    const [a1, b1, a2, b2] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a1 },
+      { targetId: 'finance-lake', deliveryId: b1 },
+    ]);
+    await applyEvent(deps, event(a1, 2));
+    await applyEvent(deps, needsUser(b1, 2));
+    expect(statusOf(repo, job.id)).toBe('awaiting_review');
+
+    // Approved again: a second round to both targets.
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'delivering' });
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a2 },
+      { targetId: 'finance-lake', deliveryId: b2 },
+    ]);
+    expect((await repo.deliveriesOf(job.id)).map((d) => d.deliveryId)).toEqual([a2, b2]);
+    await applyEvent(deps, event(a2, 2));
+    expect(statusOf(repo, job.id)).toBe('delivering');
+    await applyEvent(deps, event(b2, 2));
+    expect(statusOf(repo, job.id)).toBe('succeeded');
+  });
+
+  it('one target failed and one succeeded: the job fails, naming the failed target', async () => {
+    const { repo, job, deps } = await setup();
+    const [a, b] = [randomUUID(), randomUUID()];
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a },
+      { targetId: 'finance-lake', deliveryId: b },
+    ]);
+    await applyEvent(deps, event(a, 2));
+    await applyEvent(
+      deps,
+      event(b, 2, {
+        status: 'failed',
+        receipt: null,
+        error: { class: 'retryable', code: 'timeout', message: 'gave up' },
+      }),
+    );
+    expect(repo.jobs.get(job.id)).toMatchObject({
+      status: 'failed',
+      error: 'Finance lake: gave up',
+    });
+  });
+
+  it('one target needs the user and one failed: the job goes back to review', async () => {
+    const { repo, job, deps } = await setup();
+    const [a, b] = [randomUUID(), randomUUID()];
+    await repo.recordDeliveries(job.id, [
+      { targetId: 'default', deliveryId: a },
+      { targetId: 'finance-lake', deliveryId: b },
+    ]);
+    await applyEvent(
+      deps,
+      event(a, 2, {
+        status: 'failed',
+        receipt: null,
+        error: { class: 'retryable', code: 'timeout', message: 'gave up' },
+      }),
+    );
+    await applyEvent(deps, needsUser(b, 2));
+    expect(repo.jobs.get(job.id)).toMatchObject({
+      status: 'awaiting_review',
+      reviewReasons: ['Finance lake: access denied'],
+    });
+  });
+});
+
 describe('reconcileOnce', () => {
   const view = (id: string, over: Partial<DeliveryView> = {}): DeliveryView => ({
     id,

@@ -1620,10 +1620,17 @@ const toDelivery = (r: DeliveryRow): JobDelivery => ({
   updatedAt: r.updated_at.toISOString(),
 });
 
+/**
+ * Each target's latest delivery of a job (an approval again starts a new round; the rounds
+ * before stay for the record but no longer judge the job), oldest first.
+ */
 async function deliveriesIn(db: pg.Pool | pg.PoolClient, jobId: string): Promise<JobDelivery[]> {
   const { rows } = await db.query<DeliveryRow>(
-    `SELECT ${DELIVERY_COLUMNS} FROM job_deliveries d WHERE d.job_id = $1
-      ORDER BY d.created_at, d.delivery_id`,
+    `SELECT * FROM (
+       SELECT DISTINCT ON (d.target_id) ${DELIVERY_COLUMNS}, d.created_at AS round_at
+         FROM job_deliveries d WHERE d.job_id = $1
+        ORDER BY d.target_id, d.created_at DESC, d.delivery_id DESC
+     ) latest ORDER BY round_at, delivery_id`,
     [jobId],
   );
   return rows.map(toDelivery);

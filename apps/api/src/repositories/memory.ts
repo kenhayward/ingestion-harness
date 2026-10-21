@@ -1026,8 +1026,15 @@ export class MemoryRepo implements IngestionRepo {
     return { outcome: 'applied', finished: outcome };
   }
 
+  /** Each target's latest delivery (a re-approval's round replaces the one before), in order. */
   async deliveriesOf(jobId: string): Promise<JobDelivery[]> {
-    return [...this.deliveries.values()].filter((d) => d.jobId === jobId).map((d) => ({ ...d }));
+    const latest = new Map<string, JobDelivery>();
+    for (const d of this.deliveries.values()) {
+      if (d.jobId !== jobId) continue;
+      latest.delete(d.targetId); // insertion order: a newer round goes last
+      latest.set(d.targetId, d);
+    }
+    return [...latest.values()].map((d) => ({ ...d }));
   }
 
   async stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]> {
