@@ -48,6 +48,7 @@ const legacy = (id: string, over: Partial<LegacyKeys> = {}): LegacyKeys => ({
   secretKeyEnv: null,
   forcePathStyle: false,
   movedToBridgeAt: null,
+  connectionId: null,
   ...over,
 });
 
@@ -468,6 +469,11 @@ export function publishTargetsContract(
           secretKeyEnv: 'A_SECRET',
           forcePathStyle: true,
         }),
+      );
+      // The connection a move chose is recorded before it is written, for its retry to reuse.
+      await repo.chooseLegacyConnection('finance', 'target-finance');
+      expect((await repo.legacyKeys()).find((k) => k.id === 'finance')).toEqual(
+        legacy('finance', { connectionId: 'target-finance' }),
       );
       await repo.dropLegacyKeys('finance');
       expect((await repo.legacyKeys()).map((k) => k.id)).toEqual(['archive']);

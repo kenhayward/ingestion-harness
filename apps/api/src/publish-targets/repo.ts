@@ -58,6 +58,8 @@ export interface LegacyKeys {
   secretKeyEnv: string | null;
   forcePathStyle: boolean;
   movedToBridgeAt: string | null;
+  /** The connection a move chose for these keys (set before it writes it; null: none yet). */
+  connectionId: string | null;
 }
 
 export type SeedOutcome = 'seeded' | 'kept' | 'differs';
@@ -90,6 +92,8 @@ export interface PublishTargetRepo {
   /** Keys from before the bridge not dropped yet, by id. */
   legacyKeys(): Promise<LegacyKeys[]>;
   dropLegacyKeys(id: string): Promise<void>;
+  /** Records the connection a move is about to write for these keys, so a retry reuses it. */
+  chooseLegacyConnection(id: string, connectionId: string): Promise<void>;
   /** The bridge connection a target delivers with (null: none, or no such target). */
   connectionOf(id: string): Promise<string | null>;
 }
@@ -344,6 +348,11 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
 
   async dropLegacyKeys(id: string): Promise<void> {
     this.legacy.delete(id);
+  }
+
+  async chooseLegacyConnection(id: string, connectionId: string): Promise<void> {
+    const k = this.legacy.get(id);
+    if (k) this.legacy.set(id, { ...k, connectionId });
   }
 
   async connectionOf(id: string): Promise<string | null> {

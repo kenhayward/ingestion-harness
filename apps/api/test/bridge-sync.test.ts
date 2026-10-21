@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   moveTargetsToBridge,
   pullTargets,
@@ -36,6 +36,7 @@ const legacy = (id: string, over: Partial<LegacyKeys> = {}): LegacyKeys => ({
   secretKeyEnv: null,
   forcePathStyle: false,
   movedToBridgeAt: null,
+  connectionId: null,
   ...over,
 });
 
@@ -315,6 +316,40 @@ describe('moveTargetsToBridge and what an admin set first', () => {
     expect(await targets.connectionOf('finance')).toBe('finance-account');
     expect(bridge.targets.get('finance')?.connectionId).toBe('finance-account');
     expect(await targets.legacyKeys()).toEqual([]);
+  });
+
+  it('a move whose target put failed reuses its own connection on retry', async () => {
+    const { targets, bridge, log } = setup();
+    await cacheS3(targets, { id: 'finance' });
+    targets.putLegacyKeys(legacy('finance'));
+    for (let i = 0; i < 3; i++) {
+      vi.spyOn(bridge, 'putTarget').mockRejectedValueOnce(new Error('bridge restarting'));
+      await expect(moveTargetsToBridge({ targets, bridge, secrets: KEYS, log })).rejects.toThrow(
+        'bridge restarting',
+      );
+      expect((await targets.legacyKeys())[0]?.connectionId).toBe('target-finance');
+    }
+    const result = await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log });
+    expect(result).toEqual({ moved: ['finance'], skipped: [] });
+    expect([...bridge.connections.keys()]).toEqual(['target-finance']);
+    expect(bridge.targets.get('finance')?.connectionId).toBe('target-finance');
+    expect(await targets.connectionOf('finance')).toBe('target-finance');
+    expect(await targets.legacyKeys()).toEqual([]);
+  });
+
+  it('a target put the bridge refused reuses its own connection at the next start', async () => {
+    const { targets, bridge, log, warnings } = setup();
+    await cacheS3(targets, { id: 'finance' });
+    targets.putLegacyKeys(legacy('finance'));
+    vi.spyOn(bridge, 'putTarget').mockRejectedValueOnce(FakeBridgeApi.refusal('not now'));
+    expect(await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log })).toEqual({
+      moved: [],
+      skipped: ['finance'],
+    });
+    expect(warnings.join(' ')).toContain('not now');
+    await moveTargetsToBridge({ targets, bridge, secrets: KEYS, log });
+    expect([...bridge.connections.keys()]).toEqual(['target-finance']);
+    expect(await targets.connectionOf('finance')).toBe('target-finance');
   });
 
   it("does not overwrite an admin's connection already named target-<id>", async () => {

@@ -81,8 +81,9 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
         legacyKeys: async (k: LegacyKeys) => {
           await p.query(
             `INSERT INTO publish_target_legacy_keys (id, endpoint, region, access_key_id,
-               secret_key_enc, access_key_env, secret_key_env, force_path_style, moved_to_bridge_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+               secret_key_enc, access_key_env, secret_key_env, force_path_style, moved_to_bridge_at,
+               connection_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
               k.id,
               k.endpoint,
@@ -93,6 +94,7 @@ describe.skipIf(!url)('PgPublishTargetRepo', { timeout: 60_000 }, () => {
               k.secretKeyEnv,
               k.forcePathStyle,
               k.movedToBridgeAt,
+              k.connectionId,
             ],
           );
         },

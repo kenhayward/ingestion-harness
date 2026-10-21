@@ -66,7 +66,9 @@ export const movedConnectionId = (targetId: string): string => `target-${targetI
  * One-off, per row of `publish_target_legacy_keys`: an external target's keys become the
  * bridge's shared connection `target-<id>` (`target-<id>-2`, … when a connection of that id
  * exists already: one an admin made is never overwritten), the bridge's target is pointed at it
- * (its place unchanged) and cached, and the legacy row is dropped. A target an admin already gave
+ * (its place unchanged) and cached, and the legacy row is dropped. The connection chosen is
+ * recorded on the legacy row before it is written, so a try whose target write failed is retried
+ * with the same connection, never a new copy of the secret. A target an admin already gave
  * a connection keeps it: only its legacy row is dropped. Keys read from `.env` (an env-keyed
  * default) become an env connection: the bridge reads the same allowlisted variables in its own
  * container. A row an earlier move already took is dropped. A row whose secret cannot be
@@ -127,10 +129,19 @@ export async function moveTargetsToBridge(
     if (k.accessKeyId) fields.accessKeyId = k.accessKeyId;
     else if (k.accessKeyEnv) fields.accessKeyIdEnv = k.accessKeyEnv;
     fields.forcePathStyle = String(k.forcePathStyle);
-    // Never over an existing connection (one an admin made under that name): the next free id.
-    taken ??= new Set((await deps.bridge.listConnections('shared')).map((c) => c.id));
-    let connectionId = movedConnectionId(t.id);
-    for (let n = 2; taken.has(connectionId); n++) connectionId = `${movedConnectionId(t.id)}-${n}`;
+    // A retry reuses the connection its own earlier try chose (and may have written). Otherwise
+    // never over an existing connection (one an admin made under that name): the next free id,
+    // recorded before it is written.
+    let connectionId = k.connectionId;
+    if (connectionId === null) {
+      taken ??= new Set((await deps.bridge.listConnections('shared')).map((c) => c.id));
+      connectionId = movedConnectionId(t.id);
+      for (let n = 2; taken.has(connectionId); n++) {
+        connectionId = `${movedConnectionId(t.id)}-${n}`;
+      }
+      taken.add(connectionId);
+      await deps.targets.chooseLegacyConnection(t.id, connectionId);
+    }
     try {
       await deps.bridge.putSharedConnection({
         id: connectionId,
@@ -139,7 +150,6 @@ export async function moveTargetsToBridge(
         secret,
         secretEnv,
       });
-      taken.add(connectionId);
       const view = await deps.bridge.putTarget(t.id, {
         label: t.label,
         sinkId: t.sinkId,

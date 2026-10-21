@@ -228,9 +228,10 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
       secret_key_env: string | null;
       force_path_style: boolean;
       moved_to_bridge_at: Date | null;
+      connection_id: string | null;
     }>(
       `SELECT id, endpoint, region, access_key_id, secret_key_enc, access_key_env, secret_key_env,
-              force_path_style, moved_to_bridge_at
+              force_path_style, moved_to_bridge_at, connection_id
          FROM publish_target_legacy_keys ORDER BY id`,
     );
     return rows.map((r) => ({
@@ -243,11 +244,19 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
       secretKeyEnv: r.secret_key_env,
       forcePathStyle: r.force_path_style,
       movedToBridgeAt: iso(r.moved_to_bridge_at),
+      connectionId: r.connection_id,
     }));
   }
 
   async dropLegacyKeys(id: string): Promise<void> {
     await this.pool.query('DELETE FROM publish_target_legacy_keys WHERE id = $1', [id]);
+  }
+
+  async chooseLegacyConnection(id: string, connectionId: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE publish_target_legacy_keys SET connection_id = $2 WHERE id = $1',
+      [id, connectionId],
+    );
   }
 
   async connectionOf(id: string): Promise<string | null> {
