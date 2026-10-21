@@ -134,6 +134,70 @@ def key_issues(sections: list[Section], spans: list[SectionSpan]) -> list[KeyIss
     return issues
 
 
+#: Callers cap how many missed keys they show; `missed_keys` itself returns all of them.
+MAX_MISSED_KEYS = 20
+MAX_MISSED_LINE = 120
+
+_INLINE_FLAGS = re.compile(r"\(\?[aiLmsux]+\)")
+
+
+@dataclass(frozen=True)
+class MissedKey:
+    """A key a repeating sections' key pattern finds in the text that none of their spans carry."""
+
+    sections: tuple[str, ...]
+    key: str
+    #: The stripped line of the key's last match (the body title, not a contents entry).
+    line: str
+
+
+def _line_anchored(pattern: str) -> bool:
+    rest = pattern
+    while (flags := _INLINE_FLAGS.match(rest)) is not None:
+        rest = rest[flags.end() :]
+    return rest.startswith("^")
+
+
+def missed_keys(text: str, sections: list[Section], spans: list[SectionSpan]) -> list[MissedKey]:
+    """Keys that the key pattern of repeating sections finds in `text` but no anchor caught.
+
+    Sections with their own `key` are judged in groups sharing the exact pattern; a pattern that
+    is not line-anchored is skipped (it would flag every number). A candidate is a distinct key
+    value found anywhere; it is covered when a span of the group carries it. Returned in document
+    order of each key's last match. A group whose spans cover no key reports nothing.
+    """
+    groups: dict[str, list[str]] = {}
+    for section in sections:
+        if section.repeat and section.key and _line_anchored(section.key):
+            groups.setdefault(section.key, []).append(section.id)
+    found: list[tuple[int, MissedKey]] = []
+    for pattern, ids in groups.items():
+        covered = {s.key for s in spans if s.id in ids and s.key is not None}
+        if not covered:
+            continue
+        last: dict[str, re.Match[str]] = {}
+        for match in re.finditer(pattern, text, re.MULTILINE):
+            if "key" in match.re.groupindex:
+                value = match.group("key")
+            elif match.re.groups:
+                value = match.group(1)
+            else:
+                value = match.group(0)
+            value = (value or "").strip()
+            if value:
+                last[value] = match
+        for value, match in last.items():
+            if value in covered:
+                continue
+            # `^\s*` may begin on the line above, so read the line of the first visible character
+            at = match.start() + len(match.group(0)) - len(match.group(0).lstrip())
+            start = text.rfind("\n", 0, at) + 1
+            end = text.find("\n", at)
+            line = text[start : end if end != -1 else len(text)].strip()
+            found.append((at, MissedKey(tuple(ids), value, line[:MAX_MISSED_LINE])))
+    return [missed for _, missed in sorted(found, key=lambda item: item[0])]
+
+
 @dataclass(frozen=True)
 class Occurrence:
     """One occurrence of a repeating section, 1-based."""
