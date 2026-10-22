@@ -36,6 +36,10 @@ async function setup() {
   });
   await connections.put(connection('other-sink', { sinkId: 'fake' }));
   await connections.put(connection('triples', { sinkId: 'rdf' }));
+  await connections.put(connection('acme-shared', { sinkId: 'acme' }));
+  await connections.put(
+    connection('u-mine', { kind: 'personal', owner: 'u1', sinkId: 'fake', instanceId: null }),
+  );
   const app = await testBridge({
     targets,
     connections,
@@ -44,6 +48,11 @@ async function setup() {
     sinks: new MapSinkRegistry({
       s3,
       fake: new FakeSink(),
+      acme: new FakeSink({
+        connectionKind: 'personal',
+        instances: [{ id: 'sandbox', label: 'Sandbox' }],
+        credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+      }),
       rdf: new RdfSink({ store: () => ({}) as never }),
     }),
   });
@@ -286,5 +295,42 @@ describe('Test connection for targets', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ ok: false, step: 'connect' });
+  });
+});
+
+describe('targets of a personal sink', () => {
+  const acme = (over: Record<string, unknown> = {}) => ({
+    label: 'Acme',
+    sinkId: 'acme',
+    instanceId: 'sandbox',
+    connectionId: null,
+    destination: { bucket: 'b' },
+    ...over,
+  });
+
+  it('name an instance of the sink and no connection', async () => {
+    const { call } = await setup();
+    expect((await call('PUT', '/v1/targets/acme', acme())).statusCode).toBe(200);
+    const named = await call('PUT', '/v1/targets/acme', acme({ connectionId: 'acme-shared' }));
+    expect(named.statusCode).toBe(422);
+    expect(named.json().message).toBe(
+      "a personal sink's target names no connection: each delivery uses its acting user's",
+    );
+    const other = await call('PUT', '/v1/targets/acme', acme({ instanceId: 'other' }));
+    expect(other.statusCode).toBe(422);
+    expect(other.json().message).toBe('other is not an instance of acme');
+  });
+
+  it("a shared sink's target never names a personal connection", async () => {
+    const { call } = await setup();
+    const res = await call('PUT', '/v1/targets/f', {
+      label: 'F',
+      sinkId: 'fake',
+      instanceId: null,
+      connectionId: 'u-mine',
+      destination: { bucket: 'b' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().message).toBe('u-mine is a personal connection');
   });
 });

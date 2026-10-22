@@ -2,6 +2,7 @@ import { ConnectionSummarySchema } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { MemoryConnectionRepo } from '../src/connections/repo.js';
 import { decryptSecret } from '../src/secrets.js';
+import { FakeSink } from '../src/sinks/fake.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
 import { RdfSink } from '../src/sinks/rdf.js';
 import { S3Sink } from '../src/sinks/s3.js';
@@ -26,8 +27,21 @@ async function setup() {
       throw new Error('no triple store in these tests');
     },
   });
-  const app = await testBridge({ targets, connections, sinks: new MapSinkRegistry({ s3, rdf }) });
-  const call = (method: 'GET' | 'PUT', url: string, body?: unknown) =>
+  const acme = new FakeSink({
+    name: 'Acme',
+    connectionKind: 'personal',
+    instances: [{ id: 'sandbox', label: 'Sandbox' }],
+    credentialFields: [
+      { id: 'username', label: 'Username', secret: false },
+      { id: 'password', label: 'Password', secret: true },
+    ],
+  });
+  const app = await testBridge({
+    targets,
+    connections,
+    sinks: new MapSinkRegistry({ s3, rdf, acme }),
+  });
+  const call = (method: 'GET' | 'PUT' | 'POST' | 'DELETE', url: string, body?: unknown) =>
     signedInject(app, KEY, { method, url, body });
   return { app, call, connections };
 }
@@ -173,5 +187,76 @@ describe('GET /v1/connections', () => {
       lake: { endpoint: 'https://s3.example.com', accessKeyId: 'AKIA9' },
       'rdf-default': { endpoint: 'http://fuseki:3030', user: 'ct-writer' },
     });
+  });
+});
+
+const mine = (id: string, owner: string, over: Parameters<typeof connection>[1] = {}) =>
+  connection(id, {
+    kind: 'personal',
+    owner,
+    sinkId: 'acme',
+    instanceId: 'sandbox',
+    fields: { username: `${owner}-login` },
+    ...over,
+  });
+
+describe('personal connections, as the producer reaches them', () => {
+  it("lists one owner's connections, with no fields and never a secret", async () => {
+    const { call, connections } = await setup();
+    await connections.put({ ...mine('u-1', 'u1'), secretEnc: 'v1:personal-cipher' });
+    await connections.put(mine('u-2', 'u2'));
+    await connections.put(connection('finance'));
+    const res = await call('GET', '/v1/connections?kind=personal&owner=u1');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain('v1:personal-cipher');
+    expect(res.body).not.toContain('u1-login');
+    const list = res.json().connections.map((c: unknown) => ConnectionSummarySchema.parse(c));
+    expect(list).toEqual([
+      {
+        id: 'u-1',
+        name: 'Connection u-1',
+        sinkId: 'acme',
+        kind: 'personal',
+        instanceId: 'sandbox',
+        status: 'untested',
+        statusReason: null,
+        lastUsedAt: null,
+        fields: {},
+      },
+    ]);
+  });
+
+  it('never lists every owner: personal needs an owner, and no kind is shared only', async () => {
+    const { call, connections } = await setup();
+    await connections.put(mine('u-1', 'u1'));
+    await connections.put(connection('finance'));
+    expect((await call('GET', '/v1/connections?kind=personal')).statusCode).toBe(400);
+    const all = (await call('GET', '/v1/connections')).json().connections;
+    expect(all.map((c: { id: string }) => c.id)).toEqual(['finance']);
+  });
+
+  it("deletes one user's personal connections, and no shared one", async () => {
+    const { call, connections } = await setup();
+    await connections.put(mine('u-1', 'u1'));
+    await connections.put(mine('u-2', 'u2'));
+    await connections.put(connection('finance'));
+    const res = await call('DELETE', '/v1/users/u1/connections');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ deleted: 1 });
+    expect((await connections.list({})).map((c) => c.id)).toEqual(['finance', 'u-2']);
+  });
+
+  it('reconciles against the live users, and refuses an empty list', async () => {
+    const { call, connections } = await setup();
+    await connections.put(mine('u-1', 'u1'));
+    await connections.put(mine('u-2', 'u2'));
+    await connections.put(mine('u-3', 'u3'));
+    await connections.put(connection('finance'));
+    const empty = await call('POST', '/v1/users:reconcile', { liveUserIds: [] });
+    expect(empty.statusCode).toBe(422);
+    expect(await connections.list({})).toHaveLength(4);
+    const res = await call('POST', '/v1/users:reconcile', { liveUserIds: ['u2'] });
+    expect(res.json()).toEqual({ deleted: 2 });
+    expect((await connections.list({})).map((c) => c.id)).toEqual(['finance', 'u-2']);
   });
 });

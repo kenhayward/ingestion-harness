@@ -56,11 +56,30 @@ async function checkTarget(
   const sink = app.deps.sinks.get(t.sinkId);
   if (!sink) throw refuse('content_rejected', `there is no sink ${t.sinkId}`);
   const described = await sink.describe();
+  if (described.connectionKind === 'personal') {
+    if (t.connectionId !== null) {
+      throw refuse(
+        'content_rejected',
+        "a personal sink's target names no connection: each delivery uses its acting user's",
+      );
+    }
+    const instances = described.instances.map((i) => i.id);
+    const fits = instances.length ? instances.includes(t.instanceId ?? '') : t.instanceId === null;
+    if (!fits) {
+      throw refuse(
+        'content_rejected',
+        `${t.instanceId ?? 'no instance'} is not an instance of ${t.sinkId}`,
+      );
+    }
+  }
   if (t.connectionId !== null) {
     const connection = await app.deps.connections.get(t.connectionId);
     if (!connection) throw refuse('connection_missing', `there is no connection ${t.connectionId}`);
     if (connection.sinkId !== t.sinkId) {
       throw refuse('content_rejected', `connection ${t.connectionId} is not for ${t.sinkId}`);
+    }
+    if (connection.kind === 'personal') {
+      throw refuse('content_rejected', `${t.connectionId} is a personal connection`);
     }
   }
   const declared = new Set(described.destinationFields.map((f) => f.id));
