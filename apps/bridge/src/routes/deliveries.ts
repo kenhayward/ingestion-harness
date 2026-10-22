@@ -59,13 +59,14 @@ export const deliveryRoutes: FastifyPluginAsync = async (app) => {
         );
       }
       try {
-        const { deliveries, packages, targets, sinks, config } = app.deps;
+        const { deliveries, packages, targets, sinks, connections, config } = app.deps;
         const result = await acceptDeliveries(
           {
             deliveries,
             packages,
             targets,
             sinks,
+            connections,
             retentionDays: config.BRIDGE_PACKAGE_RETENTION_DAYS,
           },
           parsed.data,

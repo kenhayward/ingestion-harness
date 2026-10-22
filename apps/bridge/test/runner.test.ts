@@ -40,6 +40,7 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
     destination: { bucket: 'b', prefix: 'out/' },
   });
   const sinks = new MapSinkRegistry({ fake: sink });
+  const connections = new MemoryConnectionRepo(targets);
   const deps = {
     deliveries,
     packages,
@@ -51,7 +52,7 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
   };
   const submit = async (overrides: Record<string, string> = {}, now = T0) => {
     const result = await acceptDeliveries(
-      { deliveries, packages, targets, sinks, retentionDays: 30 },
+      { deliveries, packages, targets, sinks, connections, retentionDays: 30 },
       {
         targets: ['t1'],
         actingUser: { id: 'u1', name: 'Pat', email: null },
@@ -345,5 +346,125 @@ describe('runOnce with a connection', () => {
     });
     expect(sink.delivered).toEqual([]);
     expect((await connections.get('c1'))?.status).toBe('untested');
+  });
+});
+
+describe('a personal sink', () => {
+  const credentialFields = [
+    { id: 'username', label: 'Username', secret: false },
+    { id: 'password', label: 'Password', secret: true },
+  ];
+  const pat = { id: 'u1', name: 'Pat', email: null };
+  const sam = { id: 'u2', name: 'Sam', email: null };
+
+  async function personal(sink = new FakeSink({})) {
+    const deliveries = new MemoryDeliveryRepo();
+    const packages = new MemoryPackageStore();
+    const targets = new MemoryTargetRepo();
+    await targets.put({
+      id: 'acme',
+      label: 'Acme',
+      sinkId: 'acme',
+      instanceId: 'sandbox',
+      connectionId: null,
+      destination: { bucket: 'b' },
+    });
+    const connections = new MemoryConnectionRepo(targets);
+    const mine = (id: string, owner: string, password: string) =>
+      connections.put({
+        ...connection(id, {
+          kind: 'personal',
+          owner,
+          sinkId: 'acme',
+          instanceId: 'sandbox',
+          fields: { username: owner },
+        }),
+        secretEnc: encryptSecret(password, SECRETS),
+      });
+    await mine('u-pat', 'u1', 'pat-pw');
+    await mine('u-sam', 'u2', 'sam-pw');
+    const sinks = new MapSinkRegistry({ acme: sink });
+    const deps = {
+      deliveries,
+      packages,
+      targets,
+      sinks,
+      connections,
+      credentials: new Credentials({ connections, secrets: SECRETS, env: {} }),
+      maxAttempts: 8,
+      leaseSeconds: 300,
+      pollSeconds: 30,
+    };
+    const submit = (actingUser: typeof pat | null) =>
+      acceptDeliveries(
+        { deliveries, packages, targets, sinks, connections, retentionDays: 30 },
+        { targets: ['acme'], actingUser, overrides: {}, package: documentPackage },
+        T0,
+        randomUUID,
+      );
+    return { deps, deliveries, connections, submit };
+  }
+  const acmeSink = () =>
+    new FakeSink({
+      capabilities: caps(),
+      connectionKind: 'personal',
+      instances: [{ id: 'sandbox', label: 'Sandbox' }],
+      credentialFields,
+    });
+
+  it('accept refuses a delivery with no person to deliver as, writing nothing', async () => {
+    const { deliveries, submit } = await personal(acmeSink());
+    await expect(submit(null)).rejects.toMatchObject({
+      error: {
+        code: 'connection_missing',
+        message: 'delivering to Acme needs a person to deliver as',
+      },
+    });
+    expect(await deliveries.claim(T0, 300)).toBeNull();
+  });
+
+  it('accept refuses an acting user with no connection for the instance', async () => {
+    const { submit } = await personal(acmeSink());
+    await expect(submit({ id: 'u3', name: 'Lee', email: null })).rejects.toMatchObject({
+      error: {
+        code: 'connection_missing',
+        message: 'Lee has no connection for Acme: add one on the connections page',
+        details: { targetId: 'acme', userId: 'u3' },
+      },
+    });
+  });
+
+  it("delivers with the acting user's own credential and marks that connection", async () => {
+    const sink = acmeSink();
+    const { deps, connections, submit } = await personal(sink);
+    await submit(sam);
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.credential).toEqual({ username: 'u2', password: 'sam-pw' });
+    expect(await connections.get('u-sam')).toMatchObject({ status: 'ok', lastUsedAt: T0 });
+    expect(await connections.get('u-pat')).toMatchObject({ status: 'untested', lastUsedAt: null });
+  });
+
+  it("a rejected credential flags the acting user's connection", async () => {
+    const sink = acmeSink().script({ error: 'credential_rejected' });
+    const { deps, deliveries, connections, submit } = await personal(sink);
+    const id = (await submit(pat)).deliveries[0]!.deliveryId;
+    await runOnce(deps, T0);
+    expect((await deliveries.get(id))?.status).toBe('needs_user');
+    expect(await connections.get('u-pat')).toMatchObject({ status: 'needs_attention' });
+    expect((await connections.get('u-sam'))?.status).toBe('untested');
+  });
+
+  it('a connection deleted after accept stops the delivery for a person, after one attempt', async () => {
+    const sink = acmeSink();
+    const { deps, deliveries, connections, submit } = await personal(sink);
+    const id = (await submit(pat)).deliveries[0]!.deliveryId;
+    await connections.removeOwner('u1');
+    await runOnce(deps, T0);
+    expect(await deliveries.get(id)).toMatchObject({
+      status: 'needs_user',
+      attempts: 1,
+      error: { code: 'connection_missing' },
+    });
+    expect(sink.delivered).toEqual([]);
   });
 });

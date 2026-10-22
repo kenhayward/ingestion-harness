@@ -5,6 +5,7 @@ import {
   type CreateDeliveriesRequest,
   type CreateDeliveriesResult,
 } from '@ih/bridge-contract';
+import type { ConnectionRepo } from '../connections/repo.js';
 import type { PackageStore } from '../packages/store.js';
 import { SinkError, type SinkRegistry } from '../sinks/port.js';
 import type { TargetRepo } from '../targets/repo.js';
@@ -15,6 +16,8 @@ export interface AcceptDeps {
   packages: PackageStore;
   targets: TargetRepo;
   sinks: SinkRegistry;
+  /** Where a personal sink's deliveries find the acting user's connection. */
+  connections: ConnectionRepo;
   retentionDays: number;
 }
 
@@ -29,7 +32,8 @@ export function manifestOf(pkg: BridgePackage): unknown {
 
 /**
  * Accepts a package for its targets, all or nothing: every target must exist, have a registered
- * sink, and that sink must take every part the package carries. The first problem throws a
+ * sink, and that sink must take every part the package carries; a personal sink's target also
+ * needs an acting user who holds a connection for its instance. The first problem throws a
  * SinkError before anything is written.
  */
 export async function acceptDeliveries(
@@ -53,7 +57,30 @@ export async function acceptDeliveries(
         }),
       );
     }
-    const { capabilities } = await sink.describe();
+    const { capabilities, connectionKind } = await sink.describe();
+    if (connectionKind === 'personal') {
+      const user = req.actingUser;
+      if (!user) {
+        throw new SinkError(
+          bridgeError(
+            'connection_missing',
+            `delivering to ${target.label} needs a person to deliver as`,
+            {
+              targetId,
+            },
+          ),
+        );
+      }
+      if (!(await deps.connections.findPersonal(user.id, target.sinkId, target.instanceId))) {
+        throw new SinkError(
+          bridgeError(
+            'connection_missing',
+            `${user.name} has no connection for ${target.label}: add one on the connections page`,
+            { targetId, userId: user.id },
+          ),
+        );
+      }
+    }
     const refused = parts.find((p) => !capabilities.accepts.includes(p));
     if (refused) {
       throw new SinkError(

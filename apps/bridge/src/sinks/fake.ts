@@ -2,6 +2,7 @@ import {
   bridgeError,
   type BrowseResult,
   type ConnectionTestResult,
+  type ConnectionTestRequest,
   type ErrorCode,
   type SinkDeliverRequest,
   type SinkDeliverResult,
@@ -44,6 +45,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** A scriptable sink for tests: answers in the order it was told, then succeeds. */
 export class FakeSink implements SinkPort {
   readonly delivered: SinkDeliverRequest[] = [];
+  /** Every connection test it was asked for. */
+  readonly tested: ConnectionTestRequest[] = [];
+  private readonly testSteps: ErrorCode[] = [];
   private readonly steps: DeliverStep[] = [];
   private readonly statusSteps: StatusStep[] = [];
   private jobs = 0;
@@ -52,6 +56,12 @@ export class FakeSink implements SinkPort {
 
   script(...steps: DeliverStep[]): this {
     this.steps.push(...steps);
+    return this;
+  }
+
+  /** The next connection tests fail with these codes, in order; then they pass. */
+  scriptTest(...errors: ErrorCode[]): this {
+    this.testSteps.push(...errors);
     return this;
   }
 
@@ -64,8 +74,11 @@ export class FakeSink implements SinkPort {
     return { ...DESCRIBE, ...this.overrides };
   }
 
-  async testConnection(): Promise<ConnectionTestResult> {
-    return { ok: true, identity: 'fake' };
+  async testConnection(req: ConnectionTestRequest): Promise<ConnectionTestResult> {
+    this.tested.push(structuredClone(req));
+    const error = this.testSteps.shift();
+    if (error) throw new SinkError(bridgeError(error, `scripted ${error}`));
+    return { ok: true, identity: `fake:${req.credential.username ?? 'user'}` };
   }
 
   async browse(): Promise<BrowseResult> {
