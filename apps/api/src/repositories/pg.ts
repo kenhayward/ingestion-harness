@@ -21,7 +21,9 @@ import {
   modelRef,
   sourceContentType,
   statusesIn,
+  statusGroup,
   type Creator,
+  type JobPage,
 } from '@ih/shared';
 import {
   ReferenceConflictError,
@@ -31,6 +33,7 @@ import {
   type QueueStats,
   type JobReview,
   type ListJobsQuery,
+  type JobPageRequest,
   type ListPublishedQuery,
   type RetryOptions,
   SEGMENT_PRIORITY,
@@ -672,6 +675,95 @@ export class PgRepo implements IngestionRepo {
       ],
     );
     return rows.map(toSummary);
+  }
+
+  async jobPage({ mine, q, group, size, before, after, from }: JobPageRequest): Promise<JobPage> {
+    // pageOfJobs in SQL: the jobs the caller may list ($1-$3: "mine" as in listJobs), every
+    // word of the search somewhere ($4: ILIKE patterns, wildcards escaped), the group ($5).
+    const words = (q ?? '').split(/\s+/).filter(Boolean);
+    const patterns = words.map((w) => `%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    const LISTABLE = `j.task <> 'prepare'
+      AND ($1::boolean IS NOT TRUE
+           OR (j.created_by_user IS NOT NULL AND j.created_by_user = $2::uuid)
+           OR (j.created_by_user IS NULL AND j.created_by = $3))
+      AND NOT EXISTS (
+        SELECT 1 FROM unnest($4::text[]) AS w(p)
+         WHERE NOT COALESCE(d.filename ILIKE w.p ESCAPE '\\' OR d.spec_id ILIKE w.p ESCAPE '\\'
+                    OR j.status::text ILIKE w.p ESCAPE '\\'
+                    OR j.model_override ILIKE w.p ESCAPE '\\'
+                    OR EXISTS (SELECT 1 FROM step_runs s
+                                WHERE s.job_id = j.id AND s.model ILIKE w.p ESCAPE '\\'),
+                    false))`;
+    const VIEW = `${LISTABLE} AND ($5::job_status[] IS NULL OR j.status = ANY($5))`;
+    const FROM = 'FROM jobs j JOIN documents d ON d.id = j.document_id';
+    const base = [mine !== undefined, mine?.userId ?? null, mine?.name ?? null, patterns];
+    const view = [...base, group ? statusesIn(group) : null];
+
+    const counted = await this.pool.query<{ status: JobStatus; n: number }>(
+      `SELECT j.status, count(*)::int AS n ${FROM} WHERE ${LISTABLE} GROUP BY j.status`,
+      base,
+    );
+    const counts = { all: 0, attention: 0, active: 0, done: 0 };
+    let total = 0;
+    for (const { status, n } of counted.rows) {
+      counts.all += n;
+      counts[statusGroup(status)] += n;
+      if (!group || statusGroup(status) === group) total += n;
+    }
+
+    // The job paged from, among the jobs the caller may list (search and group aside); a job
+    // gone since pages from the newest.
+    const cursorId = before ?? after ?? from;
+    const cursor = cursorId
+      ? (
+          await this.pool.query(`SELECT 1 ${FROM} WHERE j.id = $5 AND ${LISTABLE}`, [
+            ...base,
+            cursorId,
+          ])
+        ).rowCount === 1
+      : false;
+    const PLACE = '(j.created_at, j.id)';
+    const AT = '(SELECT created_at, id FROM jobs WHERE id = $6)';
+    const countWhere = async (cond: string) =>
+      Number(
+        (
+          await this.pool.query<{ n: number }>(
+            `SELECT count(*)::int AS n ${FROM} WHERE ${VIEW} AND ${cond}`,
+            [...view, cursorId],
+          )
+        ).rows[0]!.n,
+      );
+    const pageWhere = async (cond: string | null, order: 'ASC' | 'DESC') =>
+      (
+        await this.pool.query<JobRow>(
+          `${JOB_SELECT} WHERE ${VIEW} AND (${cond ?? '$6::uuid IS NULL'})
+            ORDER BY j.created_at ${order}, j.id ${order} LIMIT $7`,
+          [...view, cond ? cursorId : null, size],
+        )
+      ).rows.map(toSummary);
+
+    let start = 0;
+    let jobs: JobSummary[];
+    if (cursor && before) {
+      start = await countWhere(`${PLACE} >= ${AT}`);
+      jobs = await pageWhere(`${PLACE} < ${AT}`, 'DESC');
+    } else if (cursor && from) {
+      start = await countWhere(`${PLACE} > ${AT}`);
+      jobs = await pageWhere(`${PLACE} <= ${AT}`, 'DESC');
+    } else if (cursor && after && (await countWhere(`${PLACE} > ${AT}`)) > size) {
+      start = (await countWhere(`${PLACE} > ${AT}`)) - size;
+      jobs = (await pageWhere(`${PLACE} > ${AT}`, 'ASC')).reverse();
+    } else {
+      jobs = await pageWhere(null, 'DESC');
+    }
+    return {
+      jobs,
+      start,
+      total,
+      hasNewer: start > 0,
+      hasOlder: start + jobs.length < total,
+      counts,
+    };
   }
 
   async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {

@@ -214,6 +214,10 @@
             <span>— one line a job, paged to fit the window</span>
           </li>
           <li>
+            <a href="#jobs-every-job">The Jobs list reaches every job</a>
+            <span>— pages, counts and search answered by the server</span>
+          </li>
+          <li>
             <a href="#attention-everywhere">No job needing you is missed</a>
             <span>— the badges and the review queue count every job waiting on someone</span>
           </li>
@@ -497,7 +501,27 @@
         <strong>‹ Newer</strong> and <strong>Older ›</strong> above it, and the page no longer
         scrolls. In the list, <kbd>↑</kbd> and <kbd>↓</kbd> move to the next job (across pages),
         <kbd>PgUp</kbd> and <kbd>PgDn</kbd> change page, and <kbd>Enter</kbd> opens the selected job
-        to review or view. The list still holds the newest 50 jobs.
+        to review or view.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="jobs-every-job">The Jobs list reaches every job</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/307">#307</a>
+      </p>
+      <p>
+        The <strong>Jobs</strong> list used to hold only the newest 50 jobs. It now pages on the
+        server, so <strong>Older ›</strong> goes back to the very first job, and new jobs arriving
+        at the top no longer move the page you are reading. The counts on the status chips and
+        <em>Showing n of m</em> count every job, and the search looks through every job too, a
+        moment after you stop typing. It matches the file name, document type id, status or model id
+        (no longer a model choice&apos;s name). A link to a job opens the list at that job.
+      </p>
+      <p>
+        For API clients: <code>GET /api/jobs/page</code> returns one page from a job&apos;s place in
+        the list (<code>before</code>, <code>after</code> or <code>from</code>), with
+        <code>group</code>, <code>mine</code>, <code>q</code> and the counts per group. One
+        migration runs with the deploy: <code>202610221544_jobs_list_index</code>.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

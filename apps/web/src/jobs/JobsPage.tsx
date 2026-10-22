@@ -1,20 +1,22 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { JobSummary } from '@ih/shared';
-import type { Api } from '../api/client.js';
-import { matchesQuery, statusGroup } from '../shell/derive.js';
-import { useJobs } from '../shell/useJobs.js';
+import type { Api, JobPageParams } from '../api/client.js';
+import { statusGroup } from '../shell/derive.js';
 import { FilterChips } from '../ui/FilterChips.js';
 import { JobCleanup } from './JobCleanup.js';
 import { JobDetailPanel } from './JobDetailPanel.js';
 import { JobList } from './JobList.js';
 import { JobsPager } from './JobsPager.js';
 import { usePageSize } from './usePageSize.js';
-import { chipCounts, inChip, modelLabel, pageRange, primaryAction, type Chip } from './derive.js';
+import { useJobPage } from './useJobPage.js';
+import { primaryAction, type Chip } from './derive.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { HelpButton } from '../ui/Help.js';
 
 /** Rows a page shows until the list's height is measured (and where it cannot be: tests). */
 export const FALLBACK_PAGE_SIZE = 25;
+/** The search waits this long after typing before asking the server. */
+export const SEARCH_DELAY_MS = 250;
 
 const jobsText = (n: number) => `${n} ${n === 1 ? 'job' : 'jobs'}`;
 
@@ -36,10 +38,15 @@ function saveMine(mine: boolean) {
   }
 }
 
+/** Where the shown page starts: the newest jobs, or a job's place in the list. */
+type Anchor = { kind: 'top' } | { kind: 'before' | 'after' | 'from'; id: string };
+const TOP: Anchor = { kind: 'top' };
+
 /**
- * Jobs (UI handoff §1; uploading is on Home): status chips, the My jobs toggle, job list + detail panel,
- * clean-up. My jobs asks the server for the signed-in token's jobs (so the list limit applies
- * to them, not to everyone's) and polls them itself; the status chips apply on top.
+ * Jobs (UI handoff §1; uploading is on Home): status chips, the My jobs toggle, job list + detail
+ * panel, clean-up. The list is paged on the server (`GET /api/jobs/page`, `useJobPage`) from a
+ * job's place in it, so every job can be reached; the chips' counts, the search and My jobs
+ * are answered there too.
  *
  * The page fits the window (side by side): the list shows as many one-line rows as its box
  * holds (`usePageSize`), paged from the pager above it, so the page never scrolls. ↑/↓ move the
@@ -47,19 +54,15 @@ function saveMine(mine: boolean) {
  */
 export function JobsPage({
   api,
-  jobs: allJobs,
-  error: allError,
   refresh: refreshAll,
   query,
   pollMs,
   jobId,
 }: {
   api: Api;
-  /** A shared link's job (#/jobs/<id>): opened in the panel, from the full list. */
+  /** A shared link's job (#/jobs/<id>): opened in the panel, on its page. */
   jobId?: string;
-  jobs: JobSummary[];
-  /** The last poll failed with this message (the list shows the previous result). */
-  error: string | null;
+  /** The app's own job lists (the badges): refreshed after an action here. */
   refresh: () => Promise<void>;
   /** Top-bar search. */
   query: string;
@@ -69,32 +72,62 @@ export function JobsPage({
   const [chip, setChip] = useState<Chip>('all');
   // A shared link opens on every job, not only the reader's own (not saved).
   const [mine, setMine] = useState(() => (jobId ? false : loadMine()));
-  const mineJobs = useJobs(api, pollMs, { mine: true, enabled: mine });
-  const jobs = mine ? mineJobs.jobs : allJobs;
-  const error = mine ? mineJobs.error : allError;
-  // Actions change both lists: the shared one also drives the nav badge.
-  const refresh = async () => {
-    await Promise.all([refreshAll(), mine ? mineJobs.refresh() : null]);
+  const [anchor, setAnchor] = useState<Anchor>(jobId ? { kind: 'from', id: jobId } : TOP);
+  const [search, setSearch] = useState(query);
+  const lastQuery = useRef(query);
+  useEffect(() => {
+    if (lastQuery.current === query) return;
+    lastQuery.current = query;
+    const timer = setTimeout(() => {
+      setSearch(query);
+      setAnchor(TOP); // a new view starts at the newest
+    }, SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const pickChip = (next: Chip) => {
+    setChip(next);
+    setAnchor(TOP);
   };
   const toggleMine = () => {
     saveMine(!mine);
     setMine(!mine);
+    setAnchor(TOP);
   };
+  const { box: listBox, size: pageSize } = usePageSize<HTMLDivElement>(FALLBACK_PAGE_SIZE);
+  const params: JobPageParams = {
+    size: pageSize,
+    ...(chip !== 'all' ? { group: chip } : {}),
+    ...(mine ? { mine: true } : {}),
+    ...(search.trim() ? { q: search.trim() } : {}),
+    ...(anchor.kind !== 'top' ? { [anchor.kind]: anchor.id } : {}),
+  };
+  const { page, current, error, refresh: refreshPage } = useJobPage(api, params, pollMs);
+  const jobs = useMemo(() => page?.jobs ?? [], [page]);
+  // Actions change this page and the app's own lists (the badges).
+  const refresh = async () => {
+    await Promise.all([refreshAll(), refreshPage()]);
+  };
+
   const [selectedId, setSelectedId] = useState<string | null>(jobId ?? null);
-  // A new link while the page is open selects its job.
+  /** The selected job as last seen, so paging away leaves it in the panel. */
+  const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
+  /** The page (its params) the selected job was last seen on: gone from it = deleted. */
+  const seenOn = useRef<string | null>(null);
+  /** The view (chip, My jobs, search) it was seen in: another view never keeps it. */
+  const seenIn = useRef<string | null>(null);
+  // A new link while the page is open selects its job, on its page.
+  const lastLink = useRef(jobId);
   useEffect(() => {
-    if (jobId) {
-      setSelectedId(jobId);
-      setJumpTo(jobId);
-    }
+    if (!jobId || lastLink.current === jobId) return;
+    lastLink.current = jobId;
+    setSelectedId(jobId);
+    setAnchor({ kind: 'from', id: jobId });
   }, [jobId]);
   const [cleanupOpen, setCleanupOpen] = useState(false);
-  const { box: listBox, size: pageSize } = usePageSize<HTMLDivElement>(FALLBACK_PAGE_SIZE);
-  const [pageIndex, setPageIndex] = useState(0);
-  /** A row to focus once its page has rendered (keyboard moves). */
+  /** After a keyboard move to another page: which of its jobs to select once it loads. */
+  const [pick, setPick] = useState<'first' | 'last' | null>(null);
+  /** A row to focus once it has rendered (keyboard moves). */
   const [focusId, setFocusId] = useState<string | null>(null);
-  /** A linked job whose page to open once it is in the list. */
-  const [jumpTo, setJumpTo] = useState<string | null>(jobId ?? null);
   const section = useRef<HTMLElement>(null);
   const models = useModelChoices(api);
   const [specTitles, setSpecTitles] = useState<ReadonlyMap<string, string>>(new Map());
@@ -113,82 +146,87 @@ export function JobsPage({
     );
   }, [api]);
 
-  const counts = chipCounts(jobs);
-  const visible = jobs.filter(
-    (j) =>
-      inChip(j, chip) &&
-      matchesQuery(
-        query,
-        j.filename,
-        j.specId,
-        j.modelOverride,
-        j.status,
-        ...j.modelsUsed,
-        modelLabel(j, models),
-      ),
-  );
+  const pageKey = JSON.stringify(params);
+  const viewKey = JSON.stringify([chip, mine, search.trim()]);
+  const onPage = jobs.find((j) => j.id === selectedId);
+  // Paging leaves the selected job in the panel; gone from the page it was last seen on
+  // (deleted), or another view, falls back.
+  const gone = !onPage && current && seenOn.current === pageKey;
+  const kept =
+    !gone && seenIn.current === viewKey && selectedJob?.id === selectedId ? selectedJob : null;
   // The selection falls back (never stored) when its job is deleted or filtered out.
   const selected =
-    visible.find((j) => j.id === selectedId) ??
-    visible.find((j) => statusGroup(j.status) === 'attention') ??
-    visible[0] ??
-    null;
+    onPage ?? kept ?? jobs.find((j) => statusGroup(j.status) === 'attention') ?? jobs[0] ?? null;
+  useEffect(() => {
+    if (onPage && current) {
+      seenOn.current = pageKey;
+      seenIn.current = viewKey;
+      setSelectedJob(onPage);
+    }
+  }, [onPage, current, pageKey, viewKey]);
   // Pin what the panel shows: a later poll (a newer job needing attention) must not swap the
   // panel, and with it any confirm or model picker open there.
+  // Only once the page asked for has loaded: a link or keyboard move waits for its page.
   const shownId = selected?.id ?? null;
   useEffect(() => {
-    if (shownId !== null && shownId !== selectedId) setSelectedId(shownId);
-  }, [shownId, selectedId]);
-  // A new view starts on its first page.
-  useEffect(() => setPageIndex(0), [chip, mine, query]);
-  // A resize keeps the first job shown in view.
-  const lastSize = useRef(pageSize);
+    if (current && shownId !== null && shownId !== selectedId) setSelectedId(shownId);
+  }, [current, shownId, selectedId]);
+  // A keyboard move to another page selects its first or last job once it has loaded.
   useEffect(() => {
-    if (lastSize.current === pageSize) return;
-    setPageIndex((p) => Math.floor((p * lastSize.current) / pageSize));
-    lastSize.current = pageSize;
-  }, [pageSize]);
-  // A linked job opens on its page, once the list holds it.
-  const jumpAt = jumpTo === null ? -1 : visible.findIndex((j) => j.id === jumpTo);
-  useEffect(() => {
-    if (jumpAt < 0) return;
-    setPageIndex(Math.floor(jumpAt / pageSize));
-    setJumpTo(null);
-  }, [jumpAt, pageSize]);
-  const range = pageRange(visible.length, pageSize, pageIndex);
-  const pageJobs = visible.slice(range.from, range.to);
+    if (!pick || !current || jobs.length === 0) return;
+    const target = pick === 'first' ? jobs[0]! : jobs[jobs.length - 1]!;
+    setPick(null);
+    setSelectedId(target.id);
+    setFocusId(target.id);
+  }, [pick, current, jobs]);
   useEffect(() => {
     if (!focusId) return;
-    section.current
-      ?.querySelector<HTMLElement>(`tr[data-job-id="${CSS.escape(focusId)}"] .doc-button`)
-      ?.focus();
+    const row = section.current?.querySelector<HTMLElement>(
+      `tr[data-job-id="${CSS.escape(focusId)}"] .doc-button`,
+    );
+    if (!row) return;
+    row.focus();
     setFocusId(null);
-  }, [focusId, range.page]);
+  }, [focusId, jobs]);
 
-  /** Select the job at `index` of the view, on its page, and focus its row. */
-  const moveTo = (index: number) => {
-    const target = visible[index];
-    if (!target) return;
-    setSelectedId(target.id);
-    setPageIndex(Math.floor(index / pageSize));
-    setFocusId(target.id);
+  const older = () => {
+    const last = jobs[jobs.length - 1];
+    if (page?.hasOlder && last) setAnchor({ kind: 'before', id: last.id });
+  };
+  const newer = () => {
+    const first = jobs[0];
+    if (page?.hasNewer && first) setAnchor({ kind: 'after', id: first.id });
   };
   const onListKey = (e: KeyboardEvent<HTMLElement>) => {
     const el = e.target as HTMLElement;
     const id = el.closest<HTMLElement>('.job-list tr')?.dataset.jobId;
     // Only from the rows themselves: never inside a menu, a confirmation or a dialog.
     if (!id || el.closest('.menu, .row-popover, [role="dialog"]')) return;
-    const at = visible.findIndex((j) => j.id === id);
+    const at = jobs.findIndex((j) => j.id === id);
     if (at < 0) return;
-    const go = (index: number) => {
-      e.preventDefault();
-      moveTo(index);
+    const select = (target: JobSummary) => {
+      setSelectedId(target.id);
+      setFocusId(target.id);
     };
-    if (e.key === 'ArrowDown') go(Math.min(at + 1, visible.length - 1));
-    else if (e.key === 'ArrowUp') go(Math.max(at - 1, 0));
-    else if (e.key === 'PageDown' && range.page < range.pages - 1) go((range.page + 1) * pageSize);
-    else if (e.key === 'PageUp' && range.page > 0) go((range.page - 1) * pageSize);
-    else if (e.key === 'Enter' && el.classList.contains('doc-button') && id === selected?.id) {
+    const turn = (go: () => void, which: 'first' | 'last') => {
+      go();
+      setPick(which);
+    };
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (at < jobs.length - 1) select(jobs[at + 1]!);
+      else if (page?.hasOlder) turn(older, 'first');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (at > 0) select(jobs[at - 1]!);
+      else if (page?.hasNewer) turn(newer, 'last');
+    } else if (e.key === 'PageDown' && page?.hasOlder) {
+      e.preventDefault();
+      turn(older, 'first');
+    } else if (e.key === 'PageUp' && page?.hasNewer) {
+      e.preventDefault();
+      turn(newer, 'first');
+    } else if (e.key === 'Enter' && el.classList.contains('doc-button') && id === selected?.id) {
       const action = primaryAction(selected);
       if (action === 'review' || action === 'view') {
         e.preventDefault();
@@ -197,7 +235,14 @@ export function JobsPage({
     }
   };
   const now = Date.now();
-  const linkedMissing = jobId !== undefined && jobs.length > 0 && !jobs.some((j) => j.id === jobId);
+  const counts = page?.counts ?? { all: 0, attention: 0, active: 0, done: 0 };
+  const linkedMissing =
+    jobId !== undefined &&
+    current &&
+    anchor.kind === 'from' &&
+    anchor.id === jobId &&
+    !jobs.some((j) => j.id === jobId);
+  const searching = search.trim();
 
   return (
     <div className="jobs-page">
@@ -215,8 +260,7 @@ export function JobsPage({
       </div>
       {linkedMissing && (
         <p role="status" aria-label="Linked job" className="kept-note">
-          The linked job is not in this list: it may have been deleted, or be older than the list
-          shows.
+          The linked job is not in this list: it may have been deleted.
         </p>
       )}
       {error && <p role="alert">Failed to load jobs: {error}</p>}
@@ -227,7 +271,7 @@ export function JobsPage({
               <FilterChips
                 label="Filter jobs by status"
                 value={chip}
-                onChange={setChip}
+                onChange={pickChip}
                 chips={[
                   { value: 'all', label: 'All', count: counts.all },
                   {
@@ -250,25 +294,27 @@ export function JobsPage({
                 My jobs
               </button>
               <JobsPager
-                from={range.from}
-                to={range.to}
-                total={visible.length}
-                page={range.page}
-                pages={range.pages}
-                onPage={setPageIndex}
+                from={page?.start ?? 0}
+                to={(page?.start ?? 0) + jobs.length}
+                total={page?.total ?? 0}
+                size={pageSize}
+                hasNewer={page?.hasNewer ?? false}
+                hasOlder={page?.hasOlder ?? false}
+                onNewer={newer}
+                onOlder={older}
               />
             </div>
             <div className="job-list-rows" ref={listBox}>
-              {mine && mineJobs.loaded && jobs.length === 0 && !error ? (
+              {mine && page && counts.all === 0 && !searching && !error ? (
                 <p className="job-list-empty">You have not queued any jobs yet.</p>
-              ) : jobs.length > 0 && visible.length === 0 ? (
+              ) : page && page.total === 0 && (counts.all > 0 || searching) ? (
                 <p className="job-list-empty">
-                  {query.trim() ? `No jobs match “${query.trim()}”.` : 'No jobs in this view.'}
+                  {searching ? `No jobs match “${searching}”.` : 'No jobs in this view.'}
                 </p>
               ) : (
                 <JobList
                   api={api}
-                  jobs={pageJobs}
+                  jobs={jobs}
                   selectedId={selected?.id ?? null}
                   onSelect={setSelectedId}
                   onChanged={refresh}
@@ -285,7 +331,7 @@ export function JobsPage({
                 <kbd>Enter</kbd> open
               </span>
               <span className="muted">
-                Showing {visible.length} of {jobsText(jobs.length)}
+                Showing {page?.total ?? 0} of {jobsText(counts.all)}
               </span>
               <button
                 type="button"

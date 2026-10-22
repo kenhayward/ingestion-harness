@@ -7,7 +7,7 @@ import {
   type StageTimes,
   type StepRun,
 } from '@ih/shared';
-import { statusGroup, type StatusGroup } from '../shell/derive.js';
+import type { StatusGroup } from '../shell/derive.js';
 
 /** Status tones (UI handoff): colour + label + shape, lightness differs as well as hue. */
 export type Tone = 'neutral' | 'info' | 'warn' | 'alert' | 'danger' | 'ok';
@@ -90,16 +90,6 @@ export function jobNote(job: JobSummary): { text: string; tone: NoteTone } {
 }
 
 export type Chip = 'all' | StatusGroup;
-
-export function inChip(job: JobSummary, chip: Chip): boolean {
-  return chip === 'all' || statusGroup(job.status) === chip;
-}
-
-export function chipCounts(jobs: readonly JobSummary[]): Record<Chip, number> {
-  const counts: Record<Chip, number> = { all: jobs.length, attention: 0, active: 0, done: 0 };
-  for (const j of jobs) counts[statusGroup(j.status)]++;
-  return counts;
-}
 
 export type StepState = 'done' | 'current' | 'wait' | 'fail' | 'todo';
 
@@ -373,18 +363,4 @@ const MIN_ROWS = 5;
 export function rowsThatFit(height: number, rowHeight: number): number {
   if (height <= 0 || rowHeight <= 0) return MIN_ROWS;
   return Math.max(MIN_ROWS, Math.floor(height / rowHeight));
-}
-
-/**
- * One page of a list: the page clamped to the pages there are (a list that shrank keeps a page
- * to show), and the slice of the list it holds (`from` inclusive, `to` exclusive).
- */
-export function pageRange(
-  total: number,
-  size: number,
-  page: number,
-): { page: number; pages: number; from: number; to: number } {
-  const pages = Math.max(1, Math.ceil(total / size));
-  const p = Math.min(Math.max(0, page), pages - 1);
-  return { page: p, pages, from: p * size, to: Math.min(total, (p + 1) * size) };
 }

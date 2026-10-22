@@ -1,4 +1,5 @@
 export * from './jobs.js';
+export * from './job-pages.js';
 export * from './spec.js';
 export * from './retirement.js';
 export * from './models.js';

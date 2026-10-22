@@ -405,8 +405,6 @@ function SignedInApp({
       <JobsPage
         api={api}
         {...(route.jobId ? { jobId: route.jobId } : {})}
-        jobs={jobs}
-        error={error}
         refresh={refresh}
         query={query}
         pollMs={pollMs}

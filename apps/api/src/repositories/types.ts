@@ -16,6 +16,8 @@ import type {
   ResultShow,
   DeliveryOverrides,
   StatusGroup,
+  JobPage,
+  JobPageQuery,
 } from '@ih/shared';
 import type { BridgeError, DeliveryStatus, Receipt } from '@ih/bridge-contract';
 
@@ -271,6 +273,9 @@ export interface WorkbenchJobOptions {
   createdBy?: Creator | null;
 }
 
+/** A page of the Jobs list: `JobPageQuery` with `mine` as the signed-in user (`isMine`). */
+export type JobPageRequest = Omit<JobPageQuery, 'mine'> & { mine?: Creator };
+
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
@@ -408,6 +413,8 @@ export interface IngestionRepo {
   countUnfinishedJobsWithModel(model: string): Promise<number>;
   /** Jobs page listing; prepare jobs are excluded (they belong to the Workbench). */
   listJobs(query: ListJobsQuery): Promise<JobSummary[]>;
+  /** One page of the Jobs list, as `pageOfJobs` pages it (`GET /api/jobs/page`). */
+  jobPage(query: JobPageRequest): Promise<JobPage>;
   getJob(id: string): Promise<JobDetail | null>;
   /** jobs.params (free-form; null when unset or the job is unknown). */
   getJobParams(id: string): Promise<Record<string, unknown> | null>;

@@ -771,6 +771,25 @@ describe('http api: jobs', () => {
   });
 });
 
+describe('http api: job pages', () => {
+  it('asks for one page, from a job, with the filters set', async () => {
+    const fetch = vi.fn(async () => respond(200, {}));
+    vi.stubGlobal('fetch', fetch);
+    const api = createHttpApi('/api');
+    await api.listJobPage({ size: 20 });
+    await api.listJobPage({ size: 20, group: 'attention', mine: true, q: ' a b ', before: 'x' });
+    await api.listJobPage({ size: 5, after: 'y' });
+    await api.listJobPage({ size: 5, from: 'z', q: '  ' });
+    const urls = fetch.mock.calls.map((c) => (c as unknown as [string])[0]);
+    expect(urls).toEqual([
+      '/api/jobs/page?size=20',
+      '/api/jobs/page?size=20&group=attention&mine=1&q=a+b&before=x',
+      '/api/jobs/page?size=5&after=y',
+      '/api/jobs/page?size=5&from=z',
+    ]);
+  });
+});
+
 describe('http api: LLM endpoints', () => {
   it('calls the admin routes', async () => {
     const fetch = vi.fn(async (_url: string, init?: RequestInit) =>

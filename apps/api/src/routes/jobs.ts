@@ -4,6 +4,9 @@ import {
   JobDetailSchema,
   JobStatusSchema,
   StatusGroupSchema,
+  JobPageQuerySchema,
+  JobPageSchema,
+  pageOfJobs,
   JobSummarySchema,
   modelRefProblem,
   pagePreviewKey,
@@ -121,6 +124,47 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
       const me = creatorOf(req);
       if (!me) return [];
       return app.deps.repo.listJobs({ ...rest, mine: me });
+    },
+  );
+
+  app.get(
+    '/jobs/page',
+    {
+      schema: {
+        tags: ['Jobs'],
+        operationId: 'listJobPage',
+        summary: 'One page of the Jobs list',
+        description: md`
+          The Jobs page's list, paged on the server: newest first (by \`createdAt\`, then
+          \`id\`), \`size\` jobs from a job's place in the list rather than a page number, so
+          jobs arriving at the top never shift the page being read. \`before\` gives the jobs
+          just older than that job (Older ›), \`after\` the ones just newer (‹ Newer; a full
+          page where there are enough), \`from\` that job and older (a linked job); none gives
+          the newest. A job no longer listed (deleted) pages from the newest. \`group\`,
+          \`mine=1\` and \`q\` (every word in the file name, document type id, status,
+          model override or a model used) narrow the view. \`start\` counts the jobs of the
+          view newer than the first one shown and \`total\` the view; \`counts\` are per
+          status group with \`mine\` and \`q\` applied but not \`group\` (the chips).
+          Lists the same jobs as \`GET /api/jobs\`.
+        `,
+        querystring: JobPageQuerySchema,
+        response: {
+          200: res('The page.', JobPageSchema),
+          400: error(
+            'Zod issues for an invalid query, or more than one of `before`, `after`, `from`.',
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const query = JobPageQuerySchema.safeParse(req.query);
+      if (!query.success) return reply.code(400).send({ error: query.error.issues });
+      const { mine, ...rest } = query.data;
+      if (mine !== '1') return app.deps.repo.jobPage(rest);
+      // Without access control nobody is signed in, so nothing is "mine".
+      const me = creatorOf(req);
+      if (!me) return pageOfJobs([], rest);
+      return app.deps.repo.jobPage({ ...rest, mine: me });
     },
   );
 
