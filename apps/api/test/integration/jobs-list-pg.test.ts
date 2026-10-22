@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import type { JobStatus } from '@ih/shared';
+import { JobPageQuerySchema, pageOfJobs, type JobStatus } from '@ih/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from '../../src/db/migrate.js';
 import { PgRepo } from '../../src/repositories/pg.js';
@@ -59,6 +59,7 @@ describe.skipIf(!url)('listing jobs against Postgres', { timeout: 30_000 }, () =
   };
 
   it('lists a status group however old its jobs are, newest first', async () => {
+    await pool.query('DELETE FROM jobs');
     const oldReview = await jobAt('awaiting_review', 600);
     const oldFailure = await jobAt('failed', 500);
     const done = [await jobAt('succeeded', 3), await jobAt('cancelled', 2)];
@@ -84,5 +85,53 @@ describe.skipIf(!url)('listing jobs against Postgres', { timeout: 30_000 }, () =
       (await repo.listJobs({ limit: 50, group: 'attention', status: 'failed' })).map((j) => j.id),
     ).toEqual([oldFailure]);
     expect(await repo.listJobs({ limit: 50, group: 'done', status: 'failed' })).toEqual([]);
+  });
+
+  it('pages exactly as pageOfJobs does, for every kind of query', async () => {
+    await pool.query('DELETE FROM jobs');
+    const statuses: JobStatus[] = ['succeeded', 'failed', 'running', 'awaiting_review'];
+    const made: string[] = [];
+    for (let n = 0; n < 12; n++) made.push(await jobAt(statuses[n % 4]!, 100 - n));
+    // Two jobs created at the same moment: the id decides their order.
+    const same = await jobAt('succeeded', 50);
+    const twin = await jobAt('succeeded', 50);
+    await pool.query(
+      `UPDATE jobs SET created_at = (SELECT created_at FROM jobs WHERE id = $1) WHERE id = $2`,
+      [same, twin],
+    );
+    // A file name holding LIKE's wildcards: searched as text.
+    const odd = await jobAt('failed', 40);
+    await pool.query(
+      `UPDATE documents SET filename = '100%_done.pdf' WHERE id = (SELECT document_id FROM jobs WHERE id = $1)`,
+      [odd],
+    );
+    const all = await repo.listJobs({ limit: 500 });
+    const queries: Record<string, unknown>[] = [
+      { size: 5 },
+      { size: 5, before: made[3] },
+      { size: 5, after: made[9] },
+      { size: 5, after: made[1] },
+      { size: 5, from: made[6] },
+      { size: 5, before: same },
+      { size: 5, before: twin },
+      { size: 3, group: 'attention' },
+      { size: 3, group: 'attention', before: made[2] },
+      { size: 4, group: 'done', after: made[11] },
+      { size: 10, q: 'FAILED' },
+      { size: 10, q: '100%_' },
+      { size: 10, q: '%' },
+      { size: 10, q: 'it-jobs running' },
+      { size: 5, before: randomUUID() },
+    ];
+    for (const q of queries) {
+      const query = { ...JobPageQuerySchema.parse(q), mine: undefined };
+      const expected = pageOfJobs(all, query);
+      const got = await repo.jobPage(query);
+      expect({ q, ...got, jobs: got.jobs.map((j) => j.id) }).toEqual({
+        q,
+        ...expected,
+        jobs: expected.jobs.map((j) => j.id),
+      });
+    }
   });
 });

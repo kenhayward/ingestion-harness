@@ -37,6 +37,7 @@ describe('roles', () => {
     'DELETE /api/jobs/:id',
     'POST /api/jobs/cleanup',
     'GET /api/queue/summary',
+    'GET /api/jobs/page',
     'GET /api/results',
     'GET /api/results/:jobId',
     'GET /api/results/:jobId/archive',
