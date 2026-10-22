@@ -16,12 +16,18 @@ import {
 import { z } from 'zod';
 
 /**
- * A connection summary as read here: a bridge one version behind sends no `fields` (the values
- * of its non-secret credential fields), which reads as none rather than failing every sync.
+ * A connection summary as read here. A bridge a version or two behind sends no `fields` (the
+ * values of its non-secret credential fields), `kind`, `instanceId` or `lastUsedAt`; those read
+ * as none (and shared, the only kind it listed) rather than failing every sync.
  */
-const ReadConnectionSummary = ConnectionSummarySchema.extend({
+export const ReadConnectionSummary = ConnectionSummarySchema.extend({
   fields: ConnectionSummarySchema.shape.fields.default({}),
+  kind: ConnectionSummarySchema.shape.kind.default('shared'),
+  instanceId: ConnectionSummarySchema.shape.instanceId.default(null),
+  lastUsedAt: ConnectionSummarySchema.shape.lastUsedAt.default(null),
 });
+/** A summary as a bridge may send it (what `ReadConnectionSummary` reads). */
+export type SentConnectionSummary = z.input<typeof ReadConnectionSummary>;
 
 /** A shared connection written once, by the move of a target's keys to the bridge. */
 export interface SharedConnection {

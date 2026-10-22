@@ -5,8 +5,8 @@ import type {
   TargetTestResult,
   TargetView,
 } from '@ih/bridge-contract';
-import type { BridgeApi, SharedConnection } from '../src/bridge/client.js';
-import { BridgeApiError } from '../src/bridge/client.js';
+import type { BridgeApi, SentConnectionSummary, SharedConnection } from '../src/bridge/client.js';
+import { BridgeApiError, ReadConnectionSummary } from '../src/bridge/client.js';
 
 /** The destination fields each sink declares, as the bridge's sinks describe them. */
 const DESTINATION_FIELDS: Record<string, string[]> = {
@@ -31,7 +31,7 @@ export class FakeBridgeApi implements BridgeApi {
    * Connection summaries listConnections answers (the internal one by default), followed by
    * those of the connections written here that are not listed in it.
    */
-  summaries: ConnectionSummary[] = [
+  summaries: SentConnectionSummary[] = [
     {
       id: 'internal',
       name: 'This deployment',
@@ -135,12 +135,18 @@ export class FakeBridgeApi implements BridgeApi {
           id: c.id,
           name: c.name,
           sinkId,
+          kind: 'shared',
+          instanceId: null,
           status: 'untested',
           statusReason: null,
+          lastUsedAt: null,
           fields: Object.fromEntries(Object.entries(c.fields).filter(([k]) => shown.includes(k))),
         };
       });
-    return structuredClone([...this.summaries, ...written]);
+    return structuredClone([
+      ...this.summaries.map((c) => ReadConnectionSummary.parse(c)),
+      ...written,
+    ]);
   }
 
   async testTarget(id: string): Promise<TargetTestResult> {

@@ -258,8 +258,11 @@ describe('seedRdf (through the bridge)', () => {
       id: 'rdf-default',
       name: 'Triple store',
       sinkId: 'rdf',
+      kind: 'shared' as const,
+      instanceId: null,
       status: 'ok' as const,
       statusReason: null,
+      lastUsedAt: null,
       fields,
     });
     const both = conn({ endpoint: RDF.endpoint, user: RDF.user });

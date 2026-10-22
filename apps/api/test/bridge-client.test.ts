@@ -69,10 +69,12 @@ describe('HttpBridgeApi targets', () => {
 });
 
 describe('HttpBridgeApi connections', () => {
-  it('reads a summary without `fields` (a bridge one version behind) as no fields', async () => {
+  it('reads a summary from an older bridge (no fields, kind, instance or last used) as shared', async () => {
     const summary = { id: 'lake', name: 'Lake', sinkId: 's3', status: 'ok', statusReason: null };
     const { api, calls } = client(() => ({ connections: [summary] }));
-    expect(await api.listConnections('shared')).toEqual([{ ...summary, fields: {} }]);
+    expect(await api.listConnections('shared')).toEqual([
+      { ...summary, fields: {}, kind: 'shared', instanceId: null, lastUsedAt: null },
+    ]);
     expect(calls[0]!.path).toBe('/v1/connections?kind=shared');
   });
 });

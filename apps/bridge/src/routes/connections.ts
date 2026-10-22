@@ -64,9 +64,12 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
           id: c.id,
           name: c.name,
           sinkId: c.sinkId,
+          kind: c.kind,
+          instanceId: c.instanceId,
           status: c.status,
           statusReason: c.statusReason,
-          fields: await publicFields(c.sinkId, c.fields),
+          lastUsedAt: c.lastUsedAt?.toISOString() ?? null,
+          fields: c.kind === 'personal' ? {} : await publicFields(c.sinkId, c.fields),
         });
       }
       return { connections };

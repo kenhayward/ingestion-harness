@@ -82,7 +82,15 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
     const res = await call('GET', '/describe');
     const parsed = SinkDescribeSchema.safeParse(res.json);
     described = parsed.success ? parsed.data : null;
-    check('describe', res.status === 200 && parsed.success, describeIssues(parsed));
+    const personalWithoutFields =
+      described?.connectionKind === 'personal' && described.credentialFields.length === 0;
+    check(
+      'describe',
+      res.status === 200 && parsed.success && !personalWithoutFields,
+      personalWithoutFields
+        ? 'a personal sink declares the credential fields its users enter'
+        : describeIssues(parsed),
+    );
   } catch (err) {
     check('describe', false, String(err));
   }

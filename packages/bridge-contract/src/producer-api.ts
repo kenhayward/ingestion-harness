@@ -64,6 +64,8 @@ export const SinkViewSchema = z.strictObject({
   contractVersion: z.number().int(),
   capabilities: CapabilitiesSchema,
   connectionKind: z.enum(['shared', 'personal']),
+  /** The places a personal connection is made to, as the sink's describe lists them. */
+  instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
 });
 export type SinkView = z.infer<typeof SinkViewSchema>;
 
@@ -159,13 +161,43 @@ export const ConnectionSummarySchema = z.strictObject({
   id: z.string(),
   name: z.string(),
   sinkId: z.string(),
+  /** Shared (owned by admins) or personal (owned by one CT Studio user). */
+  kind: z.enum(['shared', 'personal']),
+  /** The sink instance a personal connection is made to (null for shared ones). */
+  instanceId: z.string().nullable(),
   status: z.enum(['ok', 'needs_attention', 'untested']),
   statusReason: z.string().nullable(),
+  /** When a delivery last used it successfully. */
+  lastUsedAt: z.string().datetime().nullable(),
   /**
    * The values it stores for its sink's credential fields declared `secret: false` (S3's endpoint
    * and access key id, the triple store's endpoint and user). Never a secret field, a secret read
-   * from the environment, or a field the sink does not declare.
+   * from the environment, or a field the sink does not declare. Always `{}` for a personal
+   * connection: what a user enters is theirs, not the producer's.
    */
   fields: z.record(z.string(), z.string()),
 });
 export type ConnectionSummary = z.infer<typeof ConnectionSummarySchema>;
+
+/**
+ * `GET /v1/connections`: the shared connections (no kind, or `shared`), or one owner's personal
+ * connections (`personal` with `owner`). Every owner's at once is never listed.
+ */
+export const ConnectionListQuerySchema = z.strictObject({
+  kind: z.enum(['shared', 'personal']).optional(),
+  owner: z.string().min(1).optional(),
+});
+export type ConnectionListQuery = z.infer<typeof ConnectionListQuerySchema>;
+
+/**
+ * `POST /v1/users:reconcile`: the producer's live users. Personal connections of anyone else are
+ * deleted. An empty list is refused, so a failed lookup can never delete everyone's.
+ */
+export const UsersReconcileRequestSchema = z.strictObject({
+  liveUserIds: z.array(z.string().min(1)).min(1),
+});
+export type UsersReconcileRequest = z.infer<typeof UsersReconcileRequestSchema>;
+
+/** How many personal connections a delete or a reconcile removed. */
+export const ConnectionsDeletedSchema = z.strictObject({ deleted: z.number().int().min(0) });
+export type ConnectionsDeleted = z.infer<typeof ConnectionsDeletedSchema>;
