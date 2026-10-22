@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { lockFor } from './lockout.js';
 import {
-  DUMMY_HASH,
+  dummyHash,
   hashPassword,
   newOneTimePassword,
   normaliseEmail,
@@ -266,7 +266,7 @@ export class PgAccessRepo implements AccessRepo {
     const found = rows[0];
     // A lock is checked before the password, which is then never verified (D3).
     if (found?.locked) return { kind: 'locked', userId: found.id, until: iso(found.locked_until)! };
-    const ok = await verifyPassword(password, found?.password_hash ?? DUMMY_HASH);
+    const ok = await verifyPassword(password, found?.password_hash ?? dummyHash());
     if (!found) return { kind: 'invalid', userId: null, failures: null, locked: null };
 
     return this.tx(async (c): Promise<LoginResult> => {
