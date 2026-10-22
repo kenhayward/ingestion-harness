@@ -46,6 +46,8 @@ const ReviewViewSchema = z.object({
   template: TemplateSchema.describe('The recipe version the job ran with.'),
   document: DraftDocumentSchema,
   edits: z.array(ReviewEditSchema).describe('Edits so far, oldest first.'),
+  /** A delivery needs a person's connection: the review offers Manage connections. */
+  connectionNeeded: z.boolean(),
 });
 
 const NO_REVIEW = error(
@@ -222,7 +224,13 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
       const ctx = await loadContext(app, req.params.id, reply);
       if (!ctx) return reply;
       const edits = await app.deps.repo.listEdits(ctx.job.id);
-      return { job: ctx.job, template: ctx.template, document: ctx.document, edits };
+      return {
+        job: ctx.job,
+        template: ctx.template,
+        document: ctx.document,
+        edits,
+        connectionNeeded: await app.deps.repo.connectionNeeded(ctx.job.id),
+      };
     },
   );
 

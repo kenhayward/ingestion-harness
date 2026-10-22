@@ -391,4 +391,26 @@ describe('JobDetailPanel deliveries (delivery bridge)', () => {
     render(<JobDetailPanel api={detail([])} job={delivering} {...defaults} />);
     await waitFor(() => expect(within(panel()).queryByText('Delivering to')).toBeNull());
   });
+
+  it('links to what a delivery wrote, where the sink gives a link', async () => {
+    render(
+      <JobDetailPanel
+        api={detail([
+          {
+            targetId: 'fake-target',
+            label: 'Fake target',
+            status: 'succeeded',
+            message: null,
+            deliverOnly: true,
+            links: [{ label: 'Q3 letter', url: 'https://fake.example/doc-1' }],
+          },
+        ])}
+        job={delivering}
+        {...defaults}
+      />,
+    );
+    const link = await within(panel()).findByRole('link', { name: 'Q3 letter' });
+    expect(link).toHaveAttribute('href', 'https://fake.example/doc-1');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
 });

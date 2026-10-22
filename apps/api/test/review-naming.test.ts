@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { applyEvent } from '../src/bridge/events.js';
 import { describe, expect, it } from 'vitest';
 import { testApp } from './helpers.js';
 import { FAKE_SINK } from './fake-sink.js';
@@ -57,7 +58,7 @@ async function seed(settings?: Record<string, Record<string, string>>) {
       JSON.stringify({
         document_id: documentId,
         source_sha256: SHA,
-        fields: { sender: { value: 'Acme Ltd', page: 1 } },
+        fields: { sender: { value: 'Acme Ltd', evidence: null, page: 1 } },
         tables: {},
         checks: {},
         issues: [],
@@ -230,5 +231,64 @@ describe("names follow the reviewer's edits", () => {
       payload: { overrides: { 'fake-target': { name: '  Acme  ' } } },
     });
     expect(await repo.deliveryOverrides(job.id)).toEqual({ 'fake-target': { name: 'Acme' } });
+  });
+});
+
+describe('a review held up by a connection', () => {
+  it('a credential refusal says so on the review, and approving clears it', async () => {
+    const ctx = await seed();
+    const { app, repo, job, targets } = ctx;
+    const deliveryId = randomUUID();
+    await repo.recordDeliveries(job.id, [{ targetId: 'fake-target', deliveryId }]);
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'delivering' });
+    await applyEvent(
+      { repo, targets },
+      {
+        eventId: randomUUID(),
+        deliveryId,
+        sequence: 1,
+        status: 'needs_user',
+        error: {
+          class: 'needs_user',
+          code: 'credential_rejected',
+          message: 'the token was refused',
+        },
+        receipt: null,
+        at: new Date().toISOString(),
+      },
+    );
+    expect(repo.jobs.get(job.id)!.status).toBe('awaiting_review');
+    const review = (await app.inject(`/api/jobs/${job.id}/review`)).json();
+    expect(review.connectionNeeded).toBe(true);
+    await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/approve`, payload: {} });
+    expect(await repo.connectionNeeded(job.id)).toBe(false);
+  });
+
+  it('another refusal does not', async () => {
+    const { app, job } = await seed();
+    expect((await app.inject(`/api/jobs/${job.id}/review`)).json().connectionNeeded).toBe(false);
+  });
+});
+
+describe('receipts on the job', () => {
+  it("shows the receipt's links, and drops one that is not http(s)", async () => {
+    const { app, repo, job } = await seed();
+    const deliveryId = randomUUID();
+    await repo.recordDeliveries(job.id, [{ targetId: 'fake-target', deliveryId }]);
+    repo.deliveries.set(deliveryId, {
+      ...repo.deliveries.get(deliveryId)!,
+      status: 'succeeded',
+      receipt: {
+        written: [
+          { kind: 'document', id: 'doc-1', label: 'Q3 letter', url: 'https://fake.example/doc-1' },
+          { kind: 'document', id: 'doc-2', label: null, url: 'javascript:alert(1)' },
+          { kind: 'data', id: 'rows', label: null, url: null },
+        ],
+      },
+    });
+    const detail = (await app.inject(`/api/jobs/${job.id}`)).json();
+    expect(detail.deliveries[0].links).toEqual([
+      { label: 'Q3 letter', url: 'https://fake.example/doc-1' },
+    ]);
   });
 });

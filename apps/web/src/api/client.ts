@@ -160,6 +160,8 @@ export interface ReviewData {
   template: Template;
   document: ReviewDocument;
   edits: ReviewEdit[];
+  /** A delivery needs the reviewer's (or someone's) connection: offer Manage connections. */
+  connectionNeeded?: boolean;
 }
 
 export interface TemplateListItem {

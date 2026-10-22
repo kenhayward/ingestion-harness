@@ -102,7 +102,7 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         return
     check_cancelled(job, queue)
     from .bridge.client import BridgeRefused
-    from .template_pipeline import BACK_TO_REVIEW, deliver_publication
+    from .template_pipeline import BACK_TO_REVIEW, NEEDS_A_CONNECTION, deliver_publication
 
     try:
         delivered = deliver_publication(
@@ -122,6 +122,8 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
             raise
         # No uploader, or one without a connection: a reviewer approves it, and delivers it.
         queue.await_review(job, outcome.outputs, bucket, [str(refused)])
+        if refused.error.code in NEEDS_A_CONNECTION:
+            queue.flag_connection_needed(job.id)
         log.info("job %s goes to review: %s", job.id, refused)
         return
     record_delivered(queue, job, delivered, outcome.targets)

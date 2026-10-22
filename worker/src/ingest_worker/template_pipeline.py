@@ -347,6 +347,8 @@ def publish_template_job(
             # A person can settle it (their connection, a name): back to review, not to an
             # operator. Approving again delivers as the new approver.
             queue.await_review(job, [], deps.buckets.outputs, [str(refused)])
+            if refused.error.code in NEEDS_A_CONNECTION:
+                queue.flag_connection_needed(job.id)
             return []
         published = delivered.outputs
         if on_published is not None:
@@ -358,6 +360,10 @@ def publish_template_job(
 #: Refusals at accept that a reviewer can settle: no person or connection to deliver as, a
 #: credential the target refuses, or a name pattern that resolves to nothing. The job goes back
 #: to review (awaiting_review) rather than to an operator.
+#: Of those, the refusals a person settles with their connection on the bridge's page.
+NEEDS_A_CONNECTION = frozenset(
+    {"connection_missing", "credential_missing", "credential_rejected", "credential_mfa_required"}
+)
 BACK_TO_REVIEW = frozenset(
     {
         "connection_missing",

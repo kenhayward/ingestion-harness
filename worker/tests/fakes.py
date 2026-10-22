@@ -201,6 +201,8 @@ class FakeQueue:
     #: jobs.delivered_as_user, by job id; the users last_deliverer finds, by id.
     delivered_as: dict[str, str] = field(default_factory=dict)
     users: dict[str, ActingUser] = field(default_factory=dict)
+    #: jobs.connection_needed.
+    connection_needed: set[str] = field(default_factory=set)
     edits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Templates stored in the database, keyed by (id, version).
@@ -265,6 +267,9 @@ class FakeQueue:
 
     def record_delivered_as(self, job_id: str, user_id: str) -> None:
         self.delivered_as[job_id] = user_id
+
+    def flag_connection_needed(self, job_id: str) -> None:
+        self.connection_needed.add(job_id)
 
     def last_deliverer(self, job_id: str) -> ActingUser | None:
         user_id = self.delivered_as.get(job_id)

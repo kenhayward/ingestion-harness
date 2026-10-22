@@ -192,6 +192,10 @@
             <span>— name patterns per target, and names a reviewer can change</span>
           </li>
           <li>
+            <a href="#right-person">Delivered as the right person</a>
+            <span>— the approver, a warning at upload, and receipts on the job</span>
+          </li>
+          <li>
             <a href="#personal-connections">Your own connections</a>
             <span>— everyone can keep their own logins on the connections page</span>
           </li>
@@ -270,6 +274,23 @@
         document under that name, the job comes back to review with the name marked, so you can
         choose another. For integrators: the bridge contract package is now 0.6.0, with name
         patterns and naming inputs, and recipe patterns sent with each delivery.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="right-person">Delivered as the right person</h2>
+      <p>
+        A system that records who delivered each item gets the approver, or for a document published
+        without review, the uploader. The approver is now recorded by account, so renaming a user no
+        longer loses it. When the person has no connection to that system, or it is refused, the
+        document comes back to review with
+        <strong>Manage connections</strong>. It no longer stops in <em>Needs review</em>. Fix the
+        connection and approve again.
+      </p>
+      <p>
+        Uploading to a type that delivers to such a system warns you first when you have no
+        connection there. The upload still goes ahead. Once delivered, the job shows links to what
+        the system wrote, where it gives them. For integrators: the bridge contract package is now
+        0.7.0, with <code>POST /v1/deliveries:preflight</code>.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

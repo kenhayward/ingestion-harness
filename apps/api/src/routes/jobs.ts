@@ -190,6 +190,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           status: d.status,
           message: d.error?.message ?? null,
           deliverOnly: deliverOnly(d.targetId),
+          links: (d.receipt?.written ?? []).flatMap((w) =>
+            w.url && /^https?:\/\//i.test(w.url) ? [{ label: w.label ?? w.id, url: w.url }] : [],
+          ),
         })),
       };
     },

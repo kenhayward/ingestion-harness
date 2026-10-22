@@ -786,6 +786,7 @@ def test_an_approver_without_a_connection_sends_the_job_back_to_review_not_to_an
     [(_, _, reasons)] = [a for a in queue.awaiting if a[0] == "job-1"][-1:]
     assert reasons == ["Rae has no connection for default: add one on the connections page"]
     assert documents(bridge) == []
+    assert queue.connection_needed == {"job-1"}
     # Approved again, by someone who has a connection: they deliver it.
     queue.reviewers["job-1"] = PAT
     queue.jobs = [replace(JOB, task="publish")]

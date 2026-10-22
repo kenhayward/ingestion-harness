@@ -131,6 +131,10 @@ class JobQueue(Protocol):
         """The bridge accepted a package of the job as this user (a re-delivery acts as them)."""
         ...
 
+    def flag_connection_needed(self, job_id: str) -> None:
+        """The job waits in review for a person's connection (the review offers to add one)."""
+        ...
+
     def last_deliverer(self, job_id: str) -> ActingUser | None:
         """The user the job was last delivered as (None: never, or no such user now)."""
         ...
@@ -366,6 +370,9 @@ class PgJobQueue:
             (job_id,),
         ).fetchone()
         return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
+
+    def flag_connection_needed(self, job_id: str) -> None:
+        self._conn.execute("UPDATE jobs SET connection_needed = true WHERE id = %s", (job_id,))
 
     def record_delivered_as(self, job_id: str, user_id: str) -> None:
         self._conn.execute(

@@ -7,6 +7,14 @@ import {
   type JobFinish,
 } from '../repositories/types.js';
 
+/** Refusals a person settles with their connection on the bridge's page. */
+export const CONNECTION_CODES: ReadonlySet<string> = new Set([
+  'connection_missing',
+  'credential_missing',
+  'credential_rejected',
+  'credential_mfa_required',
+]);
+
 /**
  * How a delivering job ends, once every delivery is final: succeeded when all succeeded or were
  * skipped; back to review when any needs a person (`<target label>: <message>` each); otherwise
@@ -23,7 +31,11 @@ export function finishOf(
       `${label(d.targetId)}: ${d.error?.message ?? fallback}`;
     const needs = deliveries.filter((d) => d.status === 'needs_user');
     if (needs.length > 0) {
-      return { status: 'awaiting_review', reasons: needs.map((d) => said(d, 'needs attention')) };
+      return {
+        status: 'awaiting_review',
+        reasons: needs.map((d) => said(d, 'needs attention')),
+        connectionNeeded: needs.some((d) => CONNECTION_CODES.has(d.error?.code ?? '')),
+      };
     }
     const failed = deliveries.filter((d) => d.status === 'failed');
     if (failed.length > 0) {

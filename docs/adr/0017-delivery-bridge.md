@@ -44,6 +44,12 @@ system's API, would put secrets and private code in a public product.
   - CT Studio creates targets of any registered sink from the fields the sink declares, and
     recipes may name them. The primary target stays an S3 files target.
   - External sinks are deliver-only until the contract specifies withdraw and read-back.
+  - Name patterns resolve at accept: the reviewer's name wins over the recipe's pattern, and the
+    recipe's over the target's. A sink's `name_conflict` comes back to review with the field
+    marked.
+  - Deliveries are made as the approver (by id), the uploader for an auto-published job, or the
+    last deliverer for a rebuild. A refusal for a missing connection returns the job to review,
+    and an upload warns beforehand.
 - **The bridge's targets are the recipient registry** (sink, instance, connection, destination,
   label). CT Studio's `publish_targets` caches them beside what only CT Studio knows (usage,
   locking, read-key grants, backup rules), pulls them at start and after restores, and sends every

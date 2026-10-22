@@ -202,7 +202,13 @@ export function ReviewPage({
 
   return (
     <div className="review">
-      <ReviewHeader data={data} jobs={jobs} jobId={jobId} models={models} />
+      <ReviewHeader
+        data={data}
+        jobs={jobs}
+        jobId={jobId}
+        models={models}
+        onManageConnections={() => void api.openConnections()}
+      />
 
       <div className="review-panes">
         <PageViewer

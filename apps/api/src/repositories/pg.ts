@@ -1192,6 +1192,14 @@ export class PgRepo implements IngestionRepo {
     return toEdit(rows[0]!);
   }
 
+  async connectionNeeded(jobId: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ needed: boolean }>(
+      'SELECT connection_needed AS needed FROM jobs WHERE id = $1',
+      [jobId],
+    );
+    return rows[0]?.needed ?? false;
+  }
+
   async deliveryOverrides(jobId: string): Promise<DeliveryOverrides> {
     const { rows } = await this.pool.query<{ o: DeliveryOverrides }>(
       'SELECT delivery_overrides AS o FROM jobs WHERE id = $1',
@@ -1210,7 +1218,8 @@ export class PgRepo implements IngestionRepo {
     const { rowCount } = await this.pool.query(
       `UPDATE jobs SET status = 'queued', task = 'publish', attempts = 0, error = NULL,
               run_after = now(), reviewer = $2, review_note = $3, reviewed_at = now(),
-              delivery_overrides = $4, reviewer_user_id = $5, updated_at = now()
+              delivery_overrides = $4, reviewer_user_id = $5, connection_needed = false,
+              updated_at = now()
         WHERE id = $1 AND status = 'awaiting_review'`,
       [jobId, reviewer, note, JSON.stringify(overrides), reviewerUserId],
     );
@@ -1592,6 +1601,7 @@ export class PgRepo implements IngestionRepo {
                   error = CASE WHEN $2::text = 'failed' THEN $3 ELSE NULL END,
                   review_reasons = CASE WHEN $2::text = 'awaiting_review' THEN $4::jsonb
                                         ELSE review_reasons END,
+                  connection_needed = $5,
                   updated_at = now()
             WHERE id = $1 AND status = 'delivering'`,
           [
@@ -1599,6 +1609,7 @@ export class PgRepo implements IngestionRepo {
             outcome.status,
             outcome.status === 'failed' ? outcome.error : null,
             outcome.status === 'awaiting_review' ? JSON.stringify(outcome.reasons) : null,
+            outcome.status === 'awaiting_review' && outcome.connectionNeeded === true,
           ],
         );
         const e = finishEvent(outcome);

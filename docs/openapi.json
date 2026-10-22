@@ -12830,6 +12830,24 @@
                           },
                           "deliverOnly": {
                             "type": "boolean"
+                          },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "url"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -12837,7 +12855,8 @@
                           "label",
                           "status",
                           "message",
-                          "deliverOnly"
+                          "deliverOnly",
+                          "links"
                         ]
                       }
                     }
@@ -16342,6 +16361,24 @@
                               },
                               "deliverOnly": {
                                 "type": "boolean"
+                              },
+                              "links": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "url": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "url"
+                                  ]
+                                }
                               }
                             },
                             "required": [
@@ -16349,7 +16386,8 @@
                               "label",
                               "status",
                               "message",
-                              "deliverOnly"
+                              "deliverOnly",
+                              "links"
                             ]
                           }
                         }
@@ -17470,13 +17508,17 @@
                         ]
                       },
                       "description": "Edits so far, oldest first."
+                    },
+                    "connectionNeeded": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "job",
                     "template",
                     "document",
-                    "edits"
+                    "edits",
+                    "connectionNeeded"
                   ],
                   "description": "The review view."
                 }

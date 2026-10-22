@@ -329,6 +329,8 @@ export const JobDeliveryViewSchema = z.object({
   message: z.string().nullable(),
   /** Its target cannot withdraw (an external sink): what it was handed stays there. */
   deliverOnly: z.boolean(),
+  /** What the delivery wrote, where the sink gives a link (http or https only). */
+  links: z.array(z.object({ label: z.string(), url: z.string() })),
 });
 export type JobDeliveryView = z.infer<typeof JobDeliveryViewSchema>;
 

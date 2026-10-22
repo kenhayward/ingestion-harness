@@ -43,7 +43,12 @@ export interface JobDelivery {
 /** How a delivering job ends once every delivery is final. */
 export type JobFinish =
   | { status: 'succeeded'; targets: string[] }
-  | { status: 'awaiting_review'; reasons: string[] }
+  | {
+      status: 'awaiting_review';
+      reasons: string[];
+      /** A delivery needs a person's connection (none, or refused): the review says so. */
+      connectionNeeded?: boolean;
+    }
   | { status: 'failed'; error: string };
 
 export interface DeliveryUpdate {
@@ -518,6 +523,8 @@ export interface IngestionRepo {
   ): Promise<JobSummary | null>;
   /** The name overrides the job's last approval stored (none: `{}`). */
   deliveryOverrides(jobId: string): Promise<DeliveryOverrides>;
+  /** Whether the job waits in review for a person's connection (jobs.connection_needed). */
+  connectionNeeded(jobId: string): Promise<boolean>;
   listStepRuns(jobId: string): Promise<StepRun[]>;
   /** awaiting_review -> queued rerun task for one step. Null if not awaiting review. */
   requestRerun(jobId: string, step: string, params: RerunRequest): Promise<JobSummary | null>;

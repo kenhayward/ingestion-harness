@@ -13,8 +13,11 @@ export function ReviewHeader({
   jobs,
   jobId,
   models,
+  onManageConnections,
 }: {
   data: ReviewData;
+  /** Opens the bridge's connections page (a review held up by a connection). */
+  onManageConnections?: () => void;
   jobs: readonly JobSummary[];
   jobId: string;
   models: readonly ModelChoice[];
@@ -66,6 +69,15 @@ export function ReviewHeader({
               <li key={r}>{r}</li>
             ))}
           </ul>
+          {data.connectionNeeded && onManageConnections && (
+            <p>
+              A delivery needs a connection: add or fix it, then approve again.{' '}
+              <button type="button" onClick={onManageConnections}>
+                <Icon name="key" />
+                Manage connections
+              </button>
+            </p>
+          )}
         </div>
       )}
     </>

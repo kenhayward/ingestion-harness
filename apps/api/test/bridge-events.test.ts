@@ -457,6 +457,7 @@ describe('GET /api/jobs/:id deliveries', () => {
         status: 'queued',
         message: null,
         deliverOnly: false,
+        links: [],
       },
       {
         targetId: 'gone',
@@ -464,6 +465,7 @@ describe('GET /api/jobs/:id deliveries', () => {
         status: 'needs_user',
         message: 'no target gone',
         deliverOnly: false,
+        links: [],
       },
     ]);
   });

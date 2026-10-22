@@ -700,3 +700,20 @@ describe('ReviewPage names', () => {
     expect(screen.queryByRole('region', { name: 'Names' })).toBeNull();
   });
 });
+
+describe('ReviewPage, a review held up by a connection', () => {
+  it('offers Manage connections', async () => {
+    const { api } = setup({
+      getReview: vi.fn(async () => ({ ...reviewData(), connectionNeeded: true })),
+    });
+    const note = await screen.findByRole('note', { name: 'Why this needs review' });
+    await userEvent.click(within(note).getByRole('button', { name: 'Manage connections' }));
+    expect(api.openConnections).toHaveBeenCalled();
+  });
+
+  it('says nothing about connections otherwise', async () => {
+    setup();
+    await screen.findByRole('heading', { name: /scan\.pdf/ });
+    expect(screen.queryByRole('button', { name: 'Manage connections' })).toBeNull();
+  });
+});

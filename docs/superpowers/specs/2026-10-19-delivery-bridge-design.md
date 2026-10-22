@@ -1,6 +1,6 @@
 # Delivery bridge: design
 
-Status: phases 1 to 5 and the target-registry merge built, 2026-10-19 to 2026-10-22 (see the "as built" sections). Replaces the worker's direct S3 and Fuseki
+Status: phases 1 to 6 and the target-registry merge built, 2026-10-19 to 2026-10-22 (see the "as built" sections). Replaces the worker's direct S3 and Fuseki
 publishing (`worker/src/ingest_worker/pipeline.py` `publish_outputs`,
 `template_pipeline.py` `publish_graph`) with delivery through a separate **bridge** service to
 pluggable **sinks**. It builds on, and in part supersedes,
@@ -801,6 +801,29 @@ Part B covers names:
 - **Name conflicts.** A sink's `name_conflict` with `details.field` (and `value`) marks that field
   in the naming view while it is the latest round's error ("<label> already has another document
   named <value>: choose another name"). It clears once a later round of deliveries is recorded (the next approval).
+
+Part C covers the right person:
+
+- **The approver by id.** `jobs.reviewer_user_id` (migration 202610221600) is set on approve, and
+  the worker finds the reviewer by it first. A job approved before then is still matched by name.
+- **The last deliverer.** `jobs.delivered_as_user` is recorded once the bridge accepts a package,
+  on every path. A rebuild or remint acts as that user, then the reviewer, then the uploader.
+- **A refusal a person can settle goes back to review**, not to an operator. These are
+  `connection_missing`, `credential_*` and `pattern_unresolved`, at accept, on the reviewed and
+  auto-published paths. The job is `awaiting_review` with the bridge's message, so approving
+  again delivers as the new approver. Without this, the job sat in `needs_review`, which nobody
+  can approve. Other refusals still go to an operator.
+- **The upload preflight.** `POST /v1/deliveries:preflight` (contract 0.7.0) shares accept's
+  target checks (`readyTarget`).
+  - `POST /api/documents/preflight { specId }` asks it as the uploader, for the type's latest
+    published version, only when that names a sink target. With the bridge down, the answer is no
+    problems.
+  - The upload strip warns, with *Manage connections*, and the upload still goes ahead.
+- **A review held up by a connection says so.** `jobs.connection_needed` (migration
+  202610221700) is set by the worker's refusal and by a delivery event with one of those codes,
+  and cleared on approve. The review's reasons offer *Manage connections*.
+- **Receipts.** `JobDeliveryView.links` lists each receipt entry's `http(s)` URL with its label;
+  any other URL is dropped. The job panel links them.
 
 ## Left to the builder
 
