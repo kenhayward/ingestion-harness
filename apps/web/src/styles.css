@@ -1953,6 +1953,28 @@ h3.card-label {
   flex-direction: column;
   gap: 8px;
 }
+/* Less room around the one-row header: about a third of the space above and below it. */
+.page:has(> .review) {
+  padding-top: 10px;
+  padding-bottom: 12px;
+}
+/* Side by side, the page fits the window: the header, the workspace and the decision bar fill
+   it exactly, so the page itself never scrolls and only the panes (a table's rows, the pages)
+   do. The workspace takes whatever the header, notices and the bar leave. */
+@media (min-width: 1000px) {
+  .review {
+    height: calc(100vh - var(--ih-topbar-h) - 22px);
+    min-height: 560px;
+  }
+  .review > * {
+    flex: none;
+  }
+  .review > .review-workspace {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 320px;
+  }
+}
 /* The header on one row: back link | file, status, reasons chip, recipe · version · model, then
    the queue and help at the right. The meta shrinks first, then the file name. */
 .review-header {
@@ -2075,7 +2097,6 @@ button.reasons-chip[aria-expanded='true'] {
    (--doc-width), split by a draggable divider; either can fold to a rail at its side. */
 .review-workspace {
   display: flex;
-  height: max(520px, calc(100vh - var(--ih-topbar-h) - 260px));
   min-height: 0;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-lg);
@@ -2230,10 +2251,6 @@ button.reasons-chip[aria-expanded='true'] {
   padding: 10px 12px;
   border-bottom: 1px solid var(--ih-border);
   font-size: var(--ih-text-md);
-}
-.page-hint {
-  margin-left: auto;
-  font-size: var(--ih-text-sm);
 }
 button.icon.bordered {
   width: 36px;
