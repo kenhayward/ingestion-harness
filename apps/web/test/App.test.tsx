@@ -39,6 +39,10 @@ describe('App', () => {
     const jobs = await list();
     expect(await jobs.findByText('bad.pdf')).toBeInTheDocument();
     expect(jobs.getByText('schema mismatch')).toBeInTheDocument();
+    // Every row's actions are in its ⋯ menu.
+    await userEvent.click(jobs.getByRole('button', { name: 'More actions for ok.pdf' }));
+    expect(jobs.queryByRole('button', { name: /^Retry / })).toBeNull();
+    await userEvent.click(jobs.getByRole('button', { name: 'More actions for bad.pdf' }));
     const retry = jobs.getAllByRole('button', { name: /^Retry / });
     expect(retry).toHaveLength(1);
 
@@ -79,7 +83,8 @@ describe('review routing', () => {
     });
     render(<App api={api} pollMs={0} />);
     const jobs = await list();
-    const link = await jobs.findByRole('link', { name: 'Review' });
+    await userEvent.click(await jobs.findByRole('button', { name: 'More actions for scan.pdf' }));
+    const link = jobs.getByRole('link', { name: 'Review' });
     expect(link).toHaveAttribute('href', '#/review/r1');
     expect(jobs.getByText('2 unmatched')).toBeInTheDocument();
   });
@@ -108,7 +113,9 @@ describe('review routing', () => {
       listJobs: async () => [job({ id: 'f', filename: 'bad.pdf', status: 'failed' })],
     });
     render(<App api={api} pollMs={0} />);
-    await userEvent.click(await (await list()).findByRole('button', { name: 'Retry bad.pdf' }));
+    const jobs = await list();
+    await userEvent.click(await jobs.findByRole('button', { name: 'More actions for bad.pdf' }));
+    await userEvent.click(jobs.getByRole('button', { name: 'Retry bad.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Retry bad.pdf' });
     expect(within(dialog).getByRole('combobox', { name: 'Model' })).toHaveValue('');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));

@@ -27,6 +27,24 @@ const STATUS: Record<JobStatus, { label: string; tone: Tone }> = {
 export const statusLabel = (status: JobStatus): string => STATUS[status].label;
 export const statusTone = (status: JobStatus): Tone => STATUS[status].tone;
 
+/** The icon a job's row shows for its status: one spinner for everything under way. */
+export type StatusIcon =
+  'queued' | 'spinner' | 'review' | 'warning' | 'failed' | 'done' | 'rejected' | 'cancelled';
+
+const ICONS: Record<JobStatus, StatusIcon> = {
+  queued: 'queued',
+  running: 'spinner',
+  delivering: 'spinner',
+  awaiting_review: 'review',
+  needs_review: 'warning',
+  failed: 'failed',
+  succeeded: 'done',
+  rejected: 'rejected',
+  cancelled: 'cancelled',
+};
+
+export const statusIcon = (status: JobStatus): StatusIcon => ICONS[status];
+
 export type PrimaryAction = 'review' | 'view' | 'retry' | 'cancel' | null;
 
 const PRIMARY: Record<JobStatus, PrimaryAction> = {
@@ -329,7 +347,7 @@ export function modelLabel(job: JobSummary, choices: readonly ModelChoice[]): st
   return [...new Set(names.map(nameOf))].join(', ');
 }
 
-const MENU = { width: 220, height: 160, gap: 4, margin: 8 };
+const MENU = { width: 220, height: 200, gap: 4, margin: 8 };
 
 /**
  * Where a fixed-position menu opens for a button: right-aligned under it, clamped inside the
@@ -346,4 +364,27 @@ export function menuPosition(
     return { left, bottom: viewport.height - button.top + MENU.gap };
   }
   return { left, top: below };
+}
+
+/** The fewest rows a page of jobs shows, however short the window. */
+const MIN_ROWS = 5;
+
+/** How many rows of `rowHeight` px fit in `height` px (at least `MIN_ROWS`). */
+export function rowsThatFit(height: number, rowHeight: number): number {
+  if (height <= 0 || rowHeight <= 0) return MIN_ROWS;
+  return Math.max(MIN_ROWS, Math.floor(height / rowHeight));
+}
+
+/**
+ * One page of a list: the page clamped to the pages there are (a list that shrank keeps a page
+ * to show), and the slice of the list it holds (`from` inclusive, `to` exclusive).
+ */
+export function pageRange(
+  total: number,
+  size: number,
+  page: number,
+): { page: number; pages: number; from: number; to: number } {
+  const pages = Math.max(1, Math.ceil(total / size));
+  const p = Math.min(Math.max(0, page), pages - 1);
+  return { page: p, pages, from: p * size, to: Math.min(total, (p + 1) * size) };
 }
