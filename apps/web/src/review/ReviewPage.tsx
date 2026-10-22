@@ -96,13 +96,10 @@ export function ReviewPage({
   const [find, setFind] = useState('');
   const [layout, setLayoutState] = useState<ReviewLayout>(loadLayout);
   const setLayout = (patch: Partial<ReviewLayout>) =>
-    setLayoutState((current) => {
-      const next = { ...current, ...patch };
-      saveLayout(next);
-      return next;
-    });
+    setLayoutState((current) => ({ ...current, ...patch }));
   const workspace = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
+  /** While the divider is dragged the width follows the pointer; it is saved once it is let go. */
+  const [dragging, setDragging] = useState(false);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   /** The model choices a re-run may use (ADR 0010). */
   const models = useModelChoices(api);
@@ -131,6 +128,11 @@ export function ReviewPage({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Remember the arrangement per browser, once a drag of the divider has ended.
+  useEffect(() => {
+    if (!dragging) saveLayout(layout);
+  }, [layout, dragging]);
 
   useEffect(() => {
     if (tab !== 'steps') return;
@@ -276,15 +278,13 @@ export function ReviewPage({
     return clampWidth(layout.docSide === 'left' ? pct : 100 - pct);
   };
   const onDividerDown = (e: PointerEvent<HTMLDivElement>) => {
-    dragging.current = true;
+    setDragging(true);
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onDividerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (dragging.current) setLayout({ docWidth: widthAt(e.clientX) });
+    if (dragging) setLayout({ docWidth: widthAt(e.clientX) });
   };
-  const onDividerUp = () => {
-    dragging.current = false;
-  };
+  const onDividerUp = () => setDragging(false);
   const onDividerKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const towardsData = layout.docSide === 'left' ? 'ArrowRight' : 'ArrowLeft';
     const towardsDoc = layout.docSide === 'left' ? 'ArrowLeft' : 'ArrowRight';

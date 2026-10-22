@@ -1,5 +1,5 @@
 import type { JobSummary, PluginInfo } from '@ih/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -707,6 +707,30 @@ describe('ReviewPage layout', () => {
     setup();
     await screen.findByRole('region', { name: 'Source PDF' });
     expect(separator()).toHaveAttribute('aria-valuenow', '30');
+  });
+
+  it('follows a drag of the divider and remembers it once the drag ends', async () => {
+    setup();
+    await screen.findByRole('region', { name: 'Source PDF' });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 1000, height: 600 }),
+    );
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const divider = separator();
+    // jsdom's PointerEvent has no clientX: a MouseEvent of the pointer type carries it.
+    const pointer = (type: string, clientX: number) =>
+      fireEvent(divider, new MouseEvent(type, { bubbles: true, clientX }));
+    pointer('pointerdown', 450);
+    pointer('pointermove', 500);
+    pointer('pointermove', 550);
+    pointer('pointermove', 600);
+    expect(divider).toHaveAttribute('aria-valuenow', '60');
+    const layoutWrites = () => setItem.mock.calls.filter(([key]) => key === 'ih.reviewLayout');
+    expect(layoutWrites()).toHaveLength(0);
+    pointer('pointerup', 600);
+    expect(layoutWrites()).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem('ih.reviewLayout')!)).toMatchObject({ docWidth: 60 });
+    vi.restoreAllMocks();
   });
 
   it('hides either panel to a rail at its side, and shows it again', async () => {
