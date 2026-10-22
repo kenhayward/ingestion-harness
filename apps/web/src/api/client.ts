@@ -78,6 +78,13 @@ import type {
   PluginInfo,
   PluginPreviewView,
   TargetConnection,
+  DeliveryOverrides,
+  JobNaming,
+  PatternPreview,
+  SinkInfo,
+  SinkBrowseNode,
+  SinkTargetCreateBody,
+  SinkTargetPatchBody,
   MyConnections,
   TargetCreateBody,
   TargetPatchBody,
@@ -153,6 +160,8 @@ export interface ReviewData {
   template: Template;
   document: ReviewDocument;
   edits: ReviewEdit[];
+  /** A delivery needs the reviewer's (or someone's) connection: offer Manage connections. */
+  connectionNeeded?: boolean;
 }
 
 export interface TemplateListItem {
@@ -468,19 +477,36 @@ export interface Api {
   listLlmEndpoints(): Promise<LlmEndpointView[]>;
   /** Publishing targets with what uses each (admins; Administration > Published outputs). */
   listPublishTargets(): Promise<PublishTargetView[]>;
-  createPublishTarget(body: TargetCreateBody): Promise<PublishTargetView>;
-  updatePublishTarget(id: string, patch: TargetPatchBody): Promise<PublishTargetView>;
+  createPublishTarget(body: TargetCreateBody | SinkTargetCreateBody): Promise<PublishTargetView>;
+  updatePublishTarget(
+    id: string,
+    patch: TargetPatchBody | SinkTargetPatchBody,
+  ): Promise<PublishTargetView>;
+  /** The delivery bridge's sinks (built in and external), for Published outputs. */
+  listSinks(): Promise<SinkInfo[]>;
+  /** One level of a sink's tree for a destination field, as the signed-in admin. */
+  browseSink(req: {
+    sinkId: string;
+    instanceId: string | null;
+    connectionId: string | null;
+    field: string;
+    parentId: string | null;
+    cursor: string | null;
+  }): Promise<{ nodes: SinkBrowseNode[]; nextCursor: string | null }>;
   deletePublishTarget(id: string): Promise<void>;
   /** Through the delivery bridge: writes, reads back and deletes a small file. */
   testPublishTarget(body: TargetTestBody): Promise<TargetTestResult>;
   /** The delivery bridge's shared connections an external target may use (admins). */
-  listSharedConnections(): Promise<TargetConnection[]>;
+  /** The bridge's shared connections of one sink (default `s3`), for a target's picker. */
+  listSharedConnections(sinkId?: string): Promise<TargetConnection[]>;
   /** Opens the bridge's connections page in a new tab (a one-time link for this user). */
   openConnections(): Promise<void>;
   /** The signed-in user's personal connections on the delivery bridge (never a credential). */
   listMyConnections(): Promise<MyConnections>;
   /** What a recipe's Publish to picker offers (any designer or admin). */
   listPublishTargetChoices(): Promise<TargetChoice[]>;
+  /** A name pattern resolved against a sample document, or why it is not one. */
+  previewPattern(pattern: string): Promise<PatternPreview>;
   /** The plugins recipe steps can run, as the workers published them (recipe plugins 3b). */
   listPlugins(): Promise<PluginInfo[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
@@ -595,7 +621,16 @@ export interface Api {
   getResult(jobId: string): Promise<ResultDetail>;
   getReview(jobId: string): Promise<ReviewData>;
   addEdit(jobId: string, edit: EditRequest): Promise<ReviewEdit>;
-  approve(jobId: string, body: { reviewer?: string; note?: string }): Promise<JobSummary>;
+  approve(
+    jobId: string,
+    body: { reviewer?: string; note?: string; overrides?: DeliveryOverrides },
+  ): Promise<JobSummary>;
+  /** Before an upload: what the type's targets would need of the uploader (none: ready). */
+  preflightUpload(
+    specId: string,
+  ): Promise<{ problems: { targetLabel: string; message: string }[] }>;
+  /** The names a reviewer can change for a job, per target (none: no target names anything). */
+  getJobNaming(jobId: string): Promise<JobNaming>;
   reject(jobId: string, body: { reviewer?: string; reason: string }): Promise<JobSummary>;
   pageUrl(jobId: string, page: number): string;
   /** The job's uploaded PDF, served inline (Open PDF). */
@@ -1113,11 +1148,24 @@ export function createHttpApi(base = '/api'): Api {
       window.open(url, '_blank', 'noopener');
     },
     listMyConnections: () => apiFetch(`${base}/profile/connections`).then(json<MyConnections>),
-    listSharedConnections: () =>
-      apiFetch(`${base}/publish-targets/connections`)
+    browseSink: (req) =>
+      post<{ nodes: SinkBrowseNode[]; nextCursor: string | null }>(
+        `${base}/publish-targets/browse`,
+        req,
+      ),
+    listSinks: () =>
+      apiFetch(`${base}/publish-targets/sinks`)
+        .then(json<{ sinks: SinkInfo[] }>)
+        .then((r) => r.sinks),
+    listSharedConnections: (sinkId) =>
+      apiFetch(
+        `${base}/publish-targets/connections${sinkId ? `?sinkId=${encodeURIComponent(sinkId)}` : ''}`,
+      )
         .then(json<{ connections: TargetConnection[] }>)
         .then((r) => r.connections),
     listPlugins: () => apiFetch(`${base}/plugins`).then(json<PluginInfo[]>),
+    previewPattern: (pattern) =>
+      post<PatternPreview>(`${base}/publish-targets/preview`, { pattern }),
     listPublishTargetChoices: () =>
       apiFetch(`${base}/publish-targets/choices`)
         .then(json<{ choices: TargetChoice[] }>)
@@ -1606,6 +1654,14 @@ export function createHttpApi(base = '/api'): Api {
     getReview: (jobId) => apiFetch(`${base}/jobs/${jobId}/review`).then(json<ReviewData>),
     addEdit: (jobId, edit) => post<ReviewEdit>(`${base}/jobs/${jobId}/edits`, edit),
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),
+    preflightUpload: (specId) =>
+      post<{ problems: { targetLabel: string; message: string }[] }>(
+        `${base}/documents/preflight`,
+        {
+          specId,
+        },
+      ),
+    getJobNaming: (jobId) => apiFetch(`${base}/jobs/${jobId}/naming`).then(json<JobNaming>),
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
     documentUrl: (jobId) => `${base}/jobs/${jobId}/document`,

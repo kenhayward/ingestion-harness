@@ -33,6 +33,8 @@ const TARGETS: TargetChoice[] = [
     bucket: 'ingest-published',
     prefix: '',
     layout: 'files',
+    sinkName: null,
+    patternFields: [],
   },
   {
     id: 'finance-lake',
@@ -41,6 +43,8 @@ const TARGETS: TargetChoice[] = [
     bucket: 'finance-published',
     prefix: '',
     layout: 'files',
+    sinkName: null,
+    patternFields: [],
   },
 ];
 const overview = (

@@ -21,10 +21,13 @@ export function ConnectionPicker({
   api,
   value,
   current,
+  sinkId,
   onChange,
 }: {
   api: Api;
   value: string;
+  /** Whose shared connections are offered (default: S3's). */
+  sinkId?: string;
   /** The target's connection as last seen, shown even before (or without) the list. */
   current?: TargetConnection | null;
   onChange: (id: string) => void;
@@ -35,13 +38,13 @@ export function ConnectionPicker({
   useEffect(() => {
     let live = true;
     api
-      .listSharedConnections()
+      .listSharedConnections(sinkId)
       .then((list) => live && setConnections(list))
       .catch((err: unknown) => live && setError((err as Error).message));
     return () => {
       live = false;
     };
-  }, [api]);
+  }, [api, sinkId]);
 
   const listed = connections ?? [];
   const options =

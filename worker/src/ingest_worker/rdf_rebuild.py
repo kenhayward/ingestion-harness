@@ -231,8 +231,11 @@ def _publish(
     graph = build_graph(run, deps, queue, template, document)
     if graph is None:
         return None
-    # A system re-delivery acts as whoever last delivered the job (spec, acting users).
-    acting = queue.reviewer(job.job_id) or queue.uploader(job.job_id)
+    # A system re-delivery acts as whoever last delivered the job (spec, acting users); a job
+    # delivered before that was recorded, as its reviewer, else its uploader.
+    acting = (
+        queue.last_deliverer(job.job_id) or queue.reviewer(job.job_id) or queue.uploader(job.job_id)
+    )
     delivered = deliver_publication(
         run,
         deps,

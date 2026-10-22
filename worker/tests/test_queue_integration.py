@@ -570,3 +570,33 @@ def test_waiting_since_is_set_on_the_first_wait_and_cleared_past_it(
         "SELECT status, waiting_since, error FROM jobs WHERE id = %s", (job_id,)
     ).fetchone()
     assert row == ("failed", None, "publishing target default has not synced")
+
+
+def test_the_reviewer_is_found_by_id_even_after_a_rename_and_the_last_deliverer_is_kept(
+    queue_and_job: tuple[PgJobQueue, ClaimedJob],
+) -> None:
+    q, job = queue_and_job
+    tag = uuid.uuid4().hex[:8]
+    [(reviewer_id,)] = q._conn.execute(
+        """INSERT INTO users (name, email, role, password_hash)
+           VALUES (%s, %s, 'designer', 'x') RETURNING id::text""",
+        (f"Rev {tag}", f"rev{tag}@example.com"),
+    ).fetchall()
+    try:
+        q._conn.execute(
+            """UPDATE jobs SET reviewer = 'an old name', reviewer_user_id = %s,
+                      reviewed_at = now() WHERE id = %s""",
+            (reviewer_id, job.id),
+        )
+        reviewer = q.reviewer(job.id)
+        assert reviewer is not None and reviewer.id == reviewer_id
+        assert q.last_deliverer(job.id) is None
+        q.record_delivered_as(job.id, reviewer_id)
+        last = q.last_deliverer(job.id)
+        assert last is not None and last.id == reviewer_id and last.name == f"Rev {tag}"
+    finally:
+        q._conn.execute(
+            "UPDATE jobs SET reviewer_user_id = NULL, delivered_as_user = NULL WHERE id = %s",
+            (job.id,),
+        )
+        q._conn.execute("DELETE FROM users WHERE id = %s", (reviewer_id,))

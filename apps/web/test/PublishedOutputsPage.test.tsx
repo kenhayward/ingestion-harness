@@ -1,4 +1,4 @@
-import type { PublishTargetView } from '@ih/shared';
+import type { SinkInfo, PublishTargetView } from '@ih/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -28,11 +28,14 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     label: 'Default',
     kind: 'internal',
     sinkId: 's3',
+    instanceId: null,
     destination: { bucket: 'ingest-published', prefix: '', layout: 'files' },
     onBridge: true,
     bucket: 'ingest-published',
     prefix: '',
     layout: 'files',
+    sinkName: null,
+    deliverOnly: false,
     endpoint: null,
     connectionId: null,
     connection: null,
@@ -81,6 +84,73 @@ const tripleStore = (over: Partial<PublishTargetView> = {}) =>
     usage: NO_USE,
     ...over,
   });
+
+const FAKE_SINK: SinkInfo = {
+  id: 'fake',
+  name: 'Fake sink',
+  status: 'available',
+  contractVersion: 1,
+  connectionKind: 'shared',
+  instances: [],
+  destinationFields: [
+    {
+      id: 'space',
+      label: 'Space',
+      kind: 'fixed',
+      required: true,
+      overridable: false,
+      browse: true,
+    },
+    {
+      id: 'name',
+      label: 'Name',
+      kind: 'pattern',
+      required: true,
+      overridable: true,
+      browse: false,
+    },
+  ],
+  credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+  capabilities: {
+    browse: true,
+    replace: true,
+    withdraw: false,
+    readBack: false,
+    accepts: ['files', 'data'],
+  },
+};
+const S3_SINK: SinkInfo = {
+  ...FAKE_SINK,
+  id: 's3',
+  name: 'S3',
+  destinationFields: [],
+  capabilities: {
+    browse: false,
+    replace: true,
+    withdraw: true,
+    readBack: true,
+    accepts: ['files'],
+  },
+};
+
+function sinkTarget(over: Partial<PublishTargetView> = {}): PublishTargetView {
+  return target({
+    id: 'fake-target',
+    label: 'Fake target',
+    kind: 'sink',
+    sinkId: 'fake',
+    sinkName: 'Fake sink',
+    deliverOnly: true,
+    destination: { space: 'reports', name: '{source.stem}' },
+    bucket: null,
+    prefix: null,
+    layout: null,
+    sse: null,
+    connectionId: 'fake-account',
+    usage: NO_USE,
+    ...over,
+  });
+}
 
 function page(targets: PublishTargetView[] = [target(), external()], overrides = {}) {
   const api = fakeApi({ listPublishTargets: vi.fn(async () => targets), ...overrides });
@@ -579,52 +649,102 @@ describe('AdminDialog Published outputs tab', () => {
     expect(within(r).getByRole('button', { name: 'Test connection' })).toBeDisabled();
   });
 
-  it("a target of a sink this page doesn't edit shows its destination read-only", async () => {
-    page([
-      target({
-        id: 'archive-sftp',
-        label: 'Archive SFTP',
-        kind: 'sink',
-        sinkId: 'sftp',
-        destination: { host: 'sftp.example.com', path: '/in' },
-        bucket: null,
-        prefix: null,
-        layout: null,
-        sse: null,
-        usage: NO_USE,
-      }),
-    ]);
-    const row0 = await row('Archive SFTP');
-    expect(row0).toHaveTextContent('sftp');
-    const r = await open('Archive SFTP');
-    expect(r).toHaveTextContent('host: sftp.example.com');
-    expect(r).toHaveTextContent('path: /in');
-    expect(within(r).queryByLabelText('Bucket')).toBeNull();
-    expect(within(r).queryByLabelText('Connection')).toBeNull();
-    expect(within(r).getByRole('button', { name: /Remove/ })).toBeEnabled();
-    expect(within(r).getByRole('button', { name: 'Test connection' })).toBeDisabled();
+  it("a sink target opens on its sink's fields; fixed ones lock while it is in use", async () => {
+    const api = page(
+      [sinkTarget({ usage: { ...NO_USE, publishedVersions: 1, documentTypes: ['letter'] } })],
+      {
+        listSinks: vi.fn(async () => [FAKE_SINK]),
+      },
+    );
+    const row0 = await row('Fake target');
+    expect(row0).toHaveTextContent('Fake sink');
+    expect(row0).toHaveTextContent('Deliver-only');
+    const r = await open('Fake target');
+    expect(within(r).getByLabelText('Space')).toBeDisabled();
+    const name = within(r).getByLabelText('Name');
+    expect(name).toBeEnabled();
+    await userEvent.clear(name);
+    await userEvent.type(name, '{{field:sender}');
+    await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
+    expect(api.updatePublishTarget).toHaveBeenCalledWith('fake-target', {
+      destination: { space: 'reports', name: '{field:sender}' },
+    });
+    expect(within(r).getByRole('button', { name: /Remove/ })).toBeDisabled();
   });
 
-  it("a sink target's label is read-only and Save stays disabled", async () => {
-    page([
-      target({
-        id: 'archive-sftp',
-        label: 'Archive SFTP',
-        kind: 'sink',
-        sinkId: 'sftp',
-        destination: { host: 'h' },
-        bucket: null,
-        prefix: null,
-        layout: null,
-        sse: null,
-        usage: NO_USE,
-      }),
-    ]);
-    const r = await open('Archive SFTP');
-    const label = within(r).getByLabelText('Label');
-    expect(label).toHaveAttribute('readonly');
-    await userEvent.type(label, 'x');
+  it('a sink target whose sink is not available now shows that, and only its label saves', async () => {
+    const api = page([sinkTarget()], { listSinks: vi.fn(async () => []) });
+    const r = await open('Fake target');
+    expect(r).toHaveTextContent('fake is not available on the delivery bridge now');
     expect(within(r).getByRole('button', { name: 'Save' })).toBeDisabled();
+    const label = within(r).getByLabelText('Label');
+    await userEvent.clear(label);
+    await userEvent.type(label, 'Renamed');
+    await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
+    expect(api.updatePublishTarget).toHaveBeenCalledWith('fake-target', { label: 'Renamed' });
+  });
+
+  it("a personal sink target's instance can't change once saved", async () => {
+    const personal = {
+      ...FAKE_SINK,
+      connectionKind: 'personal' as const,
+      instances: [
+        { id: 'sandbox', label: 'Sandbox' },
+        { id: 'prod', label: 'Production' },
+      ],
+    };
+    page([sinkTarget({ instanceId: 'sandbox', connectionId: null })], {
+      listSinks: vi.fn(async () => [personal]),
+    });
+    const r = await open('Fake target');
+    expect(within(r).getByLabelText('Instance')).toBeDisabled();
+  });
+
+  it('adds a target of another system from its declared fields', async () => {
+    const api = page([target()], {
+      listSinks: vi.fn(async () => [S3_SINK, FAKE_SINK]),
+      listSharedConnections: vi.fn(async (sinkId?: string) =>
+        sinkId === 'fake'
+          ? [
+              {
+                id: 'fake-account',
+                name: 'Fake account',
+                status: 'ok' as const,
+                statusReason: null,
+              },
+            ]
+          : [],
+      ),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add publishing target' });
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Other system' }));
+    await userEvent.type(within(dialog).getByLabelText('Label'), 'Fake target');
+    await userEvent.type(within(dialog).getByLabelText('Space'), 'reports');
+    await userEvent.type(within(dialog).getByLabelText('Name'), '{{source.stem}');
+    await within(dialog).findByRole('option', { name: 'Fake account (OK)' });
+    await userEvent.selectOptions(within(dialog).getByLabelText('Connection'), 'fake-account');
+    expect(within(dialog).queryByRole('button', { name: 'Test connection' })).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
+    expect(api.createPublishTarget).toHaveBeenCalledWith({
+      kind: 'sink',
+      id: 'fake-target',
+      label: 'Fake target',
+      sinkId: 'fake',
+      instanceId: null,
+      connectionId: 'fake-account',
+      destination: { space: 'reports', name: '{source.stem}' },
+    });
+  });
+
+  it('lists the systems read-only', async () => {
+    page([target()], { listSinks: vi.fn(async () => [S3_SINK, FAKE_SINK]) });
+    const systems = await screen.findByRole('table', { name: 'Systems' });
+    const rows = within(systems).getAllByRole('row');
+    expect(rows[2]).toHaveTextContent('Fake sink');
+    expect(rows[2]).toHaveTextContent('Available');
+    expect(rows[2]).toHaveTextContent('Deliver-only');
+    expect(rows[1]).toHaveTextContent('Can withdraw, read back, replace');
   });
 
   it("the triple store's endpoint comes from its connection", async () => {

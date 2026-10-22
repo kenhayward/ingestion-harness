@@ -196,6 +196,13 @@ class FakeQueue:
     #: Who reviewed and who uploaded each job, by job id (acting users).
     reviewers: dict[str, ActingUser] = field(default_factory=dict)
     uploaders: dict[str, ActingUser] = field(default_factory=dict)
+    #: jobs.delivery_overrides, by job id.
+    overrides: dict[str, dict[str, dict[str, str]]] = field(default_factory=dict)
+    #: jobs.delivered_as_user, by job id; the users last_deliverer finds, by id.
+    delivered_as: dict[str, str] = field(default_factory=dict)
+    users: dict[str, ActingUser] = field(default_factory=dict)
+    #: jobs.connection_needed.
+    connection_needed: set[str] = field(default_factory=set)
     edits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Templates stored in the database, keyed by (id, version).
@@ -254,6 +261,19 @@ class FakeQueue:
 
     def uploader(self, job_id: str) -> ActingUser | None:
         return self.uploaders.get(job_id)
+
+    def delivery_overrides(self, job_id: str) -> dict[str, dict[str, str]]:
+        return dict(self.overrides.get(job_id, {}))
+
+    def record_delivered_as(self, job_id: str, user_id: str) -> None:
+        self.delivered_as[job_id] = user_id
+
+    def flag_connection_needed(self, job_id: str) -> None:
+        self.connection_needed.add(job_id)
+
+    def last_deliverer(self, job_id: str) -> ActingUser | None:
+        user_id = self.delivered_as.get(job_id)
+        return self.users.get(user_id) if user_id else None
 
     def await_review(
         self,
@@ -852,8 +872,15 @@ class FakeBridge:
         targets: dict[str, tuple[str, str]] | None = None,
         stores: dict[str, MemoryObjectStore] | None = None,
         rdf: set[str] | None = None,
+        sinks: set[str] | None = None,
     ) -> None:
         self.targets = dict(targets or {})
+        #: Targets of other sinks: a delivery to one is recorded and writes nothing here.
+        self.sinks = set(sinks or ())
+        #: Personal-connection targets: target id -> the users holding a connection for it. As
+        #: the bridge's accept does, a delivery to one with no acting user, or as a user without
+        #: a connection, is refused (connection_missing) and nothing is delivered.
+        self.personal: dict[str, set[str]] = {}
         #: Targets with layout `package`: a delivery writes the package as an archive there.
         self.archives: set[str] = set()
         self.stores = dict(stores or {})
@@ -882,6 +909,7 @@ class FakeBridge:
             target_id not in self.targets
             and target_id not in self.stores
             and target_id not in self.rdf
+            and target_id not in self.sinks
         ):
             raise BridgeUnavailable(f"the bridge answered 404 to a target: no target {target_id}")
 
@@ -904,8 +932,25 @@ class FakeBridge:
         self._next_refusal()
         for target_id in request.targets:
             self._known(target_id)
+        for target_id in request.targets:
+            if target_id not in self.personal:
+                continue
+            user = request.acting_user
+            if user is None:
+                message = f"delivering to {target_id} needs a person to deliver as"
+            elif user.id not in self.personal[target_id]:
+                message = f"{user.name} has no connection for {target_id}: add one on the connections page"
+            else:
+                continue
+            raise BridgeRefused(
+                BridgeError.model_validate(
+                    {"class": "needs_user", "code": "connection_missing", "message": message}
+                )
+            )
         self.requests.append(request)
         for target_id in request.targets:
+            if target_id in self.sinks:
+                continue
             if target_id in self.rdf:
                 if request.package.rdf is not None:
                     self.graphs[request.package.rdf.graph_name] = request.package.rdf.turtle

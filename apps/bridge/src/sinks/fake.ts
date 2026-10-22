@@ -1,5 +1,6 @@
 import {
   bridgeError,
+  type BrowseRequest,
   type BrowseResult,
   type ConnectionTestResult,
   type ConnectionTestRequest,
@@ -36,7 +37,7 @@ const DESCRIBE: SinkDescribe = {
     replace: true,
     withdraw: false,
     readBack: false,
-    accepts: ['files'],
+    accepts: ['files', 'data'],
   },
 };
 
@@ -81,7 +82,7 @@ export class FakeSink implements SinkPort {
     return { ok: true, identity: `fake:${req.credential.username ?? 'user'}` };
   }
 
-  async browse(): Promise<BrowseResult> {
+  async browse(_req?: BrowseRequest): Promise<BrowseResult> {
     return { nodes: [], nextCursor: null };
   }
 

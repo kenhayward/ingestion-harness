@@ -57,6 +57,7 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
         targets: ['t1'],
         actingUser: { id: 'u1', name: 'Pat', email: null },
         overrides: { t1: overrides },
+        patterns: {},
         package: documentPackage,
       },
       now,
@@ -74,12 +75,33 @@ describe('backoff', () => {
 });
 
 describe('runOnce', () => {
-  it('delivers and records the receipt, with the overrides merged into the destination', async () => {
-    const { deps, deliveries, sink, submit } = await setup();
-    const id = await submit({ prefix: 'other/' });
+  it("delivers the destination resolved at accept (a reviewer's name over the target's)", async () => {
+    const named = new FakeSink({
+      capabilities: caps(),
+      destinationFields: [
+        {
+          id: 'bucket',
+          label: 'Bucket',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: false,
+        },
+        {
+          id: 'name',
+          label: 'Name',
+          kind: 'pattern',
+          required: true,
+          overridable: true,
+          browse: false,
+        },
+      ],
+    });
+    const { deps, deliveries, sink, submit } = await setup(named);
+    const id = await submit({ name: 'Chosen' });
     expect(await runOnce(deps, T0)).toBe('worked');
     expect(sink.delivered[0]).toMatchObject({
-      destination: { bucket: 'b', prefix: 'other/' },
+      destination: { bucket: 'b', prefix: 'out/', name: 'Chosen' },
       credential: null,
       instanceId: null,
       actingUser: { id: 'u1' },
@@ -398,7 +420,7 @@ describe('a personal sink', () => {
     const submit = (actingUser: typeof pat | null) =>
       acceptDeliveries(
         { deliveries, packages, targets, sinks, connections, retentionDays: 30 },
-        { targets: ['acme'], actingUser, overrides: {}, package: documentPackage },
+        { targets: ['acme'], actingUser, overrides: {}, patterns: {}, package: documentPackage },
         T0,
         randomUUID,
       );
@@ -513,6 +535,7 @@ describe('a personal sink, polled', () => {
         targets: ['acme'],
         actingUser: { id: 'u1', name: 'Pat', email: null },
         overrides: {},
+        patterns: {},
         package: documentPackage,
       },
       T0,
@@ -536,5 +559,34 @@ describe('a personal sink, polled', () => {
     sink.scriptStatus('succeed');
     await runOnce(deps, at(60));
     expect(await connections.get('u-pat')).toMatchObject({ status: 'ok', lastUsedAt: at(60) });
+  });
+});
+
+describe('a delivery accepted before phase 6', () => {
+  it('has no resolved destination: its overrides merge over the target, as before', async () => {
+    const { deps, deliveries, sink } = await setup();
+    await deliveries.create(
+      {
+        id: 'p-old',
+        kind: 'document',
+        idempotencyKey: documentPackage.idempotencyKey,
+        manifest: {},
+        stagedKey: 'packages/p-old.json',
+        expiresAt: null,
+      },
+      [
+        {
+          id: 'd-old',
+          targetId: 't1',
+          actingUser: null,
+          overrides: { prefix: 'old/' },
+          destination: null,
+        },
+      ],
+      T0,
+    );
+    await deps.packages.put('packages/p-old.json', documentPackage);
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.destination).toEqual({ bucket: 'b', prefix: 'old/' });
   });
 });

@@ -200,6 +200,12 @@ export function JobDetailPanel({
             {deliveries.map((d) => (
               <span key={d.targetId} className="delivery-line">
                 {deliveryText(d)}
+                {(d.links ?? []).map((l) => (
+                  <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer">
+                    {' '}
+                    {l.label}
+                  </a>
+                ))}
                 <br />
               </span>
             ))}
@@ -228,6 +234,9 @@ export function JobDetailPanel({
       models={models}
       typeModel={typeModels?.get(job.specId)}
       variant="panel"
+      staysIn={deliveries
+        .filter((d) => d.deliverOnly && (d.status === 'succeeded' || d.status === 'skipped'))
+        .map((d) => d.label)}
     />
   );
   const download = (

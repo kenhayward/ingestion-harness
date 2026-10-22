@@ -28,6 +28,7 @@ from .models import (
     idempotency_key,
     package_archive_keys,
 )
+from .naming import naming_inputs
 
 if TYPE_CHECKING:
     from ..pipeline import PipelineDeps
@@ -134,6 +135,7 @@ def build_package(
     sha = job.source_sha256 or str(doc.get("source_sha256") or "")
     if not re.fullmatch(r"[0-9a-f]{64}", sha):
         raise DocumentError("the document's sha256 is not known: it cannot be delivered")
+    published_at = _utc(doc.get("published_at")) or _now()
     return BridgePackage(
         kind="document",
         contract_version=1,
@@ -147,9 +149,17 @@ def build_package(
             recipe_version=recipe_version,
             approver=approver,
             extracted_at=_utc(doc.get("extracted_at")),
-            published_at=_utc(doc.get("published_at")) or _now(),
+            published_at=published_at,
         ),
-        naming={},
+        naming=naming_inputs(
+            fields=doc.get("fields") or {},
+            job_id=job.id,
+            recipe_id=recipe_id,
+            recipe_version=recipe_version,
+            source_filename=job.filename,
+            source_sha256=sha,
+            published_at=datetime.fromisoformat(published_at.replace("Z", "+00:00")),
+        ),
         files=[
             PackageFile(
                 output=o.output_id,
@@ -223,9 +233,11 @@ def deliver_document(
     approver: ActingUser | None,
     graph: GraphVersion | None = None,
     primary: Target | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
 ) -> Delivered:
     """Build the job's package from `outputs` (and `graph`) and deliver it to every target
-    (deliver_outputs; `primary`: the target read back from, else the first)."""
+    (deliver_outputs; `primary`: the target read back from, else the first), with the recipe's
+    name patterns and the reviewer's `overrides` for the targets it names."""
     package = build_package(
         job=job,
         template=template,
@@ -235,7 +247,21 @@ def deliver_document(
         deployment=deps.deployment,
         graph=graph,
     )
-    return deliver_outputs(deps, job, package, targets, acting, outputs, primary)
+    # The recipe's name patterns, for the targets this hand-off names (the bridge resolves them).
+    named = {t.id for t in targets}
+    settings = template.delivery_settings() if template else {}
+    patterns = {t: fields for t, fields in settings.items() if t in named}
+    return deliver_outputs(
+        deps,
+        job,
+        package,
+        targets,
+        acting,
+        outputs,
+        primary,
+        patterns=patterns,
+        overrides={t: f for t, f in (overrides or {}).items() if t in named},
+    )
 
 
 def deliver_outputs(
@@ -246,8 +272,12 @@ def deliver_outputs(
     acting: ActingUser | None,
     outputs: list[RenderedOutput],
     primary: Target | None = None,
+    *,
+    patterns: dict[str, dict[str, str]] | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
 ) -> Delivered:
-    """Submit the package to `targets` through the bridge, in one request. Returns the outputs
+    """Submit the package to `targets` through the bridge, in one request, with the recipe's
+    name `patterns` and the reviewer's `overrides` per target. Returns the outputs
     keyed as the primary target (default: the first) writes them (its prefix + their key), what
     each S3 target records, and the deliveries. A refusal for a person (BridgeRefused, a
     DocumentError) and an unreachable bridge (BridgeUnavailable, retried) propagate; nothing is
@@ -256,7 +286,11 @@ def deliver_outputs(
         raise RuntimeError("no delivery bridge is configured: nothing can be delivered")
     result = deps.bridge.deliver(
         CreateDeliveriesRequest(
-            targets=[t.id for t in targets], acting_user=acting, package=package
+            targets=[t.id for t in targets],
+            acting_user=acting,
+            overrides=overrides or {},
+            patterns=patterns or {},
+            package=package,
         )
     )
     by_target = {d.target_id: d.delivery_id for d in result.deliveries}
@@ -270,6 +304,9 @@ def deliver_outputs(
         # so withdrawing the job deletes it there too.
         + ([] if t.id == files.id else graph_copy_outputs(t, package))
         for t in targets
+        # Another sink's target records no outputs here: what it holds is its own, and the job
+        # shows its delivery.
+        if t.layout != "sink"
     }
     return Delivered(
         outputs=keyed[files.id],

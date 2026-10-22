@@ -198,6 +198,8 @@ services:
       # The triple store's writer password, read by the rdf-default connection (only the bridge
       # writes graphs; RDF_ENDPOINT and the user come from the API's mirror of the target).
       RDF_PASSWORD: ${RDF_WRITER_PASSWORD:-}
+      # External sinks, each with its own signing key (blank: S3 and the triple store only).
+      BRIDGE_SINKS: ${BRIDGE_SINKS:-}
     networks: [default, rdf]
     depends_on:
       migrate-bridge: { condition: service_completed_successfully }
@@ -208,6 +210,17 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+
+  fake-sink:
+    # Test stacks only (profile fake-sink): an external sink the bridge reaches over the sink
+    # contract, for the compose smoke and the conformance suite. Name it in BRIDGE_SINKS with
+    # FAKE_SINK_KEY. No host port.
+    image: ${IMAGE_PREFIX:-ingestion-harness}/bridge:${IMAGE_TAG:-dev}
+    profiles: [fake-sink]
+    command: ['node', 'apps/bridge/dist/sinks/fake-server.js']
+    environment:
+      FAKE_SINK_KEY: ${FAKE_SINK_KEY:-}
+    restart: unless-stopped
 
   api:
     image: ${IMAGE_PREFIX:-ingestion-harness}/api:${IMAGE_TAG:-dev}

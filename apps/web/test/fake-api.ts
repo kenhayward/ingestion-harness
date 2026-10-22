@@ -399,6 +399,13 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listPublishTargets: vi.fn(async () => []),
     openConnections: vi.fn(async () => undefined),
     listMyConnections: vi.fn(async () => ({ personalSinks: false, connections: [] })),
+    listSinks: vi.fn(async () => []),
+    browseSink: vi.fn(async () => ({ nodes: [], nextCursor: null })),
+    previewPattern: vi.fn(async (pattern: string) => ({
+      value: pattern.replaceAll('{source.stem}', 'sample'),
+      unresolved: [],
+      error: null,
+    })),
     listSharedConnections: vi.fn(async () => [
       { id: 'finance-account', name: 'Finance account', status: 'ok' as const, statusReason: null },
     ]),
@@ -576,6 +583,8 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     addEdit: vi.fn(async () => ({}) as never),
     approve: vi.fn(async () => job({ status: 'queued' })),
+    getJobNaming: vi.fn(async () => ({ targets: [] })),
+    preflightUpload: vi.fn(async () => ({ problems: [] })),
     reject: vi.fn(async () => job({ status: 'rejected' })),
     pageUrl: (jobId, page) => `/api/jobs/${jobId}/pages/${page}`,
     documentUrl: (jobId) => `/api/jobs/${jobId}/document`,

@@ -84,12 +84,19 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
     described = parsed.success ? parsed.data : null;
     const personalWithoutFields =
       described?.connectionKind === 'personal' && described.credentialFields.length === 0;
+    // Every package carries files and data: a sink takes the parts it may ignore.
+    const takesTooLittle =
+      !!described &&
+      !(['files', 'data'] as const).every((p) => described!.capabilities.accepts.includes(p));
+    const problem = personalWithoutFields
+      ? 'a personal sink declares the credential fields its users enter'
+      : takesTooLittle
+        ? 'a sink takes files and data (it may ignore them)'
+        : null;
     check(
       'describe',
-      res.status === 200 && parsed.success && !personalWithoutFields,
-      personalWithoutFields
-        ? 'a personal sink declares the credential fields its users enter'
-        : describeIssues(parsed),
+      res.status === 200 && parsed.success && !problem,
+      problem ?? describeIssues(parsed),
     );
   } catch (err) {
     check('describe', false, String(err));

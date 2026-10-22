@@ -18,6 +18,7 @@ import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { TargetStores } from '../src/publish-targets/stores.js';
 import { cacheS3 } from './target-views.js';
 import { HandoffCodes } from '../src/bridge/handoff.js';
+import { SinkCatalog } from '../src/bridge/sinks.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 
 /** The key test bridges sign their calls to the API with (BRIDGE_CLIENT_KEY). */
@@ -113,11 +114,16 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
           version: r.version,
           definition: r.definition as { delivery?: { publishTo?: string | string[] } },
         })),
-    deliveredCount: async (id) =>
-      [...usedRepo.outputs.values()]
+    deliveredCount: async (id) => {
+      const outputs = [...usedRepo.outputs.values()]
         .flat()
-        .filter((o) => o.stage === 'published' && o.targetId === id).length +
-      usedRepo.graphVersions.filter((v) => v.targetId === id).length,
+        .filter((o) => o.stage === 'published' && o.targetId === id).length;
+      // Another sink's target records no outputs: its deliveries are what it was handed.
+      const delivered = outputs
+        ? 0
+        : [...usedRepo.deliveries.values()].filter((d) => d.targetId === id).length;
+      return outputs + delivered + usedRepo.graphVersions.filter((v) => v.targetId === id).length;
+    },
     consumerCount: async (id) => s3KeyRepo.grantCount(id),
     pendingJobCount: async (id) =>
       usedRepo.backgroundJobs.filter(
@@ -147,6 +153,8 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     targets,
     targetStores,
     bridge,
+    // Fresh on every request in tests: they change the fake bridge's sinks as they go.
+    sinks: new SinkCatalog({ ttlMs: 0 }),
     templates,
     workbench,
     specs: SpecRegistry.fromDefinitions([

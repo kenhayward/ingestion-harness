@@ -8,12 +8,14 @@ import {
   type DataPolicy,
   type ModelChoice,
   type Template,
+  deliverySettingsOf,
   publishTargetsOf,
 } from '@ih/shared';
+import { parsePattern, patternVariables, type SinkView } from '@ih/bridge-contract';
 import { z } from 'zod';
 import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
-import { primaryTargetOf } from '../publish-targets/repo.js';
+import { primaryTargetOf, type TargetRecord } from '../publish-targets/repo.js';
 import type { TemplateRecord } from './repo.js';
 import { semanticsIssues } from './semantics.js';
 import type { PluginCatalogue } from '../plugins/catalogue.js';
@@ -94,6 +96,63 @@ export function choiceProblem(
 }
 
 /**
+ * The recipe's name patterns per target (`delivery.settings`): each names a target it delivers
+ * to and a pattern field of that target's sink, parses, and names only fields the recipe has;
+ * and every required pattern field of a sink target has a pattern here or on the target. A sink
+ * not known now is left to the bridge, which checks again when it accepts a delivery.
+ */
+function settingsIssues(
+  t: Template,
+  listed: string[],
+  named: (TargetRecord | null)[],
+  sinkOf: (sinkId: string) => SinkView | undefined,
+): string[] {
+  const settings = deliverySettingsOf(t);
+  const fieldIds = new Set(t.outputs.fields.map((f) => f.id));
+  const out: string[] = [];
+  for (const [targetId, fields] of Object.entries(settings)) {
+    const i = listed.indexOf(targetId);
+    if (i < 0) {
+      out.push(`settings for ${targetId}: the recipe does not deliver to it`);
+      continue;
+    }
+    const target = named[i];
+    const sink = target?.kind === 'sink' ? sinkOf(target.sinkId) : undefined;
+    for (const [fieldId, pattern] of Object.entries(fields)) {
+      const declared = sink?.destinationFields.find((f) => f.id === fieldId);
+      if (sink && declared?.kind !== 'pattern') {
+        out.push(`${targetId}: ${fieldId} is not a name pattern of ${sink.name}`);
+        continue;
+      }
+      if (target && target.kind !== 'sink') {
+        out.push(`${targetId}: an S3 target takes no name patterns`);
+        continue;
+      }
+      const parsed = parsePattern(pattern);
+      if ('error' in parsed) {
+        out.push(`${targetId}.${fieldId}: ${parsed.error}`);
+        continue;
+      }
+      for (const v of patternVariables(pattern)) {
+        if (v.startsWith('field:') && !fieldIds.has(v.slice('field:'.length))) {
+          out.push(`${targetId}.${fieldId}: {${v}} names no field of this recipe`);
+        }
+      }
+    }
+  }
+  listed.forEach((targetId, i) => {
+    const target = named[i];
+    const sink = target?.kind === 'sink' ? sinkOf(target.sinkId) : undefined;
+    for (const f of sink?.destinationFields ?? []) {
+      if (f.kind !== 'pattern' || !f.required) continue;
+      if (settings[targetId]?.[f.id] || target?.destination[f.id]) continue;
+      out.push(`${targetId}: ${f.label} needs a name pattern (set one here, or on the target)`);
+    }
+  });
+  return out;
+}
+
+/**
  * `validateTemplate` plus the models its steps name: only models offered on their endpoint run
  * (ADR 0010), so a step naming another one is an issue (and blocks publishing). An alias the
  * database does not define is left to the worker. A draft's steps and its document type model
@@ -101,7 +160,8 @@ export function choiceProblem(
  * versions keep running theirs.
  */
 export async function templateIssues(
-  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets' | 'plugins'>,
+  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets' | 'plugins'> &
+    Partial<Pick<AppDeps, 'sinks' | 'bridge'>>,
   definition: unknown,
   { draft }: { draft: boolean },
 ): Promise<TemplateIssue[]> {
@@ -126,13 +186,20 @@ export async function templateIssues(
   // A recipe from another deployment keeps its target ids; until each exists here it cannot publish.
   const listed = parsed.data.delivery?.publishTo === undefined ? [] : publishTargetsOf(parsed.data);
   const named = await Promise.all(listed.map((id) => deps.targets.get(id)));
+  // Another sink's target takes the graph only if its sink does (one it doesn't know yet is
+  // left to the bridge, which refuses the delivery).
+  const graph = parsed.data.delivery?.formats?.includes('rdf') ?? false;
+  if (named.some((t) => t?.kind === 'sink') && deps.sinks && deps.bridge) {
+    await deps.sinks.refresh(deps.bridge);
+  }
   const targetMessages = listed.flatMap((id, i) => {
     const t = named[i];
     if (!t) return [`no publishing target ${id} on this deployment`];
     if (t.kind === 'rdf') return [`${id} is a triple store: name an S3 target`];
-    // Delivering to another sink is phase 6: until then the worker refuses one the same way.
-    if (t.kind === 'sink')
-      return [`${id} is a ${t.sinkId} target: recipes can't deliver to it yet`];
+    const sink = t.kind === 'sink' ? deps.sinks?.get(t.sinkId) : undefined;
+    if (graph && sink && !sink.capabilities.accepts.includes('rdf')) {
+      return [`${id} (${sink.name}) does not take the graph (rdf)`];
+    }
     return [];
   });
   // Results, the zip, read keys and the graph's copy read from one files-layout target.
@@ -141,12 +208,16 @@ export async function templateIssues(
     targetMessages.push('needs a target with the files layout');
   }
   const targetProblems = targetMessages.map((message) => ({ path: 'delivery.publishTo', message }));
+  const settingProblems = settingsIssues(parsed.data, listed, named, (sinkId) =>
+    deps.sinks?.get(sinkId),
+  ).map((message) => ({ path: 'delivery.settings', message }));
   return [
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),
     ...modelIssues,
     ...(await pluginIssues(deps.plugins, parsed.data)),
     ...targetProblems,
+    ...settingProblems,
     ...(await semanticsIssues(deps.ontologies, parsed.data)),
   ];
 }

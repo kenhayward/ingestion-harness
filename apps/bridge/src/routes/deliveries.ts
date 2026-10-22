@@ -5,11 +5,13 @@ import {
   CreateDeliveriesRequestSchema,
   CreateDeliveriesResultSchema,
   DeliveryViewSchema,
+  PreflightRequestSchema,
+  PreflightResultSchema,
   type DeliveryView,
 } from '@ih/bridge-contract';
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { acceptDeliveries } from '../deliveries/accept.js';
+import { acceptDeliveries, readyTarget } from '../deliveries/accept.js';
 import type { DeliveryRow } from '../deliveries/repo.js';
 import { SinkError } from '../sinks/port.js';
 
@@ -32,6 +34,38 @@ export function sendSinkError(reply: FastifyReply, err: SinkError): FastifyReply
 }
 
 export const deliveryRoutes: FastifyPluginAsync = async (app) => {
+  app.post(
+    '/v1/deliveries::preflight',
+    {
+      schema: {
+        summary: 'Check targets before a delivery',
+        description:
+          'Whether each target would take a delivery as the acting user now: it exists, its sink is available, and a personal sink has the user’s connection. Nothing is written.',
+        tags: ['Deliveries'],
+        body: PreflightRequestSchema,
+        response: { 200: PreflightResultSchema, 400: BridgeErrorSchema },
+      },
+    },
+    async (req, reply) => {
+      const parsed = PreflightRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send(bridgeError('content_rejected', 'the request is not valid'));
+      }
+      const { connections, sinks, targets } = app.deps;
+      const results = [];
+      for (const targetId of parsed.data.targets) {
+        try {
+          await readyTarget({ connections, sinks, targets }, targetId, parsed.data.actingUser);
+          results.push({ targetId, problem: null });
+        } catch (err) {
+          if (!(err instanceof SinkError)) throw err;
+          results.push({ targetId, problem: err.error });
+        }
+      }
+      return { targets: results };
+    },
+  );
+
   app.post(
     '/v1/deliveries',
     {

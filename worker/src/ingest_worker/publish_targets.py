@@ -66,7 +66,11 @@ class Target:
     prefix: str = ""
     #: `files`: the package's files at prefix + their names (today's keys). `package`: the whole
     #: package archived under prefix + `packages/<idempotency key>/` (package_archive_keys).
+    #: `sink`: a target of another sink, with no S3 place (no bucket or prefix): it is handed the
+    #: package and records no outputs here, and it is never the primary target.
     layout: str = "files"
+    #: The bridge sink it delivers through.
+    sink_id: str = S3_SINK_ID
 
 
 class PublishTargetStore(Protocol):
@@ -173,21 +177,18 @@ class LiveTargets:
         return True
 
     def get(self, target_id: str) -> Target:
-        """The S3 place of a target (s3PlaceOf in TS: a blank layout is `files`). TargetMissing
-        for an unknown or inert id and for the triple store (never listed by a recipe); a
-        DocumentError for another sink (phase 6: recipes cannot deliver to one yet, which the API
-        refuses on publishing too); TargetNotSynced while the cache has not taken the row from
-        the bridge."""
+        """The S3 place of a target (s3PlaceOf in TS: a blank layout is `files`), or a target of
+        another sink (layout `sink`, no place). TargetMissing for an unknown or inert id and for
+        the triple store (never listed by a recipe); TargetNotSynced while the cache has not
+        taken the row from the bridge."""
         self.refresh()
         row = self._rows.get(target_id)
         if row is None or row.inert or row.kind == "rdf":
             raise TargetMissing(target_id)
-        if row.sink_id != S3_SINK_ID:
-            raise DocumentError(
-                f"{target_id} is a {row.sink_id} target: recipes can't deliver to it yet"
-            )
         if row.synced_at is None:
             raise TargetNotSynced(target_id)
+        if row.sink_id != S3_SINK_ID:
+            return Target(row.id, "", "", layout="sink", sink_id=row.sink_id)
         d = row.destination
         layout = "package" if d.get("layout") == "package" else "files"
         return Target(row.id, d.get("bucket", ""), d.get("prefix", ""), layout)

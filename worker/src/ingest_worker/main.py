@@ -74,6 +74,8 @@ from .step_graph import (
 from .storage import S3ObjectStore
 from .template_pipeline import (
     PUBLISH_REFUSED,
+    PUBLISH_REFUSED_FOR_A_PERSON,
+    BackToReview,
     ShapesViolated,
     publish_template_job,
     rerun_template_job,
@@ -168,6 +170,16 @@ def handle_publish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outc
         # Nothing was delivered: the reviewer fixes the values and approves again.
         queue.event(job.id, "warn", PUBLISH_REFUSED, {"reasons": refused.reasons})
         return AwaitReview([], refused.reasons, drafts=False, note="publish refused")
+    except BackToReview as refused:
+        # Nothing was delivered: a person adds their connection (or a name) and approves again.
+        queue.event(job.id, "warn", PUBLISH_REFUSED_FOR_A_PERSON, {"reason": refused.reason})
+        return AwaitReview(
+            [],
+            [refused.reason],
+            drafts=False,
+            note="publish refused",
+            connection_needed=refused.connection,
+        )
     if not deliveries:
         return Complete(note=f"published {len(published)} outputs")  # a test run
     return Delivering([], deliveries, note=f"handed {len(published)} outputs to the bridge")

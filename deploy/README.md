@@ -117,6 +117,26 @@ from localhost. Packages are staged in `BRIDGE_STAGING_BUCKET` (default `ingest-
 deleted once every delivery of them is final and they are older than
 `BRIDGE_PACKAGE_RETENTION_DAYS`.
 
+**External sinks.** Besides S3 and the triple store, the bridge delivers to the external sinks
+listed in `BRIDGE_SINKS`: a JSON list of `{"id", "url", "key"}`. Use `BRIDGE_SINKS_FILE` for a
+file holding the same list, for example a Docker secret; setting both is an error. Each key, at
+least 32 characters, signs the bridge's calls to that sink and is shared with it alone.
+
+- **Checking an entry.** A bad entry stops the bridge at start, naming the entry but never its
+  key.
+- **Describes.** The bridge describes each sink at start and every
+  `BRIDGE_SINK_REFRESH_SECONDS` (300). A sink that doesn't answer is unavailable: new deliveries
+  to it are retried until it answers.
+- **Targets.** Administration > Published outputs lists the sinks under *Systems*. It adds
+  targets of a sink with the fields that sink declares.
+- **Deliver-only.** External sinks are deliver-only for now: nothing withdraws from them or reads
+  back through them.
+- **Testing a sink.** The conformance image (`ct-bridge-conformance`, published on each tag)
+  checks a sink before you register it. A test stack can run the fake sink: compose profile
+  `fake-sink`, with `FAKE_SINK_KEY` and a `BRIDGE_SINKS` entry for `http://fake-sink:8080`. Add
+  it to `COMPOSE_PROFILES` (`rdf,fake-sink`): a `--profile` flag replaces that list and leaves
+  Fuseki out.
+
 **After upgrading:** on first start the API moves each external target's keys to the bridge as the
 connection `target-<id>` (named after the target; `target-<id>-2`, … if a connection of that id
 exists already) and clears them from CT Studio. A target you already gave a connection keeps it,

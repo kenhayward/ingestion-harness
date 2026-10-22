@@ -4,7 +4,7 @@ import { loadBridgeConfig } from '../src/config.js';
 import { S3PackageStore } from '../src/packages/s3.js';
 import { buildFromConfig } from '../src/wiring.js';
 
-const config = loadBridgeConfig({
+const ENV = {
   DATABASE_URL: 'postgres://x/y',
   BRIDGE_CLIENT_KEY: 'k'.repeat(32),
   BRIDGE_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
@@ -13,11 +13,30 @@ const config = loadBridgeConfig({
   S3_SECRET_KEY: 'internal-secret',
   BRIDGE_PRODUCER_URL: 'http://api:3000/api',
   BRIDGE_PUBLIC_URL: 'https://ct.example.com/bridge',
-});
+};
+const config = loadBridgeConfig(ENV);
 
 const pool = (answer: () => Promise<unknown>) => ({ query: answer }) as unknown as pg.Pool;
 
 describe('buildFromConfig', () => {
+  it('registers exactly s3 and rdf when BRIDGE_SINKS is unset', async () => {
+    const built = await buildFromConfig(config, { pool: pool(async () => ({ rows: [] })) });
+    expect(built.sinks.ids()).toEqual(['s3', 'rdf']);
+    expect(config.sinks).toEqual([]);
+  });
+
+  it('registers each BRIDGE_SINKS entry beside the built-in sinks', async () => {
+    const withSink = loadBridgeConfig({
+      ...ENV,
+      BRIDGE_SINKS: JSON.stringify([
+        { id: 'fake', url: 'http://fake-sink:8080', key: 'f'.repeat(32) },
+      ]),
+    });
+    const built = await buildFromConfig(withSink, { pool: pool(async () => ({ rows: [] })) });
+    expect(built.sinks.ids()).toEqual(['s3', 'rdf', 'fake']);
+    expect(withSink.BRIDGE_SINK_REFRESH_SECONDS).toBe(300);
+  });
+
   it('is ready when the database answers', async () => {
     const { app } = await buildFromConfig(config, { pool: pool(async () => ({ rows: [] })) });
     expect((await app.inject('/readyz')).statusCode).toBe(200);

@@ -1,10 +1,59 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { PublishTargetView } from '@ih/shared';
+import type { PublishTargetView, SinkInfo } from '@ih/shared';
 import type { Api, Me } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { InSlot } from '../ui/InSlot.js';
 import { AddTargetDialog } from './AddTargetDialog.js';
+import { SinkTargetRow } from './SinkTargetRow.js';
 import { TargetRow } from './TargetRow.js';
+
+/** What a sink can do, in words. */
+function capabilitiesText(s: SinkInfo): string {
+  const can = [
+    s.capabilities.withdraw && 'withdraw',
+    s.capabilities.readBack && 'read back',
+    s.capabilities.replace && 'replace',
+  ].filter(Boolean);
+  return s.capabilities.withdraw ? `Can ${can.join(', ')}` : 'Deliver-only';
+}
+
+/** The delivery bridge's sinks, read-only: what targets can deliver through. */
+function SinksSection({ sinks }: { sinks: SinkInfo[] }) {
+  return (
+    <section className="admin-section" aria-label="Systems">
+      <div className="admin-section-head">
+        <div>
+          <h3>
+            Systems <span className="muted">· {sinks.length}</span>
+          </h3>
+          <p className="muted">The kinds of place the delivery bridge delivers to.</p>
+        </div>
+      </div>
+      <table className="token-list" aria-label="Systems">
+        <thead>
+          <tr>
+            <th>System</th>
+            <th>Status</th>
+            <th>Contract</th>
+            <th>Connections</th>
+            <th>What it can do</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sinks.map((s) => (
+            <tr key={s.id}>
+              <td>{s.name}</td>
+              <td>{s.status === 'available' ? 'Available' : 'Unavailable'}</td>
+              <td>{s.contractVersion}</td>
+              <td>{s.connectionKind === 'personal' ? 'Personal' : 'Shared'}</td>
+              <td>{capabilitiesText(s)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 
 /**
  * Published outputs: the publishing targets recipes deliver to (an internal bucket on this
@@ -24,12 +73,14 @@ export function PublishedOutputsPage({
   const [targets, setTargets] = useState<PublishTargetView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [sinks, setSinks] = useState<SinkInfo[]>([]);
   const isAdmin = me.role === 'admin';
 
   const load = useCallback(async () => {
     try {
       setTargets(await api.listPublishTargets());
       setError(null);
+      setSinks(await api.listSinks().catch(() => []));
     } catch (err) {
       setError((err as Error).message);
     }
@@ -78,12 +129,17 @@ export function PublishedOutputsPage({
             </div>
           </div>
           <div className="admin-list">
-            {targets.map((t) => (
-              <TargetRow key={t.id} api={api} target={t} onChanged={load} />
-            ))}
+            {targets.map((t) =>
+              t.kind === 'sink' && t.onBridge ? (
+                <SinkTargetRow key={t.id} api={api} target={t} sinks={sinks} onChanged={load} />
+              ) : (
+                <TargetRow key={t.id} api={api} target={t} onChanged={load} />
+              ),
+            )}
           </div>
         </section>
       )}
+      {sinks.length > 0 && <SinksSection sinks={sinks} />}
       {adding && (
         <AddTargetDialog
           api={api}

@@ -104,6 +104,20 @@ GRAPH_VIOLATES = "graph violates shapes"
 PUBLISH_REFUSED = "publish refused: graph violates shapes"
 
 
+#: The event when a delivery refusal a person can settle sends the job back to review.
+PUBLISH_REFUSED_FOR_A_PERSON = "publish refused: a person must settle it"
+
+
+class BackToReview(Exception):
+    """A delivery refused for something a reviewer can settle (BACK_TO_REVIEW): the job goes back
+    to review with the bridge's message; `connection`: the refusal is about a connection."""
+
+    def __init__(self, reason: str, *, connection: bool) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.connection = connection
+
+
 class ShapesViolated(Exception):
     """A publish that delivers RDF whose graph violates the recipe's shapes: back to review."""
 
@@ -327,23 +341,51 @@ def publish_template_job(
     published: list[RenderedOutput] = []
     if targets:  # none: no publishing targets, nothing is delivered
         reviewer = queue.reviewer(job.id)
-        delivered = deliver_publication(
-            job,
-            deps,
-            queue,
-            template=template,
-            document=document,
-            outputs=[o for o in rendered if o.format in formats],
-            graph=graph if "rdf" in formats else None,
-            targets=targets,
-            acting=reviewer or queue.uploader(job.id),
-            approver=reviewer,
-        )
+        try:
+            delivered = deliver_publication(
+                job,
+                deps,
+                queue,
+                template=template,
+                document=document,
+                outputs=[o for o in rendered if o.format in formats],
+                graph=graph if "rdf" in formats else None,
+                targets=targets,
+                acting=reviewer or queue.uploader(job.id),
+                approver=reviewer,
+                overrides=queue.delivery_overrides(job.id),
+            )
+        except BridgeRefused as refused:
+            if refused.error.code not in BACK_TO_REVIEW:
+                raise
+            # A person can settle it (their connection, a name): back to review, not to an
+            # operator (handle_publish). Approving again delivers as the new approver.
+            raise BackToReview(
+                str(refused), connection=refused.error.code in NEEDS_A_CONNECTION
+            ) from refused
         published = delivered.outputs
         if on_published is not None:
             on_published(targets, delivered)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
+
+
+#: Refusals at accept that a reviewer can settle: no person or connection to deliver as, a
+#: credential the target refuses, or a name pattern that resolves to nothing. The job goes back
+#: to review (awaiting_review) rather than to an operator.
+#: Of those, the refusals a person settles with their connection on the bridge's page.
+NEEDS_A_CONNECTION = frozenset(
+    {"connection_missing", "credential_missing", "credential_rejected", "credential_mfa_required"}
+)
+BACK_TO_REVIEW = frozenset(
+    {
+        "connection_missing",
+        "credential_missing",
+        "credential_rejected",
+        "credential_mfa_required",
+        "pattern_unresolved",
+    }
+)
 
 
 def deliver_publication(
@@ -358,8 +400,9 @@ def deliver_publication(
     targets: list[Target],
     acting: ActingUser | None,
     approver: ActingUser | None,
+    overrides: dict[str, dict[str, str]] | None = None,
 ) -> Delivered:
-    """Hand one publication to the bridge. With a graph (a recipe delivering `rdf`): the pinned
+    """Hand one publication to the bridge (with the reviewer's name `overrides`). With a graph (a recipe delivering `rdf`): the pinned
     ontologies not loaded yet under its base go to the triple store first, as graph packages (a
     refused one goes to review before any version is spent); then the graph's next version is
     committed (prepare_graph); then one package carries the outputs, the graph and its versioned
@@ -405,7 +448,11 @@ def deliver_publication(
         acting=acting,
         approver=approver,
         graph=version,
+        overrides=overrides,
     )
+    # A later system re-delivery (a rebuild, a remint) acts as whom the bridge accepted it as.
+    if acting is not None:
+        queue.record_delivered_as(job.id, acting.id)
     return replace(delivered, deliveries=delivered.deliveries + loads)
 
 

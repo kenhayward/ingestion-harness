@@ -10,6 +10,8 @@ const unavailable = (id: string): SinkView => ({
   contractVersion: 0,
   connectionKind: 'shared',
   instances: [],
+  destinationFields: [],
+  credentialFields: [],
   capabilities: {
     browse: false,
     replace: false,
@@ -38,10 +40,12 @@ export const catalogRoutes: FastifyPluginAsync = async (app) => {
             return {
               id,
               name: d.name,
-              status: 'available',
+              status: sinks.status(id),
               contractVersion: d.contractVersion,
               connectionKind: d.connectionKind,
               instances: d.instances,
+              destinationFields: d.destinationFields,
+              credentialFields: d.credentialFields,
               capabilities: d.capabilities,
             };
           } catch {

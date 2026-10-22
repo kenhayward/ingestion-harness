@@ -188,6 +188,8 @@ describe('GET /api/profile/connections', () => {
     },
     connectionKind: 'personal' as const,
     instances: [{ id: 'sandbox', label: 'Sandbox' }],
+    destinationFields: [],
+    credentialFields: [],
   };
 
   it("answers the signed-in user's own connections, with the system and instance named", async () => {

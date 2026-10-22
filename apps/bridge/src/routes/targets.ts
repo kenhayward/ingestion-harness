@@ -6,7 +6,10 @@ import {
   ObjectPutRequestSchema,
   ObjectReadResultSchema,
   ObjectRefSchema,
+  parsePattern,
   RESOURCE_ID,
+  BrowseResultSchema,
+  TargetBrowseRequestSchema,
   TargetPutRequestSchema,
   TargetSettingsTestRequestSchema,
   TargetTestResultSchema,
@@ -86,6 +89,12 @@ async function checkTarget(
   const undeclared = Object.keys(t.destination).find((k) => !declared.has(k));
   if (undeclared) {
     throw refuse('content_rejected', `${undeclared} is not a destination field of ${t.sinkId}`);
+  }
+  for (const f of described.destinationFields) {
+    const pattern = t.destination[f.id];
+    if (f.kind !== 'pattern' || !pattern) continue;
+    const parsed = parsePattern(pattern);
+    if ('error' in parsed) throw refuse('content_rejected', `${f.label}: ${parsed.error}`);
   }
   const missing = described.destinationFields.find(
     (f) => f.required && f.kind === 'fixed' && !t.destination[f.id],
@@ -339,6 +348,74 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
       const params = parse(Params, req.params, reply);
       if (!params) return reply;
       return withTarget(params.id, reply, (target) => test(target));
+    },
+  );
+
+  app.post(
+    '/v1/targets::browse',
+    {
+      schema: {
+        summary: "Browse a sink's tree for a destination field",
+        tags,
+        body: TargetBrowseRequestSchema,
+        response: { 200: BrowseResultSchema, 400: BridgeErrorSchema, 422: BridgeErrorSchema },
+      },
+    },
+    async (req, reply) => {
+      const body = parse(TargetBrowseRequestSchema, req.body, reply);
+      if (!body) return reply;
+      try {
+        const sink = app.deps.sinks.get(body.sinkId);
+        if (!sink) throw refuse('content_rejected', `there is no sink ${body.sinkId}`);
+        const described = await sink.describe();
+        const field = described.destinationFields.find((f) => f.id === body.field);
+        if (!described.capabilities.browse || !field?.browse) {
+          throw refuse('content_rejected', `${body.field} of ${body.sinkId} cannot be browsed`);
+        }
+        let connectionId = body.connectionId;
+        if (described.connectionKind === 'personal') {
+          const user = body.actingUser;
+          const own = user
+            ? await app.deps.connections.findPersonal(user.id, body.sinkId, body.instanceId)
+            : null;
+          if (!own) {
+            throw refuse(
+              'connection_missing',
+              `${user?.name ?? 'You'} has no connection for ${body.instanceId ?? body.sinkId}: add one on the connections page`,
+            );
+          }
+          connectionId = own.id;
+        } else if (
+          described.instances.length
+            ? !described.instances.some((i) => i.id === body.instanceId)
+            : body.instanceId !== null
+        ) {
+          throw refuse(
+            'content_rejected',
+            `${body.instanceId ?? 'no instance'} is not an instance of ${body.sinkId}`,
+          );
+        } else if (connectionId !== null) {
+          // Only a shared connection of this sink: never a person's, nor another sink's.
+          const shared = await app.deps.connections.get(connectionId);
+          if (!shared || shared.kind !== 'shared' || shared.sinkId !== body.sinkId) {
+            throw refuse(
+              'content_rejected',
+              `there is no shared connection ${connectionId} for ${body.sinkId}`,
+            );
+          }
+        }
+        const credential = await app.deps.credentials.resolve(connectionId, described);
+        return await sink.browse({
+          instanceId: body.instanceId ?? '',
+          credential,
+          field: body.field,
+          parentId: body.parentId,
+          cursor: body.cursor,
+        });
+      } catch (err) {
+        if (err instanceof SinkError) return sendSinkError(reply, err);
+        throw err;
+      }
     },
   );
 

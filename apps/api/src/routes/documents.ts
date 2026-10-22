@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyPluginAsync } from 'fastify';
-import { inboxKey, JobSummarySchema, modelRefProblem } from '@ih/shared';
+import { inboxKey, JobSummarySchema, modelRefProblem, publishTargetsOf } from '@ih/shared';
+import { z } from 'zod';
 import { error, md, multipart, res } from '../openapi/zod.js';
 import {
   draftOutputsSnapshot,
@@ -10,6 +11,7 @@ import {
 import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 import { creatorOf } from '../access/routes.js';
+import { CONNECTION_CODES } from '../bridge/events.js';
 
 /**
  * POST /api/documents (multipart/form-data)
@@ -18,7 +20,66 @@ import { creatorOf } from '../access/routes.js';
  *   file: the PDF or Word document (.docx)
  * Stores the file in the inbox bucket and enqueues a job.
  */
+const PreflightBody = z.object({ specId: z.string().min(1) });
+
 export const documentRoutes: FastifyPluginAsync = async (app) => {
+  app.post(
+    '/documents/preflight',
+    {
+      schema: {
+        tags: ['Documents'],
+        operationId: 'preflightUpload',
+        summary: 'Check an upload can be delivered',
+        description: md`
+          Before an upload: whether the targets the document type's latest published version
+          delivers to would take its delivery as the signed-in user, for example a system that
+          needs that user's own connection. Each problem names the target and what is missing.
+          The upload never depends on this: with the bridge down, or no such target, the
+          answer is no problems.
+        `,
+        body: PreflightBody,
+        response: {
+          200: res(
+            'The problems (none: ready).',
+            z.object({
+              problems: z.array(z.object({ targetLabel: z.string(), message: z.string() })),
+            }),
+          ),
+          400: error('The body is not `{ specId }`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = PreflightBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const resolved = await resolveDefinition(app.deps, body.data.specId);
+      if (!resolved?.ok || resolved.definition.kind !== 'template') return { problems: [] };
+      const ids = publishTargetsOf(resolved.definition.template);
+      const records = await Promise.all(ids.map((id) => app.deps.targets.get(id)));
+      // Only another system's target can need a person: S3 and the triple store never do.
+      if (!records.some((t) => t?.kind === 'sink')) return { problems: [] };
+      const auth = req.auth ?? { userId: 'unit-test-admin', label: 'admin', email: null };
+      try {
+        const { targets } = await app.deps.bridge.preflight({
+          targets: ids,
+          actingUser: { id: auth.userId, name: auth.label, email: auth.email },
+        });
+        const labelOf = new Map(records.flatMap((t) => (t ? [[t.id, t.label] as const] : [])));
+        return {
+          // Only what the uploader can fix: their own connection (on the connections page).
+          problems: targets.flatMap((t) =>
+            t.problem && CONNECTION_CODES.has(t.problem.code)
+              ? [{ targetLabel: labelOf.get(t.targetId) ?? t.targetId, message: t.problem.message }]
+              : [],
+          ),
+        };
+      } catch (err) {
+        req.log.warn({ err }, 'the upload preflight could not ask the bridge');
+        return { problems: [] };
+      }
+    },
+  );
+
   app.post(
     '/documents',
     {

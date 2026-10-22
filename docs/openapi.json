@@ -10450,6 +10450,26 @@
                                       }
                                     }
                                   ]
+                                },
+                                "settings": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 1024
+                                    }
+                                  }
                                 }
                               },
                               "additionalProperties": false
@@ -11030,6 +11050,212 @@
                     "error"
                   ],
                   "description": "`document type not found`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/documents/preflight": {
+      "post": {
+        "operationId": "preflightUpload",
+        "summary": "Check an upload can be delivered",
+        "tags": [
+          "Documents"
+        ],
+        "description": "Before an upload: whether the targets the document type's latest published version\ndelivers to would take its delivery as the signed-in user, for example a system that\nneeds that user's own connection. Each problem names the target and what is missing.\nThe upload never depends on this: with the bridge down, or no such target, the\nanswer is no problems.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "specId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "specId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The problems (none: ready).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "targetLabel": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "targetLabel",
+                          "message"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "problems"
+                  ],
+                  "description": "The problems (none: ready)."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ specId }`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The body is not `{ specId }`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -12601,13 +12827,36 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "deliverOnly": {
+                            "type": "boolean"
+                          },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "url"
+                              ]
+                            }
                           }
                         },
                         "required": [
                           "targetId",
                           "label",
                           "status",
-                          "message"
+                          "message",
+                          "deliverOnly",
+                          "links"
                         ]
                       }
                     }
@@ -15391,6 +15640,256 @@
         }
       }
     },
+    "/api/jobs/{id}/naming": {
+      "get": {
+        "operationId": "getJobNaming",
+        "summary": "Get a job's names a reviewer can change",
+        "tags": [
+          "Review & steps"
+        ],
+        "description": "For each target of the job's recipe version that names what it creates (a document\nname), the fields a reviewer can change: the pattern that applies, its value for this\ndocument (or what it lacks), the name chosen at an earlier approval, and why the\ntarget refused a name. Approve with `overrides` to use other names.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The job id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The names.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "targetId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "pattern": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "unresolved": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "override": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "conflict": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "pattern",
+                                "value",
+                                "unresolved",
+                                "override",
+                                "conflict"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "targetId",
+                          "label",
+                          "fields"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "targets"
+                  ],
+                  "description": "The names."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not found`, `job did not run a recipe`, `no draft document for this job` or `draft document missing from storage`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`not found`, `job did not run a recipe`, `no draft document for this job` or `draft document missing from storage`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{id}/review": {
       "get": {
         "operationId": "getReview",
@@ -15859,13 +16358,36 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "deliverOnly": {
+                                "type": "boolean"
+                              },
+                              "links": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "url": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "url"
+                                  ]
+                                }
                               }
                             },
                             "required": [
                               "targetId",
                               "label",
                               "status",
-                              "message"
+                              "message",
+                              "deliverOnly",
+                              "links"
                             ]
                           }
                         }
@@ -16842,6 +17364,26 @@
                                   }
                                 }
                               ]
+                            },
+                            "settings": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                              },
+                              "additionalProperties": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                },
+                                "additionalProperties": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 1024
+                                }
+                              }
                             }
                           },
                           "additionalProperties": false
@@ -16966,13 +17508,17 @@
                         ]
                       },
                       "description": "Edits so far, oldest first."
+                    },
+                    "connectionNeeded": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "job",
                     "template",
                     "document",
-                    "edits"
+                    "edits",
+                    "connectionNeeded"
                   ],
                   "description": "The review view."
                 }
@@ -17478,6 +18024,24 @@
                   },
                   "note": {
                     "type": "string"
+                  },
+                  "overrides": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 1024
+                      }
+                    }
                   }
                 },
                 "additionalProperties": false
@@ -59750,7 +60314,8 @@
                             "type": "string",
                             "enum": [
                               "internal",
-                              "external"
+                              "external",
+                              "sink"
                             ]
                           },
                           "bucket": {
@@ -59760,11 +60325,58 @@
                             "type": "string"
                           },
                           "layout": {
-                            "type": "string",
-                            "enum": [
-                              "files",
-                              "package"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "files",
+                                  "package"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
+                          },
+                          "sinkName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "patternFields": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "overridable": {
+                                  "type": "boolean"
+                                },
+                                "targetPattern": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "required",
+                                "overridable",
+                                "targetPattern"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -59773,7 +60385,8 @@
                           "kind",
                           "bucket",
                           "prefix",
-                          "layout"
+                          "layout",
+                          "sinkName"
                         ]
                       }
                     },
@@ -76112,7 +76725,8 @@
                             "type": "string",
                             "enum": [
                               "internal",
-                              "external"
+                              "external",
+                              "sink"
                             ]
                           },
                           "bucket": {
@@ -76122,11 +76736,58 @@
                             "type": "string"
                           },
                           "layout": {
-                            "type": "string",
-                            "enum": [
-                              "files",
-                              "package"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "files",
+                                  "package"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
                             ]
+                          },
+                          "sinkName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "patternFields": {
+                            "default": [],
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "overridable": {
+                                  "type": "boolean"
+                                },
+                                "targetPattern": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "required",
+                                "overridable",
+                                "targetPattern"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -76135,7 +76796,8 @@
                           "kind",
                           "bucket",
                           "prefix",
-                          "layout"
+                          "layout",
+                          "sinkName"
                         ]
                       }
                     }
@@ -76261,6 +76923,229 @@
         }
       }
     },
+    "/api/publish-targets/preview": {
+      "post": {
+        "operationId": "previewNamePattern",
+        "summary": "Preview a name pattern",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "A name pattern resolved against a sample document (`sample.pdf`, each field shown as\nits id in angle quotes, today's date), or why it is not a pattern. For the recipe and\ntarget editors' previews; nothing is stored.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "pattern"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "unresolved": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unresolved",
+                    "error"
+                  ],
+                  "description": "The preview."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ pattern }` (at most 1024 characters).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The body is not `{ pattern }` (at most 1024 characters)."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/publish-targets": {
       "get": {
         "operationId": "listPublishTargets",
@@ -76301,6 +77186,12 @@
                           },
                           "sinkId": {
                             "type": "string"
+                          },
+                          "instanceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           },
                           "destination": {
                             "type": "object",
@@ -76414,6 +77305,15 @@
                               }
                             ]
                           },
+                          "sinkName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "deliverOnly": {
+                            "type": "boolean"
+                          },
                           "source": {
                             "type": "string",
                             "enum": [
@@ -76476,6 +77376,7 @@
                           "label",
                           "kind",
                           "sinkId",
+                          "instanceId",
                           "destination",
                           "onBridge",
                           "bucket",
@@ -76487,6 +77388,8 @@
                           "kmsKeyId",
                           "storageClass",
                           "layout",
+                          "sinkName",
+                          "deliverOnly",
                           "source",
                           "editedAt",
                           "updatedBy",
@@ -76652,78 +77555,149 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "internal",
+                          "external"
+                        ]
+                      },
+                      "bucket": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 63,
+                        "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                      },
+                      "prefix": {
+                        "default": "",
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9!_.'()/-]*$"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "sse": {
+                        "default": "none",
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "AES256",
+                          "aws:kms"
+                        ]
+                      },
+                      "kmsKeyId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "storageClass": {
+                        "type": "string",
+                        "enum": [
+                          "STANDARD",
+                          "STANDARD_IA",
+                          "ONEZONE_IA",
+                          "INTELLIGENT_TIERING",
+                          "GLACIER_IR"
+                        ]
+                      },
+                      "layout": {
+                        "default": "files",
+                        "type": "string",
+                        "enum": [
+                          "files",
+                          "package"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "bucket"
+                    ],
+                    "additionalProperties": false
                   },
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "internal",
-                      "external"
-                    ]
-                  },
-                  "bucket": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 63,
-                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
-                  },
-                  "prefix": {
-                    "default": "",
-                    "type": "string",
-                    "maxLength": 512,
-                    "pattern": "^[A-Za-z0-9!_.'()/-]*$"
-                  },
-                  "connectionId": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
-                  },
-                  "sse": {
-                    "default": "none",
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "AES256",
-                      "aws:kms"
-                    ]
-                  },
-                  "kmsKeyId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "storageClass": {
-                    "type": "string",
-                    "enum": [
-                      "STANDARD",
-                      "STANDARD_IA",
-                      "ONEZONE_IA",
-                      "INTELLIGENT_TIERING",
-                      "GLACIER_IR"
-                    ]
-                  },
-                  "layout": {
-                    "default": "files",
-                    "type": "string",
-                    "enum": [
-                      "files",
-                      "package"
-                    ]
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "sink"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "sinkId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "instanceId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "connectionId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "destination": {
+                        "default": {},
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "label",
+                      "sinkId"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "label",
-                  "kind",
-                  "bucket"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -76755,6 +77729,12 @@
                     },
                     "sinkId": {
                       "type": "string"
+                    },
+                    "instanceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "destination": {
                       "type": "object",
@@ -76868,6 +77848,15 @@
                         }
                       ]
                     },
+                    "sinkName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "deliverOnly": {
+                      "type": "boolean"
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -76930,6 +77919,7 @@
                     "label",
                     "kind",
                     "sinkId",
+                    "instanceId",
                     "destination",
                     "onBridge",
                     "bucket",
@@ -76941,6 +77931,8 @@
                     "kmsKeyId",
                     "storageClass",
                     "layout",
+                    "sinkName",
+                    "deliverOnly",
                     "source",
                     "editedAt",
                     "updatedBy",
@@ -77259,6 +78251,694 @@
         }
       }
     },
+    "/api/publish-targets/sinks": {
+      "get": {
+        "operationId": "listSinks",
+        "summary": "List the sinks",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** The delivery bridge's sinks (the built-in S3 and triple store, and\nevery registered external sink): name, status, contract version, connection kind,\ninstances, the fields a target and a connection of it take (never values), and\ncapabilities. An external sink is deliver-only for now. When the bridge cannot be\nreached, the sinks it last listed.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The sinks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sinks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "available",
+                              "unavailable"
+                            ]
+                          },
+                          "contractVersion": {
+                            "type": "integer"
+                          },
+                          "capabilities": {
+                            "type": "object",
+                            "properties": {
+                              "browse": {
+                                "type": "boolean"
+                              },
+                              "replace": {
+                                "type": "boolean"
+                              },
+                              "withdraw": {
+                                "type": "boolean"
+                              },
+                              "readBack": {
+                                "type": "boolean"
+                              },
+                              "accepts": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "files",
+                                    "data",
+                                    "rdf",
+                                    "narrative",
+                                    "images"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "browse",
+                              "replace",
+                              "withdraw",
+                              "readBack",
+                              "accepts"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "connectionKind": {
+                            "type": "string",
+                            "enum": [
+                              "shared",
+                              "personal"
+                            ]
+                          },
+                          "instances": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "destinationFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "fixed",
+                                    "pattern"
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "overridable": {
+                                  "type": "boolean"
+                                },
+                                "browse": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "kind",
+                                "required",
+                                "overridable",
+                                "browse"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "credentialFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "secret": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "secret"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "status",
+                          "contractVersion",
+                          "capabilities",
+                          "connectionKind",
+                          "instances",
+                          "destinationFields",
+                          "credentialFields"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "sinks"
+                  ],
+                  "description": "The sinks."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/publish-targets/browse": {
+      "post": {
+        "operationId": "browseSinkForTarget",
+        "summary": "Browse a sink's tree",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** One level of a sink's tree for a destination field the sink lets\nyou browse (a space, a folder), for the target editor's picker. A shared sink is\nbrowsed with `connectionId`; a personal one with the signed-in admin's own connection\nto `instanceId` (422 `connection_missing` without one). Nodes are paged by\n`cursor`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sinkId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "instanceId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "connectionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "field": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "parentId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "sinkId",
+                  "instanceId",
+                  "connectionId",
+                  "field",
+                  "parentId",
+                  "cursor"
+                ]
+              }
+            }
+          }
+        },
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The nodes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "hasChildren": {
+                            "type": "boolean"
+                          },
+                          "selectable": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "kind",
+                          "hasChildren",
+                          "selectable"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "nodes",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The nodes."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The bridge's refusal, e.g. `… has no connection for …`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The bridge's refusal, e.g. `… has no connection for …`."
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`the delivery bridge could not be reached`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the delivery bridge could not be reached`."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/publish-targets/connections": {
       "get": {
         "operationId": "listPublishTargetConnections",
@@ -77266,7 +78946,18 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** The delivery bridge's shared S3 connections (name and status, never\na credential), for the external target editor's picker. The built-in connection of\ninternal targets is not offered. 502 when the bridge cannot be reached.",
+        "description": "**Admins only.** The delivery bridge's shared connections of one sink (`sinkId`,\ndefault `s3`): name and status, never a credential, for a target editor's picker.\nThe built-in connection of internal targets is not offered. 502 when the bridge cannot\nbe reached.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "sinkId",
+            "required": false
+          }
+        ],
         "x-admin": true,
         "responses": {
           "200": {
@@ -77500,73 +79191,111 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "bucket": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 63,
-                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
-                  },
-                  "prefix": {
-                    "type": "string",
-                    "maxLength": 512,
-                    "pattern": "^[A-Za-z0-9!_.'()/-]*$"
-                  },
-                  "connectionId": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
-                  },
-                  "sse": {
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "AES256",
-                      "aws:kms"
-                    ]
-                  },
-                  "kmsKeyId": {
-                    "anyOf": [
-                      {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 80
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "storageClass": {
-                    "anyOf": [
-                      {
+                      "bucket": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 63,
+                        "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                      },
+                      "prefix": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9!_.'()/-]*$"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "sse": {
                         "type": "string",
                         "enum": [
-                          "STANDARD",
-                          "STANDARD_IA",
-                          "ONEZONE_IA",
-                          "INTELLIGENT_TIERING",
-                          "GLACIER_IR"
+                          "none",
+                          "AES256",
+                          "aws:kms"
                         ]
                       },
-                      {
-                        "type": "null"
+                      "kmsKeyId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "storageClass": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "STANDARD",
+                              "STANDARD_IA",
+                              "ONEZONE_IA",
+                              "INTELLIGENT_TIERING",
+                              "GLACIER_IR"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "files",
+                          "package"
+                        ]
                       }
-                    ]
+                    },
+                    "additionalProperties": false
                   },
-                  "layout": {
-                    "type": "string",
-                    "enum": [
-                      "files",
-                      "package"
-                    ]
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "connectionId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "destination": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      }
+                    },
+                    "additionalProperties": false
                   }
-                },
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -77609,6 +79338,12 @@
                     },
                     "sinkId": {
                       "type": "string"
+                    },
+                    "instanceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "destination": {
                       "type": "object",
@@ -77722,6 +79457,15 @@
                         }
                       ]
                     },
+                    "sinkName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "deliverOnly": {
+                      "type": "boolean"
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -77784,6 +79528,7 @@
                     "label",
                     "kind",
                     "sinkId",
+                    "instanceId",
                     "destination",
                     "onBridge",
                     "bucket",
@@ -77795,6 +79540,8 @@
                     "kmsKeyId",
                     "storageClass",
                     "layout",
+                    "sinkName",
+                    "deliverOnly",
                     "source",
                     "editedAt",
                     "updatedBy",

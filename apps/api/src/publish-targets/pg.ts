@@ -208,7 +208,22 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
          FROM publish_targets t, target_s3_place(t.destination, t.sink_id) p
         WHERE t.${LIVE} AND t.kind IN ('internal', 'external')`,
     );
-    return rows.sort(byDefaultThenLabel);
+    const sinks = await this.pool.query<{ id: string; label: string }>(
+      `SELECT t.id, t.label FROM publish_targets t WHERE t.${LIVE} AND t.kind = 'sink'`,
+    );
+    return [
+      ...rows.map((r) => ({ ...r, sinkName: null, patternFields: [] })),
+      ...sinks.rows.map((r) => ({
+        id: r.id,
+        label: r.label,
+        kind: 'sink' as const,
+        bucket: '',
+        prefix: '',
+        layout: null,
+        sinkName: null,
+        patternFields: [],
+      })),
+    ].sort(byDefaultThenLabel);
   }
 
   async version(): Promise<number> {
@@ -303,6 +318,11 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
          UNION ALL
          SELECT target_id, count(*) FROM published_graph_versions
           WHERE $1::text IS NULL OR target_id = $1 GROUP BY 1
+         UNION ALL
+         -- Another sink's target records no outputs: its deliveries are what it was handed.
+         SELECT d.target_id, count(*) FROM job_deliveries d
+           JOIN publish_targets t ON t.id = d.target_id AND t.kind = 'sink'
+          WHERE $1::text IS NULL OR d.target_id = $1 GROUP BY 1
        ) d GROUP BY 1`,
       [id],
     );

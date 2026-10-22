@@ -451,8 +451,22 @@ describe('GET /api/jobs/:id deliveries', () => {
     );
     const detail = (await c.app.inject(`/api/jobs/${job.id}`)).json();
     expect(detail.deliveries).toEqual([
-      { targetId: 'default', label: 'Default', status: 'queued', message: null },
-      { targetId: 'gone', label: 'gone', status: 'needs_user', message: 'no target gone' },
+      {
+        targetId: 'default',
+        label: 'Default',
+        status: 'queued',
+        message: null,
+        deliverOnly: false,
+        links: [],
+      },
+      {
+        targetId: 'gone',
+        label: 'gone',
+        status: 'needs_user',
+        message: 'no target gone',
+        deliverOnly: false,
+        links: [],
+      },
     ]);
   });
 });

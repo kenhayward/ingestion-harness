@@ -162,8 +162,8 @@
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
         calls, and one registry of publishing targets. PRs #289 to #303, merged between Wednesday 21
-        October 2026, 14:06 and Thursday 22 October 2026, 10:17 (UTC). #298 is still open and is not
-        in this release.
+        October 2026, 14:06 and Thursday 22 October 2026, 10:17 (UTC). #298, delivery to other
+        systems, is described under Major changes and is not merged yet.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -187,6 +187,18 @@
           <li>
             <a href="#one-registry">One registry of publishing targets</a>
             <span>— the delivery bridge holds every target; CT Studio shows what it holds</span>
+          </li>
+          <li>
+            <a href="#external-sinks">Other systems to deliver to</a>
+            <span>— the delivery bridge delivers to registered external sinks too</span>
+          </li>
+          <li>
+            <a href="#names">Names where content is delivered</a>
+            <span>— name patterns per target, and names a reviewer can change</span>
+          </li>
+          <li>
+            <a href="#right-person">Delivered as the right person</a>
+            <span>— the approver, a warning at upload, and receipts on the job</span>
           </li>
         </ul>
         <h4>Minor changes</h4>
@@ -249,6 +261,13 @@
             <code>202610221100_legacy_key_connection</code>, and the bridge&apos;s
             <code>202610211000_target_removal</code>. The bridge contract package is now at
             <strong>0.4.0</strong>.
+          </li>
+          <li>
+            With #298: migrations <code>202610221500_delivery_overrides</code>,
+            <code>202610221600_acting_users</code> and <code>202610221700_connection_needed</code>,
+            and the bridge&apos;s <code>202610221400_resolved_destination</code>. The bridge
+            contract package moves to <strong>0.7.0</strong>. External sinks are registered with
+            <code>BRIDGE_SINKS</code> (or <code>BRIDGE_SINKS_FILE</code>) on the bridge.
           </li>
         </ul>
       </div>
@@ -355,6 +374,65 @@
         yet: a recipe naming one can&apos;t be published (<em
           >&lt;id&gt; is a &lt;sink&gt; target: recipes can&apos;t deliver to it yet</em
         >), and a copy restore treats production&apos;s like its external targets.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="external-sinks">Other systems to deliver to</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/298">#298</a>
+      </p>
+      <p>
+        The delivery bridge can now deliver to other systems besides S3 and the triple store. A
+        deployment registers each one in <code>BRIDGE_SINKS</code>. Administration &gt;
+        <em>Published outputs</em> lists them under <strong>Systems</strong>.
+        <strong>Add target</strong> &gt; <strong>Other system</strong> adds a target of one, with
+        the fields that system asks for. Recipes can deliver to such a target alongside an S3
+        target, which still serves Results and downloads.
+      </p>
+      <p>
+        These systems are deliver-only for now. Nothing withdraws from them, and deleting a job says
+        what stays there. While a target is in use, its fixed fields are locked; its name patterns
+        are not. For integrators: the bridge contract package is now 0.5.0. The sink catalog lists
+        each sink&apos;s fields, and the conformance suite expects a sink to take files and data.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="names">Names where content is delivered</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/298">#298</a>
+      </p>
+      <p>
+        A system that names what it creates, a document name for example, takes a
+        <strong>name pattern</strong> such as <code>{field:title|source.stem}</code>. A target holds
+        one, and a recipe can set its own for that target under <em>Publish to</em>, with a preview.
+        Admins can <strong>Browse…</strong> a system&apos;s spaces or folders instead of typing
+        them.
+      </p>
+      <p>
+        On the review screen, <strong>Names</strong> shows what each such target will call the
+        document. Type another name to use it instead. When the system already holds a different
+        document under that name, the job comes back to review with the name marked, so you can
+        choose another. For integrators: the bridge contract package is now 0.6.0, with name
+        patterns and naming inputs, and recipe patterns sent with each delivery.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="right-person">Delivered as the right person</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/298">#298</a>
+      </p>
+      <p>
+        A system that records who delivered each item gets the approver, or for a document published
+        without review, the uploader. The approver is now recorded by account, so renaming a user no
+        longer loses it. When the person has no connection to that system, or it is refused, the
+        document comes back to review with <strong>Manage connections</strong>. It no longer stops
+        in <em>Needs review</em>. Fix the connection and approve again.
+      </p>
+      <p>
+        Uploading to a type that delivers to such a system warns you first when you have no
+        connection there. The upload still goes ahead. Once delivered, the job shows links to what
+        the system wrote, where it gives them. For integrators: the bridge contract package is now
+        0.7.0, with <code>POST /v1/deliveries:preflight</code>.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

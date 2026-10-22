@@ -128,7 +128,7 @@ const PRODUCTION = `
               ('shared', 'Production shared', 'external', 's3', 'staging-keys', '{"bucket": "prod-shared"}', now()),
               ('prod-int', 'Production archive', 'internal', 's3', 'internal', '{"bucket": "prod-archive"}', now()),
               ('rdf-default', 'Triple store', 'rdf', 'rdf', 'rdf-default', '{"dataset": "ct"}', now()),
-              ('prod-3ds', 'Production 3DEXPERIENCE', 'sink', '3dexperience', 'prod-3ds-keys', '{"space": "prod"}', now());
+              ('prod-box', 'Production box', 'sink', 'fake', 'prod-box-keys', '{"space": "prod"}', now());
   -- Production's keys from before the bridge: none of them may survive a copy.
   INSERT INTO publish_target_legacy_keys (id, endpoint, region, access_key_id, secret_key_enc)
        VALUES ('prod-ext', 'https://s3.prod.example', 'eu-west-1', 'AKPROD', 'v1:prod-secret'),
@@ -195,10 +195,10 @@ const BRIDGE_PRODUCTION = `
        VALUES ('internal', 'shared', 's3', 'This deployment', '{}', NULL),
               ('staging-keys', 'shared', 's3', 'Same id, production keys', '{}', 'v1:prod-same-id'),
               ('target-prod-ext', 'shared', 's3', 'Production lake', '{"accessKeyId": "AKPROD"}', 'v1:prod-bridge-secret'),
-              ('prod-3ds-keys', 'shared', '3dexperience', 'Production 3DEXPERIENCE', '{}', 'v1:prod-3ds-secret');
+              ('prod-box-keys', 'shared', 'fake', 'Production box', '{}', 'v1:prod-box-secret');
   INSERT INTO bridge.targets (id, label, sink_id, connection_id, destination)
        VALUES ('default', 'Default', 's3', 'internal', '{"bucket": "ingest-published"}'),
-              ('prod-3ds', 'Production 3DEXPERIENCE', '3dexperience', 'prod-3ds-keys', '{"space": "prod"}'),
+              ('prod-box', 'Production box', 'fake', 'prod-box-keys', '{"space": "prod"}'),
               ('prod-ext', 'Production lake', 's3', 'target-prod-ext', '{"bucket": "prod-lake"}'),
               ('shared', 'Production shared', 's3', 'staging-keys', '{"bucket": "prod-shared"}');
   -- Production removed its 'shared' (soft: the row stays); staging's live 'shared' replaces it.
@@ -300,7 +300,7 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
         WHERE id = 'prod-ext'`,
     );
     expect(prodExt).toEqual({ kind: 'external', connection_id: null, inert: true });
-    expect(result.droppedTargets).toEqual(['prod-3ds', 'prod-ext', 'rdf-default']);
+    expect(result.droppedTargets).toEqual(['prod-box', 'prod-ext', 'rdf-default']);
     // Production's triple store (this server has none): inert, no connection (its endpoint and
     // writer user were production's), so nothing here delivers to production's Fuseki.
     expect(
@@ -440,7 +440,7 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
   it('a copy restore writes the kept targets into bridge.targets and the cache', async () => {
     const bridgeTargets = await side(
       `SELECT id, label, sink_id, instance_id, connection_id, destination
-         FROM bridge.targets WHERE id NOT IN ('prod-ext', 'prod-3ds') ORDER BY id`,
+         FROM bridge.targets WHERE id NOT IN ('prod-ext', 'prod-box') ORDER BY id`,
     );
     expect(bridgeTargets).toEqual([
       {
@@ -509,12 +509,12 @@ describe.skipIf(!url)('copy rules (Postgres)', () => {
     expect(
       await side(
         `SELECT kind, connection_id, inert_at IS NOT NULL AS inert
-           FROM publish_targets WHERE id = 'prod-3ds'`,
+           FROM publish_targets WHERE id = 'prod-box'`,
       ),
     ).toEqual([{ kind: 'sink', connection_id: null, inert: true }]);
     expect(
-      await side(`SELECT id, connection_id FROM bridge.targets WHERE id = 'prod-3ds'`),
-    ).toEqual([{ id: 'prod-3ds', connection_id: null }]);
+      await side(`SELECT id, connection_id FROM bridge.targets WHERE id = 'prod-box'`),
+    ).toEqual([{ id: 'prod-box', connection_id: null }]);
   });
 
   it("never delivers production's unfinished deliveries nor sends its events here", async () => {

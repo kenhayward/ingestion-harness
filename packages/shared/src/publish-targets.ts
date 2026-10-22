@@ -134,6 +134,8 @@ export const PublishTargetViewSchema = z.object({
   kind: z.enum(PUBLISH_TARGET_KINDS),
   /** The delivery bridge's sink it delivers through (`s3`, `rdf`, or another). */
   sinkId: z.string(),
+  /** A personal sink's target: the sink instance it delivers to (else null). */
+  instanceId: z.string().nullable(),
   /** Where in that sink, as the bridge holds it (the sink's destination fields). */
   destination: z.record(z.string(), z.string()),
   /** False when the bridge no longer lists it: its deliveries fail until it is there again. */
@@ -152,6 +154,13 @@ export const PublishTargetViewSchema = z.object({
   kmsKeyId: z.string().nullable(),
   storageClass: z.string().nullable(),
   layout: z.enum(TARGET_LAYOUTS).nullable(),
+  /** A `sink` target: its sink's name as the bridge lists it (null: other kinds, or unknown). */
+  sinkName: z.string().nullable(),
+  /**
+   * Content delivered to it stays there: the sink cannot withdraw (an external sink, or one
+   * not known yet). Deleting a job or retiring a type says so.
+   */
+  deliverOnly: z.boolean(),
   source: z.enum(['env', 'ui']),
   editedAt: z.string().nullable(),
   updatedBy: z.string().nullable(),
@@ -230,6 +239,87 @@ function checkTarget(
 export const TargetCreateBodySchema = TargetFieldsSchema.superRefine(checkTarget);
 export type TargetCreateBody = z.infer<typeof TargetCreateBodySchema>;
 
+/** A destination as a sink's fields hold it: field id to value (a pattern for pattern fields). */
+const SinkDestinationSchema = z.record(z.string().min(1).max(64), z.string().max(1024));
+
+/**
+ * A target of an external sink (any but the built-in `s3` and `rdf`): its fields are the sink's
+ * own, which the bridge checks. A shared sink's target names one of its connections; a personal
+ * sink's names an instance and no connection.
+ */
+export const SinkTargetCreateBodySchema = z
+  .object({
+    kind: z.literal('sink'),
+    id: TargetIdSchema.optional(),
+    label: TARGET_FIELDS.label,
+    sinkId: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, 'a sink id')
+      .refine(
+        (id) => id !== 's3' && id !== 'rdf',
+        'S3 and triple store targets have their own form',
+      ),
+    instanceId: z.string().min(1).nullable().default(null),
+    connectionId: ConnectionIdSchema.nullable().default(null),
+    destination: SinkDestinationSchema.default({}),
+  })
+  .strict();
+export type SinkTargetCreateBody = z.infer<typeof SinkTargetCreateBodySchema>;
+
+/** A sink target's change: fields left out are kept; its sink and instance never change. */
+export const SinkTargetPatchBodySchema = z
+  .object({
+    label: TARGET_FIELDS.label,
+    connectionId: ConnectionIdSchema.nullable(),
+    destination: SinkDestinationSchema,
+  })
+  .partial()
+  .strict()
+  .refine((b) => Object.values(b).some((v) => v !== undefined), 'nothing to change');
+export type SinkTargetPatchBody = z.infer<typeof SinkTargetPatchBodySchema>;
+
+/**
+ * A sink as Published outputs shows it (the delivery bridge's catalog entry): never a credential
+ * value. Kept in step with the bridge contract's SinkViewSchema, which the API answers.
+ */
+export const SinkInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(['available', 'unavailable']),
+  contractVersion: z.number().int(),
+  connectionKind: z.enum(['shared', 'personal']),
+  instances: z.array(z.object({ id: z.string(), label: z.string() })),
+  destinationFields: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      kind: z.enum(['fixed', 'pattern']),
+      required: z.boolean(),
+      overridable: z.boolean(),
+      browse: z.boolean(),
+    }),
+  ),
+  credentialFields: z.array(z.object({ id: z.string(), label: z.string(), secret: z.boolean() })),
+  capabilities: z.object({
+    browse: z.boolean(),
+    replace: z.boolean(),
+    withdraw: z.boolean(),
+    readBack: z.boolean(),
+    accepts: z.array(z.string()),
+  }),
+});
+export type SinkInfo = z.infer<typeof SinkInfoSchema>;
+
+/** One node of a sink's browse tree (the bridge contract's BrowseNode). */
+export const SinkBrowseNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  kind: z.string(),
+  hasChildren: z.boolean(),
+  selectable: z.boolean(),
+});
+export type SinkBrowseNode = z.infer<typeof SinkBrowseNodeSchema>;
+
 /** What `null` clears in a patch. */
 const CLEARABLE = {
   kmsKeyId: z.string().min(1).nullable(),
@@ -269,12 +359,53 @@ export type TargetTestResult = z.infer<typeof TargetTestResultSchema>;
 export const TargetChoiceSchema = z.object({
   id: TargetIdSchema,
   label: z.string(),
-  kind: z.enum(TARGET_KINDS),
+  kind: z.enum([...TARGET_KINDS, 'sink']),
+  /** S3 targets; empty for a sink target. */
   bucket: z.string(),
   prefix: z.string(),
-  layout: z.enum(TARGET_LAYOUTS),
+  /** S3 targets; null for a sink target (never the primary target). */
+  layout: z.enum(TARGET_LAYOUTS).nullable(),
+  /** A sink target's sink, by name (null: S3, or a sink not known now). */
+  sinkName: z.string().nullable(),
+  /** A sink target's name pattern fields, with the target's own pattern (S3: none). */
+  patternFields: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        required: z.boolean(),
+        overridable: z.boolean(),
+        /** The target's own pattern for it, used when the recipe sets none. */
+        targetPattern: z.string().nullable(),
+      }),
+    )
+    .default([]),
 });
 export type TargetChoice = z.infer<typeof TargetChoiceSchema>;
+
+/** A name pattern resolved against a sample document, for the editors' previews. */
+export const PatternPreviewSchema = z.object({
+  /** The pattern resolved; null when it does not parse, or a placeholder resolves to nothing. */
+  value: z.string().nullable(),
+  unresolved: z.array(z.string()),
+  /** Why it is not a pattern, else null. */
+  error: z.string().nullable(),
+});
+export type PatternPreview = z.infer<typeof PatternPreviewSchema>;
+
+/** A recipe's name patterns per target: target id → pattern field id → pattern. */
+export const DeliverySettingsSchema = z.record(
+  TargetIdSchema,
+  z.record(z.string().min(1).max(64), z.string().min(1).max(1024)),
+);
+export type DeliverySettings = z.infer<typeof DeliverySettingsSchema>;
+
+/** A recipe's name patterns per target (`delivery.settings`); absent means none. */
+export function deliverySettingsOf(definition: {
+  delivery?: { settings?: DeliverySettings };
+}): DeliverySettings {
+  return definition.delivery?.settings ?? {};
+}
 
 /**
  * The targets a recipe delivers to, in its order; absent means `["default"]`. The triple store

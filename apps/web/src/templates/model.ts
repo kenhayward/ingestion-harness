@@ -61,6 +61,28 @@ export function validateDefinition(def: unknown): string[] {
 }
 
 /**
+ * The delivery with the name pattern of one target's field set (blank: removed). `settings` is
+ * written only while it holds a pattern, so an untouched recipe keeps its hash.
+ */
+export function withSetting(
+  delivery: object | undefined,
+  targetId: string,
+  fieldId: string,
+  pattern: string,
+): Record<string, unknown> | undefined {
+  const rest: Record<string, unknown> = { ...delivery };
+  const settings = { ...((rest.settings as Record<string, Record<string, string>>) ?? {}) };
+  const fields = { ...(settings[targetId] ?? {}) };
+  if (pattern.trim()) fields[fieldId] = pattern;
+  else delete fields[fieldId];
+  if (Object.keys(fields).length) settings[targetId] = fields;
+  else delete settings[targetId];
+  if (Object.keys(settings).length) rest.settings = settings;
+  else delete rest.settings;
+  return Object.keys(rest).length === 0 ? undefined : rest;
+}
+
+/**
  * A delivery that publishes to `ids`, in order: a string for one target, a list for two or more
  * (so a recipe that keeps one target keeps its hash), and no `publishTo` for the default target
  * alone or none. No `delivery` at all when nothing is left.
@@ -71,6 +93,13 @@ export function withPublishTo(
 ): Record<string, unknown> | undefined {
   const rest: Record<string, unknown> = { ...delivery };
   delete rest.publishTo;
+  // A target no longer delivered to keeps no name patterns.
+  const settings = rest.settings as Record<string, unknown> | undefined;
+  if (settings) {
+    const kept = Object.fromEntries(Object.entries(settings).filter(([id]) => ids.includes(id)));
+    if (Object.keys(kept).length) rest.settings = kept;
+    else delete rest.settings;
+  }
   const onlyDefault = ids.length === 0 || (ids.length === 1 && ids[0] === DEFAULT_TARGET_ID);
   const next = onlyDefault ? rest : { ...rest, publishTo: ids.length === 1 ? ids[0] : [...ids] };
   return Object.keys(next).length === 0 ? undefined : next;
