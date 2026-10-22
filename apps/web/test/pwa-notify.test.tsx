@@ -43,7 +43,20 @@ function app(lists: JobSummary[][], role: 'designer' | 'admin' = 'designer') {
       mustChangePassword: false,
       userId: 'u-test',
     })),
-    listJobs: vi.fn(async () => lists[Math.min(call++, lists.length - 1)]!),
+    // The newest list (the app's poll) moves through `lists`; the attention list reads the
+    // same moment without moving on. The Jobs page is not what these tests watch.
+    listJobs: vi.fn(async (opts?: { group?: string }) => {
+      const at = Math.min(opts ? Math.max(call - 1, 0) : call++, lists.length - 1);
+      return lists[at]!;
+    }),
+    listJobPage: vi.fn(async () => ({
+      jobs: [],
+      start: 0,
+      total: 0,
+      hasNewer: false,
+      hasOlder: false,
+      counts: { all: 0, attention: 0, active: 0, done: 0 },
+    })),
   });
   render(
     <App api={api} pollMs={20} launched={new LaunchedFiles()} install={new InstallPrompt()} />,

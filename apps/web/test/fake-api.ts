@@ -1,4 +1,6 @@
 import { vi } from 'vitest';
+import { pageOfJobs, type JobPageQuery } from '@ih/shared';
+import type { JobPageParams } from '../src/api/client.js';
 import type {
   GitHubLinkBody,
   MaintenanceBody,
@@ -310,7 +312,7 @@ export type FakeApi = Api & {
 export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
   const listeners = new Set<() => void>();
   const maintenanceListeners = new Set<(notice: MaintenanceNotice) => void>();
-  return {
+  const api: FakeApi = {
     expireSession: () => listeners.forEach((l) => l()),
     startMaintenance: (notice) => maintenanceListeners.forEach((l) => l(notice)),
     onMaintenance: (listener) => {
@@ -558,6 +560,18 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     })),
     listPickerChoices: vi.fn(async () => MODEL_CHOICES),
     listJobs: vi.fn(async () => []),
+    // The Jobs page's pages come from whatever listJobs gives, in the order given (newest
+    // first, as the server lists them), paged by the shared rule: a test stubs listJobs (or
+    // listJobPage itself).
+    listJobPage: vi.fn(async ({ mine, ...query }: JobPageParams) => {
+      const given = await api.listJobs(mine ? { mine: true } : undefined);
+      const ranked = given.map((j, i) => ({
+        ...j,
+        createdAt: new Date(Date.UTC(2100, 0, 1) - i * 1000).toISOString(),
+      }));
+      const page = pageOfJobs(ranked, query as JobPageQuery);
+      return { ...page, jobs: page.jobs.map((j) => given.find((g) => g.id === j.id)!) };
+    }),
     getJob: vi.fn(async (id: string) => ({ ...job({ id }), outputs: [] })),
     // No live stream by default: callers fall back to polling, as in a browser without one.
     watchJob: vi.fn((_id: string, on: { error(): void }) => {
@@ -798,6 +812,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     }),
     ...overrides,
   };
+  return api;
 }
 
 export function projectOverview(overrides: Partial<ProjectOverview> = {}): ProjectOverview {
