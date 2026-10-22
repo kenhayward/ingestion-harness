@@ -180,3 +180,17 @@ describe('POST /v1/deliveries to an unavailable sink', () => {
     expect(await deliveries.claim(new Date(), 300)).toBeNull();
   });
 });
+
+describe('POST /v1/deliveries resolves name patterns', () => {
+  it('refuses a pattern that resolves to nothing, writing nothing', async () => {
+    const { app, deliveries } = await setup();
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: { ...request(['t1']), overrides: { t1: { bucket: 'other' } } },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ code: 'content_rejected' });
+    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+  });
+});

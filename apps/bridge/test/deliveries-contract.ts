@@ -23,6 +23,7 @@ export const delivery = (targetId = 't1') => ({
   targetId,
   actingUser: user,
   overrides: {},
+  destination: null,
 });
 
 /** The behaviour every DeliveryRepo shares; `make` gives an empty repo whose targets t1, t2 exist. */

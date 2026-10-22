@@ -6,6 +6,7 @@ import {
   ObjectPutRequestSchema,
   ObjectReadResultSchema,
   ObjectRefSchema,
+  parsePattern,
   RESOURCE_ID,
   TargetPutRequestSchema,
   TargetSettingsTestRequestSchema,
@@ -86,6 +87,12 @@ async function checkTarget(
   const undeclared = Object.keys(t.destination).find((k) => !declared.has(k));
   if (undeclared) {
     throw refuse('content_rejected', `${undeclared} is not a destination field of ${t.sinkId}`);
+  }
+  for (const f of described.destinationFields) {
+    const pattern = t.destination[f.id];
+    if (f.kind !== 'pattern' || !pattern) continue;
+    const parsed = parsePattern(pattern);
+    if ('error' in parsed) throw refuse('content_rejected', `${f.label}: ${parsed.error}`);
   }
   const missing = described.destinationFields.find(
     (f) => f.required && f.kind === 'fixed' && !t.destination[f.id],

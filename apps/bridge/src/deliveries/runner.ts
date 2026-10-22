@@ -147,7 +147,8 @@ async function step(
   const result = await sink.deliver({
     instanceId: target.instanceId,
     credential,
-    destination: { ...target.destination, ...row.overrides },
+    // Resolved at accept; a delivery from before phase 6 merges its overrides as it did.
+    destination: row.destination ?? { ...target.destination, ...row.overrides },
     idempotencyKey: row.idempotencyKey,
     actingUser: row.actingUser,
     package: pkg,

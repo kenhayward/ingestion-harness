@@ -149,8 +149,11 @@ class CreateDeliveriesRequest(Wire):
 
     targets: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
     acting_user: ActingUser | None
-    #: Per target id, per destination field id: the reviewer's overrides.
+    #: Per target id, per destination field id: the reviewer's overrides (literal values).
     overrides: dict[str, dict[str, str]] = Field(default_factory=dict)
+    #: Per target id, per pattern field id: the recipe's name patterns (the bridge resolves
+    #: them against the package's naming).
+    patterns: dict[str, dict[str, str]] = Field(default_factory=dict)
     package: BridgePackage
 
 

@@ -31,7 +31,7 @@ from ingest_worker.pipeline import Buckets, PipelineDeps, Target
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import SpecRegistry
 from ingest_worker.storage import MemoryObjectStore, graph_version_key, output_key
-from ingest_worker.template import Template
+from ingest_worker.template import Delivery, Template
 
 from .fakes import FakeBridge, FakeQueue
 
@@ -293,3 +293,28 @@ def test_a_sink_target_is_in_the_request_and_records_no_outputs() -> None:
     assert [t for t, _ in delivered.deliveries] == ["finance-lake", "fake-target"]
     assert "fake-target" not in delivered.outputs_by_target
     assert delivered.primary == "finance-lake"
+
+
+def test_the_recipe_s_name_patterns_go_with_the_request_for_its_targets() -> None:
+    bridge = FakeBridge({"finance-lake": ("finance", "fin/")}, sinks={"fake-target"})
+    sink = Target("fake-target", "", "", layout="sink", sink_id="fake")
+    template = TEMPLATE.model_copy(
+        update={
+            "delivery": TEMPLATE.delivery.model_copy(
+                update={
+                    "settings": {"fake-target": {"name": "{field:product}"}, "gone": {"x": "y"}}
+                }
+            )
+            if TEMPLATE.delivery
+            else Delivery.model_validate(
+                {"settings": {"fake-target": {"name": "{field:product}"}, "gone": {"x": "y"}}}
+            )
+        }
+    )
+    deliver_document(
+        deps(bridge), JOB, template=template, document=DOCUMENT, outputs=rendered(),
+        targets=[TARGET, sink], acting=PAT, approver=None,
+    )  # fmt: skip
+    [request] = bridge.requests
+    assert request.patterns == {"fake-target": {"name": "{field:product}"}}
+    assert request.overrides == {}

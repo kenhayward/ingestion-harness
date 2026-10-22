@@ -6,6 +6,7 @@ import {
   type CreateDeliveriesResult,
 } from '@ih/bridge-contract';
 import type { ConnectionRepo } from '../connections/repo.js';
+import { resolveDestination } from './destination.js';
 import type { PackageStore } from '../packages/store.js';
 import { SinkError, type SinkRegistry } from '../sinks/port.js';
 import type { TargetRepo } from '../targets/repo.js';
@@ -43,6 +44,7 @@ export async function acceptDeliveries(
   ids: () => string,
 ): Promise<CreateDeliveriesResult> {
   const parts = partsOf(req.package);
+  const destinations = new Map<string, Record<string, string>>();
   for (const targetId of req.targets) {
     const target = await deps.targets.get(targetId);
     if (!target) {
@@ -65,7 +67,18 @@ export async function acceptDeliveries(
         }),
       );
     }
-    const { capabilities, connectionKind } = await sink.describe();
+    const { capabilities, connectionKind, destinationFields } = await sink.describe();
+    destinations.set(
+      targetId,
+      resolveDestination({
+        targetId,
+        target,
+        fields: destinationFields,
+        patterns: req.patterns[targetId] ?? {},
+        overrides: req.overrides[targetId] ?? {},
+        naming: req.package.naming,
+      }),
+    );
     if (connectionKind === 'personal') {
       const user = req.actingUser;
       if (!user) {
@@ -107,6 +120,7 @@ export async function acceptDeliveries(
     targetId,
     actingUser: req.actingUser,
     overrides: req.overrides[targetId] ?? {},
+    destination: destinations.get(targetId) ?? null,
   }));
   await deps.deliveries.create(
     {

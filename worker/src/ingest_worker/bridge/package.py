@@ -245,7 +245,11 @@ def deliver_document(
         deployment=deps.deployment,
         graph=graph,
     )
-    return deliver_outputs(deps, job, package, targets, acting, outputs, primary)
+    # The recipe's name patterns, for the targets this hand-off names (the bridge resolves them).
+    named = {t.id for t in targets}
+    settings = template.delivery_settings() if template else {}
+    patterns = {t: fields for t, fields in settings.items() if t in named}
+    return deliver_outputs(deps, job, package, targets, acting, outputs, primary, patterns=patterns)
 
 
 def deliver_outputs(
@@ -256,8 +260,12 @@ def deliver_outputs(
     acting: ActingUser | None,
     outputs: list[RenderedOutput],
     primary: Target | None = None,
+    *,
+    patterns: dict[str, dict[str, str]] | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
 ) -> Delivered:
-    """Submit the package to `targets` through the bridge, in one request. Returns the outputs
+    """Submit the package to `targets` through the bridge, in one request, with the recipe's
+    name `patterns` and the reviewer's `overrides` per target. Returns the outputs
     keyed as the primary target (default: the first) writes them (its prefix + their key), what
     each S3 target records, and the deliveries. A refusal for a person (BridgeRefused, a
     DocumentError) and an unreachable bridge (BridgeUnavailable, retried) propagate; nothing is
@@ -266,7 +274,11 @@ def deliver_outputs(
         raise RuntimeError("no delivery bridge is configured: nothing can be delivered")
     result = deps.bridge.deliver(
         CreateDeliveriesRequest(
-            targets=[t.id for t in targets], acting_user=acting, package=package
+            targets=[t.id for t in targets],
+            acting_user=acting,
+            overrides=overrides or {},
+            patterns=patterns or {},
+            package=package,
         )
     )
     by_target = {d.target_id: d.delivery_id for d in result.deliveries}

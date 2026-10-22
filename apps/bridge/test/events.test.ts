@@ -24,7 +24,13 @@ async function twoEvents() {
     stagedKey: 'k',
     expiresAt: null,
   };
-  const d = () => ({ id: randomUUID(), targetId: 't1', actingUser: null, overrides: {} });
+  const d = () => ({
+    id: randomUUID(),
+    targetId: 't1',
+    actingUser: null,
+    overrides: {},
+    destination: null,
+  });
   await deliveries.create(pkg, [d()], T0);
   await deliveries.create({ ...pkg, id: randomUUID() }, [d()], at(1));
   return deliveries;

@@ -16,7 +16,13 @@ describe('pruning staged packages (BRIDGE_PACKAGE_RETENTION_DAYS)', () => {
     const packages = new MemoryPackageStore();
     const done = pkg({ stagedKey: 'packages/done.json', expiresAt: at(100) });
     const busy = pkg({ stagedKey: 'packages/busy.json', expiresAt: at(100) });
-    const d = { id: randomUUID(), targetId: 't1', actingUser: user, overrides: {} };
+    const d = {
+      id: randomUUID(),
+      targetId: 't1',
+      actingUser: user,
+      overrides: {},
+      destination: null,
+    };
     await deliveries.create(done, [d], T0);
     await deliveries.create(busy, [{ ...d, id: randomUUID() }], at(1));
     await packages.put(done.stagedKey, documentPackage);

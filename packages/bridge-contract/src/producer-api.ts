@@ -25,8 +25,13 @@ export type DeliveryStatus = z.infer<typeof DeliveryStatusSchema>;
 export const CreateDeliveriesRequestSchema = z.strictObject({
   targets: z.array(z.string().min(1)).min(1),
   actingUser: ActingUserSchema.nullable(),
-  /** Per target id, per destination field id: the reviewer's overrides. */
+  /** Per target id, per destination field id: the reviewer's overrides (literal values). */
   overrides: z.record(z.string(), z.record(z.string(), z.string())).default({}),
+  /**
+   * Per target id, per pattern field id: the recipe's name patterns, resolved by the bridge
+   * against the package's `naming` (they win over the target's own patterns).
+   */
+  patterns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   package: PackageSchema,
 });
 export type CreateDeliveriesRequest = z.infer<typeof CreateDeliveriesRequestSchema>;

@@ -48,6 +48,26 @@ async function setup() {
     sinks: new MapSinkRegistry({
       s3,
       fake: new FakeSink(),
+      named: new FakeSink({
+        destinationFields: [
+          {
+            id: 'bucket',
+            label: 'Bucket',
+            kind: 'fixed',
+            required: true,
+            overridable: false,
+            browse: false,
+          },
+          {
+            id: 'name',
+            label: 'Name',
+            kind: 'pattern',
+            required: true,
+            overridable: true,
+            browse: false,
+          },
+        ],
+      }),
       acme: new FakeSink({
         connectionKind: 'personal',
         instances: [{ id: 'sandbox', label: 'Sandbox' }],
@@ -177,7 +197,7 @@ describe('DELETE /v1/targets/:id', () => {
         stagedKey: 'k',
         expiresAt: null,
       },
-      [{ id: randomUUID(), targetId: 'b', actingUser: null, overrides: {} }],
+      [{ id: randomUUID(), targetId: 'b', actingUser: null, overrides: {}, destination: null }],
       new Date(),
     );
     expect((await call('DELETE', '/v1/targets/a')).statusCode).toBe(204);
@@ -332,5 +352,28 @@ describe('targets of a personal sink', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json().message).toBe('u-mine is a personal connection');
+  });
+});
+
+describe('a target’s own name patterns', () => {
+  it('are checked when it is written', async () => {
+    const { call } = await setup();
+    const res = await call('PUT', '/v1/targets/named', {
+      label: 'Named',
+      sinkId: 'named',
+      instanceId: null,
+      connectionId: null,
+      destination: { bucket: 'b', name: '{nope}' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().message).toBe('Name: `{nope}`: unknown variable nope at 1');
+    const ok = await call('PUT', '/v1/targets/named', {
+      label: 'Named',
+      sinkId: 'named',
+      instanceId: null,
+      connectionId: null,
+      destination: { bucket: 'b', name: '{source.stem}' },
+    });
+    expect(ok.statusCode).toBe(200);
   });
 });

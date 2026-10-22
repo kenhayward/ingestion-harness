@@ -10,6 +10,11 @@
       "documentName": "Invoice 001 (corrected)"
     }
   },
+  "patterns": {
+    "specs-archive": {
+      "documentName": "{field:title|source.stem}"
+    }
+  },
   "package": {
     "kind": "document",
     "contractVersion": 1,

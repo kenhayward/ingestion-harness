@@ -161,6 +161,22 @@
                       }
                     }
                   },
+                  "patterns": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
                   "package": {
                     "type": "object",
                     "properties": {

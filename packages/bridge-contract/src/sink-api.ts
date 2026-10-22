@@ -18,6 +18,7 @@ export const DestinationFieldSchema = z.strictObject({
   overridable: z.boolean(),
   browse: z.boolean(),
 });
+export type DestinationField = z.infer<typeof DestinationFieldSchema>;
 
 export const CapabilitiesSchema = z.strictObject({
   browse: z.boolean(),
