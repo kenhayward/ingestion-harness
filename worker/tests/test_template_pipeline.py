@@ -16,7 +16,7 @@ import pytest
 import yaml
 from rdflib import RDFS, Graph, Literal, URIRef
 
-from ingest_worker.bridge.models import BridgeError, package_archive_keys
+from ingest_worker.bridge.models import ActingUser, BridgeError, package_archive_keys
 from ingest_worker.llm.registry import ModelRegistry, ProviderConfig
 from ingest_worker.main import run_once
 from ingest_worker.pipeline import Buckets, PipelineDeps, Target, mark_pages
@@ -761,6 +761,14 @@ def test_a_reviewed_publish_sends_the_names_the_reviewer_chose(tmp_path: Path) -
     run_once(queue, deps, "w1")
     [request] = documents(bridge)
     assert request.overrides == {"default": {"name": "Chosen"}}
+
+
+def test_a_publish_records_whom_it_delivered_as(tmp_path: Path) -> None:
+    deps, _bridge, queue = to_publish(tmp_path)
+    pat = ActingUser(id="u-pat", name="Pat", email=None)
+    queue.reviewers["job-1"] = pat
+    run_once(queue, deps, "w1")
+    assert queue.delivered_as["job-1"] == "u-pat"
 
 
 def test_publishing_the_same_file_again_is_the_next_version_of_its_graph(tmp_path: Path) -> None:

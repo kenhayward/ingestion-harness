@@ -513,6 +513,8 @@ export interface IngestionRepo {
     reviewer: string | null,
     note: string | null,
     overrides?: DeliveryOverrides,
+    /** The signed-in user who approved (null: none, e.g. tests without access). */
+    reviewerUserId?: string | null,
   ): Promise<JobSummary | null>;
   /** The name overrides the job's last approval stored (none: `{}`). */
   deliveryOverrides(jobId: string): Promise<DeliveryOverrides>;

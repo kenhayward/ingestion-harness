@@ -127,6 +127,14 @@ class JobQueue(Protocol):
         """The names the reviewer chose at the job's approval, per target and name field."""
         ...
 
+    def record_delivered_as(self, job_id: str, user_id: str) -> None:
+        """The bridge accepted a package of the job as this user (a re-delivery acts as them)."""
+        ...
+
+    def last_deliverer(self, job_id: str) -> ActingUser | None:
+        """The user the job was last delivered as (None: never, or no such user now)."""
+        ...
+
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         """Reviewer edits in the order they were made."""
         ...
@@ -348,10 +356,26 @@ class PgJobQueue:
                 )
 
     def reviewer(self, job_id: str) -> ActingUser | None:
+        # By id (recorded since phase 6), else by the name a job approved before then carries.
         row = self._conn.execute(
             """SELECT u.id::text, u.name, u.email FROM jobs j
-                 JOIN users u ON lower(btrim(u.name)) = lower(btrim(j.reviewer))
+                 JOIN users u ON (j.reviewer_user_id IS NOT NULL AND u.id = j.reviewer_user_id)
+                              OR (j.reviewer_user_id IS NULL
+                                  AND lower(btrim(u.name)) = lower(btrim(j.reviewer)))
                 WHERE j.id = %s AND j.reviewed_at IS NOT NULL""",
+            (job_id,),
+        ).fetchone()
+        return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
+
+    def record_delivered_as(self, job_id: str, user_id: str) -> None:
+        self._conn.execute(
+            "UPDATE jobs SET delivered_as_user = %s WHERE id = %s", (user_id, job_id)
+        )
+
+    def last_deliverer(self, job_id: str) -> ActingUser | None:
+        row = self._conn.execute(
+            """SELECT u.id::text, u.name, u.email FROM jobs j
+                 JOIN users u ON u.id = j.delivered_as_user WHERE j.id = %s""",
             (job_id,),
         ).fetchone()
         return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None

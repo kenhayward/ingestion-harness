@@ -409,6 +409,9 @@ def deliver_publication(
         graph=version,
         overrides=overrides,
     )
+    # A later system re-delivery (a rebuild, a remint) acts as whom the bridge accepted it as.
+    if acting is not None:
+        queue.record_delivered_as(job.id, acting.id)
     return replace(delivered, deliveries=delivered.deliveries + loads)
 
 

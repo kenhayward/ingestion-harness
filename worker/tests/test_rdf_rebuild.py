@@ -140,6 +140,25 @@ def test_backfill_publishes_delivered_documents_with_the_newest_mapping(tmp_path
     assert f"{BASE}graph/ontology/acme/1" in store_of(deps).graphs  # the TBox came with it
 
 
+def test_a_backfill_delivers_as_whoever_last_delivered_the_job(tmp_path: Path) -> None:
+    from ingest_worker.bridge.models import ActingUser
+
+    last = ActingUser(id="u-last", name="Lee", email=None)
+    reviewer = ActingUser(id="u-rev", name="Rae", email=None)
+
+    class Queue(FakeQueue):
+        def last_deliverer(self, job_id: str) -> ActingUser | None:
+            return last
+
+        def reviewer(self, job_id: str) -> ActingUser | None:
+            return reviewer
+
+    deps, source = setup(tmp_path, job(1, "aa" * 32))
+    backfill(deps, Queue(), source, "letter")
+    documents = [r for r in store_of(deps).requests if r.package.kind == "document"]
+    assert documents and all(r.acting_user == last for r in documents)
+
+
 def test_backfill_skips_documents_already_published_or_without_a_review(tmp_path: Path) -> None:
     deps, source = setup(tmp_path, job(1, "aa" * 32))
     backfill(deps, FakeQueue(), source, "letter")

@@ -966,6 +966,8 @@ export class MemoryRepo implements IngestionRepo {
 
   /** jobs.delivery_overrides, by job id. */
   readonly overrides = new Map<string, DeliveryOverrides>();
+  /** jobs.reviewer_user_id, by job id. */
+  readonly reviewerIds = new Map<string, string | null>();
 
   async deliveryOverrides(jobId: string): Promise<DeliveryOverrides> {
     return structuredClone(this.overrides.get(jobId) ?? {});
@@ -976,9 +978,11 @@ export class MemoryRepo implements IngestionRepo {
     reviewer: string | null,
     note: string | null,
     overrides: DeliveryOverrides = {},
+    reviewerUserId: string | null = null,
   ) {
     if (this.jobs.get(jobId)?.status !== 'awaiting_review') return null;
     this.overrides.set(jobId, structuredClone(overrides));
+    this.reviewerIds.set(jobId, reviewerUserId);
     return this.update(jobId, {
       status: 'queued',
       task: 'publish',

@@ -1205,13 +1205,14 @@ export class PgRepo implements IngestionRepo {
     reviewer: string | null,
     note: string | null,
     overrides: DeliveryOverrides = {},
+    reviewerUserId: string | null = null,
   ) {
     const { rowCount } = await this.pool.query(
       `UPDATE jobs SET status = 'queued', task = 'publish', attempts = 0, error = NULL,
               run_after = now(), reviewer = $2, review_note = $3, reviewed_at = now(),
-              delivery_overrides = $4, updated_at = now()
+              delivery_overrides = $4, reviewer_user_id = $5, updated_at = now()
         WHERE id = $1 AND status = 'awaiting_review'`,
-      [jobId, reviewer, note, JSON.stringify(overrides)],
+      [jobId, reviewer, note, JSON.stringify(overrides), reviewerUserId],
     );
     return rowCount ? await this.getJob(jobId) : null;
   }

@@ -50,7 +50,13 @@ describe.skipIf(!url)('approving against Postgres', { timeout: 30_000 }, () => {
   it('stores the name overrides with the approval, and a re-approval replaces them', async () => {
     const job = await awaiting();
     expect(await repo.deliveryOverrides(job.id)).toEqual({});
-    await repo.approve(job.id, 'Ken', null, { 'fake-target': { name: 'Chosen' } });
+    const userId = randomUUID();
+    await repo.approve(job.id, 'Ken', null, { 'fake-target': { name: 'Chosen' } }, userId);
+    const { rows } = await pool.query<{ id: string | null }>(
+      'SELECT reviewer_user_id::text AS id FROM jobs WHERE id = $1',
+      [job.id],
+    );
+    expect(rows[0]?.id).toBe(userId);
     expect(await repo.deliveryOverrides(job.id)).toEqual({ 'fake-target': { name: 'Chosen' } });
     await pool.query(`UPDATE jobs SET status = 'awaiting_review' WHERE id = $1`, [job.id]);
     await repo.approve(job.id, 'Ken', null);

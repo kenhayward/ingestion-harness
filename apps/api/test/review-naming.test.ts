@@ -190,3 +190,10 @@ describe('a name the target refused (name_conflict)', () => {
   });
 });
 
+describe('approving records who approved, by id', () => {
+  it('stores the signed-in user as the reviewer', async () => {
+    const { app, repo, job } = await seed();
+    await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/approve`, payload: {} });
+    expect(repo.reviewerIds.get(job.id)).toBe('unit-test-admin');
+  });
+});

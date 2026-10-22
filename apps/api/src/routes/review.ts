@@ -342,6 +342,7 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
         body.data.reviewer ?? null,
         body.data.note ?? null,
         overrides,
+        req.auth?.userId ?? (app.deps.access ? null : 'unit-test-admin'),
       );
       return job ?? reply.code(409).send({ error: 'job not found or not awaiting review' });
     },
