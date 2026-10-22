@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ResultsPage } from '../src/results/ResultsPage.js';
 import { timeOf } from '../src/results/format.js';
 import { fakeApi } from './fake-api.js';
+import { resultDetail } from './result-fixture.js';
 
 const result = (o: Partial<ResultSummary> = {}): ResultSummary => ({
   jobId: crypto.randomUUID(),
@@ -87,6 +88,38 @@ describe('ResultsPage list', () => {
       'target',
       '_blank',
     );
+  });
+
+  it('offers the viewer in the preview once it knows the result is a recipe one', async () => {
+    const r = result({
+      jobId: 'j2',
+      filename: 'report.docx',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    render(
+      <ResultsPage
+        api={fakeApi({
+          listResults: vi.fn(async () => [r]),
+          getResult: vi.fn(async () => resultDetail({ job: { ...resultDetail().job, id: 'j2' } })),
+        })}
+      />,
+    );
+    await screen.findByRole('button', { name: 'Show preview of report.docx' });
+    const viewer = await within(preview()).findByRole('link', {
+      name: 'Open report.docx in the viewer',
+    });
+    expect(viewer).toHaveAttribute('href', '#/review/j2');
+    const actions = within(preview()).getByRole('group', { name: 'Actions' });
+    expect(
+      within(actions)
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('aria-label')),
+    ).toEqual([
+      'Open full result for report.docx',
+      'Open report.docx in the viewer',
+      'Download original of report.docx',
+      'Download report.docx results as ZIP',
+    ]);
   });
 
   it('offers the original of a Word document as a download', async () => {

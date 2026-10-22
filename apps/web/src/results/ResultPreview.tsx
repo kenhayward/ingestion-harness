@@ -16,7 +16,10 @@ export const PREVIEW_FILES = 8;
 
 const label = (c: { id: string; name?: string }) => c.name ?? c.id;
 
-/** Open full result, the original (PDF in a tab, or the .docx), and the ZIP of every output. */
+/**
+ * Open full result, Open in viewer (a recipe result: the document beside its values, read-only),
+ * the original (PDF in a tab, or the .docx), and the ZIP of every output.
+ */
 export function ResultActions({
   api,
   jobId,
@@ -24,6 +27,7 @@ export function ResultActions({
   contentType,
   outputCount,
   primary,
+  viewer,
 }: {
   api: Api;
   jobId: string;
@@ -32,6 +36,8 @@ export function ResultActions({
   outputCount: number;
   /** The preview leads with Open full result; the full result has no such link. */
   primary?: boolean;
+  /** A recipe result, so the Review page can show it (it refuses legacy spec jobs). */
+  viewer?: boolean;
 }) {
   return (
     <div role="group" aria-label="Actions" className="result-actions">
@@ -43,6 +49,17 @@ export function ResultActions({
         >
           <Icon name="open" />
           Open full result
+        </a>
+      )}
+      {viewer && (
+        <a
+          className="button"
+          href={`#/review/${jobId}`}
+          aria-label={`Open ${filename} in the viewer`}
+          title="The document beside its values, with page thumbnails and the tables (read-only)"
+        >
+          <Icon name="eye" />
+          Open in viewer
         </a>
       )}
       {isWordDocument(contentType) ? (
@@ -150,6 +167,7 @@ export function ResultPreview({
         contentType={summary.contentType}
         outputCount={summary.outputCount}
         primary
+        viewer={definition?.kind === 'template'}
       />
       {error && <p className="error">Couldn't load the preview: {error}</p>}
       {detail?.documentError && <p className="error">{DOCUMENT_ERRORS[detail.documentError]}.</p>}
