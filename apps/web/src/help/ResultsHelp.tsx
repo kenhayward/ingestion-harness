@@ -47,6 +47,12 @@ export function ResultsHelp() {
           where it was published, and each output to download.
         </li>
         <li>
+          <strong>Open in viewer</strong> shows the document beside its values, as on the Review
+          page but read-only: page thumbnails, the tables, and page numbers that turn to their page.
+          It shows the reviewed values, which are what was published. Documents of older (legacy)
+          types don't have it.
+        </li>
+        <li>
           The preview also opens the original document (<strong>PDF</strong>, or{' '}
           <strong>Original</strong> for a Word document) and downloads every output at once as a{' '}
           <strong>ZIP</strong>.
