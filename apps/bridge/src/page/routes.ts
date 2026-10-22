@@ -39,6 +39,9 @@ const cspFor = (appOrigin: string | undefined) =>
   `default-src 'self'; form-action 'self'; frame-ancestors ${appOrigin ?? "'none'"}`;
 const EXPIRED = 'This link has expired. Open Connections again from CT Studio.';
 const ENDED = 'Your session has ended. Open Connections again from CT Studio.';
+/** A form posted from an older copy of the page: opening it again gave the session a new token. */
+const REPLACED =
+  'This page was opened again elsewhere, so this copy can no longer save. Open Connections again from CT Studio.';
 /** A non-secret S3 field naming the variable its access key id is read from. */
 const ACCESS_KEY_ENV = 'accessKeyIdEnv';
 /** The longest name a person may give a connection. */
@@ -141,7 +144,8 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       return null;
     }
     if (!csrfMatches(s, formOf(req.body).csrf)) {
-      void notAllowed(reply, s);
+      // CT Studio offers Reopen (a forged post gets the same refusal, and changes nothing).
+      void html(reply, 403, message(shell(undefined, 'ended'), 'Opened again', REPLACED));
       return null;
     }
     return s;

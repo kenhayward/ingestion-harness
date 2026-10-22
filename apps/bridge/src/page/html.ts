@@ -50,8 +50,13 @@ ${heading}${body}
 </html>`;
 }
 
+/** A page saying one thing; to a signed-in person, with a way back to the list (the modal has no Back). */
 export function message(shell: Shell, title: string, text: string): string {
-  return layout(shell, title, `<p>${esc(text)}</p>`);
+  const back = shell.user
+    ? `
+<p><a href="${esc(shell.base)}/connections">Back to connections</a></p>`
+    : '';
+  return layout(shell, title, `<p>${esc(text)}</p>${back}`);
 }
 
 const STATUS: Record<Connection['status'], string> = {

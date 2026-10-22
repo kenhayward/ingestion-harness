@@ -766,3 +766,28 @@ describe('tabs, list and details', () => {
     );
   });
 });
+
+describe('no dead ends in the modal', () => {
+  it('a page saying no, to a signed-in person, links back to the list', async () => {
+    const { app } = await setup();
+    const { cookie } = await login(app, 'good');
+    const gone = await app.inject({
+      url: '/connections/deleted-elsewhere',
+      cookies: { bridge_session: cookie!.value },
+    });
+    expect(gone.statusCode).toBe(404);
+    expect(gone.body).toContain('<a href="/bridge/connections">Back to connections</a>');
+  });
+
+  it('a form whose token no longer matches (the page was opened again) ends this copy', async () => {
+    const { app, connections } = await setup();
+    const { cookie } = await login(app);
+    const res = await post(app, '/connections', cookie!.value, newConnection('stale-token'));
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toContain('data-event="ended"');
+    expect(res.body).toContain(
+      'This page was opened again elsewhere, so this copy can no longer save. Open Connections again from CT Studio.',
+    );
+    expect(await connections.get('finance')).toBeNull();
+  });
+});
