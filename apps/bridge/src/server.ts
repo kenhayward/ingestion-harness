@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { loadBridgeConfig } from './config.js';
+import { crossSiteWarning, loadBridgeConfig } from './config.js';
 import { migrateBridge } from './db/migrate.js';
 import { runOnce } from './deliveries/runner.js';
 import { dispatchOnce, HttpEventSender, UNKNOWN_EVENT_GIVE_UP_HOURS } from './events/dispatch.js';
@@ -21,6 +21,8 @@ const built = await buildFromConfig(config, {
   logger: { level: config.LOG_LEVEL },
 });
 const { app, runner } = built;
+const crossSite = crossSiteWarning(config.BRIDGE_APP_ORIGIN, config.BRIDGE_PUBLIC_URL);
+if (crossSite) app.log.warn(crossSite);
 pool.on('error', (err) => app.log.error({ err }, 'database connection lost'));
 await seedInternalConnection(app.deps.connections);
 await built.internalStore.ensureBucket(config.BRIDGE_STAGING_BUCKET);

@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
-        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #310,
+        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #311,
         merged between Wednesday 21 October 2026, 14:06 and Thursday 22 October 2026 (UTC).
       </p>
 
@@ -659,7 +659,8 @@
 
       <h3 id="connections-window">Connections in a window</h3>
       <p class="prs">
-        <a href="https://github.com/kenhayward/ingestion-harness/pull/309">#309</a>
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/309">#309</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/311">#311</a>
       </p>
       <p>
         <strong>Manage connections</strong> now opens the delivery bridge&apos;s connections page in
@@ -670,6 +671,13 @@
         last used, test it, change it or delete it (Delete asks first). Profile and the target
         pickers update as you save, without reloading. CT Studio still never sees what you type: the
         page stays on its own address, and only it can read its fields.
+      </p>
+      <p>
+        Since #311, reloading the window after adding or testing a connection no longer sends the
+        form again, and the result of the test is still shown once. While the delivery bridge is
+        down, the window says the page is unavailable instead of showing a bare error, and the
+        bridge warns in its log when the page&apos;s address is not a subdomain of CT Studio&apos;s
+        (where the window could not keep you signed in).
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

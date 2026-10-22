@@ -23,6 +23,8 @@ RUN npm run build -w @ih/web
 FROM nginx:1.31-alpine
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/docker/security-headers.conf /etc/nginx/snippets/security-headers.conf
+# The connections listener's page while the delivery bridge is down (nginx.conf, port 8082).
+COPY deploy/docker/connections-unavailable.html /usr/share/nginx/connections/connections-unavailable.html
 # Rendered into conf.d at start from the environment (ADR 0012); blank = no framing.
 COPY deploy/docker/frame-ancestors.conf.template /etc/nginx/templates/frame-ancestors.conf.template
 ENV FRAME_ANCESTORS=""

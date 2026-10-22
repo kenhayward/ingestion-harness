@@ -133,3 +133,24 @@ export function loadBridgeConfig(env: NodeJS.ProcessEnv = process.env): BridgeCo
     sinks,
   };
 }
+
+/** A host's site, roughly: an IP address or `localhost` itself, else its last two labels. */
+const siteOf = (url: URL): string => {
+  const host = url.hostname;
+  if (host === 'localhost' || /^[\d.]+$/.test(host) || host.startsWith('[')) return host;
+  return host.split('.').slice(-2).join('.');
+};
+
+/**
+ * Why the framed page would fail, or null: a page on another site than the app's is a
+ * third-party frame, whose `SameSite=Lax` session cookie browsers block, so the modal would keep
+ * saying the session ended. A warning, not a refusal: without the public suffix list the site is
+ * a guess (`a.co.uk` and `b.co.uk` look alike).
+ */
+export function crossSiteWarning(appOrigin: string | undefined, publicUrl: string): string | null {
+  if (!appOrigin) return null;
+  const app = new URL(appOrigin);
+  const page = new URL(publicUrl);
+  if (app.protocol === page.protocol && siteOf(app) === siteOf(page)) return null;
+  return `BRIDGE_PUBLIC_URL (${page.origin}) is not on the same site as BRIDGE_APP_ORIGIN (${app.origin}): use a subdomain of the app's domain, or the connections modal will keep saying the session ended`;
+}
