@@ -15,6 +15,7 @@ import type {
   SuggestParams,
   ResultShow,
   DeliveryOverrides,
+  StatusGroup,
 } from '@ih/shared';
 import type { BridgeError, DeliveryStatus, Receipt } from '@ih/bridge-contract';
 
@@ -273,6 +274,8 @@ export interface WorkbenchJobOptions {
 export interface ListJobsQuery {
   limit: number;
   status?: JobStatus;
+  /** Only jobs of this status group (`statusesIn`). */
+  group?: StatusGroup;
   /** Only jobs this user queued (the Jobs page's "My jobs"; `isMine`). */
   mine?: Creator;
 }

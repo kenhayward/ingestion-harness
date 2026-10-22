@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  JOB_STATUSES,
   JobSummarySchema,
+  STATUS_GROUPS,
+  statusGroup,
+  statusesIn,
   isMine,
   RepublishParamsSchema,
   ReviewEditSchema,
@@ -155,5 +159,21 @@ describe('ReviewEdit', () => {
       reason: null,
     };
     expect(ReviewEditSchema.parse(edit)).toEqual(edit);
+  });
+});
+
+describe('status groups', () => {
+  it('puts every status in exactly one group', () => {
+    const grouped = STATUS_GROUPS.flatMap((g) => statusesIn(g));
+    expect([...grouped].sort()).toEqual([...JOB_STATUSES].sort());
+    for (const status of JOB_STATUSES) expect(statusesIn(statusGroup(status))).toContain(status);
+  });
+
+  it.each([
+    ['attention', ['awaiting_review', 'needs_review', 'failed']],
+    ['active', ['queued', 'running', 'delivering']],
+    ['done', ['succeeded', 'rejected', 'cancelled']],
+  ] as const)('%s holds %j', (group, statuses) => {
+    expect([...statusesIn(group)].sort()).toEqual([...statuses].sort());
   });
 });

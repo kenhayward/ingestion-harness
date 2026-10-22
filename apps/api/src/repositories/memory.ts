@@ -19,6 +19,7 @@ import {
   DELETABLE_STATUSES,
   isMine,
   sourceContentType,
+  statusGroup,
   type Creator,
 } from '@ih/shared';
 import {
@@ -416,9 +417,10 @@ export class MemoryRepo implements IngestionRepo {
     ).length;
   }
 
-  async listJobs({ limit, status, mine }: ListJobsQuery): Promise<JobSummary[]> {
+  async listJobs({ limit, status, group, mine }: ListJobsQuery): Promise<JobSummary[]> {
     return [...this.jobs.values()]
       .filter((j) => j.task !== 'prepare' && (!status || j.status === status))
+      .filter((j) => !group || statusGroup(j.status) === group)
       .filter((j) => mine === undefined || isMine(j, mine))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit)

@@ -41,6 +41,9 @@ import { BUILD_VERSION } from './version.js';
  * sign-in page shows the banner, and anyone but an admin gets the maintenance page instead of the
  * app until it is over.
  */
+/** The jobs needing someone that the badges and review queue read (the API's maximum). */
+const ATTENTION_LIMIT = 500;
+
 export function App({
   api,
   pollMs = 3000,
@@ -298,8 +301,14 @@ function SignedInApp({
   }, [route]);
   useDocumentTitle(routeTitle(route));
   const { jobs, error, refresh, loaded } = useJobs(api, pollMs);
+  // Every job needing someone, however old: the badges and the review queue count these, so a
+  // job awaiting review is never missed behind the newest jobs listed.
+  const { jobs: attentionJobs } = useJobs(api, pollMs, {
+    group: 'attention',
+    limit: ATTENTION_LIMIT,
+  });
   // The installed app (docs/design/pwa.md): the taskbar badge and toasts for your own jobs.
-  useAppBadge(attentionCount(jobs));
+  useAppBadge(attentionCount(attentionJobs));
   const notify = useNotifySetting();
   const creator = useMemo(() => ({ name: me.label, userId: me.userId }), [me.label, me.userId]);
   useJobNotifications({ jobs, loaded, me: creator, enabled: notify.state === 'on' });
@@ -329,7 +338,7 @@ function SignedInApp({
         key={route.jobId}
         api={api}
         jobId={route.jobId}
-        jobs={jobs}
+        jobs={attentionJobs}
         role={me.role}
         onDone={() => navigate('#/jobs')}
       />
@@ -421,7 +430,7 @@ function SignedInApp({
     <AppShell
       me={me}
       route={route}
-      jobs={jobs}
+      jobs={attentionJobs}
       query={query}
       onQuery={setQuery}
       install={install}
