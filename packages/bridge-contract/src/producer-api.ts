@@ -21,6 +21,22 @@ export const DELIVERY_STATUSES = [
 export const DeliveryStatusSchema = z.enum(DELIVERY_STATUSES);
 export type DeliveryStatus = z.infer<typeof DeliveryStatusSchema>;
 
+/**
+ * `POST /v1/deliveries:preflight`: whether these targets would take a delivery as this user now
+ * (they exist, their sink is available, and a personal sink's target has the user's connection),
+ * without a package and without name patterns. Nothing is written.
+ */
+export const PreflightRequestSchema = z.strictObject({
+  targets: z.array(z.string().min(1)).min(1),
+  actingUser: ActingUserSchema.nullable(),
+});
+export type PreflightRequest = z.infer<typeof PreflightRequestSchema>;
+
+export const PreflightResultSchema = z.strictObject({
+  targets: z.array(z.strictObject({ targetId: z.string(), problem: BridgeErrorSchema.nullable() })),
+});
+export type PreflightResult = z.infer<typeof PreflightResultSchema>;
+
 /** `POST /v1/deliveries`: one package to one or more targets, as one user. */
 export const CreateDeliveriesRequestSchema = z.strictObject({
   targets: z.array(z.string().min(1)).min(1),

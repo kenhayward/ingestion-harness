@@ -623,6 +623,10 @@ export interface Api {
     jobId: string,
     body: { reviewer?: string; note?: string; overrides?: DeliveryOverrides },
   ): Promise<JobSummary>;
+  /** Before an upload: what the type's targets would need of the uploader (none: ready). */
+  preflightUpload(
+    specId: string,
+  ): Promise<{ problems: { targetLabel: string; message: string }[] }>;
   /** The names a reviewer can change for a job, per target (none: no target names anything). */
   getJobNaming(jobId: string): Promise<JobNaming>;
   reject(jobId: string, body: { reviewer?: string; reason: string }): Promise<JobSummary>;
@@ -1648,6 +1652,13 @@ export function createHttpApi(base = '/api'): Api {
     getReview: (jobId) => apiFetch(`${base}/jobs/${jobId}/review`).then(json<ReviewData>),
     addEdit: (jobId, edit) => post<ReviewEdit>(`${base}/jobs/${jobId}/edits`, edit),
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),
+    preflightUpload: (specId) =>
+      post<{ problems: { targetLabel: string; message: string }[] }>(
+        `${base}/documents/preflight`,
+        {
+          specId,
+        },
+      ),
     getJobNaming: (jobId) => apiFetch(`${base}/jobs/${jobId}/naming`).then(json<JobNaming>),
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,

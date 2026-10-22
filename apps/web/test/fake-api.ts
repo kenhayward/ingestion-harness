@@ -584,6 +584,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     addEdit: vi.fn(async () => ({}) as never),
     approve: vi.fn(async () => job({ status: 'queued' })),
     getJobNaming: vi.fn(async () => ({ targets: [] })),
+    preflightUpload: vi.fn(async () => ({ problems: [] })),
     reject: vi.fn(async () => job({ status: 'rejected' })),
     pageUrl: (jobId, page) => `/api/jobs/${jobId}/pages/${page}`,
     documentUrl: (jobId) => `/api/jobs/${jobId}/document`,

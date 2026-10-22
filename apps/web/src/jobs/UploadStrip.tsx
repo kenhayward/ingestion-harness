@@ -73,6 +73,20 @@ export function UploadStrip({
   const [specs, setSpecs] = useState<SpecSummary[]>([]);
   const [models, setModels] = useState<readonly ModelChoice[]>(CHOICES_LOADING);
   const [spec, setSpec] = useState('');
+  /** What the chosen type's targets would need of the uploader (a connection): a warning. */
+  const [needs, setNeeds] = useState<{ targetLabel: string; message: string }[]>([]);
+  useEffect(() => {
+    const specId = spec.split('@')[0];
+    if (!specId) return;
+    let live = true;
+    api.preflightUpload(specId).then(
+      (r) => live && setNeeds(r.problems),
+      () => live && setNeeds([]),
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, spec]);
   const [model, setModel] = useState('');
   const [picks, setPicks] = useState<Pick[]>([]);
   /** The folders of the current selection, with what each one gave. */
@@ -272,6 +286,21 @@ export function UploadStrip({
             </li>
           ))}
         </ul>
+      )}
+      {needs.length > 0 && (
+        <div className="callout tone-warn upload-needs" role="status">
+          <Icon name="warning" />
+          <div>
+            {needs.map((n) => (
+              <p key={n.targetLabel}>{n.message}</p>
+            ))}
+            <p className="muted">You can still upload: the document waits in review until then.</p>
+            <button type="button" onClick={() => void api.openConnections()}>
+              <Icon name="key" />
+              Manage connections
+            </button>
+          </div>
+        </div>
       )}
       {loadError && <p role="alert">{loadError}</p>}
     </form>

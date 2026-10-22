@@ -238,3 +238,57 @@ describe('POST /v1/deliveries, a pattern that resolves to nothing', () => {
     expect(await deliveries.claim(new Date(), 300)).toBeNull();
   });
 });
+
+describe('POST /v1/deliveries:preflight', () => {
+  it("says which targets the acting user can't be delivered as, writing nothing", async () => {
+    const personal = new FakeSink({
+      connectionKind: 'personal',
+      instances: [{ id: 'sandbox', label: 'Sandbox' }],
+      credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+    });
+    const { app, deliveries } = await setup(
+      async (shared) => new MapSinkRegistry({ fake: shared, acme: personal }),
+    );
+    await app.deps.targets.put({
+      id: 'acme',
+      label: 'Acme',
+      sinkId: 'acme',
+      instanceId: 'sandbox',
+      connectionId: null,
+      destination: { bucket: 'b' },
+    });
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries:preflight',
+      body: {
+        targets: ['t1', 'acme', 'nosuch'],
+        actingUser: { id: 'u1', name: 'Pat', email: null },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      targets: [
+        { targetId: 't1', problem: null },
+        {
+          targetId: 'acme',
+          problem: {
+            class: 'needs_user',
+            code: 'connection_missing',
+            message: 'Pat has no connection for Acme: add one on the connections page',
+            details: { targetId: 'acme', userId: 'u1' },
+          },
+        },
+        {
+          targetId: 'nosuch',
+          problem: {
+            class: 'needs_user',
+            code: 'target_missing',
+            message: 'no target nosuch',
+            details: { targetId: 'nosuch' },
+          },
+        },
+      ],
+    });
+    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+  });
+});

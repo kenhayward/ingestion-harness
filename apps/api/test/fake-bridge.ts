@@ -1,6 +1,8 @@
 import type {
   BrowseResult,
   ConnectionSummary,
+  PreflightRequest,
+  PreflightResult,
   SinkView,
   TargetBrowseRequest,
   DeliveryView,
@@ -137,6 +139,21 @@ export class FakeBridgeApi implements BridgeApi {
   readonly userDeletes: string[] = [];
   readonly reconciles: string[][] = [];
   sinkViews: SinkView[] = [];
+  /** Each preflight asked for, and the problem it answers per target (none: ready). */
+  readonly preflights: PreflightRequest[] = [];
+  preflightProblems: Record<string, PreflightResult['targets'][number]['problem']> = {};
+
+  async preflight(req: PreflightRequest): Promise<PreflightResult> {
+    this.fail();
+    this.preflights.push(structuredClone(req));
+    return {
+      targets: req.targets.map((targetId) => ({
+        targetId,
+        problem: this.preflightProblems[targetId] ?? null,
+      })),
+    };
+  }
+
   /** What browse answers, and every browse asked for. */
   browseResult: BrowseResult = { nodes: [], nextCursor: null };
   readonly browsed: TargetBrowseRequest[] = [];

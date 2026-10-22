@@ -6,6 +6,7 @@ import {
   ObjectReadResultSchema,
   signRequest,
   BrowseResultSchema,
+  PreflightResultSchema,
   SinkViewSchema,
   TargetTestResultSchema,
   TargetViewSchema,
@@ -16,6 +17,8 @@ import {
   type TargetTestResult,
   type TargetView,
   type BrowseResult,
+  type PreflightRequest,
+  type PreflightResult,
   type SinkView,
   type TargetBrowseRequest,
 } from '@ih/bridge-contract';
@@ -61,6 +64,8 @@ export interface BridgeApi {
   /** Deletes the personal connections of every user not listed; how many went. */
   reconcileUsers(liveUserIds: string[]): Promise<number>;
   listSinks(): Promise<SinkView[]>;
+  /** Whether targets would take a delivery as this user now (nothing is written). */
+  preflight(req: PreflightRequest): Promise<PreflightResult>;
   /** One level of a sink's tree for a destination field (TargetBrowseRequest). */
   browse(req: TargetBrowseRequest): Promise<BrowseResult>;
   testTarget(id: string): Promise<TargetTestResult>;
@@ -205,6 +210,15 @@ export class HttpBridgeApi implements BridgeApi {
       'the user reconcile',
     );
     return ConnectionsDeletedSchema.parse(await res.json()).deleted;
+  }
+
+  async preflight(req: PreflightRequest): Promise<PreflightResult> {
+    const res = await this.expect(
+      await this.call('POST', '/v1/deliveries:preflight', req),
+      [200],
+      'the preflight',
+    );
+    return PreflightResultSchema.parse(await res.json());
   }
 
   async browse(req: TargetBrowseRequest): Promise<BrowseResult> {
