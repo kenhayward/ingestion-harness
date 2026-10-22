@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react';
 import { Icon } from '../ui/Icon.js';
 
+/** How a value finds its page, said on the page arrows (no room for it in the toolbar). */
+const HINT = 'Click a value to find it on the page';
+
 /**
  * Source PDF pane (UI handoff §2): page toolbar over the rendered page on a recessed well, with
  * a strip of page thumbnails beside it (a dot marks pages holding flagged values).
@@ -33,6 +36,7 @@ export function PageViewer({
           type="button"
           className="icon bordered"
           aria-label="Previous page"
+          title={HINT}
           disabled={page <= 1}
           onClick={() => onPage(page - 1)}
         >
@@ -45,12 +49,12 @@ export function PageViewer({
           type="button"
           className="icon bordered"
           aria-label="Next page"
+          title={HINT}
           disabled={page >= pageCount}
           onClick={() => onPage(page + 1)}
         >
           <Icon name="chevronRight" />
         </button>
-        <span className="page-hint muted">Click a value to find it on the page</span>
         {actions && <span className="pane-actions">{actions}</span>}
       </div>
       <div className="page-body">
