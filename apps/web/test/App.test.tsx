@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { fakeApi, job } from './fake-api.js';
+import { JOB_ID, reviewData } from './review-fixture.js';
 
 /** The job list (the detail panel repeats the selected job's name and actions). */
 const list = async () => within(await screen.findByRole('region', { name: 'Job list' }));
@@ -94,6 +95,27 @@ describe('review routing', () => {
     const api = fakeApi();
     render(<App api={api} pollMs={0} />);
     await vi.waitFor(() => expect(api.getReview).toHaveBeenCalledWith('r1'));
+    window.location.hash = '';
+  });
+
+  it('counts the review queue from every job awaiting review, not only the newest', async () => {
+    window.location.hash = `#/review/${JOB_ID}`;
+    const waiting = [
+      job({ id: JOB_ID, status: 'awaiting_review', createdAt: '2020-01-01T00:00:00Z' }),
+      job({ id: 'next-id', status: 'awaiting_review', createdAt: '2020-01-02T00:00:00Z' }),
+    ];
+    const api = fakeApi({
+      getReview: vi.fn(async () => reviewData()),
+      listJobs: vi.fn(async (opts?: { group?: string }) =>
+        opts?.group === 'attention' ? waiting : [],
+      ),
+    });
+    render(<App api={api} pollMs={0} />);
+    expect(await screen.findByText('1 of 2 awaiting review')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Next document/ })).toHaveAttribute(
+      'href',
+      '#/review/next-id',
+    );
     window.location.hash = '';
   });
 

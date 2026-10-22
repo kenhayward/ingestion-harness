@@ -765,8 +765,9 @@ describe('http api: jobs', () => {
     const api = createHttpApi('/api');
     await api.listJobs();
     await api.listJobs({ mine: true });
+    await api.listJobs({ group: 'attention', limit: 500 });
     const urls = fetch.mock.calls.map((c) => (c as unknown as [string])[0]);
-    expect(urls).toEqual(['/api/jobs', '/api/jobs?mine=1']);
+    expect(urls).toEqual(['/api/jobs', '/api/jobs?mine=1', '/api/jobs?group=attention&limit=500']);
   });
 });
 

@@ -69,6 +69,7 @@ import type {
   JobDetail,
   JobLive,
   JobSummary,
+  StatusGroup,
   KeepableStage,
   LlmChoicesView,
   LlmChoiceView,
@@ -589,7 +590,8 @@ export interface Api {
   /** The model choices every picker offers, the default first (ADR 0010, phase 4c). */
   listPickerChoices(): Promise<ModelChoice[]>;
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
-  listJobs(opts?: { mine?: boolean }): Promise<JobSummary[]>;
+  /** `group`: only that status group, however old (the badge and review queue); `limit` ≤ 500. */
+  listJobs(opts?: { mine?: boolean; group?: StatusGroup; limit?: number }): Promise<JobSummary[]>;
   getJob(id: string): Promise<JobDetail>;
   /**
    * Follow a job live (Server-Sent Events, `GET /api/jobs/:id/events`): `update` on every change
@@ -1427,8 +1429,14 @@ export function createHttpApi(base = '/api'): Api {
       apiFetch(`${base}/models/choices`)
         .then(json<{ choices: ModelChoice[] }>)
         .then((r) => r.choices),
-    listJobs: (opts) =>
-      apiFetch(`${base}/jobs${opts?.mine ? '?mine=1' : ''}`).then(json<JobSummary[]>),
+    listJobs: (opts) => {
+      const q = new URLSearchParams();
+      if (opts?.mine) q.set('mine', '1');
+      if (opts?.group) q.set('group', opts.group);
+      if (opts?.limit) q.set('limit', String(opts.limit));
+      const qs = q.toString();
+      return apiFetch(`${base}/jobs${qs ? `?${qs}` : ''}`).then(json<JobSummary[]>);
+    },
     getJob: (id) => apiFetch(`${base}/jobs/${id}`).then(json<JobDetail>),
     watchJob: (id, on) => watchJobEvents(`${base}/jobs/${id}/events`, on),
     retryJob: (id, model) =>

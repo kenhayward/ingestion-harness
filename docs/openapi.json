@@ -11856,7 +11856,7 @@
         "tags": [
           "Jobs"
         ],
-        "description": "The newest jobs first, optionally of one status, and with `mine=1` only those queued\nby the signed-in user: by user id (`createdByUser`), so a rename keeps them; jobs\nfrom before ids were recorded match by name (`createdBy`). Lists the jobs of uploaded documents (production,\ntest and regression runs); the Workbench's preparation, preview, drafting and export\njobs are not listed.",
+        "description": "The newest jobs first, optionally of one status or one status group (`group`: the\napp asks for every job needing attention this way, so none is missed behind the\nnewest ones), and with `mine=1` only those queued\nby the signed-in user: by user id (`createdByUser`), so a rename keeps them; jobs\nfrom before ids were recorded match by name (`createdBy`). Lists the jobs of uploaded documents (production,\ntest and regression runs); the Workbench's preparation, preview, drafting and export\njobs are not listed.",
         "parameters": [
           {
             "schema": {
@@ -11889,6 +11889,20 @@
             "name": "status",
             "required": false,
             "description": "Only jobs in this status."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "attention",
+                "active",
+                "done"
+              ]
+            },
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "description": "Only jobs of this status group: `attention` (awaiting review, needs review, failed), `active` (queued, running, delivering) or `done` (succeeded, rejected, cancelled)."
           },
           {
             "schema": {
@@ -12100,7 +12114,7 @@
             }
           },
           "400": {
-            "description": "Zod issues for an invalid `limit` or `status`.",
+            "description": "Zod issues for an invalid `limit`, `status` or `group`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12125,7 +12139,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "Zod issues for an invalid `limit` or `status`."
+                  "description": "Zod issues for an invalid `limit`, `status` or `group`."
                 }
               }
             }

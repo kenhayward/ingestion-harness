@@ -21,6 +21,29 @@ export const JOB_STATUSES = [
 export const JobStatusSchema = z.enum(JOB_STATUSES);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 
+/** Which bucket a status belongs to: someone must act, still under way, or finished. */
+export const STATUS_GROUPS = ['attention', 'active', 'done'] as const;
+export const StatusGroupSchema = z.enum(STATUS_GROUPS);
+export type StatusGroup = z.infer<typeof StatusGroupSchema>;
+
+const GROUP_OF: Record<JobStatus, StatusGroup> = {
+  queued: 'active',
+  running: 'active',
+  delivering: 'active',
+  awaiting_review: 'attention',
+  needs_review: 'attention',
+  failed: 'attention',
+  succeeded: 'done',
+  rejected: 'done',
+  cancelled: 'done',
+};
+
+export const statusGroup = (status: JobStatus): StatusGroup => GROUP_OF[status];
+
+/** The statuses of a group (`GET /api/jobs?group=`, the Jobs page's chips). */
+export const statusesIn = (group: StatusGroup): JobStatus[] =>
+  JOB_STATUSES.filter((s) => GROUP_OF[s] === group);
+
 /** Finished jobs: these can be deleted (queued/running must be cancelled, review decided). */
 export const DELETABLE_STATUSES: readonly JobStatus[] = [
   'succeeded',
