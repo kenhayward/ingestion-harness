@@ -1,14 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  DUMMY_HASH,
+  SCRYPT_N,
+  dummyHash,
   hashPassword,
   newOneTimePassword,
   normaliseEmail,
   passwordProblem,
+  setScryptCost,
   verifyPassword,
 } from '../src/access/passwords.js';
 
 describe('passwords', () => {
+  // test/setup.ts makes hashing cheap for every other test; this file checks the real cost.
+  beforeEach(() => setScryptCost(SCRYPT_N));
+
   it('hashes with a fresh salt and verifies', async () => {
     const a = await hashPassword('correct horse battery');
     const b = await hashPassword('correct horse battery');
@@ -25,7 +30,22 @@ describe('passwords', () => {
   });
 
   it('has a dummy hash that verifies nothing', async () => {
-    expect(await verifyPassword('', DUMMY_HASH)).toBe(false);
+    expect(dummyHash()).toMatch(/^scrypt\$32768\$8\$1\$/);
+    expect(await verifyPassword('', dummyHash())).toBe(false);
+  });
+
+  it('takes a cheaper cost, written into the hash, and still verifies hashes made at another', async () => {
+    const real = await hashPassword('correct horse battery');
+    setScryptCost(1024);
+    const cheap = await hashPassword('correct horse battery');
+    expect(cheap).toMatch(/^scrypt\$1024\$8\$1\$/);
+    expect(dummyHash()).toMatch(/^scrypt\$1024\$8\$1\$/);
+    expect(await verifyPassword('correct horse battery', cheap)).toBe(true);
+    expect(await verifyPassword('correct horse battery', real)).toBe(true);
+  });
+
+  it.each([0, 1, 1000, 2 ** 21, 1.5])('refuses the scrypt cost %s', (n) => {
+    expect(() => setScryptCost(n)).toThrow('scrypt cost must be a power of two from 2 to 2^20');
   });
 
   it('makes readable one-time passwords', () => {

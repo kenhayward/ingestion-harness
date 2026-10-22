@@ -645,6 +645,15 @@
         deleted during delivery, for example), and logs a warning. A delivery that has finished
         stays finished: a late event can no longer move it back.
       </p>
+
+      <h3 id="faster-api-tests">Faster API tests</h3>
+      <p class="prs">PR to come</p>
+      <p>
+        The API&apos;s tests hash passwords at a low cost, so signing in no longer takes a third of
+        their time (465 s to about 310 s of test time, the GitHub sync and Profile tests three to
+        five times faster). Production hashing is unchanged, and one test still checks the real
+        cost.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
   </body>

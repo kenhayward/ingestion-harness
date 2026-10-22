@@ -1,7 +1,8 @@
 import { randomBytes, randomInt, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 
 /** scrypt parameters (ADR 0013). Stored in each hash, so they can be raised later. */
-const N = 32768;
+export const SCRYPT_N = 32768;
+let N = SCRYPT_N;
 const R = 8;
 const P = 1;
 const KEY_BYTES = 32;
@@ -9,6 +10,17 @@ const MAXMEM = 64 * 1024 * 1024;
 
 export const MIN_PASSWORD = 12;
 export const MAX_PASSWORD = 200;
+
+/**
+ * The cost new hashes use (default `SCRYPT_N`). Only the API tests lower it (test/setup.ts), so
+ * signing in does not dominate the suite; hashes made at any cost still verify.
+ */
+export function setScryptCost(n: number): void {
+  if (!Number.isInteger(n) || n < 2 || n > 2 ** 20 || (n & (n - 1)) !== 0) {
+    throw new Error('scrypt cost must be a power of two from 2 to 2^20');
+  }
+  N = n;
+}
 
 function derive(plain: string, salt: Buffer, opts: ScryptOptions): Promise<Buffer> {
   return new Promise((resolve, reject) =>
@@ -43,8 +55,11 @@ export async function verifyPassword(plain: string, stored: string): Promise<boo
   }
 }
 
-/** Verified against when the email is unknown, so timing does not reveal which emails exist. */
-export const DUMMY_HASH = `scrypt$${N}$${R}$${P}$${'A'.repeat(22)}$${'A'.repeat(43)}`;
+/**
+ * Verified against when the email is unknown, so timing does not reveal which emails exist. At
+ * the current cost, so it takes as long as checking a real hash.
+ */
+export const dummyHash = () => `scrypt$${N}$${R}$${P}$${'A'.repeat(22)}$${'A'.repeat(43)}`;
 
 const OTP_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 

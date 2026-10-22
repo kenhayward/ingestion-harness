@@ -2,7 +2,7 @@ import type { Role } from '@ih/shared';
 import { randomUUID } from 'node:crypto';
 import { DISABLE_AFTER, LOCK_AFTER, lockFor } from './lockout.js';
 import {
-  DUMMY_HASH,
+  dummyHash,
   hashPassword,
   newOneTimePassword,
   normaliseEmail,
@@ -295,7 +295,7 @@ export class MemoryAccessRepo implements AccessRepo {
     if (row && this.lockedNow(row)) {
       return { kind: 'locked', userId: row.id, until: iso(row.lockedUntil)! };
     }
-    const ok = await verifyPassword(password, row?.hash ?? DUMMY_HASH);
+    const ok = await verifyPassword(password, row?.hash ?? dummyHash());
     if (!row) return { kind: 'invalid', userId: null, failures: null, locked: null };
     // Again after the await: a parallel guess may have locked it meanwhile (Pg: under FOR UPDATE).
     if (this.lockedNow(row)) {
