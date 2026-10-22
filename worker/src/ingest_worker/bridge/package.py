@@ -270,6 +270,9 @@ def deliver_outputs(
         # so withdrawing the job deletes it there too.
         + ([] if t.id == files.id else graph_copy_outputs(t, package))
         for t in targets
+        # Another sink's target records no outputs here: what it holds is its own, and the job
+        # shows its delivery.
+        if t.layout != "sink"
     }
     return Delivered(
         outputs=keyed[files.id],

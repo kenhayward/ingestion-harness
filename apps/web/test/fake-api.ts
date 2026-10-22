@@ -399,6 +399,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listPublishTargets: vi.fn(async () => []),
     openConnections: vi.fn(async () => undefined),
     listMyConnections: vi.fn(async () => ({ personalSinks: false, connections: [] })),
+    listSinks: vi.fn(async () => []),
     listSharedConnections: vi.fn(async () => [
       { id: 'finance-account', name: 'Finance account', status: 'ok' as const, statusReason: null },
     ]),

@@ -86,16 +86,12 @@ def test_rdf_reads_the_dataset_from_the_destination() -> None:
     assert live([row()])[0].rdf() is None
 
 
-def test_a_non_s3_sink_is_refused_until_recipes_can_deliver_to_one() -> None:
+def test_a_target_of_another_sink_is_delivered_to_with_no_s3_place() -> None:
     hook = row(id="hook", kind="sink", sink_id="webhook", destination={"url": "https://x"})
     targets, _ = live([hook, replace(hook, id="early", synced_at=None)])
-    for target_id in ("hook", "early"):  # refused (review), never waited for
-        with pytest.raises(DocumentError) as raised:
-            targets.get(target_id)
-        assert not isinstance(raised.value, TargetMissing)  # it exists: "no target" is false
-        assert str(raised.value) == (
-            f"{target_id} is a webhook target: recipes can't deliver to it yet"
-        )
+    assert targets.get("hook") == Target("hook", "", "", layout="sink", sink_id="webhook")
+    with pytest.raises(TargetNotSynced, match="early"):
+        targets.get("early")
 
 
 def test_a_target_not_synced_yet_is_not_ready_and_is_no_document_error() -> None:

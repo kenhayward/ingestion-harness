@@ -327,6 +327,8 @@ export const JobDeliveryViewSchema = z.object({
   status: z.enum(['queued', 'running', 'waiting', 'succeeded', 'skipped', 'needs_user', 'failed']),
   /** What went wrong, in the bridge's words; null when nothing did. */
   message: z.string().nullable(),
+  /** Its target cannot withdraw (an external sink): what it was handed stays there. */
+  deliverOnly: z.boolean(),
 });
 export type JobDeliveryView = z.infer<typeof JobDeliveryViewSchema>;
 

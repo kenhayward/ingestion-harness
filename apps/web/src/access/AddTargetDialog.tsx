@@ -1,8 +1,9 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import {
   publishTargetIdFrom,
   SSE_MODES,
   STORAGE_CLASSES,
+  type SinkInfo,
   type TargetCreateBody,
   type TargetKind,
   type TargetLayout,
@@ -13,12 +14,20 @@ import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
 import { Segmented } from '../ui/Segmented.js';
 import { ConnectionPicker } from './ConnectionPicker.js';
+import { SinkTargetFields, sinkTargetComplete, type SinkTargetValue } from './SinkTargetFields.js';
 import { LAYOUT_LABELS, TestOutcome } from './TargetRow.js';
 
-const KINDS: readonly { value: TargetKind; label: string }[] = [
+type Kind = TargetKind | 'sink';
+
+const KINDS: readonly { value: Kind; label: string }[] = [
   { value: 'internal', label: 'Internal' },
   { value: 'external', label: 'External' },
 ];
+const OTHER: { value: Kind; label: string } = { value: 'sink', label: 'Other system' };
+
+/** The bridge's sinks a target form is generated for: every one but S3 and the triple store. */
+export const externalSinks = (sinks: SinkInfo[]) =>
+  sinks.filter((s) => s.id !== 's3' && s.id !== 'rdf');
 
 /** Add a publishing target: an internal bucket on this deployment's S3, or an external one. */
 export function AddTargetDialog({
@@ -31,7 +40,30 @@ export function AddTargetDialog({
   onAdded: () => void;
 }) {
   const formId = useId();
-  const [kind, setKind] = useState<TargetKind>('internal');
+  const [kind, setKind] = useState<Kind>('internal');
+  const [sinks, setSinks] = useState<SinkInfo[]>([]);
+  const [sinkId, setSinkId] = useState('');
+  const [sinkValue, setSinkValue] = useState<SinkTargetValue>({
+    instanceId: null,
+    connectionId: null,
+    destination: {},
+  });
+  useEffect(() => {
+    let live = true;
+    api
+      .listSinks()
+      .then((all) => {
+        if (!live) return;
+        const external = externalSinks(all);
+        setSinks(external);
+        setSinkId((id) => id || (external[0]?.id ?? ''));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [api]);
+  const sink = sinks.find((s) => s.id === sinkId);
   const [label, setLabel] = useState('');
   const [id, setId] = useState<string | null>(null);
   const [bucket, setBucket] = useState('');
@@ -58,7 +90,7 @@ export function AddTargetDialog({
     if (kind === 'internal') return { ...common, kind } as TargetCreateBody;
     return {
       ...common,
-      kind,
+      kind: 'external',
       connectionId,
       sse,
       ...(sse === 'aws:kms' && kms.trim() ? { kmsKeyId: kms.trim() } : {}),
@@ -81,7 +113,17 @@ export function AddTargetDialog({
   const submit = (ev: FormEvent) => {
     ev.preventDefault();
     void run(async () => {
-      await api.createPublishTarget(body());
+      await api.createPublishTarget(
+        kind === 'sink'
+          ? {
+              kind: 'sink',
+              ...(shownId ? { id: shownId } : {}),
+              label: label.trim(),
+              sinkId,
+              ...sinkValue,
+            }
+          : body(),
+      );
       onAdded();
     });
   };
@@ -92,7 +134,9 @@ export function AddTargetDialog({
     });
 
   const complete =
-    label.trim() !== '' && bucket.trim() !== '' && (kind === 'internal' || connectionId !== '');
+    kind === 'sink'
+      ? label.trim() !== '' && !!sink && sinkTargetComplete(sink, sinkValue)
+      : label.trim() !== '' && bucket.trim() !== '' && (kind === 'internal' || connectionId !== '');
 
   const idHint = useId();
   const sseLabel = sse === 'none' ? 'None' : sse;
@@ -107,9 +151,11 @@ export function AddTargetDialog({
       onClose={onClose}
       actions={
         <>
-          <button type="button" disabled={busy || !complete} onClick={test}>
-            Test connection
-          </button>
+          {kind !== 'sink' && (
+            <button type="button" disabled={busy || !complete} onClick={test}>
+              Test connection
+            </button>
+          )}
           <button type="submit" form={formId} className="primary" disabled={busy || !complete}>
             Add
           </button>
@@ -121,7 +167,7 @@ export function AddTargetDialog({
           <span className="field-label">Kind</span>
           <Segmented
             label="Kind"
-            options={KINDS}
+            options={sinks.length ? [...KINDS, OTHER] : KINDS}
             value={kind}
             onChange={(next) => {
               setKind(next);
@@ -131,71 +177,110 @@ export function AddTargetDialog({
           <small className="muted">
             {kind === 'internal'
               ? "A bucket on this deployment's own S3."
-              : 'An S3 bucket elsewhere, reached with a connection on the delivery bridge.'}
+              : kind === 'external'
+                ? 'An S3 bucket elsewhere, reached with a connection on the delivery bridge.'
+                : 'Another system the delivery bridge delivers to.'}
           </small>
         </div>
-        <fieldset className="target-group">
-          <legend>Where</legend>
-          <div className="target-grid">
+        {kind === 'sink' && (
+          <fieldset className="target-group">
+            <legend>System</legend>
+            {sinks.length > 1 && (
+              <label>
+                System
+                <select
+                  value={sinkId}
+                  onChange={(e) => {
+                    setSinkId(e.target.value);
+                    setSinkValue({ instanceId: null, connectionId: null, destination: {} });
+                  }}
+                >
+                  {sinks.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label>
               Label
-              <input
-                value={label}
-                autoComplete="off"
-                placeholder="Finance data lake"
-                onChange={(e) => setLabel(e.target.value)}
-              />
+              <input value={label} autoComplete="off" onChange={(e) => setLabel(e.target.value)} />
             </label>
-            <div className="target-field">
+            {sink && (
+              <SinkTargetFields api={api} sink={sink} value={sinkValue} onChange={setSinkValue} />
+            )}
+            {sink && !sink.capabilities.withdraw && (
+              <p className="muted">
+                {sink.name} is deliver-only: what is delivered there stays there.
+              </p>
+            )}
+          </fieldset>
+        )}
+        {kind !== 'sink' && (
+          <fieldset className="target-group">
+            <legend>Where</legend>
+            <div className="target-grid">
               <label>
-                Id
+                Label
                 <input
-                  className="mono"
-                  name="publish-target-id"
-                  value={shownId}
+                  value={label}
                   autoComplete="off"
-                  spellCheck={false}
-                  aria-describedby={idHint}
-                  onChange={(e) => setId(e.target.value)}
+                  placeholder="Finance data lake"
+                  onChange={(e) => setLabel(e.target.value)}
                 />
               </label>
-              <small id={idHint} className="muted">
-                Use the same id on every deployment for the same recipient.
-              </small>
+              <div className="target-field">
+                <label>
+                  Id
+                  <input
+                    className="mono"
+                    name="publish-target-id"
+                    value={shownId}
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-describedby={idHint}
+                    onChange={(e) => setId(e.target.value)}
+                  />
+                </label>
+                <small id={idHint} className="muted">
+                  Use the same id on every deployment for the same recipient.
+                </small>
+              </div>
+              <label>
+                Bucket
+                <input
+                  className="mono"
+                  value={bucket}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => setBucket(e.target.value)}
+                />
+              </label>
+              <label>
+                Prefix
+                <input
+                  className="mono"
+                  value={prefix}
+                  placeholder="none"
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(e) => setPrefix(e.target.value)}
+                />
+              </label>
+              <label>
+                Layout
+                <select value={layout} onChange={(e) => setLayout(e.target.value as TargetLayout)}>
+                  {(Object.keys(LAYOUT_LABELS) as TargetLayout[]).map((l) => (
+                    <option key={l} value={l}>
+                      {LAYOUT_LABELS[l]}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-            <label>
-              Bucket
-              <input
-                className="mono"
-                value={bucket}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => setBucket(e.target.value)}
-              />
-            </label>
-            <label>
-              Prefix
-              <input
-                className="mono"
-                value={prefix}
-                placeholder="none"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => setPrefix(e.target.value)}
-              />
-            </label>
-            <label>
-              Layout
-              <select value={layout} onChange={(e) => setLayout(e.target.value as TargetLayout)}>
-                {(Object.keys(LAYOUT_LABELS) as TargetLayout[]).map((l) => (
-                  <option key={l} value={l}>
-                    {LAYOUT_LABELS[l]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </fieldset>
+          </fieldset>
+        )}
         {kind === 'external' && (
           <>
             <fieldset className="target-group">

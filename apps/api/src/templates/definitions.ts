@@ -101,7 +101,8 @@ export function choiceProblem(
  * versions keep running theirs.
  */
 export async function templateIssues(
-  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets' | 'plugins'>,
+  deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets' | 'plugins'> &
+    Partial<Pick<AppDeps, 'sinks' | 'bridge'>>,
   definition: unknown,
   { draft }: { draft: boolean },
 ): Promise<TemplateIssue[]> {
@@ -126,13 +127,20 @@ export async function templateIssues(
   // A recipe from another deployment keeps its target ids; until each exists here it cannot publish.
   const listed = parsed.data.delivery?.publishTo === undefined ? [] : publishTargetsOf(parsed.data);
   const named = await Promise.all(listed.map((id) => deps.targets.get(id)));
+  // Another sink's target takes the graph only if its sink does (one it doesn't know yet is
+  // left to the bridge, which refuses the delivery).
+  const graph = parsed.data.delivery?.formats?.includes('rdf') ?? false;
+  if (graph && named.some((t) => t?.kind === 'sink') && deps.sinks && deps.bridge) {
+    await deps.sinks.refresh(deps.bridge);
+  }
   const targetMessages = listed.flatMap((id, i) => {
     const t = named[i];
     if (!t) return [`no publishing target ${id} on this deployment`];
     if (t.kind === 'rdf') return [`${id} is a triple store: name an S3 target`];
-    // Delivering to another sink is phase 6: until then the worker refuses one the same way.
-    if (t.kind === 'sink')
-      return [`${id} is a ${t.sinkId} target: recipes can't deliver to it yet`];
+    const sink = t.kind === 'sink' ? deps.sinks?.get(t.sinkId) : undefined;
+    if (graph && sink && !sink.capabilities.accepts.includes('rdf')) {
+      return [`${id} (${sink.name}) does not take the graph (rdf)`];
+    }
     return [];
   });
   // Results, the zip, read keys and the graph's copy read from one files-layout target.

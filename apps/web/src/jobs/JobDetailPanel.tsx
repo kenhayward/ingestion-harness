@@ -228,6 +228,9 @@ export function JobDetailPanel({
       models={models}
       typeModel={typeModels?.get(job.specId)}
       variant="panel"
+      staysIn={deliveries
+        .filter((d) => d.deliverOnly && (d.status === 'succeeded' || d.status === 'skipped'))
+        .map((d) => d.label)}
     />
   );
   const download = (

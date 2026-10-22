@@ -170,9 +170,15 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         [...PROGRESS_EVENTS, GRAPH_PUBLISHED_EVENT],
       );
       const deliveries = await app.deps.repo.deliveriesOf(job.id);
-      const labels = deliveries.length
-        ? new Map((await app.deps.targets.list()).map((t) => [t.id, t.label]))
-        : new Map<string, string>();
+      const listed = deliveries.length ? await app.deps.targets.list() : [];
+      const labels = new Map(listed.map((t) => [t.id, t.label]));
+      const sinks = app.deps.sinks!;
+      const sinkOf = new Map(listed.filter((t) => t.kind === 'sink').map((t) => [t.id, t.sinkId]));
+      if (sinkOf.size) await sinks.refresh(app.deps.bridge);
+      const deliverOnly = (targetId: string) => {
+        const sinkId = sinkOf.get(targetId);
+        return sinkId !== undefined && !sinks.get(sinkId)?.capabilities.withdraw;
+      };
       return {
         ...job,
         progress: jobProgress(job, events),
@@ -183,6 +189,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
           label: labels.get(d.targetId) ?? d.targetId,
           status: d.status,
           message: d.error?.message ?? null,
+          deliverOnly: deliverOnly(d.targetId),
         })),
       };
     },

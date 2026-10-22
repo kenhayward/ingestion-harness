@@ -42,6 +42,7 @@ export function JobActions({
   models,
   typeModel,
   variant,
+  staysIn = [],
 }: {
   api: Api;
   job: JobSummary;
@@ -51,6 +52,8 @@ export function JobActions({
   /** The job's document type's model, to name the "no override" option (unknown: unnamed). */
   typeModel?: { model?: string };
   variant: 'row' | 'panel';
+  /** Targets the job was delivered to that can't withdraw: deleting says what stays there. */
+  staysIn?: readonly string[];
 }) {
   const [confirm, setConfirm] = useState<InlineAction | null>(null);
   const [dialog, setDialog] = useState<'retry' | 're-process' | null>(null);
@@ -171,7 +174,12 @@ export function JobActions({
   if (confirm) {
     return (
       <div className="inline-confirm">
-        <span id={promptId}>{PROMPTS[confirm](file)}</span>
+        <span id={promptId}>
+          {PROMPTS[confirm](file)}
+          {confirm === 'delete' && staysIn.length > 0
+            ? ` This content stays in ${staysIn.join(', ')}.`
+            : ''}
+        </span>
         <button
           ref={(el) => {
             confirmRef.current = el;

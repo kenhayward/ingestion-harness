@@ -120,6 +120,7 @@ export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
     label: r.label,
     kind: r.kind,
     sinkId: r.sinkId,
+    instanceId: r.instanceId,
     destination: r.destination,
     onBridge: r.onBridge,
     bucket: place?.bucket ?? (r.kind === 'rdf' ? (r.destination.dataset ?? null) : null),

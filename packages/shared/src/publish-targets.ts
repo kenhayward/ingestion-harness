@@ -134,6 +134,8 @@ export const PublishTargetViewSchema = z.object({
   kind: z.enum(PUBLISH_TARGET_KINDS),
   /** The delivery bridge's sink it delivers through (`s3`, `rdf`, or another). */
   sinkId: z.string(),
+  /** A personal sink's target: the sink instance it delivers to (else null). */
+  instanceId: z.string().nullable(),
   /** Where in that sink, as the bridge holds it (the sink's destination fields). */
   destination: z.record(z.string(), z.string()),
   /** False when the bridge no longer lists it: its deliveries fail until it is there again. */
@@ -275,6 +277,38 @@ export const SinkTargetPatchBodySchema = z
   .strict()
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'nothing to change');
 export type SinkTargetPatchBody = z.infer<typeof SinkTargetPatchBodySchema>;
+
+/**
+ * A sink as Published outputs shows it (the delivery bridge's catalog entry): never a credential
+ * value. Kept in step with the bridge contract's SinkViewSchema, which the API answers.
+ */
+export const SinkInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(['available', 'unavailable']),
+  contractVersion: z.number().int(),
+  connectionKind: z.enum(['shared', 'personal']),
+  instances: z.array(z.object({ id: z.string(), label: z.string() })),
+  destinationFields: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      kind: z.enum(['fixed', 'pattern']),
+      required: z.boolean(),
+      overridable: z.boolean(),
+      browse: z.boolean(),
+    }),
+  ),
+  credentialFields: z.array(z.object({ id: z.string(), label: z.string(), secret: z.boolean() })),
+  capabilities: z.object({
+    browse: z.boolean(),
+    replace: z.boolean(),
+    withdraw: z.boolean(),
+    readBack: z.boolean(),
+    accepts: z.array(z.string()),
+  }),
+});
+export type SinkInfo = z.infer<typeof SinkInfoSchema>;
 
 /** What `null` clears in a patch. */
 const CLEARABLE = {

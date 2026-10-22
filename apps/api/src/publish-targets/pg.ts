@@ -317,6 +317,11 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
          UNION ALL
          SELECT target_id, count(*) FROM published_graph_versions
           WHERE $1::text IS NULL OR target_id = $1 GROUP BY 1
+         UNION ALL
+         -- Another sink's target records no outputs: its deliveries are what it was handed.
+         SELECT d.target_id, count(*) FROM job_deliveries d
+           JOIN publish_targets t ON t.id = d.target_id AND t.kind = 'sink'
+          WHERE $1::text IS NULL OR d.target_id = $1 GROUP BY 1
        ) d GROUP BY 1`,
       [id],
     );

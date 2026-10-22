@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { SinkView } from '@ih/bridge-contract';
 import type { PublishTargetView } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
@@ -198,5 +199,56 @@ describe('targets of an external sink', () => {
       sinkName: null,
       deliverOnly: false,
     });
+  });
+
+  /** A job of the demo spec, with a delivery to `targetId` recorded. */
+  async function deliveredTo(c: Awaited<ReturnType<typeof setup>>, targetId: string) {
+    const job = await c.repo.createDocumentAndJob(
+      {
+        id: randomUUID(),
+        filename: 'a.pdf',
+        sha256: 'a'.repeat(64),
+        sizeBytes: 1,
+        specId: 'demo',
+        specVersion: 1,
+        bucket: 'inbox',
+        objectKey: 'demo/a.pdf',
+      },
+      null,
+    );
+    await c.repo.recordDeliveries(job.id, [{ targetId, deliveryId: randomUUID() }]);
+    return job;
+  }
+
+  it('a delivery to it puts it in use: its fixed fields lock', async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', sinkBody());
+    await deliveredTo(c, 'fake-target');
+    const res = await c.call('PATCH', '/publish-targets/fake-target', {
+      destination: { space: 'elsewhere', name: '{source.stem}' },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("a job's delivery to it says the content stays there", async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', sinkBody());
+    const job = await deliveredTo(c, 'fake-target');
+    const detail = (await c.call('GET', `/jobs/${job.id}`)).json() as {
+      deliveries: { targetId: string; label: string; deliverOnly: boolean }[];
+    };
+    expect(detail.deliveries).toEqual([
+      expect.objectContaining({ targetId: 'fake-target', label: 'Fake target', deliverOnly: true }),
+    ]);
+  });
+
+  it("lists one sink's shared connections for its target editor", async () => {
+    const c = await setup();
+    const res = await c.call('GET', '/publish-targets/connections?sinkId=fake');
+    expect(res.json()).toEqual({
+      connections: [{ id: 'fake-account', name: 'Fake account', status: 'ok', statusReason: null }],
+    });
+    const s3 = (await c.call('GET', '/publish-targets/connections')).json();
+    expect(s3.connections.map((x: { id: string }) => x.id)).not.toContain('fake-account');
   });
 });

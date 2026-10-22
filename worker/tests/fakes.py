@@ -852,8 +852,11 @@ class FakeBridge:
         targets: dict[str, tuple[str, str]] | None = None,
         stores: dict[str, MemoryObjectStore] | None = None,
         rdf: set[str] | None = None,
+        sinks: set[str] | None = None,
     ) -> None:
         self.targets = dict(targets or {})
+        #: Targets of other sinks: a delivery to one is recorded and writes nothing here.
+        self.sinks = set(sinks or ())
         #: Targets with layout `package`: a delivery writes the package as an archive there.
         self.archives: set[str] = set()
         self.stores = dict(stores or {})
@@ -882,6 +885,7 @@ class FakeBridge:
             target_id not in self.targets
             and target_id not in self.stores
             and target_id not in self.rdf
+            and target_id not in self.sinks
         ):
             raise BridgeUnavailable(f"the bridge answered 404 to a target: no target {target_id}")
 
@@ -906,6 +910,8 @@ class FakeBridge:
             self._known(target_id)
         self.requests.append(request)
         for target_id in request.targets:
+            if target_id in self.sinks:
+                continue
             if target_id in self.rdf:
                 if request.package.rdf is not None:
                     self.graphs[request.package.rdf.graph_name] = request.package.rdf.turtle

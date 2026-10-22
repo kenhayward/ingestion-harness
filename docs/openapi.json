@@ -12601,13 +12601,17 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "deliverOnly": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
                           "targetId",
                           "label",
                           "status",
-                          "message"
+                          "message",
+                          "deliverOnly"
                         ]
                       }
                     }
@@ -15859,13 +15863,17 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "deliverOnly": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
                               "targetId",
                               "label",
                               "status",
-                              "message"
+                              "message",
+                              "deliverOnly"
                             ]
                           }
                         }
@@ -76332,6 +76340,12 @@
                           "sinkId": {
                             "type": "string"
                           },
+                          "instanceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "destination": {
                             "type": "object",
                             "additionalProperties": {
@@ -76515,6 +76529,7 @@
                           "label",
                           "kind",
                           "sinkId",
+                          "instanceId",
                           "destination",
                           "onBridge",
                           "bucket",
@@ -76868,6 +76883,12 @@
                     "sinkId": {
                       "type": "string"
                     },
+                    "instanceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "destination": {
                       "type": "object",
                       "additionalProperties": {
@@ -77051,6 +77072,7 @@
                     "label",
                     "kind",
                     "sinkId",
+                    "instanceId",
                     "destination",
                     "onBridge",
                     "bucket",
@@ -77715,7 +77737,18 @@
         "tags": [
           "Published outputs"
         ],
-        "description": "**Admins only.** The delivery bridge's shared S3 connections (name and status, never\na credential), for the external target editor's picker. The built-in connection of\ninternal targets is not offered. 502 when the bridge cannot be reached.",
+        "description": "**Admins only.** The delivery bridge's shared connections of one sink (`sinkId`,\ndefault `s3`): name and status, never a credential, for a target editor's picker.\nThe built-in connection of internal targets is not offered. 502 when the bridge cannot\nbe reached.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "sinkId",
+            "required": false
+          }
+        ],
         "x-admin": true,
         "responses": {
           "200": {
@@ -78097,6 +78130,12 @@
                     "sinkId": {
                       "type": "string"
                     },
+                    "instanceId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "destination": {
                       "type": "object",
                       "additionalProperties": {
@@ -78280,6 +78319,7 @@
                     "label",
                     "kind",
                     "sinkId",
+                    "instanceId",
                     "destination",
                     "onBridge",
                     "bucket",

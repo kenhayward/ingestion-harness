@@ -78,6 +78,9 @@ import type {
   PluginInfo,
   PluginPreviewView,
   TargetConnection,
+  SinkInfo,
+  SinkTargetCreateBody,
+  SinkTargetPatchBody,
   MyConnections,
   TargetCreateBody,
   TargetPatchBody,
@@ -468,13 +471,19 @@ export interface Api {
   listLlmEndpoints(): Promise<LlmEndpointView[]>;
   /** Publishing targets with what uses each (admins; Administration > Published outputs). */
   listPublishTargets(): Promise<PublishTargetView[]>;
-  createPublishTarget(body: TargetCreateBody): Promise<PublishTargetView>;
-  updatePublishTarget(id: string, patch: TargetPatchBody): Promise<PublishTargetView>;
+  createPublishTarget(body: TargetCreateBody | SinkTargetCreateBody): Promise<PublishTargetView>;
+  updatePublishTarget(
+    id: string,
+    patch: TargetPatchBody | SinkTargetPatchBody,
+  ): Promise<PublishTargetView>;
+  /** The delivery bridge's sinks (built in and external), for Published outputs. */
+  listSinks(): Promise<SinkInfo[]>;
   deletePublishTarget(id: string): Promise<void>;
   /** Through the delivery bridge: writes, reads back and deletes a small file. */
   testPublishTarget(body: TargetTestBody): Promise<TargetTestResult>;
   /** The delivery bridge's shared connections an external target may use (admins). */
-  listSharedConnections(): Promise<TargetConnection[]>;
+  /** The bridge's shared connections of one sink (default `s3`), for a target's picker. */
+  listSharedConnections(sinkId?: string): Promise<TargetConnection[]>;
   /** Opens the bridge's connections page in a new tab (a one-time link for this user). */
   openConnections(): Promise<void>;
   /** The signed-in user's personal connections on the delivery bridge (never a credential). */
@@ -1113,8 +1122,14 @@ export function createHttpApi(base = '/api'): Api {
       window.open(url, '_blank', 'noopener');
     },
     listMyConnections: () => apiFetch(`${base}/profile/connections`).then(json<MyConnections>),
-    listSharedConnections: () =>
-      apiFetch(`${base}/publish-targets/connections`)
+    listSinks: () =>
+      apiFetch(`${base}/publish-targets/sinks`)
+        .then(json<{ sinks: SinkInfo[] }>)
+        .then((r) => r.sinks),
+    listSharedConnections: (sinkId) =>
+      apiFetch(
+        `${base}/publish-targets/connections${sinkId ? `?sinkId=${encodeURIComponent(sinkId)}` : ''}`,
+      )
         .then(json<{ connections: TargetConnection[] }>)
         .then((r) => r.connections),
     listPlugins: () => apiFetch(`${base}/plugins`).then(json<PluginInfo[]>),

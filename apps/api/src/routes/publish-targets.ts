@@ -243,6 +243,8 @@ export async function publishTargetRoutes(app: FastifyInstance): Promise<void> {
   await app.register(adminRoutes);
 }
 
+const ConnectionsQuery = z.object({ sinkId: z.string().min(1).optional() });
+
 async function adminRoutes(app: FastifyInstance): Promise<void> {
   const repo = app.deps.targets;
   const stores = app.deps.targetStores;
@@ -404,11 +406,13 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           'listPublishTargetConnections',
           'List the connections a target may use',
           md`
-            **Admins only.** The delivery bridge's shared S3 connections (name and status, never
-            a credential), for the external target editor's picker. The built-in connection of
-            internal targets is not offered. 502 when the bridge cannot be reached.
+            **Admins only.** The delivery bridge's shared connections of one sink (\`sinkId\`,
+            default \`s3\`): name and status, never a credential, for a target editor's picker.
+            The built-in connection of internal targets is not offered. 502 when the bridge cannot
+            be reached.
           `,
         ),
+        querystring: ConnectionsQuery,
         response: {
           200: res('The connections.', z.object({ connections: z.array(TargetConnectionSchema) })),
           403: ADMINS_ONLY,
@@ -416,12 +420,13 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (_req, reply) => {
+    async (req, reply) => {
+      const sinkId = ConnectionsQuery.safeParse(req.query).data?.sinkId ?? 's3';
       try {
         const listed = await bridge.listConnections('shared');
         return {
           connections: listed
-            .filter((c) => c.sinkId === 's3' && c.id !== INTERNAL_CONNECTION_ID)
+            .filter((c) => c.sinkId === sinkId && c.id !== INTERNAL_CONNECTION_ID)
             .map((c) => ({
               id: c.id,
               name: c.name,

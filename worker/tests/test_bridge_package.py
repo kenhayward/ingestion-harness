@@ -277,3 +277,14 @@ def test_a_graph_package_has_kind_graph_no_provenance_and_the_graph_key() -> Non
     assert delivery_id
     assert bridge.requests[0].targets == ["rdf-default"]
     assert bridge.graphs[GRAPH_NAME] == TURTLE.decode()
+
+
+def test_a_sink_target_is_in_the_request_and_records_no_outputs() -> None:
+    bridge = FakeBridge({"finance-lake": ("finance", "fin/")}, sinks={"fake-target"})
+    sink = Target("fake-target", "", "", layout="sink", sink_id="fake")
+    delivered = deliver_outputs(deps(bridge), JOB, package(), [TARGET, sink], PAT, rendered())
+    [request] = bridge.requests
+    assert request.targets == ["finance-lake", "fake-target"]
+    assert [t for t, _ in delivered.deliveries] == ["finance-lake", "fake-target"]
+    assert "fake-target" not in delivered.outputs_by_target
+    assert delivered.primary == "finance-lake"
