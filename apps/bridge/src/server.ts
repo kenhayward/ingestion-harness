@@ -25,6 +25,16 @@ pool.on('error', (err) => app.log.error({ err }, 'database connection lost'));
 await seedInternalConnection(app.deps.connections);
 await built.internalStore.ensureBucket(config.BRIDGE_STAGING_BUCKET);
 
+// Every sink is described once before deliveries run (an external one answers within its
+// timeout, or is unavailable until a later refresh), then again on an interval.
+const refreshSinks = () =>
+  built.sinks.refresh().then(() => {
+    const down = built.sinks.ids().filter((id) => built.sinks.status(id) === 'unavailable');
+    if (down.length) app.log.warn({ sinks: down }, 'sinks unavailable: their describe failed');
+  });
+await refreshSinks();
+setInterval(() => void refreshSinks(), config.BRIDGE_SINK_REFRESH_SECONDS * 1000).unref();
+
 let stopping = false;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

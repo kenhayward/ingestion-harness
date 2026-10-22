@@ -61,6 +61,8 @@ export class SinkError extends Error {
 export interface SinkRegistry {
   get(id: string): SinkPort | null;
   ids(): string[];
+  /** Whether the sink answered its last describe (built-in sinks always do). */
+  status(id: string): 'available' | 'unavailable';
 }
 
 export class MapSinkRegistry implements SinkRegistry {
@@ -72,5 +74,9 @@ export class MapSinkRegistry implements SinkRegistry {
 
   ids(): string[] {
     return Object.keys(this.sinks);
+  }
+
+  status(): 'available' {
+    return 'available';
   }
 }
