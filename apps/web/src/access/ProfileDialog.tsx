@@ -6,12 +6,14 @@ import { Icon, type IconName } from '../ui/Icon.js';
 import { HelpButton } from '../ui/Help.js';
 import { useModalFocus } from '../ui/Dialog.js';
 import { ChangePassword } from './ChangePassword.js';
+import { ProfileConnections } from './ProfileConnections.js';
 
-export type ProfileTab = 'details' | 'password';
+export type ProfileTab = 'details' | 'password' | 'connections';
 
 const TABS: { id: ProfileTab; label: string; icon: IconName }[] = [
   { id: 'details', label: 'Personal details', icon: 'user' },
   { id: 'password', label: 'Change password', icon: 'lock' },
+  { id: 'connections', label: 'Connections', icon: 'plug' },
 ];
 
 /** How the GitHub link ended (`?github=` on the way back from GitHub), as the person reads it. */
@@ -122,6 +124,8 @@ export function ProfileDialog({
           >
             {tab === 'details' ? (
               <PersonalDetails api={api} githubResult={githubResult} onChanged={onChanged} />
+            ) : tab === 'connections' ? (
+              <ProfileConnections api={api} />
             ) : (
               <ChangePassword
                 api={api}

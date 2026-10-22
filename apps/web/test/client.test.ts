@@ -1158,6 +1158,15 @@ describe('http api: publishing targets', () => {
     expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe('/api/publish-targets/connections');
   });
 
+  it("lists the signed-in user's personal connections for Profile", async () => {
+    const api = createHttpApi('/api');
+    const mine = { personalSinks: true, connections: [] };
+    const fetch = vi.fn(async () => respond(200, mine));
+    vi.stubGlobal('fetch', fetch);
+    expect(await api.listMyConnections()).toEqual(mine);
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe('/api/profile/connections');
+  });
+
   it('opens the connections page in a new tab, without an opener', async () => {
     const api = createHttpApi('/api');
     const url = 'https://ct.example.com/bridge/connections/start?code=abc';

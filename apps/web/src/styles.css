@@ -6048,7 +6048,8 @@ img.avatar {
   flex: 1;
   min-width: 200px;
 }
-.profile-github {
+.profile-github,
+.profile-connections {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -6057,12 +6058,17 @@ img.avatar {
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-md);
 }
-.profile-github legend {
+.profile-github legend,
+.profile-connections legend {
   padding: 0 6px;
   font-weight: 600;
 }
-.profile-github p {
+.profile-github p,
+.profile-connections p {
   margin: 0;
+}
+.profile-connections > button {
+  align-self: flex-start;
 }
 .profile-github > a.button {
   align-self: flex-start;

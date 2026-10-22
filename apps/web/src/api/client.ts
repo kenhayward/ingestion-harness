@@ -78,6 +78,7 @@ import type {
   PluginInfo,
   PluginPreviewView,
   TargetConnection,
+  MyConnections,
   TargetCreateBody,
   TargetPatchBody,
   TargetTestBody,
@@ -476,6 +477,8 @@ export interface Api {
   listSharedConnections(): Promise<TargetConnection[]>;
   /** Opens the bridge's connections page in a new tab (a one-time link for this user). */
   openConnections(): Promise<void>;
+  /** The signed-in user's personal connections on the delivery bridge (never a credential). */
+  listMyConnections(): Promise<MyConnections>;
   /** What a recipe's Publish to picker offers (any designer or admin). */
   listPublishTargetChoices(): Promise<TargetChoice[]>;
   /** The plugins recipe steps can run, as the workers published them (recipe plugins 3b). */
@@ -1109,6 +1112,7 @@ export function createHttpApi(base = '/api'): Api {
       // A new tab, not a frame (the page keeps its own session), and no window.opener for it.
       window.open(url, '_blank', 'noopener');
     },
+    listMyConnections: () => apiFetch(`${base}/profile/connections`).then(json<MyConnections>),
     listSharedConnections: () =>
       apiFetch(`${base}/publish-targets/connections`)
         .then(json<{ connections: TargetConnection[] }>)

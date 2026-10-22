@@ -75,6 +75,7 @@ export const HELP_INDEX: HelpEntry[] = [
       { topic: 'ontologyMemory', label: 'Remembered mappings' },
     ],
   },
+  { topic: 'connections', label: 'Connections' },
   {
     topic: 'administration',
     label: 'Administration',
