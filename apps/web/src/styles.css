@@ -2953,16 +2953,80 @@ input.danger-border {
   align-items: start;
   gap: 20px;
 }
+.results-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+.results-title p {
+  margin: 0;
+}
 .results-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .results-empty {
   margin: 0;
   padding: 20px;
 }
+/* The list's card, as the Jobs page's: the filters and pager on top, the rows, the footer. */
 .results-list-card {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
+.results-list-card > .results-toolbar {
+  flex: none;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ih-border);
+}
+.results-list-card .select-field select {
+  min-width: 140px;
+  max-width: 160px;
+}
+.results-list-card .filter-search {
+  /* Room for its placeholder, "Filter by file name", where the bar has it. */
+  flex: 1 1 190px;
+  min-width: 120px;
+  max-width: 240px;
+}
+.results-pager {
+  margin-left: auto;
+}
+.day-row .continued {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-style: italic;
+}
+/* The rows' area: as many lines as it holds make a page (usePageSize), so it never scrolls. */
+.result-list-rows {
+  flex: none;
+  height: min(70vh, 900px);
+  min-height: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+/* A narrow list keeps the file name readable: the document type and file count go (the
+   preview has both), and the reviewer column narrows. */
+@container (max-width: 760px) {
+  .result-list-rows .result-list col.type-col,
+  .result-list-rows .result-list col.files-col {
+    width: 0;
+  }
+  .result-list-rows .result-list .type-cell,
+  .result-list-rows .result-list .files-cell {
+    padding: 0;
+    visibility: hidden;
+  }
+  .result-list-rows .result-list col.reviewer-col {
+    width: 130px;
+  }
+}
+/* One line a result: fixed columns, text that does not fit ends in an ellipsis. */
 .result-list {
   width: 100%;
   background: transparent;
@@ -2970,39 +3034,59 @@ input.danger-border {
 }
 .result-list th,
 .result-list td {
-  padding: 10px 12px;
+  padding: 0 12px;
   vertical-align: middle;
 }
-.result-list thead th {
-  font-size: var(--ih-text-sm);
+.result-list td {
+  height: 36px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.result-list th:nth-child(3),
-.result-list td:nth-child(3) {
-  width: 170px;
+.result-list col.badge-col {
+  width: 56px;
 }
-.result-list th:nth-child(4),
-.result-list td:nth-child(4) {
-  width: 84px;
+.result-list col.type-col {
+  width: 22%;
 }
-.result-list th:nth-child(5),
-.result-list td:nth-child(5) {
-  width: 64px;
+.result-list col.reviewer-col {
+  width: 150px;
 }
-.result-list th:nth-child(6),
-.result-list td:nth-child(6) {
-  width: 70px;
+.result-list col.when-col {
+  width: 88px;
 }
-.result-list .badge-col {
-  width: 48px;
-  padding-right: 0;
+.result-list col.issues-col {
+  width: 60px;
 }
-.result-list .chev-col {
-  width: 32px;
+.result-list col.files-col {
+  width: 78px;
+}
+.result-list col.chev-col {
+  width: 30px;
+}
+.result-list td.badge-col {
+  padding: 0 0 0 16px;
+}
+.result-list td.chev-col {
+  padding: 0;
   color: var(--ih-muted);
   text-align: center;
 }
+.result-list .file-badge {
+  width: 36px;
+  height: 18px;
+  align-items: center;
+  padding-bottom: 0;
+  border-radius: 4px;
+  font-size: 9.5px;
+}
+.result-list .type-cell {
+  color: var(--ih-muted);
+  font-size: var(--ih-text-md);
+}
 .result-list .day-row th {
-  padding: 12px 16px 6px;
+  height: 28px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--ih-border-soft);
   background: var(--ih-surface2);
   color: var(--ih-muted);
@@ -3029,17 +3113,21 @@ input.danger-border {
   box-shadow: inset 3px 0 0 var(--ih-accent);
 }
 .result-list .doc-button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  width: 100%;
-  min-width: 0;
+  display: block;
+  max-width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-weight: 500;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .result-list .doc-button:hover:not(:disabled) {
-  text-decoration: none;
-}
-.result-list .doc-button:hover:not(:disabled) .doc-name {
+  background: none;
   text-decoration: underline;
 }
 .doc-name,
@@ -3101,16 +3189,14 @@ input.danger-border {
   font-weight: 600;
 }
 .results-foot {
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px;
+  padding: 8px 14px;
   border-top: 1px solid var(--ih-border);
-  font-size: var(--ih-text-md);
-}
-.results-foot:has(> span) {
-  justify-content: flex-start;
+  font-size: var(--ih-text-sm);
 }
 .file-badge {
   flex: none;
@@ -3150,6 +3236,63 @@ input.danger-border {
   flex-direction: column;
   gap: 14px;
   padding: 18px;
+}
+.preview-top {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* Side by side the Results page fits the window, as the Jobs page: the header on top, the list
+   and the preview fill the rest; the list's rows area takes what its toolbar and footer leave
+   (a page of lines), the preview scrolls under its head. The page itself never scrolls. */
+@media (min-width: 1000px) {
+  .page:has(> .results-page) {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+  .results-page {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: calc(100vh - var(--ih-topbar-h) - 32px);
+    min-height: 480px;
+  }
+  .results-page > * {
+    flex: none;
+  }
+  .results-page > .page-header {
+    margin-bottom: 0;
+  }
+  .results-page > .results-layout {
+    flex: 1 1 0;
+    min-height: 0;
+    align-items: stretch;
+  }
+  .results-main {
+    min-height: 0;
+  }
+  .results-main > .results-list-card {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+  .results-list-card > .result-list-rows {
+    flex: 1 1 0;
+    height: auto;
+  }
+  .results-layout > .result-preview {
+    position: static;
+    min-height: 0;
+    overflow: auto;
+    padding-top: 0;
+  }
+  .result-preview > .preview-top {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 18px 0 14px;
+    border-bottom: 1px solid var(--ih-border-soft);
+    background: var(--ih-surface);
+  }
 }
 .preview-head {
   display: flex;

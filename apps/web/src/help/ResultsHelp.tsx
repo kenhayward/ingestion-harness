@@ -21,8 +21,19 @@ export function ResultsHelp() {
       </ul>
 
       <h3>The list</h3>
-      <p>Newest first, grouped by the day they were published.</p>
+      <p>
+        Newest first, one line a result, grouped by the day they were published. The list fills the
+        window and shows as many results as fit: <strong>‹ Newer</strong> and{' '}
+        <strong>Older ›</strong> above it move between pages, and a page that starts partway through
+        a day repeats its heading with <em>(continued)</em>. In a narrow window the document type
+        and file count give way to the file name; the preview shows both.
+      </p>
       <ul>
+        <li>
+          From the keyboard: <kbd>↑</kbd> and <kbd>↓</kbd> move to the next result (onto the next
+          page when needed), <kbd>Page Up</kbd> and <kbd>Page Down</kbd> change page, and{' '}
+          <kbd>Enter</kbd> opens the full result.
+        </li>
         <li>
           <strong>Published</strong>: the time the outputs were delivered.
         </li>

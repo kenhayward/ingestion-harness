@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
-        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #309,
+        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #310,
         merged between Wednesday 21 October 2026, 14:06 and Thursday 22 October 2026 (UTC).
       </p>
 
@@ -220,6 +220,10 @@
           <li>
             <a href="#attention-everywhere">No job needing you is missed</a>
             <span>— the badges and the review queue count every job waiting on someone</span>
+          </li>
+          <li>
+            <a href="#results-compact">A compact Results list</a>
+            <span>— one line a result, by day, paged to fit the window</span>
           </li>
           <li>
             <a href="#open-in-viewer">Open a result in the viewer</a>
@@ -549,6 +553,26 @@
         awaiting review, needing review or failed, however old. For API clients:
         <code>GET /api/jobs</code> takes <code>group=attention</code>, <code>active</code> or
         <code>done</code>.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="results-compact">A compact Results list</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/310">#310</a>
+      </p>
+      <p>
+        The <strong>Results</strong> page follows the Jobs page: each result is one line (its kind,
+        the file name, the document type, who reviewed it, the time, issues and files), still
+        grouped under the day it was published. From 1,000 px wide the page fits the window: the
+        list shows as many lines as fit, day headings included, with <strong>‹ Newer</strong> and
+        <strong>Older ›</strong> above it in place of <strong>Load more</strong>, and a page that
+        starts partway through a day repeats its heading with <em>(continued)</em>. The preview
+        beside it is the window&apos;s height; its fields and files scroll under its title and
+        buttons. In a narrow window the document type and file count give way to the file name.
+      </p>
+      <p>
+        In the list, <kbd>↑</kbd> and <kbd>↓</kbd> move to the next result (across pages),
+        <kbd>PgUp</kbd> and <kbd>PgDn</kbd> change page, and <kbd>Enter</kbd> opens the full result.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

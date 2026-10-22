@@ -642,6 +642,8 @@ export interface Api {
     show?: ResultShow;
     before?: string;
     beforeId?: string;
+    /** At most this many (1 to 200; the API's default is 50). */
+    limit?: number;
   }): Promise<ResultSummary[]>;
   getResult(jobId: string): Promise<ResultDetail>;
   getReview(jobId: string): Promise<ReviewData>;
@@ -1691,6 +1693,7 @@ export function createHttpApi(base = '/api'): Api {
       if (query.show) params.set('show', query.show);
       if (query.before) params.set('before', query.before);
       if (query.beforeId) params.set('beforeId', query.beforeId);
+      if (query.limit) params.set('limit', String(query.limit));
       const qs = params.toString();
       return apiFetch(`${base}/results${qs ? `?${qs}` : ''}`).then(json<ResultSummary[]>);
     },

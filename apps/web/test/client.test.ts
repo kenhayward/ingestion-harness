@@ -414,9 +414,10 @@ describe('http api: results query', () => {
       q: 'a b%',
       before: 'x',
       beforeId: 'y',
+      limit: 17,
     });
     expect(fetch).toHaveBeenCalledWith(
-      '/api/results?templateId=t&q=a+b%25&before=x&beforeId=y',
+      '/api/results?templateId=t&q=a+b%25&before=x&beforeId=y&limit=17',
       undefined,
     );
   });
