@@ -1,5 +1,5 @@
 import type { JobSummary, PluginInfo } from '@ih/shared';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
@@ -37,9 +37,51 @@ describe('ReviewPage header and source', () => {
       'href',
       '#/review/next-id',
     );
-    expect(screen.getByRole('note', { name: 'Why this needs review' })).toHaveTextContent(
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const chip = screen.getByRole('button', { name: /Why this needs review \(2\)/ });
+    await userEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('dialog', { name: 'Why this needs review' })).toHaveTextContent(
       'check batch_check: 1 unmatched',
     );
+  });
+
+  it('closes the reasons on Escape, back to the chip, and on a click outside', async () => {
+    setup();
+    const chip = await screen.findByRole('button', { name: /Why this needs review/ });
+    await userEvent.click(chip);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Why this needs review' })).toBeNull();
+    expect(chip).toHaveFocus();
+    await userEvent.click(chip);
+    await userEvent.click(screen.getByRole('heading', { level: 1 }));
+    expect(screen.queryByRole('dialog', { name: 'Why this needs review' })).toBeNull();
+  });
+
+  it('shows no reasons once the job has left review', async () => {
+    const data = reviewData();
+    data.job.status = 'succeeded';
+    setup({ getReview: vi.fn(async () => data) });
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    expect(screen.queryByRole('button', { name: /Why this needs review/ })).toBeNull();
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.queryByText(/check batch_check/)).toBeNull();
+  });
+
+  it('shows no reasons chip for a job awaiting review without reasons', async () => {
+    const data = reviewData();
+    data.job.reviewReasons = [];
+    setup({ getReview: vi.fn(async () => data) });
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    expect(screen.queryByRole('button', { name: /Why this needs review/ })).toBeNull();
+  });
+
+  it('keeps the full file name on hover and the recipe, version and model in the header', async () => {
+    setup();
+    const h1 = await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    expect(h1).toHaveAttribute('title', 'scan.pdf');
+    const header = h1.closest('header')!;
+    expect(header).toHaveTextContent('Template demo · v1');
   });
 
   it('hides Next document when this is the only one awaiting review', async () => {
@@ -77,7 +119,7 @@ describe('ReviewPage extracted data', () => {
       'aria-selected',
       'true',
     );
-    expect(within(tabs).getByRole('tab', { name: 'results 3 (flagged)' })).toBeInTheDocument();
+    expect(within(tabs).getByRole('tab', { name: 'results 3 (2 flagged)' })).toBeInTheDocument();
     expect(within(tabs).getByRole('tab', { name: 'Edits 0' })).toBeInTheDocument();
     expect(within(tabs).getByRole('tab', { name: 'Steps 2' })).toBeInTheDocument();
   });
@@ -158,7 +200,10 @@ describe('ReviewPage', () => {
   it('shows the document, review reasons and every field with its evidence', async () => {
     setup();
     expect(await screen.findByRole('heading', { level: 1, name: 'scan.pdf' })).toBeInTheDocument();
+    // The reasons sit behind the header's chip.
+    await userEvent.click(screen.getByRole('button', { name: /Why this needs review/ }));
     expect(screen.getByText(/check batch_check: 1 unmatched/)).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
     const row = fieldRow(/Execution Date/);
     expect(within(row).getByText('2023-02-16')).toBeInTheDocument();
     expect(within(row).getByText(/Made 16\/02\/2023/)).toBeInTheDocument();
@@ -218,7 +263,12 @@ describe('ReviewPage', () => {
     expect(within(table).getAllByRole('row')).toHaveLength(4); // header + 3
     const flagged = within(table).getByTitle("'Complies' is not a valid decimal");
     expect(flagged).toHaveTextContent('Complies');
-    await userEvent.click(screen.getByRole('checkbox', { name: /flagged rows only/i }));
+    const rows = screen.getByRole('group', { name: 'Rows' });
+    expect(within(rows).getByRole('button', { name: 'All rows' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await userEvent.click(within(rows).getByRole('button', { name: 'Flagged only' }));
     expect(within(table).getAllByRole('row')).toHaveLength(2);
   });
 
@@ -616,7 +666,7 @@ describe('ReviewPage graph (ADR 0011 step 5)', () => {
         ],
       })),
     });
-    await userEvent.click(await screen.findByRole('tab', { name: /Graph 1 \(flagged\)/ }));
+    await userEvent.click(await screen.findByRole('tab', { name: /Graph 1 \(1 flagged\)/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Turtle' }));
     expect(await screen.findByText('<a> <b> <c> .')).toBeInTheDocument();
     expect(api.getShaclReport).toHaveBeenCalledWith(JOB_ID);
@@ -625,6 +675,221 @@ describe('ReviewPage graph (ADR 0011 step 5)', () => {
     await userEvent.click(screen.getByRole('tab', { name: /Graph/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Show product' }));
     expect(screen.getByRole('tab', { name: /Fields/ })).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
+describe('ReviewPage layout', () => {
+  const separator = () =>
+    screen.getByRole('separator', { name: 'Resize the document and the data' });
+
+  it('lists fields and tables in an outline, with flag counts and a filter', async () => {
+    setup();
+    const outline = await screen.findByRole('tablist', { name: 'Extracted data' });
+    expect(outline).toHaveAttribute('aria-orientation', 'vertical');
+    expect(within(outline).getByText('Tables')).toBeInTheDocument();
+    expect(within(outline).getByText('1 flagged')).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Find a table or field' }), 'res');
+    expect(within(outline).getByRole('tab', { name: /^results/ })).toBeInTheDocument();
+    expect(within(outline).queryByRole('tab', { name: /^Fields/ })).toBeNull();
+    expect(within(outline).queryByRole('tab', { name: /^Steps/ })).toBeNull();
+  });
+
+  it("shows a table's long name with its reference on a second line", async () => {
+    const data = reviewData();
+    data.template.outputs.tables[0]!.name = 'Test Parameters (Table IX)';
+    setup({ getReview: vi.fn(async () => data) });
+    const tab = await screen.findByRole('tab', { name: /^Test Parameters \(Table IX\) 3/ });
+    expect(within(tab).getByText('Table IX')).toBeInTheDocument();
+    expect(within(tab).getByText('Test Parameters')).toBeInTheDocument();
+  });
+
+  it('steps between tables from the open table', async () => {
+    const data = reviewData();
+    data.template.outputs.tables.push({
+      id: 'extra',
+      name: 'Extra',
+      columns: [{ id: 'note', type: 'text' }],
+    });
+    data.document.tables.extra = [{ note: 'n' }];
+    setup({ getReview: vi.fn(async () => data) });
+    await userEvent.click(await screen.findByRole('tab', { name: /^results/ }));
+    expect(screen.getByRole('button', { name: 'Previous table' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Next table: Extra' }));
+    expect(screen.getByRole('tab', { name: /^Extra/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('explains the flagged value Next flagged lands on, with a way to edit it', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: /Next flagged/ }));
+    const note = screen.getByRole('region', { name: 'Flagged value' });
+    expect(note).toHaveTextContent('Row 2 · batch');
+    expect(note).toHaveTextContent('batch_check');
+    await userEvent.click(screen.getByRole('button', { name: /Next flagged/ }));
+    expect(note).toHaveTextContent('Row 2 · value');
+    expect(note).toHaveTextContent("'Complies' is not a valid decimal");
+    await userEvent.click(within(note).getByRole('button', { name: 'Edit value' }));
+    expect(
+      screen.getByRole('textbox', { name: 'New value for results row 2 value' }),
+    ).toHaveFocus();
+  });
+
+  it('resizes the document beside the data and remembers it', async () => {
+    const { unmount } = render(
+      <ReviewPage
+        api={fakeApi({ getReview: vi.fn(async () => reviewData()) })}
+        jobId={JOB_ID}
+        onDone={vi.fn()}
+      />,
+    );
+    await screen.findByRole('region', { name: 'Source PDF' });
+    expect(separator()).toHaveAttribute('aria-valuenow', '45');
+    separator().focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(separator()).toHaveAttribute('aria-valuenow', '50');
+    await userEvent.click(screen.getByRole('button', { name: 'Document 30%' }));
+    expect(separator()).toHaveAttribute('aria-valuenow', '30');
+    unmount();
+    setup();
+    await screen.findByRole('region', { name: 'Source PDF' });
+    expect(separator()).toHaveAttribute('aria-valuenow', '30');
+  });
+
+  it('follows a drag of the divider and remembers it once the drag ends', async () => {
+    setup();
+    await screen.findByRole('region', { name: 'Source PDF' });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 0, y: 0, width: 1000, height: 600 }),
+    );
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const divider = separator();
+    // jsdom's PointerEvent has no clientX: a MouseEvent of the pointer type carries it.
+    const pointer = (type: string, clientX: number) =>
+      fireEvent(divider, new MouseEvent(type, { bubbles: true, clientX }));
+    pointer('pointerdown', 450);
+    pointer('pointermove', 500);
+    pointer('pointermove', 550);
+    pointer('pointermove', 600);
+    expect(divider).toHaveAttribute('aria-valuenow', '60');
+    const layoutWrites = () => setItem.mock.calls.filter(([key]) => key === 'ih.reviewLayout');
+    expect(layoutWrites()).toHaveLength(0);
+    pointer('pointerup', 600);
+    expect(layoutWrites()).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem('ih.reviewLayout')!)).toMatchObject({ docWidth: 60 });
+    vi.restoreAllMocks();
+  });
+
+  it('hides either panel to a rail at its side, and shows it again', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Hide the document' }));
+    expect(screen.queryByRole('region', { name: 'Source PDF' })).toBeNull();
+    expect(screen.queryByRole('separator')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Show the document' }));
+    expect(screen.getByRole('region', { name: 'Source PDF' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Hide the data' }));
+    expect(screen.queryByRole('region', { name: 'Extracted data' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Show the data' }));
+    expect(screen.getByRole('region', { name: 'Extracted data' })).toBeInTheDocument();
+  });
+
+  it('swaps the document to the other side', async () => {
+    setup();
+    const source = await screen.findByRole('region', { name: 'Source PDF' });
+    const data = screen.getByRole('region', { name: 'Extracted data' });
+    const before = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(source, data)).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Swap sides' }));
+    expect(
+      before(
+        screen.getByRole('region', { name: 'Extracted data' }),
+        screen.getByRole('region', { name: 'Source PDF' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('shows page thumbnails, marking pages with flagged fields', async () => {
+    const data = reviewData();
+    data.document.issues.push({
+      step: 'head',
+      target: 'executed_on',
+      row: null,
+      column: null,
+      raw: 'x',
+      message: 'odd date',
+    });
+    setup({ getReview: vi.fn(async () => data) });
+    const pages = await screen.findByRole('navigation', { name: 'Pages' });
+    expect(within(pages).getAllByRole('button')).toHaveLength(3);
+    expect(within(pages).getByRole('button', { name: 'Page 1' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(
+      within(pages).getByRole('button', { name: 'Page 3 (flagged values)' }),
+    ).toBeInTheDocument();
+    await userEvent.click(within(pages).getByRole('button', { name: 'Page 2' }));
+    expect(screen.getByRole('img', { name: 'Page 2 of 3' })).toBeInTheDocument();
+  });
+});
+
+describe('ReviewPage long text values', () => {
+  it('edits a text value in a multi-line box: Shift+Enter starts a line, Enter saves', async () => {
+    const { api } = setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Medicinal Product' }));
+    const box = screen.getByRole('textbox', { name: 'New value for product' });
+    expect(box.tagName).toBe('TEXTAREA');
+    expect(box).toHaveValue('Richfer capsules');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Line one{Shift>}{Enter}{/Shift}line two');
+    expect(api.addEdit).not.toHaveBeenCalled();
+    await userEvent.keyboard('{Enter}');
+    expect(api.addEdit).toHaveBeenCalledWith(JOB_ID, {
+      field: 'product',
+      value: 'Line one\nline two',
+    });
+  });
+
+  it('keeps a one-line box for values that are not text', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Execution Date' }));
+    expect(screen.getByRole('textbox', { name: 'New value for executed_on' }).tagName).toBe(
+      'INPUT',
+    );
+  });
+});
+
+describe('ReviewPage page columns', () => {
+  /** The results table with a Page column: row 2 (the flagged one) was found on page 2. */
+  const withPages = () => {
+    const data = reviewData();
+    data.template.outputs.tables[0]!.columns.push({ id: 'page', name: 'Page', type: 'integer' });
+    data.document.tables.results = [
+      { batch: 'G1', value: 137.8, page: 3 },
+      { batch: 'GX', value: 'Complies', page: 2 },
+      { batch: 'G1', value: 120.1, page: 9 },
+    ];
+    return data;
+  };
+
+  it("opens the page a row's page column names", async () => {
+    setup({ getReview: vi.fn(async () => withPages()) });
+    await userEvent.click(await screen.findByRole('tab', { name: /^results/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Show page 3' }));
+    expect(screen.getByRole('img', { name: 'Page 3 of 3' })).toBeInTheDocument();
+    // Only page numbers the document has, and only in the page column.
+    expect(screen.queryByRole('button', { name: 'Show page 9' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Show page 137/ })).toBeNull();
+  });
+
+  it('turns to the page of the flagged row Next flagged lands on, and marks it', async () => {
+    setup({ getReview: vi.fn(async () => withPages()) });
+    await userEvent.click(await screen.findByRole('button', { name: /Next flagged/ }));
+    expect(screen.getByRole('img', { name: 'Page 2 of 3' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Pages' })).getByRole('button', {
+        name: 'Page 2 (flagged values)',
+      }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -706,8 +971,9 @@ describe('ReviewPage, a review held up by a connection', () => {
     const { api } = setup({
       getReview: vi.fn(async () => ({ ...reviewData(), connectionNeeded: true })),
     });
-    const note = await screen.findByRole('note', { name: 'Why this needs review' });
-    await userEvent.click(within(note).getByRole('button', { name: 'Manage connections' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Why this needs review/ }));
+    const reasons = screen.getByRole('dialog', { name: 'Why this needs review' });
+    await userEvent.click(within(reasons).getByRole('button', { name: 'Manage connections' }));
     expect(api.openConnections).toHaveBeenCalled();
   });
 
