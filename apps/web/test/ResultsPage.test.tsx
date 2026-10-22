@@ -2,7 +2,7 @@ import type { ResultSummary } from '@ih/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { ResultsPage } from '../src/results/ResultsPage.js';
+import { FALLBACK_PAGE_SIZE, ResultsPage } from '../src/results/ResultsPage.js';
 import { timeOf } from '../src/results/format.js';
 import { fakeApi } from './fake-api.js';
 import { resultDetail } from './result-fixture.js';
@@ -150,7 +150,7 @@ describe('ResultsPage list', () => {
     ).toEqual(['All types', 'Invoice', 'Process Validation Protocol']);
     expect(select).toHaveValue('');
     await userEvent.selectOptions(select, 'Process Validation Protocol');
-    expect(listResults).toHaveBeenLastCalledWith({ templateId: 'pvp', q: undefined });
+    expect(listResults).toHaveBeenLastCalledWith({ templateId: 'pvp', q: undefined, limit: 25 });
   });
 
   it('shows reviewed, auto-approved or with-issues results on the server', async () => {
@@ -173,12 +173,14 @@ describe('ResultsPage list', () => {
       templateId: undefined,
       q: undefined,
       show: 'reviewed',
+      limit: 25,
     });
     await userEvent.click(within(show).getByRole('button', { name: 'Auto-approved' }));
     expect(listResults).toHaveBeenLastCalledWith({
       templateId: undefined,
       q: undefined,
       show: 'auto',
+      limit: 25,
     });
     await userEvent.click(within(show).getByRole('button', { name: 'With issues' }));
     expect(within(show).getByRole('button', { name: 'With issues' })).toHaveAttribute(
@@ -203,7 +205,7 @@ describe('ResultsPage list', () => {
     const days = screen.getAllByRole('rowheader').map((h) => h.textContent);
     expect(days).toEqual(['Today', 'Yesterday', expect.stringMatching(/12 Oct|Oct 12/)]);
     expect(row('today.pdf')).toHaveTextContent(timeOf(rows[0]!.publishedAt));
-    expect(screen.getByText('3 results')).toBeInTheDocument();
+    expect(screen.getByText('Showing 1–3 · newest first')).toBeInTheDocument();
   });
 
   it('filters by file name on the server, once typing pauses', async () => {
@@ -211,7 +213,7 @@ describe('ResultsPage list', () => {
     render(<ResultsPage api={fakeApi({ listResults })} />);
     await userEvent.type(screen.getByRole('searchbox', { name: 'Filter by file name' }), 'acme');
     await vi.waitFor(() =>
-      expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme' }),
+      expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme', limit: 25 }),
     );
     const qs = listResults.mock.calls.map((c) => (c as unknown as [{ q?: string }])[0].q);
     expect(qs).toEqual([undefined, 'acme']);
@@ -222,7 +224,7 @@ describe('ResultsPage list', () => {
     render(<ResultsPage api={fakeApi({ listResults })} query="acme" />);
     expect(screen.getByRole('searchbox', { name: 'Filter by file name' })).toHaveValue('acme');
     await vi.waitFor(() =>
-      expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme' }),
+      expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme', limit: 25 }),
     );
   });
 
@@ -230,32 +232,6 @@ describe('ResultsPage list', () => {
     const listResults = vi.fn(async (query?: { q?: string }) => (query?.q ? [] : [result()]));
     render(<ResultsPage api={fakeApi({ listResults })} query="zzz" />);
     expect(await screen.findByText('No results match “zzz”.')).toBeInTheDocument();
-  });
-
-  it('loads more with the last publish time as the cursor, keeping the filter', async () => {
-    const page1 = Array.from({ length: 50 }, (_, i) =>
-      result({
-        filename: `p1-${i}.pdf`,
-        publishedAt: `2026-10-02T09:00:${String(59 - i).padStart(2, '0')}.000Z`,
-      }),
-    );
-    const listResults = vi
-      .fn()
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce([result({ filename: 'p2.pdf' })]);
-    render(<ResultsPage api={fakeApi({ listResults })} query="p" />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));
-    expect(listResults).toHaveBeenLastCalledWith({
-      templateId: undefined,
-      q: 'p',
-      before: page1[49]!.publishedAt,
-      beforeId: page1[49]!.jobId,
-    });
-    expect(
-      await screen.findByRole('button', { name: 'Show preview of p2.pdf' }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show preview of p1-0.pdf' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
   });
 
   it('explains the empty state and shows load errors', async () => {
@@ -290,23 +266,6 @@ describe('ResultsPage list', () => {
     expect(
       screen.queryByRole('button', { name: 'Show preview of stale-all.pdf' }),
     ).not.toBeInTheDocument();
-  });
-
-  it('disables Load more while a page is loading', async () => {
-    const page1 = Array.from({ length: 50 }, (_, i) => result({ filename: `p1-${i}.pdf` }));
-    let resolveMore!: (rows: ResultSummary[]) => void;
-    const listResults = vi
-      .fn()
-      .mockResolvedValueOnce(page1)
-      .mockImplementationOnce(() => new Promise((resolve) => (resolveMore = resolve)));
-    render(<ResultsPage api={fakeApi({ listResults })} />);
-    const more = await screen.findByRole('button', { name: 'Load more' });
-    await userEvent.click(more);
-    expect(more).toBeDisabled();
-    await userEvent.click(more);
-    expect(listResults).toHaveBeenCalledTimes(2);
-    await act(async () => resolveMore([result({ filename: 'p2.pdf' })]));
-    expect(screen.getAllByRole('button', { name: 'Show preview of p2.pdf' })).toHaveLength(1);
   });
 
   it('says when the selected document type has no results', async () => {
@@ -361,5 +320,159 @@ describe('ResultsPage help', () => {
       within(header as HTMLElement).getByRole('button', { name: 'Help: Using the Results page' }),
     );
     expect(screen.getByRole('dialog', { name: 'Using the Results page' })).toBeInTheDocument();
+  });
+});
+
+/** `n` results of one day, newest first: r-01.pdf … */
+const oneDay = (n: number, day = '2026-10-02') =>
+  Array.from({ length: n }, (_, i) =>
+    result({
+      filename: `r-${String(i + 1).padStart(2, '0')}.pdf`,
+      publishedAt: `${day}T09:${String(59 - i).padStart(2, '0')}:00.000Z`,
+    }),
+  );
+const shownFiles = () =>
+  screen.getAllByRole('button', { name: /^Show preview of / }).map((b) => b.textContent);
+const pager = () => screen.getByRole('navigation', { name: 'Pages of results' });
+
+describe('ResultsPage pages', () => {
+  it('asks for a page of results as large as the list holds, day headings counted', async () => {
+    expect(FALLBACK_PAGE_SIZE).toBe(25);
+    const rows = oneDay(30);
+    const listResults = vi.fn(async (q?: { limit?: number }) => rows.slice(0, q?.limit));
+    render(<ResultsPage api={fakeApi({ listResults })} />);
+    await screen.findByRole('button', { name: 'Show preview of r-01.pdf' });
+    expect(listResults).toHaveBeenLastCalledWith({
+      templateId: undefined,
+      q: undefined,
+      limit: 25,
+    });
+    // 25 lines: the day heading and 24 results.
+    expect(shownFiles()).toHaveLength(24);
+    expect(screen.getAllByRole('rowheader')).toHaveLength(1);
+    expect(screen.getByText('Showing 1–24 · newest first')).toBeInTheDocument();
+    expect(pager()).toHaveTextContent('Page 1');
+    expect(within(pager()).getByRole('button', { name: 'Newer results' })).toBeDisabled();
+    expect(within(pager()).getByRole('button', { name: 'Older results' })).toBeEnabled();
+  });
+
+  it('pages older from the last result shown, and back newer, keeping the filter', async () => {
+    const rows = oneDay(30);
+    const listResults = vi.fn(async (q?: { limit?: number; beforeId?: string }) => {
+      const from = q?.beforeId ? rows.findIndex((r) => r.jobId === q.beforeId) + 1 : 0;
+      return rows.slice(from, from + (q?.limit ?? 50));
+    });
+    render(<ResultsPage api={fakeApi({ listResults })} query="r" />);
+    await screen.findByRole('button', { name: 'Show preview of r-01.pdf' });
+    await userEvent.click(within(pager()).getByRole('button', { name: 'Older results' }));
+    expect(listResults).toHaveBeenLastCalledWith({
+      templateId: undefined,
+      q: 'r',
+      limit: 25,
+      before: rows[23]!.publishedAt,
+      beforeId: rows[23]!.jobId,
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Show preview of r-25.pdf' }),
+    ).toBeInTheDocument();
+    expect(shownFiles()).toEqual([
+      'r-25.pdf',
+      'r-26.pdf',
+      'r-27.pdf',
+      'r-28.pdf',
+      'r-29.pdf',
+      'r-30.pdf',
+    ]);
+    // The page starts inside the day: its heading says so.
+    expect(screen.getByRole('rowheader')).toHaveTextContent('(continued)');
+    expect(screen.getByText('Showing 25–30 · newest first')).toBeInTheDocument();
+    expect(pager()).toHaveTextContent('Page 2');
+    expect(within(pager()).getByRole('button', { name: 'Older results' })).toBeDisabled();
+    await userEvent.click(within(pager()).getByRole('button', { name: 'Newer results' }));
+    expect(
+      await screen.findByRole('button', { name: 'Show preview of r-01.pdf' }),
+    ).toBeInTheDocument();
+    expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'r', limit: 25 });
+    expect(pager()).toHaveTextContent('Page 1');
+  });
+
+  it('goes back to the first page when a filter changes', async () => {
+    const rows = oneDay(30);
+    const listResults = vi.fn(async (q?: { limit?: number; beforeId?: string }) => {
+      const from = q?.beforeId ? rows.findIndex((r) => r.jobId === q.beforeId) + 1 : 0;
+      return rows.slice(from, from + (q?.limit ?? 50));
+    });
+    render(<ResultsPage api={fakeApi({ listResults })} />);
+    await screen.findByRole('button', { name: 'Show preview of r-01.pdf' });
+    await userEvent.click(within(pager()).getByRole('button', { name: 'Older results' }));
+    await screen.findByRole('button', { name: 'Show preview of r-25.pdf' });
+    await userEvent.click(screen.getByRole('button', { name: 'Reviewed' }));
+    expect(listResults).toHaveBeenLastCalledWith({
+      templateId: undefined,
+      q: undefined,
+      show: 'reviewed',
+      limit: 25,
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Show preview of r-01.pdf' }),
+    ).toBeInTheDocument();
+    expect(pager()).toHaveTextContent('Page 1');
+  });
+});
+
+describe('ResultsPage keyboard', () => {
+  const paged = () => {
+    const rows = oneDay(30);
+    return vi.fn(async (q?: { limit?: number; beforeId?: string }) => {
+      const from = q?.beforeId ? rows.findIndex((r) => r.jobId === q.beforeId) + 1 : 0;
+      return rows.slice(from, from + (q?.limit ?? 50));
+    });
+  };
+
+  it('moves the selection with ↑ and ↓, onto the next page and back', async () => {
+    render(<ResultsPage api={fakeApi({ listResults: paged() })} />);
+    (await screen.findByRole('button', { name: 'Show preview of r-23.pdf' })).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('button', { name: 'Show preview of r-24.pdf' })).toHaveFocus();
+    expect(within(preview()).getByRole('heading', { name: 'r-24.pdf' })).toBeInTheDocument();
+    await userEvent.keyboard('{ArrowDown}');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show preview of r-25.pdf' })).toHaveFocus(),
+    );
+    expect(pager()).toHaveTextContent('Page 2');
+    await userEvent.keyboard('{ArrowUp}');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show preview of r-24.pdf' })).toHaveFocus(),
+    );
+    expect(pager()).toHaveTextContent('Page 1');
+  });
+
+  it('pages with Page Down and Page Up, selecting the first result of the page', async () => {
+    render(<ResultsPage api={fakeApi({ listResults: paged() })} />);
+    (await screen.findByRole('button', { name: 'Show preview of r-03.pdf' })).focus();
+    await userEvent.keyboard('{PageDown}');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show preview of r-25.pdf' })).toHaveFocus(),
+    );
+    await userEvent.keyboard('{PageUp}');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Show preview of r-01.pdf' })).toHaveFocus(),
+    );
+  });
+
+  it('opens the selected result with Enter', async () => {
+    const rows = [result({ jobId: '11111111-1111-4111-8111-111111111111', filename: 'a.pdf' })];
+    render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => rows) })} />);
+    window.location.hash = '#/results';
+    (await screen.findByRole('button', { name: 'Show preview of a.pdf' })).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(window.location.hash).toBe('#/results/11111111-1111-4111-8111-111111111111');
+    window.location.hash = '';
+  });
+
+  it('says how to move with the keyboard', async () => {
+    render(<ResultsPage api={fakeApi({ listResults: vi.fn(async () => [result()]) })} />);
+    await screen.findByRole('button', { name: 'Show preview of a.pdf' });
+    expect(screen.getByText(/select ·/)).toBeInTheDocument();
   });
 });

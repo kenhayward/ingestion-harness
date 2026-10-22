@@ -141,34 +141,37 @@ export function ResultPreview({
 
   return (
     <aside className="result-preview card" aria-label="Result preview">
-      <div className="preview-head">
-        <FileBadge contentType={summary.contentType} />
-        <h2>{summary.filename}</h2>
+      {/* The head stays in view while the fields and files scroll under it. */}
+      <div className="preview-top">
+        <div className="preview-head">
+          <FileBadge contentType={summary.contentType} />
+          <h2>{summary.filename}</h2>
+        </div>
+        <p className="preview-sub">
+          <span className="kind-tag tone-info">
+            {typeTitle} v{summary.specVersion}
+          </span>
+          <span>Published {shortWhen(summary.publishedAt)}</span>
+          <span>
+            ·{' '}
+            {summary.reviewedAt
+              ? `Reviewed by ${summary.reviewer ?? 'unnamed reviewer'}`
+              : 'Auto-approved'}
+          </span>
+          {summary.issueCount !== null && (
+            <span>· {summary.issueCount ? plural(summary.issueCount, 'issue') : 'No issues'}</span>
+          )}
+        </p>
+        <ResultActions
+          api={api}
+          jobId={summary.jobId}
+          filename={summary.filename}
+          contentType={summary.contentType}
+          outputCount={summary.outputCount}
+          primary
+          viewer={definition?.kind === 'template'}
+        />
       </div>
-      <p className="preview-sub">
-        <span className="kind-tag tone-info">
-          {typeTitle} v{summary.specVersion}
-        </span>
-        <span>Published {shortWhen(summary.publishedAt)}</span>
-        <span>
-          ·{' '}
-          {summary.reviewedAt
-            ? `Reviewed by ${summary.reviewer ?? 'unnamed reviewer'}`
-            : 'Auto-approved'}
-        </span>
-        {summary.issueCount !== null && (
-          <span>· {summary.issueCount ? plural(summary.issueCount, 'issue') : 'No issues'}</span>
-        )}
-      </p>
-      <ResultActions
-        api={api}
-        jobId={summary.jobId}
-        filename={summary.filename}
-        contentType={summary.contentType}
-        outputCount={summary.outputCount}
-        primary
-        viewer={definition?.kind === 'template'}
-      />
       {error && <p className="error">Couldn't load the preview: {error}</p>}
       {detail?.documentError && <p className="error">{DOCUMENT_ERRORS[detail.documentError]}.</p>}
       {definition && definition.kind !== 'template' && (
