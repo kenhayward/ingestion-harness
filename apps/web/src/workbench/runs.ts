@@ -59,15 +59,6 @@ export function runBatches(runs: readonly TestRun[]): { batches: RunBatch[]; oth
   return { batches, others };
 }
 
-/** The newest two batches and any still running are shown; older ones wait behind *Show*. */
-export function splitBatches(batches: readonly RunBatch[]): {
-  shown: RunBatch[];
-  hidden: RunBatch[];
-} {
-  const shown = batches.filter((b, i) => i < 2 || b.active);
-  return { shown, hidden: batches.filter((b) => !shown.includes(b)) };
-}
-
 const ORDER: readonly JobStatus[] = [
   'succeeded',
   'awaiting_review',
@@ -117,18 +108,6 @@ export function batchSubtitle(batch: RunBatch, choices: readonly ModelChoice[]):
     ...(batch.createdBy ? [`started by ${batch.createdBy}`] : []),
     model,
   ].join(' · ');
-}
-
-/** "Older batches: 4 more on v3 and v4". */
-export function olderText(hidden: readonly RunBatch[]): string {
-  const versions = [...new Set(hidden.map((b) => b.specVersion))]
-    .sort((a, b) => a - b)
-    .map((v) => `v${v}`);
-  const list =
-    versions.length <= 2
-      ? versions.join(' and ')
-      : `${versions.slice(0, -1).join(', ')} and ${versions.at(-1)}`;
-  return `Older batches: ${hidden.length} more on ${list}`;
 }
 
 /** "occurrence 2 of 3 (4586784)": the occurrence of a repeating section a call reads. */

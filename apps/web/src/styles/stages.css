@@ -3250,9 +3250,6 @@ label.inline.list-select {
 .runs-stepbar .is-current {
   background: var(--ih-info-fg);
 }
-.runs-older {
-  margin: 0;
-}
 @media (max-width: 760px) {
   .runs-queue {
     flex-basis: 100%;

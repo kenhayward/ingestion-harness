@@ -433,8 +433,13 @@ export function WbRunsHelp() {
       <p>
         Each run is a batch, newest first: a bar of its jobs' states, and a row per sample with its
         status, the step it is on, and how long it took. <strong>Review</strong> opens a finished
-        run; <strong>Retry</strong> runs a failed one again. Older batches are behind{' '}
-        <strong>Show</strong>.
+        run; <strong>Retry</strong> runs a failed one again. Every batch is listed.
+      </p>
+      <p>
+        <strong>Other runs</strong>, below the batches, lists the runs of dev samples that were not
+        started as a batch: reference runs and re-verifies (References tab), evaluations and model
+        comparisons (Evaluate tab), and runs from before batches. Holdout runs are never listed
+        here.
       </p>
       <h3>Cancelling</h3>
       <p>
