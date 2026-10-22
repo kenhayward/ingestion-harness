@@ -353,6 +353,8 @@ DeliveryFormat = Literal["csv", "json", "rdf"]
 #: The id of a publishing target (TARGET_ID in TS); `default` is the seeded one.
 DEFAULT_PUBLISH_TARGET = "default"
 PublishTargetId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,39}$")]
+SettingField = Annotated[str, Field(min_length=1, max_length=64)]
+SettingPattern = Annotated[str, Field(min_length=1, max_length=1024)]
 #: The most targets one recipe delivers to (MAX_PUBLISH_TARGETS in TS).
 MAX_PUBLISH_TARGETS = 8
 
@@ -379,6 +381,9 @@ class Delivery(_Model):
     formats: list[DeliveryFormat] | None = Field(default=None, min_length=1)
     #: The publishing targets to deliver to, one or a list (absent: the default target).
     publish_to: PublishTo | None = Field(default=None, alias="publishTo")
+    #: Name patterns per target: target id -> the sink's pattern field -> its pattern (absent:
+    #: none). The bridge resolves them; deliverySettingsOf in TS.
+    settings: dict[PublishTargetId, dict[SettingField, SettingPattern]] | None = None
 
 
 class TemplateDocument(DocumentLayout):
@@ -441,6 +446,11 @@ class Template(_Model):
         if self.delivery and self.delivery.formats:
             return list(self.delivery.formats)
         return ["csv", "json"]
+
+    def delivery_settings(self) -> dict[str, dict[str, str]]:
+        """The recipe's name patterns per target (`delivery.settings`), else none."""
+        settings = self.delivery.settings if self.delivery else None
+        return {t: dict(fields) for t, fields in (settings or {}).items()}
 
     def publish_targets(self) -> list[str]:
         """The publishing targets' ids, in the recipe's order (`delivery.publishTo`, else

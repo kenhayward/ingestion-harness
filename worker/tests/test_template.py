@@ -293,6 +293,7 @@ def test_delivery_cases_match_the_shared_fixture(case: dict[str, Any]) -> None:
     t = Template.model_validate({**SEMANTICS_FIXTURE["base"], **case["definition"]})
     assert t.delivery_formats() == case["formats"]
     assert t.publish_targets() == case["publishTargets"]
+    assert t.delivery_settings() == case.get("settings", {})
 
 
 @pytest.mark.parametrize("bad", ["Lake", "-x", "a b", "x" * 41, ""])

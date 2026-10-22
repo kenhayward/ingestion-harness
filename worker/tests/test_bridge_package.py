@@ -31,7 +31,7 @@ from ingest_worker.pipeline import Buckets, PipelineDeps, Target
 from ingest_worker.queue import ClaimedJob
 from ingest_worker.specs import SpecRegistry
 from ingest_worker.storage import MemoryObjectStore, graph_version_key, output_key
-from ingest_worker.template import Template
+from ingest_worker.template import Delivery, Template
 
 from .fakes import FakeBridge, FakeQueue
 
@@ -144,7 +144,12 @@ def test_a_document_package_carries_files_at_todays_keys_and_the_data() -> None:
         ["batch", "value"],
     )
     assert table.rows == [{"batch": "B1", "value": 1.0}]
-    assert package.naming == {}
+    # What the sinks' name patterns resolve against (fixture naming.json pins the rules).
+    assert package.naming["field:product"] == "Richfer"
+    assert package.naming["field:dose"] == "2.5"
+    assert package.naming["recipe.id"] == package.provenance.recipe_id
+    assert package.naming["job.id"] == package.provenance.job_id
+    assert package.naming["date"] == package.provenance.published_at[:10]
     assert package.rdf is None and package.narrative is None and package.images is None
 
 
@@ -277,3 +282,39 @@ def test_a_graph_package_has_kind_graph_no_provenance_and_the_graph_key() -> Non
     assert delivery_id
     assert bridge.requests[0].targets == ["rdf-default"]
     assert bridge.graphs[GRAPH_NAME] == TURTLE.decode()
+
+
+def test_a_sink_target_is_in_the_request_and_records_no_outputs() -> None:
+    bridge = FakeBridge({"finance-lake": ("finance", "fin/")}, sinks={"fake-target"})
+    sink = Target("fake-target", "", "", layout="sink", sink_id="fake")
+    delivered = deliver_outputs(deps(bridge), JOB, package(), [TARGET, sink], PAT, rendered())
+    [request] = bridge.requests
+    assert request.targets == ["finance-lake", "fake-target"]
+    assert [t for t, _ in delivered.deliveries] == ["finance-lake", "fake-target"]
+    assert "fake-target" not in delivered.outputs_by_target
+    assert delivered.primary == "finance-lake"
+
+
+def test_the_recipe_s_name_patterns_go_with_the_request_for_its_targets() -> None:
+    bridge = FakeBridge({"finance-lake": ("finance", "fin/")}, sinks={"fake-target"})
+    sink = Target("fake-target", "", "", layout="sink", sink_id="fake")
+    template = TEMPLATE.model_copy(
+        update={
+            "delivery": TEMPLATE.delivery.model_copy(
+                update={
+                    "settings": {"fake-target": {"name": "{field:product}"}, "gone": {"x": "y"}}
+                }
+            )
+            if TEMPLATE.delivery
+            else Delivery.model_validate(
+                {"settings": {"fake-target": {"name": "{field:product}"}, "gone": {"x": "y"}}}
+            )
+        }
+    )
+    deliver_document(
+        deps(bridge), JOB, template=template, document=DOCUMENT, outputs=rendered(),
+        targets=[TARGET, sink], acting=PAT, approver=None,
+    )  # fmt: skip
+    [request] = bridge.requests
+    assert request.patterns == {"fake-target": {"name": "{field:product}"}}
+    assert request.overrides == {}

@@ -123,6 +123,22 @@ class JobQueue(Protocol):
         """The CT Studio user who queued the job (None: not recorded)."""
         ...
 
+    def delivery_overrides(self, job_id: str) -> dict[str, dict[str, str]]:
+        """The names the reviewer chose at the job's approval, per target and name field."""
+        ...
+
+    def record_delivered_as(self, job_id: str, user_id: str) -> None:
+        """The bridge accepted a package of the job as this user (a re-delivery acts as them)."""
+        ...
+
+    def flag_connection_needed(self, job_id: str) -> None:
+        """The job waits in review for a person's connection (the review offers to add one)."""
+        ...
+
+    def last_deliverer(self, job_id: str) -> ActingUser | None:
+        """The user the job was last delivered as (None: never, or no such user now)."""
+        ...
+
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         """Reviewer edits in the order they were made."""
         ...
@@ -344,10 +360,34 @@ class PgJobQueue:
                 )
 
     def reviewer(self, job_id: str) -> ActingUser | None:
+        # By id (recorded since phase 6), else by the name a job approved before then carries.
         row = self._conn.execute(
             """SELECT u.id::text, u.name, u.email FROM jobs j
-                 JOIN users u ON lower(btrim(u.name)) = lower(btrim(j.reviewer))
+                 JOIN users u ON (j.reviewer_user_id IS NOT NULL AND u.id = j.reviewer_user_id)
+                              OR (j.reviewer_user_id IS NULL
+                                  AND lower(btrim(u.name)) = lower(btrim(j.reviewer)))
                 WHERE j.id = %s AND j.reviewed_at IS NOT NULL""",
+            (job_id,),
+        ).fetchone()
+        return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
+
+    def flag_connection_needed(self, job_id: str) -> None:
+        # Only a job that is waiting in review now (not one cancelled meanwhile).
+        self._conn.execute(
+            """UPDATE jobs SET connection_needed = true
+                WHERE id = %s AND status = 'awaiting_review'""",
+            (job_id,),
+        )
+
+    def record_delivered_as(self, job_id: str, user_id: str) -> None:
+        self._conn.execute(
+            "UPDATE jobs SET delivered_as_user = %s WHERE id = %s", (user_id, job_id)
+        )
+
+    def last_deliverer(self, job_id: str) -> ActingUser | None:
+        row = self._conn.execute(
+            """SELECT u.id::text, u.name, u.email FROM jobs j
+                 JOIN users u ON u.id = j.delivered_as_user WHERE j.id = %s""",
             (job_id,),
         ).fetchone()
         return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
@@ -360,6 +400,12 @@ class PgJobQueue:
             (job_id,),
         ).fetchone()
         return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
+
+    def delivery_overrides(self, job_id: str) -> dict[str, dict[str, str]]:
+        row = self._conn.execute(
+            "SELECT delivery_overrides FROM jobs WHERE id = %s", (job_id,)
+        ).fetchone()
+        return dict(row[0] or {}) if row else {}
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         cur = self._conn.execute(

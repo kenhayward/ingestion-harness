@@ -8,11 +8,12 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
-import type { EditRequest, JobSummary, Role, StepRun } from '@ih/shared';
+import type { EditRequest, JobNaming, JobSummary, Role, StepRun } from '@ih/shared';
 import { modelDisplayName } from '../jobs/derive.js';
 import type { Api, ReviewData } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
 import { DecisionBar } from './DecisionBar.js';
+import { NamesPanel, overridesOf, type NameEdits } from './NamesPanel.js';
 import { EditableValue } from './EditableValue.js';
 import { FieldsGrid } from './FieldsGrid.js';
 import { GraphTab } from './GraphTab.js';
@@ -117,6 +118,8 @@ export function ReviewPage({
     pages: string;
   } | null>(null);
 
+  const [naming, setNaming] = useState<JobNaming>({ targets: [] });
+  const [names, setNames] = useState<NameEdits>({});
   const load = useCallback(async () => {
     try {
       setData(await api.getReview(jobId));
@@ -124,6 +127,8 @@ export function ReviewPage({
     } catch (err) {
       setError((err as Error).message);
     }
+    // Names are a part of the review that may not apply (no target names anything).
+    api.getJobNaming(jobId).then(setNaming, () => setNaming({ targets: [] }));
   }, [api, jobId]);
 
   useEffect(() => {
@@ -831,7 +836,13 @@ export function ReviewPage({
 
   return (
     <div className="review">
-      <ReviewHeader data={data} jobs={jobs} jobId={jobId} models={models} />
+      <ReviewHeader
+        data={data}
+        jobs={jobs}
+        jobId={jobId}
+        models={models}
+        onManageConnections={() => void api.openConnections()}
+      />
 
       <div
         ref={workspace}
@@ -853,6 +864,15 @@ export function ReviewPage({
         )}
       </div>
 
+      {editable && (
+        <NamesPanel
+          naming={naming}
+          edits={names}
+          onEdit={(targetId, fieldId, value) =>
+            setNames((all) => ({ ...all, [targetId]: { ...all[targetId], [fieldId]: value } }))
+          }
+        />
+      )}
       {editable ? (
         <DecisionBar
           busy={busy}
@@ -866,6 +886,9 @@ export function ReviewPage({
               api.approve(jobId, {
                 ...(reviewer.trim() ? { reviewer: reviewer.trim() } : {}),
                 ...(note ? { note } : {}),
+                ...(Object.keys(overridesOf(naming, names)).length
+                  ? { overrides: overridesOf(naming, names) }
+                  : {}),
               }),
             )
           }

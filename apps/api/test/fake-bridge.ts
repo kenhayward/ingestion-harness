@@ -1,6 +1,10 @@
 import type {
+  BrowseResult,
   ConnectionSummary,
+  PreflightRequest,
+  PreflightResult,
   SinkView,
+  TargetBrowseRequest,
   DeliveryView,
   TargetPutRequest,
   TargetTestResult,
@@ -101,9 +105,12 @@ export class FakeBridgeApi implements BridgeApi {
       );
     }
     this.targetPuts += 1;
-    const undeclared = Object.keys(t.destination).find(
-      (k) => !(DESTINATION_FIELDS[t.sinkId] ?? []).includes(k),
-    );
+    // As the bridge checks it: a listed sink's declared fields, else the built-in ones.
+    const listed = this.sinkViews.find((s) => s.id === t.sinkId);
+    const declared = listed
+      ? listed.destinationFields.map((f) => f.id)
+      : (DESTINATION_FIELDS[t.sinkId] ?? []);
+    const undeclared = Object.keys(t.destination).find((k) => !declared.includes(k));
     if (undeclared) {
       throw FakeBridgeApi.refusal(`${undeclared} is not a destination field of ${t.sinkId}`);
     }
@@ -132,6 +139,30 @@ export class FakeBridgeApi implements BridgeApi {
   readonly userDeletes: string[] = [];
   readonly reconciles: string[][] = [];
   sinkViews: SinkView[] = [];
+  /** Each preflight asked for, and the problem it answers per target (none: ready). */
+  readonly preflights: PreflightRequest[] = [];
+  preflightProblems: Record<string, PreflightResult['targets'][number]['problem']> = {};
+
+  async preflight(req: PreflightRequest): Promise<PreflightResult> {
+    this.fail();
+    this.preflights.push(structuredClone(req));
+    return {
+      targets: req.targets.map((targetId) => ({
+        targetId,
+        problem: this.preflightProblems[targetId] ?? null,
+      })),
+    };
+  }
+
+  /** What browse answers, and every browse asked for. */
+  browseResult: BrowseResult = { nodes: [], nextCursor: null };
+  readonly browsed: TargetBrowseRequest[] = [];
+
+  async browse(req: TargetBrowseRequest): Promise<BrowseResult> {
+    this.fail();
+    this.browsed.push(structuredClone(req));
+    return structuredClone(this.browseResult);
+  }
 
   async listPersonalConnections(owner: string): Promise<ConnectionSummary[]> {
     this.fail();

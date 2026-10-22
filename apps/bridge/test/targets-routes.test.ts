@@ -7,6 +7,79 @@ import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
 import { MemoryObjectStore } from '../src/s3/store.js';
 import { encryptSecret } from '../src/secrets.js';
 import { FakeSink } from '../src/sinks/fake.js';
+import type { BrowseRequest, BrowseResult } from '@ih/bridge-contract';
+
+/** A shared sink with a browsable `space`. */
+class ShelfSink extends FakeSink {
+  constructor() {
+    super({
+      destinationFields: [
+        {
+          id: 'space',
+          label: 'Space',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: true,
+        },
+      ],
+      capabilities: {
+        browse: true,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files', 'data'],
+      },
+    });
+  }
+}
+
+/** A sink with a browsable `space`: two spaces at the root, and what each browse was sent. */
+class TreeSink extends FakeSink {
+  readonly browsed: BrowseRequest[] = [];
+  constructor() {
+    super({
+      connectionKind: 'personal',
+      instances: [{ id: 'sandbox', label: 'Sandbox' }],
+      credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+      destinationFields: [
+        {
+          id: 'space',
+          label: 'Space',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: true,
+        },
+        {
+          id: 'name',
+          label: 'Name',
+          kind: 'pattern',
+          required: true,
+          overridable: true,
+          browse: false,
+        },
+      ],
+      capabilities: {
+        browse: true,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files', 'data'],
+      },
+    });
+  }
+  override async browse(req: BrowseRequest): Promise<BrowseResult> {
+    this.browsed.push(structuredClone(req));
+    return {
+      nodes: [
+        { id: 'reports', label: 'Reports', kind: 'space', hasChildren: false, selectable: true },
+        { id: 'archive', label: 'Archive', kind: 'space', hasChildren: true, selectable: false },
+      ],
+      nextCursor: null,
+    };
+  }
+}
 import { MapSinkRegistry } from '../src/sinks/port.js';
 import { RdfSink } from '../src/sinks/rdf.js';
 import { S3Sink } from '../src/sinks/s3.js';
@@ -37,6 +110,17 @@ async function setup() {
   await connections.put(connection('other-sink', { sinkId: 'fake' }));
   await connections.put(connection('triples', { sinkId: 'rdf' }));
   await connections.put(connection('acme-shared', { sinkId: 'acme' }));
+  await connections.put(connection('shelf-keys', { sinkId: 'shelf', fields: {} }));
+  await connections.put({
+    ...connection('u-ada', {
+      kind: 'personal',
+      owner: 'u1',
+      sinkId: 'tree',
+      instanceId: 'sandbox',
+      fields: {},
+    }),
+    secretEnc: encryptSecret('ada-token', SECRETS),
+  });
   await connections.put(
     connection('u-mine', { kind: 'personal', owner: 'u1', sinkId: 'fake', instanceId: null }),
   );
@@ -48,6 +132,28 @@ async function setup() {
     sinks: new MapSinkRegistry({
       s3,
       fake: new FakeSink(),
+      tree: new TreeSink(),
+      shelf: new ShelfSink(),
+      named: new FakeSink({
+        destinationFields: [
+          {
+            id: 'bucket',
+            label: 'Bucket',
+            kind: 'fixed',
+            required: true,
+            overridable: false,
+            browse: false,
+          },
+          {
+            id: 'name',
+            label: 'Name',
+            kind: 'pattern',
+            required: true,
+            overridable: true,
+            browse: false,
+          },
+        ],
+      }),
       acme: new FakeSink({
         connectionKind: 'personal',
         instances: [{ id: 'sandbox', label: 'Sandbox' }],
@@ -177,7 +283,7 @@ describe('DELETE /v1/targets/:id', () => {
         stagedKey: 'k',
         expiresAt: null,
       },
-      [{ id: randomUUID(), targetId: 'b', actingUser: null, overrides: {} }],
+      [{ id: randomUUID(), targetId: 'b', actingUser: null, overrides: {}, destination: null }],
       new Date(),
     );
     expect((await call('DELETE', '/v1/targets/a')).statusCode).toBe(204);
@@ -332,5 +438,131 @@ describe('targets of a personal sink', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json().message).toBe('u-mine is a personal connection');
+  });
+});
+
+describe('a target’s own name patterns', () => {
+  it('are checked when it is written', async () => {
+    const { call } = await setup();
+    const res = await call('PUT', '/v1/targets/named', {
+      label: 'Named',
+      sinkId: 'named',
+      instanceId: null,
+      connectionId: null,
+      destination: { bucket: 'b', name: '{nope}' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().message).toBe('Name: `{nope}`: unknown variable nope at 1');
+    const ok = await call('PUT', '/v1/targets/named', {
+      label: 'Named',
+      sinkId: 'named',
+      instanceId: null,
+      connectionId: null,
+      destination: { bucket: 'b', name: '{source.stem}' },
+    });
+    expect(ok.statusCode).toBe(200);
+  });
+});
+
+describe('POST /v1/targets:browse', () => {
+  const browse = (over: Record<string, unknown> = {}) => ({
+    sinkId: 'tree',
+    instanceId: 'sandbox',
+    connectionId: null,
+    field: 'space',
+    parentId: null,
+    cursor: null,
+    actingUser: { id: 'u1', name: 'Ada', email: null },
+    ...over,
+  });
+
+  it("browses a personal sink with the acting admin's own connection", async () => {
+    const { call, app } = await setup();
+    const res = await call('POST', '/v1/targets:browse', browse());
+    expect(res.statusCode).toBe(200);
+    expect(res.json().nodes.map((n: { id: string }) => n.id)).toEqual(['reports', 'archive']);
+    const tree = app.deps.sinks.get('tree') as unknown as TreeSink;
+    expect(tree.browsed).toEqual([
+      {
+        instanceId: 'sandbox',
+        credential: { token: 'ada-token' },
+        field: 'space',
+        parentId: null,
+        cursor: null,
+      },
+    ]);
+  });
+
+  it('refuses an admin with no connection for the instance, a field it cannot browse, or no sink', async () => {
+    const { call } = await setup();
+    const none = await call(
+      'POST',
+      '/v1/targets:browse',
+      browse({ actingUser: { id: 'u9', name: 'Zed', email: null } }),
+    );
+    expect(none.statusCode).toBe(422);
+    expect(none.json()).toMatchObject({
+      code: 'connection_missing',
+      message: 'Zed has no connection for sandbox: add one on the connections page',
+    });
+    const field = await call('POST', '/v1/targets:browse', browse({ field: 'name' }));
+    expect(field.statusCode).toBe(422);
+    expect(field.json().message).toBe('name of tree cannot be browsed');
+    const sink = await call('POST', '/v1/targets:browse', browse({ sinkId: 'nosuch' }));
+    expect(sink.statusCode).toBe(422);
+  });
+});
+
+describe('POST /v1/targets:browse of a shared sink', () => {
+  const browse = (connectionId: string | null) => ({
+    sinkId: 'shelf',
+    instanceId: null,
+    connectionId,
+    field: 'space',
+    parentId: null,
+    cursor: null,
+    actingUser: { id: 'u1', name: 'Ada', email: null },
+  });
+
+  it("uses only a shared connection of that sink: never a person's, nor another sink's", async () => {
+    const { call } = await setup();
+    expect((await call('POST', '/v1/targets:browse', browse('shelf-keys'))).statusCode).toBe(200);
+    for (const id of ['u-ada', 'finance', 'nosuch']) {
+      const res = await call('POST', '/v1/targets:browse', browse(id));
+      expect([id, res.statusCode]).toEqual([id, 422]);
+      expect(res.json().message).toBe(`there is no shared connection ${id} for shelf`);
+    }
+  });
+});
+
+describe('POST /v1/targets:browse, more', () => {
+  it("never uses a connection the client names for a personal sink: only the admin's own", async () => {
+    const { call, app } = await setup();
+    await call('POST', '/v1/targets:browse', {
+      sinkId: 'tree',
+      instanceId: 'sandbox',
+      connectionId: 'acme-shared',
+      field: 'space',
+      parentId: null,
+      cursor: null,
+      actingUser: { id: 'u1', name: 'Ada', email: null },
+    });
+    const tree = app.deps.sinks.get('tree') as unknown as TreeSink;
+    expect(tree.browsed.at(-1)?.credential).toEqual({ token: 'ada-token' });
+  });
+
+  it("refuses an instance a shared sink doesn't declare", async () => {
+    const { call } = await setup();
+    const res = await call('POST', '/v1/targets:browse', {
+      sinkId: 'shelf',
+      instanceId: 'elsewhere',
+      connectionId: 'shelf-keys',
+      field: 'space',
+      parentId: null,
+      cursor: null,
+      actingUser: null,
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().message).toBe('elsewhere is not an instance of shelf');
   });
 });

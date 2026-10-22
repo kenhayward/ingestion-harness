@@ -82,6 +82,13 @@ jobs:
           sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/; s/^SEAWEEDFS_MASTER_PORT=.*/SEAWEEDFS_MASTER_PORT=0/; s/^FUSEKI_PUBLIC_PORT=.*/FUSEKI_PUBLIC_PORT=0/" deploy/.env.ci
           # The delivery bridge's two keys (the example leaves them blank: compose refuses that).
           sed -i "s|^BRIDGE_CLIENT_KEY=.*|BRIDGE_CLIENT_KEY=$(openssl rand -base64 32)|; s|^BRIDGE_SECRETS_KEY=.*|BRIDGE_SECRETS_KEY=$(openssl rand -base64 32)|" deploy/.env.ci
+          # The fake external sink (profile fake-sink, added to the example's COMPOSE_PROFILES:
+          # a --profile flag would replace them and leave Fuseki out), registered with the bridge.
+          sed -i "/^COMPOSE_PROFILES=./s/$/,fake-sink/; s/^COMPOSE_PROFILES=$/COMPOSE_PROFILES=fake-sink/" deploy/.env.ci
+          fake_key="$(openssl rand -hex 32)"
+          sed -i "s|^FAKE_SINK_KEY=.*|FAKE_SINK_KEY=${fake_key}|" deploy/.env.ci
+          sed -i "s|^BRIDGE_SINKS=.*|BRIDGE_SINKS=[{\"id\":\"fake\",\"url\":\"http://fake-sink:8080\",\"key\":\"${fake_key}\"}]|" deploy/.env.ci
+          echo "FAKE_SINK_KEY=${fake_key}" >> "$GITHUB_ENV"
       - name: Build images
         run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml build
       - name: Start stack
@@ -91,15 +98,23 @@ jobs:
           compose run --rm init-buckets
           compose run --rm migrate
           compose run --rm migrate-bridge
+          # The fake external sink first, so the bridge's start-up describe finds it.
+          compose up -d fake-sink
           compose up -d bridge api worker app
           echo "COMPOSE_FUSEKI=$(compose ps -q fuseki)" >> "$GITHUB_ENV"
           echo "APP_URL=http://$(compose port app 80)" >> "$GITHUB_ENV"
           echo "S3_URL=http://$(compose port seaweedfs 8333)" >> "$GITHUB_ENV"
+      - name: Conformance suite against the fake external sink
+        run: |
+          docker build -q -t ih-ci-conformance -f deploy/docker/bridge-conformance.Dockerfile .
+          docker run --rm --network "${COMPOSE_PROJECT_NAME}_default" \
+            -e SINK_URL=http://fake-sink:8080 -e SINK_KEY="$FAKE_SINK_KEY" -e SINK_INSTANCE=any \
+            -e SINK_DESTINATION='{"space":"conformance","name":"suite"}' ih-ci-conformance
       - name: Smoke test
         run: |
           ADMIN_TOKEN="$(deploy/scripts/admin-token.sh --env-file deploy/.env.ci -f deploy/docker-compose.yml)"
           echo "::add-mask::$ADMIN_TOKEN"
-          BASE_URL="$APP_URL" S3_URL="$S3_URL" ADMIN_TOKEN="$ADMIN_TOKEN" \
+          BASE_URL="$APP_URL" S3_URL="$S3_URL" ADMIN_TOKEN="$ADMIN_TOKEN" SMOKE_EXTERNAL=1 \
             SMOKE_COMPOSE="docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml" \
             deploy/scripts/smoke-test.sh
       - name: Triple store smoke test

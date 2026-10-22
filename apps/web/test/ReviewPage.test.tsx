@@ -916,3 +916,84 @@ describe('ReviewPage help', () => {
     expect(screen.getByRole('dialog', { name: 'Reviewing a document' })).toBeInTheDocument();
   });
 });
+
+describe('ReviewPage names', () => {
+  const naming = (over: object = {}) => ({
+    targets: [
+      {
+        targetId: 'fake-target',
+        label: 'Fake target',
+        fields: [
+          {
+            id: 'name',
+            label: 'Name',
+            pattern: '{field:sender}',
+            value: 'Acme Ltd',
+            unresolved: [],
+            override: null,
+            conflict: null,
+            ...over,
+          },
+        ],
+      },
+    ],
+  });
+
+  it('shows the resolved name, and approving sends the one the reviewer typed', async () => {
+    const { api } = setup({ getJobNaming: vi.fn(async () => naming()) });
+    const names = await screen.findByRole('region', { name: 'Names' });
+    const input = within(names).getByLabelText('Fake target: Name');
+    expect(input).toHaveValue('Acme Ltd');
+    await userEvent.clear(input);
+    await userEvent.type(input, 'Acme letter Q3');
+    await userEvent.click(screen.getByRole('button', { name: 'Approve and publish' }));
+    expect(api.approve).toHaveBeenCalledWith(JOB_ID, {
+      overrides: { 'fake-target': { name: 'Acme letter Q3' } },
+    });
+  });
+
+  it('a name left as resolved sends no override', async () => {
+    const { api } = setup({ getJobNaming: vi.fn(async () => naming()) });
+    await screen.findByRole('region', { name: 'Names' });
+    await userEvent.click(screen.getByRole('button', { name: 'Approve and publish' }));
+    expect(api.approve).toHaveBeenCalledWith(JOB_ID, {});
+  });
+
+  it('marks a name the target refused, and one that resolves to nothing', async () => {
+    setup({
+      getJobNaming: vi.fn(async () =>
+        naming({ conflict: 'Fake target already has another document named Acme Ltd' }),
+      ),
+    });
+    const names = await screen.findByRole('region', { name: 'Names' });
+    expect(within(names).getByLabelText('Fake target: Name')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
+    expect(names).toHaveTextContent('already has another document named Acme Ltd');
+  });
+
+  it('is absent when no target names anything', async () => {
+    setup();
+    await screen.findByRole('heading', { name: /scan\.pdf/ });
+    expect(screen.queryByRole('region', { name: 'Names' })).toBeNull();
+  });
+});
+
+describe('ReviewPage, a review held up by a connection', () => {
+  it('offers Manage connections', async () => {
+    const { api } = setup({
+      getReview: vi.fn(async () => ({ ...reviewData(), connectionNeeded: true })),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /Why this needs review/ }));
+    const reasons = screen.getByRole('dialog', { name: 'Why this needs review' });
+    await userEvent.click(within(reasons).getByRole('button', { name: 'Manage connections' }));
+    expect(api.openConnections).toHaveBeenCalled();
+  });
+
+  it('says nothing about connections otherwise', async () => {
+    setup();
+    await screen.findByRole('heading', { name: /scan\.pdf/ });
+    expect(screen.queryByRole('button', { name: 'Manage connections' })).toBeNull();
+  });
+});

@@ -10,6 +10,8 @@
 #                seed a reviewed job and look at the delivered object; unset, that part is skipped.
 #   SMOKE_ARCHIVE    1 on a test stack: also deliver to an archive target (`smoke-archive`, which
 #                stays: a target that has delivered can never be removed).
+#   SMOKE_EXTERNAL   1 on a test stack running the fake external sink (compose profile fake-sink,
+#                named in BRIDGE_SINKS): also deliver to it (`smoke-fake`, which stays).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -349,6 +351,165 @@ PY
   [[ "$(several where)" == "absent absent" ]] ||
     fail "deleting the job must withdraw it at both targets, got: $(several where)"
   echo "ok   deleting the job withdrew it at both targets, the archive included"
+fi
+
+# --- External sinks (delivery bridge phase 6): the fake sink, beside the default ------------
+# A target of the fake external sink (compose profile fake-sink, registered in BRIDGE_SINKS)
+# and a recipe delivering to `default` and to it. Approving two jobs of the same file delivers
+# both to the fake sink, which replaces what the first one wrote: one key, two deliveries.
+# Opt-in (SMOKE_EXTERNAL=1, on a test stack running the fake sink): its target stays.
+if [[ -z "${SMOKE_COMPOSE:-}" ]]; then
+  echo "skip external sinks: SMOKE_COMPOSE is not set"
+elif [[ "${SMOKE_EXTERNAL:-}" != 1 ]]; then
+  echo "skip external sinks: set SMOKE_EXTERNAL=1 on a test stack running the fake sink"
+else
+  sc() { $SMOKE_COMPOSE "$@"; }
+  delivered_to_fake() { sc exec -T bridge wget -q -O - http://fake-sink:8080/_delivered; }
+  delivered_to_fake >/dev/null || fail "the fake sink is not reachable from the bridge (profile fake-sink)"
+  # The bridge describes a sink that was unavailable again every 15 s: wait until it has.
+  sinks=""
+  for ((i = 1; i <= 30; i++)); do
+    sinks="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/publish-targets/sinks")"
+    grep -q '"id":"fake","name":"Fake sink","status":"available"' <<<"$sinks" && break
+    sleep 2
+  done
+  grep -q '"id":"fake","name":"Fake sink","status":"available"' <<<"$sinks" ||
+    fail "the bridge does not list the fake sink as available: $sinks"
+  got="$(status -b "$ADMIN_JAR" -H 'content-type: application/json' \
+    -d '{"id": "smoke-fake", "kind": "sink", "label": "Smoke fake", "sinkId": "fake", "destination": {"space": "smoke", "name": "{source.stem}"}}' \
+    "$BASE_URL/api/publish-targets")"
+  [[ "$got" == 201 || "$got" == 409 ]] || fail "create the fake sink's target, got $got"
+  ext_sha="$(openssl rand -hex 32)"
+  seeded="$(sc exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -qAt -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<SQL
+INSERT INTO templates (id, version, status, definition, published_at)
+VALUES ('smoke-external', 1, 'published', '{"id": "smoke-external", "version": 1,
+  "name": "Smoke test (external sink)", "document": {"sections": [{"id": "all", "anchor": "\\\\A"}]},
+  "outputs": {"fields": [{"id": "sender", "type": "text"}]},
+  "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
+  "review": {"required": "always"}, "delivery": {"publishTo": ["default", "smoke-fake"]}}', now())
+ON CONFLICT DO NOTHING;
+WITH doc AS (
+  INSERT INTO documents (filename, sha256, size_bytes, spec_id, spec_version, bucket, object_key)
+  SELECT 'smoke-external.pdf', '$ext_sha', 4, 'smoke-external', 1, 'ingest-inbox',
+         'smoke-external/v1/smoke-' || n || '.pdf'
+    FROM generate_series(1, 2) AS n
+  RETURNING id, sha256
+), job AS (
+  INSERT INTO jobs (document_id, status, task, review_reasons)
+  SELECT id, 'awaiting_review', 'process', '["smoke test"]' FROM doc RETURNING id, document_id
+)
+SELECT job.id || ' ' || doc.id FROM job JOIN doc ON doc.id = job.document_id;
+SQL
+)" || fail "seed two reviewed jobs for the external sink: $seeded"
+  mapfile -t ext_jobs <<<"$seeded"
+  [[ "${#ext_jobs[@]}" == 2 ]] || fail "seed two reviewed jobs: $seeded"
+  for pair in "${ext_jobs[@]}"; do
+    read -r ext_job ext_doc <<<"$pair"
+    sc exec -T worker python - "$ext_doc" "$ext_job" "$ext_sha" <<'PY' || fail "write the draft for the external sink"
+import json, os, sys
+from ingest_worker.storage import S3ObjectStore
+doc, job, sha = sys.argv[1:4]
+store = S3ObjectStore(os.environ["S3_ENDPOINT"], os.environ.get("S3_REGION") or "us-east-1",
+                      os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"])
+draft = {"document_id": doc, "job_id": job, "source_sha256": sha,
+         "template": {"id": "smoke-external", "version": 1, "name": "Smoke test (external sink)"},
+         "extracted_at": "2026-10-22T00:00:00+00:00", "page_count": 1, "models": {},
+         "fields": {"sender": {"value": "Smoke", "evidence": None, "page": 1}},
+         "tables": {}, "checks": {}, "issues": [], "review_required": True,
+         "review_reasons": ["smoke test"]}
+bucket = os.environ.get("S3_BUCKET_OUTPUTS") or "ingest-outputs"
+store.put(bucket, f"smoke-external/v1/document/{doc}.json", json.dumps(draft).encode(),
+          "application/json")
+PY
+    [[ "$(status -b "$ADMIN_JAR" -H 'content-type: application/json' -d '{}' \
+      "$BASE_URL/api/jobs/$ext_job/approve")" == 200 ]] || fail "approve the external-sink job"
+    job_status=""
+    for ((i = 1; i <= 90; i++)); do
+      job_status="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$ext_job" | json_field status | head -1)"
+      [[ "$job_status" == succeeded || "$job_status" == failed || "$job_status" == needs_review ]] && break
+      sleep 2
+    done
+    [[ "$job_status" == succeeded ]] ||
+      fail "the external-sink job must succeed, got '$job_status': $(curl -sS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$ext_job")"
+  done
+  fake="$(delivered_to_fake)"
+  key="$(printf '%s\nsmoke-external\n1' "$ext_sha" | sha256sum | cut -d' ' -f1)"
+  [[ "$(grep -o "\"idempotencyKey\":\"$key\"" <<<"$fake" | wc -l)" == 2 ]] ||
+    fail "the fake sink must have both deliveries of key $key: $fake"
+  echo "ok   two jobs of one file delivered to the default target and to the fake external sink"
+  echo "ok   the fake sink holds one copy of that key (a replace, not a second copy)"
+
+  # A name the sink refuses (the fake holds every `taken-…` name) sends the job back to review,
+  # naming the field; approving with another name delivers it.
+  conflict_sha="$(openssl rand -hex 32)"
+  seeded="$(sc exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -qAt -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<SQL
+INSERT INTO templates (id, version, status, definition, published_at)
+VALUES ('smoke-names', 1, 'published', '{"id": "smoke-names", "version": 1,
+  "name": "Smoke test (names)", "document": {"sections": [{"id": "all", "anchor": "\\\\A"}]},
+  "outputs": {"fields": [{"id": "sender", "type": "text"}]},
+  "pipeline": [{"type": "extract", "id": "head", "fields": ["sender"], "sections": ["all"]}],
+  "review": {"required": "always"},
+  "delivery": {"publishTo": ["default", "smoke-fake"],
+               "settings": {"smoke-fake": {"name": "taken-{source.stem}"}}}}', now())
+ON CONFLICT DO NOTHING;
+WITH doc AS (
+  INSERT INTO documents (filename, sha256, size_bytes, spec_id, spec_version, bucket, object_key)
+  VALUES ('smoke-names.pdf', '$conflict_sha', 4, 'smoke-names', 1, 'ingest-inbox',
+          'smoke-names/v1/smoke.pdf')
+  RETURNING id
+), job AS (
+  INSERT INTO jobs (document_id, status, task, review_reasons)
+  SELECT id, 'awaiting_review', 'process', '["smoke test"]' FROM doc RETURNING id, document_id
+), draft AS (
+  -- The draft as the worker records it: the review screen (and its names) read it from here.
+  INSERT INTO job_outputs (job_id, output_id, stage, format, bucket, object_key)
+  SELECT id, 'document', 'draft', 'json', 'ingest-outputs',
+         'smoke-names/v1/document/' || document_id || '.json' FROM job
+)
+SELECT job.id || ' ' || job.document_id FROM job;
+SQL
+)" || fail "seed a reviewed job for names: $seeded"
+  read -r name_job name_doc <<<"$seeded"
+  sc exec -T worker python - "$name_doc" "$name_job" "$conflict_sha" <<'PY' || fail "write the draft for names"
+import json, os, sys
+from ingest_worker.storage import S3ObjectStore
+doc, job, sha = sys.argv[1:4]
+store = S3ObjectStore(os.environ["S3_ENDPOINT"], os.environ.get("S3_REGION") or "us-east-1",
+                      os.environ["S3_ACCESS_KEY"], os.environ["S3_SECRET_KEY"])
+draft = {"document_id": doc, "job_id": job, "source_sha256": sha,
+         "template": {"id": "smoke-names", "version": 1, "name": "Smoke test (names)"},
+         "extracted_at": "2026-10-22T00:00:00+00:00", "page_count": 1, "models": {},
+         "fields": {"sender": {"value": "Smoke", "evidence": None, "page": 1}},
+         "tables": {}, "checks": {}, "issues": [], "review_required": True,
+         "review_reasons": ["smoke test"]}
+bucket = os.environ.get("S3_BUCKET_OUTPUTS") or "ingest-outputs"
+store.put(bucket, f"smoke-names/v1/document/{doc}.json", json.dumps(draft).encode(),
+          "application/json")
+PY
+  wait_for() { # job status...
+    local job="$1" want="$2" got=""
+    for ((i = 1; i <= 90; i++)); do
+      # The job's own status: the first in the answer (its deliveries' come after).
+      got="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$job" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
+      [[ "$got" == "$want" || "$got" == failed ]] && break
+      sleep 2
+    done
+    [[ "$got" == "$want" ]] || fail "job $job must be $want, got '$got': $(curl -sS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$job")"
+  }
+  [[ "$(status -b "$ADMIN_JAR" -H 'content-type: application/json' -d '{}' \
+    "$BASE_URL/api/jobs/$name_job/approve")" == 200 ]] || fail "approve the names job"
+  wait_for "$name_job" awaiting_review
+  naming="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$name_job/naming")"
+  grep -q 'already has another document named taken-smoke-names' <<<"$naming" ||
+    fail "the refused name must be marked on the job's names: $naming"
+  echo "ok   a name the external sink refused sent the job back to review, naming the field"
+  [[ "$(status -b "$ADMIN_JAR" -H 'content-type: application/json' \
+    -d '{"overrides": {"smoke-fake": {"name": "smoke-renamed"}}}' \
+    "$BASE_URL/api/jobs/$name_job/approve")" == 200 ]] || fail "approve the names job with another name"
+  wait_for "$name_job" succeeded
+  delivered_to_fake | grep -q '"name":"smoke-renamed"' ||
+    fail "the fake sink must have the renamed delivery: $(delivered_to_fake)"
+  echo "ok   approving with another name delivered it under that name"
 fi
 
 # --- RDF through the bridge (delivery bridge phase 3): a reviewed job of a mapped recipe ------

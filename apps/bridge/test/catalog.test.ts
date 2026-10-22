@@ -2,6 +2,7 @@ import { SinkViewSchema, TargetViewSchema } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { FakeSink } from '../src/sinks/fake.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
+import { CachingSinkRegistry } from '../src/sinks/registry.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { KEY, signedInject, testBridge } from './helpers.js';
 
@@ -52,5 +53,40 @@ describe('GET /v1/targets', () => {
         destination: { bucket: 'b' },
       },
     ]);
+  });
+});
+
+describe('GET /v1/sinks, external sinks', () => {
+  it("shows an external sink's fields, its cached status, and no withdraw or read-back", async () => {
+    const remote = new FakeSink({
+      name: 'Remote',
+      credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+      capabilities: {
+        browse: true,
+        replace: true,
+        withdraw: true,
+        readBack: true,
+        accepts: ['files', 'data'],
+      },
+    });
+    const sinks = new CachingSinkRegistry({ fake: remote });
+    await sinks.refresh();
+    const app = await testBridge({ sinks });
+    const [view] = (await signedInject(app, KEY, { method: 'GET', url: '/v1/sinks' })).json()
+      .sinks as unknown[];
+    expect(SinkViewSchema.parse(view)).toMatchObject({
+      id: 'fake',
+      name: 'Remote',
+      status: 'available',
+      capabilities: { browse: true, replace: true, withdraw: false, readBack: false },
+      credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+      destinationFields: [expect.objectContaining({ id: 'bucket', kind: 'fixed' })],
+    });
+    remote.describe = async () => {
+      throw new Error('down');
+    };
+    await sinks.refresh();
+    const after = (await signedInject(app, KEY, { method: 'GET', url: '/v1/sinks' })).json();
+    expect(after.sinks[0]).toMatchObject({ name: 'Remote', status: 'unavailable' });
   });
 });

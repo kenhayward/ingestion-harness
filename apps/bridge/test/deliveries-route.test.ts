@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
 import { MemoryPackageStore } from '../src/packages/store.js';
 import { FakeSink } from '../src/sinks/fake.js';
-import { MapSinkRegistry } from '../src/sinks/port.js';
+import { MapSinkRegistry, type SinkRegistry } from '../src/sinks/port.js';
+import { CachingSinkRegistry } from '../src/sinks/registry.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { KEY, signedInject, testBridge } from './helpers.js';
 import { documentPackage } from './sink-builders.js';
@@ -15,7 +16,7 @@ const request = (targets: string[], pkg: unknown = documentPackage) => ({
   package: pkg,
 });
 
-async function setup() {
+async function setup(registry?: (sink: FakeSink) => Promise<SinkRegistry>) {
   const deliveries = new MemoryDeliveryRepo();
   const packages = new MemoryPackageStore();
   const targets = new MemoryTargetRepo();
@@ -46,7 +47,7 @@ async function setup() {
       accepts: ['files', 'data'],
     },
   });
-  const sinks = new MapSinkRegistry({ fake: sink });
+  const sinks = registry ? await registry(sink) : new MapSinkRegistry({ fake: sink });
   const app = await testBridge({ deliveries, packages, targets, sinks });
   return { app, deliveries, packages };
 }
@@ -153,5 +154,141 @@ describe('GET /v1/deliveries/:id', () => {
       url: '/v1/deliveries/00000000-0000-4000-8000-000000000000',
     });
     expect(missing.statusCode).toBe(404);
+  });
+});
+
+describe('POST /v1/deliveries to an unavailable sink', () => {
+  it('is refused as retryable and writes nothing', async () => {
+    const { app, deliveries } = await setup(async (sink) => {
+      const sinks = new CachingSinkRegistry({ fake: sink });
+      await sinks.refresh();
+      const real = sink.describe.bind(sink);
+      sink.describe = async () => {
+        throw new Error('down');
+      };
+      await sinks.refresh();
+      sink.describe = real;
+      return sinks;
+    });
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: request(['t1']),
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ class: 'retryable', code: 'sink_unavailable' });
+    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+  });
+});
+
+describe('POST /v1/deliveries resolves name patterns', () => {
+  it('refuses an override of a fixed field, writing nothing', async () => {
+    const { app, deliveries } = await setup();
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: { ...request(['t1']), overrides: { t1: { bucket: 'other' } } },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ code: 'content_rejected' });
+    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+  });
+});
+
+describe('POST /v1/deliveries, a pattern that resolves to nothing', () => {
+  it('is pattern_unresolved, naming the field', async () => {
+    const named = new FakeSink({
+      capabilities: {
+        browse: false,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files', 'data'],
+      },
+      destinationFields: [
+        {
+          id: 'bucket',
+          label: 'Bucket',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: false,
+        },
+        {
+          id: 'name',
+          label: 'Name',
+          kind: 'pattern',
+          required: true,
+          overridable: true,
+          browse: false,
+        },
+      ],
+    });
+    const { app, deliveries } = await setup(async () => new MapSinkRegistry({ fake: named }));
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: { ...request(['t1']), patterns: { t1: { name: '{field:nowhere}' } } },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      code: 'pattern_unresolved',
+      details: { targetId: 't1', field: 'name', variables: ['field:nowhere'] },
+    });
+    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+  });
+});
+
+describe('POST /v1/deliveries:preflight', () => {
+  it("says which targets the acting user can't be delivered as, writing nothing", async () => {
+    const personal = new FakeSink({
+      connectionKind: 'personal',
+      instances: [{ id: 'sandbox', label: 'Sandbox' }],
+      credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+    });
+    const { app, deliveries } = await setup(
+      async (shared) => new MapSinkRegistry({ fake: shared, acme: personal }),
+    );
+    await app.deps.targets.put({
+      id: 'acme',
+      label: 'Acme',
+      sinkId: 'acme',
+      instanceId: 'sandbox',
+      connectionId: null,
+      destination: { bucket: 'b' },
+    });
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries:preflight',
+      body: {
+        targets: ['t1', 'acme', 'nosuch'],
+        actingUser: { id: 'u1', name: 'Pat', email: null },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      targets: [
+        { targetId: 't1', problem: null },
+        {
+          targetId: 'acme',
+          problem: {
+            class: 'needs_user',
+            code: 'connection_missing',
+            message: 'Pat has no connection for Acme: add one on the connections page',
+            details: { targetId: 'acme', userId: 'u1' },
+          },
+        },
+        {
+          targetId: 'nosuch',
+          problem: {
+            class: 'needs_user',
+            code: 'target_missing',
+            message: 'no target nosuch',
+            details: { targetId: 'nosuch' },
+          },
+        },
+      ],
+    });
+    expect(await deliveries.claim(new Date(), 300)).toBeNull();
   });
 });

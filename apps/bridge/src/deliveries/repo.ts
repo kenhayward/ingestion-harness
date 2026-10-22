@@ -22,6 +22,8 @@ export interface NewDelivery {
   targetId: string;
   actingUser: ActingUser | null;
   overrides: Record<string, string>;
+  /** The destination resolved at accept (pattern fields applied). */
+  destination: Record<string, string> | null;
 }
 
 export interface DeliveryRow {
@@ -31,6 +33,8 @@ export interface DeliveryRow {
   idempotencyKey: string;
   actingUser: ActingUser | null;
   overrides: Record<string, string>;
+  /** The destination resolved at accept; null for a delivery accepted before phase 6. */
+  destination: Record<string, string> | null;
   status: DeliveryStatus;
   attempts: number;
   runAfter: Date;

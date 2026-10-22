@@ -18,8 +18,11 @@ export function ReviewHeader({
   jobs,
   jobId,
   models,
+  onManageConnections,
 }: {
   data: ReviewData;
+  /** Opens the bridge's connections page (a review held up by a connection). */
+  onManageConnections?: () => void;
   jobs: readonly JobSummary[];
   jobId: string;
   models: readonly ModelChoice[];
@@ -38,7 +41,12 @@ export function ReviewHeader({
       <span className="review-header-rule" aria-hidden="true" />
       <h1 title={job.filename}>{job.filename}</h1>
       <StatusPill status={job.status} />
-      {reasons.length > 0 && <ReasonsChip reasons={reasons} />}
+      {reasons.length > 0 && (
+        <ReasonsChip
+          reasons={reasons}
+          onManageConnections={data.connectionNeeded ? onManageConnections : undefined}
+        />
+      )}
       <span className="review-meta muted" title={meta}>
         {meta}
       </span>
@@ -62,8 +70,17 @@ export function ReviewHeader({
   );
 }
 
-/** What flagged the job for review, behind an amber chip (closed until asked for). */
-function ReasonsChip({ reasons }: { reasons: readonly string[] }) {
+/**
+ * What flagged the job for review, behind an amber chip (closed until asked for). With
+ * `onManageConnections`, a delivery needs a connection and the reasons offer the page for it.
+ */
+function ReasonsChip({
+  reasons,
+  onManageConnections,
+}: {
+  reasons: readonly string[];
+  onManageConnections?: () => void;
+}) {
   const p = usePopover();
   const headingId = useId();
   return (
@@ -89,6 +106,15 @@ function ReasonsChip({ reasons }: { reasons: readonly string[] }) {
               <li key={r}>{r}</li>
             ))}
           </ul>
+          {onManageConnections && (
+            <p>
+              A delivery needs a connection: add or fix it, then approve again.{' '}
+              <button type="button" onClick={onManageConnections}>
+                <Icon name="key" />
+                Manage connections
+              </button>
+            </p>
+          )}
         </div>
       )}
     </div>

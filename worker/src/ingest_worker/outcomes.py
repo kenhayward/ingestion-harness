@@ -43,6 +43,8 @@ class AwaitReview:
     #: point if the job was cancelled meanwhile. False: a refused publish, which wrote nothing.
     drafts: bool = True
     note: str = "awaiting review"
+    #: A delivery needs a person's connection: the review offers to add one.
+    connection_needed: bool = False
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,8 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
             queue.record_drafts(job, outcome.outputs, bucket)
             check_cancelled(job, queue)
         queue.await_review(job, outcome.outputs, bucket, outcome.reasons)
+        if outcome.connection_needed:
+            queue.flag_connection_needed(job.id)
         log.info("job %s %s: %s", job.id, outcome.note, "; ".join(outcome.reasons))
         return
     if isinstance(outcome, Delivering):
@@ -101,20 +105,37 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         log.info("job %s %s with %d outputs", job.id, outcome.note, len(outcome.outputs))
         return
     check_cancelled(job, queue)
-    from .template_pipeline import deliver_publication
-
-    delivered = deliver_publication(
-        job,
-        deps,
-        queue,
-        template=outcome.template,
-        document=outcome.document,
-        outputs=outcome.delivered,
-        graph=outcome.graph.graph if outcome.graph is not None else None,
-        targets=outcome.targets,
-        acting=queue.uploader(job.id),  # auto-published: the uploader acts
-        approver=None,
+    from .bridge.client import BridgeRefused
+    from .template_pipeline import (
+        BACK_TO_REVIEW,
+        NEEDS_A_CONNECTION,
+        PUBLISH_REFUSED_FOR_A_PERSON,
+        deliver_publication,
     )
+
+    try:
+        delivered = deliver_publication(
+            job,
+            deps,
+            queue,
+            template=outcome.template,
+            document=outcome.document,
+            outputs=outcome.delivered,
+            graph=outcome.graph.graph if outcome.graph is not None else None,
+            targets=outcome.targets,
+            acting=queue.uploader(job.id),  # auto-published: the uploader acts
+            approver=None,
+        )
+    except BridgeRefused as refused:
+        if refused.error.code not in BACK_TO_REVIEW:
+            raise
+        # No uploader, or one without a connection: a reviewer approves it, and delivers it.
+        queue.event(job.id, "warn", PUBLISH_REFUSED_FOR_A_PERSON, {"reason": str(refused)})
+        queue.await_review(job, outcome.outputs, bucket, [str(refused)])
+        if refused.error.code in NEEDS_A_CONNECTION:
+            queue.flag_connection_needed(job.id)
+        log.info("job %s goes to review: %s", job.id, refused)
+        return
     record_delivered(queue, job, delivered, outcome.targets)
     queue.delivering(job, outcome.outputs, bucket, delivered.deliveries)
     log.info("job %s handed %d outputs to the bridge", job.id, len(delivered.outputs))

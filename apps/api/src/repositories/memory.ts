@@ -12,6 +12,7 @@ import type {
   ReviewEdit,
   StepRun,
   SuggestParams,
+  DeliveryOverrides,
 } from '@ih/shared';
 import {
   DEFAULT_TARGET_ID,
@@ -963,8 +964,32 @@ export class MemoryRepo implements IngestionRepo {
     return saved;
   }
 
-  async approve(jobId: string, reviewer: string | null, note: string | null) {
+  /** jobs.delivery_overrides, by job id. */
+  readonly overrides = new Map<string, DeliveryOverrides>();
+  /** jobs.reviewer_user_id, by job id. */
+  readonly reviewerIds = new Map<string, string | null>();
+  /** jobs.connection_needed: the jobs waiting in review for a person's connection. */
+  readonly needingConnection = new Set<string>();
+
+  async connectionNeeded(jobId: string): Promise<boolean> {
+    return this.needingConnection.has(jobId);
+  }
+
+  async deliveryOverrides(jobId: string): Promise<DeliveryOverrides> {
+    return structuredClone(this.overrides.get(jobId) ?? {});
+  }
+
+  async approve(
+    jobId: string,
+    reviewer: string | null,
+    note: string | null,
+    overrides: DeliveryOverrides = {},
+    reviewerUserId: string | null = null,
+  ) {
     if (this.jobs.get(jobId)?.status !== 'awaiting_review') return null;
+    this.overrides.set(jobId, structuredClone(overrides));
+    this.reviewerIds.set(jobId, reviewerUserId);
+    this.needingConnection.delete(jobId);
     return this.update(jobId, {
       status: 'queued',
       task: 'publish',
@@ -1054,6 +1079,9 @@ export class MemoryRepo implements IngestionRepo {
     const status = job?.status ?? background?.status;
     if (status !== 'delivering') return { outcome: 'applied', finished: null };
     if (job) {
+      if (outcome.status === 'awaiting_review' && outcome.connectionNeeded) {
+        this.needingConnection.add(d.jobId);
+      } else this.needingConnection.delete(d.jobId);
       this.update(d.jobId, {
         status: outcome.status,
         error: outcome.status === 'failed' ? outcome.error : null,

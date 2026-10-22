@@ -121,6 +121,8 @@ describe('publishing target routes: list and choices', () => {
           bucket: 'published',
           prefix: 'pub/',
           layout: 'files',
+          sinkName: null,
+          patternFields: [],
         },
       ],
     });
@@ -1105,26 +1107,21 @@ describe('a recipe naming several publishing targets', () => {
     ]);
   });
 
-  it('refuses a sink target until recipes can deliver to one', async () => {
+  it('takes a target of another sink beside an S3 one', async () => {
     const c = await setup();
     await c.targets.cache(
       {
-        id: 'plm',
-        label: 'PLM',
-        sinkId: '3dexperience',
+        id: 'box',
+        label: 'Box',
+        sinkId: 'fake',
         instanceId: null,
         connectionId: null,
         destination: { space: 'prod' },
       },
       { source: 'ui' },
     );
-    await c.templates.create('letter', 1, letter(1, ['default', 'plm']), 'draft');
-    expect(await issuesOf(c, 1)).toEqual([
-      {
-        path: 'delivery.publishTo',
-        message: "plm is a 3dexperience target: recipes can't deliver to it yet",
-      },
-    ]);
+    await c.templates.create('letter', 1, letter(1, ['default', 'box']), 'draft');
+    expect(await issuesOf(c, 1)).toEqual([]);
   });
 
   it('asks for a files target when every listed target is an archive', async () => {

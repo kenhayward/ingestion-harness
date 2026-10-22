@@ -338,3 +338,30 @@ describe('UploadStrip with several files', () => {
     expect(within(list).getByText('b.pdf')).toBeInTheDocument();
   });
 });
+
+describe('UploadStrip, what the targets need of the uploader', () => {
+  it('warns with Manage connections when the chosen type needs a connection, and still uploads', async () => {
+    const preflightUpload = vi.fn(async () => ({
+      problems: [
+        {
+          targetLabel: 'Fake target',
+          message: 'Pat has no connection for Fake target: add one on the connections page',
+        },
+      ],
+    }));
+    const api = fakeApi({ preflightUpload });
+    render(<UploadStrip api={api} onUploaded={vi.fn()} />);
+    const warning = await screen.findByRole('status');
+    expect(warning).toHaveTextContent('Pat has no connection for Fake target');
+    expect(preflightUpload).toHaveBeenCalled();
+    await userEvent.click(within(warning).getByRole('button', { name: 'Manage connections' }));
+    expect(api.openConnections).toHaveBeenCalled();
+    expect(screen.getByText('Drop Files or a Folder here')).toBeInTheDocument();
+  });
+
+  it('says nothing when the targets need nothing', async () => {
+    render(<UploadStrip api={fakeApi()} onUploaded={vi.fn()} />);
+    await screen.findByRole('option', { name: /Process Validation Protocol/ });
+    expect(screen.queryByText(/Manage connections/)).toBeNull();
+  });
+});

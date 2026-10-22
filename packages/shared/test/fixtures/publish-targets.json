@@ -75,6 +75,26 @@
       },
       "formats": ["json"],
       "publishTargets": ["archive", "default", "lake_2"]
+    },
+    {
+      "name": "per-target name patterns",
+      "definition": {
+        "delivery": {
+          "publishTo": ["default", "fake-target"],
+          "settings": {
+            "fake-target": {
+              "name": "{field:sender|source.stem}"
+            }
+          }
+        }
+      },
+      "formats": ["csv", "json"],
+      "publishTargets": ["default", "fake-target"],
+      "settings": {
+        "fake-target": {
+          "name": "{field:sender|source.stem}"
+        }
+      }
     }
   ],
   "seed": [

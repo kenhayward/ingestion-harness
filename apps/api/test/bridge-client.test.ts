@@ -173,6 +173,8 @@ describe('HttpBridgeApi personal connections', () => {
       },
       connectionKind: 'personal',
       instances: [{ id: 'sandbox', label: 'Sandbox' }],
+      destinationFields: [],
+      credentialFields: [],
     };
     const { api, calls } = client(() => ({ sinks: [sink] }));
     expect(await api.listSinks()).toEqual([sink]);

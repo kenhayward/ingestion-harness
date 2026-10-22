@@ -54,6 +54,7 @@ import { maintenanceRoutes } from './routes/maintenance.js';
 import { MemoryNonceStore, type NonceStore } from '@ih/bridge-contract';
 import type { BridgeApi } from './bridge/client.js';
 import type { HandoffCodes } from './bridge/handoff.js';
+import { SinkCatalog } from './bridge/sinks.js';
 import { bridgeRoutes } from './routes/bridge.js';
 import { publishTargetRoutes } from './routes/publish-targets.js';
 import { pluginRoutes } from './routes/plugins.js';
@@ -74,6 +75,8 @@ export interface AppDeps {
   targetStores: TargetStores;
   /** The delivery bridge: it holds the targets (cached here), published files are read back through it. */
   bridge: BridgeApi;
+  /** The bridge's sinks as last listed (names, fields, capabilities); absent: an empty one. */
+  sinks?: SinkCatalog;
   /**
    * How the bridge and CT Studio trust each other in this direction: the shared key its signed
    * calls carry, where browsers reach its connections page, and the one-time codes that hand a
@@ -171,6 +174,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       },
       (err, id) => app.log.warn({ err, id }, 'mapping memory not recorded'),
     ),
+    sinks: deps.sinks ?? new SinkCatalog(),
     // Signed calls from the bridge: nonces seen inside the replay window (one API instance).
     bridgeAuth: { ...deps.bridgeAuth, nonces: deps.bridgeAuth.nonces ?? new MemoryNonceStore() },
   };

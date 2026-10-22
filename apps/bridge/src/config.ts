@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseMasterKey, type SecretsKeys } from './secrets.js';
+import { parseSinkEntries, type SinkEntry } from './sinks/registry.js';
 
 /** docker-compose passes unset optional variables as ''. */
 const blank = (v: unknown) => (v === '' ? undefined : v);
@@ -65,12 +66,18 @@ const EnvSchema = z.object({
   BRIDGE_SECRETS_KEY: masterKey('BRIDGE_SECRETS_KEY'),
   /** The key before a rotation: still decrypts. */
   BRIDGE_SECRETS_KEY_PREVIOUS: optional(masterKey('BRIDGE_SECRETS_KEY_PREVIOUS')),
+  /** How often each sink is described again (its describe is cached between). */
+  BRIDGE_SINK_REFRESH_SECONDS: z.preprocess(blank, z.coerce.number().int().positive().default(300)),
 });
 
 export type BridgeConfig = Omit<
   z.infer<typeof EnvSchema>,
   'BRIDGE_SECRETS_KEY' | 'BRIDGE_SECRETS_KEY_PREVIOUS'
-> & { secrets: SecretsKeys };
+> & {
+  secrets: SecretsKeys;
+  /** External sinks (BRIDGE_SINKS or BRIDGE_SINKS_FILE): none when unset. */
+  sinks: SinkEntry[];
+};
 
 /** The bridge's settings from the environment; one error lists every problem. */
 export function loadBridgeConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
@@ -80,8 +87,16 @@ export function loadBridgeConfig(env: NodeJS.ProcessEnv = process.env): BridgeCo
     throw new Error(`Invalid bridge configuration:\n  ${issues.join('\n  ')}`);
   }
   const { BRIDGE_SECRETS_KEY, BRIDGE_SECRETS_KEY_PREVIOUS, ...rest } = parsed.data;
+  let sinks: SinkEntry[];
+  try {
+    sinks = parseSinkEntries(env);
+  } catch (err) {
+    throw new Error(`Invalid bridge configuration:
+  ${(err as Error).message}`);
+  }
   return {
     ...rest,
     secrets: { current: BRIDGE_SECRETS_KEY, previous: BRIDGE_SECRETS_KEY_PREVIOUS ?? null },
+    sinks,
   };
 }

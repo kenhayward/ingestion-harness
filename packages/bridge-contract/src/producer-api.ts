@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { BridgeErrorSchema } from './errors.js';
 import { ActingUserSchema, PackageSchema } from './package.js';
-import { CapabilitiesSchema, DestinationSchema, ReceiptSchema } from './sink-api.js';
+import {
+  CapabilitiesSchema,
+  CredentialFieldSchema,
+  DestinationFieldSchema,
+  DestinationSchema,
+  ReceiptSchema,
+} from './sink-api.js';
 
 export const DELIVERY_STATUSES = [
   'queued',
@@ -15,12 +21,33 @@ export const DELIVERY_STATUSES = [
 export const DeliveryStatusSchema = z.enum(DELIVERY_STATUSES);
 export type DeliveryStatus = z.infer<typeof DeliveryStatusSchema>;
 
+/**
+ * `POST /v1/deliveries:preflight`: whether these targets would take a delivery as this user now
+ * (they exist, their sink is available, and a personal sink's target has the user's connection),
+ * without a package and without name patterns. Nothing is written.
+ */
+export const PreflightRequestSchema = z.strictObject({
+  targets: z.array(z.string().min(1)).min(1),
+  actingUser: ActingUserSchema.nullable(),
+});
+export type PreflightRequest = z.infer<typeof PreflightRequestSchema>;
+
+export const PreflightResultSchema = z.strictObject({
+  targets: z.array(z.strictObject({ targetId: z.string(), problem: BridgeErrorSchema.nullable() })),
+});
+export type PreflightResult = z.infer<typeof PreflightResultSchema>;
+
 /** `POST /v1/deliveries`: one package to one or more targets, as one user. */
 export const CreateDeliveriesRequestSchema = z.strictObject({
   targets: z.array(z.string().min(1)).min(1),
   actingUser: ActingUserSchema.nullable(),
-  /** Per target id, per destination field id: the reviewer's overrides. */
+  /** Per target id, per destination field id: the reviewer's overrides (literal values). */
   overrides: z.record(z.string(), z.record(z.string(), z.string())).default({}),
+  /**
+   * Per target id, per pattern field id: the recipe's name patterns, resolved by the bridge
+   * against the package's `naming` (they win over the target's own patterns).
+   */
+  patterns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   package: PackageSchema,
 });
 export type CreateDeliveriesRequest = z.infer<typeof CreateDeliveriesRequestSchema>;
@@ -66,6 +93,10 @@ export const SinkViewSchema = z.strictObject({
   connectionKind: z.enum(['shared', 'personal']),
   /** The places a personal connection is made to, as the sink's describe lists them. */
   instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+  /** What a target of this sink records, so a producer can render its form (never values). */
+  destinationFields: z.array(DestinationFieldSchema),
+  /** What a connection to this sink asks for (ids, labels, which are secret; never values). */
+  credentialFields: z.array(CredentialFieldSchema),
 });
 export type SinkView = z.infer<typeof SinkViewSchema>;
 
@@ -108,6 +139,22 @@ export const TargetPutRequestSchema = z.strictObject({
 export type TargetPutRequest = z.infer<typeof TargetPutRequestSchema>;
 
 /** `POST /v1/targets:test`: Test connection for settings not saved yet. */
+/**
+ * `POST /v1/targets:browse`: one level of a sink's tree for a destination field, for a target
+ * editor's picker. A shared sink is browsed with `connectionId`; a personal one with the acting
+ * user's own connection to `instanceId`.
+ */
+export const TargetBrowseRequestSchema = z.strictObject({
+  sinkId: z.string().min(1),
+  instanceId: z.string().nullable(),
+  connectionId: z.string().regex(CONNECTION_ID).nullable(),
+  field: z.string().min(1),
+  parentId: z.string().nullable(),
+  cursor: z.string().nullable(),
+  actingUser: ActingUserSchema.nullable(),
+});
+export type TargetBrowseRequest = z.infer<typeof TargetBrowseRequestSchema>;
+
 export const TargetSettingsTestRequestSchema = z.strictObject({
   connectionId: z.string().regex(CONNECTION_ID),
   destination: DestinationSchema,

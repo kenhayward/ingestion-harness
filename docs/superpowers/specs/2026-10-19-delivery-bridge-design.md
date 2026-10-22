@@ -1,6 +1,6 @@
 # Delivery bridge: design
 
-Status: phases 1 to 5 and the target-registry merge built, 2026-10-19 to 2026-10-22 (see the "as built" sections). Replaces the worker's direct S3 and Fuseki
+Status: phases 1 to 6 and the target-registry merge built, 2026-10-19 to 2026-10-22 (see the "as built" sections). Replaces the worker's direct S3 and Fuseki
 publishing (`worker/src/ingest_worker/pipeline.py` `publish_outputs`,
 `template_pipeline.py` `publish_graph`) with delivery through a separate **bridge** service to
 pluggable **sinks**. It builds on, and in part supersedes,
@@ -711,6 +711,119 @@ Phase 5 (personal connections) made these calls
   worker's acting-user fallbacks (no uploader, or a missing person, sends the job to review with
   the approver acting), and tracking the last deliverer for system re-deliveries. None of them is
   reachable before a recipe can name a personal sink's target.
+
+## Phase 6 as built
+
+Phase 6 (external sinks) made these calls
+([plan](../plans/2026-10-22-delivery-bridge-6-external-sinks.md)). Part A covers registering
+and delivering:
+
+- **`BRIDGE_SINKS`** (or `BRIDGE_SINKS_FILE`) is a JSON list of `{ id, url, key }`.
+  - An id is not `s3` or `rdf`.
+  - A URL is http(s), with no credentials and no query.
+  - A key is at least 32 characters.
+  - A bad entry stops the bridge at start, naming the entry, never the key.
+- **`HttpSink`** calls a sink over the contract's routes. Every call is signed with the sink's
+  key, and every answer is checked against the contract.
+  - Timeouts: 15 s for describe, test and browse; 120 s for deliver and status.
+  - Answers are capped at 8 MiB.
+  - Classing: a sink's own `needs_user` error stands; a 5xx, a timeout or no answer is
+    retryable; a 401 or a malformed answer is `internal`.
+- **Describes are cached** (`CachingSinkRegistry`). They are refreshed at start, before the
+  loops run, then every `BRIDGE_SINK_REFRESH_SECONDS` (300). A failed refresh keeps the last
+  good describe and marks the sink unavailable. Accept refuses an unavailable sink's deliveries
+  as `sink_unavailable`, which is retryable.
+- **External sinks are deliver-only.** Their `withdraw` and `readBack` read as false: contract
+  v1 names those routes but not their bodies.
+  - A delivery to one records no `job_outputs`; it counts as use through `job_deliveries`.
+  - Withdrawal never reaches one.
+  - The job panel's Delete says "This content stays in <label>".
+- **`SinkView` gains `destinationFields` and `credentialFields`** (contract 0.5.0), and the
+  conformance suite fails a sink whose `accepts` lacks `files` or `data`.
+- **CT Studio creates and edits sink targets.**
+  - They have their own body schemas (`SinkTargetCreateBodySchema`, `SinkTargetPatchBodySchema`),
+    and the bridge checks their fields.
+  - While a target is in use, its instance and fixed fields lock (every field, when the sink is
+    not known now). Its label, connection and pattern fields never lock.
+  - Choices list sink targets (`layout: null`, never primary).
+  - Published outputs shows the sinks under *Systems*.
+- **Recipes name sink targets.** The refusal is gone from the API and the worker. A recipe that
+  delivers `rdf` to a sink that doesn't take it is the issue "`<id>` (<sink>) does not take the
+  graph (rdf)".
+- **The fake external sink** (`apps/bridge/src/sinks/fake-server.ts`) runs in compose profile
+  `fake-sink` on test stacks. CI runs the conformance image against it, and the smoke's
+  `SMOKE_EXTERNAL` section delivers two jobs of one file to it: one key, two deliveries.
+- **A sink that hangs or drops mid-answer is still a SinkError** (the body is read under the same
+  timeout). An unavailable sink is described again every 15 s. A sink's own error is bounded:
+  its message is cut to 500 characters, details over 4 KiB are dropped, and a known code keeps
+  its own class. CT Studio's sink catalog asks the bridge at most every 30 s.
+
+Part B covers names:
+
+- **One pattern syntax, in the contract** (`naming.ts`: `parsePattern`, `patternVariables`,
+  `resolvePattern`, `namingInputs`; contract 0.6.0).
+  - Placeholders `{a|b|'literal'}`; `{{` and `}}` are literal braces.
+  - The variables are `field:<id>`, `source.filename`, `source.stem`, `source.sha256`,
+    `recipe.id`, `recipe.version`, `job.id` and `date` (UTC).
+  - The worker fills `package.naming` with the same inputs (`bridge/naming.py`). The shared
+    fixture `naming.json` pins both, and the resolver.
+- **Precedence of a pattern field's value:**
+  1. the reviewer's override (a literal);
+  2. the recipe's `delivery.settings[target][field]`;
+  3. the target's own pattern.
+
+  `CreateDeliveriesRequest.patterns` carries the recipe's patterns, and `overrides` carries the
+  reviewer's.
+- **The bridge resolves at accept** (`resolveDestination`) and records the result in
+  `deliveries.destination` (bridge migration 202610221400). The runner sends that.
+  - An override or pattern for a field that is fixed, undeclared or not overridable is
+    `content_rejected`.
+  - A required pattern that resolves to nothing is `pattern_unresolved`, with details
+    `{targetId, field, variables}`. An optional one is left out.
+  - `checkTarget` parses a target's own patterns.
+- **Recipes check their settings** (`templateIssues` on `delivery.settings`). Each setting must
+  name a target the recipe delivers to and a pattern field of that target's sink, parse, and
+  name only the recipe's own fields. A required pattern field needs a pattern here or on the
+  target.
+  - The *Publish to* picker shows each picked sink target's pattern fields.
+  - A preview resolves the pattern against a sample document (`POST
+    /api/publish-targets/preview`).
+- **Browse** is `POST /v1/targets:browse`, with the acting admin.
+  - A personal sink is browsed with only that admin's own connection.
+  - A shared sink is browsed with only a shared connection of its own.
+  - The target editor's *Browse…* button opens a tree, one level at a time.
+- **Review overrides.**
+  - `GET /api/jobs/:id/naming` lists, for each target, its overridable pattern fields: pattern,
+    resolved value or what it lacks, the earlier override, and any conflict.
+  - Approve takes `overrides`, which are validated against that list and stored in
+    `jobs.delivery_overrides` (migration 202610221500). A re-approval replaces them.
+  - The worker sends them with the delivery.
+- **Name conflicts.** A sink's `name_conflict` with `details.field` (and `value`) marks that field
+  in the naming view while it is the latest round's error ("<label> already has another document
+  named <value>: choose another name"). It clears once a later round of deliveries is recorded (the next approval).
+
+Part C covers the right person:
+
+- **The approver by id.** `jobs.reviewer_user_id` (migration 202610221600) is set on approve, and
+  the worker finds the reviewer by it first. A job approved before then is still matched by name.
+- **The last deliverer.** `jobs.delivered_as_user` is recorded once the bridge accepts a package,
+  on every path. A rebuild or remint acts as that user, then the reviewer, then the uploader.
+- **A refusal a person can settle goes back to review**, not to an operator. These are
+  `connection_missing`, `credential_*` and `pattern_unresolved`, at accept, on the reviewed and
+  auto-published paths. The job is `awaiting_review` with the bridge's message, so approving
+  again delivers as the new approver. Without this, the job sat in `needs_review`, which nobody
+  can approve. Other refusals still go to an operator.
+- **The upload preflight.** `POST /v1/deliveries:preflight` (contract 0.7.0) shares accept's
+  target checks (`readyTarget`).
+  - `POST /api/documents/preflight { specId }` asks it as the uploader, for the type's latest
+    published version, only when that names a sink target. With the bridge down, the answer is no
+    problems.
+  - The upload strip warns, with *Manage connections*, and the upload still goes ahead.
+- **A review held up by a connection says so.** `jobs.connection_needed` (migration
+  202610221700) is set by the worker's refusal and by a delivery event with one of those codes,
+  and cleared on approve. The review's reasons offer *Manage connections*.
+- **Receipts.** `JobDeliveryView.links` lists each receipt entry's `http(s)` URL with its label;
+  any other URL is dropped. The job panel links them.
 
 ## Left to the builder
 
