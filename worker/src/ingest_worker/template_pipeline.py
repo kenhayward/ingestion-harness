@@ -327,24 +327,46 @@ def publish_template_job(
     published: list[RenderedOutput] = []
     if targets:  # none: no publishing targets, nothing is delivered
         reviewer = queue.reviewer(job.id)
-        delivered = deliver_publication(
-            job,
-            deps,
-            queue,
-            template=template,
-            document=document,
-            outputs=[o for o in rendered if o.format in formats],
-            graph=graph if "rdf" in formats else None,
-            targets=targets,
-            acting=reviewer or queue.uploader(job.id),
-            approver=reviewer,
-            overrides=queue.delivery_overrides(job.id),
-        )
+        try:
+            delivered = deliver_publication(
+                job,
+                deps,
+                queue,
+                template=template,
+                document=document,
+                outputs=[o for o in rendered if o.format in formats],
+                graph=graph if "rdf" in formats else None,
+                targets=targets,
+                acting=reviewer or queue.uploader(job.id),
+                approver=reviewer,
+                overrides=queue.delivery_overrides(job.id),
+            )
+        except BridgeRefused as refused:
+            if refused.error.code not in BACK_TO_REVIEW:
+                raise
+            # A person can settle it (their connection, a name): back to review, not to an
+            # operator. Approving again delivers as the new approver.
+            queue.await_review(job, [], deps.buckets.outputs, [str(refused)])
+            return []
         published = delivered.outputs
         if on_published is not None:
             on_published(targets, delivered)
     queue.event(job.id, "info", "published", {"edits": len(edits), "outputs": len(published)})
     return published
+
+
+#: Refusals at accept that a reviewer can settle: no person or connection to deliver as, a
+#: credential the target refuses, or a name pattern that resolves to nothing. The job goes back
+#: to review (awaiting_review) rather than to an operator.
+BACK_TO_REVIEW = frozenset(
+    {
+        "connection_missing",
+        "credential_missing",
+        "credential_rejected",
+        "credential_mfa_required",
+        "pattern_unresolved",
+    }
+)
 
 
 def deliver_publication(

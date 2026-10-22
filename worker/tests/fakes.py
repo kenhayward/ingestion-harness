@@ -872,6 +872,10 @@ class FakeBridge:
         self.targets = dict(targets or {})
         #: Targets of other sinks: a delivery to one is recorded and writes nothing here.
         self.sinks = set(sinks or ())
+        #: Personal-connection targets: target id -> the users holding a connection for it. As
+        #: the bridge's accept does, a delivery to one with no acting user, or as a user without
+        #: a connection, is refused (connection_missing) and nothing is delivered.
+        self.personal: dict[str, set[str]] = {}
         #: Targets with layout `package`: a delivery writes the package as an archive there.
         self.archives: set[str] = set()
         self.stores = dict(stores or {})
@@ -923,6 +927,21 @@ class FakeBridge:
         self._next_refusal()
         for target_id in request.targets:
             self._known(target_id)
+        for target_id in request.targets:
+            if target_id not in self.personal:
+                continue
+            user = request.acting_user
+            if user is None:
+                message = f"delivering to {target_id} needs a person to deliver as"
+            elif user.id not in self.personal[target_id]:
+                message = f"{user.name} has no connection for {target_id}: add one on the connections page"
+            else:
+                continue
+            raise BridgeRefused(
+                BridgeError.model_validate(
+                    {"class": "needs_user", "code": "connection_missing", "message": message}
+                )
+            )
         self.requests.append(request)
         for target_id in request.targets:
             if target_id in self.sinks:

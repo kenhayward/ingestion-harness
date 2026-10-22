@@ -771,6 +771,30 @@ def test_a_publish_records_whom_it_delivered_as(tmp_path: Path) -> None:
     assert queue.delivered_as["job-1"] == "u-pat"
 
 
+RAE = ActingUser(id="u-rae", name="Rae", email=None)
+PAT = ActingUser(id="u-pat", name="Pat", email=None)
+
+
+def test_an_approver_without_a_connection_sends_the_job_back_to_review_not_to_an_operator(
+    tmp_path: Path,
+) -> None:
+    deps, bridge, queue = to_publish(tmp_path)
+    bridge.personal["default"] = {PAT.id}
+    queue.reviewers["job-1"] = RAE
+    run_once(queue, deps, "w1")
+    assert queue.reviewed == []  # never to an operator: a reviewer can approve it again
+    [(_, _, reasons)] = [a for a in queue.awaiting if a[0] == "job-1"][-1:]
+    assert reasons == ["Rae has no connection for default: add one on the connections page"]
+    assert documents(bridge) == []
+    # Approved again, by someone who has a connection: they deliver it.
+    queue.reviewers["job-1"] = PAT
+    queue.jobs = [replace(JOB, task="publish")]
+    run_once(queue, deps, "w1")
+    [request] = documents(bridge)
+    assert request.acting_user == PAT
+    assert "job-1" in queue.finished
+
+
 def test_publishing_the_same_file_again_is_the_next_version_of_its_graph(tmp_path: Path) -> None:
     deps, bridge, queue = to_publish(tmp_path)
     run_once(queue, deps, "w1")
@@ -1244,6 +1268,28 @@ def test_an_auto_published_job_is_handed_to_the_bridge_at_todays_keys(tmp_path: 
     [(target_id, delivery_id)] = deliveries
     assert target_id == "default"
     assert queue.published_deliveries == [("job-1", "default", delivery_id)]
+
+
+def test_an_auto_published_job_with_no_uploader_goes_to_review_before_a_personal_target(
+    tmp_path: Path,
+) -> None:
+    template = {**TEMPLATE, "review": {"required": "never"}}
+    deps, bridge = mapped_deps(tmp_path, template, BASE_IRI)
+    bridge.personal["default"] = {"u-pat"}
+    queue = FakeQueue(jobs=[JOB])
+    run_once(queue, deps, "w1")
+    assert queue.handed_over == [] and queue.reviewed == []
+    [(job_id, outputs, reasons)] = queue.awaiting
+    assert job_id == "job-1" and outputs
+    assert reasons == ["delivering to default needs a person to deliver as"]
+    # An uploader without a connection is named instead.
+    deps, bridge = mapped_deps(tmp_path / "again", template, BASE_IRI)
+    bridge.personal["default"] = {"u-pat"}
+    queue = FakeQueue(jobs=[JOB])
+    queue.uploaders["job-1"] = ActingUser(id="u-up", name="Uma", email=None)
+    run_once(queue, deps, "w1")
+    [(_, _, reasons)] = queue.awaiting
+    assert reasons == ["Uma has no connection for default: add one on the connections page"]
 
 
 def test_a_refused_delivery_sends_the_job_to_review_with_the_bridges_message(
