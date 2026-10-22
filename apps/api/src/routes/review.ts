@@ -97,6 +97,14 @@ async function namingOf(app: FastifyInstance, ctx: ReviewContext): Promise<JobNa
   const listed = publishTargetsOf(ctx.template);
   const settings = deliverySettingsOf(ctx.template);
   const overrides = await app.deps.repo.deliveryOverrides(ctx.job.id);
+  // The latest round's refusals of a name (a different document holds it at the target).
+  const conflicts = new Map<string, string>();
+  for (const d of await app.deps.repo.deliveriesOf(ctx.job.id)) {
+    const details = d.error?.details as { field?: unknown; value?: unknown } | undefined;
+    if (d.status === 'needs_user' && d.error?.code === 'name_conflict' && details?.field) {
+      conflicts.set(`${d.targetId}.${String(details.field)}`, String(details.value ?? ''));
+    }
+  }
   const sinks = app.deps.sinks!;
   const records = await Promise.all(listed.map((id) => app.deps.targets.get(id)));
   if (records.some((t) => t?.kind === 'sink')) await sinks.refresh(app.deps.bridge);
@@ -133,7 +141,9 @@ async function namingOf(app: FastifyInstance, ctx: ReviewContext): Promise<JobNa
           value: 'value' in resolved ? resolved.value : null,
           unresolved: 'unresolved' in resolved ? resolved.unresolved : [],
           override: overrides[targetId]?.[f.id] ?? null,
-          conflict: null,
+          conflict: conflicts.has(`${targetId}.${f.id}`)
+            ? `${t.label} already has another document named ${conflicts.get(`${targetId}.${f.id}`) || 'that'}: choose another name`
+            : null,
         };
       }),
     });

@@ -66,3 +66,21 @@ describe('the fake external sink server', () => {
     expect(JSON.stringify(body)).not.toContain(req.package.files[0]!.content);
   });
 });
+
+describe('the fake external sink server, names', () => {
+  it('refuses a name starting taken- as held by another document', async () => {
+    const { signed } = await server();
+    const res = await signed(
+      'POST',
+      '/deliveries',
+      deliverRequest({ destination: { space: 's', name: 'taken-x' } }),
+    );
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({
+      class: 'needs_user',
+      code: 'name_conflict',
+      message: 'another document is named taken-x',
+      details: { field: 'name', value: 'taken-x' },
+    });
+  });
+});

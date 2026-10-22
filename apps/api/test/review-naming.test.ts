@@ -154,3 +154,39 @@ describe('POST /api/jobs/:id/approve with name overrides', () => {
     }
   });
 });
+
+describe('a name the target refused (name_conflict)', () => {
+  async function refused() {
+    const ctx = await seed();
+    const deliveryId = randomUUID();
+    await ctx.repo.recordDeliveries(ctx.job.id, [{ targetId: 'fake-target', deliveryId }]);
+    const d = ctx.repo.deliveries.get(deliveryId)!;
+    ctx.repo.deliveries.set(deliveryId, {
+      ...d,
+      status: 'needs_user',
+      error: {
+        class: 'needs_user',
+        code: 'name_conflict',
+        message: 'another document is named Acme Ltd',
+        details: { field: 'name', value: 'Acme Ltd' },
+      },
+    });
+    return ctx;
+  }
+
+  it('marks the field, naming the name', async () => {
+    const { app, job } = await refused();
+    const [target] = (await app.inject(`/api/jobs/${job.id}/naming`)).json().targets;
+    expect(target.fields[0].conflict).toBe(
+      'Fake target already has another document named Acme Ltd: choose another name',
+    );
+  });
+
+  it('clears once a later delivery of that target succeeds', async () => {
+    const { app, repo, job } = await refused();
+    await repo.recordDeliveries(job.id, [{ targetId: 'fake-target', deliveryId: randomUUID() }]);
+    const [target] = (await app.inject(`/api/jobs/${job.id}/naming`)).json().targets;
+    expect(target.fields[0].conflict).toBeNull();
+  });
+});
+

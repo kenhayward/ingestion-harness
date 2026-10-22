@@ -1,4 +1,5 @@
 import type { DeliveryOverrides, JobNaming } from '@ih/shared';
+import { HelpButton } from '../ui/Help.js';
 
 /** The names a reviewer has typed: per target, per field (the text as it stands). */
 export type NameEdits = Record<string, Record<string, string>>;
@@ -36,7 +37,9 @@ export function NamesPanel({
   if (naming.targets.length === 0) return null;
   return (
     <section className="names-panel" aria-label="Names">
-      <h2>Names</h2>
+      <h2>
+        Names <HelpButton topic="names" />
+      </h2>
       <p className="muted">
         What this document is called where it is delivered. Change one to use your own name.
       </p>

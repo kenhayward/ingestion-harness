@@ -753,6 +753,55 @@ and delivering:
 - **The fake external sink** (`apps/bridge/src/sinks/fake-server.ts`) runs in compose profile
   `fake-sink` on test stacks. CI runs the conformance image against it, and the smoke's
   `SMOKE_EXTERNAL` section delivers two jobs of one file to it: one key, two deliveries.
+- **A sink that hangs or drops mid-answer is still a SinkError** (the body is read under the same
+  timeout). An unavailable sink is described again every 15 s. A sink's own error is bounded:
+  its message is cut to 500 characters, details over 4 KiB are dropped, and a known code keeps
+  its own class. CT Studio's sink catalog asks the bridge at most every 30 s.
+
+Part B covers names:
+
+- **One pattern syntax, in the contract** (`naming.ts`: `parsePattern`, `patternVariables`,
+  `resolvePattern`, `namingInputs`; contract 0.6.0).
+  - Placeholders `{a|b|'literal'}`; `{{` and `}}` are literal braces.
+  - The variables are `field:<id>`, `source.filename`, `source.stem`, `source.sha256`,
+    `recipe.id`, `recipe.version`, `job.id` and `date` (UTC).
+  - The worker fills `package.naming` with the same inputs (`bridge/naming.py`). The shared
+    fixture `naming.json` pins both, and the resolver.
+- **Precedence of a pattern field's value:**
+  1. the reviewer's override (a literal);
+  2. the recipe's `delivery.settings[target][field]`;
+  3. the target's own pattern.
+
+  `CreateDeliveriesRequest.patterns` carries the recipe's patterns, and `overrides` carries the
+  reviewer's.
+- **The bridge resolves at accept** (`resolveDestination`) and records the result in
+  `deliveries.destination` (bridge migration 202610221400). The runner sends that.
+  - An override or pattern for a field that is fixed, undeclared or not overridable is
+    `content_rejected`.
+  - A required pattern that resolves to nothing is `pattern_unresolved`, with details
+    `{targetId, field, variables}`. An optional one is left out.
+  - `checkTarget` parses a target's own patterns.
+- **Recipes check their settings** (`templateIssues` on `delivery.settings`). Each setting must
+  name a target the recipe delivers to and a pattern field of that target's sink, parse, and
+  name only the recipe's own fields. A required pattern field needs a pattern here or on the
+  target.
+  - The *Publish to* picker shows each picked sink target's pattern fields.
+  - A preview resolves the pattern against a sample document (`POST
+    /api/publish-targets/preview`).
+- **Browse** is `POST /v1/targets:browse`, with the acting admin.
+  - A personal sink is browsed with only that admin's own connection.
+  - A shared sink is browsed with only a shared connection of its own.
+  - The target editor's *Browse…* button opens a tree, one level at a time.
+- **Review overrides.**
+  - `GET /api/jobs/:id/naming` lists, for each target, its overridable pattern fields: pattern,
+    resolved value or what it lacks, the earlier override, and any conflict.
+  - Approve takes `overrides`, which are validated against that list and stored in
+    `jobs.delivery_overrides` (migration 202610221500). A re-approval replaces them.
+  - The worker sends them with the delivery.
+- **Name conflicts.** A sink's `name_conflict` with `details.field` (and `value`) marks that field
+  in the naming view while it is the latest round's error ("<label> already has another document
+  named <value>: choose another name"). It clears once a later delivery of that target
+  succeeds.
 
 ## Left to the builder
 

@@ -188,6 +188,10 @@
             <span>— the delivery bridge delivers to registered external sinks too</span>
           </li>
           <li>
+            <a href="#names">Names where content is delivered</a>
+            <span>— name patterns per target, and names a reviewer can change</span>
+          </li>
+          <li>
             <a href="#personal-connections">Your own connections</a>
             <span>— everyone can keep their own logins on the connections page</span>
           </li>
@@ -250,6 +254,22 @@
         what stays there. While a target is in use, its fixed fields are locked; its name patterns
         are not. For integrators: the bridge contract package is now 0.5.0. The sink catalog lists
         each sink's fields, and the conformance suite expects a sink to take files and data.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="names">Names where content is delivered</h2>
+      <p>
+        A system that names what it creates, a document name for example, takes a
+        <strong>name pattern</strong> such as <code>{field:title|source.stem}</code>. A target holds
+        one, and a recipe can set its own for that target under <em>Publish to</em>, with a preview.
+        Admins can <strong>Browse…</strong> a system's spaces or folders instead of typing them.
+      </p>
+      <p>
+        On the review screen, <strong>Names</strong> shows what each such target will call the
+        document. Type another name to use it instead. When the system already holds a different
+        document under that name, the job comes back to review with the name marked, so you can
+        choose another. For integrators: the bridge contract package is now 0.6.0, with name
+        patterns and naming inputs, and recipe patterns sent with each delivery.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

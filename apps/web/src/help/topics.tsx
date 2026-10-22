@@ -26,6 +26,7 @@ import { OutputsHelp } from './OutputsHelp.js';
 import { PipelineHelp } from './PipelineHelp.js';
 import { PublishedOutputsHelp } from './PublishedOutputsHelp.js';
 import { ConnectionsHelp } from './ConnectionsHelp.js';
+import { NamesHelp } from './NamesHelp.js';
 import { QualityHelp } from './QualityHelp.js';
 import { ResultHelp } from './ResultHelp.js';
 import { ResultsHelp } from './ResultsHelp.js';
@@ -99,6 +100,7 @@ export const HELP_TOPICS = {
   'github-sync': { title: 'How GitHub sync works', body: <GitHubSyncHelp /> },
   'published-outputs': { title: 'How publishing targets work', body: <PublishedOutputsHelp /> },
   connections: { title: 'How connections work', body: <ConnectionsHelp /> },
+  names: { title: 'How names work', body: <NamesHelp /> },
   backup: { title: 'Backing up and restoring CT Studio', body: <BackupHelp /> },
   general: { title: 'General recipe settings', body: <GeneralHelp /> },
   sections: { title: 'How sections work', body: <SectionsHelp /> },
