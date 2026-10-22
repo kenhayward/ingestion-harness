@@ -1,5 +1,6 @@
 import type {
   ConnectionSummary,
+  SinkView,
   DeliveryView,
   TargetPutRequest,
   TargetTestResult,
@@ -124,6 +125,39 @@ export class FakeBridgeApi implements BridgeApi {
   }
 
   /** The summaries given, then every connection put (as the bridge lists what it holds). */
+  /** Personal summaries by owner, and who they were asked for. */
+  readonly personal = new Map<string, ConnectionSummary[]>();
+  readonly personalAsked: string[] = [];
+  /** Users whose personal connections were deleted, and each reconcile's live users. */
+  readonly userDeletes: string[] = [];
+  readonly reconciles: string[][] = [];
+  sinkViews: SinkView[] = [];
+
+  async listPersonalConnections(owner: string): Promise<ConnectionSummary[]> {
+    this.fail();
+    this.personalAsked.push(owner);
+    return structuredClone(this.personal.get(owner) ?? []);
+  }
+
+  async deleteUserConnections(userId: string): Promise<number> {
+    this.fail();
+    this.userDeletes.push(userId);
+    const n = this.personal.get(userId)?.length ?? 0;
+    this.personal.delete(userId);
+    return n;
+  }
+
+  async reconcileUsers(liveUserIds: string[]): Promise<number> {
+    this.fail();
+    this.reconciles.push([...liveUserIds]);
+    return 0;
+  }
+
+  async listSinks(): Promise<SinkView[]> {
+    this.fail();
+    return structuredClone(this.sinkViews);
+  }
+
   async listConnections(): Promise<ConnectionSummary[]> {
     this.fail();
     const written = [...this.connections.values()]

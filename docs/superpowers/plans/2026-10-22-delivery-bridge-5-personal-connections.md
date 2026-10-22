@@ -21,7 +21,7 @@ are deleted.
   each attempt, so the existing health marking (`ok` with last used, or `needs_attention`) now
   covers personal connections too.
 - **CT Studio sees summaries only.** Signed routes list one owner's summaries, delete one owner's
-  connections, and reconcile against the list of live users. The API serves `GET /api/me/connections`
+  connections, and reconcile against the list of live users. The API serves `GET /api/profile/connections`
   to Profile. Disabling a user deletes their connections, and an hourly reconcile catches any
   miss.
 - **Nothing in CT Studio can deliver to a personal sink yet.** `sink` targets stay refused until
@@ -335,7 +335,7 @@ CREATE INDEX connections_owner ON connections (owner) WHERE owner IS NOT NULL;
   - `BridgeApi.deleteUserConnections(userId: string): Promise<number>`;
   - `BridgeApi.reconcileUsers(liveUserIds: string[]): Promise<number>`;
   - `BridgeApi.listSinks(): Promise<SinkView[]>` (unless it exists already);
-  - `GET /api/me/connections` → `{ personalSinks: boolean, connections: { id, name, sinkName,
+  - `GET /api/profile/connections` → `{ personalSinks: boolean, connections: { id, name, sinkName,
     instanceLabel, status, statusReason, lastUsedAt }[] }`. Every signed-in role can call it. It
     answers 502 `connections are unavailable right now` when the bridge is down. There is no
     `fields` and no `sinkId` beyond the name;
@@ -374,7 +374,7 @@ CREATE INDEX connections_owner ON connections (owner) WHERE owner IS NOT NULL;
 - Test: `apps/web/test/ProfileDialog.test.tsx`, `apps/web/test/client.test.ts`
 
 **Interfaces:**
-- Consumes: `GET /api/me/connections` from Task 6.
+- Consumes: `GET /api/profile/connections` from Task 6.
 - Produces: `ProfileTab` gains `'connections'`, and the help topic `connections` is in
   `HELP_INDEX`.
 

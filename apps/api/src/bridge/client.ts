@@ -1,9 +1,11 @@
 import {
   BridgeErrorSchema,
+  ConnectionsDeletedSchema,
   ConnectionSummarySchema,
   DeliveryViewSchema,
   ObjectReadResultSchema,
   signRequest,
+  SinkViewSchema,
   TargetTestResultSchema,
   TargetViewSchema,
   type BridgeError,
@@ -12,6 +14,7 @@ import {
   type TargetPutRequest,
   type TargetTestResult,
   type TargetView,
+  type SinkView,
 } from '@ih/bridge-contract';
 import { z } from 'zod';
 
@@ -48,6 +51,13 @@ export interface BridgeApi {
   deleteTarget(id: string): Promise<'deleted' | 'in_use'>;
   putSharedConnection(c: SharedConnection): Promise<void>;
   listConnections(kind: 'shared'): Promise<ConnectionSummary[]>;
+  /** One user's personal connections: secret-free, and with no fields. */
+  listPersonalConnections(owner: string): Promise<ConnectionSummary[]>;
+  /** Deletes a user's personal connections; how many went. */
+  deleteUserConnections(userId: string): Promise<number>;
+  /** Deletes the personal connections of every user not listed; how many went. */
+  reconcileUsers(liveUserIds: string[]): Promise<number>;
+  listSinks(): Promise<SinkView[]>;
   testTarget(id: string): Promise<TargetTestResult>;
   testSettings(s: {
     connectionId: string;
@@ -161,6 +171,40 @@ export class HttpBridgeApi implements BridgeApi {
       [204],
       `connection ${id}`,
     );
+  }
+
+  async listPersonalConnections(owner: string): Promise<ConnectionSummary[]> {
+    const query = new URLSearchParams({ kind: 'personal', owner });
+    const res = await this.expect(
+      await this.call('GET', `/v1/connections?${query.toString()}`),
+      [200],
+      'the connection list',
+    );
+    return z.strictObject({ connections: z.array(ReadConnectionSummary) }).parse(await res.json())
+      .connections;
+  }
+
+  async deleteUserConnections(userId: string): Promise<number> {
+    const res = await this.expect(
+      await this.call('DELETE', `/v1/users/${encodeURIComponent(userId)}/connections`),
+      [200],
+      `the connections of user ${userId}`,
+    );
+    return ConnectionsDeletedSchema.parse(await res.json()).deleted;
+  }
+
+  async reconcileUsers(liveUserIds: string[]): Promise<number> {
+    const res = await this.expect(
+      await this.call('POST', '/v1/users:reconcile', { liveUserIds }),
+      [200],
+      'the user reconcile',
+    );
+    return ConnectionsDeletedSchema.parse(await res.json()).deleted;
+  }
+
+  async listSinks(): Promise<SinkView[]> {
+    const res = await this.expect(await this.call('GET', '/v1/sinks'), [200], 'the sink list');
+    return z.strictObject({ sinks: z.array(SinkViewSchema) }).parse(await res.json()).sinks;
   }
 
   async listConnections(kind: 'shared'): Promise<ConnectionSummary[]> {

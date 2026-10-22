@@ -35,6 +35,7 @@ import { HttpBridgeApi } from './bridge/client.js';
 import { HandoffCodes } from './bridge/handoff.js';
 import { resyncAfterRestore, startTargetSync } from './bridge/sync.js';
 import { reconcileOnce } from './bridge/reconcile.js';
+import { reconcileUsersOnce } from './bridge/users-reconcile.js';
 import { secretsKeys } from './llm/secrets.js';
 import { PgPublishTargetRepo } from './publish-targets/pg.js';
 import { PgPluginCatalogue } from './plugins/catalogue.js';
@@ -286,6 +287,10 @@ setInterval(
       .catch((err: unknown) => app.log.warn({ err }, 'delivery reconcile failed')),
   60_000,
 ).unref();
+// The personal connections of users who are gone are deleted on the bridge: now and hourly.
+const reconcileUsers = () => reconcileUsersOnce({ users: access, bridge, log: app.log });
+void reconcileUsers();
+setInterval(() => void reconcileUsers(), 3_600_000).unref();
 // In the background, retried until the bridge answers: old keys move to the bridge once, .env
 // seeds the default and the triple store there, and the cache takes the bridge's registry.
 void startTargetSync({

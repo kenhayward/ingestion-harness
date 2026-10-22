@@ -233,6 +233,19 @@ export function registerUserRoutes(app: FastifyInstance, access: AccessRepo): vo
           { userId: result.id, by: by(req) },
           enabled ? 'user enabled' : 'user disabled',
         );
+        // A disabled user's own logins to other systems go with them. A bridge that is down
+        // leaves them to the hourly reconcile; the disable stands either way.
+        if (!enabled) {
+          const userId = result.id;
+          void app.deps.bridge
+            .deleteUserConnections(userId)
+            .then((deleted) => {
+              if (deleted) req.log.info({ userId, deleted }, 'personal connections deleted');
+            })
+            .catch((err: unknown) =>
+              req.log.warn({ err, userId }, 'personal connections not deleted: the reconcile will'),
+            );
+        }
       }
       return send(reply, result);
     };
@@ -248,7 +261,9 @@ export function registerUserRoutes(app: FastifyInstance, access: AccessRepo): vo
         summary: 'Disable a user',
         description: md`
           **Admins only.** The user can no longer sign in, and every session of theirs ends at
-          once. Nothing they made is removed. You cannot disable yourself.
+          once. Nothing they made is removed, but their personal connections on the delivery
+          bridge are deleted (enabling them again does not bring those back). You cannot disable
+          yourself.
         `,
         params: UserParams,
         response: {

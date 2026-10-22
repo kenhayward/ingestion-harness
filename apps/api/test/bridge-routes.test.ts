@@ -38,14 +38,8 @@ describe('HandoffCodes', () => {
 });
 
 describe('POST /api/bridge/connections-link', () => {
-  it('is admin-only and returns a URL under BRIDGE_PUBLIC_URL', async () => {
-    const { app, adminCookie, userCookie } = await accessApp();
-    const refused = await app.inject({
-      method: 'POST',
-      url: '/api/bridge/connections-link',
-      headers: { cookie: userCookie },
-    });
-    expect(refused.statusCode).toBe(403);
+  it('returns a URL under BRIDGE_PUBLIC_URL', async () => {
+    const { app, adminCookie } = await accessApp();
     const res = await app.inject({
       method: 'POST',
       url: '/api/bridge/connections-link',
@@ -57,15 +51,22 @@ describe('POST /api/bridge/connections-link', () => {
     expect(codeOf(url)).toHaveLength(43);
   });
 
-  it('operators get 403', async () => {
+  it('is open to every role: an operator gets a link minted for them, as an operator', async () => {
     const { app, access } = await accessApp();
-    const { cookie } = await signInNewUser(app, access, 'Olu', 'operator');
+    const { cookie, user } = await signInNewUser(app, access, 'Olu', 'operator');
     const res = await app.inject({
       method: 'POST',
       url: '/api/bridge/connections-link',
       headers: { cookie },
     });
-    expect(res.statusCode).toBe(403);
+    expect(res.statusCode).toBe(200);
+    const code = codeOf((res.json() as { url: string }).url);
+    const redeemed = await signed(app, '/api/bridge/handoff/redeem', { code });
+    expect(redeemed.json()).toMatchObject({
+      id: user.id,
+      name: 'Olu',
+      role: 'operator',
+    });
   });
 });
 
@@ -157,5 +158,124 @@ describe('POST /api/bridge/handoff/redeem', () => {
       payload: JSON.stringify({ code: 'b' }),
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('GET /api/profile/connections', () => {
+  const summary = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    name: `Connection ${id}`,
+    sinkId: 'acme',
+    kind: 'personal' as const,
+    instanceId: 'sandbox',
+    status: 'ok' as const,
+    statusReason: null,
+    lastUsedAt: '2026-10-22T09:00:00.000Z',
+    fields: {},
+    ...over,
+  });
+  const acme = {
+    id: 'acme',
+    name: 'Acme',
+    status: 'available' as const,
+    contractVersion: 1,
+    capabilities: {
+      browse: false,
+      replace: true,
+      withdraw: false,
+      readBack: false,
+      accepts: ['files' as const],
+    },
+    connectionKind: 'personal' as const,
+    instances: [{ id: 'sandbox', label: 'Sandbox' }],
+  };
+
+  it("answers the signed-in user's own connections, with the system and instance named", async () => {
+    const { app, access, bridge } = await accessApp();
+    const { cookie, user } = await signInNewUser(app, access, 'Olu', 'operator');
+    bridge.sinkViews = [acme];
+    bridge.personal.set(user.id, [
+      summary('u-1'),
+      summary('u-2', {
+        instanceId: 'gone',
+        status: 'needs_attention',
+        statusReason: 'the password was refused',
+        lastUsedAt: null,
+      }),
+    ]);
+    bridge.personal.set('someone-else', [summary('u-9')]);
+    const res = await app.inject({ url: '/api/profile/connections', headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      personalSinks: true,
+      connections: [
+        {
+          id: 'u-1',
+          name: 'Connection u-1',
+          sinkName: 'Acme',
+          instanceLabel: 'Sandbox',
+          status: 'ok',
+          statusReason: null,
+          lastUsedAt: '2026-10-22T09:00:00.000Z',
+        },
+        {
+          id: 'u-2',
+          name: 'Connection u-2',
+          sinkName: 'Acme',
+          instanceLabel: 'gone',
+          status: 'needs_attention',
+          statusReason: 'the password was refused',
+          lastUsedAt: null,
+        },
+      ],
+    });
+    expect(bridge.personalAsked).toEqual([user.id]);
+  });
+
+  it('says when no system uses personal connections', async () => {
+    const { app, userCookie } = await accessApp();
+    const res = await app.inject({ url: '/api/profile/connections', headers: { cookie: userCookie } });
+    expect(res.json()).toEqual({ personalSinks: false, connections: [] });
+  });
+
+  it('answers 502 while the bridge is down', async () => {
+    const { app, userCookie, bridge } = await accessApp();
+    bridge.failNext = new Error('connect ECONNREFUSED');
+    const res = await app.inject({ url: '/api/profile/connections', headers: { cookie: userCookie } });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'connections are unavailable right now' });
+  });
+});
+
+describe('disabling a user deletes their personal connections', () => {
+  it('after the disable; enabling deletes nothing', async () => {
+    const { app, access, adminCookie, bridge } = await accessApp();
+    const { user } = await signInNewUser(app, access, 'Olu', 'operator');
+    const off = await app.inject({
+      method: 'POST',
+      url: `/api/users/${user.id}/disable`,
+      headers: { cookie: adminCookie },
+    });
+    expect(off.statusCode).toBe(200);
+    expect(bridge.userDeletes).toEqual([user.id]);
+    await app.inject({
+      method: 'POST',
+      url: `/api/users/${user.id}/enable`,
+      headers: { cookie: adminCookie },
+    });
+    expect(bridge.userDeletes).toEqual([user.id]);
+  });
+
+  it('a bridge that is down does not undo the disable', async () => {
+    const { app, access, adminCookie, bridge } = await accessApp();
+    const { user } = await signInNewUser(app, access, 'Olu', 'operator');
+    bridge.failNext = new Error('connect ECONNREFUSED');
+    const off = await app.inject({
+      method: 'POST',
+      url: `/api/users/${user.id}/disable`,
+      headers: { cookie: adminCookie },
+    });
+    expect(off.statusCode).toBe(200);
+    expect(off.json()).toMatchObject({ status: 'disabled' });
   });
 });
