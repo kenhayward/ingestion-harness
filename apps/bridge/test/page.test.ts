@@ -88,7 +88,19 @@ async function login(app: FastifyInstance, code = 'good') {
     url: '/connections',
     cookies: { bridge_session: cookie?.value ?? '' },
   });
-  const csrf = /name="csrf" value="([^"]+)"/.exec(page.body)?.[1] ?? '';
+  // An empty tab without a form carries no token: an admin's shared tab always has the built-in.
+  const token = (body: string) => /name="csrf" value="([^"]+)"/.exec(body)?.[1];
+  const csrf =
+    token(page.body) ??
+    token(
+      (
+        await app.inject({
+          url: '/connections/new?tab=shared',
+          cookies: { bridge_session: cookie?.value ?? '' },
+        })
+      ).body,
+    ) ??
+    '';
   return { start, cookie, page, csrf };
 }
 
@@ -166,13 +178,17 @@ describe('connections page', () => {
         secretEnv: 'TARGET_S3_SECRET_KEY',
       }),
     );
-    const { page } = await login(app);
-    expect(page.statusCode).toBe(200);
-    expect(page.body).toContain('Finance account');
-    expect(page.body).toContain('https://s3.example.com');
-    expect(page.body).toContain('Secret stored');
-    expect(page.body).toContain('Keys from TARGET_S3_SECRET_KEY');
-    expect(page.body).not.toContain(SECRET);
+    const { cookie } = await login(app);
+    const view = (url: string) => app.inject({ url, cookies: { bridge_session: cookie!.value } });
+    const shared = await view('/connections?tab=shared');
+    expect(shared.statusCode).toBe(200);
+    expect(shared.body).toContain('Finance account');
+    expect(shared.body).toContain('Default target');
+    const finance = await view('/connections/finance');
+    expect(finance.body).toContain('https://s3.example.com');
+    expect(finance.body).toContain('Secret stored');
+    expect((await view('/connections/env-keys')).body).toContain('Keys from TARGET_S3_SECRET_KEY');
+    for (const page of [shared, finance]) expect(page.body).not.toContain(SECRET);
   });
 
   it('refuses non-admins the shared connections', async () => {
@@ -590,5 +606,163 @@ describe('the page in a CT Studio frame', () => {
     expect(ended.body).toContain('data-event="ended"');
     const expired = await app.inject('/connections/start?code=nope');
     expect(expired.body).toContain('data-event="ended"');
+  });
+});
+
+describe('tabs, list and details', () => {
+  const get = (app: FastifyInstance, url: string, cookie: string) =>
+    app.inject({ url, cookies: { bridge_session: cookie } });
+  /** The list's rows: each one's text, in order. */
+  const rows = (body: string) =>
+    [...body.matchAll(/<li class="item[^"]*">([\s\S]*?)<\/li>/g)].map((m) =>
+      m[1]!
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    );
+  const finance = () => ({
+    ...connection('finance', {
+      name: 'Finance account',
+      fields: { endpoint: 'https://s3.example.com', accessKeyId: 'AKIAFINANCE' },
+      status: 'ok' as const,
+    }),
+    secretEnc: encryptSecret(SECRET, SECRETS),
+  });
+
+  it('an admin has both tabs, the current one marked; others only their own', async () => {
+    const { app } = await setup(new MemoryObjectStore(), acmeSink());
+    const admin = await login(app, 'good');
+    expect(admin.page.body).toContain('href="/bridge/connections?tab=mine" aria-current="page"');
+    expect(admin.page.body).toContain('href="/bridge/connections?tab=shared"');
+    const shared = await get(app, '/connections?tab=shared', admin.cookie!.value);
+    expect(shared.body).toContain('href="/bridge/connections?tab=shared" aria-current="page"');
+    const dee = await login(app, 'designer');
+    expect(dee.page.body).not.toContain('tab=shared');
+    const asked = await get(app, '/connections?tab=shared', dee.cookie!.value);
+    expect(asked.statusCode).toBe(200);
+    expect(asked.body).toContain('href="/bridge/connections?tab=mine" aria-current="page"');
+    expect(asked.body).not.toContain('This deployment');
+  });
+
+  it('lists each connection by name and system only', async () => {
+    const { app, connections } = await setup(new MemoryObjectStore(), acmeSink());
+    await connections.put(finance());
+    const { cookie, csrf } = await login(app, 'good');
+    await post(app, '/connections', cookie!.value, personal(csrf));
+    const mine = await get(app, '/connections?tab=mine', cookie!.value);
+    expect(rows(mine.body)).toEqual(['My sandbox login Acme']);
+    const shared = await get(app, '/connections?tab=shared', cookie!.value);
+    expect(rows(shared.body)).toEqual(['Finance account S3', 'This deployment S3 Built in']);
+  });
+
+  it('selects the first connection of a tab, and offers the add form when it has none', async () => {
+    const { app, connections } = await setup(new MemoryObjectStore(), acmeSink());
+    await connections.put(finance());
+    const { cookie } = await login(app, 'good');
+    const shared = await get(app, '/connections?tab=shared', cookie!.value);
+    expect(shared.body).toMatch(/<li class="item selected">[\s\S]*?Finance account/);
+    expect(shared.body).toContain('https://s3.example.com');
+    const mine = await get(app, '/connections?tab=mine', cookie!.value);
+    expect(mine.body).toContain('Add a connection to Acme');
+  });
+
+  it("shows a connection's details, its form and its actions", async () => {
+    const { app, connections } = await setup();
+    await connections.put(finance());
+    const { cookie } = await login(app, 'good');
+    const page = await get(app, '/connections/finance', cookie!.value);
+    expect(page.body).toMatch(/<li class="item selected">[\s\S]*?Finance account/);
+    for (const text of [
+      'https://s3.example.com',
+      'OK',
+      'Never',
+      'Secret stored',
+      'Test and save',
+    ]) {
+      expect(page.body).toContain(text);
+    }
+    expect(page.body).toContain('action="/bridge/connections/finance/test"');
+    expect(page.body).toContain('href="/bridge/connections/finance/delete"');
+    expect(page.body).not.toContain(SECRET);
+  });
+
+  it("shows the built-in connection's details without a form", async () => {
+    const { app } = await setup();
+    const { cookie } = await login(app, 'good');
+    for (const url of ['/connections?tab=shared', '/connections/internal']) {
+      const page = await get(app, url, cookie!.value);
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toContain('This deployment’s storage');
+      expect(page.body).not.toContain('Test and save');
+      expect(page.body).not.toContain('/connections/internal/delete');
+    }
+  });
+
+  it('adds through the chosen system', async () => {
+    const { app } = await setup();
+    const { cookie } = await login(app, 'good');
+    const s3 = await get(app, '/connections/new?tab=shared&sink=s3', cookie!.value);
+    expect(s3.body).toContain('Add a shared connection to S3');
+    expect(s3.body).toContain('name="sinkId" value="s3"');
+    // An unknown system: the choice, or with one system its form.
+    const unknown = await get(app, '/connections/new?tab=shared&sink=nope', cookie!.value);
+    expect(unknown.body).toContain('Add a shared connection to S3');
+    const dee = await login(app, 'designer');
+    const notHers = await get(app, '/connections/new?tab=shared&sink=s3', dee.cookie!.value);
+    expect(notHers.body).not.toContain('Add a shared connection');
+  });
+
+  it('offers a choice of system when there are several', async () => {
+    const lake = new FakeSink({
+      name: 'Lake',
+      connectionKind: 'shared',
+      credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+    });
+    const { app } = await setup(new MemoryObjectStore(), lake);
+    const { cookie } = await login(app, 'good');
+    const choice = await get(app, '/connections/new?tab=shared', cookie!.value);
+    expect(choice.body).toContain('Choose the system it connects to.');
+    expect(choice.body).toContain('href="/bridge/connections/new?tab=shared&amp;sink=s3"');
+    expect(choice.body).toContain('href="/bridge/connections/new?tab=shared&amp;sink=acme"');
+    const form = await get(app, '/connections/new?tab=shared&sink=acme', cookie!.value);
+    expect(form.body).toContain('Add a shared connection to Lake');
+  });
+
+  it('asks before deleting', async () => {
+    const { app, connections } = await setup();
+    await connections.put(finance());
+    const { cookie, csrf } = await login(app, 'good');
+    const ask = await get(app, '/connections/finance/delete', cookie!.value);
+    expect(ask.statusCode).toBe(200);
+    expect(ask.body).toContain('Delete Finance account?');
+    expect(ask.body).toContain('Targets using it stop delivering.');
+    expect(ask.body).toContain('action="/bridge/connections/finance/delete"');
+    expect(ask.body).toContain('href="/bridge/connections/finance"');
+    const done = await post(app, '/connections/finance/delete', cookie!.value, { csrf });
+    expect(done.statusCode).toBe(303);
+    expect(done.headers.location).toBe('/bridge/connections?tab=shared&changed=1');
+    expect(await connections.get('finance')).toBeNull();
+  });
+
+  it('shows a notice in the details and goes back to the saved connection', async () => {
+    const { app } = await setup();
+    const { cookie, csrf } = await login(app, 'good');
+    const made = await post(app, '/connections', cookie!.value, newConnection(csrf));
+    expect(made.headers.location).toBe('/bridge/connections/finance?changed=1');
+    const tested = await post(app, '/connections/finance/test', cookie!.value, { csrf });
+    expect(tested.body).toMatch(
+      /<section class="details">\s*<p class="notice">Finance account: Connected\./,
+    );
+  });
+
+  it("keeps another user's connection out of reach of the delete question", async () => {
+    const { app, connections } = await setup(new MemoryObjectStore(), acmeSink());
+    const olive = await login(app, 'olive');
+    await post(app, '/connections', olive.cookie!.value, personal(olive.csrf));
+    const [mine] = await connections.list({ kind: 'personal' });
+    const otto = await login(app, 'otto');
+    expect((await get(app, `/connections/${mine!.id}/delete`, otto.cookie!.value)).statusCode).toBe(
+      404,
+    );
   });
 });

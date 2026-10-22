@@ -12,14 +12,16 @@ import {
 import { encryptSecret } from '../secrets.js';
 import { SinkError } from '../sinks/port.js';
 import {
-  editPage,
+  connectionsPage,
   instanceLabel,
-  listPage,
   message,
   PAGE_CSS,
   type FormValues,
+  type ListItem,
   type PersonalDraft,
+  type Selected,
   type Shell,
+  type Tab,
 } from './html.js';
 import { PAGE_JS } from './script.js';
 import {
@@ -102,9 +104,12 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     html(reply, 401, message(shell(undefined, 'ended'), title, text));
   const html = (reply: FastifyReply, code: number, body: string) =>
     reply.code(code).type('text/html; charset=utf-8').send(body);
-  /** Back to the list after a change, which the list then tells CT Studio about. */
-  const toList = (reply: FastifyReply) =>
-    reply.code(303).header('location', `${base}/connections?changed=1`).send();
+  /** After a change, back to `path` (under /connections), which then tells CT Studio. */
+  const changedTo = (reply: FastifyReply, path: string) =>
+    reply
+      .code(303)
+      .header('location', `${base}/connections${path}${path.includes('?') ? '&' : '?'}changed=1`)
+      .send();
 
   /** The sinks of one connection kind that ask for credentials: their describe, by id. */
   const sinksOf = async (kind: Connection['kind']): Promise<Record<string, SinkDescribe>> => {
@@ -143,37 +148,71 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   };
   const isAdmin = (s: PageSession) => s.user.role === 'admin';
 
-  const renderList = async (
-    reply: FastifyReply,
-    s: PageSession,
-    code = 200,
-    extra: {
-      notice?: { text: string; error: boolean };
-      draft?: FormValues;
-      personalDraft?: PersonalDraft;
-      /** A connection was added, saved, tested or deleted: CT Studio refreshes its lists. */
-      changed?: boolean;
-    } = {},
-  ) =>
-    html(
+  /** What the page shows: a tab, and in it a connection, an add form or a delete question. */
+  interface View {
+    tab?: Tab;
+    /** The connection to show (its tab follows from its kind). */
+    show?: Connection;
+    /** Ask before deleting `show`. */
+    confirm?: boolean;
+    add?: { sinkId?: string; draft?: FormValues; personalDraft?: PersonalDraft };
+    /** What a refused edit of `show` sent, shown again. */
+    draft?: FormValues;
+    notice?: { text: string; error: boolean };
+    /** A connection was added, saved, tested or deleted: CT Studio refreshes its lists. */
+    changed?: boolean;
+  }
+
+  const tabOf = (c: Connection): Tab => (c.kind === 'shared' ? 'shared' : 'mine');
+
+  const renderPage = async (reply: FastifyReply, s: PageSession, code: number, v: View) => {
+    const tabs: Tab[] = isAdmin(s) ? ['mine', 'shared'] : ['mine'];
+    const wanted = v.show ? tabOf(v.show) : v.tab;
+    const tab: Tab = wanted && tabs.includes(wanted) ? wanted : 'mine';
+    const sinks = tab === 'shared' ? await sharedSinks() : await personalSinks();
+    const listed =
+      tab === 'shared'
+        ? await app.deps.connections.list({ kind: 'shared' })
+        : await app.deps.connections.list({ kind: 'personal', owner: s.user.id });
+    const builtIn = (c: Connection) => c.id === INTERNAL_CONNECTION_ID;
+    // The built-in connection last: the ones people made come first.
+    const ordered = [...listed.filter((c) => !builtIn(c)), ...listed.filter(builtIn)];
+    const list: ListItem[] = ordered.map((c) => ({
+      id: c.id,
+      name: c.name,
+      system: sinks[c.sinkId]?.name ?? c.sinkId,
+      builtIn: builtIn(c),
+    }));
+    const shown = v.add ? undefined : (v.show ?? ordered[0]);
+    let selected: Selected;
+    if (shown && v.confirm) selected = { kind: 'confirm-delete', connection: shown };
+    else if (shown) {
+      selected = {
+        kind: 'connection',
+        connection: shown,
+        sinks,
+        builtIn: builtIn(shown),
+        ...(v.draft ? { draft: v.draft } : {}),
+      };
+    } else selected = { kind: 'add', sinks, ...v.add };
+    return html(
       reply,
       code,
-      listPage(shell(s, extra.changed ? 'changed' : undefined), {
-        personal: await app.deps.connections.list({ kind: 'personal', owner: s.user.id }),
-        personalSinks: await personalSinks(),
-        shared: isAdmin(s)
-          ? {
-              connections: await app.deps.connections.list({ kind: 'shared' }),
-              sinks: await sharedSinks(),
-              builtIn: INTERNAL_CONNECTION_ID,
-              ...(extra.draft ? { draft: extra.draft } : {}),
-            }
-          : null,
+      connectionsPage(shell(s, v.changed ? 'changed' : undefined), {
+        tab,
+        tabs,
+        list,
+        ...(shown ? { selectedId: shown.id } : {}),
+        selected,
         csrf: s.csrf,
-        ...(extra.notice ? { notice: extra.notice } : {}),
-        ...(extra.personalDraft ? { personalDraft: extra.personalDraft } : {}),
+        ...(v.notice ? { notice: v.notice } : {}),
       }),
     );
+  };
+
+  const query = (req: FastifyRequest) => req.query as Record<string, unknown>;
+  const tabParam = (req: FastifyRequest): Tab | undefined =>
+    query(req).tab === 'shared' ? 'shared' : query(req).tab === 'mine' ? 'mine' : undefined;
 
   /** A form's values for a sink: id, name and its declared non-secret fields (blanks dropped). */
   const valuesOf = (form: Form, sink: SinkDescribe, id: string, sinkId: string): FormValues => ({
@@ -258,16 +297,29 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   app.get('/connections', { schema: { hide: true } }, async (req, reply) => {
     const s = session(req);
     if (!s) return ended(reply, 'Session ended', ENDED);
-    return renderList(reply, s, 200, {
-      changed: (req.query as Record<string, unknown>).changed === '1',
+    const tab = tabParam(req);
+    return renderPage(reply, s, 200, {
+      ...(tab ? { tab } : {}),
+      changed: query(req).changed === '1',
+    });
+  });
+
+  app.get('/connections/new', { schema: { hide: true } }, async (req, reply) => {
+    const s = session(req);
+    if (!s) return ended(reply, 'Session ended', ENDED);
+    const sink = query(req).sink;
+    const tab = tabParam(req);
+    return renderPage(reply, s, 200, {
+      ...(tab ? { tab } : {}),
+      add: typeof sink === 'string' ? { sinkId: sink } : {},
     });
   });
 
   /**
-   * The connection this session may change: its own personal one, or (for an admin) a shared
-   * one other than the built-in. Anything else is not found, so nobody learns another user's ids.
+   * The connection this session may see: its own personal one, or (for an admin) a shared one.
+   * Anything else is not found, so nobody learns another user's ids.
    */
-  const editable = async (
+  const visible = async (
     reply: FastifyReply,
     s: PageSession,
     id: string,
@@ -278,6 +330,17 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       void html(reply, 404, message(shell(s), 'Not found', `There is no connection ${id}.`));
       return null;
     }
+    return c;
+  };
+
+  /** The connection this session may change: one it sees, other than the built-in. */
+  const editable = async (
+    reply: FastifyReply,
+    s: PageSession,
+    id: string,
+  ): Promise<Connection | null> => {
+    const c = await visible(reply, s, id);
+    if (!c) return null;
     if (id === INTERNAL_CONNECTION_ID) {
       void html(
         reply,
@@ -293,13 +356,17 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   app.get('/connections/:id', { schema: { hide: true } }, async (req, reply) => {
     const s = session(req);
     if (!s) return ended(reply, 'Session ended', ENDED);
+    const c = await visible(reply, s, (req.params as { id: string }).id);
+    if (!c) return reply;
+    return renderPage(reply, s, 200, { show: c, changed: query(req).changed === '1' });
+  });
+
+  app.get('/connections/:id/delete', { schema: { hide: true } }, async (req, reply) => {
+    const s = session(req);
+    if (!s) return ended(reply, 'Session ended', ENDED);
     const c = await editable(reply, s, (req.params as { id: string }).id);
     if (!c) return reply;
-    return html(
-      reply,
-      200,
-      editPage(shell(s), { connection: c, csrf: s.csrf, sinks: await sinksFor(c) }),
-    );
+    return renderPage(reply, s, 200, { show: c, confirm: true });
   });
 
   /** Adds the session user's personal connection to a sink instance, tested first. */
@@ -308,7 +375,11 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     const sinkId = form.sinkId ?? '';
     const sink = sinks[sinkId];
     if (!sink) {
-      return renderList(reply, s, 422, { notice: { text: 'Choose a system', error: true } });
+      return renderPage(reply, s, 422, {
+        tab: 'mine',
+        add: {},
+        notice: { text: 'Choose a system', error: true },
+      });
     }
     const instanceId = sink.instances.length ? (form.instanceId ?? '') : null;
     const values = valuesOf(form, sink, '', sinkId);
@@ -319,7 +390,11 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       fields: values.fields,
     };
     const refuse = (code: number, text: string) =>
-      renderList(reply, s, code, { notice: { text, error: true }, personalDraft });
+      renderPage(reply, s, code, {
+        tab: 'mine',
+        add: { sinkId, personalDraft },
+        notice: { text, error: true },
+      });
     if (instanceId !== null && !sink.instances.some((i) => i.id === instanceId)) {
       return refuse(422, 'Choose an instance.');
     }
@@ -341,9 +416,10 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     if (failure && form.saveUntested !== 'on') {
       return refuse(422, `The test failed: ${failure}. Nothing was saved.`);
     }
+    const id = `${PERSONAL_ID_PREFIX}${randomBytes(8).toString('hex')}`;
     try {
       await app.deps.connections.put({
-        id: `${PERSONAL_ID_PREFIX}${randomBytes(8).toString('hex')}`,
+        id,
         kind: 'personal',
         owner: s.user.id,
         sinkId,
@@ -359,7 +435,9 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       if (err instanceof ConnectionConflict) return refuse(409, taken);
       throw err;
     }
-    return renderList(reply, s, 200, {
+    const saved = await app.deps.connections.get(id);
+    return renderPage(reply, s, 200, {
+      ...(saved ? { show: saved } : { tab: 'mine' }),
       changed: true,
       notice: failure
         ? { text: `${values.name}: saved untested: ${failure}.`, error: true }
@@ -376,11 +454,21 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     const sinks = await sharedSinks();
     const sinkId = form.sinkId ?? Object.keys(sinks)[0] ?? '';
     const sink = sinks[sinkId];
-    if (!sink) return renderList(reply, s, 422, { notice: { text: 'Choose a kind', error: true } });
+    if (!sink) {
+      return renderPage(reply, s, 422, {
+        tab: 'shared',
+        add: {},
+        notice: { text: 'Choose a kind', error: true },
+      });
+    }
     const id = (form.id ?? '').trim();
     const draft = valuesOf(form, sink, id, sinkId);
     const refuse = (code: number, text: string) =>
-      renderList(reply, s, code, { notice: { text, error: true }, draft });
+      renderPage(reply, s, code, {
+        tab: 'shared',
+        add: { sinkId, draft },
+        notice: { text, error: true },
+      });
     if (id.startsWith(PERSONAL_ID_PREFIX)) {
       return refuse(422, `Ids starting ${PERSONAL_ID_PREFIX} are kept for personal connections.`);
     }
@@ -417,7 +505,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       statusReason: failure,
       secretEnc: secret ? encryptSecret(secret, config.secrets) : null,
     });
-    return toList(reply);
+    return changedTo(reply, `/${encodeURIComponent(id)}`);
   });
 
   app.post('/connections/:id', { schema: { hide: true } }, async (req, reply) => {
@@ -427,10 +515,12 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     if (!c) return reply;
     const sinks = await sinksFor(c);
     const sink = sinks[c.sinkId];
-    if (!sink)
-      return renderList(reply, s, 422, {
+    if (!sink) {
+      return renderPage(reply, s, 422, {
+        show: c,
         notice: { text: 'The sink is not available', error: true },
       });
+    }
     const form = formOf(req.body);
     const draft = valuesOf(form, sink, c.id, c.sinkId);
     const secretField = sink.credentialFields.find((f) => f.secret);
@@ -441,17 +531,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
         ? { ...draft.fields, [ACCESS_KEY_ENV]: c.fields[ACCESS_KEY_ENV] }
         : draft.fields;
     const refuse = async (text: string) =>
-      html(
-        reply,
-        422,
-        editPage(shell(s), {
-          connection: c,
-          csrf: s.csrf,
-          sinks,
-          notice: { text, error: true },
-          draft,
-        }),
-      );
+      renderPage(reply, s, 422, { show: c, draft, notice: { text, error: true } });
     if (!draft.name) return refuse('Enter a name.');
     if (c.kind === 'personal' && draft.name.length > NAME_MAX) {
       return refuse(`A name is ${NAME_MAX} characters at most.`);
@@ -481,7 +561,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       statusReason: failure,
       ...(secret ? { secretEnc: encryptSecret(secret, config.secrets) } : {}),
     });
-    return toList(reply);
+    return changedTo(reply, `/${encodeURIComponent(c.id)}`);
   });
 
   app.post('/connections/:id/test', { schema: { hide: true } }, async (req, reply) => {
@@ -504,7 +584,8 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     await app.deps.connections.mark(c.id, failure ? 'needs_attention' : 'ok', failure);
-    return renderList(reply, s, 200, {
+    return renderPage(reply, s, 200, {
+      show: (await app.deps.connections.get(c.id)) ?? c,
       changed: true,
       notice: failure
         ? { text: `${c.name}: the test failed: ${failure}.`, error: true }
@@ -522,13 +603,14 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       const users = (await app.deps.targets.list())
         .filter((t) => t.connectionId === c.id)
         .map((t) => t.label);
-      return renderList(reply, s, 409, {
+      return renderPage(reply, s, 409, {
+        show: c,
         notice: {
           text: `${c.name} is used by ${users.join(', ')}. Change those targets first.`,
           error: true,
         },
       });
     }
-    return toList(reply);
+    return changedTo(reply, `?tab=${tabOf(c)}`);
   });
 };
