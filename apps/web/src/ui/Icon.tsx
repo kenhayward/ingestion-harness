@@ -203,6 +203,7 @@ const PATHS = {
   code: <path d="M9 7l-5 5 5 5M15 7l5 5-5 5" />,
   play: <path d="M8 5v14l11-7z" />,
   back: <path d="M15 6l-6 6 6 6" />,
+  swap: <path d="M4 8h15l-3.5-3.5M20 16H5l3.5 3.5" />,
   lock: (
     <>
       <rect x="6" y="11" width="12" height="9" rx="2" />
