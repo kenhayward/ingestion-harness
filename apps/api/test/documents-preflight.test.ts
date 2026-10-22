@@ -22,7 +22,7 @@ async function setup() {
       id: 'letter',
       version: 1,
       name: 'Letter',
-      document: { sections: [{ id: 'all', anchor: '\A' }] },
+      document: { sections: [{ id: 'all', anchor: '\\A' }] },
       outputs: { fields: [{ id: 'sender', type: 'text' }] },
       pipeline: [{ type: 'extract', id: 'head', fields: ['sender'], sections: ['all'] }],
       delivery: { publishTo: ['default', 'fake-target'] },
