@@ -1,16 +1,23 @@
+import { randomBytes } from 'node:crypto';
 import { parse as parseQuery } from 'node:querystring';
 import type { SinkDescribe } from '@ih/bridge-contract';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
-import { connectionProblem, INTERNAL_CONNECTION_ID, type Connection } from '../connections/repo.js';
+import {
+  ConnectionConflict,
+  connectionProblem,
+  INTERNAL_CONNECTION_ID,
+  type Connection,
+} from '../connections/repo.js';
 import { encryptSecret } from '../secrets.js';
 import { SinkError } from '../sinks/port.js';
 import {
   editPage,
-  laterPage,
+  instanceLabel,
   listPage,
   message,
   PAGE_CSS,
   type FormValues,
+  type PersonalDraft,
   type Shell,
 } from './html.js';
 import {
@@ -28,6 +35,8 @@ const EXPIRED = 'This link has expired. Open Connections again from CT Studio.';
 const ENDED = 'Your session has ended. Open Connections again from CT Studio.';
 /** A non-secret S3 field naming the variable its access key id is read from. */
 const ACCESS_KEY_ENV = 'accessKeyIdEnv';
+/** The longest name a person may give a connection. */
+const NAME_MAX = 80;
 
 type Form = Record<string, string>;
 
@@ -50,7 +59,11 @@ const formOf = (body: unknown): Form =>
 /**
  * The bridge's connections page: server-rendered, no client script, reached through a one-time
  * handoff code CT Studio mints (`/connections/start?code=`), then a signed `HttpOnly` session
- * cookie with a CSRF token every form carries. Phase 2 serves admins' shared connections only.
+ * cookie with a CSRF token every form carries.
+ *
+ * Everyone manages their own personal connections here (for the sinks whose describe says
+ * `personal`); admins also manage the shared ones. A personal connection is reached by its owner
+ * only: anyone else, an admin included, gets 404.
  */
 export const pageRoutes: FastifyPluginAsync = async (app) => {
   const { config } = app.deps;
@@ -77,52 +90,70 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   const toList = (reply: FastifyReply) =>
     reply.code(303).header('location', `${base}/connections`).send();
 
-  /** The shared-connection sinks: their describe, by id. */
-  const sharedSinks = async (): Promise<Record<string, SinkDescribe>> => {
+  /** The sinks of one connection kind that ask for credentials: their describe, by id. */
+  const sinksOf = async (kind: Connection['kind']): Promise<Record<string, SinkDescribe>> => {
     const out: Record<string, SinkDescribe> = {};
     for (const id of app.deps.sinks.ids()) {
       try {
         const d = await app.deps.sinks.get(id)!.describe();
-        if (d.connectionKind === 'shared' && d.credentialFields.length) out[id] = d;
+        if (d.connectionKind === kind && d.credentialFields.length) out[id] = d;
       } catch {
         // A sink that cannot describe itself offers nothing to connect to now.
       }
     }
     return out;
   };
+  const sharedSinks = () => sinksOf('shared');
+  const personalSinks = () => sinksOf('personal');
 
   const session = (req: FastifyRequest) =>
     openSession(cookieOf(req, SESSION_COOKIE), key, Date.now());
 
-  /** The admin session of a form post with its token; otherwise the refusal is sent. */
-  const adminPost = (req: FastifyRequest, reply: FastifyReply): PageSession | null => {
+  const notAllowed = (reply: FastifyReply, s: PageSession) =>
+    html(reply, 403, message(shell(s), 'Not allowed', 'You cannot change connections.'));
+
+  /** The session of a form post with its token; otherwise the refusal is sent. */
+  const formPost = (req: FastifyRequest, reply: FastifyReply): PageSession | null => {
     const s = session(req);
     if (!s) {
       void html(reply, 401, message(shell(), 'Session ended', ENDED));
       return null;
     }
-    if (s.user.role !== 'admin' || !csrfMatches(s, formOf(req.body).csrf)) {
-      void html(reply, 403, message(shell(s), 'Not allowed', 'You cannot change connections.'));
+    if (!csrfMatches(s, formOf(req.body).csrf)) {
+      void notAllowed(reply, s);
       return null;
     }
     return s;
   };
+  const isAdmin = (s: PageSession) => s.user.role === 'admin';
 
   const renderList = async (
     reply: FastifyReply,
     s: PageSession,
     code = 200,
-    extra: { notice?: { text: string; error: boolean }; draft?: FormValues } = {},
+    extra: {
+      notice?: { text: string; error: boolean };
+      draft?: FormValues;
+      personalDraft?: PersonalDraft;
+    } = {},
   ) =>
     html(
       reply,
       code,
       listPage(shell(s), {
-        connections: await app.deps.connections.list({ kind: 'shared' }),
+        personal: await app.deps.connections.list({ kind: 'personal', owner: s.user.id }),
+        personalSinks: await personalSinks(),
+        shared: isAdmin(s)
+          ? {
+              connections: await app.deps.connections.list({ kind: 'shared' }),
+              sinks: await sharedSinks(),
+              builtIn: INTERNAL_CONNECTION_ID,
+              ...(extra.draft ? { draft: extra.draft } : {}),
+            }
+          : null,
         csrf: s.csrf,
-        sinks: await sharedSinks(),
-        builtIn: INTERNAL_CONNECTION_ID,
-        ...extra,
+        ...(extra.notice ? { notice: extra.notice } : {}),
+        ...(extra.personalDraft ? { personalDraft: extra.personalDraft } : {}),
       }),
     );
 
@@ -138,19 +169,31 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     ),
   });
 
-  /** Runs the sink's connection test; the failure's message, or null when it passed. */
+  /**
+   * Runs the sink's connection test against an instance (`''` for a shared sink): who the sink
+   * says the credential is, or the failure's message.
+   */
   const tryCredential = async (
     sinkId: string,
+    instanceId: string | null,
     credential: Record<string, string>,
-  ): Promise<string | null> => {
+  ): Promise<{ failure: string | null; identity: string | null }> => {
     try {
-      await app.deps.sinks.get(sinkId)!.testConnection({ instanceId: '', credential });
-      return null;
+      const { identity } = await app.deps.sinks
+        .get(sinkId)!
+        .testConnection({ instanceId: instanceId ?? '', credential });
+      return { failure: null, identity };
     } catch (err) {
-      if (err instanceof SinkError) return err.error.message;
-      return 'the test could not run';
+      if (err instanceof SinkError) return { failure: err.error.message, identity: null };
+      return { failure: 'the test could not run', identity: null };
     }
   };
+
+  /** What a passing test of a connection says. */
+  const connected = (c: { kind: Connection['kind']; name: string }, identity: string | null) =>
+    c.kind === 'personal' && identity
+      ? `${c.name}: connected as ${identity}.`
+      : `${c.name}: Connected.`;
 
   app.get('/connections/page.css', { schema: { hide: true } }, async (_req, reply) =>
     reply.type('text/css; charset=utf-8').send(PAGE_CSS),
@@ -191,16 +234,24 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   app.get('/connections', { schema: { hide: true } }, async (req, reply) => {
     const s = session(req);
     if (!s) return html(reply, 401, message(shell(), 'Session ended', ENDED));
-    if (s.user.role !== 'admin') return html(reply, 200, laterPage(shell(s)));
     return renderList(reply, s);
   });
 
-  /** The connection an admin may change: not the built-in one. */
+  /**
+   * The connection this session may change: its own personal one, or (for an admin) a shared
+   * one other than the built-in. Anything else is not found, so nobody learns another user's ids.
+   */
   const editable = async (
     reply: FastifyReply,
     s: PageSession,
     id: string,
   ): Promise<Connection | null> => {
+    const c = await app.deps.connections.get(id);
+    const mine = c?.kind === 'personal' && c.owner === s.user.id;
+    if (!mine && !(c?.kind === 'shared' && isAdmin(s))) {
+      void html(reply, 404, message(shell(s), 'Not found', `There is no connection ${id}.`));
+      return null;
+    }
     if (id === INTERNAL_CONNECTION_ID) {
       void html(
         reply,
@@ -209,31 +260,92 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       );
       return null;
     }
-    const c = await app.deps.connections.get(id);
-    if (!c || c.kind !== 'shared') {
-      void html(reply, 404, message(shell(s), 'Not found', `There is no connection ${id}.`));
-      return null;
-    }
     return c;
   };
+  const sinksFor = (c: Connection) => (c.kind === 'shared' ? sharedSinks() : personalSinks());
 
   app.get('/connections/:id', { schema: { hide: true } }, async (req, reply) => {
     const s = session(req);
     if (!s) return html(reply, 401, message(shell(), 'Session ended', ENDED));
-    if (s.user.role !== 'admin') return html(reply, 200, laterPage(shell(s)));
     const c = await editable(reply, s, (req.params as { id: string }).id);
     if (!c) return reply;
     return html(
       reply,
       200,
-      editPage(shell(s), { connection: c, csrf: s.csrf, sinks: await sharedSinks() }),
+      editPage(shell(s), { connection: c, csrf: s.csrf, sinks: await sinksFor(c) }),
     );
   });
 
+  /** Adds the session user's personal connection to a sink instance, tested first. */
+  const addPersonal = async (reply: FastifyReply, s: PageSession, form: Form) => {
+    const sinks = await personalSinks();
+    const sinkId = form.sinkId ?? '';
+    const sink = sinks[sinkId];
+    if (!sink) {
+      return renderList(reply, s, 422, { notice: { text: 'Choose a system', error: true } });
+    }
+    const instanceId = sink.instances.length ? (form.instanceId ?? '') : null;
+    const values = valuesOf(form, sink, '', sinkId);
+    const personalDraft = {
+      sinkId,
+      instanceId: instanceId ?? '',
+      name: values.name,
+      fields: values.fields,
+    };
+    const refuse = (code: number, text: string) =>
+      renderList(reply, s, code, { notice: { text, error: true }, personalDraft });
+    if (instanceId !== null && !sink.instances.some((i) => i.id === instanceId)) {
+      return refuse(422, 'Choose an instance.');
+    }
+    if (!values.name) return refuse(422, 'Enter a name.');
+    if (values.name.length > NAME_MAX)
+      return refuse(422, `A name is ${NAME_MAX} characters at most.`);
+    const place = instanceLabel(sink, instanceId) || sink.name;
+    const taken = `You already have a connection for ${place}: update that one.`;
+    if (await app.deps.connections.findPersonal(s.user.id, sinkId, instanceId)) {
+      return refuse(409, taken);
+    }
+    const secretField = sink.credentialFields.find((f) => f.secret);
+    const secret = secretField ? (form[secretField.id] ?? '') : '';
+    if (secretField && !secret) return refuse(422, `Enter the ${secretField.label.toLowerCase()}.`);
+    const { failure, identity } = await tryCredential(sinkId, instanceId, {
+      ...values.fields,
+      ...(secretField ? { [secretField.id]: secret } : {}),
+    });
+    if (failure && form.saveUntested !== 'on') {
+      return refuse(422, `The test failed: ${failure}. Nothing was saved.`);
+    }
+    try {
+      await app.deps.connections.put({
+        id: `u-${randomBytes(8).toString('hex')}`,
+        kind: 'personal',
+        owner: s.user.id,
+        sinkId,
+        instanceId,
+        name: values.name,
+        fields: values.fields,
+        secretEnv: null,
+        status: failure ? 'untested' : 'ok',
+        statusReason: failure,
+        secretEnc: secret ? encryptSecret(secret, config.secrets) : null,
+      });
+    } catch (err) {
+      if (err instanceof ConnectionConflict) return refuse(409, taken);
+      throw err;
+    }
+    return renderList(reply, s, 200, {
+      notice: failure
+        ? { text: `${values.name}: saved untested: ${failure}.`, error: true }
+        : { text: connected({ kind: 'personal', name: values.name }, identity), error: false },
+    });
+  };
+
   app.post('/connections', { schema: { hide: true } }, async (req, reply) => {
-    const s = adminPost(req, reply);
+    const s = formPost(req, reply);
     if (!s) return reply;
     const form = formOf(req.body);
+    if (form.kind === 'personal') return addPersonal(reply, s, form);
+    if (!isAdmin(s)) return notAllowed(reply, s);
     const sinks = await sharedSinks();
     const sinkId = form.sinkId ?? Object.keys(sinks)[0] ?? '';
     const sink = sinks[sinkId];
@@ -262,7 +374,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     };
     const problem = connectionProblem(record) ?? (draft.name ? null : 'Enter a name.');
     if (problem) return refuse(422, problem);
-    const failure = await tryCredential(sinkId, {
+    const { failure } = await tryCredential(sinkId, null, {
       ...draft.fields,
       ...(secretField ? { [secretField.id]: secret } : {}),
     });
@@ -279,11 +391,12 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/connections/:id', { schema: { hide: true } }, async (req, reply) => {
-    const s = adminPost(req, reply);
+    const s = formPost(req, reply);
     if (!s) return reply;
     const c = await editable(reply, s, (req.params as { id: string }).id);
     if (!c) return reply;
-    const sink = (await sharedSinks())[c.sinkId];
+    const sinks = await sinksFor(c);
+    const sink = sinks[c.sinkId];
     if (!sink)
       return renderList(reply, s, 422, {
         notice: { text: 'The sink is not available', error: true },
@@ -304,18 +417,21 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
         editPage(shell(s), {
           connection: c,
           csrf: s.csrf,
-          sinks: await sharedSinks(),
+          sinks,
           notice: { text, error: true },
           draft,
         }),
       );
     if (!draft.name) return refuse('Enter a name.');
+    if (c.kind === 'personal' && draft.name.length > NAME_MAX) {
+      return refuse(`A name is ${NAME_MAX} characters at most.`);
+    }
     let failure: string | null;
     try {
       const stored = (await app.deps.credentials.resolve(c.id, sink)) ?? {};
       const credential = { ...stored, ...draft.fields };
       if (secretField && secret) credential[secretField.id] = secret;
-      failure = await tryCredential(c.sinkId, credential);
+      ({ failure } = await tryCredential(c.sinkId, c.instanceId, credential));
     } catch (err) {
       failure = err instanceof SinkError ? err.error.message : 'the test could not run';
     }
@@ -324,8 +440,8 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     }
     await app.deps.connections.put({
       id: c.id,
-      kind: 'shared',
-      owner: null,
+      kind: c.kind,
+      owner: c.owner,
       sinkId: c.sinkId,
       instanceId: c.instanceId,
       name: draft.name,
@@ -339,18 +455,20 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/connections/:id/test', { schema: { hide: true } }, async (req, reply) => {
-    const s = adminPost(req, reply);
+    const s = formPost(req, reply);
     if (!s) return reply;
     const c = await editable(reply, s, (req.params as { id: string }).id);
     if (!c) return reply;
-    const sink = (await sharedSinks())[c.sinkId];
+    const sink = (await sinksFor(c))[c.sinkId];
     let failure: string | null = 'the sink is not available';
+    let identity: string | null = null;
     if (sink) {
       try {
-        failure = await tryCredential(
+        ({ failure, identity } = await tryCredential(
           c.sinkId,
+          c.instanceId,
           (await app.deps.credentials.resolve(c.id, sink)) ?? {},
-        );
+        ));
       } catch (err) {
         failure = err instanceof SinkError ? err.error.message : 'the test could not run';
       }
@@ -359,12 +477,12 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     return renderList(reply, s, 200, {
       notice: failure
         ? { text: `${c.name}: the test failed: ${failure}.`, error: true }
-        : { text: `${c.name}: Connected.`, error: false },
+        : { text: connected(c, identity), error: false },
     });
   });
 
   app.post('/connections/:id/delete', { schema: { hide: true } }, async (req, reply) => {
-    const s = adminPost(req, reply);
+    const s = formPost(req, reply);
     if (!s) return reply;
     const c = await editable(reply, s, (req.params as { id: string }).id);
     if (!c) return reply;

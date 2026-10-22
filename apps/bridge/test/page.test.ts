@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryConnectionRepo } from '../src/connections/repo.js';
 import { MemoryObjectStore } from '../src/s3/store.js';
 import { encryptSecret } from '../src/secrets.js';
+import { FakeSink } from '../src/sinks/fake.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
 import { S3Sink } from '../src/sinks/s3.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
@@ -26,8 +27,25 @@ class OneShotProducer implements ProducerClient {
 
 const admin: HandoffUser = { id: 'u1', name: 'Ada', email: 'ada@example.com', role: 'admin' };
 const designer: HandoffUser = { id: 'u2', name: 'Dee', email: null, role: 'designer' };
+const olive: HandoffUser = { id: 'u3', name: 'Olive', email: null, role: 'operator' };
+const otto: HandoffUser = { id: 'u4', name: 'Otto', email: null, role: 'operator' };
 
-async function setup(store = new MemoryObjectStore()) {
+/** A personal sink with two instances, its password secret. */
+const acmeSink = () =>
+  new FakeSink({
+    name: 'Acme',
+    connectionKind: 'personal',
+    instances: [
+      { id: 'sandbox', label: 'Sandbox' },
+      { id: 'prod', label: 'Production' },
+    ],
+    credentialFields: [
+      { id: 'username', label: 'Username', secret: false },
+      { id: 'password', label: 'Password', secret: true },
+    ],
+  });
+
+async function setup(store = new MemoryObjectStore(), acme: FakeSink | null = null) {
   const targets = new MemoryTargetRepo();
   const connections = new MemoryConnectionRepo(targets);
   await connections.put(connection('internal', { name: 'This deployment', fields: {} }));
@@ -44,11 +62,13 @@ async function setup(store = new MemoryObjectStore()) {
   const app = await testBridge({
     targets,
     connections,
-    sinks: new MapSinkRegistry({ s3 }),
+    sinks: new MapSinkRegistry(acme ? { s3, acme } : { s3 }),
     producer: new OneShotProducer(
       new Map([
         ['good', admin],
         ['designer', designer],
+        ['olive', olive],
+        ['otto', otto],
       ]),
     ),
   });
@@ -150,14 +170,20 @@ describe('connections page', () => {
     expect(page.body).not.toContain(SECRET);
   });
 
-  it('shows non-admins that personal connections come later, and refuses them shared ones', async () => {
+  it('refuses non-admins the shared connections', async () => {
     const { app, connections } = await setup();
-    const { page, cookie } = await login(app, 'designer');
-    expect(page.body).toContain('Personal connections arrive later');
+    const { page, cookie, csrf } = await login(app, 'designer');
+    expect(page.body).toContain('Your connections');
     expect(page.body).not.toContain('This deployment');
-    const res = await post(app, '/connections', cookie!.value, newConnection('anything'));
+    expect(page.body).not.toContain('Personal connections arrive later');
+    const res = await post(app, '/connections', cookie!.value, newConnection(csrf));
     expect(res.statusCode).toBe(403);
     expect(await connections.get('finance')).toBeNull();
+    const edit = await app.inject({
+      url: '/connections/internal',
+      cookies: { bridge_session: cookie!.value },
+    });
+    expect(edit.statusCode).toBe(404);
   });
 
   it('a POST without a CSRF token is 403', async () => {
@@ -299,5 +325,170 @@ describe('connections page', () => {
       );
       expect(res.headers['cache-control']).toBe('no-store');
     }
+  });
+});
+
+const PASSWORD = 'the-personal-password-9';
+const personal = (csrf: string, over: Record<string, string> = {}) => ({
+  csrf,
+  kind: 'personal',
+  sinkId: 'acme',
+  instanceId: 'sandbox',
+  name: 'My sandbox login',
+  username: 'alice',
+  password: PASSWORD,
+  ...over,
+});
+
+describe('personal connections on the page', () => {
+  async function added(code = 'olive') {
+    const sink = acmeSink();
+    const { app, connections } = await setup(new MemoryObjectStore(), sink);
+    const { cookie, csrf } = await login(app, code);
+    const res = await post(app, '/connections', cookie!.value, personal(csrf));
+    const [mine] = await connections.list({ kind: 'personal' });
+    return { app, connections, sink, cookie: cookie!.value, csrf, res, mine: mine! };
+  }
+
+  it('an operator sees their own connections and no shared table', async () => {
+    const { app } = await setup(new MemoryObjectStore(), acmeSink());
+    const { page } = await login(app, 'olive');
+    expect(page.body).toContain('Your connections');
+    expect(page.body).toContain('Add a connection to Acme');
+    expect(page.body).toContain('<option value="prod">Production</option>');
+    expect(page.body).not.toContain('Shared connections');
+    expect(page.body).not.toContain('This deployment');
+  });
+
+  it('adds one: tested against its instance, owned, an id made up, the password never shown', async () => {
+    const { sink, res, mine } = await added();
+    expect(res.statusCode).toBe(200);
+    expect(sink.tested).toEqual([
+      { instanceId: 'sandbox', credential: { username: 'alice', password: PASSWORD } },
+    ]);
+    expect(mine).toMatchObject({
+      kind: 'personal',
+      owner: 'u3',
+      sinkId: 'acme',
+      instanceId: 'sandbox',
+      name: 'My sandbox login',
+      fields: { username: 'alice' },
+      status: 'ok',
+      secretSet: true,
+    });
+    expect(mine.id).toMatch(/^u-[0-9a-f]{16}$/);
+    expect(res.body).toContain('My sandbox login: connected as fake:alice.');
+    expect(res.body).not.toContain(PASSWORD);
+  });
+
+  it('a failing test saves nothing, unless saved untested with the reason', async () => {
+    const sink = acmeSink().scriptTest('credential_rejected', 'credential_rejected');
+    const { app, connections } = await setup(new MemoryObjectStore(), sink);
+    const { cookie, csrf } = await login(app, 'olive');
+    const refused = await post(app, '/connections', cookie!.value, personal(csrf));
+    expect(refused.statusCode).toBe(422);
+    expect(refused.body).toContain(
+      'The test failed: scripted credential_rejected. Nothing was saved.',
+    );
+    expect(refused.body).not.toContain(PASSWORD);
+    expect(await connections.list({ kind: 'personal' })).toEqual([]);
+    await post(app, '/connections', cookie!.value, personal(csrf, { saveUntested: 'on' }));
+    expect(await connections.list({ kind: 'personal' })).toMatchObject([
+      { status: 'untested', statusReason: 'scripted credential_rejected' },
+    ]);
+  });
+
+  it('refuses a second connection for the same instance, and an unknown instance', async () => {
+    const { app, connections, cookie, csrf } = await added();
+    const again = await post(app, '/connections', cookie, personal(csrf, { name: 'Again' }));
+    expect(again.statusCode).toBe(409);
+    expect(again.body).toContain('You already have a connection for Sandbox: update that one.');
+    const unknown = await post(app, '/connections', cookie, personal(csrf, { instanceId: 'nope' }));
+    expect(unknown.statusCode).toBe(422);
+    const prod = await post(app, '/connections', cookie, personal(csrf, { instanceId: 'prod' }));
+    expect(prod.statusCode).toBe(200);
+    expect(await connections.list({ kind: 'personal' })).toHaveLength(2);
+  });
+
+  it('update with a blank password keeps it; rename, re-test and delete work for the owner', async () => {
+    const { app, connections, sink, cookie, csrf, mine } = await added();
+    const updated = await post(app, `/connections/${mine.id}`, cookie, {
+      csrf,
+      sinkId: 'acme',
+      name: 'Renamed',
+      username: 'alice2',
+      password: '',
+    });
+    expect(updated.statusCode).toBe(303);
+    expect(sink.tested.at(-1)).toEqual({
+      instanceId: 'sandbox',
+      credential: { username: 'alice2', password: PASSWORD },
+    });
+    expect(await connections.get(mine.id)).toMatchObject({
+      name: 'Renamed',
+      fields: { username: 'alice2' },
+      owner: 'u3',
+      kind: 'personal',
+      instanceId: 'sandbox',
+    });
+    const tested = await post(app, `/connections/${mine.id}/test`, cookie, { csrf });
+    expect(tested.body).toContain('Renamed: connected as fake:alice2.');
+    await post(app, `/connections/${mine.id}/delete`, cookie, { csrf });
+    expect(await connections.get(mine.id)).toBeNull();
+  });
+
+  it('nobody else reaches it: another operator and an admin get 404, and it is unchanged', async () => {
+    const { app, connections, mine } = await added();
+    for (const code of ['otto', 'good']) {
+      const { cookie, csrf } = await login(app, code);
+      const seen = await app.inject({
+        url: `/connections/${mine.id}`,
+        cookies: { bridge_session: cookie!.value },
+      });
+      expect(seen.statusCode).toBe(404);
+      for (const path of ['', '/test', '/delete']) {
+        const res = await post(app, `/connections/${mine.id}${path}`, cookie!.value, {
+          csrf,
+          sinkId: 'acme',
+          name: 'Taken over',
+          username: 'mallory',
+          password: 'other',
+        });
+        expect(res.statusCode).toBe(404);
+      }
+    }
+    expect(await connections.get(mine.id)).toMatchObject({
+      name: 'My sandbox login',
+      status: 'ok',
+    });
+  });
+
+  it('an admin sees their own personal connections and the shared table, nobody else’s', async () => {
+    const { app } = await added();
+    const { page, cookie, csrf } = await login(app, 'good');
+    expect(page.body).toContain('Shared connections');
+    expect(page.body).not.toContain('My sandbox login');
+    await post(app, '/connections', cookie!.value, personal(csrf, { name: 'Ada sandbox' }));
+    const again = await app.inject({
+      url: '/connections',
+      cookies: { bridge_session: cookie!.value },
+    });
+    expect(again.body).toContain('Ada sandbox');
+    expect(again.body).not.toContain('My sandbox login');
+  });
+
+  it('with no personal sink, says so and offers no form', async () => {
+    const { app } = await setup();
+    const { page } = await login(app, 'olive');
+    expect(page.body).toContain('No system here uses personal connections yet.');
+    expect(page.body).not.toContain('name="kind" value="personal"');
+  });
+
+  it('a personal POST needs the CSRF token', async () => {
+    const { app, connections } = await setup(new MemoryObjectStore(), acmeSink());
+    const { cookie } = await login(app, 'olive');
+    const res = await post(app, '/connections', cookie!.value, personal('forged'));
+    expect(res.statusCode).toBe(403);
+    expect(await connections.list({ kind: 'personal' })).toEqual([]);
   });
 });
