@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useConnectionsVersion } from './connections.js';
 import type { PublishTargetView, SinkInfo } from '@ih/shared';
 import type { Api, Me } from '../api/client.js';
 import { Icon } from '../ui/Icon.js';
@@ -75,6 +76,8 @@ export function PublishedOutputsPage({
   const [adding, setAdding] = useState(false);
   const [sinks, setSinks] = useState<SinkInfo[]>([]);
   const isAdmin = me.role === 'admin';
+  // A change on the bridge's connections page: targets show their connections' status.
+  const version = useConnectionsVersion();
 
   const load = useCallback(async () => {
     try {
@@ -88,7 +91,7 @@ export function PublishedOutputsPage({
 
   useEffect(() => {
     if (isAdmin) void load();
-  }, [isAdmin, load]);
+  }, [isAdmin, load, version]);
 
   if (!isAdmin) return <p>Admins only.</p>;
 
@@ -98,7 +101,7 @@ export function PublishedOutputsPage({
         Where published outputs are delivered. A recipe names its publishing target on General, so
         what a recipe delivers to changes only with a new version. .env sets the default target
         once; what you change here wins. Keys for external targets are kept as connections on the
-        delivery bridge: Manage connections opens its page in a new tab.
+        delivery bridge: Manage connections opens its page.
       </p>
       <InSlot slot={actions}>
         <button

@@ -3,6 +3,7 @@ import type { MyConnection, MyConnections } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { HelpButton } from '../ui/Help.js';
 import { Icon } from '../ui/Icon.js';
+import { useConnectionsVersion } from './connections.js';
 
 const STATUS: Record<MyConnection['status'], string> = {
   ok: 'OK',
@@ -16,12 +17,14 @@ const when = (iso: string) => iso.slice(0, 16).replace('T', ' ');
 /**
  * Profile's Connections tab: the signed-in user's own logins to the systems CT Studio delivers
  * to, as the delivery bridge summarises them (never a credential). They are added and changed on
- * the bridge's connections page, which Manage connections opens in a new tab.
+ * the bridge's connections page, which Manage connections opens (a modal, or a new tab); a
+ * change made there reads them again.
  */
 export function ProfileConnections({ api }: { api: Api }) {
   const [mine, setMine] = useState<MyConnections | null>(null);
   const [failed, setFailed] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
+  const version = useConnectionsVersion();
 
   useEffect(() => {
     let live = true;
@@ -32,7 +35,7 @@ export function ProfileConnections({ api }: { api: Api }) {
     return () => {
       live = false;
     };
-  }, [api]);
+  }, [api, version]);
 
   const manage = async () => {
     setOpening(null);

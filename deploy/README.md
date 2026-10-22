@@ -99,18 +99,31 @@ targets, pulling them when the API starts and after a restore. `deploy.sh` runs 
   `BRIDGE_SECRETS_KEY_PREVIOUS`, set a new one and redeploy; connections saved again are
   re-encrypted under the new key.
 
-**The connections page.** Admins add, test and rotate S3 credentials on the bridge's own page
-(Administration > Published outputs > *Manage connections*, which opens it in a new tab with a
-one-time link). Browsers reach it in one of two ways; set `BRIDGE_PUBLIC_URL` to match:
+**The connections page.** Everyone manages their own connections, and admins the shared ones,
+on the bridge's own page (*Manage connections* in Profile, Published outputs and the target
+browser, through a one-time link). Browsers reach it in one of two ways; set `BRIDGE_PUBLIC_URL`
+to match:
 
-- **Under this app** (default, blank `BRIDGE_PUBLIC_URL` = `http://localhost:APP_PORT/bridge`):
-  nginx forwards only `/bridge/connections` to the bridge. Behind NPM, set
-  `BRIDGE_PUBLIC_URL=https://ct.example.com/bridge`.
-- **Its own origin** (stronger: the page's cookie and scripts are kept apart from the app's):
-  an NPM proxy host such as `connections.example.com`, with NPM on the stack's Docker network,
-  forwarding to `http://bridge:3100` with a custom location for `/connections` only (and
-  `location / { return 404; }`), then `BRIDGE_PUBLIC_URL=https://connections.example.com`. Never
-  expose the rest of the bridge: its API is for CT Studio only.
+- **Its own origin** (recommended: the page opens in a CT Studio modal, and its cookie and
+  scripts stay apart from the app's). Use a **subdomain of the app's domain**, e.g.
+  `connections.example.com` for `ct.example.com`: a different origin, so CT Studio's scripts
+  never reach what is typed into the page, but the same site, so the page's session cookie still
+  works in the frame (a wholly different domain would be a third-party frame whose cookie
+  browsers block). In NPM add a proxy host for it forwarding to the app's connections listener:
+  `http://app:8082` when NPM is on this stack's Docker network, otherwise this host's
+  `BRIDGE_PAGE_PORT` (8082) with `BRIDGE_PAGE_BIND=0.0.0.0`. That listener serves `/connections`
+  only (everything else is 404), so the app is never served on that origin. Then set
+  `BRIDGE_PUBLIC_URL=https://connections.example.com` and `BRIDGE_APP_ORIGIN=https://ct.example.com`
+  (the origin people reach CT Studio at: the page may be framed by it alone) and restart.
+  Without `BRIDGE_APP_ORIGIN` the page opens in a new tab. People on another address (a LAN URL)
+  or in a page that frames CT Studio get the new tab too. A proxy host set up the earlier way,
+  straight to `http://bridge:3100` with a `/connections`-only location, keeps working.
+- **Under this app** (the default, blank `BRIDGE_PUBLIC_URL` = `http://localhost:APP_PORT/bridge`):
+  nginx forwards only `/bridge/connections` to the bridge, and the page opens in a new tab
+  (never framed: on the app's own origin its content would be in reach of the app's scripts).
+  Behind NPM, set `BRIDGE_PUBLIC_URL=https://ct.example.com/bridge`.
+
+Never expose the rest of the bridge: its API is for CT Studio only.
 
 The page's session cookie is `Secure`; set `BRIDGE_COOKIE_SECURE=false` only for plain HTTP away
 from localhost. Packages are staged in `BRIDGE_STAGING_BUCKET` (default `ingest-bridge`) and

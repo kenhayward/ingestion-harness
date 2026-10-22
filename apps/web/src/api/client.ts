@@ -88,6 +88,7 @@ import type {
   SinkTargetCreateBody,
   SinkTargetPatchBody,
   MyConnections,
+  ConnectionsLink,
   TargetCreateBody,
   TargetPatchBody,
   TargetTestBody,
@@ -125,6 +126,8 @@ import type {
   VersionLabel,
   VersionLabelBody,
 } from '@ih/shared';
+import { openConnectionsLink } from '../access/connections.js';
+import { loadTheme, themeAttr } from '../theme.js';
 
 /** document.json written by the worker for template documents. */
 export interface ReviewDocument {
@@ -513,8 +516,13 @@ export interface Api {
   /** The delivery bridge's shared connections an external target may use (admins). */
   /** The bridge's shared connections of one sink (default `s3`), for a target's picker. */
   listSharedConnections(sinkId?: string): Promise<TargetConnection[]>;
-  /** Opens the bridge's connections page in a new tab (a one-time link for this user). */
+  /**
+   * Opens the bridge's connections page (a one-time link for this user): in CT Studio's modal
+   * when the page has its own origin and may be framed here, else in a new tab.
+   */
   openConnections(): Promise<void>;
+  /** A one-time link to the bridge's connections page, in `theme` (none: the OS's). */
+  connectionsLink(theme?: 'light' | 'dark'): Promise<ConnectionsLink>;
   /** The signed-in user's personal connections on the delivery bridge (never a credential). */
   listMyConnections(): Promise<MyConnections>;
   /** What a recipe's Publish to picker offers (any designer or admin). */
@@ -1161,10 +1169,13 @@ export function createHttpApi(base = '/api'): Api {
         apiFetch(`${base}/publish-targets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
       ),
     testPublishTarget: (body) => post<TargetTestResult>(`${base}/publish-targets/test`, body),
+    connectionsLink: (theme) =>
+      post<ConnectionsLink>(`${base}/bridge/connections-link`, theme ? { theme } : {}),
     openConnections: async () => {
-      const { url } = await post<{ url: string }>(`${base}/bridge/connections-link`, {});
-      // A new tab, not a frame (the page keeps its own session), and no window.opener for it.
-      window.open(url, '_blank', 'noopener');
+      const theme = themeAttr(loadTheme());
+      openConnectionsLink(
+        await post<ConnectionsLink>(`${base}/bridge/connections-link`, theme ? { theme } : {}),
+      );
     },
     listMyConnections: () => apiFetch(`${base}/profile/connections`).then(json<MyConnections>),
     browseSink: (req) =>

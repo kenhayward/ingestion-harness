@@ -8,6 +8,7 @@ import { ChangePassword } from './access/ChangePassword.js';
 import { FailedSignInsNotice, type FailedSignIns } from './access/FailedSignInsNotice.js';
 import { MaintenanceBanner } from './access/MaintenanceBanner.js';
 import { ProfileDialog, type ProfileTab } from './access/ProfileDialog.js';
+import { ConnectionsDialog } from './access/ConnectionsDialog.js';
 import { AuthLayout, SignIn } from './access/SignIn.js';
 import { HomePage } from './home/HomePage.js';
 import { JobsPage } from './jobs/JobsPage.js';
@@ -469,6 +470,7 @@ function SignedInApp({
           onSignOut={onSignOut}
         />
       )}
+      <ConnectionsDialog api={api} />
     </AppShell>
   );
 }

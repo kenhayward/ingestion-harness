@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHttpApi } from '../src/api/client.js';
+import { connectionsModal } from '../src/access/connections.js';
 
 const respond = (status: number, body: unknown = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -1199,6 +1200,30 @@ describe('http api: publishing targets', () => {
     expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe('/api/bridge/connections-link');
     expect((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].method).toBe('POST');
     expect(open).toHaveBeenCalledWith(url, '_blank', 'noopener');
+  });
+
+  it("asks for the page in the person's chosen theme, and opens the modal when it may", async () => {
+    const api = createHttpApi('/api');
+    const url = 'https://connections.example.com/connections/start?code=abc';
+    const embed = {
+      appOrigin: window.location.origin,
+      pageOrigin: 'https://connections.example.com',
+    };
+    const fetch = vi.fn(async () => respond(200, { url, embed }));
+    vi.stubGlobal('fetch', fetch);
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    localStorage.setItem('ih.theme', 'dark');
+    try {
+      await api.openConnections();
+    } finally {
+      localStorage.removeItem('ih.theme');
+    }
+    const init = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(String(init.body))).toEqual({ theme: 'dark' });
+    expect(open).not.toHaveBeenCalled();
+    expect(connectionsModal.state().link).toEqual({ url, embed });
+    connectionsModal.reset();
   });
 });
 

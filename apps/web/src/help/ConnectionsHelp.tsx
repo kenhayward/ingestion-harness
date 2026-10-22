@@ -12,10 +12,12 @@ export function ConnectionsHelp() {
       <h3>Where they are kept</h3>
       <p>
         Connections are kept by the delivery bridge, not by CT Studio.{' '}
-        <strong>Manage connections</strong> opens the bridge&apos;s connections page in a new tab.
-        You add, test, rename, update and delete your connections there. CT Studio never sees what
-        you enter for them: Profile shows only each connection&apos;s name, system, instance, status
-        and when a delivery last used it.
+        <strong>Manage connections</strong> opens the bridge&apos;s connections page: in a window
+        over CT Studio, or in a new tab where the page shares CT Studio&apos;s address. Your
+        connections and, for admins, the shared ones are listed on the left; choose one to see it,
+        test it, change it or delete it. CT Studio&apos;s lists update as you save. CT Studio never
+        sees what you enter for them: Profile shows only each connection&apos;s name, system,
+        instance, status and when a delivery last used it.
       </p>
 
       <h3>One per instance</h3>

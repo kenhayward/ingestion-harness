@@ -82,7 +82,14 @@ export interface AppDeps {
    * calls carry, where browsers reach its connections page, and the one-time codes that hand a
    * signed-in user to that page.
    */
-  bridgeAuth: { key: string; publicUrl: string; codes: HandoffCodes; nonces?: NonceStore };
+  bridgeAuth: {
+    key: string;
+    publicUrl: string;
+    /** BRIDGE_APP_ORIGIN: the connections page may be framed by it (unset: a new tab). */
+    appOrigin?: string;
+    codes: HandoffCodes;
+    nonces?: NonceStore;
+  };
   specs: SpecRegistry;
   templates: TemplateRepo;
   /** Workbench projects, samples and briefs (ADR 0007). */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { TargetConnection } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { useConnectionsVersion } from './connections.js';
 
 const STATUS: Record<TargetConnection['status'], string> = {
   ok: 'OK',
@@ -34,6 +35,7 @@ export function ConnectionPicker({
 }) {
   const [connections, setConnections] = useState<TargetConnection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const version = useConnectionsVersion();
 
   useEffect(() => {
     let live = true;
@@ -44,7 +46,7 @@ export function ConnectionPicker({
     return () => {
       live = false;
     };
-  }, [api, sinkId]);
+  }, [api, sinkId, version]);
 
   const listed = connections ?? [];
   const options =

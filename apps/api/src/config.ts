@@ -8,6 +8,28 @@ const defaultSpecsDir = fileURLToPath(new URL('../../../specs', import.meta.url)
 const blank = (v: unknown) => (v === '' ? undefined : v);
 const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(blank, schema.optional());
 
+/** A bare http(s) origin (`https://ctstudio.app`, `http://localhost:8081`), normalised. */
+const origin = z.string().transform((v, ctx) => {
+  let url: URL | null = null;
+  try {
+    url = new URL(v);
+  } catch {
+    // reported below
+  }
+  if (!url || !/^https?:$/.test(url.protocol) || v.replace(/\/$/, '') !== url.origin) {
+    ctx.addIssue({ code: 'custom', message: 'must be an origin such as https://ct.example.com' });
+    return z.NEVER;
+  }
+  return url.origin;
+});
+
+/** A page on the app's own origin is never framed: its DOM would be in the app's reach. */
+const SAME_ORIGIN =
+  "BRIDGE_APP_ORIGIN must differ from BRIDGE_PUBLIC_URL's origin: a page on the app's own origin is never framed";
+const sameOrigin = (env: { BRIDGE_APP_ORIGIN?: string; BRIDGE_PUBLIC_URL: string }) =>
+  env.BRIDGE_APP_ORIGIN !== undefined &&
+  env.BRIDGE_APP_ORIGIN === new URL(env.BRIDGE_PUBLIC_URL).origin;
+
 /** One `frame-ancestors` source: an https origin, optionally `*.` for every subdomain. */
 const FRAME_SOURCE = /^https:\/\/(\*\.)?([a-z0-9-]+\.)*[a-z0-9-]+(:\d{1,5})?$/i;
 
@@ -54,6 +76,8 @@ const EnvSchema = z
     BRIDGE_CLIENT_KEY: z.string().min(32),
     /** Where browsers reach the bridge's connections page (its own origin, or a path here). */
     BRIDGE_PUBLIC_URL: z.string().url(),
+    /** The origin people reach this app at: the connections page may be framed by it alone. */
+    BRIDGE_APP_ORIGIN: optional(origin),
     /** The bridge's package staging bucket on this deployment's storage (backed up with it). */
     BRIDGE_STAGING_BUCKET: z.preprocess(blank, z.string().default('ingest-bridge')),
     /** The URL the data lake reads the publish bucket through (the proxy, ADR 0008); display only. */
@@ -108,6 +132,9 @@ const EnvSchema = z
         path: ['GITHUB_CLIENT_ID'],
         message: 'GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET go together',
       });
+    }
+    if (sameOrigin(env)) {
+      ctx.addIssue({ code: 'custom', path: ['BRIDGE_APP_ORIGIN'], message: SAME_ORIGIN });
     }
     if (env.LINKED_DATA_BASE_IRI && !env.LINKED_DATA_CUSTOMER) {
       ctx.addIssue({
