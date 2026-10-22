@@ -30,6 +30,12 @@ system's API, would put secrets and private code in a public product.
   encrypted under `BRIDGE_SECRETS_KEY`; keys named in `.env` are read in the bridge's container
   from the same allowlisted variables. An upgrade moves every target's keys onto the bridge once
   (`target-<id>`) and drops the ciphertext from CT Studio.
+- **People keep their own connections there too (phase 5).** Every user, whatever their role,
+  opens the same page from Profile and manages their **personal connections**: one per sink
+  instance, reached by their owner only. A delivery to a personal sink uses the acting user's
+  connection, looked up on each attempt. CT Studio sees summaries only (name, system, instance,
+  status, last used). Disabling a user deletes theirs, and an hourly reconcile deletes those of
+  anyone an admin has disabled.
 - **The bridge's targets are the recipient registry** (sink, instance, connection, destination,
   label). CT Studio's `publish_targets` caches them beside what only CT Studio knows (usage,
   locking, read-key grants, backup rules), pulls them at start and after restores, and sends every

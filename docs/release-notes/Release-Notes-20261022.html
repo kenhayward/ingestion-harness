@@ -183,6 +183,10 @@
             <a href="#restores">Restores and targets</a>
             <span>— a restore puts back the targets the bridge lacks</span>
           </li>
+          <li>
+            <a href="#personal-connections">Your own connections</a>
+            <span>— everyone can keep their own logins on the connections page</span>
+          </li>
         </ul>
       </nav>
 
@@ -225,6 +229,25 @@
         After a restore, targets CT Studio has but the bridge lacks are put back on the bridge. A
         copy restore keeps this server&apos;s targets, so a change made directly on the bridge and
         not yet shown in CT Studio is overwritten.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="personal-connections">Your own connections</h2>
+      <p>
+        Profile has a new <strong>Connections</strong> tab. Some systems CT Studio will deliver to
+        record who delivered each item, so they need a real person&apos;s login. You keep those
+        logins on the delivery bridge&apos;s connections page: <strong>Manage connections</strong>
+        opens it in a new tab, for every role. You hold one connection for each instance of a
+        system, and only you can see or change yours. CT Studio never sees what you enter: Profile
+        shows each connection&apos;s name, system, instance, status and when it was last used.
+      </p>
+      <p>
+        When an admin disables a user, that user&apos;s connections are deleted, and enabling them
+        again does not bring them back. No built-in system uses personal connections, so until one
+        is added the tab says <em>No system here uses personal connections yet</em>. For
+        integrators: the bridge contract package is now 0.4.0 (connection summaries carry
+        <code>kind</code>, <code>instanceId</code> and <code>lastUsedAt</code>, sinks list their
+        <code>instances</code>).
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
