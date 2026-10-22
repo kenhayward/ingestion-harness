@@ -2988,8 +2988,10 @@ input.danger-border {
   max-width: 160px;
 }
 .results-list-card .filter-search {
-  flex: 0 1 160px;
+  /* Room for its placeholder, "Filter by file name", where the bar has it. */
+  flex: 1 1 190px;
   min-width: 120px;
+  max-width: 240px;
 }
 .results-pager {
   margin-left: auto;
