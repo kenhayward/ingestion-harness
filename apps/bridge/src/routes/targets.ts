@@ -385,6 +385,15 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
             );
           }
           connectionId = own.id;
+        } else if (connectionId !== null) {
+          // Only a shared connection of this sink: never a person's, nor another sink's.
+          const shared = await app.deps.connections.get(connectionId);
+          if (!shared || shared.kind !== 'shared' || shared.sinkId !== body.sinkId) {
+            throw refuse(
+              'content_rejected',
+              `there is no shared connection ${connectionId} for ${body.sinkId}`,
+            );
+          }
         }
         const credential = await app.deps.credentials.resolve(connectionId, described);
         return await sink.browse({

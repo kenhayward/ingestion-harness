@@ -9,6 +9,31 @@ import { encryptSecret } from '../src/secrets.js';
 import { FakeSink } from '../src/sinks/fake.js';
 import type { BrowseRequest, BrowseResult } from '@ih/bridge-contract';
 
+/** A shared sink with a browsable `space`. */
+class ShelfSink extends FakeSink {
+  constructor() {
+    super({
+      destinationFields: [
+        {
+          id: 'space',
+          label: 'Space',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: true,
+        },
+      ],
+      capabilities: {
+        browse: true,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files', 'data'],
+      },
+    });
+  }
+}
+
 /** A sink with a browsable `space`: two spaces at the root, and what each browse was sent. */
 class TreeSink extends FakeSink {
   readonly browsed: BrowseRequest[] = [];
@@ -85,6 +110,7 @@ async function setup() {
   await connections.put(connection('other-sink', { sinkId: 'fake' }));
   await connections.put(connection('triples', { sinkId: 'rdf' }));
   await connections.put(connection('acme-shared', { sinkId: 'acme' }));
+  await connections.put(connection('shelf-keys', { sinkId: 'shelf', fields: {} }));
   await connections.put({
     ...connection('u-ada', {
       kind: 'personal',
@@ -107,6 +133,7 @@ async function setup() {
       s3,
       fake: new FakeSink(),
       tree: new TreeSink(),
+      shelf: new ShelfSink(),
       named: new FakeSink({
         destinationFields: [
           {
@@ -483,5 +510,27 @@ describe('POST /v1/targets:browse', () => {
     expect(field.json().message).toBe('name of tree cannot be browsed');
     const sink = await call('POST', '/v1/targets:browse', browse({ sinkId: 'nosuch' }));
     expect(sink.statusCode).toBe(422);
+  });
+});
+
+describe('POST /v1/targets:browse of a shared sink', () => {
+  const browse = (connectionId: string | null) => ({
+    sinkId: 'shelf',
+    instanceId: null,
+    connectionId,
+    field: 'space',
+    parentId: null,
+    cursor: null,
+    actingUser: { id: 'u1', name: 'Ada', email: null },
+  });
+
+  it("uses only a shared connection of that sink: never a person's, nor another sink's", async () => {
+    const { call } = await setup();
+    expect((await call('POST', '/v1/targets:browse', browse('shelf-keys'))).statusCode).toBe(200);
+    for (const id of ['u-ada', 'finance', 'nosuch']) {
+      const res = await call('POST', '/v1/targets:browse', browse(id));
+      expect([id, res.statusCode]).toEqual([id, 422]);
+      expect(res.json().message).toBe(`there is no shared connection ${id} for shelf`);
+    }
   });
 });
