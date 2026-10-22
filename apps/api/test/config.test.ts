@@ -191,3 +191,33 @@ describe('the delivery bridge', () => {
     });
   });
 });
+
+describe('BRIDGE_APP_ORIGIN', () => {
+  it('is unset when blank, and kept as a bare origin', () => {
+    expect(loadConfig({ ...base, BRIDGE_APP_ORIGIN: '' }).BRIDGE_APP_ORIGIN).toBeUndefined();
+    expect(
+      loadConfig({ ...base, BRIDGE_APP_ORIGIN: 'https://ctstudio.app' }).BRIDGE_APP_ORIGIN,
+    ).toBe('https://ctstudio.app');
+    expect(
+      loadConfig({ ...base, BRIDGE_APP_ORIGIN: 'http://localhost:8081' }).BRIDGE_APP_ORIGIN,
+    ).toBe('http://localhost:8081');
+  });
+
+  it('refuses anything but an http(s) origin', () => {
+    for (const bad of ['https://ctstudio.app/x', 'https://ctstudio.app?q=1', 'ftp://x', 'nope']) {
+      expect(() => loadConfig({ ...base, BRIDGE_APP_ORIGIN: bad })).toThrow(/BRIDGE_APP_ORIGIN/);
+    }
+  });
+
+  it("refuses the origin of BRIDGE_PUBLIC_URL: a page on the app's own origin is never framed", () => {
+    expect(() =>
+      loadConfig({
+        ...base,
+        BRIDGE_PUBLIC_URL: 'https://ctstudio.app/bridge',
+        BRIDGE_APP_ORIGIN: 'https://ctstudio.app',
+      }),
+    ).toThrow(
+      "BRIDGE_APP_ORIGIN must differ from BRIDGE_PUBLIC_URL's origin: a page on the app's own origin is never framed",
+    );
+  });
+});
