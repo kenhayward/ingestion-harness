@@ -1,7 +1,7 @@
 import type { SinkDescribe } from '@ih/bridge-contract';
 import type { Connection } from '../connections/repo.js';
 
-/** Server-rendered templates of the connections page: no client script, no inline style. */
+/** Server-rendered templates of the connections page: no inline script or style. */
 
 export const esc = (s: string): string =>
   s
@@ -49,29 +49,6 @@ ${heading}${body}
 </body>
 </html>`;
 }
-
-export const PAGE_CSS = `
-:root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fff; --muted: #6b6b73; --line: #d9d9de;
-  --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; font-family: system-ui, sans-serif; }
-@media (prefers-color-scheme: dark) { :root { --fg: #ececf1; --bg: #16161a; --muted: #a0a0ab;
-  --line: #34343c; --ok: #3fb950; --warn: #d29922; --bad: #f85149; } }
-body { margin: 0; background: var(--bg); color: var(--fg); }
-header { display: flex; justify-content: space-between; padding: 12px 16px;
-  border-bottom: 1px solid var(--line); }
-main { max-width: 960px; margin: 0 auto; padding: 16px; }
-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-td form { display: inline; }
-.muted { color: var(--muted); }
-.ok { color: var(--ok); } .needs_attention { color: var(--warn); } .untested { color: var(--muted); }
-.notice { padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; margin: 12px 0; }
-.error { border-color: var(--bad); color: var(--bad); }
-fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px; }
-label { display: block; margin: 8px 0; }
-label span { display: block; font-size: 0.9em; color: var(--muted); }
-input[type=text], input[type=password], select { width: 100%; max-width: 420px; padding: 6px; }
-button { padding: 6px 12px; margin-right: 8px; }
-`;
 
 export function message(shell: Shell, title: string, text: string): string {
   return layout(shell, title, `<p>${esc(text)}</p>`);

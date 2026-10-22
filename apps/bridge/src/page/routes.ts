@@ -15,7 +15,6 @@ import {
   connectionsPage,
   instanceLabel,
   message,
-  PAGE_CSS,
   type FormValues,
   type ListItem,
   type PersonalDraft,
@@ -23,6 +22,7 @@ import {
   type Shell,
   type Tab,
 } from './html.js';
+import { PAGE_CSS } from './css.js';
 import { PAGE_JS } from './script.js';
 import {
   csrfMatches,
