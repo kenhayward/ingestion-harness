@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
-        calls, and one registry of publishing targets. PRs #289 to #301, merged between Wednesday 21
+        calls, and one registry of publishing targets. PRs #289 to #302, merged between Wednesday 21
         October 2026, 14:06 and Thursday 22 October 2026, 10:17 (UTC). #298, delivery to other
         systems, is described under Major changes and is not merged yet.
       </p>
@@ -436,7 +436,8 @@
 
       <h3 id="review-header">A tighter Review page</h3>
       <p class="prs">
-        <a href="https://github.com/kenhayward/ingestion-harness/pull/301">#301</a>
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/301">#301</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/302">#302</a>
       </p>
       <p>
         The Review page&apos;s header is now one row: the back link, the file name (cut short when
@@ -444,8 +445,13 @@
         queue with <strong>Next document</strong>, and help. The reasons a document needs review
         moved from a full-width box into an amber <strong>Why review</strong> chip beside the
         status, which opens them in a small panel. It only shows while the document awaits review: a
-        finished job no longer shows the reasons it once had. The document and the data get the
-        height the header gave back.
+        finished job no longer shows the reasons it once had. The page now fits the window, with
+        less space around the header: the document and the data take all the height the header, any
+        notice and the decision bar leave, so the page itself no longer scrolls and only a table's
+        rows or the pages do. The page toolbar&apos;s
+        <em>Click a value to find it on the page</em> and the explanation beside
+        <strong>Save as reference</strong> are now hover text on the page arrows and on that button,
+        which keeps the toolbar on one row in a narrow pane.
       </p>
       <p>
         A long value now wraps in its box, so you can read all of it, and editing a text value opens

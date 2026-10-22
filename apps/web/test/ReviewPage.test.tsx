@@ -94,7 +94,14 @@ describe('ReviewPage header and source', () => {
     setup();
     const pane = await screen.findByRole('region', { name: 'Source PDF' });
     expect(within(pane).getByText('Page 1 of 3')).toBeInTheDocument();
-    expect(within(pane).getByText('Click a value to find it on the page')).toBeInTheDocument();
+    // The hint is the page arrows' hover text, so the toolbar stays one row.
+    expect(within(pane).queryByText('Click a value to find it on the page')).toBeNull();
+    for (const name of ['Previous page', 'Next page']) {
+      expect(within(pane).getByRole('button', { name })).toHaveAttribute(
+        'title',
+        'Click a value to find it on the page',
+      );
+    }
   });
 });
 
@@ -542,7 +549,14 @@ describe('ReviewPage', () => {
       getReview: vi.fn(async () => ({ ...data, job: { ...data.job, status: 'succeeded' } })),
     });
     await userEvent.type(await screen.findByLabelText('Reference name'), 'acme-2023');
-    await userEvent.click(screen.getByRole('button', { name: 'Save as reference' }));
+    const save = screen.getByRole('button', { name: 'Save as reference' });
+    // What a reference is for is the button's hover text, not a line of its own.
+    expect(save).toHaveAttribute(
+      'title',
+      'Save these (reviewed) values as a reference: recipe changes can then be regression-tested against this document.',
+    );
+    expect(screen.queryByText(/Finished\. Save these/)).toBeNull();
+    await userEvent.click(save);
     expect(api.createReference).toHaveBeenCalledWith('tdemo', JOB_ID, 'acme-2023');
     expect(await screen.findByRole('status')).toHaveTextContent('Saved reference acme-2023');
   });

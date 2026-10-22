@@ -918,15 +918,15 @@ export function ReviewPage({
             })();
           }}
         >
-          <p>
-            Finished. Save these (reviewed) values as a reference: recipe changes can then be
-            regression-tested against this document.
-          </p>
           <label>
             Reference name
             <input value={referenceName} onChange={(e) => setReferenceName(e.target.value)} />
           </label>
-          <button type="submit" disabled={!referenceName.trim()}>
+          <button
+            type="submit"
+            disabled={!referenceName.trim()}
+            title="Save these (reviewed) values as a reference: recipe changes can then be regression-tested against this document."
+          >
             Save as reference
           </button>
           {notice && <p role="status">{notice}</p>}
