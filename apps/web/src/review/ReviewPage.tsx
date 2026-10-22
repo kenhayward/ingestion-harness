@@ -30,6 +30,7 @@ import {
   splitName,
   type ReviewLayout,
 } from './layout.js';
+import { isPageColumn, pageOf } from './pages.js';
 import { ReviewHeader } from './ReviewHeader.js';
 import { useModelChoices } from '../ui/ModelPicker.js';
 import { ReprocessDialog } from '../ui/ReprocessDialog.js';
@@ -190,6 +191,14 @@ export function ReviewPage({
       setSelectedField(output);
     }
   };
+  /** The page a table row names in its page column, if the table has one. */
+  const rowPage = (tableId: string, row: number): number | null => {
+    const column = template.outputs.tables
+      .find((t) => t.id === tableId)
+      ?.columns.find(isPageColumn);
+    const cells = column ? view.tables[tableId]?.find((r) => r.number === row)?.cells : undefined;
+    return column && cells ? pageOf(cells[column.id]?.value, pageCount) : null;
+  };
   const nextFlagged = () => {
     const next = (cursor + 1) % targets.length;
     const target = targets[next]!;
@@ -200,6 +209,9 @@ export function ReviewPage({
       setSelectedField(target.field);
       const found = view.fields[target.field]?.page;
       if (found) setPage(found); // like clicking the field: show where it was found
+    } else {
+      const found = rowPage(target.tab, target.row);
+      if (found) setPage(found);
     }
     setPendingFocus(targetKey(target));
   };
@@ -244,12 +256,16 @@ export function ReviewPage({
   ).length;
   const flaggedTables = template.outputs.tables.filter((t) => flaggedCells(t.id) > 0).length;
   /** Pages a flagged field was found on (table cells carry no page). */
-  const flaggedPages = new Set(
-    template.outputs.fields
+  /** Pages a flagged field was found on, and those a flagged table row names in its page column. */
+  const flaggedPages = new Set([
+    ...template.outputs.fields
       .map((f) => view.fields[f.id])
       .filter((f) => f?.flags.length && f.page)
       .map((f) => f!.page!),
-  );
+    ...targets
+      .map((t) => ('field' in t ? null : rowPage(t.tab, t.row)))
+      .filter((n): n is number => n !== null),
+  ]);
   const tableIndex = template.outputs.tables.findIndex((t) => t.id === tab);
   const flagDetail =
     flagCell && flagCell.tab === tab && !('field' in flagCell)
@@ -589,20 +605,20 @@ export function ReviewPage({
                               {t.columns.map((c) => {
                                 const cell = r.cells[c.id]!;
                                 const label = `${t.id} row ${r.number} ${c.id}`;
+                                const shows = isPageColumn(c)
+                                  ? pageOf(cell.value, pageCount)
+                                  : null;
                                 return (
                                   <td
                                     key={c.id}
                                     id={`flag-${t.id}:${r.number}:${c.id}`}
                                     tabIndex={-1}
-                                    onFocus={() =>
-                                      cell.flags.length
-                                        ? setFlagCell({
-                                            tab: t.id,
-                                            row: r.number,
-                                            column: c.id,
-                                          })
-                                        : undefined
-                                    }
+                                    onFocus={() => {
+                                      if (!cell.flags.length) return;
+                                      setFlagCell({ tab: t.id, row: r.number, column: c.id });
+                                      const found = rowPage(t.id, r.number);
+                                      if (found) setPage(found);
+                                    }}
                                     className={
                                       [
                                         cell.flags.length ? 'flag' : '',
@@ -622,6 +638,10 @@ export function ReviewPage({
                                       editable={editable}
                                       editLabel={`Edit ${label}`}
                                       inputLabel={`New value for ${label}`}
+                                      {...(shows !== null && {
+                                        onShow: () => setPage(shows),
+                                        showLabel: `Show page ${shows}`,
+                                      })}
                                       onSave={(value) =>
                                         saveEdit({
                                           table: t.id,

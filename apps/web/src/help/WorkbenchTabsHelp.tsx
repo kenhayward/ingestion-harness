@@ -457,8 +457,10 @@ export function ReviewHelp() {
       <h3>At the top</h3>
       <p>
         The document, its recipe version, status and model; how many documents await review and{' '}
-        <strong>Next document</strong>. <strong>Why this needs review</strong> lists what flagged
-        it, such as values that could not be read as their type or checks that did not match.
+        <strong>Next document</strong>, all on one row. While the document awaits review, the amber{' '}
+        <strong>Why review</strong> chip beside the status says how many things flagged it; open it
+        to see them, such as values that could not be read as their type or checks that did not
+        match.
       </p>
       <h3>The document and the data</h3>
       <p>
@@ -498,6 +500,16 @@ export function ReviewHelp() {
         <li>
           A table shows <strong>All rows</strong> or <strong>Flagged only</strong>; ‹ › step to the
           table before or after.
+        </li>
+        <li>
+          When a table has a page column (named Page, Page no., Page number, Source page and the
+          like), its page numbers are links that turn the document to that page. Next flagged turns
+          to a flagged row's page too, and the page's thumbnail carries a dot.
+        </li>
+        <li>
+          A long value wraps, so its box shows all of it. Editing a text value opens a box that
+          grows with what it holds (drag its corner to make it taller): <strong>Enter</strong>{' '}
+          saves, <strong>Shift+Enter</strong> starts a new line.
         </li>
       </ul>
       <h3>Tabs</h3>

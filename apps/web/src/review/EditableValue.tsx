@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ValueDef } from '@ih/shared';
 import { Icon } from '../ui/Icon.js';
 import { display } from './effective.js';
@@ -15,6 +15,9 @@ interface Props {
   variant?: 'boxed' | 'inline';
   /** Box border: flagged (warn) or edited (info). */
   state?: 'flagged' | 'edited' | '';
+  /** The value names a page: it becomes a button (named `showLabel`) that shows that page. */
+  onShow?: () => void;
+  showLabel?: string;
 }
 
 function toInput(def: ValueDef, value: unknown): string {
@@ -46,10 +49,20 @@ export function EditableValue({
   onSave,
   variant = 'inline',
   state = '',
+  onShow,
+  showLabel,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
+  const area = useRef<HTMLTextAreaElement>(null);
+  // A text value's box grows with what it holds, so a long value is read and edited whole.
+  useLayoutEffect(() => {
+    const box = area.current;
+    if (!box) return;
+    box.style.height = 'auto';
+    box.style.height = `${box.scrollHeight + 2}px`;
+  }, [editing, text]);
 
   const start = () => {
     setText(toInput(def, value));
@@ -65,7 +78,11 @@ export function EditableValue({
     }
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Enter') void save();
+    // Enter saves; in a text box Shift+Enter starts a new line.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void save();
+    }
     if (e.key === 'Escape') setEditing(false);
   };
 
@@ -84,7 +101,13 @@ export function EditableValue({
   if (!editing) {
     return (
       <span className="value">
-        <span>{display(value)}</span>
+        {onShow ? (
+          <button type="button" className="link page-link" aria-label={showLabel} onClick={onShow}>
+            {display(value)}
+          </button>
+        ) : (
+          <span>{display(value)}</span>
+        )}
         {editable && (
           <button type="button" className="link" aria-label={editLabel} onClick={start}>
             Edit
@@ -112,6 +135,16 @@ export function EditableValue({
             </option>
           ))}
         </select>
+      ) : def.type === 'text' ? (
+        <textarea
+          ref={area}
+          aria-label={inputLabel}
+          rows={1}
+          value={text}
+          autoFocus
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKey}
+        />
       ) : (
         <input
           aria-label={inputLabel}
