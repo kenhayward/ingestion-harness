@@ -70,6 +70,48 @@ describe('POST /api/bridge/connections-link', () => {
   });
 });
 
+describe('POST /api/bridge/connections-link: framing', () => {
+  const link = async (
+    appOrigin: string | undefined,
+    body?: unknown,
+  ): Promise<{ status: number; json: Record<string, unknown> }> => {
+    const { app, adminCookie } = await accessApp({
+      bridgeAuth: {
+        key: TEST_BRIDGE_KEY,
+        publicUrl: 'https://connections.ctstudio.app',
+        codes: new HandoffCodes(),
+        ...(appOrigin ? { appOrigin } : {}),
+      },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/bridge/connections-link',
+      headers: { cookie: adminCookie },
+      ...(body === undefined ? {} : { payload: body as Record<string, unknown> }),
+    });
+    return { status: res.statusCode, json: res.json() as Record<string, unknown> };
+  };
+
+  it('says not to embed without BRIDGE_APP_ORIGIN', async () => {
+    expect((await link(undefined)).json.embed).toBeNull();
+  });
+
+  it('names both origins when the page may be framed', async () => {
+    expect((await link('https://ctstudio.app')).json.embed).toEqual({
+      appOrigin: 'https://ctstudio.app',
+      pageOrigin: 'https://connections.ctstudio.app',
+    });
+  });
+
+  it('passes a light or dark theme on, and refuses any other', async () => {
+    const dark = await link('https://ctstudio.app', { theme: 'dark' });
+    expect(new URL(dark.json.url as string).searchParams.get('theme')).toBe('dark');
+    const none = await link('https://ctstudio.app', {});
+    expect(new URL(none.json.url as string).searchParams.has('theme')).toBe(false);
+    expect((await link('https://ctstudio.app', { theme: 'blue' })).status).toBe(400);
+  });
+});
+
 describe('POST /api/bridge/handoff/redeem', () => {
   it('returns the user once; a second redeem is 404; after 61 s it is 404', async () => {
     let now = 5_000_000;

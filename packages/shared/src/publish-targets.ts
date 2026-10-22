@@ -128,6 +128,24 @@ export const MyConnectionsSchema = z.object({
 });
 export type MyConnections = z.infer<typeof MyConnectionsSchema>;
 
+/** What opening the connections page asks for: the colour mode to show it in (none: the OS's). */
+export const ConnectionsLinkBodySchema = z
+  .object({ theme: z.enum(['light', 'dark']).optional() })
+  .strict()
+  .optional();
+export type ConnectionsLinkBody = z.infer<typeof ConnectionsLinkBodySchema>;
+
+/**
+ * A one-time link to the bridge's connections page. `embed` is set when the page has its own
+ * origin and may be framed by this app's (`BRIDGE_APP_ORIGIN`): the web app opens it in a modal
+ * then, and accepts messages from `pageOrigin` only; null: a new tab.
+ */
+export const ConnectionsLinkSchema = z.object({
+  url: z.string().url(),
+  embed: z.object({ appOrigin: z.string(), pageOrigin: z.string() }).nullable(),
+});
+export type ConnectionsLink = z.infer<typeof ConnectionsLinkSchema>;
+
 export const PublishTargetViewSchema = z.object({
   id: TargetIdSchema,
   label: z.string(),

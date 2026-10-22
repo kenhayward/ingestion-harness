@@ -3,9 +3,14 @@ import {
   HandoffRedeemRequestSchema,
   HandoffUserSchema,
 } from '@ih/bridge-contract';
-import { MyConnectionsSchema, type MyConnection } from '@ih/shared';
+import {
+  ConnectionsLinkBodySchema,
+  ConnectionsLinkSchema,
+  MyConnectionsSchema,
+  type ConnectionsLink,
+  type MyConnection,
+} from '@ih/shared';
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import { applyEvent } from '../bridge/events.js';
 import { guardBridgeSigned } from '../bridge/guard.js';
 import { error, md, noContent, res } from '../openapi/zod.js';
@@ -34,18 +39,26 @@ export async function bridgeRoutes(app: FastifyInstance): Promise<void> {
         summary: 'Open the connections page',
         description: md`
           A one-time link to the delivery bridge's connections page, good for 60 seconds, for
-          the signed-in user, whatever their role: the web app opens it in a new tab, and the
-          bridge redeems its code with a signed call. Everyone manages their own personal
-          connections there; admins also manage the shared ones. Credentials are entered there,
-          never in CT Studio.
+          the signed-in user, whatever their role, and the bridge redeems its code with a signed
+          call. Everyone manages their own personal connections there; admins also manage the
+          shared ones. Credentials are entered there, never in CT Studio.
+
+          \`embed\` is set when the page has its own origin and may be framed by this app's
+          (\`BRIDGE_APP_ORIGIN\`): the web app opens it in a modal and accepts the page's messages
+          from \`pageOrigin\` only. Null: it opens a new tab. \`theme\` (light or dark) is passed
+          on for the page to match.
         `,
+        body: ConnectionsLinkBodySchema,
         response: {
-          200: res('The link.', z.object({ url: z.string().url() })),
+          200: res('The link.', ConnectionsLinkSchema),
+          400: error('A `theme` other than light or dark.'),
         },
       },
     },
-    async (req) => {
-      const { codes, publicUrl } = app.deps.bridgeAuth;
+    async (req, reply) => {
+      const body = ConnectionsLinkBodySchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const { codes, publicUrl, appOrigin } = app.deps.bridgeAuth;
       const auth = req.auth ?? {
         userId: 'unit-test-admin',
         label: 'admin',
@@ -60,7 +73,12 @@ export async function bridgeRoutes(app: FastifyInstance): Promise<void> {
       });
       const url = new URL(`${publicUrl.replace(/\/+$/, '')}/connections/start`);
       url.searchParams.set('code', code);
-      return { url: url.toString() };
+      if (body.data?.theme) url.searchParams.set('theme', body.data.theme);
+      const link: ConnectionsLink = {
+        url: url.toString(),
+        embed: appOrigin ? { appOrigin, pageOrigin: new URL(publicUrl).origin } : null,
+      };
+      return link;
     },
   );
 

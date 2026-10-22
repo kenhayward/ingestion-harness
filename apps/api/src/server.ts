@@ -95,6 +95,7 @@ const bridge = new HttpBridgeApi(config.BRIDGE_URL, config.BRIDGE_CLIENT_KEY);
 const bridgeAuth = {
   key: config.BRIDGE_CLIENT_KEY,
   publicUrl: config.BRIDGE_PUBLIC_URL,
+  ...(config.BRIDGE_APP_ORIGIN ? { appOrigin: config.BRIDGE_APP_ORIGIN } : {}),
   codes: new HandoffCodes(),
 };
 

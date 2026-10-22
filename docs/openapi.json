@@ -81204,7 +81204,27 @@
         "tags": [
           "Bridge"
         ],
-        "description": "A one-time link to the delivery bridge's connections page, good for 60 seconds, for\nthe signed-in user, whatever their role: the web app opens it in a new tab, and the\nbridge redeems its code with a signed call. Everyone manages their own personal\nconnections there; admins also manage the shared ones. Credentials are entered there,\nnever in CT Studio.",
+        "description": "A one-time link to the delivery bridge's connections page, good for 60 seconds, for\nthe signed-in user, whatever their role, and the bridge redeems its code with a signed\ncall. Everyone manages their own personal connections there; admins also manage the\nshared ones. Credentials are entered there, never in CT Studio.\n\n`embed` is set when the page has its own origin and may be framed by this app's\n(`BRIDGE_APP_ORIGIN`): the web app opens it in a modal and accepts the page's messages\nfrom `pageOrigin` only. Null: it opens a new tab. `theme` (light or dark) is passed\non for the page to match.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "theme": {
+                    "type": "string",
+                    "enum": [
+                      "light",
+                      "dark"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "The link.",
@@ -81216,12 +81236,66 @@
                     "url": {
                       "type": "string",
                       "format": "uri"
+                    },
+                    "embed": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "appOrigin": {
+                              "type": "string"
+                            },
+                            "pageOrigin": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "appOrigin",
+                            "pageOrigin"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "url"
+                    "url",
+                    "embed"
                   ],
                   "description": "The link."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A `theme` other than light or dark.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "A `theme` other than light or dark."
                 }
               }
             }
