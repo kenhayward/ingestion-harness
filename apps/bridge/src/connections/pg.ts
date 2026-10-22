@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import {
+  ConnectionConflict,
   connectionProblem,
   type Connection,
   type ConnectionRepo,
@@ -59,9 +60,33 @@ export class PgConnectionRepo implements ConnectionRepo {
     return rows[0] ? toConnection(rows[0]) : null;
   }
 
+  async findPersonal(
+    owner: string,
+    sinkId: string,
+    instanceId: string | null,
+  ): Promise<Connection | null> {
+    const { rows } = await this.pool.query<Row>(
+      `${SELECT} WHERE kind = 'personal' AND owner = $1 AND sink_id = $2
+         AND instance_id IS NOT DISTINCT FROM $3`,
+      [owner, sinkId, instanceId],
+    );
+    return rows[0] ? toConnection(rows[0]) : null;
+  }
+
   async put(c: NewConnection): Promise<void> {
     const problem = connectionProblem(c);
     if (problem) throw new Error(problem);
+    try {
+      await this.upsert(c);
+    } catch (err) {
+      if ((err as { constraint?: string }).constraint === 'connections_personal_instance') {
+        throw new ConnectionConflict(null);
+      }
+      throw err;
+    }
+  }
+
+  private async upsert(c: NewConnection): Promise<void> {
     const keep = c.secretEnc === undefined;
     await this.pool.query(
       `INSERT INTO bridge.connections
@@ -100,6 +125,24 @@ export class PgConnectionRepo implements ConnectionRepo {
       id,
     ]);
     return rowCount ? 'deleted' : 'missing';
+  }
+
+  async removeOwner(owner: string): Promise<number> {
+    const { rowCount } = await this.pool.query(
+      `DELETE FROM bridge.connections c WHERE c.kind = 'personal' AND c.owner = $1
+         AND NOT EXISTS (SELECT 1 FROM bridge.targets t WHERE t.connection_id = c.id)`,
+      [owner],
+    );
+    return rowCount ?? 0;
+  }
+
+  async removeOwnersNotIn(owners: readonly string[]): Promise<number> {
+    const { rowCount } = await this.pool.query(
+      `DELETE FROM bridge.connections c WHERE c.kind = 'personal' AND NOT (c.owner = ANY($1::text[]))
+         AND NOT EXISTS (SELECT 1 FROM bridge.targets t WHERE t.connection_id = c.id)`,
+      [owners],
+    );
+    return rowCount ?? 0;
   }
 
   async secretOf(

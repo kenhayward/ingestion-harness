@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ConnectionRepo, NewConnection } from '../src/connections/repo.js';
+import {
+  ConnectionConflict,
+  type ConnectionRepo,
+  type NewConnection,
+} from '../src/connections/repo.js';
 import type { TargetRepo } from '../src/targets/repo.js';
 
 export const connection = (id: string, over: Partial<NewConnection> = {}): NewConnection => ({
@@ -115,6 +119,72 @@ export function connectionsContract(
         statusReason: null,
         lastUsedAt: used,
       });
+    });
+
+    const personal = (id: string, owner: string, over: Partial<NewConnection> = {}) =>
+      connection(id, {
+        kind: 'personal',
+        owner,
+        sinkId: 'acme',
+        instanceId: 'sandbox',
+        fields: { username: owner },
+        ...over,
+      });
+
+    it('findPersonal finds by owner, sink and instance, a null instance included', async () => {
+      const { connections } = await make();
+      await connections.put(personal('u-a', 'u1'));
+      await connections.put(personal('u-b', 'u1', { instanceId: 'prod' }));
+      await connections.put(personal('u-c', 'u2'));
+      await connections.put(personal('u-d', 'u1', { sinkId: 'plain', instanceId: null }));
+      await connections.put(connection('shared-acme', { sinkId: 'acme', instanceId: 'sandbox' }));
+      expect((await connections.findPersonal('u1', 'acme', 'sandbox'))?.id).toBe('u-a');
+      expect((await connections.findPersonal('u1', 'acme', 'prod'))?.id).toBe('u-b');
+      expect((await connections.findPersonal('u2', 'acme', 'sandbox'))?.id).toBe('u-c');
+      expect((await connections.findPersonal('u1', 'plain', null))?.id).toBe('u-d');
+      expect(await connections.findPersonal('u3', 'acme', 'sandbox')).toBeNull();
+      expect(await connections.findPersonal('u2', 'acme', 'prod')).toBeNull();
+    });
+
+    it('one personal connection per owner, sink and instance; the same id updates', async () => {
+      const { connections } = await make();
+      await connections.put(personal('u-a', 'u1'));
+      await expect(connections.put(personal('u-b', 'u1'))).rejects.toBeInstanceOf(
+        ConnectionConflict,
+      );
+      await connections.put(personal('u-n1', 'u1', { sinkId: 'plain', instanceId: null }));
+      await expect(
+        connections.put(personal('u-n2', 'u1', { sinkId: 'plain', instanceId: null })),
+      ).rejects.toBeInstanceOf(ConnectionConflict);
+      await connections.put(personal('u-a', 'u1', { name: 'Renamed' }));
+      await connections.put(personal('u-c', 'u2'));
+      expect((await connections.get('u-a'))?.name).toBe('Renamed');
+      expect((await connections.list({ kind: 'personal' })).map((c) => c.id)).toEqual([
+        'u-a',
+        'u-c',
+        'u-n1',
+      ]);
+    });
+
+    it("removeOwner deletes one owner's personal connections only", async () => {
+      const { connections } = await make();
+      await connections.put(personal('u-a', 'u1'));
+      await connections.put(personal('u-b', 'u1', { instanceId: 'prod' }));
+      await connections.put(personal('u-c', 'u2'));
+      await connections.put(connection('shared'));
+      expect(await connections.removeOwner('u1')).toBe(2);
+      expect(await connections.removeOwner('u1')).toBe(0);
+      expect((await connections.list({})).map((c) => c.id)).toEqual(['shared', 'u-c']);
+    });
+
+    it('removeOwnersNotIn deletes the personal connections of everyone not listed', async () => {
+      const { connections } = await make();
+      await connections.put(personal('u-a', 'u1'));
+      await connections.put(personal('u-c', 'u2'));
+      await connections.put(personal('u-d', 'u3'));
+      await connections.put(connection('shared'));
+      expect(await connections.removeOwnersNotIn(['u1', 'u3'])).toBe(1);
+      expect((await connections.list({})).map((c) => c.id)).toEqual(['shared', 'u-a', 'u-d']);
     });
   });
 }
