@@ -376,7 +376,7 @@ export function publishTargetsContract(
       expect((await repo.usage('default')).documentTypes).toEqual(['invoice', 'memo']);
     });
 
-    it('offers S3 choices from their destinations, the default first, then by label', async () => {
+    it('offers S3 choices from their destinations and sink targets, the default first, then by label', async () => {
       const { repo } = await make();
       await cacheS3(repo, { id: 'z', label: 'Zeta' });
       await cacheS3(repo, { id: 'a', label: 'Alpha', layout: 'package' });
@@ -400,6 +400,7 @@ export function publishTargetsContract(
           bucket: 'ingest-published',
           prefix: '',
           layout: 'files',
+          sinkName: null,
         },
         {
           id: 'a',
@@ -408,6 +409,16 @@ export function publishTargetsContract(
           bucket: 'lake',
           prefix: 'out/',
           layout: 'package',
+          sinkName: null,
+        },
+        {
+          id: 'box',
+          label: 'Box',
+          kind: 'sink',
+          bucket: '',
+          prefix: '',
+          layout: null,
+          sinkName: null,
         },
         {
           id: 'z',
@@ -416,6 +427,7 @@ export function publishTargetsContract(
           bucket: 'lake',
           prefix: 'out/',
           layout: 'files',
+          sinkName: null,
         },
       ]);
     });

@@ -132,6 +132,8 @@ export function toView(r: TargetRecord, usage: TargetUsage): PublishTargetView {
     kmsKeyId: options?.kmsKeyId ?? null,
     storageClass: options?.storageClass ?? null,
     layout: place?.layout ?? null,
+    sinkName: null,
+    deliverOnly: false,
     source: r.source,
     editedAt: r.editedAt,
     updatedBy: r.updatedBy,
@@ -328,10 +330,23 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
 
   async choices(): Promise<TargetChoice[]> {
     return this.live()
-      .flatMap((r) => {
+      .flatMap((r): TargetChoice[] => {
         const place = s3PlaceOf(r);
+        if (r.kind === 'sink') {
+          return [
+            {
+              id: r.id,
+              label: r.label,
+              kind: r.kind,
+              bucket: '',
+              prefix: '',
+              layout: null,
+              sinkName: null,
+            },
+          ];
+        }
         return place && (r.kind === 'internal' || r.kind === 'external')
-          ? [{ id: r.id, label: r.label, kind: r.kind, ...place }]
+          ? [{ id: r.id, label: r.label, kind: r.kind, ...place, sinkName: null }]
           : [];
       })
       .sort(byDefaultThenLabel);

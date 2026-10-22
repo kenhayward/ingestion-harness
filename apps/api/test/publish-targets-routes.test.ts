@@ -121,6 +121,7 @@ describe('publishing target routes: list and choices', () => {
           bucket: 'published',
           prefix: 'pub/',
           layout: 'files',
+          sinkName: null,
         },
       ],
     });

@@ -152,6 +152,13 @@ export const PublishTargetViewSchema = z.object({
   kmsKeyId: z.string().nullable(),
   storageClass: z.string().nullable(),
   layout: z.enum(TARGET_LAYOUTS).nullable(),
+  /** A `sink` target: its sink's name as the bridge lists it (null: other kinds, or unknown). */
+  sinkName: z.string().nullable(),
+  /**
+   * Content delivered to it stays there: the sink cannot withdraw (an external sink, or one
+   * not known yet). Deleting a job or retiring a type says so.
+   */
+  deliverOnly: z.boolean(),
   source: z.enum(['env', 'ui']),
   editedAt: z.string().nullable(),
   updatedBy: z.string().nullable(),
@@ -230,6 +237,45 @@ function checkTarget(
 export const TargetCreateBodySchema = TargetFieldsSchema.superRefine(checkTarget);
 export type TargetCreateBody = z.infer<typeof TargetCreateBodySchema>;
 
+/** A destination as a sink's fields hold it: field id to value (a pattern for pattern fields). */
+const SinkDestinationSchema = z.record(z.string().min(1).max(64), z.string().max(1024));
+
+/**
+ * A target of an external sink (any but the built-in `s3` and `rdf`): its fields are the sink's
+ * own, which the bridge checks. A shared sink's target names one of its connections; a personal
+ * sink's names an instance and no connection.
+ */
+export const SinkTargetCreateBodySchema = z
+  .object({
+    kind: z.literal('sink'),
+    id: TargetIdSchema.optional(),
+    label: TARGET_FIELDS.label,
+    sinkId: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, 'a sink id')
+      .refine(
+        (id) => id !== 's3' && id !== 'rdf',
+        'S3 and triple store targets have their own form',
+      ),
+    instanceId: z.string().min(1).nullable().default(null),
+    connectionId: ConnectionIdSchema.nullable().default(null),
+    destination: SinkDestinationSchema.default({}),
+  })
+  .strict();
+export type SinkTargetCreateBody = z.infer<typeof SinkTargetCreateBodySchema>;
+
+/** A sink target's change: fields left out are kept; its sink and instance never change. */
+export const SinkTargetPatchBodySchema = z
+  .object({
+    label: TARGET_FIELDS.label,
+    connectionId: ConnectionIdSchema.nullable(),
+    destination: SinkDestinationSchema,
+  })
+  .partial()
+  .strict()
+  .refine((b) => Object.values(b).some((v) => v !== undefined), 'nothing to change');
+export type SinkTargetPatchBody = z.infer<typeof SinkTargetPatchBodySchema>;
+
 /** What `null` clears in a patch. */
 const CLEARABLE = {
   kmsKeyId: z.string().min(1).nullable(),
@@ -269,10 +315,14 @@ export type TargetTestResult = z.infer<typeof TargetTestResultSchema>;
 export const TargetChoiceSchema = z.object({
   id: TargetIdSchema,
   label: z.string(),
-  kind: z.enum(TARGET_KINDS),
+  kind: z.enum([...TARGET_KINDS, 'sink']),
+  /** S3 targets; empty for a sink target. */
   bucket: z.string(),
   prefix: z.string(),
-  layout: z.enum(TARGET_LAYOUTS),
+  /** S3 targets; null for a sink target (never the primary target). */
+  layout: z.enum(TARGET_LAYOUTS).nullable(),
+  /** A sink target's sink, by name (null: S3, or a sink not known now). */
+  sinkName: z.string().nullable(),
 });
 export type TargetChoice = z.infer<typeof TargetChoiceSchema>;
 

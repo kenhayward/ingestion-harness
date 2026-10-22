@@ -33,6 +33,8 @@ function target(over: Partial<PublishTargetView> = {}): PublishTargetView {
     bucket: 'ingest-published',
     prefix: '',
     layout: 'files',
+    sinkName: null,
+    deliverOnly: false,
     endpoint: null,
     connectionId: null,
     connection: null,

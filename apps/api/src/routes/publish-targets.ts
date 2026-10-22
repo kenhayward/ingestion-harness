@@ -1,4 +1,4 @@
-import type { TargetPutRequest } from '@ih/bridge-contract';
+import { SinkViewSchema, type TargetPutRequest } from '@ih/bridge-contract';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   DEFAULT_TARGET_ID,
@@ -7,6 +7,8 @@ import {
   PublishTargetViewSchema,
   TargetChoiceSchema,
   TargetConnectionSchema,
+  SinkTargetCreateBodySchema,
+  SinkTargetPatchBodySchema,
   TargetCreateBodySchema,
   TargetPatchBodySchema,
   TargetTestBodySchema,
@@ -223,7 +225,19 @@ export async function publishTargetRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    async () => ({ choices: await app.deps.targets.choices() }),
+    async () => {
+      const sinks = app.deps.sinks!;
+      const choices = await app.deps.targets.choices();
+      if (choices.some((c) => c.kind === 'sink')) await sinks.refresh(app.deps.bridge);
+      const sinkIds = new Map((await app.deps.targets.list()).map((v) => [v.id, v.sinkId]));
+      return {
+        choices: choices.map((c) =>
+          c.kind === 'sink'
+            ? { ...c, sinkName: sinks.get(sinkIds.get(c.id) ?? '')?.name ?? null }
+            : c,
+        ),
+      };
+    },
   );
 
   await app.register(adminRoutes);
@@ -233,6 +247,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
   const repo = app.deps.targets;
   const stores = app.deps.targetStores;
   const bridge = app.deps.bridge;
+  const sinks = app.deps.sinks!;
 
   app.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
     if (app.deps.access && req.auth?.role !== 'admin') {
@@ -263,8 +278,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       const listed = await bridge.listConnections('shared');
       return new Map(
         listed
-          // S3 connections, and the triple store's (the rdf-default target shows its status too).
-          .filter((c) => c.sinkId === 's3' || c.sinkId === 'rdf')
+          // Every shared connection: S3, the triple store's, and those of other sinks' targets.
           .map((c) => [
             c.id,
             {
@@ -288,9 +302,15 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
    * is its connection's (null when the bridge cannot say).
    */
   const withConnections = async (views: PublishTargetView[]): Promise<PublishTargetView[]> => {
-    if (!views.some((v) => v.connectionId)) return views;
+    if (views.some((v) => v.kind === 'sink')) await sinks.refresh(bridge);
+    const named = views.map((v) => {
+      if (v.kind !== 'sink') return v;
+      const sink = sinks.get(v.sinkId);
+      return { ...v, sinkName: sink?.name ?? null, deliverOnly: !sink?.capabilities.withdraw };
+    });
+    if (!named.some((v) => v.connectionId)) return named;
     const known = await connections();
-    return views.map((v) => {
+    return named.map((v) => {
       const found = v.connectionId ? known.get(v.connectionId) : undefined;
       return {
         ...v,
@@ -350,6 +370,33 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.get(
+    '/publish-targets/sinks',
+    {
+      schema: {
+        ...base(
+          'listSinks',
+          'List the sinks',
+          md`
+            **Admins only.** The delivery bridge's sinks (the built-in S3 and triple store, and
+            every registered external sink): name, status, contract version, connection kind,
+            instances, the fields a target and a connection of it take (never values), and
+            capabilities. An external sink is deliver-only for now. When the bridge cannot be
+            reached, the sinks it last listed.
+          `,
+        ),
+        response: {
+          200: res('The sinks.', z.object({ sinks: z.array(SinkViewSchema) })),
+          403: ADMINS_ONLY,
+        },
+      },
+    },
+    async () => {
+      await sinks.refresh(bridge);
+      return { sinks: sinks.all() };
+    },
+  );
+
+  app.get(
     '/publish-targets/connections',
     {
       schema: {
@@ -406,7 +453,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
             When only the cache write fails (500), the bridge has the target: refresh. No credential is accepted here.
           `,
         ),
-        body: TargetCreateBodySchema,
+        body: z.union([TargetCreateBodySchema, SinkTargetCreateBodySchema]),
         response: {
           201: res('The target.', PublishTargetViewSchema),
           400: error(`Zod issues, \`default is reserved\`, or ${OWN_BUCKET}.`),
@@ -421,6 +468,9 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
+      if ((req.body as { kind?: unknown } | undefined)?.kind === 'sink') {
+        return createSinkTarget(req, reply);
+      }
       const body = TargetCreateBodySchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: issuesOf(body.error) });
       const b = body.data;
@@ -452,6 +502,93 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send(await viewOf(id));
     },
   );
+
+  /** A new id from `label` (or `wanted`): null when `wanted` is taken. */
+  const newId = async (label: string, wanted: string | undefined): Promise<string | null> => {
+    const ids = await taken();
+    if (wanted !== undefined) return ids.has(wanted) ? null : wanted;
+    const stem = publishTargetIdFrom(label);
+    let id = stem;
+    for (let n = 2; ids.has(id); n++) id = `${stem}-${n}`;
+    return id;
+  };
+
+  /** A target of an external sink: the bridge checks its fields against the sink's. */
+  const createSinkTarget = async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = SinkTargetCreateBodySchema.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: issuesOf(body.error) });
+    const b = body.data;
+    if (b.id === DEFAULT_TARGET_ID) return reply.code(400).send({ error: 'default is reserved' });
+    const id = await newId(b.label, b.id);
+    if (id === null) {
+      return reply.code(409).send({ error: `a publishing target ${b.id} already exists` });
+    }
+    let view;
+    try {
+      view = await bridge.putTarget(id, {
+        label: b.label,
+        sinkId: b.sinkId,
+        instanceId: b.instanceId,
+        connectionId: b.connectionId,
+        destination: b.destination,
+      });
+    } catch (err) {
+      return bridgeFailure(reply, err);
+    }
+    const failed = await cacheAnswer(view, { source: 'ui', by: by(req) }, reply, req.log);
+    if (failed) return failed;
+    req.log.info({ target: id, sink: b.sinkId }, 'publishing target added');
+    return reply.code(201).send(await viewOf(id));
+  };
+
+  /**
+   * A sink target's change. While it is in use its fixed fields lock (any field, when the sink
+   * is not known now); its label, connection and pattern fields never do.
+   */
+  const patchSinkTarget = async (
+    stored: TargetRecord,
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    const body = SinkTargetPatchBodySchema.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: issuesOf(body.error) });
+    const patch = body.data;
+    const next = {
+      label: patch.label ?? stored.label,
+      sinkId: stored.sinkId,
+      instanceId: stored.instanceId,
+      connectionId: patch.connectionId === undefined ? stored.connectionId : patch.connectionId,
+      destination: patch.destination ?? stored.destination,
+    };
+    if (patch.destination) {
+      await sinks.refresh(bridge);
+      const fields = sinks.get(stored.sinkId)?.destinationFields;
+      const isPattern = (k: string) => fields?.find((f) => f.id === k)?.kind === 'pattern';
+      const keys = new Set([...Object.keys(stored.destination), ...Object.keys(next.destination)]);
+      const changed = [...keys].filter(
+        (k) => !isPattern(k) && stored.destination[k] !== next.destination[k],
+      );
+      if (changed.length > 0) {
+        const usage = await repo.usage(stored.id);
+        if (targetInUse(usage)) {
+          const label = fields?.find((f) => f.id === changed[0])?.label ?? changed[0];
+          return reply.code(409).send({
+            error: `${label} of ${stored.label} is locked: ${stored.label} is used by ${usageText(usage)}; add a new target instead`,
+          });
+        }
+      }
+    }
+    let view;
+    try {
+      view = await bridge.putTarget(stored.id, next);
+    } catch (err) {
+      return bridgeFailure(reply, err);
+    }
+    const failed = await cacheAnswer(view, { by: by(req) }, reply, req.log);
+    if (failed) return failed;
+    req.log.info({ target: stored.id, fields: Object.keys(patch) }, 'publishing target changed');
+    return viewOf(stored.id);
+  };
 
   /** The triple store target (seeded from RDF_ENDPOINT): its label alone changes. */
   const patchTripleStore = async (
@@ -497,7 +634,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
           `,
         ),
         params: IdParams,
-        body: TargetPatchBodySchema,
+        body: z.union([TargetPatchBodySchema, SinkTargetPatchBodySchema]),
         response: {
           200: res('The target.', PublishTargetViewSchema),
           400: error(`Zod issues, or ${OWN_BUCKET}.`),
@@ -513,10 +650,12 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
+      const found = await repo.get(req.params.id);
+      if (found?.kind === 'sink') return patchSinkTarget(found, req, reply);
       const body = TargetPatchBodySchema.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: issuesOf(body.error) });
       const patch = body.data;
-      const stored = await repo.get(req.params.id);
+      const stored = found;
       if (!stored) return reply.code(404).send({ error: NOT_FOUND_MESSAGE });
       if (stored.kind === 'rdf') return patchTripleStore(stored, patch, req, reply);
 

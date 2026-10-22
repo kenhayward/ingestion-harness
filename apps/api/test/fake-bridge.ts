@@ -101,9 +101,12 @@ export class FakeBridgeApi implements BridgeApi {
       );
     }
     this.targetPuts += 1;
-    const undeclared = Object.keys(t.destination).find(
-      (k) => !(DESTINATION_FIELDS[t.sinkId] ?? []).includes(k),
-    );
+    // As the bridge checks it: a listed sink's declared fields, else the built-in ones.
+    const listed = this.sinkViews.find((s) => s.id === t.sinkId);
+    const declared = listed
+      ? listed.destinationFields.map((f) => f.id)
+      : (DESTINATION_FIELDS[t.sinkId] ?? []);
+    const undeclared = Object.keys(t.destination).find((k) => !declared.includes(k));
     if (undeclared) {
       throw FakeBridgeApi.refusal(`${undeclared} is not a destination field of ${t.sinkId}`);
     }

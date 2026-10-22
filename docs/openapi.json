@@ -59750,7 +59750,8 @@
                             "type": "string",
                             "enum": [
                               "internal",
-                              "external"
+                              "external",
+                              "sink"
                             ]
                           },
                           "bucket": {
@@ -59760,10 +59761,23 @@
                             "type": "string"
                           },
                           "layout": {
-                            "type": "string",
-                            "enum": [
-                              "files",
-                              "package"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "files",
+                                  "package"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sinkName": {
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           }
                         },
@@ -59773,7 +59787,8 @@
                           "kind",
                           "bucket",
                           "prefix",
-                          "layout"
+                          "layout",
+                          "sinkName"
                         ]
                       }
                     },
@@ -76112,7 +76127,8 @@
                             "type": "string",
                             "enum": [
                               "internal",
-                              "external"
+                              "external",
+                              "sink"
                             ]
                           },
                           "bucket": {
@@ -76122,10 +76138,23 @@
                             "type": "string"
                           },
                           "layout": {
-                            "type": "string",
-                            "enum": [
-                              "files",
-                              "package"
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "files",
+                                  "package"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sinkName": {
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           }
                         },
@@ -76135,7 +76164,8 @@
                           "kind",
                           "bucket",
                           "prefix",
-                          "layout"
+                          "layout",
+                          "sinkName"
                         ]
                       }
                     }
@@ -76414,6 +76444,15 @@
                               }
                             ]
                           },
+                          "sinkName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "deliverOnly": {
+                            "type": "boolean"
+                          },
                           "source": {
                             "type": "string",
                             "enum": [
@@ -76487,6 +76526,8 @@
                           "kmsKeyId",
                           "storageClass",
                           "layout",
+                          "sinkName",
+                          "deliverOnly",
                           "source",
                           "editedAt",
                           "updatedBy",
@@ -76652,78 +76693,149 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "internal",
+                          "external"
+                        ]
+                      },
+                      "bucket": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 63,
+                        "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                      },
+                      "prefix": {
+                        "default": "",
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9!_.'()/-]*$"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "sse": {
+                        "default": "none",
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "AES256",
+                          "aws:kms"
+                        ]
+                      },
+                      "kmsKeyId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "storageClass": {
+                        "type": "string",
+                        "enum": [
+                          "STANDARD",
+                          "STANDARD_IA",
+                          "ONEZONE_IA",
+                          "INTELLIGENT_TIERING",
+                          "GLACIER_IR"
+                        ]
+                      },
+                      "layout": {
+                        "default": "files",
+                        "type": "string",
+                        "enum": [
+                          "files",
+                          "package"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "bucket"
+                    ],
+                    "additionalProperties": false
                   },
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "internal",
-                      "external"
-                    ]
-                  },
-                  "bucket": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 63,
-                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
-                  },
-                  "prefix": {
-                    "default": "",
-                    "type": "string",
-                    "maxLength": 512,
-                    "pattern": "^[A-Za-z0-9!_.'()/-]*$"
-                  },
-                  "connectionId": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
-                  },
-                  "sse": {
-                    "default": "none",
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "AES256",
-                      "aws:kms"
-                    ]
-                  },
-                  "kmsKeyId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "storageClass": {
-                    "type": "string",
-                    "enum": [
-                      "STANDARD",
-                      "STANDARD_IA",
-                      "ONEZONE_IA",
-                      "INTELLIGENT_TIERING",
-                      "GLACIER_IR"
-                    ]
-                  },
-                  "layout": {
-                    "default": "files",
-                    "type": "string",
-                    "enum": [
-                      "files",
-                      "package"
-                    ]
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "sink"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "sinkId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                      },
+                      "instanceId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "connectionId": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "destination": {
+                        "default": {},
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "label",
+                      "sinkId"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "label",
-                  "kind",
-                  "bucket"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -76868,6 +76980,15 @@
                         }
                       ]
                     },
+                    "sinkName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "deliverOnly": {
+                      "type": "boolean"
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -76941,6 +77062,8 @@
                     "kmsKeyId",
                     "storageClass",
                     "layout",
+                    "sinkName",
+                    "deliverOnly",
                     "source",
                     "editedAt",
                     "updatedBy",
@@ -77259,6 +77382,332 @@
         }
       }
     },
+    "/api/publish-targets/sinks": {
+      "get": {
+        "operationId": "listSinks",
+        "summary": "List the sinks",
+        "tags": [
+          "Published outputs"
+        ],
+        "description": "**Admins only.** The delivery bridge's sinks (the built-in S3 and triple store, and\nevery registered external sink): name, status, contract version, connection kind,\ninstances, the fields a target and a connection of it take (never values), and\ncapabilities. An external sink is deliver-only for now. When the bridge cannot be\nreached, the sinks it last listed.",
+        "x-admin": true,
+        "responses": {
+          "200": {
+            "description": "The sinks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sinks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "available",
+                              "unavailable"
+                            ]
+                          },
+                          "contractVersion": {
+                            "type": "integer"
+                          },
+                          "capabilities": {
+                            "type": "object",
+                            "properties": {
+                              "browse": {
+                                "type": "boolean"
+                              },
+                              "replace": {
+                                "type": "boolean"
+                              },
+                              "withdraw": {
+                                "type": "boolean"
+                              },
+                              "readBack": {
+                                "type": "boolean"
+                              },
+                              "accepts": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "files",
+                                    "data",
+                                    "rdf",
+                                    "narrative",
+                                    "images"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "browse",
+                              "replace",
+                              "withdraw",
+                              "readBack",
+                              "accepts"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "connectionKind": {
+                            "type": "string",
+                            "enum": [
+                              "shared",
+                              "personal"
+                            ]
+                          },
+                          "instances": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "destinationFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "fixed",
+                                    "pattern"
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "overridable": {
+                                  "type": "boolean"
+                                },
+                                "browse": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "kind",
+                                "required",
+                                "overridable",
+                                "browse"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "credentialFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "secret": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "secret"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "status",
+                          "contractVersion",
+                          "capabilities",
+                          "connectionKind",
+                          "instances",
+                          "destinationFields",
+                          "credentialFields"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "sinks"
+                  ],
+                  "description": "The sinks."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": {}
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "`admins only`."
+                    },
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "operators cannot use this"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/publish-targets/connections": {
       "get": {
         "operationId": "listPublishTargetConnections",
@@ -77500,73 +77949,111 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 80
-                  },
-                  "bucket": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 63,
-                    "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
-                  },
-                  "prefix": {
-                    "type": "string",
-                    "maxLength": 512,
-                    "pattern": "^[A-Za-z0-9!_.'()/-]*$"
-                  },
-                  "connectionId": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
-                  },
-                  "sse": {
-                    "type": "string",
-                    "enum": [
-                      "none",
-                      "AES256",
-                      "aws:kms"
-                    ]
-                  },
-                  "kmsKeyId": {
-                    "anyOf": [
-                      {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 80
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "storageClass": {
-                    "anyOf": [
-                      {
+                      "bucket": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 63,
+                        "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+                      },
+                      "prefix": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^[A-Za-z0-9!_.'()/-]*$"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                      },
+                      "sse": {
                         "type": "string",
                         "enum": [
-                          "STANDARD",
-                          "STANDARD_IA",
-                          "ONEZONE_IA",
-                          "INTELLIGENT_TIERING",
-                          "GLACIER_IR"
+                          "none",
+                          "AES256",
+                          "aws:kms"
                         ]
                       },
-                      {
-                        "type": "null"
+                      "kmsKeyId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "storageClass": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "STANDARD",
+                              "STANDARD_IA",
+                              "ONEZONE_IA",
+                              "INTELLIGENT_TIERING",
+                              "GLACIER_IR"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "files",
+                          "package"
+                        ]
                       }
-                    ]
+                    },
+                    "additionalProperties": false
                   },
-                  "layout": {
-                    "type": "string",
-                    "enum": [
-                      "files",
-                      "package"
-                    ]
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "connectionId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "destination": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 1024
+                        }
+                      }
+                    },
+                    "additionalProperties": false
                   }
-                },
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -77722,6 +78209,15 @@
                         }
                       ]
                     },
+                    "sinkName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "deliverOnly": {
+                      "type": "boolean"
+                    },
                     "source": {
                       "type": "string",
                       "enum": [
@@ -77795,6 +78291,8 @@
                     "kmsKeyId",
                     "storageClass",
                     "layout",
+                    "sinkName",
+                    "deliverOnly",
                     "source",
                     "editedAt",
                     "updatedBy",

@@ -208,7 +208,21 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
          FROM publish_targets t, target_s3_place(t.destination, t.sink_id) p
         WHERE t.${LIVE} AND t.kind IN ('internal', 'external')`,
     );
-    return rows.sort(byDefaultThenLabel);
+    const sinks = await this.pool.query<{ id: string; label: string }>(
+      `SELECT t.id, t.label FROM publish_targets t WHERE t.${LIVE} AND t.kind = 'sink'`,
+    );
+    return [
+      ...rows.map((r) => ({ ...r, sinkName: null })),
+      ...sinks.rows.map((r) => ({
+        id: r.id,
+        label: r.label,
+        kind: 'sink' as const,
+        bucket: '',
+        prefix: '',
+        layout: null,
+        sinkName: null,
+      })),
+    ].sort(byDefaultThenLabel);
   }
 
   async version(): Promise<number> {
