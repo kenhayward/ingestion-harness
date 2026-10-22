@@ -1405,57 +1405,135 @@ button.danger-fill {
   flex-direction: column;
   gap: 12px;
 }
+/* The list's box: the filters and pager on top, the rows, the footer. */
 .job-list-box {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-lg);
   background: var(--ih-surface);
-  overflow-x: auto;
+  overflow: hidden;
 }
+.job-list-box > .jobs-filters {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ih-border);
+}
+/* The rows' area: as many rows as it holds make a page (usePageSize), so it never scrolls. */
+.job-list-rows {
+  flex: none;
+  height: min(70vh, 900px);
+  min-height: 0;
+  overflow: hidden;
+}
+.job-list-empty {
+  margin: 0;
+  padding: 16px;
+}
+.jobs-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-size: var(--ih-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.jobs-pager-range {
+  color: var(--ih-muted);
+  white-space: nowrap;
+}
+.jobs-pager-buttons {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--ih-border-strong);
+  border-radius: var(--ih-radius-md);
+  overflow: hidden;
+}
+.jobs-pager-buttons > button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  font-size: var(--ih-text-sm);
+}
+.jobs-pager-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border-inline: 1px solid var(--ih-border);
+  white-space: nowrap;
+}
+/* One line a job: fixed columns, everything that does not fit ends in an ellipsis. */
 .job-list {
-  min-width: 740px;
+  table-layout: fixed;
   background: transparent;
 }
-.job-list th {
-  padding: 10px 16px;
-  border-bottom-color: var(--ih-border);
-}
 .job-list td {
-  padding: 10px 16px;
+  height: 36px;
+  padding: 0 12px;
   vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.job-list tbody tr:last-child td {
-  border-bottom: 0;
+.job-list .status-col {
+  width: 44px;
+}
+.job-list .type-col {
+  width: 26%;
+}
+.job-list .created-col {
+  width: 104px;
+}
+.job-list .took-col {
+  width: 96px;
+}
+.job-list .actions-col {
+  width: 52px;
+}
+.job-list .status-cell {
+  padding: 0 0 0 16px;
 }
 .job-list tr.selected td {
   background: var(--ih-sel-row);
 }
-.job-list .actions-col {
-  text-align: right;
-}
-.doc-cell,
-.type-cell {
-  max-width: 0;
-  width: 34%;
+.job-list tr.selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--ih-accent);
 }
 .type-cell {
-  width: 26%;
+  font-size: var(--ih-text-md);
+  color: var(--ih-muted);
 }
-.doc-cell > *,
-.type-cell > * {
-  display: block;
+/* The file name, then the note, on one line: the note gives way first, then the name. */
+.doc-line {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+.doc-line > * {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.doc-button {
-  min-height: 0;
+.doc-line > .doc-button {
+  flex: none;
   max-width: 100%;
+}
+.doc-line > .note {
+  flex: 0 1 auto;
+  white-space: pre;
+}
+.doc-button {
+  display: block;
+  min-height: 0;
   padding: 0;
   border: 0;
+  border-radius: 0;
   background: none;
   font-weight: 500;
   text-align: left;
-  justify-content: flex-start;
 }
 .doc-button:hover:not(:disabled) {
   background: none;
@@ -1466,6 +1544,63 @@ button.danger-fill {
   font-size: var(--ih-text-sm);
   color: var(--ih-muted);
 }
+.doc-cell .note {
+  margin: 0;
+}
+/* A job's status as an icon (JobStatusIcon): its tone's colour, its own shape. */
+.status-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  background: none;
+}
+.status-icon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.status-icon .status-icon-soft {
+  fill: var(--ih-warn-bg);
+}
+.status-icon-review .status-icon-soft {
+  stroke: none;
+}
+.status-icon.tone-alert .status-icon-soft {
+  fill: var(--ih-alert-bg);
+}
+.status-icon .status-icon-fill {
+  fill: currentColor;
+  stroke: none;
+}
+.status-icon .status-icon-solid {
+  fill: currentColor;
+  stroke: none;
+}
+.status-icon .status-icon-mark {
+  stroke: var(--ih-surface);
+  stroke-width: 1.8;
+}
+.status-icon .status-icon-track {
+  stroke: var(--ih-border);
+  stroke-width: 2;
+}
+.status-icon .status-icon-arc {
+  stroke-width: 2;
+}
+.status-icon-spinner svg {
+  animation: status-spin 1s linear infinite;
+}
+@keyframes status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-icon-spinner svg {
+    animation: none;
+  }
+}
 .note-warn {
   color: var(--ih-warn-fg);
 }
@@ -1475,24 +1610,20 @@ button.danger-fill {
 .type-cell .mono {
   font-size: var(--ih-text-xs);
 }
-.created-cell {
-  white-space: nowrap;
+.created-cell,
+.took-cell {
   font-size: var(--ih-text-md);
   color: var(--ih-muted);
-}
-.created-cell > span {
-  display: block;
-}
-.created-cell .elapsed {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-  font-size: var(--ih-text-sm);
   font-variant-numeric: tabular-nums;
 }
+.took-cell .elapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .job-list .actions-cell {
-  width: 1%;
+  padding: 0 10px 0 0;
+  overflow: visible;
 }
 .row-actions {
   position: relative;
@@ -1530,7 +1661,9 @@ button.danger-fill {
 }
 .row-actions > .more {
   flex: none;
-  width: 34px;
+  width: 30px;
+  min-height: 28px;
+  border-color: transparent;
   padding: 0;
   border-color: var(--ih-border);
   color: var(--ih-muted);
@@ -1576,6 +1709,76 @@ button.danger-fill {
   align-items: center;
   gap: 8px;
   font-size: var(--ih-text-md);
+}
+.job-list-box > .list-footer {
+  flex: none;
+  gap: 8px 16px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--ih-border);
+  font-size: var(--ih-text-sm);
+}
+.job-list-box > .list-footer > .link {
+  margin-left: auto;
+}
+.keys-hint kbd {
+  padding: 0 5px;
+  border: 1px solid var(--ih-border-strong);
+  border-radius: 4px;
+  background: var(--ih-surface2);
+  font-size: var(--ih-text-xs);
+}
+/* A row's confirmation, copied link or error, where its menu opened. */
+.menu.row-popover {
+  width: 300px;
+  gap: 6px;
+  padding: 10px 12px;
+  white-space: normal;
+  font-size: var(--ih-text-md);
+}
+.menu.row-popover .inline-confirm {
+  justify-content: flex-start;
+}
+/* Side by side the Jobs page fits the window: the header on top, the list and the panel fill
+   the rest, the list's rows area takes what its filters and footer leave (a page of rows), the
+   panel scrolls on its own. The page itself never scrolls. */
+@media (min-width: 1000px) {
+  .page:has(> .jobs-page) {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+  .jobs-page {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: calc(100vh - var(--ih-topbar-h) - 32px);
+    min-height: 480px;
+  }
+  .jobs-page > * {
+    flex: none;
+  }
+  .jobs-page > .page-header {
+    margin-bottom: 0;
+  }
+  .jobs-page > .jobs-layout {
+    flex: 1 1 0;
+    min-height: 0;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+  .jobs-main {
+    min-height: 0;
+  }
+  .jobs-main > .job-list-box {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+  .job-list-box > .job-list-rows {
+    flex: 1 1 0;
+    height: auto;
+  }
+  .jobs-layout > .job-panel {
+    overflow: auto;
+  }
 }
 .job-panel {
   flex: 1 1 320px;

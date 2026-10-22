@@ -17,6 +17,9 @@ import {
   jobDuration,
   jobNote,
   menuPosition,
+  pageRange,
+  rowsThatFit,
+  statusIcon,
   modelDisplayName,
   modelLabel,
   primaryAction,
@@ -553,5 +556,45 @@ describe('jobDuration', () => {
     ],
   ])('%s', (_name, o, text) => {
     expect(jobDuration({ ...job(), ...o }, now)).toBe(text);
+  });
+});
+
+describe('statusIcon', () => {
+  it.each<[JobStatus, string]>([
+    ['queued', 'queued'],
+    ['running', 'spinner'],
+    ['delivering', 'spinner'],
+    ['awaiting_review', 'review'],
+    ['needs_review', 'warning'],
+    ['failed', 'failed'],
+    ['succeeded', 'done'],
+    ['rejected', 'rejected'],
+    ['cancelled', 'cancelled'],
+  ])('%s shows the %s icon', (status, icon) => {
+    expect(statusIcon(status)).toBe(icon);
+  });
+});
+
+describe('rowsThatFit', () => {
+  it.each([
+    [720, 36, 20],
+    [737, 36, 20],
+    [36, 36, 5],
+    [0, 36, 5],
+    [720, 0, 5],
+  ])('%i px of %i px rows holds %i rows (never fewer than 5)', (height, row, n) => {
+    expect(rowsThatFit(height, row)).toBe(n);
+  });
+});
+
+describe('pageRange', () => {
+  it.each([
+    [34, 20, 0, { page: 0, pages: 2, from: 0, to: 20 }],
+    [34, 20, 1, { page: 1, pages: 2, from: 20, to: 34 }],
+    [34, 20, 5, { page: 1, pages: 2, from: 20, to: 34 }],
+    [0, 20, 3, { page: 0, pages: 1, from: 0, to: 0 }],
+    [20, 20, 1, { page: 0, pages: 1, from: 0, to: 20 }],
+  ])('%i jobs, %i a page, page %i', (total, size, page, range) => {
+    expect(pageRange(total, size, page)).toEqual(range);
   });
 });

@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
-        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #304,
+        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #305,
         merged between Wednesday 21 October 2026, 14:06 and Thursday 22 October 2026 (UTC).
       </p>
 
@@ -208,6 +208,10 @@
               >— a one-row header, long values shown whole, and page columns that open their
               page</span
             >
+          </li>
+          <li>
+            <a href="#jobs-compact">A compact Jobs list</a>
+            <span>— one line a job, paged to fit the window</span>
           </li>
           <li>
             <a href="#open-in-viewer">Open a result in the viewer</a>
@@ -470,6 +474,26 @@
         like), its page numbers are links that turn the document to that page.
         <strong>Next flagged</strong> turns to a flagged row&apos;s page as well, and that
         page&apos;s thumbnail gets a dot.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="jobs-compact">A compact Jobs list</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/305">#305</a>
+      </p>
+      <p>
+        The <strong>Jobs</strong> page shows each job on one line: a status icon (a spinner while it
+        runs; hover for its name), the file name, why it needs you when it does, the document type,
+        when it was created and how long it took. The model is in the details panel. Every action is
+        in the row&apos;s <strong>⋯</strong> menu, the main one first, and in the details panel; a
+        confirmation opens where the menu was.
+      </p>
+      <p>
+        From 1,000 px wide the page fits the window: the list shows as many jobs as fit, with
+        <strong>‹ Newer</strong> and <strong>Older ›</strong> above it, and the page no longer
+        scrolls. In the list, <kbd>↑</kbd> and <kbd>↓</kbd> move to the next job (across pages),
+        <kbd>PgUp</kbd> and <kbd>PgDn</kbd> change page, and <kbd>Enter</kbd> opens the selected job
+        to review or view. The list still holds the newest 50 jobs.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

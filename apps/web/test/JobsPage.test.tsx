@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JobsPage } from '../src/jobs/JobsPage.js';
+import { FALLBACK_PAGE_SIZE, JobsPage } from '../src/jobs/JobsPage.js';
 import { fakeApi, job } from './fake-api.js';
 
 type Props = ComponentProps<typeof JobsPage>;
@@ -251,5 +251,110 @@ describe('JobsPage help', () => {
       within(header as HTMLElement).getByRole('button', { name: 'Help: Using the Jobs page' }),
     );
     expect(screen.getByRole('dialog', { name: 'Using the Jobs page' })).toBeInTheDocument();
+  });
+});
+
+/** `n` jobs, newest first, named job-01.pdf …; the first needs attention so it is selected. */
+const many = (n: number) =>
+  Array.from({ length: n }, (_, i) =>
+    job({
+      id: `j${i + 1}`,
+      filename: `job-${String(i + 1).padStart(2, '0')}.pdf`,
+      status: i === 0 ? 'failed' : 'succeeded',
+    }),
+  );
+const listRegion = () => screen.getByRole('region', { name: 'Job list' });
+const shown = () =>
+  within(listRegion())
+    .getAllByRole('button', { name: /^Show details for / })
+    .map((b) => b.textContent);
+const pager = () => screen.getByRole('navigation', { name: 'Pages of jobs' });
+
+describe('JobsPage pages', () => {
+  it('shows a page of jobs at a time, paged from the top of the list', async () => {
+    expect(FALLBACK_PAGE_SIZE).toBe(25);
+    page(many(30));
+    expect(shown()).toHaveLength(25);
+    expect(shown()[0]).toBe('job-01.pdf');
+    expect(pager()).toHaveTextContent('1–25 of 30');
+    expect(pager()).toHaveTextContent('Page 1 of 2');
+    expect(within(pager()).getByRole('button', { name: 'Newer jobs' })).toBeDisabled();
+    await userEvent.click(within(pager()).getByRole('button', { name: 'Older jobs' }));
+    expect(shown()).toEqual(['job-26.pdf', 'job-27.pdf', 'job-28.pdf', 'job-29.pdf', 'job-30.pdf']);
+    expect(pager()).toHaveTextContent('26–30 of 30');
+    expect(pager()).toHaveTextContent('Page 2 of 2');
+    expect(within(pager()).getByRole('button', { name: 'Older jobs' })).toBeDisabled();
+    // Paging leaves the selected job in the panel.
+    expect(within(panel()).getByRole('heading', { name: 'job-01.pdf' })).toBeInTheDocument();
+  });
+
+  it('goes back to the first page when the status filter changes', async () => {
+    page(many(30));
+    await userEvent.click(within(pager()).getByRole('button', { name: 'Older jobs' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Finished 29' }));
+    expect(pager()).toHaveTextContent('Page 1 of 2');
+    expect(shown()[0]).toBe('job-02.pdf');
+  });
+
+  it('keeps a page to show when the list shrinks under it', async () => {
+    const jobs = many(30);
+    const { rerender } = page(jobs);
+    await userEvent.click(within(pager()).getByRole('button', { name: 'Older jobs' }));
+    rerender(element(jobs.slice(0, 20)));
+    expect(pager()).toHaveTextContent('Page 1 of 1');
+    expect(shown()).toHaveLength(20);
+  });
+
+  it("opens on a linked job's page", () => {
+    page(many(30), { jobId: 'j28' });
+    expect(pager()).toHaveTextContent('Page 2 of 2');
+    expect(within(panel()).getByRole('heading', { name: 'job-28.pdf' })).toBeInTheDocument();
+  });
+});
+
+describe('JobsPage keyboard', () => {
+  it('moves the selection with ↑ and ↓, across pages', async () => {
+    page(many(30));
+    within(listRegion()).getByRole('button', { name: 'Show details for job-24.pdf' }).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(within(panel()).getByRole('heading', { name: 'job-25.pdf' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show details for job-25.pdf' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(pager()).toHaveTextContent('Page 2 of 2');
+    expect(screen.getByRole('button', { name: 'Show details for job-26.pdf' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(pager()).toHaveTextContent('Page 1 of 2');
+    expect(within(panel()).getByRole('heading', { name: 'job-25.pdf' })).toBeInTheDocument();
+  });
+
+  it('pages with Page Down and Page Up, selecting the first job of the page', async () => {
+    page(many(30));
+    within(listRegion()).getByRole('button', { name: 'Show details for job-03.pdf' }).focus();
+    await userEvent.keyboard('{PageDown}');
+    expect(pager()).toHaveTextContent('Page 2 of 2');
+    expect(screen.getByRole('button', { name: 'Show details for job-26.pdf' })).toHaveFocus();
+    expect(within(panel()).getByRole('heading', { name: 'job-26.pdf' })).toBeInTheDocument();
+    await userEvent.keyboard('{PageUp}');
+    expect(screen.getByRole('button', { name: 'Show details for job-01.pdf' })).toHaveFocus();
+  });
+
+  it('opens the selected job with Enter when it can be reviewed or viewed', async () => {
+    page([
+      job({ id: 'a', filename: 'a.pdf', status: 'awaiting_review' }),
+      job({ id: 'b', filename: 'b.pdf', status: 'failed' }),
+    ]);
+    window.location.hash = '#/jobs';
+    screen.getByRole('button', { name: 'Show details for a.pdf' }).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(window.location.hash).toBe('#/review/a');
+    window.location.hash = '#/jobs';
+    await userEvent.click(screen.getByRole('button', { name: 'Show details for b.pdf' }));
+    await userEvent.keyboard('{Enter}');
+    expect(window.location.hash).toBe('#/jobs');
+  });
+
+  it('says how to move with the keyboard', () => {
+    page(many(3));
+    expect(within(listRegion()).getByText(/select/)).toBeInTheDocument();
   });
 });

@@ -33,44 +33,41 @@ const menuItems = (name: string) =>
     (e) => e.textContent,
   );
 
-describe('JobList main action', () => {
-  it('shows one main action per status', () => {
-    renderList([
-      job({ id: 'a', filename: 'await.pdf', status: 'awaiting_review' }),
-      job({ id: 'b', filename: 'done.pdf', status: 'succeeded' }),
-      job({ id: 'c', filename: 'run.pdf', status: 'running' }),
-      job({ id: 'd', filename: 'fail.pdf', status: 'failed' }),
-      job({ id: 'e', filename: 'rej.pdf', status: 'rejected' }),
+describe('JobList actions', () => {
+  it('keeps the row to one line: no action buttons, only the ⋯ menu', () => {
+    renderList([job({ id: 'a', filename: 'await.pdf', status: 'awaiting_review' })]);
+    const r = within(row('await.pdf'));
+    expect(r.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Show details for await.pdf',
+      'More actions for await.pdf',
     ]);
-    expect(within(row('await.pdf')).getByRole('link', { name: 'Review' })).toHaveAttribute(
-      'href',
-      '#/review/a',
-    );
-    expect(within(row('done.pdf')).getByRole('link', { name: 'View' })).toHaveAttribute(
-      'href',
-      '#/review/b',
-    );
-    expect(within(row('run.pdf')).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
-    expect(
-      within(row('fail.pdf')).getByRole('button', { name: 'Retry fail.pdf' }),
-    ).toHaveTextContent('Retry…');
-    expect(within(row('rej.pdf')).queryByRole('link', { name: /Review|View/ })).toBeNull();
-    expect(within(row('rej.pdf')).queryByRole('button', { name: /^(Retry|Cancel)/ })).toBeNull();
+    expect(r.queryByRole('link')).toBeNull();
   });
 
   it.each<[JobStatus, string[]]>([
-    ['queued', ['Open PDF', 'Copy link']],
-    ['running', ['Open PDF', 'Copy link']],
-    ['awaiting_review', ['Open PDF', 'Copy link']],
-    ['succeeded', ['Re-process…', 'Open PDF', 'Copy link', 'Delete']],
-    ['failed', ['Open PDF', 'Copy link', 'Delete']],
-    ['needs_review', ['Open PDF', 'Copy link', 'Delete']],
-    ['cancelled', ['Open PDF', 'Copy link', 'Delete']],
+    ['queued', ['Cancel', 'Open PDF', 'Copy link']],
+    ['running', ['Cancel', 'Open PDF', 'Copy link']],
+    ['awaiting_review', ['Review', 'Open PDF', 'Copy link']],
+    ['succeeded', ['View', 'Re-process…', 'Open PDF', 'Copy link', 'Delete']],
+    ['failed', ['Retry…', 'Open PDF', 'Copy link', 'Delete']],
+    ['needs_review', ['Retry…', 'Open PDF', 'Copy link', 'Delete']],
+    ['cancelled', ['Retry…', 'Open PDF', 'Copy link', 'Delete']],
     ['rejected', ['Open PDF', 'Copy link', 'Delete']],
-  ])('%s jobs offer %j in the menu', async (status, expected) => {
+  ])('%s jobs offer %j in the menu, the main action first', async (status, expected) => {
     renderList([job({ filename: 'a.pdf', status })]);
     await openMenu('a.pdf');
     expect(menuItems('a.pdf')).toEqual(expected);
+  });
+
+  it('links Review and View in the menu to the job', async () => {
+    renderList([
+      job({ id: 'a', filename: 'await.pdf', status: 'awaiting_review' }),
+      job({ id: 'b', filename: 'done.pdf', status: 'succeeded' }),
+    ]);
+    await openMenu('await.pdf');
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '#/review/a');
+    await openMenu('done.pdf');
+    expect(screen.getByRole('link', { name: 'View' })).toHaveAttribute('href', '#/review/b');
   });
 
   it('links Open PDF to the uploaded document', async () => {
@@ -96,7 +93,12 @@ describe('JobList main action', () => {
     expect(link).toHaveAttribute('href', '/api/jobs/w/document');
     expect(link).not.toHaveAttribute('target');
     expect(screen.queryByRole('link', { name: 'Open PDF' })).not.toBeInTheDocument();
-    expect(menuItems('r.docx')).toEqual(['Download original (.docx)', 'Copy link', 'Delete']);
+    expect(menuItems('r.docx')).toEqual([
+      'Retry…',
+      'Download original (.docx)',
+      'Copy link',
+      'Delete',
+    ]);
   });
 
   it('closes the menu on Escape', async () => {
@@ -136,33 +138,50 @@ describe('JobList rows', () => {
     expect(onSelect).toHaveBeenCalledWith('a');
   });
 
-  it.each([
-    [{ modelsUsed: ['local/qwen', 'cloud/claude'] }, 'Main Production Model, Cloud model'],
-    [{ modelsUsed: [], modelOverride: 'anthropic/opus' }, 'Model no longer offered'],
-    [{ modelsUsed: [], modelOverride: null }, 'Spec default'],
-  ])('shows the document type and model: %j', (fields, shown) => {
-    renderList([job({ filename: 'a.pdf', specId: 'inv', specVersion: 3, ...fields })], {
-      specTitles: new Map([['inv', 'Supplier invoice']]),
-    });
+  it('shows the document type, and no model', () => {
+    renderList(
+      [job({ filename: 'a.pdf', specId: 'inv', specVersion: 3, modelsUsed: ['local/qwen'] })],
+      {
+        specTitles: new Map([['inv', 'Supplier invoice']]),
+      },
+    );
     expect(within(row('a.pdf')).getByText('Supplier invoice v3')).toBeInTheDocument();
-    expect(within(row('a.pdf')).getByText(shown)).toBeInTheDocument();
+    expect(within(row('a.pdf')).queryByText('Main Production Model')).toBeNull();
   });
 
-  it('shows the status, a context note and when it was created', () => {
+  it.each<[JobStatus, string]>([
+    ['queued', 'Queued'],
+    ['running', 'Running'],
+    ['delivering', 'Delivering'],
+    ['awaiting_review', 'Awaiting review'],
+    ['failed', 'Failed'],
+    ['succeeded', 'Succeeded'],
+  ])("shows a %s job's status as an icon named %s, also on hover", (status, label) => {
+    renderList([job({ filename: 'a.pdf', status })]);
+    const icon = within(row('a.pdf')).getByRole('img', { name: label });
+    expect(icon).toHaveAttribute('title', label);
+  });
+
+  it('notes only what needs attention after the file name', () => {
     renderList([
-      job({
-        filename: 'a.pdf',
-        status: 'failed',
-        error: 'schema mismatch',
-        createdAt: '2026-10-12T11:54:00Z',
-      }),
+      job({ filename: 'a.pdf', status: 'failed', error: 'schema mismatch' }),
+      job({ filename: 'b.pdf', status: 'awaiting_review', reviewReasons: ['3 values flagged'] }),
+      job({ filename: 'c.pdf', status: 'succeeded' }),
+      job({ filename: 'd.pdf', status: 'running' }),
     ]);
-    expect(within(row('a.pdf')).getByText('Failed')).toBeInTheDocument();
     expect(within(row('a.pdf')).getByText('schema mismatch')).toBeInTheDocument();
-    expect(within(row('a.pdf')).getByText('6 min ago')).toBeInTheDocument();
+    expect(within(row('b.pdf')).getByText('3 values flagged')).toBeInTheDocument();
+    expect(within(row('c.pdf')).queryByText('Published')).toBeNull();
+    expect(within(row('d.pdf')).queryByText('Extracting…')).toBeNull();
   });
 
-  it('shows under the created time how long processing took, with a clock', () => {
+  it('shows when it was created, with the full date on hover', () => {
+    renderList([job({ filename: 'a.pdf', createdAt: '2026-10-12T11:54:00Z' })]);
+    const created = within(row('a.pdf')).getByText('6 min ago');
+    expect(created).toHaveAttribute('title', new Date('2026-10-12T11:54:00Z').toLocaleString());
+  });
+
+  it('shows how long processing took in its own column, with a clock', () => {
     renderList([
       job({
         filename: 'done.pdf',
@@ -175,6 +194,7 @@ describe('JobList rows', () => {
     ]);
     const done = within(row('done.pdf')).getByLabelText('Processing time 01:34');
     expect(done).toHaveTextContent('01:34');
+    expect(done.closest('td')).toHaveClass('took-cell');
     expect(done.querySelector('svg')).not.toBeNull();
     // Still running: counts up to now.
     expect(within(row('running.pdf')).getByLabelText('Processing time 23:04')).toBeInTheDocument();
@@ -198,6 +218,10 @@ describe('JobList confirmations', () => {
     expect(within(row('a.pdf')).getByText(/Delete a\.pdf\?/)).toHaveTextContent(
       'Published outputs and its graph are withdrawn.',
     );
+    // The row stays one line: the confirmation opens where the menu was, beside its ⋯ button.
+    expect(
+      within(row('a.pdf')).getByRole('button', { name: 'More actions for a.pdf' }),
+    ).toBeInTheDocument();
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Keep a.pdf' }));
     expect(api.deleteJob).not.toHaveBeenCalled();
     await openMenu('a.pdf');
@@ -213,6 +237,7 @@ describe('JobList confirmations', () => {
     const api = fakeApi();
     const j = job({ filename: 'a.pdf', status: 'running' });
     renderList([j], { api });
+    await openMenu('a.pdf');
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Cancel' }));
     expect(within(row('a.pdf')).getByText('Cancel job?')).toBeInTheDocument();
     await userEvent.click(
@@ -243,6 +268,7 @@ describe('JobList confirmations', () => {
     const onChanged = vi.fn();
     const j = job({ id: 'a', filename: 'a.pdf', status: 'failed', modelOverride: 'test' });
     renderList([j], { api, onChanged });
+    await openMenu('a.pdf');
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Retry a.pdf' });
     expect(dialog).toHaveTextContent(
@@ -262,6 +288,7 @@ describe('JobList confirmations', () => {
   it("names the job's document type model in the retry dialog", async () => {
     const j = job({ filename: 'a.pdf', status: 'failed', specId: 'letter' });
     renderList([j], { typeModels: new Map([['letter', { model: 'test' }]]) });
+    await openMenu('a.pdf');
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
     expect(
       screen.getByRole('option', { name: "Document type's model (New for testing only)" }),
@@ -272,6 +299,7 @@ describe('JobList confirmations', () => {
     const api = fakeApi();
     const j = job({ id: 'a', filename: 'a.pdf', status: 'failed' });
     renderList([j], { api });
+    await openMenu('a.pdf');
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Retry a.pdf' });
     expect(within(dialog).getByRole('combobox', { name: 'Model' })).toHaveValue('');
@@ -282,12 +310,15 @@ describe('JobList confirmations', () => {
   it('cancels the dialog without retrying', async () => {
     const api = fakeApi();
     renderList([job({ filename: 'a.pdf', status: 'failed' })], { api });
-    const retry = within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' });
-    await userEvent.click(retry);
+    await openMenu('a.pdf');
+    await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(api.retryJob).not.toHaveBeenCalled();
-    expect(retry).toHaveFocus();
+    // The menu item is gone: focus goes back to the row's ⋯ button.
+    expect(
+      within(row('a.pdf')).getByRole('button', { name: 'More actions for a.pdf' }),
+    ).toHaveFocus();
   });
 
   it('shows a refused retry in the dialog', async () => {
@@ -297,6 +328,7 @@ describe('JobList confirmations', () => {
       }),
     });
     renderList([job({ filename: 'a.pdf', status: 'failed' })], { api });
+    await openMenu('a.pdf');
     await userEvent.click(within(row('a.pdf')).getByRole('button', { name: 'Retry a.pdf' }));
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('unknown model choice gone');
