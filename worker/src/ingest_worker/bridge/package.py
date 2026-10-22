@@ -28,6 +28,7 @@ from .models import (
     idempotency_key,
     package_archive_keys,
 )
+from .naming import naming_inputs
 
 if TYPE_CHECKING:
     from ..pipeline import PipelineDeps
@@ -134,6 +135,7 @@ def build_package(
     sha = job.source_sha256 or str(doc.get("source_sha256") or "")
     if not re.fullmatch(r"[0-9a-f]{64}", sha):
         raise DocumentError("the document's sha256 is not known: it cannot be delivered")
+    published_at = _utc(doc.get("published_at")) or _now()
     return BridgePackage(
         kind="document",
         contract_version=1,
@@ -147,9 +149,17 @@ def build_package(
             recipe_version=recipe_version,
             approver=approver,
             extracted_at=_utc(doc.get("extracted_at")),
-            published_at=_utc(doc.get("published_at")) or _now(),
+            published_at=published_at,
         ),
-        naming={},
+        naming=naming_inputs(
+            fields=doc.get("fields") or {},
+            job_id=job.id,
+            recipe_id=recipe_id,
+            recipe_version=recipe_version,
+            source_filename=job.filename,
+            source_sha256=sha,
+            published_at=datetime.fromisoformat(published_at.replace("Z", "+00:00")),
+        ),
         files=[
             PackageFile(
                 output=o.output_id,

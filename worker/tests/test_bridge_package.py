@@ -144,7 +144,12 @@ def test_a_document_package_carries_files_at_todays_keys_and_the_data() -> None:
         ["batch", "value"],
     )
     assert table.rows == [{"batch": "B1", "value": 1.0}]
-    assert package.naming == {}
+    # What the sinks' name patterns resolve against (fixture naming.json pins the rules).
+    assert package.naming["field:product"] == "Richfer"
+    assert package.naming["field:dose"] == "2.5"
+    assert package.naming["recipe.id"] == package.provenance.recipe_id
+    assert package.naming["job.id"] == package.provenance.job_id
+    assert package.naming["date"] == package.provenance.published_at[:10]
     assert package.rdf is None and package.narrative is None and package.images is None
 
 

@@ -1,0 +1,127 @@
+{
+  "inputs": [
+    {
+      "name": "fields of every kind, the source, the recipe, the job and the date",
+      "document": {
+        "fields": {
+          "title": { "value": "Q3 report", "page": 1 },
+          "count": { "value": 42 },
+          "ratio": { "value": 0.5 },
+          "approved": { "value": true },
+          "tags": { "value": ["a", "b", 3] },
+          "path": { "value": "a/b" },
+          "missing": { "value": null },
+          "nested": { "value": { "unit": "mg" } },
+          "blank": { "value": "" }
+        }
+      },
+      "jobId": "11111111-2222-4333-8444-555555555555",
+      "recipe": { "id": "letter", "version": 3 },
+      "source": {
+        "filename": "Q3 report.final.docx",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "publishedAt": "2026-10-22T23:59:59.000Z",
+      "naming": {
+        "field:title": "Q3 report",
+        "field:count": "42",
+        "field:ratio": "0.5",
+        "field:approved": "true",
+        "field:tags": "a, b, 3",
+        "field:path": "a/b",
+        "source.filename": "Q3 report.final.docx",
+        "source.stem": "Q3 report.final",
+        "source.sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recipe.id": "letter",
+        "recipe.version": "3",
+        "job.id": "11111111-2222-4333-8444-555555555555",
+        "date": "2026-10-22"
+      }
+    },
+    {
+      "name": "midnight UTC is the new day; a filename with no extension is its own stem",
+      "document": { "fields": {} },
+      "jobId": "j1",
+      "recipe": { "id": "r", "version": 1 },
+      "source": {
+        "filename": "README",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "publishedAt": "2026-10-23T00:00:00.000Z",
+      "naming": {
+        "source.filename": "README",
+        "source.stem": "README",
+        "source.sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "recipe.id": "r",
+        "recipe.version": "1",
+        "job.id": "j1",
+        "date": "2026-10-23"
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "pattern": "{field:title} {date}",
+      "naming": { "field:title": "Q3", "date": "2026-10-22" },
+      "value": "Q3 2026-10-22"
+    },
+    {
+      "pattern": "{field:title|source.stem}",
+      "naming": { "source.stem": "scan" },
+      "value": "scan"
+    },
+    {
+      "pattern": "{field:title|'untitled'}",
+      "naming": {},
+      "value": "untitled"
+    },
+    {
+      "pattern": "{field:title | source.stem}",
+      "naming": { "field:title": "", "source.stem": "scan" },
+      "value": "scan"
+    },
+    { "pattern": "{{literal}} braces", "naming": {}, "value": "{literal} braces" },
+    { "pattern": "no placeholders", "naming": {}, "value": "no placeholders" },
+    { "pattern": "{field:path}", "naming": { "field:path": "a/b {x}" }, "value": "a/b {x}" },
+    {
+      "pattern": "{field:title}-{field:code|recipe.id}",
+      "naming": { "field:title": "T" },
+      "unresolved": ["field:code", "recipe.id"]
+    },
+    {
+      "pattern": "{field:title}",
+      "naming": {},
+      "unresolved": ["field:title"]
+    },
+    {
+      "pattern": "{nope}",
+      "naming": {},
+      "error": "`{nope}`: unknown variable nope at 1"
+    },
+    {
+      "pattern": "a {field:title",
+      "naming": {},
+      "error": "`a {field:title`: unclosed { at 2"
+    },
+    {
+      "pattern": "a } b",
+      "naming": {},
+      "error": "`a } b`: } with no { at 2"
+    },
+    {
+      "pattern": "{}",
+      "naming": {},
+      "error": "`{}`: an empty placeholder at 0"
+    },
+    {
+      "pattern": "{field:a{b}",
+      "naming": {},
+      "error": "`{field:a{b}`: { inside a placeholder at 8"
+    },
+    {
+      "pattern": "{'unclosed}",
+      "naming": {},
+      "error": "`{'unclosed}`: unclosed ' at 1"
+    }
+  ]
+}
