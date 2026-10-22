@@ -159,12 +159,31 @@
   <body>
     <main>
       <h1>CT Studio release notes</h1>
-      <p class="subtitle">Thursday 22 October 2026: one registry of publishing targets.</p>
+      <p class="subtitle">
+        Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
+        calls, and one registry of publishing targets. PRs #289 to #301, merged between Wednesday 21
+        October 2026, 14:06 and Thursday 22 October 2026, 10:17 (UTC). #298 is still open and is not
+        in this release.
+      </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
         <h2>Contents</h2>
         <h4>Major changes</h4>
         <ul>
+          <li>
+            <a href="#review-workspace">A resizable Review workspace</a>
+            <span
+              >— the document and the data side by side, with an outline of fields and tables</span
+            >
+          </li>
+          <li>
+            <a href="#occurrence-filters">Occurrence filters</a>
+            <span>— a table step reads only its own kind of block</span>
+          </li>
+          <li>
+            <a href="#parallel-calls">Parallel model calls</a>
+            <span>— a step&apos;s calls run at once, up to each model&apos;s limit</span>
+          </li>
           <li>
             <a href="#one-registry">One registry of publishing targets</a>
             <span>— the delivery bridge holds every target; CT Studio shows what it holds</span>
@@ -172,6 +191,25 @@
         </ul>
         <h4>Minor changes</h4>
         <ul>
+          <li>
+            <a href="#review-header">A tighter Review page</a>
+            <span
+              >— a one-row header, long values shown whole, and page columns that open their
+              page</span
+            >
+          </li>
+          <li>
+            <a href="#cancel-runs">Cancel test runs</a>
+            <span>— stop a queued or running run, or a whole batch</span>
+          </li>
+          <li>
+            <a href="#sections-hints">Sections: spaces and repeated keys</a>
+            <span>— a fix for no-break spaces, and a warning for keys caught twice</span>
+          </li>
+          <li>
+            <a href="#personal-connections">Your own connections</a>
+            <span>— everyone can keep their own logins on the connections page</span>
+          </li>
           <li>
             <a href="#waiting">A worker that starts first waits</a>
             <span
@@ -183,14 +221,117 @@
             <a href="#restores">Restores and targets</a>
             <span>— a restore puts back the targets the bridge lacks</span>
           </li>
-          <li>
-            <a href="#personal-connections">Your own connections</a>
-            <span>— everyone can keep their own logins on the connections page</span>
-          </li>
         </ul>
+        <h4><a href="#other">Other updates</a></h4>
       </nav>
 
-      <h2 id="one-registry">One registry of publishing targets</h2>
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            Cached Workbench steps that read chunks or a repeating section run again once, because
+            the extraction prompt changed order. Regression scores may move slightly.
+          </li>
+          <li>
+            <code>PATCH /api/llm/endpoints/:name/models/:modelId</code> now takes
+            <code>maxOutputTokens</code>, <code>maxConcurrentCalls</code> or both; a setting left
+            out is kept.
+          </li>
+          <li>
+            New migrations run with the deploy: <code>202610212105_llm_model_concurrency</code>,
+            <code>202610220900_targets_on_bridge</code>,
+            <code>202610220930_drop_target_columns</code>,
+            <code>202610221000_job_waiting_since</code> and
+            <code>202610221100_legacy_key_connection</code>, and the bridge&apos;s
+            <code>202610211000_target_removal</code>. The bridge contract package is now at
+            <strong>0.4.0</strong>.
+          </li>
+        </ul>
+      </div>
+
+      <h2 id="major">Major changes</h2>
+
+      <h3 id="review-workspace">A resizable Review workspace</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/299">#299</a>
+      </p>
+      <p>
+        The <strong>Review</strong> page, and the read-only view of a finished job, is now one
+        workspace that fits the window. The document and the extracted data sit side by side. Drag
+        the divider between them, or focus it and use the arrow keys (Home and End jump to the
+        ends), or pick <strong>30 / 70</strong>, <strong>40 / 60</strong> or
+        <strong>50 / 50</strong>. Either side folds to a narrow rail when you need the room, and
+        <strong>Swap sides</strong> puts the document on the right. Your arrangement is remembered
+        in this browser.
+      </p>
+      <p>
+        Page thumbnails run beside the page, with a dot on pages holding a flagged field. The tabs
+        that used to wrap onto several lines for a document with many tables are now an outline:
+        Fields, each table (a trailing reference such as <em>(Table IX)</em> on a second line),
+        Edits, Steps and Graph, each with its number of flagged values.
+        <strong>Find a table or field</strong> narrows the outline, and
+        <strong>Next flagged</strong> walks through every flagged value as before.
+      </p>
+      <p>
+        An open table offers <strong>All rows</strong> or <strong>Flagged only</strong>, buttons to
+        the previous and next table, and headings that stay in place as you scroll. When Next
+        flagged lands on a value, or you focus one, a strip under the table says why it was flagged,
+        with <strong>Edit value</strong> while the job awaits review. Below 1,000 px wide the two
+        sides stack. The Review help has new sections on arranging the page and finding a value.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="occurrence-filters">Occurrence filters</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/295">#295</a>
+      </p>
+      <p>
+        A recipe&apos;s table step reading a <strong>repeating section</strong> used to read every
+        block of it. A stability report with 60 tables of 7 kinds in one repeating section made
+        about 960 model calls per document, most of them returning no rows. A step can now say which
+        blocks it reads: on the Pipeline tab, <strong>Occurrences</strong> takes a pattern matched
+        against the start of each block (its first 600 characters, ignoring case), and the step
+        reads only the blocks that match. None matching means no call and no rows. A filtered step
+        shows a <em>filtered</em> chip, and the Checks strip warns when steps filling different
+        tables all read every block of one section.
+      </p>
+      <p>
+        The Workbench <strong>Pipeline</strong> stage now proposes these filters, and checks its
+        first answer once against the dev samples&apos; blocks: a filter matching nothing, or a kind
+        of heading no filter reads, goes back to the model. It also drops <em>chunkPages</em> on a
+        step whose blocks are short. On the example report that is about 60 calls instead of 960,
+        each on one table.
+      </p>
+      <p>
+        The extraction prompt now puts the chunk and block lines just before the document text, so a
+        local model server can reuse the rest of the prompt between calls.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="parallel-calls">Parallel model calls</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/296">#296</a>
+      </p>
+      <p>
+        A step&apos;s calls (one per block of a repeating section, or per chunk of pages) read
+        separate text, so they can now run at the same time. Administration &gt;
+        <em>Models</em> has a <strong>Parallel calls</strong> setting beside <em>Max output</em> for
+        each offered model: how many calls may go to it at once, from 1 to 32. Empty means one at a
+        time, as before. The limit holds across every worker together, and OCR uses the OCR
+        model&apos;s setting when it has one.
+      </p>
+      <p>
+        Results are merged in the same order as a run one call at a time, so the extracted data is
+        the same. Steps themselves still run one after another, because a step can read the ones
+        before it. Some local servers answer slightly differently when they batch requests, so
+        compare a test run before relying on a higher value.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="one-registry">One registry of publishing targets</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/293">#293</a>
+      </p>
       <p>
         Publishing targets now live in one place: the delivery bridge. Administration &gt;
         <em>Published outputs</em> lists the bridge&apos;s targets, and every save goes to the
@@ -213,26 +354,69 @@
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
-      <h2 id="waiting">A worker that starts first waits</h2>
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="review-header">A tighter Review page</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/301">#301</a>
+      </p>
       <p>
-        Only the API creates the <code>default</code> and triple store targets now, on its first
-        start. A worker that starts earlier waits for them, and the job is retried without using up
-        its attempts. It waits before any model call, so waiting never re-runs a paid extraction. A
-        job that has waited 30 minutes fails with
-        <em>publishing target &lt;id&gt; has not synced with the delivery bridge for 30 minutes</em
-        >: check that the bridge is running and read the API&apos;s log.
+        The Review page&apos;s header is now one row: the back link, the file name (cut short when
+        it is long, with the full name on hover), its status, the recipe, version and model, the
+        queue with <strong>Next document</strong>, and help. The reasons a document needs review
+        moved from a full-width box into an amber <strong>Why review</strong> chip beside the
+        status, which opens them in a small panel. It only shows while the document awaits review: a
+        finished job no longer shows the reasons it once had. The document and the data get the
+        height the header gave back.
+      </p>
+      <p>
+        A long value now wraps in its box, so you can read all of it, and editing a text value opens
+        a box that grows with what it holds (you can also drag it taller):
+        <strong>Enter</strong> saves and <strong>Shift+Enter</strong> starts a new line.
+      </p>
+      <p>
+        When a table has a page column (named Page, Page no., Page number, Source page and the
+        like), its page numbers are links that turn the document to that page.
+        <strong>Next flagged</strong> turns to a flagged row&apos;s page as well, and that
+        page&apos;s thumbnail gets a dot.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
-      <h2 id="restores">Restores and targets</h2>
+      <h3 id="cancel-runs">Cancel test runs</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/292">#292</a>
+      </p>
       <p>
-        After a restore, targets CT Studio has but the bridge lacks are put back on the bridge. A
-        copy restore keeps this server&apos;s targets, so a change made directly on the bridge and
-        not yet shown in CT Studio is overwritten.
+        The Workbench <strong>Test runs</strong> tab can now stop runs. Each queued or running run
+        has <strong>Cancel</strong>, and a batch with unfinished runs has
+        <strong>Cancel batch…</strong>, which cancels only those runs and leaves finished ones
+        alone. Both ask first, and a batch lists the files it will cancel. A cancelled run can be
+        retried as before, and cancelling works for retired document types too.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
-      <h2 id="personal-connections">Your own connections</h2>
+      <h3 id="sections-hints">Sections: spaces and repeated keys</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/291">#291</a>
+      </p>
+      <p>
+        An anchor that misses a heading only because the document writes a no-break space (or
+        another Unicode space) where the anchor has a plain one now gets a suggested fix on the
+        <strong>Sections</strong> tab, which names the character and quotes the line. One click
+        applies it, as for the other suggestions.
+      </p>
+      <p>
+        A sample now shows <strong>Keys caught more than once</strong> when one key starts more than
+        one block of a repeating section, usually because the anchor also caught the table of
+        contents. It names the section and where each block starts. The Sections drafting stage gets
+        both hints too.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="personal-connections">Your own connections</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/297">#297</a>
+      </p>
       <p>
         Profile has a new <strong>Connections</strong> tab. Some systems CT Studio will deliver to
         record who delivered each item, so they need a real person&apos;s login. You keep those
@@ -248,6 +432,57 @@
         integrators: the bridge contract package is now 0.4.0 (connection summaries carry
         <code>kind</code>, <code>instanceId</code> and <code>lastUsedAt</code>, sinks list their
         <code>instances</code>).
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="waiting">A worker that starts first waits</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/293">#293</a>
+      </p>
+      <p>
+        Only the API creates the <code>default</code> and triple store targets now, on its first
+        start. A worker that starts earlier waits for them, and the job is retried without using up
+        its attempts. It waits before any model call, so waiting never re-runs a paid extraction. A
+        job that has waited 30 minutes fails with
+        <em>publishing target &lt;id&gt; has not synced with the delivery bridge for 30 minutes</em
+        >: check that the bridge is running and read the API&apos;s log.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="restores">Restores and targets</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/293">#293</a>
+      </p>
+      <p>
+        After a restore, targets CT Studio has but the bridge lacks are put back on the bridge. A
+        copy restore keeps this server&apos;s targets, so a change made directly on the bridge and
+        not yet shown in CT Studio is overwritten.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="other">Other updates</h2>
+
+      <h3 id="target-removal">Removing targets, and the deployment&apos;s own storage</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/290">#290</a>
+      </p>
+      <p>
+        A publishing target can now be removed once every delivery to it has finished. Its id stays
+        taken, so a new target with the same label gets <code>&lt;id&gt;-2</code> and never inherits
+        the old one&apos;s delivery history. An external connection pointing at this
+        deployment&apos;s own storage can no longer write into CT Studio&apos;s own buckets or the
+        bridge&apos;s staging bucket (<em>bucket &lt;b&gt; is reserved</em>). Moving old target keys
+        to the bridge keeps any connection an admin already chose.
+      </p>
+
+      <h3 id="bridge-events">Bridge events</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/289">#289</a>
+      </p>
+      <p>
+        The bridge stops resending an event CT Studio still doesn&apos;t know after 24 hours (a job
+        deleted during delivery, for example), and logs a warning. A delivery that has finished
+        stays finished: a late event can no longer move it back.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
