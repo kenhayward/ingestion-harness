@@ -53,6 +53,21 @@ describe('job creator', () => {
     expect(await list(adminCookie, '?mine=1&status=failed')).toEqual([]);
   });
 
+  it('pages only my jobs with mine=1', async () => {
+    const { app, upload, adminCookie, userCookie } = await signedIn();
+    await upload(adminCookie, 'admin.pdf');
+    await upload(userCookie, 'user-1.pdf');
+    const page = async (cookie: string, q: string) =>
+      (await app.inject({ url: `/api/jobs/page${q}`, headers: { cookie } })).json() as {
+        jobs: { filename: string }[];
+        counts: { all: number };
+      };
+    const mine = await page(userCookie, '?mine=1');
+    expect(names(mine.jobs)).toEqual(['user-1.pdf']);
+    expect(mine.counts.all).toBe(1);
+    expect(names((await page(userCookie, '')).jobs)).toEqual(['admin.pdf', 'user-1.pdf']);
+  });
+
   it("records the user's id beside the name", async () => {
     const { app, upload, userCookie } = await signedIn();
     const me = (await app.inject({ url: '/api/auth/me', headers: { cookie: userCookie } })).json();

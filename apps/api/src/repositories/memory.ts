@@ -20,7 +20,9 @@ import {
   isMine,
   sourceContentType,
   statusGroup,
+  pageOfJobs,
   type Creator,
+  type JobPage,
 } from '@ih/shared';
 import {
   ReferenceConflictError,
@@ -30,6 +32,7 @@ import {
   type QueueStats,
   type JobReview,
   type ListJobsQuery,
+  type JobPageRequest,
   type ListPublishedQuery,
   type RetryOptions,
   type ProjectJob,
@@ -425,6 +428,14 @@ export class MemoryRepo implements IngestionRepo {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit)
       .map((j) => this.withModels(j));
+  }
+
+  async jobPage({ mine, ...query }: JobPageRequest): Promise<JobPage> {
+    const listable = [...this.jobs.values()]
+      .filter((j) => j.task !== 'prepare')
+      .filter((j) => mine === undefined || isMine(j, mine))
+      .map((j) => this.withModels(j));
+    return pageOfJobs(listable, query);
   }
 
   /** modelsUsed derived from step runs, like PgRepo's subquery. */

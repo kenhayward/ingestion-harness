@@ -51,6 +51,51 @@ describe('jobs API', () => {
     expect((await app.inject('/api/jobs?group=bogus')).statusCode).toBe(400);
   });
 
+  it('pages the jobs list on the server, newest first, from a job', async () => {
+    const { app, repo, job } = await seedJob();
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'failed' });
+    const ids = [job.id];
+    for (const n of [1, 2, 3, 4]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart({ specId: 'demo' }, { filename: `b${n}.pdf`, content: fakePdf }),
+      });
+      const id = (res.json() as { id: string }).id;
+      repo.jobs.set(id, {
+        ...repo.jobs.get(id)!,
+        status: 'succeeded',
+        createdAt: new Date(Date.now() + n * 1000).toISOString(),
+      });
+      ids.push(id);
+    }
+    type Page = {
+      jobs: { id: string; filename: string }[];
+      start: number;
+      total: number;
+      hasNewer: boolean;
+      hasOlder: boolean;
+      counts: Record<string, number>;
+    };
+    const get = async (q: string) => (await app.inject(`/api/jobs/page${q}`)).json() as Page;
+    const first = await get('?size=2');
+    expect(first.jobs.map((j) => j.filename)).toEqual(['b4.pdf', 'b3.pdf']);
+    expect(first).toMatchObject({ start: 0, total: 5, hasNewer: false, hasOlder: true });
+    expect(first.counts).toEqual({ all: 5, attention: 1, active: 0, done: 4 });
+    const next = await get(`?size=2&before=${first.jobs[1]!.id}`);
+    expect(next.jobs.map((j) => j.filename)).toEqual(['b2.pdf', 'b1.pdf']);
+    expect(next).toMatchObject({ start: 2, hasNewer: true, hasOlder: true });
+    expect((await get(`?size=2&after=${next.jobs[0]!.id}`)).jobs.map((j) => j.filename)).toEqual([
+      'b4.pdf',
+      'b3.pdf',
+    ]);
+    expect((await get('?size=10&group=attention')).jobs.map((j) => j.id)).toEqual([job.id]);
+    expect((await get('?size=10&q=b3')).jobs.map((j) => j.filename)).toEqual(['b3.pdf']);
+    for (const bad of ['?size=0', '?size=101', `?before=${ids[1]}&after=${ids[2]}`, '?group=x']) {
+      expect((await app.inject(`/api/jobs/page${bad}`)).statusCode).toBe(400);
+    }
+  });
+
   it('returns job detail with outputs, 404 for unknown ids', async () => {
     const { app, job } = await seedJob();
     const res = await app.inject(`/api/jobs/${job.id}`);

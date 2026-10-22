@@ -69,6 +69,7 @@ import type {
   JobDetail,
   JobLive,
   JobSummary,
+  JobPage,
   StatusGroup,
   KeepableStage,
   LlmChoicesView,
@@ -386,6 +387,18 @@ export interface BackupStatus {
   queue: QueueControlView;
 }
 
+/** A page of the Jobs list to ask for: `JobPageQuery` with `mine` as a flag. */
+export interface JobPageParams {
+  size: number;
+  group?: StatusGroup;
+  mine?: boolean;
+  q?: string;
+  /** At most one of: older than, newer than, or from (this one and older) a job. */
+  before?: string;
+  after?: string;
+  from?: string;
+}
+
 export interface Api {
   /** Current session, or null when not signed in (401). */
   me(): Promise<Me | null>;
@@ -592,6 +605,8 @@ export interface Api {
   /** mine: only the jobs the signed-in token queued (`?mine=1`, matched by its label). */
   /** `group`: only that status group, however old (the badge and review queue); `limit` ≤ 500. */
   listJobs(opts?: { mine?: boolean; group?: StatusGroup; limit?: number }): Promise<JobSummary[]>;
+  /** One page of the Jobs list, paged on the server from a job's place (`GET /api/jobs/page`). */
+  listJobPage(params: JobPageParams): Promise<JobPage>;
   getJob(id: string): Promise<JobDetail>;
   /**
    * Follow a job live (Server-Sent Events, `GET /api/jobs/:id/events`): `update` on every change
@@ -1436,6 +1451,16 @@ export function createHttpApi(base = '/api'): Api {
       if (opts?.limit) q.set('limit', String(opts.limit));
       const qs = q.toString();
       return apiFetch(`${base}/jobs${qs ? `?${qs}` : ''}`).then(json<JobSummary[]>);
+    },
+    listJobPage: ({ size, group, mine, q, before, after, from }) => {
+      const p = new URLSearchParams({ size: String(size) });
+      if (group) p.set('group', group);
+      if (mine) p.set('mine', '1');
+      if (q?.trim()) p.set('q', q.trim());
+      if (before) p.set('before', before);
+      if (after) p.set('after', after);
+      if (from) p.set('from', from);
+      return apiFetch(`${base}/jobs/page?${p}`).then(json<JobPage>);
     },
     getJob: (id) => apiFetch(`${base}/jobs/${id}`).then(json<JobDetail>),
     watchJob: (id, on) => watchJobEvents(`${base}/jobs/${id}/events`, on),

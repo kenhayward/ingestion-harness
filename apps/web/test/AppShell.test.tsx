@@ -229,12 +229,13 @@ describe('search', () => {
       screen.queryByRole('button', { name: `Show details for ${name}` });
     await screen.findByRole('button', { name: 'Show details for coa-lot-7781.pdf' });
     const search = screen.getByRole('searchbox', { name: SEARCH });
+    // The Jobs page searches on the server, a moment after typing stops.
     await userEvent.type(search, 'acme');
+    await waitFor(() => expect(shown('coa-lot-7781.pdf')).not.toBeInTheDocument());
     expect(shown('inv-0042-acme.pdf')).toBeInTheDocument();
-    expect(shown('coa-lot-7781.pdf')).not.toBeInTheDocument();
     await userEvent.clear(search);
     await userEvent.type(search, 'globex');
-    expect(screen.getByText('No jobs match “globex”.')).toBeInTheDocument();
+    expect(await screen.findByText('No jobs match “globex”.')).toBeInTheDocument();
     expect(screen.queryByText('No jobs yet.')).not.toBeInTheDocument();
   });
 

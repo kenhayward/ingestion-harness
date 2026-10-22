@@ -12237,6 +12237,462 @@
         }
       }
     },
+    "/api/jobs/page": {
+      "get": {
+        "operationId": "listJobPage",
+        "summary": "One page of the Jobs list",
+        "tags": [
+          "Jobs"
+        ],
+        "description": "The Jobs page's list, paged on the server: newest first (by `createdAt`, then\n`id`), `size` jobs from a job's place in the list rather than a page number, so\njobs arriving at the top never shift the page being read. `before` gives the jobs\njust older than that job (Older ›), `after` the ones just newer (‹ Newer; a full\npage where there are enough), `from` that job and older (a linked job); none gives\nthe newest. A job no longer listed (deleted) pages from the newest. `group`,\n`mine=1` and `q` (every word in the file name, document type id, status,\nmodel override or a model used) narrow the view. `start` counts the jobs of the\nview newer than the first one shown and `total` the view; `counts` are per\nstatus group with `mine` and `q` applied but not `group` (the chips).\nLists the same jobs as `GET /api/jobs`.",
+        "parameters": [
+          {
+            "schema": {
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "description": "Jobs on the page, 1 to 100."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "attention",
+                "active",
+                "done"
+              ]
+            },
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "description": "Only jobs of this status group."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            },
+            "in": "query",
+            "name": "mine",
+            "required": false,
+            "description": "`1`: only jobs queued by the signed-in user."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Words that must each appear in the file name, document type id, status, model override or a model used (ignoring case)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "description": "The jobs just older than this job (Older ›)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "description": "The jobs just newer than this job (‹ Newer)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "description": "This job and the ones older than it (a linked job)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "documentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "contentType": {
+                            "type": "string"
+                          },
+                          "specId": {
+                            "type": "string"
+                          },
+                          "specVersion": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "running",
+                              "succeeded",
+                              "failed",
+                              "needs_review",
+                              "awaiting_review",
+                              "rejected",
+                              "cancelled",
+                              "delivering"
+                            ]
+                          },
+                          "modelOverride": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "modelsUsed": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "attempts": {
+                            "type": "integer"
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "task": {
+                            "type": "string",
+                            "enum": [
+                              "process",
+                              "publish",
+                              "rerun",
+                              "prepare",
+                              "segment",
+                              "draft",
+                              "export",
+                              "ontology"
+                            ]
+                          },
+                          "test": {
+                            "type": "boolean"
+                          },
+                          "referenceId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "projectId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdBy": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdByUser": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewReasons": {
+                            "anyOf": [
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewer": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "batchId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "documentId",
+                          "filename",
+                          "contentType",
+                          "specId",
+                          "specVersion",
+                          "status",
+                          "modelOverride",
+                          "modelsUsed",
+                          "attempts",
+                          "error",
+                          "task",
+                          "test",
+                          "referenceId",
+                          "projectId",
+                          "createdBy",
+                          "createdByUser",
+                          "reviewReasons",
+                          "reviewer",
+                          "reviewNote",
+                          "reviewedAt",
+                          "createdAt",
+                          "updatedAt",
+                          "batchId",
+                          "startedAt",
+                          "finishedAt"
+                        ]
+                      }
+                    },
+                    "start": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "hasNewer": {
+                      "type": "boolean"
+                    },
+                    "hasOlder": {
+                      "type": "boolean"
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "all": {
+                          "type": "integer"
+                        },
+                        "attention": {
+                          "type": "integer"
+                        },
+                        "active": {
+                          "type": "integer"
+                        },
+                        "done": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "all",
+                        "attention",
+                        "active",
+                        "done"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "jobs",
+                    "start",
+                    "total",
+                    "hasNewer",
+                    "hasOlder",
+                    "counts"
+                  ],
+                  "description": "The page."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Zod issues for an invalid query, or more than one of `before`, `after`, `from`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "Zod issues for an invalid query, or more than one of `before`, `after`, `from`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/queue/summary": {
       "get": {
         "operationId": "getQueueSummary",

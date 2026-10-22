@@ -10,14 +10,11 @@ import type {
 import {
   CHOICES_FAILED,
   CHOICES_LOADING,
-  chipCounts,
   choiceName,
   draftingModelName,
-  inChip,
   jobDuration,
   jobNote,
   menuPosition,
-  pageRange,
   rowsThatFit,
   statusIcon,
   modelDisplayName,
@@ -88,35 +85,6 @@ describe('jobNote', () => {
     [job({ status: 'rejected', reviewer: null }), 'Rejected', 'muted'],
     [job({ status: 'cancelled' }), 'Cancelled by operator', 'muted'],
   ])('%#: %s', (j, text, tone) => expect(jobNote(j)).toEqual({ text, tone }));
-});
-
-describe('chips', () => {
-  const jobs = (
-    [
-      'queued',
-      'running',
-      'awaiting_review',
-      'needs_review',
-      'failed',
-      'succeeded',
-      'rejected',
-      'cancelled',
-    ] as const
-  ).map((status) => job({ status }));
-
-  it('counts each group', () => {
-    expect(chipCounts(jobs)).toEqual({ all: 8, attention: 3, active: 2, done: 3 });
-    expect(chipCounts([])).toEqual({ all: 0, attention: 0, active: 0, done: 0 });
-  });
-
-  it('filters by chip', () => {
-    expect(jobs.filter((j) => inChip(j, 'attention')).map((j) => j.status)).toEqual([
-      'awaiting_review',
-      'needs_review',
-      'failed',
-    ]);
-    expect(jobs.filter((j) => inChip(j, 'all'))).toHaveLength(8);
-  });
 });
 
 describe('progressSteps', () => {
@@ -584,17 +552,5 @@ describe('rowsThatFit', () => {
     [720, 0, 5],
   ])('%i px of %i px rows holds %i rows (never fewer than 5)', (height, row, n) => {
     expect(rowsThatFit(height, row)).toBe(n);
-  });
-});
-
-describe('pageRange', () => {
-  it.each([
-    [34, 20, 0, { page: 0, pages: 2, from: 0, to: 20 }],
-    [34, 20, 1, { page: 1, pages: 2, from: 20, to: 34 }],
-    [34, 20, 5, { page: 1, pages: 2, from: 20, to: 34 }],
-    [0, 20, 3, { page: 0, pages: 1, from: 0, to: 0 }],
-    [20, 20, 1, { page: 0, pages: 1, from: 0, to: 20 }],
-  ])('%i jobs, %i a page, page %i', (total, size, page, range) => {
-    expect(pageRange(total, size, page)).toEqual(range);
   });
 });

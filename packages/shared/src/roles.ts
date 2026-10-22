@@ -42,6 +42,7 @@ const OPERATOR_CALLS = new Set([
   'POST /api/documents',
   'POST /api/documents/preflight',
   'GET /api/jobs',
+  'GET /api/jobs/page',
   'POST /api/jobs/cleanup',
   'GET /api/jobs/:id',
   'DELETE /api/jobs/:id',

@@ -16,7 +16,8 @@ export function JobsHelp() {
         </li>
         <li>
           The list fills the window and shows as many jobs as fit: <strong>‹ Newer</strong> and{' '}
-          <strong>Older ›</strong> above it move between pages, newest first.
+          <strong>Older ›</strong> above it move between pages, newest first, back to the very first
+          job. New jobs arriving at the top don&apos;t move the page you are reading.
         </li>
         <li>
           From the keyboard: <kbd>↑</kbd> and <kbd>↓</kbd> move to the next job (onto the next page
@@ -35,7 +36,10 @@ export function JobsHelp() {
         <li>
           <strong>My jobs</strong> shows only the jobs you queued; CT Studio remembers the setting.
         </li>
-        <li>The search box at the top filters by file name, document type, model or status.</li>
+        <li>
+          The search box at the top finds jobs by file name, document type id, status or model id,
+          every word somewhere, across every job (not only the ones on screen).
+        </li>
         <li>A new filter or search starts on the first page.</li>
       </ul>
 
