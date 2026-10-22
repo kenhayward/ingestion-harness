@@ -1140,6 +1140,68 @@
                               ],
                               "additionalProperties": false
                             }
+                          },
+                          "destinationFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "fixed",
+                                    "pattern"
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "overridable": {
+                                  "type": "boolean"
+                                },
+                                "browse": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "kind",
+                                "required",
+                                "overridable",
+                                "browse"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "credentialFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "secret": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label",
+                                "secret"
+                              ],
+                              "additionalProperties": false
+                            }
                           }
                         },
                         "required": [
@@ -1149,7 +1211,9 @@
                           "contractVersion",
                           "capabilities",
                           "connectionKind",
-                          "instances"
+                          "instances",
+                          "destinationFields",
+                          "credentialFields"
                         ],
                         "additionalProperties": false
                       }

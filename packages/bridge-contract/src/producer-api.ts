@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { BridgeErrorSchema } from './errors.js';
 import { ActingUserSchema, PackageSchema } from './package.js';
-import { CapabilitiesSchema, DestinationSchema, ReceiptSchema } from './sink-api.js';
+import {
+  CapabilitiesSchema,
+  CredentialFieldSchema,
+  DestinationFieldSchema,
+  DestinationSchema,
+  ReceiptSchema,
+} from './sink-api.js';
 
 export const DELIVERY_STATUSES = [
   'queued',
@@ -66,6 +72,10 @@ export const SinkViewSchema = z.strictObject({
   connectionKind: z.enum(['shared', 'personal']),
   /** The places a personal connection is made to, as the sink's describe lists them. */
   instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+  /** What a target of this sink records, so a producer can render its form (never values). */
+  destinationFields: z.array(DestinationFieldSchema),
+  /** What a connection to this sink asks for (ids, labels, which are secret; never values). */
+  credentialFields: z.array(CredentialFieldSchema),
 });
 export type SinkView = z.infer<typeof SinkViewSchema>;
 

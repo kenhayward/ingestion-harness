@@ -57,6 +57,14 @@ export async function acceptDeliveries(
         }),
       );
     }
+    if (deps.sinks.status(target.sinkId) === 'unavailable') {
+      throw new SinkError(
+        bridgeError('sink_unavailable', `the sink of ${target.label} is not available`, {
+          targetId,
+          sinkId: target.sinkId,
+        }),
+      );
+    }
     const { capabilities, connectionKind } = await sink.describe();
     if (connectionKind === 'personal') {
       const user = req.actingUser;

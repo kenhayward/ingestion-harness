@@ -36,7 +36,7 @@ const DESCRIBE: SinkDescribe = {
     replace: true,
     withdraw: false,
     readBack: false,
-    accepts: ['files'],
+    accepts: ['files', 'data'],
   },
 };
 

@@ -68,6 +68,16 @@ export function parseSinkEntries(env: NodeJS.ProcessEnv): SinkEntry[] {
 }
 
 /**
+ * What the bridge uses of a sink's describe. An external sink's `withdraw` and `readBack` are
+ * not used yet (contract v1 names their routes but not their bodies), so they read as false:
+ * nothing offers to withdraw from it or read back through it.
+ */
+export function effectiveDescribe(id: string, d: SinkDescribe): SinkDescribe {
+  if (BUILT_IN.has(id)) return d;
+  return { ...d, capabilities: { ...d.capabilities, withdraw: false, readBack: false } };
+}
+
+/**
  * Sinks with their describes cached: `refresh()` describes each one (at start, then on an
  * interval), and `get(id).describe()` answers from the cache. A sink whose describe fails keeps
  * its last good answer but is `unavailable`; one never described has no describe, so whatever
@@ -116,7 +126,7 @@ export class CachingSinkRegistry implements SinkRegistry {
           bridgeError('sink_unavailable', `the sink ${id} has not described itself yet`),
         );
       }
-      return structuredClone(d);
+      return effectiveDescribe(id, structuredClone(d));
     };
     return port;
   }

@@ -2,6 +2,7 @@ import { conformanceSuite } from '@ih/bridge-contract';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FakeSink } from '../src/sinks/fake.js';
+import { HttpSink } from '../src/sinks/http.js';
 import { serveSink } from '../src/sinks/serve.js';
 import { KEY } from './helpers.js';
 
@@ -91,5 +92,42 @@ describe('conformance suite', () => {
       ok: false,
       detail: 'a personal sink declares the credential fields its users enter',
     });
+  });
+});
+
+describe('conformance suite, more', () => {
+  it('fails the describe of a sink that does not take files and data', async () => {
+    const sink = new FakeSink({
+      capabilities: {
+        browse: false,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files'],
+      },
+    });
+    const results = await run(await listen(await serveSink(sink, KEY)));
+    expect(results.find((r) => r.name === 'describe')).toMatchObject({
+      ok: false,
+      detail: 'a sink takes files and data (it may ignore them)',
+    });
+  });
+
+  it('the bridge adapter and the suite agree: a sink served through HttpSink passes', async () => {
+    const inner = new FakeSink({
+      capabilities: {
+        browse: false,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files', 'data'],
+      },
+    });
+    const first = await listen(await serveSink(inner, KEY));
+    // The bridge's view of that sink, served again: what the adapter reads must stand up.
+    const relayed = await listen(
+      await serveSink(new HttpSink({ id: 'fake', url: first, key: KEY }), KEY),
+    );
+    expect((await run(relayed)).filter((r) => !r.ok)).toEqual([]);
   });
 });
