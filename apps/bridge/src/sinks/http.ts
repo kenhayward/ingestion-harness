@@ -1,12 +1,14 @@
 import {
   bridgeError,
   BridgeErrorSchema,
+  ERROR_CODES,
   BrowseResultSchema,
   ConnectionTestResultSchema,
   signRequest,
   SinkDeliverResultSchema,
   SinkDescribeSchema,
   SinkJobStatusSchema,
+  type BridgeError,
   type BrowseRequest,
   type BrowseResult,
   type ConnectionTestRequest,
@@ -21,6 +23,9 @@ import { SinkError, type SinkPort } from './port.js';
 
 /** The most an answer may be: sinks answer receipts and statuses, never content. */
 const MAX_ANSWER_BYTES = 8 * 2 ** 20;
+/** The most of a sink's own error kept: its message, and its details as JSON. */
+const MAX_MESSAGE = 500;
+const MAX_DETAILS = 4096;
 
 export interface HttpSinkOptions {
   id: string;
@@ -35,6 +40,20 @@ export interface HttpSinkOptions {
 
 const refuse = (code: 'internal' | 'timeout' | 'sink_unavailable', message: string) =>
   new SinkError(bridgeError(code, message));
+
+/**
+ * A sink's own error as the bridge keeps it (and CT Studio shows it): a known code takes its own
+ * class, the message is cut to MAX_MESSAGE characters, and details over MAX_DETAILS are dropped.
+ */
+function bounded(e: BridgeError): BridgeError {
+  const known = Object.hasOwn(ERROR_CODES, e.code)
+    ? ERROR_CODES[e.code as keyof typeof ERROR_CODES]
+    : e.class;
+  const message =
+    e.message.length > MAX_MESSAGE ? `${e.message.slice(0, MAX_MESSAGE - 1)}…` : e.message;
+  const keep = e.details !== undefined && JSON.stringify(e.details).length <= MAX_DETAILS;
+  return { class: known, code: e.code, message, ...(keep ? { details: e.details } : {}) };
+}
 
 /**
  * An external sink, reached over the sink contract's HTTP routes (as `serveSink` serves them),
@@ -101,6 +120,7 @@ export class HttpSink implements SinkPort {
     });
     if (body !== undefined) headers['content-type'] = 'application/json';
     let res: Response;
+    let text: string;
     try {
       res = await this.fetchImpl(`${this.base}${path}`, {
         method,
@@ -108,14 +128,16 @@ export class HttpSink implements SinkPort {
         ...(body === undefined ? {} : { body: payload }),
         signal: AbortSignal.timeout(timeoutMs),
       });
+      // The same timeout covers the body: a sink that stalls or drops mid-answer is caught here.
+      text = await this.read(res);
     } catch (err) {
+      if (err instanceof SinkError) throw err;
       const name = (err as Error).name;
       if (name === 'TimeoutError' || name === 'AbortError') {
         throw refuse('timeout', `the sink ${this.opts.id} did not answer in time`);
       }
       throw refuse('sink_unavailable', `the sink ${this.opts.id} could not be reached`);
     }
-    const text = await this.read(res);
     if (res.status === 401) {
       throw refuse('internal', "the sink refused the bridge's signature: check its key");
     }
@@ -164,7 +186,7 @@ export class HttpSink implements SinkPort {
       // Not JSON: classed by its status below.
     }
     const parsed = BridgeErrorSchema.safeParse(json);
-    if (parsed.success) return new SinkError(parsed.data);
+    if (parsed.success) return new SinkError(bounded(parsed.data));
     if (status >= 500) {
       return refuse('sink_unavailable', `the sink ${this.opts.id} failed (${status})`);
     }

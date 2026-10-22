@@ -168,3 +168,55 @@ describe('HttpSink', () => {
     });
   });
 });
+
+describe('HttpSink, a sink that misbehaves mid-answer', () => {
+  it('a body that stalls after the headers is a timeout', async () => {
+    const app = Fastify();
+    app.get('/describe', (_req, reply) => {
+      reply.raw.writeHead(200, { 'content-type': 'application/json' });
+      reply.raw.write('{"name":');
+      // …and never another byte.
+    });
+    const err = await failure(
+      adapter(await listen(app), KEY, { short: 200, long: 200 }).describe(),
+    );
+    expect(err.error).toMatchObject({ class: 'retryable', code: 'timeout' });
+  });
+
+  it('a connection dropped mid-body is unavailable', async () => {
+    const app = Fastify();
+    app.get('/describe', (req, reply) => {
+      reply.raw.writeHead(200, { 'content-type': 'application/json', 'content-length': '500' });
+      reply.raw.write('{"name":');
+      setTimeout(() => req.raw.socket.destroy(), 20);
+    });
+    const err = await failure(adapter(await listen(app)).describe());
+    expect(err.error).toMatchObject({ class: 'retryable', code: 'sink_unavailable' });
+  });
+
+  it("a sink's error is bounded, and a known code keeps its own class", async () => {
+    const huge = 'x'.repeat(100_000);
+    const url = await stub(422, {
+      class: 'retryable',
+      code: 'credential_rejected',
+      message: huge,
+      details: { blob: huge },
+    });
+    const err = await failure(adapter(url).deliver(deliverRequest()));
+    expect(err.error.class).toBe('needs_user');
+    expect(err.error.code).toBe('credential_rejected');
+    expect(err.error.message.length).toBeLessThanOrEqual(500);
+    expect(err.error.details).toBeUndefined();
+    const small = await failure(
+      adapter(
+        await stub(422, {
+          class: 'needs_user',
+          code: 'name_conflict',
+          message: 'taken',
+          details: { field: 'name' },
+        }),
+      ).deliver(deliverRequest()),
+    );
+    expect(small.error.details).toEqual({ field: 'name' });
+  });
+});

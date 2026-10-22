@@ -113,3 +113,19 @@ describe('CachingSinkRegistry', () => {
     expect(sink.tested).toHaveLength(1);
   });
 });
+
+describe('CachingSinkRegistry, unavailable sinks', () => {
+  it('refreshUnavailable describes only the sinks that are unavailable', async () => {
+    const up = new Flaky({ name: 'Up' });
+    const late = new Flaky({ name: 'Late' });
+    late.down = true;
+    const registry = new CachingSinkRegistry({ up, late });
+    await registry.refresh();
+    expect(registry.status('late')).toBe('unavailable');
+    late.down = false;
+    await registry.refreshUnavailable();
+    expect(registry.status('late')).toBe('available');
+    expect(up.calls).toBe(1);
+    expect(late.calls).toBe(2);
+  });
+});

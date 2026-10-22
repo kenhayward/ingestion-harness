@@ -672,11 +672,32 @@ describe('AdminDialog Published outputs tab', () => {
     expect(within(r).getByRole('button', { name: /Remove/ })).toBeDisabled();
   });
 
-  it('a sink target whose sink is not available now shows that, and saves nothing', async () => {
-    page([sinkTarget()], { listSinks: vi.fn(async () => []) });
+  it('a sink target whose sink is not available now shows that, and only its label saves', async () => {
+    const api = page([sinkTarget()], { listSinks: vi.fn(async () => []) });
     const r = await open('Fake target');
     expect(r).toHaveTextContent('fake is not available on the delivery bridge now');
     expect(within(r).getByRole('button', { name: 'Save' })).toBeDisabled();
+    const label = within(r).getByLabelText('Label');
+    await userEvent.clear(label);
+    await userEvent.type(label, 'Renamed');
+    await userEvent.click(within(r).getByRole('button', { name: 'Save' }));
+    expect(api.updatePublishTarget).toHaveBeenCalledWith('fake-target', { label: 'Renamed' });
+  });
+
+  it("a personal sink target's instance can't change once saved", async () => {
+    const personal = {
+      ...FAKE_SINK,
+      connectionKind: 'personal' as const,
+      instances: [
+        { id: 'sandbox', label: 'Sandbox' },
+        { id: 'prod', label: 'Production' },
+      ],
+    };
+    page([sinkTarget({ instanceId: 'sandbox', connectionId: null })], {
+      listSinks: vi.fn(async () => [personal]),
+    });
+    const r = await open('Fake target');
+    expect(within(r).getByLabelText('Instance')).toBeDisabled();
   });
 
   it('adds a target of another system from its declared fields', async () => {

@@ -96,7 +96,9 @@ jobs:
           compose run --rm init-buckets
           compose run --rm migrate
           compose run --rm migrate-bridge
-          compose --profile fake-sink up -d fake-sink bridge api worker app
+          # The fake external sink first, so the bridge's start-up describe finds it.
+          compose --profile fake-sink up -d fake-sink
+          compose --profile fake-sink up -d bridge api worker app
           echo "COMPOSE_FUSEKI=$(compose ps -q fuseki)" >> "$GITHUB_ENV"
           echo "APP_URL=http://$(compose port app 80)" >> "$GITHUB_ENV"
           echo "S3_URL=http://$(compose port seaweedfs 8333)" >> "$GITHUB_ENV"

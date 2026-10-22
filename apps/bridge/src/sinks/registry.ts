@@ -105,6 +105,22 @@ export class CachingSinkRegistry implements SinkRegistry {
     );
   }
 
+  /** Describes again the sinks that are unavailable now (a sink that started late, or blinked). */
+  async refreshUnavailable(): Promise<void> {
+    await Promise.all(
+      Object.entries(this.sinks)
+        .filter(([id]) => !this.available.has(id))
+        .map(async ([id, sink]) => {
+          try {
+            this.described.set(id, await sink.describe());
+            this.available.add(id);
+          } catch {
+            // Still unavailable: the next try, or the full refresh, sees it again.
+          }
+        }),
+    );
+  }
+
   status(id: string): 'available' | 'unavailable' {
     return this.available.has(id) ? 'available' : 'unavailable';
   }

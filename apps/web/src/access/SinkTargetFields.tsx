@@ -33,6 +33,7 @@ export function SinkTargetFields({
   value,
   onChange,
   fixedLocked = false,
+  instanceFixed = false,
 }: {
   api: Api;
   sink: SinkInfo;
@@ -40,6 +41,8 @@ export function SinkTargetFields({
   onChange: (next: SinkTargetValue) => void;
   /** The target is in use: its instance and fixed fields can't change. */
   fixedLocked?: boolean;
+  /** A saved target: its instance never changes (add a new target instead). */
+  instanceFixed?: boolean;
 }) {
   const set = (id: string, v: string) =>
     onChange({ ...value, destination: { ...value.destination, [id]: v } });
@@ -51,7 +54,7 @@ export function SinkTargetFields({
             Instance
             <select
               value={value.instanceId ?? ''}
-              disabled={fixedLocked}
+              disabled={fixedLocked || instanceFixed}
               onChange={(e) => onChange({ ...value, instanceId: e.target.value || null })}
             >
               <option value="">Choose an instance</option>

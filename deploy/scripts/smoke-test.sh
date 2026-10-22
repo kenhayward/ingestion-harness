@@ -366,8 +366,15 @@ else
   sc() { $SMOKE_COMPOSE "$@"; }
   delivered_to_fake() { sc exec -T bridge wget -q -O - http://fake-sink:8080/_delivered; }
   delivered_to_fake >/dev/null || fail "the fake sink is not reachable from the bridge (profile fake-sink)"
-  sinks="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/publish-targets/sinks")"
-  grep -q '"id":"fake"' <<<"$sinks" || fail "the bridge does not list the fake sink: $sinks"
+  # The bridge describes a sink that was unavailable again every 15 s: wait until it has.
+  sinks=""
+  for ((i = 1; i <= 30; i++)); do
+    sinks="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/publish-targets/sinks")"
+    grep -q '"id":"fake","name":"Fake sink","status":"available"' <<<"$sinks" && break
+    sleep 2
+  done
+  grep -q '"id":"fake","name":"Fake sink","status":"available"' <<<"$sinks" ||
+    fail "the bridge does not list the fake sink as available: $sinks"
   got="$(status -b "$ADMIN_JAR" -H 'content-type: application/json' \
     -d '{"id": "smoke-fake", "kind": "sink", "label": "Smoke fake", "sinkId": "fake", "destination": {"space": "smoke", "name": "{source.stem}"}}' \
     "$BASE_URL/api/publish-targets")"

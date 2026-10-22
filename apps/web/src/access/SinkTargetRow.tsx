@@ -45,6 +45,7 @@ export function SinkTargetRow({
   }, [t]);
   const sink = sinks.find((s) => s.id === t.sinkId);
   const inUse = targetInUse(t.usage);
+  const labelOnly = value.connectionId === t.connectionId && same(value.destination, t.destination);
   const dirty =
     label.trim() !== t.label ||
     value.connectionId !== t.connectionId ||
@@ -119,6 +120,7 @@ export function SinkTargetRow({
               value={value}
               onChange={setValue}
               fixedLocked={inUse}
+              instanceFixed
             />
           ) : (
             <p className="muted">
@@ -135,7 +137,12 @@ export function SinkTargetRow({
             <button
               type="submit"
               className="primary"
-              disabled={busy || !dirty || !sink || !sinkTargetComplete(sink, value)}
+              disabled={
+                busy ||
+                !dirty ||
+                !label.trim() ||
+                (sink ? !sinkTargetComplete(sink, value) : !labelOnly)
+              }
             >
               Save
             </button>

@@ -34,6 +34,8 @@ const refreshSinks = () =>
   });
 await refreshSinks();
 setInterval(() => void refreshSinks(), config.BRIDGE_SINK_REFRESH_SECONDS * 1000).unref();
+// A sink that is unavailable (started after the bridge, or blinked) is tried again sooner.
+setInterval(() => void built.sinks.refreshUnavailable(), 15_000).unref();
 
 let stopping = false;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

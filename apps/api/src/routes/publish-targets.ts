@@ -463,7 +463,7 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async () => {
-      await sinks.refresh(bridge);
+      await sinks.refresh(bridge, { force: true });
       return { sinks: sinks.all() };
     },
   );

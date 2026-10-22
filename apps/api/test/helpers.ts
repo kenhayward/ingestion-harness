@@ -18,6 +18,7 @@ import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { TargetStores } from '../src/publish-targets/stores.js';
 import { cacheS3 } from './target-views.js';
 import { HandoffCodes } from '../src/bridge/handoff.js';
+import { SinkCatalog } from '../src/bridge/sinks.js';
 import { FakeBridgeApi } from './fake-bridge.js';
 
 /** The key test bridges sign their calls to the API with (BRIDGE_CLIENT_KEY). */
@@ -152,6 +153,8 @@ export async function testApp(overrides: Partial<AppDeps> & { targetStore?: Obje
     targets,
     targetStores,
     bridge,
+    // Fresh on every request in tests: they change the fake bridge's sinks as they go.
+    sinks: new SinkCatalog({ ttlMs: 0 }),
     templates,
     workbench,
     specs: SpecRegistry.fromDefinitions([
