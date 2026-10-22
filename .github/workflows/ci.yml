@@ -82,7 +82,9 @@ jobs:
           sed -i "s/^APP_PORT=.*/APP_PORT=0/; s/^S3_PUBLIC_PORT=.*/S3_PUBLIC_PORT=0/; s/^SEAWEEDFS_MASTER_PORT=.*/SEAWEEDFS_MASTER_PORT=0/; s/^FUSEKI_PUBLIC_PORT=.*/FUSEKI_PUBLIC_PORT=0/" deploy/.env.ci
           # The delivery bridge's two keys (the example leaves them blank: compose refuses that).
           sed -i "s|^BRIDGE_CLIENT_KEY=.*|BRIDGE_CLIENT_KEY=$(openssl rand -base64 32)|; s|^BRIDGE_SECRETS_KEY=.*|BRIDGE_SECRETS_KEY=$(openssl rand -base64 32)|" deploy/.env.ci
-          # The fake external sink (profile fake-sink), registered with the bridge.
+          # The fake external sink (profile fake-sink, added to the example's COMPOSE_PROFILES:
+          # a --profile flag would replace them and leave Fuseki out), registered with the bridge.
+          sed -i "/^COMPOSE_PROFILES=./s/$/,fake-sink/; s/^COMPOSE_PROFILES=$/COMPOSE_PROFILES=fake-sink/" deploy/.env.ci
           fake_key="$(openssl rand -hex 32)"
           sed -i "s|^FAKE_SINK_KEY=.*|FAKE_SINK_KEY=${fake_key}|" deploy/.env.ci
           sed -i "s|^BRIDGE_SINKS=.*|BRIDGE_SINKS=[{\"id\":\"fake\",\"url\":\"http://fake-sink:8080\",\"key\":\"${fake_key}\"}]|" deploy/.env.ci
@@ -97,8 +99,8 @@ jobs:
           compose run --rm migrate
           compose run --rm migrate-bridge
           # The fake external sink first, so the bridge's start-up describe finds it.
-          compose --profile fake-sink up -d fake-sink
-          compose --profile fake-sink up -d bridge api worker app
+          compose up -d fake-sink
+          compose up -d bridge api worker app
           echo "COMPOSE_FUSEKI=$(compose ps -q fuseki)" >> "$GITHUB_ENV"
           echo "APP_URL=http://$(compose port app 80)" >> "$GITHUB_ENV"
           echo "S3_URL=http://$(compose port seaweedfs 8333)" >> "$GITHUB_ENV"

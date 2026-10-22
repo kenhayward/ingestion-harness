@@ -133,7 +133,9 @@ least 32 characters, signs the bridge's calls to that sink and is shared with it
   back through them.
 - **Testing a sink.** The conformance image (`ct-bridge-conformance`, published on each tag)
   checks a sink before you register it. A test stack can run the fake sink: compose profile
-  `fake-sink`, with `FAKE_SINK_KEY` and a `BRIDGE_SINKS` entry for `http://fake-sink:8080`.
+  `fake-sink`, with `FAKE_SINK_KEY` and a `BRIDGE_SINKS` entry for `http://fake-sink:8080`. Add
+  it to `COMPOSE_PROFILES` (`rdf,fake-sink`): a `--profile` flag replaces that list and leaves
+  Fuseki out.
 
 **After upgrading:** on first start the API moves each external target's keys to the bridge as the
 connection `target-<id>` (named after the target; `target-<id>-2`, … if a connection of that id
