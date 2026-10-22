@@ -13,6 +13,13 @@ export interface PageSession {
   expires: number;
   /** The colour mode CT Studio showed when it opened the page; unset: the OS's. */
   theme?: PageTheme;
+  /** What a POST that redirected has to say, shown once by the page it redirected to. */
+  flash?: PageFlash;
+}
+
+export interface PageFlash {
+  text: string;
+  error: boolean;
 }
 
 export type PageTheme = 'light' | 'dark';
@@ -22,6 +29,7 @@ const SessionSchema = z.strictObject({
   csrf: z.string().min(1),
   expires: z.number().int(),
   theme: z.enum(['light', 'dark']).optional(),
+  flash: z.strictObject({ text: z.string().max(1000), error: z.boolean() }).optional(),
 });
 
 const mac = (key: string, payload: string) =>

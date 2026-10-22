@@ -117,7 +117,11 @@ to match:
   (the origin people reach CT Studio at: the page may be framed by it alone) and restart.
   Without `BRIDGE_APP_ORIGIN` the page opens in a new tab. People on another address (a LAN URL)
   or in a page that frames CT Studio get the new tab too. A proxy host set up the earlier way,
-  straight to `http://bridge:3100` with a `/connections`-only location, keeps working.
+  straight to `http://bridge:3100` with a `/connections`-only location, keeps working. The page's
+  host must be a subdomain of the app's domain (the same site): the bridge logs a warning at start
+  when it isn't, since browsers then block its cookie and the modal keeps saying the session
+  ended. While the bridge is down, the listener answers with a short *unavailable* page instead
+  of nginx's own.
 - **Under this app** (the default, blank `BRIDGE_PUBLIC_URL` = `http://localhost:APP_PORT/bridge`):
   nginx forwards only `/bridge/connections` to the bridge, and the page opens in a new tab
   (never framed: on the app's own origin its content would be in reach of the app's scripts).

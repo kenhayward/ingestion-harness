@@ -121,6 +121,24 @@ function post(
   });
 }
 
+/**
+ * A POST, then the page its 303 sends the browser to, with the session cookie it set (the
+ * notice rides in it); an answer that is no redirect comes back as it is.
+ */
+async function postAndFollow(
+  app: FastifyInstance,
+  url: string,
+  cookie: string,
+  fields: Record<string, string>,
+): Promise<LightMyRequestResponse & { posted: LightMyRequestResponse }> {
+  const posted = await post(app, url, cookie, fields);
+  if (posted.statusCode !== 303) return Object.assign(posted, { posted });
+  const next = posted.cookies.find((c) => c.name === 'bridge_session')?.value ?? cookie;
+  const location = String(posted.headers.location).replace(/^\/bridge/, '');
+  const page = await app.inject({ url: location, cookies: { bridge_session: next } });
+  return Object.assign(page, { posted });
+}
+
 const newConnection = (csrf: string, over: Record<string, string> = {}) => ({
   csrf,
   id: 'finance',
@@ -281,8 +299,8 @@ describe('connections page', () => {
     const { cookie, csrf } = await login(app);
     await post(app, '/connections', cookie!.value, newConnection(csrf));
     await connections.mark('finance', 'needs_attention', 'old failure');
-    const tested = await post(app, '/connections/finance/test', cookie!.value, { csrf });
-    expect(tested.statusCode).toBe(200);
+    const tested = await postAndFollow(app, '/connections/finance/test', cookie!.value, { csrf });
+    expect(tested.posted.statusCode).toBe(303);
     expect(tested.body).toContain('Connected');
     expect((await connections.get('finance'))?.status).toBe('ok');
     await targets.put({
@@ -332,7 +350,9 @@ describe('connections page', () => {
         })
       ).body,
     );
-    bodies.push((await post(app, '/connections/finance/test', cookie!.value, { csrf })).body);
+    bodies.push(
+      (await postAndFollow(app, '/connections/finance/test', cookie!.value, { csrf })).body,
+    );
     for (const body of bodies) expect(body).not.toContain(SECRET);
   });
 
@@ -366,7 +386,7 @@ describe('personal connections on the page', () => {
     const sink = acmeSink();
     const { app, connections } = await setup(new MemoryObjectStore(), sink);
     const { cookie, csrf } = await login(app, code);
-    const res = await post(app, '/connections', cookie!.value, personal(csrf));
+    const res = await postAndFollow(app, '/connections', cookie!.value, personal(csrf));
     const [mine] = await connections.list({ kind: 'personal' });
     return { app, connections, sink, cookie: cookie!.value, csrf, res, mine: mine! };
   }
@@ -383,6 +403,7 @@ describe('personal connections on the page', () => {
 
   it('adds one: tested against its instance, owned, an id made up, the password never shown', async () => {
     const { sink, res, mine } = await added();
+    expect(res.posted.statusCode).toBe(303);
     expect(res.statusCode).toBe(200);
     expect(sink.tested).toEqual([
       { instanceId: 'sandbox', credential: { username: 'alice', password: PASSWORD } },
@@ -427,7 +448,7 @@ describe('personal connections on the page', () => {
     const unknown = await post(app, '/connections', cookie, personal(csrf, { instanceId: 'nope' }));
     expect(unknown.statusCode).toBe(422);
     const prod = await post(app, '/connections', cookie, personal(csrf, { instanceId: 'prod' }));
-    expect(prod.statusCode).toBe(200);
+    expect(prod.statusCode).toBe(303);
     expect(await connections.list({ kind: 'personal' })).toHaveLength(2);
   });
 
@@ -452,7 +473,7 @@ describe('personal connections on the page', () => {
       kind: 'personal',
       instanceId: 'sandbox',
     });
-    const tested = await post(app, `/connections/${mine.id}/test`, cookie, { csrf });
+    const tested = await postAndFollow(app, `/connections/${mine.id}/test`, cookie, { csrf });
     expect(tested.body).toContain('Renamed: connected as fake:alice2.');
     await post(app, `/connections/${mine.id}/delete`, cookie, { csrf });
     expect(await connections.get(mine.id)).toBeNull();
@@ -583,10 +604,10 @@ describe('the page in a CT Studio frame', () => {
     const refused = await post(app, '/connections', c, personal(csrf, { name: '' }));
     expect(refused.statusCode).toBe(422);
     expect(refused.body).not.toContain('data-event');
-    const added = await post(app, '/connections', c, personal(csrf));
+    const added = await postAndFollow(app, '/connections', c, personal(csrf));
     expect(added.body).toContain('data-event="changed"');
     const [mine] = await connections.list({ kind: 'personal' });
-    const tested = await post(app, `/connections/${mine!.id}/test`, c, { csrf });
+    const tested = await postAndFollow(app, `/connections/${mine!.id}/test`, c, { csrf });
     expect(tested.body).toContain('data-event="changed"');
     const saved = await post(app, `/connections/${mine!.id}`, c, {
       csrf,
@@ -749,7 +770,7 @@ describe('tabs, list and details', () => {
     const { cookie, csrf } = await login(app, 'good');
     const made = await post(app, '/connections', cookie!.value, newConnection(csrf));
     expect(made.headers.location).toBe('/bridge/connections/finance?changed=1');
-    const tested = await post(app, '/connections/finance/test', cookie!.value, { csrf });
+    const tested = await postAndFollow(app, '/connections/finance/test', cookie!.value, { csrf });
     expect(tested.body).toMatch(
       /<section class="details">\s*<p class="notice">Finance account: Connected\./,
     );
@@ -789,5 +810,38 @@ describe('no dead ends in the modal', () => {
       'This page was opened again elsewhere, so this copy can no longer save. Open Connections again from CT Studio.',
     );
     expect(await connections.get('finance')).toBeNull();
+  });
+});
+
+describe('a reload after adding or testing', () => {
+  it('re-sends nothing: the POST redirects, and the notice shows once', async () => {
+    const { app } = await setup(new MemoryObjectStore(), acmeSink());
+    const { cookie, csrf } = await login(app, 'olive');
+    const added = await postAndFollow(app, '/connections', cookie!.value, personal(csrf));
+    expect(added.posted.statusCode).toBe(303);
+    expect(String(added.posted.headers.location)).toMatch(
+      /^\/bridge\/connections\/u-[0-9a-f]{16}\?changed=1$/,
+    );
+    expect(added.body).toContain('My sandbox login: connected as fake:alice.');
+    // The page as reloaded: the session the notice was shown with no longer carries it.
+    const shown = added.cookies.find((c) => c.name === 'bridge_session')?.value;
+    expect(shown).toBeDefined();
+    const reloaded = await app.inject({
+      url: String(added.posted.headers.location).replace(/^\/bridge/, ''),
+      cookies: { bridge_session: shown! },
+    });
+    expect(reloaded.statusCode).toBe(200);
+    expect(reloaded.body).not.toContain('connected as');
+  });
+
+  it('keeps the session and its token across the redirect', async () => {
+    const { app, connections } = await setup(new MemoryObjectStore(), acmeSink());
+    const { cookie, csrf } = await login(app, 'olive');
+    const added = await postAndFollow(app, '/connections', cookie!.value, personal(csrf));
+    const next = added.posted.cookies.find((c) => c.name === 'bridge_session')!;
+    expect(next).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/bridge', secure: true });
+    const [mine] = await connections.list({ kind: 'personal' });
+    const tested = await post(app, `/connections/${mine!.id}/test`, next.value, { csrf });
+    expect(tested.statusCode).toBe(303);
   });
 });

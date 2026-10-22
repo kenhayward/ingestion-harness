@@ -104,7 +104,7 @@ describe('crossSiteWarning', () => {
       ['http://localhost:8081', 'http://127.0.0.1:8082'],
       ['https://ctstudio.app', 'http://connections.ctstudio.app'],
       ['http://192.168.1.10:8081', 'http://192.168.1.11:8082'],
-    ]) {
+    ] as const) {
       expect(crossSiteWarning(app, page)).toMatch(
         /^BRIDGE_PUBLIC_URL .* is not on the same site as BRIDGE_APP_ORIGIN .*: use a subdomain of the app's domain/,
       );

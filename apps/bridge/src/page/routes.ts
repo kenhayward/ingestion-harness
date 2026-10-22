@@ -30,7 +30,7 @@ import {
   openSession,
   sealSession,
   SESSION_COOKIE,
-  SESSION_SECONDS,
+  type PageFlash,
   type PageSession,
 } from './session.js';
 
@@ -107,12 +107,31 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     html(reply, 401, message(shell(undefined, 'ended'), title, text));
   const html = (reply: FastifyReply, code: number, body: string) =>
     reply.code(code).type('text/html; charset=utf-8').send(body);
-  /** After a change, back to `path` (under /connections), which then tells CT Studio. */
-  const changedTo = (reply: FastifyReply, path: string) =>
-    reply
+  /** The session cookie for `s`, good until the session's own expiry. */
+  const cookieFor = (s: PageSession) =>
+    [
+      `${SESSION_COOKIE}=${sealSession(s, key)}`,
+      `Path=${base || '/'}`,
+      `Max-Age=${Math.max(0, s.expires - Math.floor(Date.now() / 1000))}`,
+      'HttpOnly',
+      'SameSite=Lax',
+      ...(config.BRIDGE_COOKIE_SECURE ? ['Secure'] : []),
+    ].join('; ');
+  /**
+   * After a change, back to `path` (under /connections), which then tells CT Studio; `flash`, its
+   * notice, rides in the session to be shown once there. A reload of that page re-sends nothing.
+   */
+  const changedTo = (
+    reply: FastifyReply,
+    path: string,
+    flash?: { s: PageSession; notice: PageFlash },
+  ) => {
+    if (flash) reply.header('set-cookie', cookieFor({ ...flash.s, flash: flash.notice }));
+    return reply
       .code(303)
       .header('location', `${base}/connections${path}${path.includes('?') ? '&' : '?'}changed=1`)
       .send();
+  };
 
   /** The sinks of one connection kind that ask for credentials: their describe, by id. */
   const sinksOf = async (kind: Connection['kind']): Promise<Record<string, SinkDescribe>> => {
@@ -170,6 +189,13 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   const tabOf = (c: Connection): Tab => (c.kind === 'shared' ? 'shared' : 'mine');
 
   const renderPage = async (reply: FastifyReply, s: PageSession, code: number, v: View) => {
+    // A notice a redirect left: shown now, and dropped from the session so a reload doesn't.
+    if (s.flash && !v.notice) {
+      v = { ...v, notice: s.flash };
+      const { flash: _shown, ...rest } = s;
+      void _shown;
+      reply.header('set-cookie', cookieFor(rest));
+    }
     const tabs: Tab[] = isAdmin(s) ? ['mine', 'shared'] : ['mine'];
     const wanted = v.show ? tabOf(v.show) : v.tab;
     const tab: Tab = wanted && tabs.includes(wanted) ? wanted : 'mine';
@@ -282,18 +308,9 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     if (!user) return ended(reply, 'Link expired', EXPIRED);
     const asked = (req.query as Record<string, unknown>).theme;
     const theme = asked === 'light' || asked === 'dark' ? asked : undefined;
-    const value = sealSession(newSession(user, Date.now(), theme), key);
-    const attrs = [
-      `${SESSION_COOKIE}=${value}`,
-      `Path=${base || '/'}`,
-      `Max-Age=${SESSION_SECONDS}`,
-      'HttpOnly',
-      'SameSite=Lax',
-      ...(config.BRIDGE_COOKIE_SECURE ? ['Secure'] : []),
-    ];
     return reply
       .code(303)
-      .header('set-cookie', attrs.join('; '))
+      .header('set-cookie', cookieFor(newSession(user, Date.now(), theme)))
       .header('location', `${base}/connections`)
       .send();
   });
@@ -439,10 +456,8 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       if (err instanceof ConnectionConflict) return refuse(409, taken);
       throw err;
     }
-    const saved = await app.deps.connections.get(id);
-    return renderPage(reply, s, 200, {
-      ...(saved ? { show: saved } : { tab: 'mine' }),
-      changed: true,
+    return changedTo(reply, `/${encodeURIComponent(id)}`, {
+      s,
       notice: failure
         ? { text: `${values.name}: saved untested: ${failure}.`, error: true }
         : { text: connected({ kind: 'personal', name: values.name }, identity), error: false },
@@ -588,9 +603,8 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     await app.deps.connections.mark(c.id, failure ? 'needs_attention' : 'ok', failure);
-    return renderPage(reply, s, 200, {
-      show: (await app.deps.connections.get(c.id)) ?? c,
-      changed: true,
+    return changedTo(reply, `/${encodeURIComponent(c.id)}`, {
+      s,
       notice: failure
         ? { text: `${c.name}: the test failed: ${failure}.`, error: true }
         : { text: connected(c, identity), error: false },
