@@ -466,6 +466,40 @@ export function ReviewHelp() {
         <strong>evidence</strong> the model quoted and the page it came from, where it gave one;
         flagged values are highlighted. Click a value to correct it.
       </p>
+      <h3>Arranging the page</h3>
+      <ul>
+        <li>
+          Drag the divider between the document and the data (or focus it and use the arrow keys) to
+          give either more room; <strong>30 / 70</strong>, <strong>40 / 60</strong> and{' '}
+          <strong>50 / 50</strong> set the document's share at once.
+        </li>
+        <li>
+          The arrow at the right of each panel's header folds it to a narrow strip at its side; the
+          strip's arrow brings it back. <strong>Swap sides</strong> puts the document on the other
+          side. CT Studio remembers the arrangement in this browser.
+        </li>
+        <li>
+          The thumbnails beside the page open any page; a dot marks a page holding a flagged field.
+        </li>
+      </ul>
+      <h3>Finding a value</h3>
+      <ul>
+        <li>
+          The list on the left of the data holds <strong>Fields</strong>, each table (its name, with
+          its reference such as <em>Table IX</em> below it) and, under Review, Edits, Steps and
+          Graph. Each shows how many values it has and, in amber, how many are flagged.{' '}
+          <strong>Find a table or field</strong> narrows the list.
+        </li>
+        <li>
+          <strong>Next flagged</strong> steps through every flagged value. On a table cell, the
+          strip under the table says why it was flagged; <strong>Edit value</strong> opens it for
+          correction.
+        </li>
+        <li>
+          A table shows <strong>All rows</strong> or <strong>Flagged only</strong>; ‹ › step to the
+          table before or after.
+        </li>
+      </ul>
       <h3>Tabs</h3>
       <ul>
         <li>
