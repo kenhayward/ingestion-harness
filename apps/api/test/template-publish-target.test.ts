@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pullTargets } from '../src/bridge/sync.js';
 import { testApp } from './helpers.js';
-import { FAKE_SINK } from './sink-targets-routes.test.js';
+import { FAKE_SINK } from './fake-sink.js';
 
 const letter = (publishTo: string) => ({
   id: 'letter',

@@ -338,6 +338,7 @@ def publish_template_job(
             targets=targets,
             acting=reviewer or queue.uploader(job.id),
             approver=reviewer,
+            overrides=queue.delivery_overrides(job.id),
         )
         published = delivered.outputs
         if on_published is not None:
@@ -358,8 +359,9 @@ def deliver_publication(
     targets: list[Target],
     acting: ActingUser | None,
     approver: ActingUser | None,
+    overrides: dict[str, dict[str, str]] | None = None,
 ) -> Delivered:
-    """Hand one publication to the bridge. With a graph (a recipe delivering `rdf`): the pinned
+    """Hand one publication to the bridge (with the reviewer's name `overrides`). With a graph (a recipe delivering `rdf`): the pinned
     ontologies not loaded yet under its base go to the triple store first, as graph packages (a
     refused one goes to review before any version is spent); then the graph's next version is
     committed (prepare_graph); then one package carries the outputs, the graph and its versioned
@@ -405,6 +407,7 @@ def deliver_publication(
         acting=acting,
         approver=approver,
         graph=version,
+        overrides=overrides,
     )
     return replace(delivered, deliveries=delivered.deliveries + loads)
 

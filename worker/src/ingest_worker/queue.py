@@ -123,6 +123,10 @@ class JobQueue(Protocol):
         """The CT Studio user who queued the job (None: not recorded)."""
         ...
 
+    def delivery_overrides(self, job_id: str) -> dict[str, dict[str, str]]:
+        """The names the reviewer chose at the job's approval, per target and name field."""
+        ...
+
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         """Reviewer edits in the order they were made."""
         ...
@@ -360,6 +364,12 @@ class PgJobQueue:
             (job_id,),
         ).fetchone()
         return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
+
+    def delivery_overrides(self, job_id: str) -> dict[str, dict[str, str]]:
+        row = self._conn.execute(
+            "SELECT delivery_overrides FROM jobs WHERE id = %s", (job_id,)
+        ).fetchone()
+        return dict(row[0] or {}) if row else {}
 
     def review_edits(self, job_id: str) -> list[dict[str, Any]]:
         cur = self._conn.execute(

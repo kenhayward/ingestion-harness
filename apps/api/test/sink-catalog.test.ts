@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SinkCatalog } from '../src/bridge/sinks.js';
 import { FakeBridgeApi } from './fake-bridge.js';
-import { FAKE_SINK } from './sink-targets-routes.test.js';
+import { FAKE_SINK } from './fake-sink.js';
 
 describe('SinkCatalog', () => {
   it('keeps what the bridge last listed when the bridge cannot say', async () => {

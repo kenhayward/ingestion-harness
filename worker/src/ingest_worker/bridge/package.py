@@ -233,9 +233,11 @@ def deliver_document(
     approver: ActingUser | None,
     graph: GraphVersion | None = None,
     primary: Target | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
 ) -> Delivered:
     """Build the job's package from `outputs` (and `graph`) and deliver it to every target
-    (deliver_outputs; `primary`: the target read back from, else the first)."""
+    (deliver_outputs; `primary`: the target read back from, else the first), with the recipe's
+    name patterns and the reviewer's `overrides` for the targets it names."""
     package = build_package(
         job=job,
         template=template,
@@ -249,7 +251,17 @@ def deliver_document(
     named = {t.id for t in targets}
     settings = template.delivery_settings() if template else {}
     patterns = {t: fields for t, fields in settings.items() if t in named}
-    return deliver_outputs(deps, job, package, targets, acting, outputs, primary, patterns=patterns)
+    return deliver_outputs(
+        deps,
+        job,
+        package,
+        targets,
+        acting,
+        outputs,
+        primary,
+        patterns=patterns,
+        overrides={t: f for t, f in (overrides or {}).items() if t in named},
+    )
 
 
 def deliver_outputs(

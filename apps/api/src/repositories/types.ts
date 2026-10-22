@@ -14,6 +14,7 @@ import type {
   StepRun,
   SuggestParams,
   ResultShow,
+  DeliveryOverrides,
 } from '@ih/shared';
 import type { BridgeError, DeliveryStatus, Receipt } from '@ih/bridge-contract';
 
@@ -503,8 +504,18 @@ export interface IngestionRepo {
    */
   listJobReviews(jobIds: readonly string[]): Promise<JobReview[]>;
   addEdit(jobId: string, edit: NewEdit): Promise<ReviewEdit>;
-  /** awaiting_review -> queued publish task. Null if the job is not awaiting review. */
-  approve(jobId: string, reviewer: string | null, note: string | null): Promise<JobSummary | null>;
+  /**
+   * awaiting_review -> queued publish task, with the reviewer's name overrides (replacing any
+   * from an earlier approval). Null if the job is not awaiting review.
+   */
+  approve(
+    jobId: string,
+    reviewer: string | null,
+    note: string | null,
+    overrides?: DeliveryOverrides,
+  ): Promise<JobSummary | null>;
+  /** The name overrides the job's last approval stored (none: `{}`). */
+  deliveryOverrides(jobId: string): Promise<DeliveryOverrides>;
   listStepRuns(jobId: string): Promise<StepRun[]>;
   /** awaiting_review -> queued rerun task for one step. Null if not awaiting review. */
   requestRerun(jobId: string, step: string, params: RerunRequest): Promise<JobSummary | null>;

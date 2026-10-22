@@ -14,6 +14,7 @@ import type {
   StepRun,
   OutputFormat,
   SuggestParams,
+  DeliveryOverrides,
 } from '@ih/shared';
 import { DELETABLE_STATUSES, modelRef, sourceContentType, type Creator } from '@ih/shared';
 import {
@@ -1191,13 +1192,26 @@ export class PgRepo implements IngestionRepo {
     return toEdit(rows[0]!);
   }
 
-  async approve(jobId: string, reviewer: string | null, note: string | null) {
+  async deliveryOverrides(jobId: string): Promise<DeliveryOverrides> {
+    const { rows } = await this.pool.query<{ o: DeliveryOverrides }>(
+      'SELECT delivery_overrides AS o FROM jobs WHERE id = $1',
+      [jobId],
+    );
+    return rows[0]?.o ?? {};
+  }
+
+  async approve(
+    jobId: string,
+    reviewer: string | null,
+    note: string | null,
+    overrides: DeliveryOverrides = {},
+  ) {
     const { rowCount } = await this.pool.query(
       `UPDATE jobs SET status = 'queued', task = 'publish', attempts = 0, error = NULL,
               run_after = now(), reviewer = $2, review_note = $3, reviewed_at = now(),
-              updated_at = now()
+              delivery_overrides = $4, updated_at = now()
         WHERE id = $1 AND status = 'awaiting_review'`,
-      [jobId, reviewer, note],
+      [jobId, reviewer, note, JSON.stringify(overrides)],
     );
     return rowCount ? await this.getJob(jobId) : null;
   }

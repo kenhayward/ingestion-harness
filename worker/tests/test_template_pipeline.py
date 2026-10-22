@@ -755,6 +755,14 @@ def test_a_publish_hands_the_graph_and_its_copy_to_the_bridge_in_one_package(
     assert "graph-version" not in {o.output_id for o in published}
 
 
+def test_a_reviewed_publish_sends_the_names_the_reviewer_chose(tmp_path: Path) -> None:
+    deps, bridge, queue = to_publish(tmp_path)
+    queue.overrides["job-1"] = {"default": {"name": "Chosen"}}
+    run_once(queue, deps, "w1")
+    [request] = documents(bridge)
+    assert request.overrides == {"default": {"name": "Chosen"}}
+
+
 def test_publishing_the_same_file_again_is_the_next_version_of_its_graph(tmp_path: Path) -> None:
     deps, bridge, queue = to_publish(tmp_path)
     run_once(queue, deps, "w1")

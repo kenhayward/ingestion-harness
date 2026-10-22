@@ -78,6 +78,8 @@ import type {
   PluginInfo,
   PluginPreviewView,
   TargetConnection,
+  DeliveryOverrides,
+  JobNaming,
   PatternPreview,
   SinkInfo,
   SinkBrowseNode,
@@ -617,7 +619,12 @@ export interface Api {
   getResult(jobId: string): Promise<ResultDetail>;
   getReview(jobId: string): Promise<ReviewData>;
   addEdit(jobId: string, edit: EditRequest): Promise<ReviewEdit>;
-  approve(jobId: string, body: { reviewer?: string; note?: string }): Promise<JobSummary>;
+  approve(
+    jobId: string,
+    body: { reviewer?: string; note?: string; overrides?: DeliveryOverrides },
+  ): Promise<JobSummary>;
+  /** The names a reviewer can change for a job, per target (none: no target names anything). */
+  getJobNaming(jobId: string): Promise<JobNaming>;
   reject(jobId: string, body: { reviewer?: string; reason: string }): Promise<JobSummary>;
   pageUrl(jobId: string, page: number): string;
   /** The job's uploaded PDF, served inline (Open PDF). */
@@ -1641,6 +1648,7 @@ export function createHttpApi(base = '/api'): Api {
     getReview: (jobId) => apiFetch(`${base}/jobs/${jobId}/review`).then(json<ReviewData>),
     addEdit: (jobId, edit) => post<ReviewEdit>(`${base}/jobs/${jobId}/edits`, edit),
     approve: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/approve`, body),
+    getJobNaming: (jobId) => apiFetch(`${base}/jobs/${jobId}/naming`).then(json<JobNaming>),
     reject: (jobId, body) => post<JobSummary>(`${base}/jobs/${jobId}/reject`, body),
     pageUrl: (jobId, page) => `${base}/jobs/${jobId}/pages/${page}`,
     documentUrl: (jobId) => `${base}/jobs/${jobId}/document`,

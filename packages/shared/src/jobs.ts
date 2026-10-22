@@ -392,9 +392,48 @@ export const ReviewEditSchema = z.object({
 });
 export type ReviewEdit = z.infer<typeof ReviewEditSchema>;
 
+/** Per target id, per name field id: the reviewer's own name for what a delivery creates. */
+export const DeliveryOverridesSchema = z.record(
+  z.string().min(1),
+  z.record(z.string().min(1), z.string().max(1024)),
+);
+export type DeliveryOverrides = z.infer<typeof DeliveryOverridesSchema>;
+
 export const ApproveRequestSchema = z
-  .object({ reviewer: z.string().optional(), note: z.string().optional() })
+  .object({
+    reviewer: z.string().optional(),
+    note: z.string().optional(),
+    /** Names the reviewer chose, for the fields GET /jobs/:id/naming lists (absent: none). */
+    overrides: DeliveryOverridesSchema.optional(),
+  })
   .strict();
+
+/** A job's name fields a reviewer can change, per target, as they would resolve now. */
+export const JobNamingSchema = z.object({
+  targets: z.array(
+    z.object({
+      targetId: z.string(),
+      label: z.string(),
+      fields: z.array(
+        z.object({
+          id: z.string(),
+          label: z.string(),
+          /** The pattern that applies: the recipe's, else the target's own. */
+          pattern: z.string(),
+          /** The pattern resolved for this document; null when it resolves to nothing. */
+          value: z.string().nullable(),
+          /** The variables that resolved to nothing (empty when it resolved). */
+          unresolved: z.array(z.string()),
+          /** The name the reviewer chose last time, if any. */
+          override: z.string().nullable(),
+          /** Why the target refused that name (a name conflict), else null. */
+          conflict: z.string().nullable(),
+        }),
+      ),
+    }),
+  ),
+});
+export type JobNaming = z.infer<typeof JobNamingSchema>;
 export const RejectRequestSchema = z
   .object({ reviewer: z.string().optional(), reason: z.string().min(1) })
   .strict();

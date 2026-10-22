@@ -12,6 +12,7 @@ import type {
   ReviewEdit,
   StepRun,
   SuggestParams,
+  DeliveryOverrides,
 } from '@ih/shared';
 import {
   DEFAULT_TARGET_ID,
@@ -963,8 +964,21 @@ export class MemoryRepo implements IngestionRepo {
     return saved;
   }
 
-  async approve(jobId: string, reviewer: string | null, note: string | null) {
+  /** jobs.delivery_overrides, by job id. */
+  readonly overrides = new Map<string, DeliveryOverrides>();
+
+  async deliveryOverrides(jobId: string): Promise<DeliveryOverrides> {
+    return structuredClone(this.overrides.get(jobId) ?? {});
+  }
+
+  async approve(
+    jobId: string,
+    reviewer: string | null,
+    note: string | null,
+    overrides: DeliveryOverrides = {},
+  ) {
     if (this.jobs.get(jobId)?.status !== 'awaiting_review') return null;
+    this.overrides.set(jobId, structuredClone(overrides));
     return this.update(jobId, {
       status: 'queued',
       task: 'publish',

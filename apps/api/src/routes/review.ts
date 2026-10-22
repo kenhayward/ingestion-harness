@@ -1,7 +1,12 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply } from 'fastify';
 import {
   ApproveRequestSchema,
+  deliverySettingsOf,
   EditRequestSchema,
+  JobNamingSchema,
+  publishTargetsOf,
+  type DeliveryOverrides,
+  type JobNaming,
   JobDetailSchema,
   JobSummarySchema,
   modelRefProblem,
@@ -14,6 +19,7 @@ import {
   type Template,
 } from '@ih/shared';
 import { z } from 'zod';
+import { namingInputs, parsePattern, resolvePattern } from '@ih/bridge-contract';
 import { error, md, res } from '../openapi/zod.js';
 import { resolveDefinition, runnableModels } from '../templates/definitions.js';
 
@@ -83,7 +89,98 @@ async function loadContext(
   return { job, template: def.template, document: JSON.parse(body.toString('utf8')) };
 }
 
+/**
+ * The name fields a reviewer can change for a job: for each sink target of its recipe version,
+ * the overridable pattern fields, resolved against the draft as they would be delivered now.
+ */
+async function namingOf(app: FastifyInstance, ctx: ReviewContext): Promise<JobNaming> {
+  const listed = publishTargetsOf(ctx.template);
+  const settings = deliverySettingsOf(ctx.template);
+  const overrides = await app.deps.repo.deliveryOverrides(ctx.job.id);
+  const sinks = app.deps.sinks!;
+  const records = await Promise.all(listed.map((id) => app.deps.targets.get(id)));
+  if (records.some((t) => t?.kind === 'sink')) await sinks.refresh(app.deps.bridge);
+  const fields = (ctx.document.fields ?? {}) as Record<string, { value?: unknown }>;
+  const naming = namingInputs({
+    fields,
+    jobId: ctx.job.id,
+    recipe: { id: ctx.template.id, version: ctx.template.version },
+    source: {
+      filename: ctx.job.filename,
+      sha256: String(ctx.document.source_sha256 ?? ''),
+    },
+    publishedAt: new Date().toISOString(),
+  });
+  const targets: JobNaming['targets'] = [];
+  listed.forEach((targetId, i) => {
+    const t = records[i];
+    if (t?.kind !== 'sink') return;
+    const declared = sinks.get(t.sinkId)?.destinationFields ?? [];
+    const named = declared.filter((f) => f.kind === 'pattern' && f.overridable);
+    if (!named.length) return;
+    targets.push({
+      targetId,
+      label: t.label,
+      fields: named.map((f) => {
+        const pattern = settings[targetId]?.[f.id] || t.destination[f.id] || '';
+        const parsed = pattern ? parsePattern(pattern) : null;
+        const resolved =
+          parsed && !('error' in parsed) ? resolvePattern(pattern, naming) : { unresolved: [] };
+        return {
+          id: f.id,
+          label: f.label,
+          pattern,
+          value: 'value' in resolved ? resolved.value : null,
+          unresolved: 'unresolved' in resolved ? resolved.unresolved : [],
+          override: overrides[targetId]?.[f.id] ?? null,
+          conflict: null,
+        };
+      }),
+    });
+  });
+  return { targets };
+}
+
+/** Why `overrides` can't be stored for `naming`, or null. */
+function overridesProblem(overrides: DeliveryOverrides, naming: JobNaming): string | null {
+  for (const [targetId, fields] of Object.entries(overrides)) {
+    const target = naming.targets.find((t) => t.targetId === targetId);
+    if (!target) return `${targetId}: no name a reviewer can change`;
+    for (const [fieldId, value] of Object.entries(fields)) {
+      if (!target.fields.some((f) => f.id === fieldId)) {
+        return `${targetId}: ${fieldId} is not a name a reviewer can change`;
+      }
+      if (!value.trim()) return `${targetId}: ${fieldId} is empty`;
+    }
+  }
+  return null;
+}
+
 export const reviewRoutes: FastifyPluginAsync = async (app) => {
+  app.get<{ Params: { id: string } }>(
+    '/jobs/:id/naming',
+    {
+      schema: {
+        tags: ['Review & steps'],
+        operationId: 'getJobNaming',
+        summary: "Get a job's names a reviewer can change",
+        description: md`
+          For each target of the job's recipe version that names what it creates (a document
+          name), the fields a reviewer can change: the pattern that applies, its value for this
+          document (or what it lacks), the name chosen at an earlier approval, and why the
+          target refused a name. Approve with \`overrides\` to use other names.
+        `,
+        params: JobParams,
+        response: { 200: res('The names.', JobNamingSchema), 404: NO_REVIEW },
+      },
+    },
+    async (req, reply) => {
+      const ctx = await loadContext(app, req.params.id, reply);
+      if (!ctx) return reply;
+      return namingOf(app, ctx);
+    },
+  );
+
   /** Everything a reviewer needs: job, template definitions, draft document, edits so far. */
   app.get<{ Params: { id: string } }>(
     '/jobs/:id/review',
@@ -223,10 +320,18 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
       if (!UUID.safeParse(req.params.id).success)
         return reply.code(404).send({ error: 'not found' });
+      const overrides = body.data.overrides ?? {};
+      if (Object.keys(overrides).length) {
+        const ctx = await loadContext(app, req.params.id, reply);
+        if (!ctx) return reply;
+        const problem = overridesProblem(overrides, await namingOf(app, ctx));
+        if (problem) return reply.code(400).send({ error: problem });
+      }
       const job = await app.deps.repo.approve(
         req.params.id,
         body.data.reviewer ?? null,
         body.data.note ?? null,
+        overrides,
       );
       return job ?? reply.code(409).send({ error: 'job not found or not awaiting review' });
     },

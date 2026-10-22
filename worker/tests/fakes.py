@@ -196,6 +196,8 @@ class FakeQueue:
     #: Who reviewed and who uploaded each job, by job id (acting users).
     reviewers: dict[str, ActingUser] = field(default_factory=dict)
     uploaders: dict[str, ActingUser] = field(default_factory=dict)
+    #: jobs.delivery_overrides, by job id.
+    overrides: dict[str, dict[str, dict[str, str]]] = field(default_factory=dict)
     edits: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: Templates stored in the database, keyed by (id, version).
@@ -254,6 +256,9 @@ class FakeQueue:
 
     def uploader(self, job_id: str) -> ActingUser | None:
         return self.uploaders.get(job_id)
+
+    def delivery_overrides(self, job_id: str) -> dict[str, dict[str, str]]:
+        return dict(self.overrides.get(job_id, {}))
 
     def await_review(
         self,
