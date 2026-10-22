@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
-        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #304,
+        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #306,
         merged between Wednesday 21 October 2026, 14:06 and Thursday 22 October 2026 (UTC).
       </p>
 
@@ -208,6 +208,10 @@
               >— a one-row header, long values shown whole, and page columns that open their
               page</span
             >
+          </li>
+          <li>
+            <a href="#attention-everywhere">No job needing you is missed</a>
+            <span>— the badges and the review queue count every job waiting on someone</span>
           </li>
           <li>
             <a href="#open-in-viewer">Open a result in the viewer</a>
@@ -470,6 +474,20 @@
         like), its page numbers are links that turn the document to that page.
         <strong>Next flagged</strong> turns to a flagged row&apos;s page as well, and that
         page&apos;s thumbnail gets a dot.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="attention-everywhere">No job needing you is missed</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/306">#306</a>
+      </p>
+      <p>
+        The number on the <strong>Jobs</strong> link and the taskbar, and the Review page&apos;s
+        <em>n of m awaiting review</em> and <strong>Next document</strong>, used to count only the
+        newest 50 jobs, so an older job awaiting review could go unnoticed. They now count every job
+        awaiting review, needing review or failed, however old. For API clients:
+        <code>GET /api/jobs</code> takes <code>group=attention</code>, <code>active</code> or
+        <code>done</code>.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 
