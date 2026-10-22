@@ -50,6 +50,30 @@ describe('ResultDetailView', () => {
     expect(within(files).getByText('2 rows')).toBeInTheDocument();
   });
 
+  it('opens a recipe result in the viewer, before the original', async () => {
+    show();
+    await screen.findByRole('heading', { level: 1, name: 'protocol.pdf' });
+    const actions = screen.getByRole('group', { name: 'Actions' });
+    const viewer = within(actions).getByRole('link', { name: 'Open protocol.pdf in the viewer' });
+    expect(viewer).toHaveAttribute('href', '#/review/j1');
+    expect(viewer).toHaveTextContent('Open in viewer');
+    expect(
+      within(actions)
+        .getAllByRole('link')
+        .map((l) => l.getAttribute('aria-label')),
+    ).toEqual([
+      'Open protocol.pdf in the viewer',
+      'View PDF of protocol.pdf',
+      'Download protocol.pdf results as ZIP',
+    ]);
+  });
+
+  it('offers no viewer for a legacy spec result', async () => {
+    show(resultDetail({ document: null, definition: { kind: 'spec' }, outputs: [] }));
+    await screen.findByRole('heading', { level: 1, name: 'protocol.pdf' });
+    expect(screen.queryByRole('link', { name: /in the viewer/ })).toBeNull();
+  });
+
   it('renders labelled fields with formatted values and edit markers', async () => {
     render(
       <ResultDetailView

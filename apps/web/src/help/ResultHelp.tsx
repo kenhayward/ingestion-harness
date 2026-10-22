@@ -19,6 +19,12 @@ export function ResultHelp() {
           reading them directly.
         </li>
         <li>
+          <strong>Open in viewer</strong> shows the document beside its values, as on the Review
+          page but read-only: page thumbnails, the tables, and page numbers that turn to their page.
+          It shows the reviewed values, which are what was published. Documents of older (legacy)
+          types don't have it.
+        </li>
+        <li>
           <strong>Original</strong> (or <strong>PDF</strong>) opens the uploaded document;{' '}
           <strong>Download all · ZIP</strong> downloads every output at once.
         </li>

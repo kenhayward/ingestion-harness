@@ -172,6 +172,7 @@ export function ResultDetailView({ api, jobId }: { api: Api; jobId: string }) {
             filename={job.filename}
             contentType={job.contentType}
             outputCount={outputs.length}
+            viewer={definition.kind === 'template'}
           />
           <HelpButton topic="result" />
         </div>
