@@ -216,7 +216,7 @@ describe('RunsTab', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('lists batches newest first and keeps older ones behind Show', async () => {
+  it('lists every batch newest first, older ones too, with nothing behind Show', async () => {
     const runs: TestRun[] = [1, 2, 3].map((n) =>
       testRunView({
         batchId: `b${n}`,
@@ -231,27 +231,27 @@ describe('RunsTab', () => {
     expect(regions.map((r) => r.getAttribute('aria-label'))).toEqual([
       expect.stringMatching(/draft v4$/),
       expect.stringMatching(/draft v3$/),
+      expect.stringMatching(/draft v2$/),
     ]);
-    expect(screen.getByText('Older batches: 1 more on v2')).toBeInTheDocument();
-    const show = screen.getByRole('button', { name: 'Show' });
-    expect(show).toHaveAttribute('aria-expanded', 'false');
-    await userEvent.click(show);
-    expect(screen.getAllByRole('region', { name: /· draft v/ })).toHaveLength(3);
-    expect(screen.getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('button', { name: /^Show/ })).toBeNull();
+    expect(screen.queryByText(/Older batches/)).toBeNull();
   });
 
-  it('keeps runs outside a batch in a collapsed Other runs list', async () => {
+  it('lists runs outside a batch (reference and evaluation runs) without being asked', async () => {
     tab(
       fakeApi({
         listTestRuns: vi.fn(async () => [
-          testRunView({ filename: 'ref.pdf', status: 'succeeded' }),
+          testRunView({ batchId: 'b1', filename: 'batch.pdf', status: 'succeeded' }),
+          testRunView({ filename: 'ref.pdf', status: 'running' }),
         ]),
       }),
     );
-    const show = await screen.findByRole('button', { name: 'Show other runs (1)' });
-    expect(screen.queryByRole('cell', { name: 'ref.pdf' })).toBeNull();
-    await userEvent.click(show);
-    expect(screen.getByRole('cell', { name: 'ref.pdf' })).toBeInTheDocument();
+    const others = await screen.findByRole('table', { name: 'Other runs' });
+    expect(within(others).getByRole('cell', { name: 'ref.pdf' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /other runs/i })).toBeNull();
+    expect(
+      screen.queryByText(/Reference runs, evaluation runs and runs from before batches/),
+    ).toBeNull();
   });
 
   it('retries a failed run through the re-process dialog', async () => {
@@ -354,8 +354,7 @@ describe('RunsTab', () => {
     });
     const api = fakeApi({ listTestRuns: vi.fn(async () => [ref]) });
     tab(api);
-    await userEvent.click(await screen.findByRole('button', { name: 'Show other runs (1)' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Retry ref.pdf' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry ref.pdf' }));
     const dialog = screen.getByRole('dialog', { name: 'Retry ref.pdf' });
     expect(within(dialog).queryByRole('combobox')).toBeNull();
     expect(within(dialog).getByText('Drafting model')).toBeInTheDocument();
@@ -378,8 +377,7 @@ describe('RunsTab', () => {
       modelOverride: override,
     });
     tab(fakeApi({ listTestRuns: vi.fn(async () => [run]) }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Show other runs (1)' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Retry ref.pdf' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry ref.pdf' }));
     const dialog = await screen.findByRole('dialog', { name: 'Retry ref.pdf' });
     await waitFor(() => expect(within(dialog).getByText(text)).toBeInTheDocument());
     expect(dialog).not.toHaveTextContent(override === 'main' ? 'main' : override);

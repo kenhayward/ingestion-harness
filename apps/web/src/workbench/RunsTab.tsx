@@ -11,13 +11,11 @@ import {
   batchSubtitle,
   batchTitle,
   isActiveRun,
-  olderText,
   queueText,
   runBatches,
   runBlockedReason,
   runLabel,
   runSamples,
-  splitBatches,
 } from './runs.js';
 import { TabHeader } from './TabHeader.js';
 
@@ -63,8 +61,6 @@ export function RunsTab({
   const [retrying, setRetrying] = useState<TestRun | null>(null);
   const [cancelling, setCancelling] = useState<CancelRequest | null>(null);
   const cancelRun = (run: TestRun) => setCancelling({ runs: [run], batch: false });
-  const [showOlder, setShowOlder] = useState(false);
-  const [showOthers, setShowOthers] = useState(false);
   const choices = useModelChoices(api);
   const seq = useRef(0);
   const inFlight = useRef(false);
@@ -132,8 +128,6 @@ export function RunsTab({
   const label = loading ? 'Run on dev samples' : runLabel(selected.size);
 
   const { batches, others } = useMemo(() => runBatches(data?.runs ?? []), [data]);
-  const { shown, hidden } = splitBatches(batches);
-  const visible = showOlder ? batches : shown;
 
   return (
     <div className="runs-tab">
@@ -166,7 +160,7 @@ export function RunsTab({
           queue={queueText(data.queue)}
         />
       )}
-      {visible.map((batch) => {
+      {batches.map((batch) => {
         const title = batchTitle(batch, now);
         return (
           <RunBatchCard
@@ -181,46 +175,20 @@ export function RunsTab({
           />
         );
       })}
-      {hidden.length > 0 && (
-        <p className="muted runs-older">
-          <span>{showOlder ? 'Older batches shown' : olderText(hidden)}</span> ·{' '}
-          <button
-            type="button"
-            className="link"
-            aria-expanded={showOlder}
-            onClick={() => setShowOlder((v) => !v)}
-          >
-            {showOlder ? 'Hide' : 'Show'}
-          </button>
-        </p>
-      )}
       {data && batches.length === 0 && others.length === 0 && (
         <p className="muted">No test runs yet.</p>
       )}
       {others.length > 0 && (
         <section className="card runs-others" aria-labelledby="runs-others-title">
           <h3 id="runs-others-title">Other runs</h3>
-          <p className="muted">
-            Reference runs, evaluation runs and runs from before batches.{' '}
-            <button
-              type="button"
-              className="link"
-              aria-expanded={showOthers}
-              onClick={() => setShowOthers((v) => !v)}
-            >
-              {showOthers ? 'Hide other runs' : `Show other runs (${others.length})`}
-            </button>
-          </p>
-          {showOthers && (
-            <div className="table-scroll">
-              <table className="runs-table" aria-label="Other runs">
-                <RunHead />
-                <tbody>
-                  <RunRows runs={others} now={now} onRetry={setRetrying} onCancel={cancelRun} />
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="table-scroll">
+            <table className="runs-table" aria-label="Other runs">
+              <RunHead />
+              <tbody>
+                <RunRows runs={others} now={now} onRetry={setRetrying} onCancel={cancelRun} />
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
       {asking && draft !== null && (

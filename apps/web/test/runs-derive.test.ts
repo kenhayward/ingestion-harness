@@ -5,7 +5,6 @@ import {
   batchSubtitle,
   batchTitle,
   formatDuration,
-  olderText,
   progressText,
   queueText,
   cancellableRuns,
@@ -17,7 +16,6 @@ import {
   runLabel,
   runSamples,
   segmentsText,
-  splitBatches,
   type RunBatch,
 } from '../src/workbench/runs.js';
 import { sampleView, testRunView } from './fake-api.js';
@@ -51,23 +49,6 @@ describe('runBatches', () => {
     expect(batches[1]!.createdAt).toBe(at(0));
     expect(batches.map((b) => b.active)).toEqual([true, false]);
     expect(others).toEqual([loose]);
-  });
-});
-
-describe('splitBatches', () => {
-  const b = (id: string, active = false) => ({ id, active }) as RunBatch;
-  it.each([
-    [[b('1'), b('2')], ['1', '2'], []],
-    [
-      [b('1'), b('2'), b('3'), b('4')],
-      ['1', '2'],
-      ['3', '4'],
-    ],
-    [[b('1'), b('2'), b('3', true)], ['1', '2', '3'], []],
-  ])('%#', (batches, shown, hidden) => {
-    const split = splitBatches(batches);
-    expect(split.shown.map((x) => x.id)).toEqual(shown);
-    expect(split.hidden.map((x) => x.id)).toEqual(hidden);
   });
 });
 
@@ -119,13 +100,6 @@ describe('batch header', () => {
     expect(batchSubtitle(batch([testRunView()], { modelOverride: 'gone' }), choices)).toBe(
       '1 dev sample · started by ken · Model no longer offered',
     );
-  });
-
-  it('summarises hidden batches by version', () => {
-    expect(olderText([batch([]), batch([], { specVersion: 3 }), batch([])])).toBe(
-      'Older batches: 3 more on v3 and v4',
-    );
-    expect(olderText([batch([], { specVersion: 2 })])).toBe('Older batches: 1 more on v2');
   });
 });
 
