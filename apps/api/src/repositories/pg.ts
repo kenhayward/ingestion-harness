@@ -16,7 +16,13 @@ import type {
   SuggestParams,
   DeliveryOverrides,
 } from '@ih/shared';
-import { DELETABLE_STATUSES, modelRef, sourceContentType, type Creator } from '@ih/shared';
+import {
+  DELETABLE_STATUSES,
+  modelRef,
+  sourceContentType,
+  statusesIn,
+  type Creator,
+} from '@ih/shared';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -647,15 +653,23 @@ export class PgRepo implements IngestionRepo {
     return Number(rows[0]!.n);
   }
 
-  async listJobs({ limit, status, mine }: ListJobsQuery): Promise<JobSummary[]> {
+  async listJobs({ limit, status, group, mine }: ListJobsQuery): Promise<JobSummary[]> {
     // "Mine" (isMine): by user id, else by name for jobs from before migration 0041.
     const { rows } = await this.pool.query<JobRow>(
       `${JOB_SELECT} WHERE ($1::job_status IS NULL OR j.status = $1) AND j.task <> 'prepare'
+         AND ($6::job_status[] IS NULL OR j.status = ANY($6))
          AND ($3::boolean IS NOT TRUE
               OR (j.created_by_user IS NOT NULL AND j.created_by_user = $4::uuid)
               OR (j.created_by_user IS NULL AND j.created_by = $5))
        ORDER BY j.created_at DESC LIMIT $2`,
-      [status ?? null, limit, mine !== undefined, mine?.userId ?? null, mine?.name ?? null],
+      [
+        status ?? null,
+        limit,
+        mine !== undefined,
+        mine?.userId ?? null,
+        mine?.name ?? null,
+        group ? statusesIn(group) : null,
+      ],
     );
     return rows.map(toSummary);
   }

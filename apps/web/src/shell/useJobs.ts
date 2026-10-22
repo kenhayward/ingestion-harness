@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { JobSummary } from '@ih/shared';
+import type { JobSummary, StatusGroup } from '@ih/shared';
 import type { Api } from '../api/client.js';
 
 /**
- * The jobs poll, shared by the nav badge and the Jobs page. pollMs <= 0 = load once (tests).
- * `mine`: only the signed-in token's jobs (the Jobs page's My jobs); `enabled: false` stops
- * loading and polling.
+ * A jobs poll: the newest jobs (Home, the Jobs page), or with `group` every job of that status
+ * group however old (`attention`: the nav badge and the review queue, so none is missed behind
+ * the newest). pollMs <= 0 = load once (tests). `mine`: only the signed-in token's jobs (the
+ * Jobs page's My jobs); `enabled: false` stops loading and polling.
  */
 export function useJobs(
   api: Api,
   pollMs: number,
-  { mine = false, enabled = true }: { mine?: boolean; enabled?: boolean } = {},
+  {
+    mine = false,
+    enabled = true,
+    group,
+    limit,
+  }: { mine?: boolean; enabled?: boolean; group?: StatusGroup; limit?: number } = {},
 ) {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -19,14 +25,20 @@ export function useJobs(
 
   const refresh = useCallback(async () => {
     try {
-      setJobs(await (mine ? api.listJobs({ mine: true }) : api.listJobs()));
+      setJobs(
+        await (group
+          ? api.listJobs({ group, ...(limit ? { limit } : {}) })
+          : mine
+            ? api.listJobs({ mine: true })
+            : api.listJobs()),
+      );
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoaded(true);
     }
-  }, [api, mine]);
+  }, [api, mine, group, limit]);
 
   useEffect(() => {
     if (!enabled) return;

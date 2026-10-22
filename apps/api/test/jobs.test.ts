@@ -22,6 +22,35 @@ describe('jobs API', () => {
     expect((await app.inject('/api/jobs?status=bogus')).statusCode).toBe(400);
   });
 
+  it('lists a status group, however old its jobs are', async () => {
+    const { app, repo, job } = await seedJob();
+    // The seeded job becomes an old failure; two newer jobs succeed.
+    repo.jobs.set(job.id, {
+      ...repo.jobs.get(job.id)!,
+      status: 'failed',
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
+    for (const n of [1, 2]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/documents',
+        ...multipart({ specId: 'demo' }, { filename: `b${n}.pdf`, content: fakePdf }),
+      });
+      const id = (res.json() as { id: string }).id;
+      repo.jobs.set(id, { ...repo.jobs.get(id)!, status: 'succeeded' });
+    }
+    const newest = (await app.inject('/api/jobs?limit=1')).json() as { id: string }[];
+    expect(newest.map((j) => j.id)).not.toContain(job.id);
+    const attention = (await app.inject('/api/jobs?group=attention&limit=1')).json() as {
+      id: string;
+      status: string;
+    }[];
+    expect(attention.map((j) => [j.id, j.status])).toEqual([[job.id, 'failed']]);
+    expect((await app.inject('/api/jobs?group=done')).json()).toHaveLength(2);
+    expect((await app.inject('/api/jobs?group=active')).json()).toHaveLength(0);
+    expect((await app.inject('/api/jobs?group=bogus')).statusCode).toBe(400);
+  });
+
   it('returns job detail with outputs, 404 for unknown ids', async () => {
     const { app, job } = await seedJob();
     const res = await app.inject(`/api/jobs/${job.id}`);

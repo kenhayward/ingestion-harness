@@ -85,6 +85,20 @@ describe('app shell', () => {
     );
   });
 
+  it('counts jobs needing attention beyond the newest ones listed', async () => {
+    window.location.hash = '#/jobs';
+    const old = job({ id: 'old', filename: 'old.pdf', status: 'awaiting_review' });
+    const api = fakeApi({
+      listJobs: vi.fn(async (opts?: { group?: string }) =>
+        opts?.group === 'attention' ? [old] : [job({ status: 'succeeded' })],
+      ),
+    });
+    render(<App api={api} pollMs={0} />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(await within(nav).findByText('1 need attention')).toBeInTheDocument();
+    expect(api.listJobs).toHaveBeenCalledWith({ group: 'attention', limit: 500 });
+  });
+
   it('shows no badge when nothing needs attention', async () => {
     window.location.hash = '#/jobs';
     render(

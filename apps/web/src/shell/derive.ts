@@ -1,4 +1,4 @@
-import type { JobStatus, JobSummary } from '@ih/shared';
+import { statusGroup, type JobSummary } from '@ih/shared';
 import type { Route } from '../router.js';
 
 /** Nav sections; child screens belong to their parent (Review → Jobs, Editor → Document types). */
@@ -28,24 +28,7 @@ export function sectionOf(route: Route): Section {
   return SECTION[route.name];
 }
 
-/** Which bucket a status belongs to: someone must act, still running, or finished. */
-export type StatusGroup = 'attention' | 'active' | 'done';
-
-const GROUP: Record<JobStatus, StatusGroup> = {
-  queued: 'active',
-  running: 'active',
-  awaiting_review: 'attention',
-  needs_review: 'attention',
-  failed: 'attention',
-  succeeded: 'done',
-  rejected: 'done',
-  cancelled: 'done',
-  delivering: 'active',
-};
-
-export function statusGroup(status: JobStatus): StatusGroup {
-  return GROUP[status];
-}
+export { statusGroup, type StatusGroup } from '@ih/shared';
 
 /** The nav badge: jobs waiting on a person (reviewer or operator). */
 export function attentionCount(jobs: readonly JobSummary[]): number {

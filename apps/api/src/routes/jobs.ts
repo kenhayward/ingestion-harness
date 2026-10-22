@@ -3,6 +3,7 @@ import {
   GRAPH_PUBLISHED_EVENT,
   JobDetailSchema,
   JobStatusSchema,
+  StatusGroupSchema,
   JobSummarySchema,
   modelRefProblem,
   pagePreviewKey,
@@ -31,6 +32,10 @@ import { creatorOf } from '../access/routes.js';
 const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(50).describe('At most 500.'),
   status: JobStatusSchema.optional().describe('Only jobs in this status.'),
+  group: StatusGroupSchema.optional().describe(
+    'Only jobs of this status group: `attention` (awaiting review, needs review, failed), ' +
+      '`active` (queued, running, delivering) or `done` (succeeded, rejected, cancelled).',
+  ),
   mine: z
     .enum(['0', '1'])
     .optional()
@@ -92,7 +97,9 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'listJobs',
         summary: 'List jobs',
         description: md`
-          The newest jobs first, optionally of one status, and with \`mine=1\` only those queued
+          The newest jobs first, optionally of one status or one status group (\`group\`: the
+          app asks for every job needing attention this way, so none is missed behind the
+          newest ones), and with \`mine=1\` only those queued
           by the signed-in user: by user id (\`createdByUser\`), so a rename keeps them; jobs
           from before ids were recorded match by name (\`createdBy\`). Lists the jobs of uploaded documents (production,
           test and regression runs); the Workbench's preparation, preview, drafting and export
@@ -101,7 +108,7 @@ export const jobRoutes: FastifyPluginAsync = async (app) => {
         querystring: ListQuery,
         response: {
           200: res('The jobs.', z.array(JobSummarySchema)),
-          400: error('Zod issues for an invalid `limit` or `status`.'),
+          400: error('Zod issues for an invalid `limit`, `status` or `group`.'),
         },
       },
     },
