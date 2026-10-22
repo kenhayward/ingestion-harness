@@ -3,6 +3,7 @@ import {
   HandoffRedeemRequestSchema,
   HandoffUserSchema,
 } from '@ih/bridge-contract';
+import { MyConnectionsSchema, type MyConnection } from '@ih/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { applyEvent } from '../bridge/events.js';
@@ -19,8 +20,9 @@ const REFUSED = error('`bridge signature refused`.');
 
 /**
  * The delivery bridge's side of CT Studio: a link to its connections page for the signed-in
- * user, and the routes the bridge itself calls (signed with BRIDGE_CLIENT_KEY): redeeming that
- * link's one-time code, and the delivery events that finish delivering jobs.
+ * user, a secret-free list of their personal connections for Profile, and the routes the bridge
+ * itself calls (signed with BRIDGE_CLIENT_KEY): redeeming that link's one-time code, and the
+ * delivery events that finish delivering jobs.
  */
 export async function bridgeRoutes(app: FastifyInstance): Promise<void> {
   app.post(
@@ -28,25 +30,21 @@ export async function bridgeRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Bridge'],
-        'x-admin': true,
         operationId: 'createConnectionsLink',
         summary: 'Open the connections page',
         description: md`
-          **Admins only** (shared connections; personal ones come later). A one-time link to
-          the delivery bridge's connections page, good for 60 seconds, for the signed-in user:
-          the web app opens it in a new tab, and the bridge redeems its code with a signed call.
-          Credentials are entered there, never in CT Studio.
+          A one-time link to the delivery bridge's connections page, good for 60 seconds, for
+          the signed-in user, whatever their role: the web app opens it in a new tab, and the
+          bridge redeems its code with a signed call. Everyone manages their own personal
+          connections there; admins also manage the shared ones. Credentials are entered there,
+          never in CT Studio.
         `,
         response: {
           200: res('The link.', z.object({ url: z.string().url() })),
-          403: error('`admins only`.'),
         },
       },
     },
-    async (req, reply) => {
-      if (app.deps.access && req.auth?.role !== 'admin') {
-        return reply.code(403).send({ error: 'admins only' });
-      }
+    async (req) => {
       const { codes, publicUrl } = app.deps.bridgeAuth;
       const auth = req.auth ?? {
         userId: 'unit-test-admin',
@@ -63,6 +61,58 @@ export async function bridgeRoutes(app: FastifyInstance): Promise<void> {
       const url = new URL(`${publicUrl.replace(/\/+$/, '')}/connections/start`);
       url.searchParams.set('code', code);
       return { url: url.toString() };
+    },
+  );
+
+  app.get(
+    '/profile/connections',
+    {
+      schema: {
+        tags: ['Bridge'],
+        operationId: 'listMyConnections',
+        summary: 'List my connections',
+        description: md`
+          The signed-in user's personal connections on the delivery bridge, as Profile shows
+          them: name, system, instance, status and when a delivery last used it. Never a
+          credential, and never another user's. \`personalSinks\` says whether any system uses
+          personal connections at all.
+        `,
+        response: {
+          200: res('The connections.', MyConnectionsSchema),
+          502: error('`connections are unavailable right now`: the bridge did not answer.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { bridge } = app.deps;
+      const owner = req.auth?.userId ?? 'unit-test-admin';
+      try {
+        const [sinks, listed] = await Promise.all([
+          bridge.listSinks(),
+          bridge.listPersonalConnections(owner),
+        ]);
+        const byId = new Map(sinks.map((s) => [s.id, s]));
+        const connections = listed.map((c): MyConnection => {
+          const sink = byId.get(c.sinkId);
+          const instance = sink?.instances.find((i) => i.id === c.instanceId);
+          return {
+            id: c.id,
+            name: c.name,
+            sinkName: sink?.name ?? c.sinkId,
+            instanceLabel: instance?.label ?? c.instanceId ?? '',
+            status: c.status,
+            statusReason: c.statusReason,
+            lastUsedAt: c.lastUsedAt,
+          };
+        });
+        return {
+          personalSinks: sinks.some((s) => s.connectionKind === 'personal'),
+          connections,
+        };
+      } catch (err) {
+        req.log.warn({ err }, 'personal connections not listed');
+        return reply.code(502).send({ error: 'connections are unavailable right now' });
+      }
     },
   );
 

@@ -69,10 +69,12 @@ describe('HttpBridgeApi targets', () => {
 });
 
 describe('HttpBridgeApi connections', () => {
-  it('reads a summary without `fields` (a bridge one version behind) as no fields', async () => {
+  it('reads a summary from an older bridge (no fields, kind, instance or last used) as shared', async () => {
     const summary = { id: 'lake', name: 'Lake', sinkId: 's3', status: 'ok', statusReason: null };
     const { api, calls } = client(() => ({ connections: [summary] }));
-    expect(await api.listConnections('shared')).toEqual([{ ...summary, fields: {} }]);
+    expect(await api.listConnections('shared')).toEqual([
+      { ...summary, fields: {}, kind: 'shared', instanceId: null, lastUsedAt: null },
+    ]);
     expect(calls[0]!.path).toBe('/v1/connections?kind=shared');
   });
 });
@@ -126,5 +128,54 @@ describe('HttpBridgeApi timeouts', () => {
     await expect(
       failing(new TypeError('fetch failed')).deleteTarget('finance'),
     ).rejects.toMatchObject({ status: 0, timedOut: false });
+  });
+});
+
+describe('HttpBridgeApi personal connections', () => {
+  it("lists one owner's personal connections", async () => {
+    const summary = {
+      id: 'u-1',
+      name: 'Mine',
+      sinkId: 'acme',
+      kind: 'personal',
+      instanceId: 'sandbox',
+      status: 'ok',
+      statusReason: null,
+      lastUsedAt: null,
+      fields: {},
+    };
+    const { api, calls } = client(() => ({ connections: [summary] }));
+    expect(await api.listPersonalConnections('user 1')).toEqual([summary]);
+    expect(calls[0]!.path).toBe('/v1/connections?kind=personal&owner=user+1');
+  });
+
+  it("deletes a user's connections and reconciles the live users, answering the counts", async () => {
+    const { api, calls } = client(() => ({ deleted: 2 }));
+    expect(await api.deleteUserConnections('u/1')).toBe(2);
+    expect(calls[0]).toMatchObject({ method: 'DELETE', path: '/v1/users/u%2F1/connections' });
+    expect(await api.reconcileUsers(['a', 'b'])).toBe(2);
+    expect(calls[1]).toMatchObject({ method: 'POST', path: '/v1/users:reconcile' });
+    expect(JSON.parse(calls[1]!.body)).toEqual({ liveUserIds: ['a', 'b'] });
+  });
+
+  it('lists the sinks', async () => {
+    const sink = {
+      id: 'acme',
+      name: 'Acme',
+      status: 'available',
+      contractVersion: 1,
+      capabilities: {
+        browse: false,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files'],
+      },
+      connectionKind: 'personal',
+      instances: [{ id: 'sandbox', label: 'Sandbox' }],
+    };
+    const { api, calls } = client(() => ({ sinks: [sink] }));
+    expect(await api.listSinks()).toEqual([sink]);
+    expect(calls[0]!.path).toBe('/v1/sinks');
   });
 });

@@ -2,22 +2,31 @@ import {
   bridgeError,
   BridgeErrorSchema,
   CONNECTION_ID,
+  ConnectionListQuerySchema,
   ConnectionPutRequestSchema,
+  ConnectionsDeletedSchema,
   ConnectionSummarySchema,
+  UsersReconcileRequestSchema,
   type ConnectionSummary,
 } from '@ih/bridge-contract';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { connectionProblem, INTERNAL_CONNECTION_ID } from '../connections/repo.js';
+import {
+  connectionProblem,
+  INTERNAL_CONNECTION_ID,
+  PERSONAL_ID_PREFIX,
+} from '../connections/repo.js';
 import { encryptSecret } from '../secrets.js';
 
 const Params = z.strictObject({ id: z.string().regex(CONNECTION_ID) });
-const Query = z.strictObject({ kind: z.enum(['shared', 'personal']).optional() });
+const UserParams = z.strictObject({ userId: z.string().min(1) });
 
 /**
- * Connections as the producer reaches them (signed): a secret-free list for its pickers, and a
- * write used by the one-off move of the keys CT Studio held for its targets. Admins manage
- * connections on the connections page; nothing here ever answers with a secret.
+ * Connections as the producer reaches them (signed): secret-free lists (the shared connections
+ * for its pickers, one user's personal ones for their Profile), a write used by the one-off move
+ * of the keys CT Studio held for its targets, and the removal of the personal connections of
+ * users who are gone. People manage connections on the connections page; nothing here ever
+ * answers with a secret, or with what a user entered for a personal connection.
  */
 export const connectionRoutes: FastifyPluginAsync = async (app) => {
   const tags = ['Connections'];
@@ -43,7 +52,7 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
       schema: {
         summary: 'List connections',
         tags,
-        querystring: Query,
+        querystring: ConnectionListQuerySchema,
         response: {
           200: z.strictObject({ connections: z.array(ConnectionSummarySchema) }),
           400: BridgeErrorSchema,
@@ -51,12 +60,18 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
-      const query = Query.safeParse(req.query);
+      const query = ConnectionListQuerySchema.safeParse(req.query);
       if (!query.success) {
         return reply.code(400).send(bridgeError('content_rejected', 'unknown connection kind'));
       }
+      const { kind, owner } = query.data;
+      if (kind === 'personal' && owner === undefined) {
+        return reply
+          .code(400)
+          .send(bridgeError('content_rejected', 'personal connections are listed for one owner'));
+      }
       const listed = await app.deps.connections.list(
-        query.data.kind ? { kind: query.data.kind } : {},
+        kind === 'personal' ? { kind, owner: owner! } : { kind: 'shared' },
       );
       const connections: ConnectionSummary[] = [];
       for (const c of listed) {
@@ -64,9 +79,12 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
           id: c.id,
           name: c.name,
           sinkId: c.sinkId,
+          kind: c.kind,
+          instanceId: c.instanceId,
           status: c.status,
           statusReason: c.statusReason,
-          fields: await publicFields(c.sinkId, c.fields),
+          lastUsedAt: c.lastUsedAt?.toISOString() ?? null,
+          fields: c.kind === 'personal' ? {} : await publicFields(c.sinkId, c.fields),
         });
       }
       return { connections };
@@ -97,6 +115,13 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
       const refuse = (message: string) =>
         reply.code(422).send(bridgeError('content_rejected', message));
       if (id === INTERNAL_CONNECTION_ID) return refuse('the built-in connection cannot be written');
+      // A user's own connection is theirs alone: the producer can neither overwrite nor take it.
+      if ((await app.deps.connections.get(id))?.kind === 'personal') {
+        return refuse(`${id} is a personal connection`);
+      }
+      if (id.startsWith(PERSONAL_ID_PREFIX)) {
+        return refuse(`ids starting ${PERSONAL_ID_PREFIX} are kept for personal connections`);
+      }
       if (!app.deps.sinks.get(c.sinkId)) return refuse(`there is no sink ${c.sinkId}`);
       if (c.secret !== null && c.secretEnv !== null) {
         return refuse('a connection has a secret or a secret variable, not both');
@@ -120,6 +145,50 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
         secretEnc: c.secret === null ? null : encryptSecret(c.secret, app.deps.config.secrets),
       });
       return reply.code(204).send();
+    },
+  );
+
+  app.delete(
+    '/v1/users/:userId/connections',
+    {
+      schema: {
+        summary: "Delete a user's personal connections",
+        description: 'Called by the producer when a user is disabled. Shared connections stay.',
+        tags,
+        params: UserParams,
+        response: { 200: ConnectionsDeletedSchema, 400: BridgeErrorSchema },
+      },
+    },
+    async (req, reply) => {
+      const params = UserParams.safeParse(req.params);
+      if (!params.success) {
+        return reply.code(400).send(bridgeError('content_rejected', 'the request is not valid'));
+      }
+      return { deleted: await app.deps.connections.removeOwner(params.data.userId) };
+    },
+  );
+
+  app.post(
+    // `::` is a literal colon: a single one would make `reconcile` a path parameter.
+    '/v1/users::reconcile',
+    {
+      schema: {
+        summary: 'Keep the personal connections of live users only',
+        description:
+          'The producer sends the ids of its live users; the personal connections of anyone else are deleted. An empty list is refused.',
+        tags,
+        body: UsersReconcileRequestSchema,
+        response: { 200: ConnectionsDeletedSchema, 422: BridgeErrorSchema },
+      },
+    },
+    async (req, reply) => {
+      const body = UsersReconcileRequestSchema.safeParse(req.body);
+      if (!body.success) {
+        return reply
+          .code(422)
+          .send(bridgeError('content_rejected', 'a reconcile names at least one live user'));
+      }
+      return { deleted: await app.deps.connections.removeOwnersNotIn(body.data.liveUserIds) };
     },
   );
 };

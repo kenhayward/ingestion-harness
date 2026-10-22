@@ -1,0 +1,24 @@
+[
+  {
+    "id": "target-lake",
+    "name": "Finance lake keys",
+    "sinkId": "s3",
+    "kind": "shared",
+    "instanceId": null,
+    "status": "ok",
+    "statusReason": null,
+    "lastUsedAt": "2026-10-22T09:30:00.000Z",
+    "fields": { "endpoint": "https://s3.example.test", "accessKeyId": "AKIAEXAMPLE" }
+  },
+  {
+    "id": "u-0123456789abcdef",
+    "name": "My sandbox login",
+    "sinkId": "acme",
+    "kind": "personal",
+    "instanceId": "sandbox",
+    "status": "needs_attention",
+    "statusReason": "the password was refused",
+    "lastUsedAt": null,
+    "fields": {}
+  }
+]

@@ -78,9 +78,7 @@ function secretNote(c: Connection): string {
 const hidden = (csrf: string) => `<input type="hidden" name="csrf" value="${esc(csrf)}">`;
 
 function row(base: string, c: Connection, csrf: string, builtIn: boolean): string {
-  const status = `<span class="${c.status}">${STATUS[c.status]}</span>${
-    c.statusReason ? `<br><span class="muted">${esc(c.statusReason)}</span>` : ''
-  }`;
+  const status = statusCell(c);
   const actions = builtIn
     ? '<span class="muted">Built in</span>'
     : `<a href="${esc(base)}/connections/${esc(c.id)}">Edit</a>
@@ -91,10 +89,120 @@ function row(base: string, c: Connection, csrf: string, builtIn: boolean): strin
 <td>${esc(c.sinkId)}</td>
 <td>${builtIn ? 'This deployment’s storage' : esc(c.fields.endpoint ?? '')}</td>
 <td>${status}</td>
-<td>${c.lastUsedAt ? esc(c.lastUsedAt.toISOString().slice(0, 16).replace('T', ' ')) : '<span class="muted">Never</span>'}</td>
+<td>${lastUsed(c)}</td>
 <td>${builtIn ? '' : secretNote(c)}</td>
 <td>${actions}</td>
 </tr>`;
+}
+
+const lastUsed = (c: Connection) =>
+  c.lastUsedAt
+    ? esc(c.lastUsedAt.toISOString().slice(0, 16).replace('T', ' '))
+    : '<span class="muted">Never</span>';
+
+const statusCell = (c: Connection) =>
+  `<span class="${c.status}">${STATUS[c.status]}</span>${
+    c.statusReason ? `<br><span class="muted">${esc(c.statusReason)}</span>` : ''
+  }`;
+
+/** The label of a personal connection's instance, as its sink describes it. */
+export function instanceLabel(sink: SinkDescribe | undefined, instanceId: string | null): string {
+  if (instanceId === null) return '';
+  return sink?.instances.find((i) => i.id === instanceId)?.label ?? instanceId;
+}
+
+function personalRow(
+  base: string,
+  c: Connection,
+  csrf: string,
+  sinks: Record<string, SinkDescribe>,
+): string {
+  const sink = sinks[c.sinkId];
+  return `<tr>
+<td>${esc(c.name)}</td>
+<td>${esc(sink?.name ?? c.sinkId)}</td>
+<td>${esc(instanceLabel(sink, c.instanceId))}</td>
+<td>${statusCell(c)}</td>
+<td>${lastUsed(c)}</td>
+<td><a href="${esc(base)}/connections/${esc(c.id)}">Edit</a>
+  <form method="post" action="${esc(base)}/connections/${esc(c.id)}/test">${hidden(csrf)}<button>Test</button></form>
+  <form method="post" action="${esc(base)}/connections/${esc(c.id)}/delete">${hidden(csrf)}<button>Delete</button></form></td>
+</tr>`;
+}
+
+/** What a user typed into a personal add form, shown again after a refusal (never the secret). */
+export interface PersonalDraft {
+  sinkId: string;
+  instanceId: string;
+  name: string;
+  fields: Record<string, string>;
+}
+
+function credentialInputs(sink: SinkDescribe, fields: Record<string, string>, editing: boolean) {
+  return sink.credentialFields
+    .map((f) => {
+      if (f.secret) {
+        const hint = editing ? 'Leave blank to keep the stored secret' : '';
+        return `<label><span>${esc(f.label)}</span><input type="password" name="${esc(f.id)}" autocomplete="new-password" placeholder="${esc(hint)}"></label>`;
+      }
+      return `<label><span>${esc(f.label)}</span><input type="text" name="${esc(f.id)}" value="${esc(fields[f.id] ?? '')}"></label>`;
+    })
+    .join('\n');
+}
+
+/** One add form per personal sink: its instances, a name, and the credentials it asks for. */
+function personalAddForm(
+  base: string,
+  csrf: string,
+  sinkId: string,
+  sink: SinkDescribe,
+  draft: PersonalDraft | undefined,
+): string {
+  const values = draft?.sinkId === sinkId ? draft : undefined;
+  const instances = sink.instances.length
+    ? `<label><span>Instance</span><select name="instanceId">${sink.instances
+        .map(
+          (i) =>
+            `<option value="${esc(i.id)}"${i.id === values?.instanceId ? ' selected' : ''}>${esc(i.label)}</option>`,
+        )
+        .join('')}</select></label>`
+    : '';
+  return `<form method="post" action="${esc(base)}/connections">
+<fieldset><legend>Add a connection to ${esc(sink.name)}</legend>
+${hidden(csrf)}
+<input type="hidden" name="kind" value="personal">
+<input type="hidden" name="sinkId" value="${esc(sinkId)}">
+${instances}
+<label><span>Name</span><input type="text" name="name" value="${esc(values?.name ?? '')}" maxlength="80" required></label>
+${credentialInputs(sink, values?.fields ?? {}, false)}
+<label><input type="checkbox" name="saveUntested"> Save even if the test fails</label>
+<button>Test and save</button>
+</fieldset>
+</form>`;
+}
+
+function personalSection(
+  base: string,
+  csrf: string,
+  connections: Connection[],
+  sinks: Record<string, SinkDescribe>,
+  draft: PersonalDraft | undefined,
+): string {
+  const intro =
+    '<p class="muted">Your own logins to the systems CT Studio delivers to. Deliveries made as you use them. CT Studio never sees what you enter here.</p>';
+  if (!Object.keys(sinks).length && !connections.length) {
+    return `${intro}<p>No system here uses personal connections yet.</p>`;
+  }
+  const table = connections.length
+    ? `<table>
+<thead><tr><th>Name</th><th>System</th><th>Instance</th><th>Status</th><th>Last used</th><th></th></tr></thead>
+<tbody>${connections.map((c) => personalRow(base, c, csrf, sinks)).join('\n')}</tbody>
+</table>`
+    : '<p class="muted">You have no connections yet.</p>';
+  const forms = Object.entries(sinks)
+    .map(([id, sink]) => personalAddForm(base, csrf, id, sink, draft))
+    .join('\n');
+  return `${intro}${table}${forms}`;
 }
 
 export interface FormValues {
@@ -119,15 +227,7 @@ function connectionFields(
             `<option value="${esc(id)}"${id === values.sinkId ? ' selected' : ''}>${esc(d.name)}</option>`,
         )
         .join('')}</select></label>`;
-  const credentials = (sink?.credentialFields ?? [])
-    .map((f) => {
-      if (f.secret) {
-        const hint = editing ? 'Leave blank to keep the stored secret' : '';
-        return `<label><span>${esc(f.label)}</span><input type="password" name="${esc(f.id)}" autocomplete="new-password" placeholder="${esc(hint)}"></label>`;
-      }
-      return `<label><span>${esc(f.label)}</span><input type="text" name="${esc(f.id)}" value="${esc(values.fields[f.id] ?? '')}"></label>`;
-    })
-    .join('\n');
+  const credentials = sink ? credentialInputs(sink, values.fields, editing) : '';
   return `${sinkChoice}
 <label><span>Name</span><input type="text" name="name" value="${esc(values.name)}" required></label>
 ${editing ? '' : `<label><span>Id (a-z, 0-9, - and _)</span><input type="text" name="id" value="${esc(values.id)}" required></label>`}
@@ -138,44 +238,69 @@ ${credentials}
 export function listPage(
   shell: Shell,
   opts: {
-    connections: Connection[];
+    /** The session user's personal connections, and the sinks they can add one for. */
+    personal: Connection[];
+    personalSinks: Record<string, SinkDescribe>;
+    /** The shared connections and their sinks: admins only (null for everyone else). */
+    shared: {
+      connections: Connection[];
+      sinks: Record<string, SinkDescribe>;
+      builtIn: string;
+      draft?: FormValues;
+    } | null;
     csrf: string;
-    sinks: Record<string, SinkDescribe>;
-    builtIn: string;
     notice?: { text: string; error: boolean };
-    draft?: FormValues;
+    personalDraft?: PersonalDraft;
   },
 ): string {
   const { base } = shell;
   const notice = opts.notice
     ? `<p class="notice${opts.notice.error ? ' error' : ''}">${esc(opts.notice.text)}</p>`
     : '';
-  const rows = opts.connections
-    .map((c) => row(base, c, opts.csrf, c.id === opts.builtIn))
-    .join('\n');
-  const draft = opts.draft ?? {
-    id: '',
-    name: '',
-    sinkId: Object.keys(opts.sinks)[0] ?? '',
-    fields: {},
-  };
+  const personal = personalSection(
+    base,
+    opts.csrf,
+    opts.personal,
+    opts.personalSinks,
+    opts.personalDraft,
+  );
   return layout(
     shell,
-    'Shared connections',
+    'Connections',
     `${notice}
+<h2>Your connections</h2>
+${personal}
+${opts.shared ? sharedSection(base, opts.csrf, opts.shared) : ''}`,
+  );
+}
+
+function sharedSection(
+  base: string,
+  csrf: string,
+  shared: NonNullable<Parameters<typeof listPage>[1]['shared']>,
+): string {
+  const rows = shared.connections
+    .map((c) => row(base, c, csrf, c.id === shared.builtIn))
+    .join('\n');
+  const draft = shared.draft ?? {
+    id: '',
+    name: '',
+    sinkId: Object.keys(shared.sinks)[0] ?? '',
+    fields: {},
+  };
+  return `<h2>Shared connections</h2>
 <p class="muted">Credentials that publishing targets deliver with. Secrets are encrypted here and never shown again.</p>
 <table>
 <thead><tr><th>Name</th><th>Kind</th><th>Endpoint</th><th>Status</th><th>Last used</th><th>Keys</th><th></th></tr></thead>
 <tbody>${rows}</tbody>
 </table>
 <form method="post" action="${esc(base)}/connections">
-<fieldset><legend>Add a connection</legend>
-${hidden(opts.csrf)}
-${connectionFields(opts.sinks, draft, false)}
+<fieldset><legend>Add a shared connection</legend>
+${hidden(csrf)}
+${connectionFields(shared.sinks, draft, false)}
 <button>Test and save</button>
 </fieldset>
-</form>`,
-  );
+</form>`;
 }
 
 export function editPage(
@@ -193,13 +318,19 @@ export function editPage(
   const notice = opts.notice
     ? `<p class="notice${opts.notice.error ? ' error' : ''}">${esc(opts.notice.text)}</p>`
     : '';
+  const instance =
+    c.kind === 'personal'
+      ? `<p class="muted">${esc(opts.sinks[c.sinkId]?.name ?? c.sinkId)}${
+          c.instanceId ? `, ${esc(instanceLabel(opts.sinks[c.sinkId], c.instanceId))}` : ''
+        }</p>`
+      : '';
   const envNote = c.secretEnv
     ? `<p class="muted">Keys are read from ${esc(c.secretEnv)}. Entering a secret stores it here instead.</p>`
     : '';
   return layout(
     shell,
     `Edit ${c.name}`,
-    `${notice}${envNote}
+    `${notice}${instance}${envNote}
 <form method="post" action="${esc(shell.base)}/connections/${esc(c.id)}">
 <fieldset>
 ${hidden(opts.csrf)}
@@ -208,13 +339,5 @@ ${connectionFields(opts.sinks, values, true)}
 <a href="${esc(shell.base)}/connections">Cancel</a>
 </fieldset>
 </form>`,
-  );
-}
-
-export function laterPage(shell: Shell): string {
-  return layout(
-    shell,
-    'Connections',
-    '<p>Personal connections arrive later. Shared connections are managed by administrators.</p>',
   );
 }

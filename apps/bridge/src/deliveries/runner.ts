@@ -3,7 +3,7 @@ import type { Credentials } from '../connections/credential.js';
 import type { ConnectionRepo } from '../connections/repo.js';
 import type { PackageStore } from '../packages/store.js';
 import { SinkError, type SinkPort, type SinkRegistry } from '../sinks/port.js';
-import type { TargetRepo } from '../targets/repo.js';
+import type { Target, TargetRepo } from '../targets/repo.js';
 import type { DeliveryRepo, DeliveryRow, Transition } from './repo.js';
 
 export interface RunnerDeps {
@@ -56,6 +56,56 @@ function fromJobStatus(
 
 const CREDENTIAL_ERRORS = new Set(['credential_rejected', 'credential_mfa_required']);
 
+/**
+ * The acting user's connection to a personal sink's instance, looked up on every attempt: a
+ * connection deleted since accept stops the delivery for a person, and a replaced credential is
+ * used at once. Never anyone else's.
+ */
+async function personalConnection(
+  row: DeliveryRow,
+  target: Target,
+  deps: RunnerDeps,
+): Promise<string> {
+  const user = row.actingUser;
+  const found =
+    user && deps.connections
+      ? await deps.connections.findPersonal(user.id, target.sinkId, target.instanceId)
+      : null;
+  if (!found) {
+    throw new SinkError(
+      bridgeError(
+        'connection_missing',
+        user
+          ? `${user.name} has no connection for ${target.label}: add one on the connections page`
+          : `delivering to ${target.label} needs a person to deliver as`,
+        { targetId: target.id, ...(user ? { userId: user.id } : {}) },
+      ),
+    );
+  }
+  return found.id;
+}
+
+/** The connection a polled delivery's outcome flags: never a reason to stop polling. */
+async function pollConnection(
+  row: DeliveryRow,
+  target: Target,
+  sink: SinkPort,
+  deps: RunnerDeps,
+): Promise<string | null> {
+  if (!row.actingUser || !deps.connections) return target.connectionId;
+  try {
+    if ((await sink.describe()).connectionKind !== 'personal') return target.connectionId;
+  } catch {
+    return target.connectionId;
+  }
+  const found = await deps.connections.findPersonal(
+    row.actingUser.id,
+    target.sinkId,
+    target.instanceId,
+  );
+  return found?.id ?? null;
+}
+
 async function step(
   row: DeliveryRow,
   deps: RunnerDeps,
@@ -72,11 +122,17 @@ async function step(
       bridgeError('sink_unavailable', `the sink of ${target.label} is not available`),
     );
   }
-  used.connectionId = target.connectionId;
   if (row.sinkJobId) {
+    // A pending job is read with no credential: what the sink did stands, even when the acting
+    // user's connection has gone since. Its outcome flags that connection when it still exists.
+    used.connectionId = await pollConnection(row, target, sink, deps);
     return fromJobStatus(await sink.deliveryStatus(row.sinkJobId), row, deps, now);
   }
   const described = await sink.describe();
+  used.connectionId =
+    described.connectionKind === 'personal'
+      ? await personalConnection(row, target, deps)
+      : target.connectionId;
   const { capabilities } = described;
   if (!capabilities.replace && !capabilities.withdraw) {
     const earlier = await deps.deliveries.latestSucceeded(row.targetId, row.idempotencyKey, row.id);
@@ -86,7 +142,7 @@ async function step(
   const pkg = meta ? await deps.packages.get(meta.stagedKey) : null;
   if (!pkg) return { status: 'failed', error: bridgeError('internal', 'package expired') };
   const credential = deps.credentials
-    ? await deps.credentials.resolve(target.connectionId, described)
+    ? await deps.credentials.resolve(used.connectionId, described)
     : null;
   const result = await sink.deliver({
     instanceId: target.instanceId,

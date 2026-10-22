@@ -1,6 +1,6 @@
 # Delivery bridge: design
 
-Status: phases 1, 2 and 3 built, 2026-10-19 (see Phase 2 as built, Phase 3 as built). Replaces the worker's direct S3 and Fuseki
+Status: phases 1 to 5 and the target-registry merge built, 2026-10-19 to 2026-10-22 (see the "as built" sections). Replaces the worker's direct S3 and Fuseki
 publishing (`worker/src/ingest_worker/pipeline.py` `publish_outputs`,
 `template_pipeline.py` `publish_graph`) with delivery through a separate **bridge** service to
 pluggable **sinks**. It builds on, and in part supersedes,
@@ -670,6 +670,47 @@ The merge of the two target registries (after phase 4, before phase 6) made thes
   pulled is overwritten); a dropped external target keeps its bridge row and is marked inert
   here. After any restore, cached targets the bridge lacks are put back on the bridge, then
   `pullTargets` runs.
+
+## Phase 5 as built
+
+Phase 5 (personal connections) made these calls
+([plan](../plans/2026-10-22-delivery-bridge-5-personal-connections.md)):
+
+- **One personal connection per (owner, sink, instance)**, a partial unique index `NULLS NOT
+  DISTINCT` (a sink without instances has a null instance), so a delivery always knows which
+  credential to use. The page refuses a second one: "You already have a connection for
+  <instance>: update that one". Ids are made up (`u-` and 16 hex characters); names are free
+  text, 80 characters at most.
+- **The connections page serves everyone.** "Your connections" lists the session user's own,
+  with one add form per personal sink (its instances, a name, its credential fields); admins
+  also get the shared table below. A personal connection is reached by its owner only: anyone
+  else, an admin included, gets 404 on every route. The test runs against the chosen instance,
+  and a passing one shows who the sink says the user is ("connected as <identity>").
+- **Targets of a personal sink name no connection** and one of the sink's instances (none when it
+  declares none); a shared sink's target never names a personal connection.
+- **Deliveries use the acting user's connection.** Accept refuses a personal target with no
+  `actingUser`, or whose acting user holds no connection for the instance (`connection_missing`,
+  details `{targetId, userId}`). The runner looks the connection up on every attempt, so a
+  connection deleted since accept stops the delivery for a person, a replaced credential is used
+  at once, and the health marking (`ok` with last used, `needs_attention`) lands on that
+  connection. `deliveries` records no connection id.
+- **The producer never lists every owner.** `GET /v1/connections` answers the shared
+  connections (no `kind`, or `shared`), or one owner's personal ones (`kind=personal&owner=`);
+  `kind=personal` alone is 400. A personal summary's `fields` is always `{}`. Summaries gain
+  `kind`, `instanceId` and `lastUsedAt`, and `SinkView` gains `instances` (contract 0.4.0,
+  additive; the API reads an older bridge's summaries as shared).
+- **"Removed" means disabled by an admin.** CT Studio never deletes users. Disabling one calls
+  `DELETE /v1/users/:userId/connections` (after the disable is stored, never undoing it), and the
+  API sends `POST /v1/users:reconcile` with every user an admin has not disabled, at start and
+  hourly; the bridge deletes every other owner's personal connections and refuses an empty list.
+  A user disabled by failed sign-ins keeps theirs. Enabling a user brings nothing back.
+- **Profile has a Connections tab** (`GET /api/profile/connections`: name, system, instance,
+  status, last used; never a credential), and Manage connections (`POST
+  /api/bridge/connections-link`) is open to every role; both are on the operator allowlist.
+- **Left for phase 6:** the upload preflight, review reasons that link to the connection, the
+  worker's acting-user fallbacks (no uploader, or a missing person, sends the job to review with
+  the approver acting), and tracking the last deliverer for system re-deliveries. None of them is
+  reachable before a recipe can name a personal sink's target.
 
 ## Left to the builder
 

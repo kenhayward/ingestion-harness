@@ -83,4 +83,13 @@ describe('conformance suite', () => {
     expect(results.find((r) => r.name === 'deliver')).toMatchObject({ ok: false });
     expect(results.find((r) => r.name === 'errors')).toMatchObject({ ok: false });
   });
+
+  it('fails the describe of a personal sink that asks for no credential', async () => {
+    const sink = new FakeSink({ connectionKind: 'personal', instances: [{ id: 'a', label: 'A' }] });
+    const results = await run(await listen(await serveSink(sink, KEY)));
+    expect(results.find((r) => r.name === 'describe')).toMatchObject({
+      ok: false,
+      detail: 'a personal sink declares the credential fields its users enter',
+    });
+  });
 });

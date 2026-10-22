@@ -6,6 +6,21 @@ import { MapSinkRegistry, SinkError } from '../src/sinks/port.js';
 import { deliverRequest, documentPackage as pkg } from './sink-builders.js';
 
 describe('FakeSink', () => {
+  it('scripts its connection tests in order, then passes with the username as identity', async () => {
+    const sink = new FakeSink().scriptTest('credential_rejected');
+    await expect(
+      sink.testConnection({ instanceId: 'a', credential: { username: 'alice' } }),
+    ).rejects.toMatchObject({ error: { code: 'credential_rejected' } });
+    expect(
+      await sink.testConnection({ instanceId: 'a', credential: { username: 'alice' } }),
+    ).toEqual({ ok: true, identity: 'fake:alice' });
+    expect(await sink.testConnection({ instanceId: 'a', credential: {} })).toEqual({
+      ok: true,
+      identity: 'fake:user',
+    });
+    expect(sink.tested.map((t) => t.instanceId)).toEqual(['a', 'a', 'a']);
+  });
+
   it('describes itself validly', async () => {
     expect(SinkDescribeSchema.safeParse(await new FakeSink().describe()).success).toBe(true);
     expect((await new FakeSink({ name: 'Other' }).describe()).name).toBe('Other');

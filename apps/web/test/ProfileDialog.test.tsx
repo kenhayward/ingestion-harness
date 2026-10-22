@@ -46,7 +46,11 @@ describe('ProfileDialog layout', () => {
     const tabs = within(dialog).getByRole('tablist', { name: 'Profile sections' });
     expect(tabs).toHaveAttribute('aria-orientation', 'vertical');
     const names = within(tabs).getAllByRole('tab');
-    expect(names.map((t) => t.textContent)).toEqual(['Personal details', 'Change password']);
+    expect(names.map((t) => t.textContent)).toEqual([
+      'Personal details',
+      'Change password',
+      'Connections',
+    ]);
     for (const tab of names) expect(tab.querySelector('svg')).not.toBeNull();
     expect(names[0]).toHaveAttribute('aria-selected', 'true');
     expect(within(dialog).getByRole('tabpanel', { name: 'Personal details' })).toBeVisible();
@@ -252,6 +256,88 @@ describe('GitHub sync help', () => {
     );
     expect(screen.getByRole('dialog', { name: 'How GitHub sync works' })).toHaveTextContent(
       'On GitHub',
+    );
+  });
+});
+
+describe('Connections', () => {
+  const sandbox = {
+    id: 'u-1',
+    name: 'My sandbox login',
+    sinkName: 'Acme',
+    instanceLabel: 'Sandbox',
+    status: 'ok' as const,
+    statusReason: null,
+    lastUsedAt: '2026-10-22T09:30:00.000Z',
+  };
+  const open = (listMyConnections: () => Promise<unknown>) => {
+    const { dialog, api } = setup(
+      { listMyConnections: vi.fn(listMyConnections) as never },
+      { initialTab: 'connections' },
+    );
+    return { api, panel: within(dialog).getByRole('tabpanel', { name: 'Connections' }) };
+  };
+
+  it('lists each connection: name, system, instance, status and last used', async () => {
+    const { panel } = open(async () => ({
+      personalSinks: true,
+      connections: [
+        sandbox,
+        {
+          ...sandbox,
+          id: 'u-2',
+          name: 'Production login',
+          instanceLabel: 'Production',
+          status: 'needs_attention',
+          statusReason: 'the password was refused',
+          lastUsedAt: null,
+        },
+      ],
+    }));
+    const rows = await within(panel).findAllByRole('row');
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toHaveTextContent('My sandbox login');
+    expect(rows[1]).toHaveTextContent('Acme');
+    expect(rows[1]).toHaveTextContent('Sandbox');
+    expect(rows[1]).toHaveTextContent('OK');
+    expect(rows[1]).toHaveTextContent('2026-10-22');
+    expect(rows[2]).toHaveTextContent('Needs attention');
+    expect(rows[2]).toHaveTextContent('the password was refused');
+    expect(rows[2]).toHaveTextContent('Never');
+  });
+
+  it('Manage connections opens the connections page', async () => {
+    const { api, panel } = open(async () => ({ personalSinks: true, connections: [] }));
+    expect(await within(panel).findByText('You have no connections yet.')).toBeVisible();
+    await userEvent.click(within(panel).getByRole('button', { name: 'Manage connections' }));
+    expect(api.openConnections).toHaveBeenCalledOnce();
+  });
+
+  it('says when no system uses personal connections, and keeps the button', async () => {
+    const { panel } = open(async () => ({ personalSinks: false, connections: [] }));
+    expect(
+      await within(panel).findByText('No system here uses personal connections yet.'),
+    ).toBeVisible();
+    expect(within(panel).getByRole('button', { name: 'Manage connections' })).toBeEnabled();
+  });
+
+  it('says when the connections cannot be read, and keeps the button', async () => {
+    const { panel } = open(async () => {
+      throw new ApiError('connections are unavailable right now', 502);
+    });
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      'Connections are unavailable right now.',
+    );
+    expect(within(panel).getByRole('button', { name: 'Manage connections' })).toBeEnabled();
+  });
+
+  it('opens its help', async () => {
+    const { panel } = open(async () => ({ personalSinks: true, connections: [] }));
+    await userEvent.click(
+      await within(panel).findByRole('button', { name: 'Help: How connections work' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'How connections work' })).toHaveTextContent(
+      'never sees',
     );
   });
 });

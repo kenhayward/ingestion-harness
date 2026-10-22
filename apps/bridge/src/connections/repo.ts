@@ -29,11 +29,35 @@ export type NewConnection = Omit<Connection, 'secretSet' | 'lastUsedAt'> & {
   secretEnc?: string | null;
 };
 
+/**
+ * A personal connection for an (owner, sink, instance) that already has one under another id:
+ * a user holds one connection per instance, so the runner always knows which to use.
+ */
+export class ConnectionConflict extends Error {
+  constructor(readonly existingId: string | null) {
+    super('a personal connection for this sink and instance exists already');
+    this.name = 'ConnectionConflict';
+  }
+}
+
 export interface ConnectionRepo {
   list(filter: { kind?: 'shared' | 'personal'; owner?: string }): Promise<Connection[]>;
   get(id: string): Promise<Connection | null>;
-  /** Creates or updates; throws when the id or the kind/owner pair is not valid. */
+  /** The owner's personal connection to a sink instance (null instance: a sink with none). */
+  findPersonal(
+    owner: string,
+    sinkId: string,
+    instanceId: string | null,
+  ): Promise<Connection | null>;
+  /**
+   * Creates or updates; throws when the id or the kind/owner pair is not valid, and
+   * ConnectionConflict for a second personal connection to the same owner, sink and instance.
+   */
   put(c: NewConnection): Promise<void>;
+  /** Deletes the owner's personal connections (none a target names); how many went. */
+  removeOwner(owner: string): Promise<number>;
+  /** Deletes the personal connections of every owner not listed (none a target names). */
+  removeOwnersNotIn(owners: readonly string[]): Promise<number>;
   /** `in_use`: a target names it, and it is kept. */
   remove(id: string): Promise<'deleted' | 'missing' | 'in_use'>;
   secretOf(id: string): Promise<{ secretEnc: string | null; secretEnv: string | null } | null>;
@@ -42,6 +66,9 @@ export interface ConnectionRepo {
 
 /** The built-in connection: the deployment's own SeaweedFS, with the bridge's `S3_*` keys. */
 export const INTERNAL_CONNECTION_ID = 'internal';
+
+/** Personal connections' ids start so (`u-` and 16 hex characters); shared ones never do. */
+export const PERSONAL_ID_PREFIX = 'u-';
 
 /**
  * The only environment variables a connection may read its keys from (as CT Studio's API
@@ -95,6 +122,9 @@ interface Stored extends Connection {
 
 const view = ({ secretEnc: _s, ...c }: Stored): Connection => structuredClone(c);
 
+const samePlace = (c: Connection, owner: string, sinkId: string, instanceId: string | null) =>
+  c.kind === 'personal' && c.owner === owner && c.sinkId === sinkId && c.instanceId === instanceId;
+
 export class MemoryConnectionRepo implements ConnectionRepo {
   private readonly rows = new Map<string, Stored>();
 
@@ -116,9 +146,24 @@ export class MemoryConnectionRepo implements ConnectionRepo {
     return c ? view(c) : null;
   }
 
+  async findPersonal(
+    owner: string,
+    sinkId: string,
+    instanceId: string | null,
+  ): Promise<Connection | null> {
+    const c = [...this.rows.values()].find((r) => samePlace(r, owner, sinkId, instanceId));
+    return c ? view(c) : null;
+  }
+
   async put(c: NewConnection): Promise<void> {
     const problem = connectionProblem(c);
     if (problem) throw new Error(problem);
+    if (c.kind === 'personal') {
+      const other = [...this.rows.values()].find(
+        (r) => r.id !== c.id && samePlace(r, c.owner!, c.sinkId, c.instanceId),
+      );
+      if (other) throw new ConnectionConflict(other.id);
+    }
     const before = this.rows.get(c.id);
     const { secretEnc, ...rest } = c;
     const kept = secretEnc === undefined ? (before?.secretEnc ?? null) : secretEnc;
@@ -135,6 +180,27 @@ export class MemoryConnectionRepo implements ConnectionRepo {
     if ((await this.targets.list()).some((t) => t.connectionId === id)) return 'in_use';
     this.rows.delete(id);
     return 'deleted';
+  }
+
+  async removeOwner(owner: string): Promise<number> {
+    return this.removeWhere((c) => c.owner === owner);
+  }
+
+  async removeOwnersNotIn(owners: readonly string[]): Promise<number> {
+    const live = new Set(owners);
+    return this.removeWhere((c) => c.owner !== null && !live.has(c.owner));
+  }
+
+  private async removeWhere(match: (c: Stored) => boolean): Promise<number> {
+    const named = new Set((await this.targets.list()).map((t) => t.connectionId));
+    let n = 0;
+    for (const c of [...this.rows.values()]) {
+      if (c.kind === 'personal' && match(c) && !named.has(c.id)) {
+        this.rows.delete(c.id);
+        n += 1;
+      }
+    }
+    return n;
   }
 
   async secretOf(

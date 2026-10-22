@@ -30,6 +30,8 @@ const OPERATOR_CALLS = new Set([
   'PUT /api/auth/password',
   'GET /api/profile',
   'PUT /api/profile',
+  'GET /api/profile/connections',
+  'POST /api/bridge/connections-link',
   'GET /api/profile/github/connect',
   'DELETE /api/profile/github',
   'GET /api/profile/github/repos',

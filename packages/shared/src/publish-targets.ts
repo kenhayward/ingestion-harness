@@ -107,6 +107,27 @@ export const TargetConnectionSchema = z.object({
 });
 export type TargetConnection = z.infer<typeof TargetConnectionSchema>;
 
+/** One of the signed-in user's personal connections, as Profile lists it: never a credential. */
+export const MyConnectionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** The name of the system (sink) it connects to. */
+  sinkName: z.string(),
+  /** The label of the instance it connects to; empty for a system without instances. */
+  instanceLabel: z.string(),
+  status: z.enum(CONNECTION_STATUSES),
+  statusReason: z.string().nullable(),
+  lastUsedAt: z.string().nullable(),
+});
+export type MyConnection = z.infer<typeof MyConnectionSchema>;
+
+export const MyConnectionsSchema = z.object({
+  /** Whether any system on the bridge uses personal connections at all. */
+  personalSinks: z.boolean(),
+  connections: z.array(MyConnectionSchema),
+});
+export type MyConnections = z.infer<typeof MyConnectionsSchema>;
+
 export const PublishTargetViewSchema = z.object({
   id: TargetIdSchema,
   label: z.string(),

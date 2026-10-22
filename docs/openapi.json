@@ -1917,7 +1917,7 @@
         "tags": [
           "Users"
         ],
-        "description": "**Admins only.** The user can no longer sign in, and every session of theirs ends at\nonce. Nothing they made is removed. You cannot disable yourself.",
+        "description": "**Admins only.** The user can no longer sign in, and every session of theirs ends at\nonce. Nothing they made is removed, but their personal connections on the delivery\nbridge are deleted (enabling them again does not bring those back). You cannot disable\nyourself.",
         "parameters": [
           {
             "schema": {
@@ -78987,8 +78987,7 @@
         "tags": [
           "Bridge"
         ],
-        "description": "**Admins only** (shared connections; personal ones come later). A one-time link to\nthe delivery bridge's connections page, good for 60 seconds, for the signed-in user:\nthe web app opens it in a new tab, and the bridge redeems its code with a signed call.\nCredentials are entered there, never in CT Studio.",
-        "x-admin": true,
+        "description": "A one-time link to the delivery bridge's connections page, good for 60 seconds, for\nthe signed-in user, whatever their role: the web app opens it in a new tab, and the\nbridge redeems its code with a signed call. Everyone manages their own personal\nconnections there; admins also manage the shared ones. Credentials are entered there,\nnever in CT Studio.",
         "responses": {
           "200": {
             "description": "The link.",
@@ -79033,36 +79032,12 @@
             }
           },
           "403": {
-            "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "`admins only`. Or: A one-time password session: change the password first (`PUT /api/auth/password`). Or: An operator (Home, Jobs and Results only): this route is for designers and administrators. Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
                   "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {},
-                                "additionalProperties": {}
-                              }
-                            }
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ],
-                      "description": "`admins only`."
-                    },
                     {
                       "type": "object",
                       "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
@@ -79071,21 +79046,6 @@
                           "type": "string",
                           "enum": [
                             "change your one-time password first"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "description": "An operator (Home, Jobs and Results only): this route is for designers and administrators.",
-                      "properties": {
-                        "error": {
-                          "type": "string",
-                          "enum": [
-                            "operators cannot use this"
                           ]
                         }
                       },
@@ -79109,6 +79069,208 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/connections": {
+      "get": {
+        "operationId": "listMyConnections",
+        "summary": "List my connections",
+        "tags": [
+          "Bridge"
+        ],
+        "description": "The signed-in user's personal connections on the delivery bridge, as Profile shows\nthem: name, system, instance, status and when a delivery last used it. Never a\ncredential, and never another user's. `personalSinks` says whether any system uses\npersonal connections at all.",
+        "responses": {
+          "200": {
+            "description": "The connections.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "personalSinks": {
+                      "type": "boolean"
+                    },
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "sinkName": {
+                            "type": "string"
+                          },
+                          "instanceLabel": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ok",
+                              "needs_attention",
+                              "untested"
+                            ]
+                          },
+                          "statusReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lastUsedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "sinkName",
+                          "instanceLabel",
+                          "status",
+                          "statusReason",
+                          "lastUsedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "personalSinks",
+                    "connections"
+                  ],
+                  "description": "The connections."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`connections are unavailable right now`: the bridge did not answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`connections are unavailable right now`: the bridge did not answer."
                 }
               }
             }
