@@ -272,7 +272,7 @@ describe('search', () => {
         screen.queryByRole('button', { name: 'Show preview of b-globex.pdf' }),
       ).not.toBeInTheDocument(),
     );
-    expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme' });
+    expect(listResults).toHaveBeenLastCalledWith({ templateId: undefined, q: 'acme', limit: 25 });
   });
 });
 
