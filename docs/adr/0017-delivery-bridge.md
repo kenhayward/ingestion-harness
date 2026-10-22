@@ -36,6 +36,14 @@ system's API, would put secrets and private code in a public product.
   connection, looked up on each attempt. CT Studio sees summaries only (name, system, instance,
   status, last used). Disabling a user deletes theirs, and an hourly reconcile deletes those of
   anyone an admin has disabled.
+- **External sinks register in config (phase 6).**
+  - `BRIDGE_SINKS` lists each sink's id, URL and own signing key.
+  - The bridge reaches each one through `HttpSink`, which is signed and checks every answer
+    against the contract. It caches their describes, and a sink that doesn't answer is
+    unavailable.
+  - CT Studio creates targets of any registered sink from the fields the sink declares, and
+    recipes may name them. The primary target stays an S3 files target.
+  - External sinks are deliver-only until the contract specifies withdraw and read-back.
 - **The bridge's targets are the recipient registry** (sink, instance, connection, destination,
   label). CT Studio's `publish_targets` caches them beside what only CT Studio knows (usage,
   locking, read-key grants, backup rules), pulls them at start and after restores, and sends every

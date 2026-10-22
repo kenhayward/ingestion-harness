@@ -712,6 +712,48 @@ Phase 5 (personal connections) made these calls
   the approver acting), and tracking the last deliverer for system re-deliveries. None of them is
   reachable before a recipe can name a personal sink's target.
 
+## Phase 6 as built
+
+Phase 6 (external sinks) made these calls
+([plan](../plans/2026-10-22-delivery-bridge-6-external-sinks.md)). Part A covers registering
+and delivering:
+
+- **`BRIDGE_SINKS`** (or `BRIDGE_SINKS_FILE`) is a JSON list of `{ id, url, key }`.
+  - An id is not `s3` or `rdf`.
+  - A URL is http(s), with no credentials and no query.
+  - A key is at least 32 characters.
+  - A bad entry stops the bridge at start, naming the entry, never the key.
+- **`HttpSink`** calls a sink over the contract's routes. Every call is signed with the sink's
+  key, and every answer is checked against the contract.
+  - Timeouts: 15 s for describe, test and browse; 120 s for deliver and status.
+  - Answers are capped at 8 MiB.
+  - Classing: a sink's own `needs_user` error stands; a 5xx, a timeout or no answer is
+    retryable; a 401 or a malformed answer is `internal`.
+- **Describes are cached** (`CachingSinkRegistry`). They are refreshed at start, before the
+  loops run, then every `BRIDGE_SINK_REFRESH_SECONDS` (300). A failed refresh keeps the last
+  good describe and marks the sink unavailable. Accept refuses an unavailable sink's deliveries
+  as `sink_unavailable`, which is retryable.
+- **External sinks are deliver-only.** Their `withdraw` and `readBack` read as false: contract
+  v1 names those routes but not their bodies.
+  - A delivery to one records no `job_outputs`; it counts as use through `job_deliveries`.
+  - Withdrawal never reaches one.
+  - The job panel's Delete says "This content stays in <label>".
+- **`SinkView` gains `destinationFields` and `credentialFields`** (contract 0.5.0), and the
+  conformance suite fails a sink whose `accepts` lacks `files` or `data`.
+- **CT Studio creates and edits sink targets.**
+  - They have their own body schemas (`SinkTargetCreateBodySchema`, `SinkTargetPatchBodySchema`),
+    and the bridge checks their fields.
+  - While a target is in use, its instance and fixed fields lock (every field, when the sink is
+    not known now). Its label, connection and pattern fields never lock.
+  - Choices list sink targets (`layout: null`, never primary).
+  - Published outputs shows the sinks under *Systems*.
+- **Recipes name sink targets.** The refusal is gone from the API and the worker. A recipe that
+  delivers `rdf` to a sink that doesn't take it is the issue "`<id>` (<sink>) does not take the
+  graph (rdf)".
+- **The fake external sink** (`apps/bridge/src/sinks/fake-server.ts`) runs in compose profile
+  `fake-sink` on test stacks. CI runs the conformance image against it, and the smoke's
+  `SMOKE_EXTERNAL` section delivers two jobs of one file to it: one key, two deliveries.
+
 ## Left to the builder
 
 - Exact route, table, column and event names.

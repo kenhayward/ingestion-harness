@@ -184,6 +184,10 @@
             <span>— a restore puts back the targets the bridge lacks</span>
           </li>
           <li>
+            <a href="#external-sinks">Other systems to deliver to</a>
+            <span>— the delivery bridge delivers to registered external sinks too</span>
+          </li>
+          <li>
             <a href="#personal-connections">Your own connections</a>
             <span>— everyone can keep their own logins on the connections page</span>
           </li>
@@ -229,6 +233,23 @@
         After a restore, targets CT Studio has but the bridge lacks are put back on the bridge. A
         copy restore keeps this server&apos;s targets, so a change made directly on the bridge and
         not yet shown in CT Studio is overwritten.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="external-sinks">Other systems to deliver to</h2>
+      <p>
+        The delivery bridge can now deliver to other systems besides S3 and the triple store. A
+        deployment registers each one in <code>BRIDGE_SINKS</code>. Administration &gt;
+        <em>Published outputs</em> lists them under <strong>Systems</strong>.
+        <strong>Add target</strong> &gt; <strong>Other system</strong> adds a target of one, with
+        the fields that system asks for. Recipes can deliver to such a target alongside an S3
+        target, which still serves Results and downloads.
+      </p>
+      <p>
+        These systems are deliver-only for now. Nothing withdraws from them, and deleting a job says
+        what stays there. While a target is in use, its fixed fields are locked; its name patterns
+        are not. For integrators: the bridge contract package is now 0.5.0. The sink catalog lists
+        each sink's fields, and the conformance suite expects a sink to take files and data.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

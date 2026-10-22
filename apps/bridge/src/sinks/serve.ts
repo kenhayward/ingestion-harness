@@ -14,13 +14,18 @@ import { SinkError, type SinkPort } from './port.js';
  * Serves a SinkPort over the sink contract's HTTP routes, signed with `key`: the reference for
  * what an external sink exposes (and, in tests, a sink to run the conformance suite against).
  */
-export async function serveSink(sink: SinkPort, key: string): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+export async function serveSink(
+  sink: SinkPort,
+  key: string,
+  opts: { unsigned?: readonly string[]; logger?: boolean } = {},
+): Promise<FastifyInstance> {
+  const app = Fastify({ logger: opts.logger ?? false });
+  const unsigned = new Set(opts.unsigned ?? []);
   registerGuard(app, {
     key,
     nonces: new MemoryNonceStore(),
     maxBodyBytes: 100 * 2 ** 20,
-    signed: () => true,
+    signed: (path) => !unsigned.has(path),
   });
 
   const answer = async (reply: FastifyReply, run: () => Promise<unknown>) => {
