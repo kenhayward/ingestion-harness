@@ -26,7 +26,10 @@ system's API, would put secrets and private code in a public product.
   name, so published object keys did not move.
 - **Credentials live on the bridge, as connections.** Admins add, test, rotate and delete shared
   connections on the bridge's own **connections page** (server-rendered, opened from Published
-  outputs through a one-time handoff code; its own origin, or `/bridge` of the app). Secrets are
+  outputs through a one-time handoff code; its own origin, or `/bridge` of the app). On its own
+  origin it may be framed by the app's (`BRIDGE_APP_ORIGIN`) and CT Studio opens it in a modal: a
+  different origin keeps what is typed out of CT Studio's scripts, and the same site keeps its
+  cookie; on `/bridge` it is never framed and opens in a new tab. Secrets are
   encrypted under `BRIDGE_SECRETS_KEY`; keys named in `.env` are read in the bridge's container
   from the same allowlisted variables. An upgrade moves every target's keys onto the bridge once
   (`target-<id>`) and drops the ciphertext from CT Studio.

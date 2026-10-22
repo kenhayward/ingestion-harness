@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
-        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #308,
+        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #309,
         merged between Wednesday 21 October 2026, 14:06 and Thursday 22 October 2026 (UTC).
       </p>
 
@@ -242,6 +242,10 @@
             <span>— everyone can keep their own logins on the connections page</span>
           </li>
           <li>
+            <a href="#connections-window">Connections in a window</a>
+            <span>— Manage connections opens over CT Studio, with a list and the details</span>
+          </li>
+          <li>
             <a href="#waiting">A worker that starts first waits</a>
             <span
               >— no job is delivered to a target CT Studio hasn&apos;t synced yet, and none waits
@@ -283,6 +287,15 @@
             and the bridge&apos;s <code>202610221400_resolved_destination</code>. The bridge
             contract package moves to <strong>0.7.0</strong>. External sinks are registered with
             <code>BRIDGE_SINKS</code> (or <code>BRIDGE_SINKS_FILE</code>) on the bridge.
+          </li>
+          <li>
+            With #309: to open the connections page in a window, give it a subdomain of the
+            app&apos;s (e.g. <code>connections.example.com</code>) proxied to the app&apos;s new
+            connections listener (<code>app:8082</code>, or <code>BRIDGE_PAGE_PORT</code> with
+            <code>BRIDGE_PAGE_BIND=0.0.0.0</code>), and set <code>BRIDGE_PUBLIC_URL</code> to it and
+            <code>BRIDGE_APP_ORIGIN</code> to the app&apos;s origin. Without them it opens in a new
+            tab as before. <code>POST /api/bridge/connections-link</code> now also answers
+            <code>embed</code> and takes an optional <code>theme</code>.
           </li>
         </ul>
       </div>
@@ -617,6 +630,22 @@
         integrators: the bridge contract package is now 0.4.0 (connection summaries carry
         <code>kind</code>, <code>instanceId</code> and <code>lastUsedAt</code>, sinks list their
         <code>instances</code>).
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="connections-window">Connections in a window</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/309">#309</a>
+      </p>
+      <p>
+        <strong>Manage connections</strong> now opens the delivery bridge&apos;s connections page in
+        a window over CT Studio instead of a new browser tab, where the page has its own address. It
+        looks like the rest of CT Studio, light or dark as you chose. Two tabs,
+        <strong>Your connections</strong> and, for admins, <strong>Shared connections</strong>, list
+        each connection by name and system on the left; choose one to see its status and when it was
+        last used, test it, change it or delete it (Delete asks first). Profile and the target
+        pickers update as you save, without reloading. CT Studio still never sees what you type: the
+        page stays on its own address, and only it can read its fields.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
 

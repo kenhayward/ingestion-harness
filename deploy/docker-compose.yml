@@ -32,6 +32,9 @@ x-bridge-env: &bridge-env
   # Where browsers reach the bridge's connections page: its own origin (recommended), or the
   # /bridge path of this app (the default; weaker, see deploy/README.md).
   BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:${APP_PORT:-8081}/bridge}
+  # The origin people reach this app at: the page, on its own origin, may then be framed by it
+  # alone and opens in a modal. Blank: a new tab.
+  BRIDGE_APP_ORIGIN: ${BRIDGE_APP_ORIGIN:-}
 
 x-db-env: &db-env
   DATABASE_URL: postgres://${POSTGRES_USER:-ingest}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-ingest}
@@ -190,6 +193,7 @@ services:
       BRIDGE_EVENTS_URL: http://api:3000/api/bridge/events
       BRIDGE_PRODUCER_URL: http://api:3000/api
       BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:${APP_PORT:-8081}/bridge}
+      BRIDGE_APP_ORIGIN: ${BRIDGE_APP_ORIGIN:-}
       BRIDGE_COOKIE_SECURE: ${BRIDGE_COOKIE_SECURE:-true}
       BRIDGE_STAGING_BUCKET: ${BRIDGE_STAGING_BUCKET:-ingest-bridge}
       # The deployment's S3 as the data lake reaches it: a connection there keeps off the staging
@@ -353,6 +357,9 @@ services:
       FRAME_ANCESTORS: ${FRAME_ANCESTORS:-}
     ports:
       - ${APP_BIND:-0.0.0.0}:${APP_PORT:-8081}:80
+      # The connections page's own origin (nginx.conf: /connections only). A TLS proxy on this
+      # stack's network reaches it as app:8082; one elsewhere needs BRIDGE_PAGE_BIND=0.0.0.0.
+      - ${BRIDGE_PAGE_BIND:-127.0.0.1}:${BRIDGE_PAGE_PORT:-8082}:8082
     depends_on:
       api: { condition: service_healthy }
       # nginx resolves the bridge's name when it starts (/bridge/connections).
