@@ -489,7 +489,8 @@ PY
   wait_for() { # job status...
     local job="$1" want="$2" got=""
     for ((i = 1; i <= 90; i++)); do
-      got="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$job" | json_field status | head -1)"
+      # The job's own status: the first in the answer (its deliveries' come after).
+      got="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/jobs/$job" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
       [[ "$got" == "$want" || "$got" == failed ]] && break
       sleep 2
     done
