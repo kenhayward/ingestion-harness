@@ -400,6 +400,7 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     openConnections: vi.fn(async () => undefined),
     listMyConnections: vi.fn(async () => ({ personalSinks: false, connections: [] })),
     listSinks: vi.fn(async () => []),
+    browseSink: vi.fn(async () => ({ nodes: [], nextCursor: null })),
     previewPattern: vi.fn(async (pattern: string) => ({
       value: pattern.replaceAll('{source.stem}', 'sample'),
       unresolved: [],

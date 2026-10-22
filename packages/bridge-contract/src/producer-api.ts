@@ -123,6 +123,22 @@ export const TargetPutRequestSchema = z.strictObject({
 export type TargetPutRequest = z.infer<typeof TargetPutRequestSchema>;
 
 /** `POST /v1/targets:test`: Test connection for settings not saved yet. */
+/**
+ * `POST /v1/targets:browse`: one level of a sink's tree for a destination field, for a target
+ * editor's picker. A shared sink is browsed with `connectionId`; a personal one with the acting
+ * user's own connection to `instanceId`.
+ */
+export const TargetBrowseRequestSchema = z.strictObject({
+  sinkId: z.string().min(1),
+  instanceId: z.string().nullable(),
+  connectionId: z.string().regex(CONNECTION_ID).nullable(),
+  field: z.string().min(1),
+  parentId: z.string().nullable(),
+  cursor: z.string().nullable(),
+  actingUser: ActingUserSchema.nullable(),
+});
+export type TargetBrowseRequest = z.infer<typeof TargetBrowseRequestSchema>;
+
 export const TargetSettingsTestRequestSchema = z.strictObject({
   connectionId: z.string().regex(CONNECTION_ID),
   destination: DestinationSchema,

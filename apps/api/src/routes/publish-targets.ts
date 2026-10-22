@@ -1,4 +1,5 @@
 import {
+  BrowseResultSchema,
   parsePattern,
   patternVariables,
   resolvePattern,
@@ -314,6 +315,14 @@ export function previewPattern(pattern: string, now: Date): PatternPreview {
 
 const ConnectionsQuery = z.object({ sinkId: z.string().min(1).optional() });
 const PreviewBody = z.object({ pattern: z.string().max(1024) });
+const BrowseBody = z.object({
+  sinkId: z.string().min(1),
+  instanceId: z.string().nullable(),
+  connectionId: z.string().nullable(),
+  field: z.string().min(1),
+  parentId: z.string().nullable(),
+  cursor: z.string().nullable(),
+});
 
 async function adminRoutes(app: FastifyInstance): Promise<void> {
   const repo = app.deps.targets;
@@ -465,6 +474,46 @@ async function adminRoutes(app: FastifyInstance): Promise<void> {
     async () => {
       await sinks.refresh(bridge, { force: true });
       return { sinks: sinks.all() };
+    },
+  );
+
+  app.post(
+    '/publish-targets/browse',
+    {
+      schema: {
+        ...base(
+          'browseSinkForTarget',
+          "Browse a sink's tree",
+          md`
+            **Admins only.** One level of a sink's tree for a destination field the sink lets
+            you browse (a space, a folder), for the target editor's picker. A shared sink is
+            browsed with \`connectionId\`; a personal one with the signed-in admin's own connection
+            to \`instanceId\` (422 \`connection_missing\` without one). Nodes are paged by
+            \`cursor\`.
+          `,
+        ),
+        body: BrowseBody,
+        response: {
+          200: res('The nodes.', BrowseResultSchema),
+          400: error('Zod issues.'),
+          403: ADMINS_ONLY,
+          422: error("The bridge's refusal, e.g. `… has no connection for …`."),
+          502: error(`\`${BRIDGE_DOWN}\`.`),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = BrowseBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: issuesOf(body.error) });
+      const auth = req.auth ?? { userId: 'unit-test-admin', label: 'admin', email: null };
+      try {
+        return await bridge.browse({
+          ...body.data,
+          actingUser: { id: auth.userId, name: auth.label, email: auth.email },
+        });
+      } catch (err) {
+        return bridgeFailure(reply, err);
+      }
     },
   );
 

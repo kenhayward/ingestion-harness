@@ -1,6 +1,8 @@
 import type {
+  BrowseResult,
   ConnectionSummary,
   SinkView,
+  TargetBrowseRequest,
   DeliveryView,
   TargetPutRequest,
   TargetTestResult,
@@ -135,6 +137,15 @@ export class FakeBridgeApi implements BridgeApi {
   readonly userDeletes: string[] = [];
   readonly reconciles: string[][] = [];
   sinkViews: SinkView[] = [];
+  /** What browse answers, and every browse asked for. */
+  browseResult: BrowseResult = { nodes: [], nextCursor: null };
+  readonly browsed: TargetBrowseRequest[] = [];
+
+  async browse(req: TargetBrowseRequest): Promise<BrowseResult> {
+    this.fail();
+    this.browsed.push(structuredClone(req));
+    return structuredClone(this.browseResult);
+  }
 
   async listPersonalConnections(owner: string): Promise<ConnectionSummary[]> {
     this.fail();

@@ -310,6 +310,16 @@ export const SinkInfoSchema = z.object({
 });
 export type SinkInfo = z.infer<typeof SinkInfoSchema>;
 
+/** One node of a sink's browse tree (the bridge contract's BrowseNode). */
+export const SinkBrowseNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  kind: z.string(),
+  hasChildren: z.boolean(),
+  selectable: z.boolean(),
+});
+export type SinkBrowseNode = z.infer<typeof SinkBrowseNodeSchema>;
+
 /** What `null` clears in a patch. */
 const CLEARABLE = {
   kmsKeyId: z.string().min(1).nullable(),

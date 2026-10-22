@@ -8,6 +8,8 @@ import {
   ObjectRefSchema,
   parsePattern,
   RESOURCE_ID,
+  BrowseResultSchema,
+  TargetBrowseRequestSchema,
   TargetPutRequestSchema,
   TargetSettingsTestRequestSchema,
   TargetTestResultSchema,
@@ -346,6 +348,56 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
       const params = parse(Params, req.params, reply);
       if (!params) return reply;
       return withTarget(params.id, reply, (target) => test(target));
+    },
+  );
+
+  app.post(
+    '/v1/targets::browse',
+    {
+      schema: {
+        summary: "Browse a sink's tree for a destination field",
+        tags,
+        body: TargetBrowseRequestSchema,
+        response: { 200: BrowseResultSchema, 400: BridgeErrorSchema, 422: BridgeErrorSchema },
+      },
+    },
+    async (req, reply) => {
+      const body = parse(TargetBrowseRequestSchema, req.body, reply);
+      if (!body) return reply;
+      try {
+        const sink = app.deps.sinks.get(body.sinkId);
+        if (!sink) throw refuse('content_rejected', `there is no sink ${body.sinkId}`);
+        const described = await sink.describe();
+        const field = described.destinationFields.find((f) => f.id === body.field);
+        if (!described.capabilities.browse || !field?.browse) {
+          throw refuse('content_rejected', `${body.field} of ${body.sinkId} cannot be browsed`);
+        }
+        let connectionId = body.connectionId;
+        if (described.connectionKind === 'personal') {
+          const user = body.actingUser;
+          const own = user
+            ? await app.deps.connections.findPersonal(user.id, body.sinkId, body.instanceId)
+            : null;
+          if (!own) {
+            throw refuse(
+              'connection_missing',
+              `${user?.name ?? 'You'} has no connection for ${body.instanceId ?? body.sinkId}: add one on the connections page`,
+            );
+          }
+          connectionId = own.id;
+        }
+        const credential = await app.deps.credentials.resolve(connectionId, described);
+        return await sink.browse({
+          instanceId: body.instanceId ?? '',
+          credential,
+          field: body.field,
+          parentId: body.parentId,
+          cursor: body.cursor,
+        });
+      } catch (err) {
+        if (err instanceof SinkError) return sendSinkError(reply, err);
+        throw err;
+      }
     },
   );
 

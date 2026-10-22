@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import type { BrowseRequest } from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
 import { FakeSink } from './fake.js';
 import { serveSink } from './serve.js';
@@ -41,6 +42,39 @@ export async function buildFakeServer(key: string, logger = false): Promise<Fast
       readBack: false,
       accepts: ['files', 'data'],
     },
+  });
+  // Its tree: two spaces at the root, the second holding one more.
+  sink.browse = async (req?: BrowseRequest) => ({
+    nodes:
+      (req?.parentId ?? null) === null
+        ? [
+            {
+              id: 'reports',
+              label: 'Reports',
+              kind: 'space',
+              hasChildren: false,
+              selectable: true,
+            },
+            {
+              id: 'archive',
+              label: 'Archive',
+              kind: 'space',
+              hasChildren: true,
+              selectable: false,
+            },
+          ]
+        : req?.parentId === 'archive'
+          ? [
+              {
+                id: 'archive/2026',
+                label: '2026',
+                kind: 'space',
+                hasChildren: false,
+                selectable: true,
+              },
+            ]
+          : [],
+    nextCursor: null,
   });
   const app = await serveSink(sink, key, { unsigned: ['/_delivered'], logger });
   app.get('/_delivered', async () => {

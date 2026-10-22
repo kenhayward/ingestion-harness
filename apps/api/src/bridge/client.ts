@@ -5,6 +5,7 @@ import {
   DeliveryViewSchema,
   ObjectReadResultSchema,
   signRequest,
+  BrowseResultSchema,
   SinkViewSchema,
   TargetTestResultSchema,
   TargetViewSchema,
@@ -14,7 +15,9 @@ import {
   type TargetPutRequest,
   type TargetTestResult,
   type TargetView,
+  type BrowseResult,
   type SinkView,
+  type TargetBrowseRequest,
 } from '@ih/bridge-contract';
 import { z } from 'zod';
 
@@ -58,6 +61,8 @@ export interface BridgeApi {
   /** Deletes the personal connections of every user not listed; how many went. */
   reconcileUsers(liveUserIds: string[]): Promise<number>;
   listSinks(): Promise<SinkView[]>;
+  /** One level of a sink's tree for a destination field (TargetBrowseRequest). */
+  browse(req: TargetBrowseRequest): Promise<BrowseResult>;
   testTarget(id: string): Promise<TargetTestResult>;
   testSettings(s: {
     connectionId: string;
@@ -200,6 +205,15 @@ export class HttpBridgeApi implements BridgeApi {
       'the user reconcile',
     );
     return ConnectionsDeletedSchema.parse(await res.json()).deleted;
+  }
+
+  async browse(req: TargetBrowseRequest): Promise<BrowseResult> {
+    const res = await this.expect(
+      await this.call('POST', '/v1/targets:browse', req),
+      [200],
+      `the browse of ${req.sinkId}`,
+    );
+    return BrowseResultSchema.parse(await res.json());
   }
 
   async listSinks(): Promise<SinkView[]> {

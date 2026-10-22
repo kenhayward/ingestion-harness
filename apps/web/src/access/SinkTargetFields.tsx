@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { SinkInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
+import { BrowseDialog } from './BrowseDialog.js';
 import { ConnectionPicker } from './ConnectionPicker.js';
 
 /** What a target of an external sink records, as its form edits it. */
@@ -46,6 +48,7 @@ export function SinkTargetFields({
 }) {
   const set = (id: string, v: string) =>
     onChange({ ...value, destination: { ...value.destination, [id]: v } });
+  const [browsing, setBrowsing] = useState<{ id: string; label: string } | null>(null);
   return (
     <>
       {sink.connectionKind === 'personal' ? (
@@ -94,6 +97,15 @@ export function SinkTargetFields({
               onChange={(e) => set(f.id, e.target.value)}
             />
           </label>
+          {f.kind === 'fixed' && f.browse && sink.capabilities.browse && !fixedLocked && (
+            <button
+              type="button"
+              aria-label={`Browse ${f.label}`}
+              onClick={() => setBrowsing({ id: f.id, label: f.label })}
+            >
+              Browse…
+            </button>
+          )}
           {f.kind === 'pattern' && (
             <small className="muted">
               A name pattern, resolved for each document
@@ -102,6 +114,18 @@ export function SinkTargetFields({
           )}
         </div>
       ))}
+      {browsing && (
+        <BrowseDialog
+          api={api}
+          sinkId={sink.id}
+          instanceId={value.instanceId}
+          connectionId={value.connectionId}
+          field={browsing.id}
+          label={browsing.label}
+          onPick={(id) => set(browsing.id, id)}
+          onClose={() => setBrowsing(null)}
+        />
+      )}
     </>
   );
 }

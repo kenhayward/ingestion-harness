@@ -285,3 +285,56 @@ describe('targets of an external sink', () => {
     expect((await c.call('POST', '/publish-targets/preview', {})).statusCode).toBe(400);
   });
 });
+
+describe('browsing a sink for a target', () => {
+  it("asks the bridge as the signed-in admin, and answers the sink's nodes", async () => {
+    const c = await setup();
+    c.bridge.browseResult = {
+      nodes: [
+        { id: 'reports', label: 'Reports', kind: 'space', hasChildren: false, selectable: true },
+      ],
+      nextCursor: null,
+    };
+    const res = await c.call('POST', '/publish-targets/browse', {
+      sinkId: 'fake',
+      instanceId: null,
+      connectionId: 'fake-account',
+      field: 'space',
+      parentId: null,
+      cursor: null,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(c.bridge.browseResult);
+    expect(c.bridge.browsed).toEqual([
+      {
+        sinkId: 'fake',
+        instanceId: null,
+        connectionId: 'fake-account',
+        field: 'space',
+        parentId: null,
+        cursor: null,
+        actingUser: { id: 'unit-test-admin', name: 'admin', email: null },
+      },
+    ]);
+  });
+
+  it("passes the bridge's refusal through", async () => {
+    const c = await setup();
+    c.bridge.failNext = FakeBridgeApi.refusal(
+      'Ada has no connection for sandbox: add one on the connections page',
+      'connection_missing',
+    );
+    const res = await c.call('POST', '/publish-targets/browse', {
+      sinkId: 'fake',
+      instanceId: 'sandbox',
+      connectionId: null,
+      field: 'space',
+      parentId: null,
+      cursor: null,
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({
+      error: 'Ada has no connection for sandbox: add one on the connections page',
+    });
+  });
+});

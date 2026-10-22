@@ -80,6 +80,7 @@ import type {
   TargetConnection,
   PatternPreview,
   SinkInfo,
+  SinkBrowseNode,
   SinkTargetCreateBody,
   SinkTargetPatchBody,
   MyConnections,
@@ -479,6 +480,15 @@ export interface Api {
   ): Promise<PublishTargetView>;
   /** The delivery bridge's sinks (built in and external), for Published outputs. */
   listSinks(): Promise<SinkInfo[]>;
+  /** One level of a sink's tree for a destination field, as the signed-in admin. */
+  browseSink(req: {
+    sinkId: string;
+    instanceId: string | null;
+    connectionId: string | null;
+    field: string;
+    parentId: string | null;
+    cursor: string | null;
+  }): Promise<{ nodes: SinkBrowseNode[]; nextCursor: string | null }>;
   deletePublishTarget(id: string): Promise<void>;
   /** Through the delivery bridge: writes, reads back and deletes a small file. */
   testPublishTarget(body: TargetTestBody): Promise<TargetTestResult>;
@@ -1125,6 +1135,11 @@ export function createHttpApi(base = '/api'): Api {
       window.open(url, '_blank', 'noopener');
     },
     listMyConnections: () => apiFetch(`${base}/profile/connections`).then(json<MyConnections>),
+    browseSink: (req) =>
+      post<{ nodes: SinkBrowseNode[]; nextCursor: string | null }>(
+        `${base}/publish-targets/browse`,
+        req,
+      ),
     listSinks: () =>
       apiFetch(`${base}/publish-targets/sinks`)
         .then(json<{ sinks: SinkInfo[] }>)

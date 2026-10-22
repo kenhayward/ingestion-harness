@@ -7,6 +7,54 @@ import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
 import { MemoryObjectStore } from '../src/s3/store.js';
 import { encryptSecret } from '../src/secrets.js';
 import { FakeSink } from '../src/sinks/fake.js';
+import type { BrowseRequest, BrowseResult } from '@ih/bridge-contract';
+
+/** A sink with a browsable `space`: two spaces at the root, and what each browse was sent. */
+class TreeSink extends FakeSink {
+  readonly browsed: BrowseRequest[] = [];
+  constructor() {
+    super({
+      connectionKind: 'personal',
+      instances: [{ id: 'sandbox', label: 'Sandbox' }],
+      credentialFields: [{ id: 'token', label: 'Token', secret: true }],
+      destinationFields: [
+        {
+          id: 'space',
+          label: 'Space',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: true,
+        },
+        {
+          id: 'name',
+          label: 'Name',
+          kind: 'pattern',
+          required: true,
+          overridable: true,
+          browse: false,
+        },
+      ],
+      capabilities: {
+        browse: true,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files', 'data'],
+      },
+    });
+  }
+  override async browse(req: BrowseRequest): Promise<BrowseResult> {
+    this.browsed.push(structuredClone(req));
+    return {
+      nodes: [
+        { id: 'reports', label: 'Reports', kind: 'space', hasChildren: false, selectable: true },
+        { id: 'archive', label: 'Archive', kind: 'space', hasChildren: true, selectable: false },
+      ],
+      nextCursor: null,
+    };
+  }
+}
 import { MapSinkRegistry } from '../src/sinks/port.js';
 import { RdfSink } from '../src/sinks/rdf.js';
 import { S3Sink } from '../src/sinks/s3.js';
@@ -37,6 +85,16 @@ async function setup() {
   await connections.put(connection('other-sink', { sinkId: 'fake' }));
   await connections.put(connection('triples', { sinkId: 'rdf' }));
   await connections.put(connection('acme-shared', { sinkId: 'acme' }));
+  await connections.put({
+    ...connection('u-ada', {
+      kind: 'personal',
+      owner: 'u1',
+      sinkId: 'tree',
+      instanceId: 'sandbox',
+      fields: {},
+    }),
+    secretEnc: encryptSecret('ada-token', SECRETS),
+  });
   await connections.put(
     connection('u-mine', { kind: 'personal', owner: 'u1', sinkId: 'fake', instanceId: null }),
   );
@@ -48,6 +106,7 @@ async function setup() {
     sinks: new MapSinkRegistry({
       s3,
       fake: new FakeSink(),
+      tree: new TreeSink(),
       named: new FakeSink({
         destinationFields: [
           {
@@ -375,5 +434,54 @@ describe('a target’s own name patterns', () => {
       destination: { bucket: 'b', name: '{source.stem}' },
     });
     expect(ok.statusCode).toBe(200);
+  });
+});
+
+describe('POST /v1/targets:browse', () => {
+  const browse = (over: Record<string, unknown> = {}) => ({
+    sinkId: 'tree',
+    instanceId: 'sandbox',
+    connectionId: null,
+    field: 'space',
+    parentId: null,
+    cursor: null,
+    actingUser: { id: 'u1', name: 'Ada', email: null },
+    ...over,
+  });
+
+  it("browses a personal sink with the acting admin's own connection", async () => {
+    const { call, app } = await setup();
+    const res = await call('POST', '/v1/targets:browse', browse());
+    expect(res.statusCode).toBe(200);
+    expect(res.json().nodes.map((n: { id: string }) => n.id)).toEqual(['reports', 'archive']);
+    const tree = app.deps.sinks.get('tree') as unknown as TreeSink;
+    expect(tree.browsed).toEqual([
+      {
+        instanceId: 'sandbox',
+        credential: { token: 'ada-token' },
+        field: 'space',
+        parentId: null,
+        cursor: null,
+      },
+    ]);
+  });
+
+  it('refuses an admin with no connection for the instance, a field it cannot browse, or no sink', async () => {
+    const { call } = await setup();
+    const none = await call(
+      'POST',
+      '/v1/targets:browse',
+      browse({ actingUser: { id: 'u9', name: 'Zed', email: null } }),
+    );
+    expect(none.statusCode).toBe(422);
+    expect(none.json()).toMatchObject({
+      code: 'connection_missing',
+      message: 'Zed has no connection for sandbox: add one on the connections page',
+    });
+    const field = await call('POST', '/v1/targets:browse', browse({ field: 'name' }));
+    expect(field.statusCode).toBe(422);
+    expect(field.json().message).toBe('name of tree cannot be browsed');
+    const sink = await call('POST', '/v1/targets:browse', browse({ sinkId: 'nosuch' }));
+    expect(sink.statusCode).toBe(422);
   });
 });
