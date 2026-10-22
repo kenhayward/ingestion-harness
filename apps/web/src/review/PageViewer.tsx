@@ -19,7 +19,7 @@ export function PageViewer({
   thumbSrc?: (page: number) => string;
   page: number;
   pageCount: number;
-  /** Pages a flagged value was found on. */
+  /** Pages a flagged field was found on, or a flagged table row names. */
   flaggedPages?: ReadonlySet<number>;
   onPage: (page: number) => void;
   /** Buttons at the right of the toolbar (swap sides, hide). */

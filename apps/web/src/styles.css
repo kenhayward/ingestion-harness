@@ -780,6 +780,27 @@ td.edited-cell,
 .value.editing input {
   min-width: 10rem;
 }
+/* A text value is edited in a box that grows with it (EditableValue sets its height); the
+   reviewer can still drag it taller. */
+.value.editing textarea {
+  min-width: 16rem;
+  min-height: 34px;
+  padding: 6px 8px;
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  overflow: hidden;
+}
+.fields-grid .value.editing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+.fields-grid .value.editing textarea {
+  flex: 1 1 100%;
+  min-width: 0;
+}
 .filter {
   flex-direction: row;
   align-items: center;
@@ -795,7 +816,7 @@ td.edited-cell,
   white-space: nowrap;
   padding: 0.25rem 0.5rem;
 }
-.review-data td .value button.link {
+.review-data td .value button.link:not(.page-link) {
   opacity: 0;
 }
 .review-data td:hover .value button.link,
@@ -1930,14 +1951,16 @@ h3.card-label {
 .review {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
+/* The header on one row: back link | file, status, reasons chip, recipe · version · model, then
+   the queue and help at the right. The meta shrinks first, then the file name. */
 .review-header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px 16px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
 }
 .back-link {
   display: inline-flex;
@@ -1951,43 +1974,108 @@ h3.card-label {
 .back-link:hover {
   color: var(--ih-text);
 }
+.review-header .back-link {
+  flex: none;
+  min-height: 0;
+}
+.review-header-rule {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  background: var(--ih-border);
+}
 .review-header h1 {
-  word-break: break-all;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ih-text-lg);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.review-header > .pill,
+.review-header > .reasons-anchor {
+  flex: none;
 }
 .review-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  margin: 4px 0 0;
-  color: var(--ih-muted);
+  flex: 0 4 auto;
+  min-width: 0;
   font-size: var(--ih-text-md);
-}
-.review-meta .mono {
-  font-size: var(--ih-text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .review-queue {
   display: flex;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin-left: auto;
+  font-size: var(--ih-text-md);
+  white-space: nowrap;
+}
+.review-queue a.button {
+  min-height: 30px;
+  padding: 0 10px;
   font-size: var(--ih-text-md);
 }
-.why {
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 4px 24px;
-  padding: 14px 16px;
+.review-header > .help-button {
+  flex: none;
 }
-.why ul {
+.review-header > .review-meta + .help-button {
+  margin-left: auto;
+}
+button.reasons-chip {
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--ih-warn-fg);
+  border-radius: 999px;
+  background: var(--ih-warn-bg);
+  color: var(--ih-warn-fg);
+  font-size: var(--ih-text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+button.reasons-chip[aria-expanded='true'] {
+  box-shadow: 0 0 0 3px var(--ih-warn-bg);
+}
+.reasons-pop {
+  left: 0;
+  right: auto;
+  width: min(420px, 100vw - 32px);
+  gap: 6px;
+  padding: 12px 14px;
+  font-size: var(--ih-text-md);
+}
+.reasons-pop strong {
+  color: var(--ih-warn-fg);
+}
+.reasons-pop ul {
   margin: 0;
   padding-left: 18px;
+}
+@media (max-width: 999px) {
+  .review-header {
+    flex-wrap: wrap;
+  }
+  .review-meta {
+    order: 10;
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 640px) {
+  .review-header h1 {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 /* The workspace: the document and the data side by side at the document's share
    (--doc-width), split by a draggable divider; either can fold to a rail at its side. */
 .review-workspace {
   display: flex;
-  height: max(520px, calc(100vh - var(--ih-topbar-h) - 340px));
+  height: max(520px, calc(100vh - var(--ih-topbar-h) - 260px));
   min-height: 0;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-lg);
@@ -2462,22 +2550,21 @@ button.icon.bordered {
 }
 .value.boxed {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
 }
 .value-box {
   flex: 1;
   min-width: 0;
   min-height: 36px;
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
+  padding: 7px 10px;
   border: 1px solid var(--ih-border);
   border-radius: var(--ih-radius-md);
   background: var(--ih-surface);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Long values wrap, so the box grows to show all of it. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 .value-box.flagged {
   border: 1.5px solid var(--ih-warn-fg);
@@ -6707,13 +6794,6 @@ img.avatar {
   margin-bottom: -8px;
 }
 /* Review: the help at the header's top right, the queue just left of it. */
-.review-header > .help-button {
-  align-self: flex-start;
-}
-.review-header > .review-queue {
-  margin-left: auto;
-}
-
 /* Administration > Backup: the restore dialog (radio cards for the mode, the check, the report). */
 .restore-dialog {
   width: min(640px, 100vw - 32px);

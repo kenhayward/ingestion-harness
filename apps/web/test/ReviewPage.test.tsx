@@ -37,9 +37,51 @@ describe('ReviewPage header and source', () => {
       'href',
       '#/review/next-id',
     );
-    expect(screen.getByRole('note', { name: 'Why this needs review' })).toHaveTextContent(
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const chip = screen.getByRole('button', { name: /Why this needs review \(2\)/ });
+    await userEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('dialog', { name: 'Why this needs review' })).toHaveTextContent(
       'check batch_check: 1 unmatched',
     );
+  });
+
+  it('closes the reasons on Escape, back to the chip, and on a click outside', async () => {
+    setup();
+    const chip = await screen.findByRole('button', { name: /Why this needs review/ });
+    await userEvent.click(chip);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Why this needs review' })).toBeNull();
+    expect(chip).toHaveFocus();
+    await userEvent.click(chip);
+    await userEvent.click(screen.getByRole('heading', { level: 1 }));
+    expect(screen.queryByRole('dialog', { name: 'Why this needs review' })).toBeNull();
+  });
+
+  it('shows no reasons once the job has left review', async () => {
+    const data = reviewData();
+    data.job.status = 'succeeded';
+    setup({ getReview: vi.fn(async () => data) });
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    expect(screen.queryByRole('button', { name: /Why this needs review/ })).toBeNull();
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(screen.queryByText(/check batch_check/)).toBeNull();
+  });
+
+  it('shows no reasons chip for a job awaiting review without reasons', async () => {
+    const data = reviewData();
+    data.job.reviewReasons = [];
+    setup({ getReview: vi.fn(async () => data) });
+    await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    expect(screen.queryByRole('button', { name: /Why this needs review/ })).toBeNull();
+  });
+
+  it('keeps the full file name on hover and the recipe, version and model in the header', async () => {
+    setup();
+    const h1 = await screen.findByRole('heading', { level: 1, name: 'scan.pdf' });
+    expect(h1).toHaveAttribute('title', 'scan.pdf');
+    const header = h1.closest('header')!;
+    expect(header).toHaveTextContent('Template demo · v1');
   });
 
   it('hides Next document when this is the only one awaiting review', async () => {
@@ -158,7 +200,10 @@ describe('ReviewPage', () => {
   it('shows the document, review reasons and every field with its evidence', async () => {
     setup();
     expect(await screen.findByRole('heading', { level: 1, name: 'scan.pdf' })).toBeInTheDocument();
+    // The reasons sit behind the header's chip.
+    await userEvent.click(screen.getByRole('button', { name: /Why this needs review/ }));
     expect(screen.getByText(/check batch_check: 1 unmatched/)).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
     const row = fieldRow(/Execution Date/);
     expect(within(row).getByText('2023-02-16')).toBeInTheDocument();
     expect(within(row).getByText(/Made 16\/02\/2023/)).toBeInTheDocument();
@@ -784,6 +829,67 @@ describe('ReviewPage layout', () => {
     ).toBeInTheDocument();
     await userEvent.click(within(pages).getByRole('button', { name: 'Page 2' }));
     expect(screen.getByRole('img', { name: 'Page 2 of 3' })).toBeInTheDocument();
+  });
+});
+
+describe('ReviewPage long text values', () => {
+  it('edits a text value in a multi-line box: Shift+Enter starts a line, Enter saves', async () => {
+    const { api } = setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Medicinal Product' }));
+    const box = screen.getByRole('textbox', { name: 'New value for product' });
+    expect(box.tagName).toBe('TEXTAREA');
+    expect(box).toHaveValue('Richfer capsules');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Line one{Shift>}{Enter}{/Shift}line two');
+    expect(api.addEdit).not.toHaveBeenCalled();
+    await userEvent.keyboard('{Enter}');
+    expect(api.addEdit).toHaveBeenCalledWith(JOB_ID, {
+      field: 'product',
+      value: 'Line one\nline two',
+    });
+  });
+
+  it('keeps a one-line box for values that are not text', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Execution Date' }));
+    expect(screen.getByRole('textbox', { name: 'New value for executed_on' }).tagName).toBe(
+      'INPUT',
+    );
+  });
+});
+
+describe('ReviewPage page columns', () => {
+  /** The results table with a Page column: row 2 (the flagged one) was found on page 2. */
+  const withPages = () => {
+    const data = reviewData();
+    data.template.outputs.tables[0]!.columns.push({ id: 'page', name: 'Page', type: 'integer' });
+    data.document.tables.results = [
+      { batch: 'G1', value: 137.8, page: 3 },
+      { batch: 'GX', value: 'Complies', page: 2 },
+      { batch: 'G1', value: 120.1, page: 9 },
+    ];
+    return data;
+  };
+
+  it("opens the page a row's page column names", async () => {
+    setup({ getReview: vi.fn(async () => withPages()) });
+    await userEvent.click(await screen.findByRole('tab', { name: /^results/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Show page 3' }));
+    expect(screen.getByRole('img', { name: 'Page 3 of 3' })).toBeInTheDocument();
+    // Only page numbers the document has, and only in the page column.
+    expect(screen.queryByRole('button', { name: 'Show page 9' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Show page 137/ })).toBeNull();
+  });
+
+  it('turns to the page of the flagged row Next flagged lands on, and marks it', async () => {
+    setup({ getReview: vi.fn(async () => withPages()) });
+    await userEvent.click(await screen.findByRole('button', { name: /Next flagged/ }));
+    expect(screen.getByRole('img', { name: 'Page 2 of 3' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Pages' })).getByRole('button', {
+        name: 'Page 2 (flagged values)',
+      }),
+    ).toBeInTheDocument();
   });
 });
 
