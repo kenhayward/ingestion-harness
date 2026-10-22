@@ -1,4 +1,10 @@
-import { SinkViewSchema, type TargetPutRequest } from '@ih/bridge-contract';
+import {
+  parsePattern,
+  patternVariables,
+  resolvePattern,
+  SinkViewSchema,
+  type TargetPutRequest,
+} from '@ih/bridge-contract';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   DEFAULT_TARGET_ID,
@@ -7,8 +13,10 @@ import {
   PublishTargetViewSchema,
   TargetChoiceSchema,
   TargetConnectionSchema,
+  PatternPreviewSchema,
   SinkTargetCreateBodySchema,
   SinkTargetPatchBodySchema,
+  type PatternPreview,
   TargetCreateBodySchema,
   TargetPatchBodySchema,
   TargetTestBodySchema,
@@ -229,21 +237,83 @@ export async function publishTargetRoutes(app: FastifyInstance): Promise<void> {
       const sinks = app.deps.sinks!;
       const choices = await app.deps.targets.choices();
       if (choices.some((c) => c.kind === 'sink')) await sinks.refresh(app.deps.bridge);
-      const sinkIds = new Map((await app.deps.targets.list()).map((v) => [v.id, v.sinkId]));
+      const views = new Map((await app.deps.targets.list()).map((v) => [v.id, v]));
       return {
-        choices: choices.map((c) =>
-          c.kind === 'sink'
-            ? { ...c, sinkName: sinks.get(sinkIds.get(c.id) ?? '')?.name ?? null }
-            : c,
-        ),
+        choices: choices.map((c) => {
+          if (c.kind !== 'sink') return { ...c, patternFields: [] };
+          const view = views.get(c.id);
+          const sink = sinks.get(view?.sinkId ?? '');
+          return {
+            ...c,
+            sinkName: sink?.name ?? null,
+            patternFields: (sink?.destinationFields ?? [])
+              .filter((f) => f.kind === 'pattern')
+              .map((f) => ({
+                id: f.id,
+                label: f.label,
+                required: f.required,
+                overridable: f.overridable,
+                targetPattern: view?.destination[f.id] || null,
+              })),
+          };
+        }),
       };
+    },
+  );
+
+  app.post(
+    '/publish-targets/preview',
+    {
+      schema: {
+        tags: ['Published outputs'],
+        operationId: 'previewNamePattern',
+        summary: 'Preview a name pattern',
+        description: md`
+          A name pattern resolved against a sample document (\`sample.pdf\`, each field shown as
+          its id in angle quotes, today's date), or why it is not a pattern. For the recipe and
+          target editors' previews; nothing is stored.
+        `,
+        body: PreviewBody,
+        response: {
+          200: res('The preview.', PatternPreviewSchema),
+          400: error('The body is not `{ pattern }` (at most 1024 characters).'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = PreviewBody.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: issuesOf(body.error) });
+      return previewPattern(body.data.pattern, new Date());
     },
   );
 
   await app.register(adminRoutes);
 }
 
+/** A pattern resolved against a sample document: what the editors show as its preview. */
+export function previewPattern(pattern: string, now: Date): PatternPreview {
+  const parsed = parsePattern(pattern);
+  if ('error' in parsed) return { value: null, unresolved: [], error: parsed.error };
+  const naming: Record<string, string> = {
+    'source.filename': 'sample.pdf',
+    'source.stem': 'sample',
+    'source.sha256': '0'.repeat(64),
+    'recipe.id': 'recipe',
+    'recipe.version': '1',
+    'job.id': '00000000-0000-4000-8000-000000000000',
+    date: now.toISOString().slice(0, 10),
+  };
+  for (const v of patternVariables(pattern)) {
+    if (v.startsWith('field:')) naming[v] = `‹${v.slice('field:'.length)}›`;
+  }
+  const resolved = resolvePattern(pattern, naming);
+  return 'value' in resolved
+    ? { value: resolved.value, unresolved: [], error: null }
+    : { value: null, unresolved: resolved.unresolved, error: null };
+}
+
 const ConnectionsQuery = z.object({ sinkId: z.string().min(1).optional() });
+const PreviewBody = z.object({ pattern: z.string().max(1024) });
 
 async function adminRoutes(app: FastifyInstance): Promise<void> {
   const repo = app.deps.targets;

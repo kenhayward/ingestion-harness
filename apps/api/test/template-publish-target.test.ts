@@ -99,3 +99,75 @@ describe('a recipe naming an external sink target', () => {
     ]);
   });
 });
+
+describe('a recipe’s name patterns per target (delivery.settings)', () => {
+  async function withSinkTarget(destination: Record<string, string> = { space: 'reports' }) {
+    const c = await testApp();
+    c.bridge.sinkViews = [FAKE_SINK];
+    const created = await c.app.inject({
+      method: 'POST',
+      url: '/api/publish-targets',
+      payload: { kind: 'sink', label: 'Fake target', sinkId: 'fake', destination },
+    });
+    expect(created.statusCode).toBe(201);
+    const issuesFor = async (settings?: Record<string, Record<string, string>>) => {
+      await c.templates.create(
+        'letter',
+        1,
+        {
+          ...letter('default'),
+          delivery: { publishTo: ['default', 'fake-target'], ...(settings ? { settings } : {}) },
+        },
+        'draft',
+      );
+      const issues = (await c.app.inject('/api/templates/letter/versions/1')).json().issues as {
+        path: string;
+        message: string;
+      }[];
+      return issues.filter((i) => i.path === 'delivery.settings').map((i) => i.message);
+    };
+    return { c, issuesFor };
+  }
+
+  it('a required pattern field needs a pattern here or on the target', async () => {
+    const { issuesFor } = await withSinkTarget();
+    expect(await issuesFor()).toEqual([
+      'fake-target: Name needs a name pattern (set one here, or on the target)',
+    ]);
+  });
+
+  it('a pattern on the target is enough, and a good setting raises nothing', async () => {
+    const onTarget = await withSinkTarget({ space: 'reports', name: '{source.stem}' });
+    expect(await onTarget.issuesFor()).toEqual([]);
+    const set = await withSinkTarget();
+    expect(await set.issuesFor({ 'fake-target': { name: '{field:sender|source.stem}' } })).toEqual(
+      [],
+    );
+  });
+
+  it('names what is wrong with a setting', async () => {
+    const cases: [Record<string, Record<string, string>>, string][] = [
+      [{ elsewhere: { name: 'x' } }, 'settings for elsewhere: the recipe does not deliver to it'],
+      [
+        { 'fake-target': { space: 'x', name: 'n' } },
+        'fake-target: space is not a name pattern of Fake sink',
+      ],
+      [
+        { 'fake-target': { name: '{nope}' } },
+        'fake-target.name: `{nope}`: unknown variable nope at 1',
+      ],
+      [
+        { 'fake-target': { name: '{field:other}' } },
+        'fake-target.name: {field:other} names no field of this recipe',
+      ],
+      [
+        { default: { name: 'x' }, 'fake-target': { name: 'n' } },
+        'default: an S3 target takes no name patterns',
+      ],
+    ];
+    for (const [settings, message] of cases) {
+      const { issuesFor } = await withSinkTarget();
+      expect(await issuesFor(settings)).toContain(message);
+    }
+  });
+});

@@ -34,6 +34,7 @@ const TARGETS: TargetChoice[] = [
     prefix: '',
     layout: 'files',
     sinkName: null,
+    patternFields: [],
   },
   {
     id: 'finance-lake',
@@ -43,6 +44,7 @@ const TARGETS: TargetChoice[] = [
     prefix: '',
     layout: 'files',
     sinkName: null,
+    patternFields: [],
   },
 ];
 const overview = (

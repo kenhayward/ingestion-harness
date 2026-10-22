@@ -1709,6 +1709,46 @@ describe('Publish to (publishing targets)', () => {
     expect(saved(api).delivery).toEqual({ formats: ['json'] });
   });
 
+  it('a picked sink target shows its name pattern, previewed; settings are written only when set', async () => {
+    const fake = {
+      id: 'fake-target',
+      label: 'Fake target',
+      kind: 'sink' as const,
+      bucket: '',
+      prefix: '',
+      layout: null,
+      sinkName: 'Fake sink',
+      patternFields: [
+        {
+          id: 'name',
+          label: 'Name',
+          required: true,
+          overridable: true,
+          targetPattern: '{source.stem}',
+        },
+      ],
+    };
+    const { api } = setup(view(validDefinition()), {
+      listPublishTargetChoices: vi.fn(async () => [...CHOICES, fake]),
+    });
+    await userEvent.click(await tab(/General/));
+    await userEvent.click(await box('Fake target · Fake sink'));
+    const name = await within(await group()).findByLabelText('Fake target: Name');
+    expect(name).toHaveAttribute('placeholder', '{source.stem}');
+    expect(await within(await group()).findByText('Preview: sample')).toBeInTheDocument();
+    await save(api);
+    expect(saved(api).delivery).toEqual({ publishTo: ['default', 'fake-target'] });
+    await userEvent.type(name, 'Q3 {{source.stem}');
+    await save(api);
+    expect(saved(api).delivery).toEqual({
+      publishTo: ['default', 'fake-target'],
+      settings: { 'fake-target': { name: 'Q3 {source.stem}' } },
+    });
+    await userEvent.click(await box('Fake target · Fake sink'));
+    await save(api);
+    expect(saved(api).delivery).toBeUndefined();
+  });
+
   it('the last picked target cannot be unpicked', async () => {
     setup(view(validDefinition()), withChoices);
     await userEvent.click(await tab(/General/));

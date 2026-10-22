@@ -401,6 +401,7 @@ export function publishTargetsContract(
           prefix: '',
           layout: 'files',
           sinkName: null,
+          patternFields: [],
         },
         {
           id: 'a',
@@ -410,6 +411,7 @@ export function publishTargetsContract(
           prefix: 'out/',
           layout: 'package',
           sinkName: null,
+          patternFields: [],
         },
         {
           id: 'box',
@@ -419,6 +421,7 @@ export function publishTargetsContract(
           prefix: '',
           layout: null,
           sinkName: null,
+          patternFields: [],
         },
         {
           id: 'z',
@@ -428,6 +431,7 @@ export function publishTargetsContract(
           prefix: 'out/',
           layout: 'files',
           sinkName: null,
+          patternFields: [],
         },
       ]);
     });

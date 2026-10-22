@@ -21,8 +21,13 @@
     {
       "name": "no delivery",
       "definition": {},
-      "formats": ["csv", "json"],
-      "publishTargets": ["default"]
+      "formats": [
+        "csv",
+        "json"
+      ],
+      "publishTargets": [
+        "default"
+      ]
     },
     {
       "name": "target only",
@@ -31,50 +36,115 @@
           "publishTo": "finance-lake"
         }
       },
-      "formats": ["csv", "json"],
-      "publishTargets": ["finance-lake"]
+      "formats": [
+        "csv",
+        "json"
+      ],
+      "publishTargets": [
+        "finance-lake"
+      ]
     },
     {
       "name": "formats only",
       "definition": {
         "delivery": {
-          "formats": ["json"]
+          "formats": [
+            "json"
+          ]
         }
       },
-      "formats": ["json"],
-      "publishTargets": ["default"]
+      "formats": [
+        "json"
+      ],
+      "publishTargets": [
+        "default"
+      ]
     },
     {
       "name": "both",
       "definition": {
         "delivery": {
-          "formats": ["csv"],
+          "formats": [
+            "csv"
+          ],
           "publishTo": "lake_2"
         }
       },
-      "formats": ["csv"],
-      "publishTargets": ["lake_2"]
+      "formats": [
+        "csv"
+      ],
+      "publishTargets": [
+        "lake_2"
+      ]
     },
     {
       "name": "a one-item list",
       "definition": {
         "delivery": {
-          "publishTo": ["finance-lake"]
+          "publishTo": [
+            "finance-lake"
+          ]
         }
       },
-      "formats": ["csv", "json"],
-      "publishTargets": ["finance-lake"]
+      "formats": [
+        "csv",
+        "json"
+      ],
+      "publishTargets": [
+        "finance-lake"
+      ]
     },
     {
       "name": "a list, in order",
       "definition": {
         "delivery": {
-          "formats": ["json"],
-          "publishTo": ["archive", "default", "lake_2"]
+          "formats": [
+            "json"
+          ],
+          "publishTo": [
+            "archive",
+            "default",
+            "lake_2"
+          ]
         }
       },
-      "formats": ["json"],
-      "publishTargets": ["archive", "default", "lake_2"]
+      "formats": [
+        "json"
+      ],
+      "publishTargets": [
+        "archive",
+        "default",
+        "lake_2"
+      ]
+    },
+    {
+      "name": "per-target name patterns",
+      "definition": {
+        "delivery": {
+          "publishTo": [
+            "default",
+            "fake-target"
+          ],
+          "settings": {
+            "fake-target": {
+              "name": "{field:sender|source.stem}"
+            }
+          }
+        }
+      },
+      "formats": [
+        "csv",
+        "json"
+      ],
+      "publishTargets": [
+        "default",
+        "fake-target"
+      ],
+      "settings": {
+        "fake-target": {
+          "name": "{field:sender|source.stem}"
+        }
+      }
     }
   ],
   "seed": [

@@ -251,4 +251,37 @@ describe('targets of an external sink', () => {
     const s3 = (await c.call('GET', '/publish-targets/connections')).json();
     expect(s3.connections.map((x: { id: string }) => x.id)).not.toContain('fake-account');
   });
+
+  it("a choice lists its sink's name pattern fields, with the target's own pattern", async () => {
+    const c = await setup();
+    await c.call('POST', '/publish-targets', sinkBody());
+    const { choices } = (await c.call('GET', '/publish-targets/choices')).json() as {
+      choices: { id: string; patternFields: unknown[] }[];
+    };
+    expect(choices.find((ch) => ch.id === 'fake-target')?.patternFields).toEqual([
+      {
+        id: 'name',
+        label: 'Name',
+        required: true,
+        overridable: true,
+        targetPattern: '{source.stem}',
+      },
+    ]);
+    expect(choices.find((ch) => ch.id === 'default')?.patternFields).toEqual([]);
+  });
+
+  it('previews a pattern against a sample document, or says why it is not one', async () => {
+    const c = await setup();
+    const ok = await c.call('POST', '/publish-targets/preview', {
+      pattern: '{field:title} {source.stem}',
+    });
+    expect(ok.json()).toEqual({ value: '‹title› sample', unresolved: [], error: null });
+    const bad = await c.call('POST', '/publish-targets/preview', { pattern: '{nope}' });
+    expect(bad.json()).toEqual({
+      value: null,
+      unresolved: [],
+      error: '`{nope}`: unknown variable nope at 1',
+    });
+    expect((await c.call('POST', '/publish-targets/preview', {})).statusCode).toBe(400);
+  });
 });

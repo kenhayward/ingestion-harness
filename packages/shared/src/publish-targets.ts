@@ -357,8 +357,45 @@ export const TargetChoiceSchema = z.object({
   layout: z.enum(TARGET_LAYOUTS).nullable(),
   /** A sink target's sink, by name (null: S3, or a sink not known now). */
   sinkName: z.string().nullable(),
+  /** A sink target's name pattern fields, with the target's own pattern (S3: none). */
+  patternFields: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        required: z.boolean(),
+        overridable: z.boolean(),
+        /** The target's own pattern for it, used when the recipe sets none. */
+        targetPattern: z.string().nullable(),
+      }),
+    )
+    .default([]),
 });
 export type TargetChoice = z.infer<typeof TargetChoiceSchema>;
+
+/** A name pattern resolved against a sample document, for the editors' previews. */
+export const PatternPreviewSchema = z.object({
+  /** The pattern resolved; null when it does not parse, or a placeholder resolves to nothing. */
+  value: z.string().nullable(),
+  unresolved: z.array(z.string()),
+  /** Why it is not a pattern, else null. */
+  error: z.string().nullable(),
+});
+export type PatternPreview = z.infer<typeof PatternPreviewSchema>;
+
+/** A recipe's name patterns per target: target id → pattern field id → pattern. */
+export const DeliverySettingsSchema = z.record(
+  TargetIdSchema,
+  z.record(z.string().min(1).max(64), z.string().min(1).max(1024)),
+);
+export type DeliverySettings = z.infer<typeof DeliverySettingsSchema>;
+
+/** A recipe's name patterns per target (`delivery.settings`); absent means none. */
+export function deliverySettingsOf(definition: {
+  delivery?: { settings?: DeliverySettings };
+}): DeliverySettings {
+  return definition.delivery?.settings ?? {};
+}
 
 /**
  * The targets a recipe delivers to, in its order; absent means `["default"]`. The triple store

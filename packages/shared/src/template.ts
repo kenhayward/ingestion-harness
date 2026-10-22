@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PublishToSchema, type PublishTo } from './publish-targets.js';
+import { DeliverySettingsSchema, PublishToSchema, type PublishTo } from './publish-targets.js';
 import { pythonPatternCompiles } from './python-pattern.js';
 import {
   CopySelectionSchema,
@@ -485,6 +485,11 @@ export const DeliverySchema = z
     formats: z.array(z.enum(DELIVERY_FORMATS)).min(1).optional(),
     /** The publishing targets' ids, one or a list (see `publish-targets.ts`); absent = `default`. */
     publishTo: PublishToSchema.optional(),
+    /**
+     * Name patterns per target: target id, then the sink's pattern field, then its pattern (they
+     * win over the target's own defaults; a reviewer's override wins over them). Absent: none.
+     */
+    settings: DeliverySettingsSchema.optional(),
   })
   .strict();
 

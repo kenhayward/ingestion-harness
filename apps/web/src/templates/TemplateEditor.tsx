@@ -4,6 +4,7 @@ import {
   describeDefinitionChange,
   VALUE_TYPES,
   DEFAULT_TARGET_ID,
+  deliverySettingsOf,
   publishTargetsOf,
   type DataPolicy,
   type DeliveryFormat,
@@ -11,6 +12,8 @@ import {
   type OverviewItem,
   type Retirement,
   type PushOutcome,
+  type DeliverySettings,
+  type PatternPreview,
   type TargetChoice,
 } from '@ih/shared';
 import { ApiError, type Api, type TemplateRecordView } from '../api/client.js';
@@ -44,6 +47,7 @@ import {
   setIn,
   validateDefinition,
   withPublishTo,
+  withSetting,
   type Definition,
 } from './model.js';
 import { choiceName } from '../jobs/derive.js';
@@ -632,6 +636,11 @@ export function TemplateEditor({
                       choices={targets}
                       value={publishTargetsOf(def)}
                       onChange={(ids) => update(['delivery'], withPublishTo(def.delivery, ids))}
+                      settings={deliverySettingsOf(def)}
+                      onSetting={(targetId, fieldId, pattern) =>
+                        update(['delivery'], withSetting(def.delivery, targetId, fieldId, pattern))
+                      }
+                      preview={(pattern) => api.previewPattern(pattern)}
                     />
                   </div>
                   <Area
@@ -1558,6 +1567,63 @@ function TableOutputs({
 }
 
 /**
+ * One name pattern a recipe sets for a target's field, with a preview against a sample document.
+ * Blank: the target's own pattern applies.
+ */
+function PatternSetting({
+  label,
+  value,
+  fallback,
+  onChange,
+  preview,
+}: {
+  label: string;
+  value: string;
+  fallback: string | null;
+  onChange: (pattern: string) => void;
+  preview: (pattern: string) => Promise<PatternPreview>;
+}) {
+  const shown = value || fallback || '';
+  const [result, setResult] = useState<PatternPreview | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!shown) {
+      setResult(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      preview(shown).then(
+        (r) => live && setResult(r),
+        () => live && setResult(null),
+      );
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [shown, preview]);
+  return (
+    <div className="pattern-setting">
+      <label>
+        {label}
+        <input
+          className="mono"
+          value={value}
+          placeholder={fallback ?? '{source.stem}'}
+          spellCheck={false}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </label>
+      {result?.error && <small className="field-error">{result.error}</small>}
+      {result?.value != null && <small className="muted">Preview: {result.value}</small>}
+      {result && result.unresolved.length > 0 && (
+        <small className="muted">Resolves to nothing without {result.unresolved.join(', ')}</small>
+      )}
+    </div>
+  );
+}
+
+/**
  * The recipe's publishing targets, a checklist in the recipe's order (picked first, then the
  * rest), each with Move up and Move down. The first files-layout target is the primary one:
  * Results, the zip and read keys read from it. A stored id nobody offers stays visible.
@@ -1566,10 +1632,17 @@ function PublishToPicker({
   choices,
   value,
   onChange,
+  settings,
+  onSetting,
+  preview,
 }: {
   choices: readonly TargetChoice[];
   value: readonly string[];
   onChange: (ids: string[]) => void;
+  /** The recipe's name patterns per target. */
+  settings: DeliverySettings;
+  onSetting: (targetId: string, fieldId: string, pattern: string) => void;
+  preview: (pattern: string) => Promise<PatternPreview>;
 }) {
   const byId = new Map(choices.map((c) => [c.id, c]));
   // Loading: a stored id is not yet known to be missing, so it is not flagged until choices arrive.
@@ -1579,6 +1652,7 @@ function PublishToPicker({
   const describe = (id: string) => {
     const c = byId.get(id);
     if (!c) return loaded ? `${id} (not on this deployment)` : nameOf(id);
+    if (c.kind === 'sink') return `${c.label} · ${c.sinkName ?? 'another system'}`;
     const where = `${c.bucket}${c.prefix ? `/${c.prefix}` : ''}`;
     return `${c.label} · ${c.kind} · ${where}${c.layout === 'package' ? ' · archive' : ''}`;
   };
@@ -1602,6 +1676,17 @@ function PublishToPicker({
                 {describe(id)}
               </label>
               {id === primary && <small className="badge">Primary</small>}
+              {on &&
+                (byId.get(id)?.patternFields ?? []).map((f) => (
+                  <PatternSetting
+                    key={f.id}
+                    label={`${nameOf(id)}: ${f.label}`}
+                    value={settings[id]?.[f.id] ?? ''}
+                    fallback={f.targetPattern}
+                    onChange={(pattern) => onSetting(id, f.id, pattern)}
+                    preview={preview}
+                  />
+                ))}
               {on && value.length > 1 && (
                 <>
                   <button

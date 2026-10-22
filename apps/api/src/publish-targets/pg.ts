@@ -212,7 +212,7 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
       `SELECT t.id, t.label FROM publish_targets t WHERE t.${LIVE} AND t.kind = 'sink'`,
     );
     return [
-      ...rows.map((r) => ({ ...r, sinkName: null })),
+      ...rows.map((r) => ({ ...r, sinkName: null, patternFields: [] })),
       ...sinks.rows.map((r) => ({
         id: r.id,
         label: r.label,
@@ -221,6 +221,7 @@ export class PgPublishTargetRepo implements PublishTargetRepo {
         prefix: '',
         layout: null,
         sinkName: null,
+        patternFields: [],
       })),
     ].sort(byDefaultThenLabel);
   }

@@ -15,7 +15,11 @@ import {
   type DeliveryTarget,
   type OutputMapping,
 } from '../src/template.js';
-import { MAX_PUBLISH_TARGETS, publishTargetsOf } from '../src/publish-targets.js';
+import {
+  deliverySettingsOf,
+  MAX_PUBLISH_TARGETS,
+  publishTargetsOf,
+} from '../src/publish-targets.js';
 
 /** definitionCanonical sha256 of the fixture's full mapping, pinned before value nodes. */
 const PINNED_SHA = '57cc1aac4720265403d78c4d61becfd388ee617a698d653ccc99582b13f44929';
@@ -354,13 +358,26 @@ describe('delivery.publishTo (publishing targets, shared with the worker)', () =
     JSON.parse(
       readFileSync(new URL('./fixtures/publish-targets.json', import.meta.url), 'utf8'),
     ) as {
-      delivery: { name: string; definition: object; formats: string[]; publishTargets: string[] }[];
+      delivery: {
+        name: string;
+        definition: object;
+        formats: string[];
+        publishTargets: string[];
+        settings?: Record<string, Record<string, string>>;
+      }[];
     }
   ).delivery;
   it.each(cases.map((c) => [c.name, c] as const))('%s', (_n, c) => {
     const t = TemplateSchema.parse({ ...valid, ...c.definition });
     expect(deliveryFormats(t)).toEqual(c.formats);
     expect(publishTargetsOf(t)).toEqual(c.publishTargets);
+    expect(deliverySettingsOf(t)).toEqual(c.settings ?? {});
+  });
+  it('refuses a setting that is not a pattern string', () => {
+    for (const settings of [{ t: { name: '' } }, { 'Bad Id': { name: 'x' } }, { t: { name: 3 } }]) {
+      const r = TemplateSchema.safeParse({ ...valid, delivery: { publishTo: 't', settings } });
+      expect(r.success).toBe(false);
+    }
   });
   it('names the default target when none is set', () => {
     expect(publishTargetsOf({})).toEqual(['default']);

@@ -343,11 +343,21 @@ export class MemoryPublishTargetRepo implements PublishTargetRepo {
               prefix: '',
               layout: null,
               sinkName: null,
+              patternFields: [],
             },
           ];
         }
         return place && (r.kind === 'internal' || r.kind === 'external')
-          ? [{ id: r.id, label: r.label, kind: r.kind, ...place, sinkName: null }]
+          ? [
+              {
+                id: r.id,
+                label: r.label,
+                kind: r.kind,
+                ...place,
+                sinkName: null,
+                patternFields: [],
+              },
+            ]
           : [];
       })
       .sort(byDefaultThenLabel);

@@ -8,12 +8,14 @@ import {
   type DataPolicy,
   type ModelChoice,
   type Template,
+  deliverySettingsOf,
   publishTargetsOf,
 } from '@ih/shared';
+import { parsePattern, patternVariables, type SinkView } from '@ih/bridge-contract';
 import { z } from 'zod';
 import type { AppDeps } from '../app.js';
 import type { Definition, DefinitionSummary } from '../specs/spec-registry.js';
-import { primaryTargetOf } from '../publish-targets/repo.js';
+import { primaryTargetOf, type TargetRecord } from '../publish-targets/repo.js';
 import type { TemplateRecord } from './repo.js';
 import { semanticsIssues } from './semantics.js';
 import type { PluginCatalogue } from '../plugins/catalogue.js';
@@ -100,6 +102,63 @@ export function choiceProblem(
  * name model choices (phase 4c): an `endpoint/model` ref there is an issue too, while published
  * versions keep running theirs.
  */
+/**
+ * The recipe's name patterns per target (`delivery.settings`): each names a target it delivers
+ * to and a pattern field of that target's sink, parses, and names only fields the recipe has;
+ * and every required pattern field of a sink target has a pattern here or on the target. A sink
+ * not known now is left to the bridge, which checks again when it accepts a delivery.
+ */
+function settingsIssues(
+  t: Template,
+  listed: string[],
+  named: (TargetRecord | null)[],
+  sinkOf: (sinkId: string) => SinkView | undefined,
+): string[] {
+  const settings = deliverySettingsOf(t);
+  const fieldIds = new Set(t.outputs.fields.map((f) => f.id));
+  const out: string[] = [];
+  for (const [targetId, fields] of Object.entries(settings)) {
+    const i = listed.indexOf(targetId);
+    if (i < 0) {
+      out.push(`settings for ${targetId}: the recipe does not deliver to it`);
+      continue;
+    }
+    const target = named[i];
+    const sink = target?.kind === 'sink' ? sinkOf(target.sinkId) : undefined;
+    for (const [fieldId, pattern] of Object.entries(fields)) {
+      const declared = sink?.destinationFields.find((f) => f.id === fieldId);
+      if (sink && declared?.kind !== 'pattern') {
+        out.push(`${targetId}: ${fieldId} is not a name pattern of ${sink.name}`);
+        continue;
+      }
+      if (target && target.kind !== 'sink') {
+        out.push(`${targetId}: an S3 target takes no name patterns`);
+        continue;
+      }
+      const parsed = parsePattern(pattern);
+      if ('error' in parsed) {
+        out.push(`${targetId}.${fieldId}: ${parsed.error}`);
+        continue;
+      }
+      for (const v of patternVariables(pattern)) {
+        if (v.startsWith('field:') && !fieldIds.has(v.slice('field:'.length))) {
+          out.push(`${targetId}.${fieldId}: {${v}} names no field of this recipe`);
+        }
+      }
+    }
+  }
+  listed.forEach((targetId, i) => {
+    const target = named[i];
+    const sink = target?.kind === 'sink' ? sinkOf(target.sinkId) : undefined;
+    for (const f of sink?.destinationFields ?? []) {
+      if (f.kind !== 'pattern' || !f.required) continue;
+      if (settings[targetId]?.[f.id] || target?.destination[f.id]) continue;
+      out.push(`${targetId}: ${f.label} needs a name pattern (set one here, or on the target)`);
+    }
+  });
+  return out;
+}
+
 export async function templateIssues(
   deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets' | 'plugins'> &
     Partial<Pick<AppDeps, 'sinks' | 'bridge'>>,
@@ -130,7 +189,7 @@ export async function templateIssues(
   // Another sink's target takes the graph only if its sink does (one it doesn't know yet is
   // left to the bridge, which refuses the delivery).
   const graph = parsed.data.delivery?.formats?.includes('rdf') ?? false;
-  if (graph && named.some((t) => t?.kind === 'sink') && deps.sinks && deps.bridge) {
+  if (named.some((t) => t?.kind === 'sink') && deps.sinks && deps.bridge) {
     await deps.sinks.refresh(deps.bridge);
   }
   const targetMessages = listed.flatMap((id, i) => {
@@ -149,12 +208,16 @@ export async function templateIssues(
     targetMessages.push('needs a target with the files layout');
   }
   const targetProblems = targetMessages.map((message) => ({ path: 'delivery.publishTo', message }));
+  const settingProblems = settingsIssues(parsed.data, listed, named, (sinkId) =>
+    deps.sinks?.get(sinkId),
+  ).map((message) => ({ path: 'delivery.settings', message }));
   return [
     ...issues,
     ...(typeProblem ? [{ path: 'model', message: typeProblem }] : []),
     ...modelIssues,
     ...(await pluginIssues(deps.plugins, parsed.data)),
     ...targetProblems,
+    ...settingProblems,
     ...(await semanticsIssues(deps.ontologies, parsed.data)),
   ];
 }

@@ -78,6 +78,7 @@ import type {
   PluginInfo,
   PluginPreviewView,
   TargetConnection,
+  PatternPreview,
   SinkInfo,
   SinkTargetCreateBody,
   SinkTargetPatchBody,
@@ -490,6 +491,8 @@ export interface Api {
   listMyConnections(): Promise<MyConnections>;
   /** What a recipe's Publish to picker offers (any designer or admin). */
   listPublishTargetChoices(): Promise<TargetChoice[]>;
+  /** A name pattern resolved against a sample document, or why it is not one. */
+  previewPattern(pattern: string): Promise<PatternPreview>;
   /** The plugins recipe steps can run, as the workers published them (recipe plugins 3b). */
   listPlugins(): Promise<PluginInfo[]>;
   /** The ontology library (ADR 0011); retired ontologies only when asked. */
@@ -1133,6 +1136,8 @@ export function createHttpApi(base = '/api'): Api {
         .then(json<{ connections: TargetConnection[] }>)
         .then((r) => r.connections),
     listPlugins: () => apiFetch(`${base}/plugins`).then(json<PluginInfo[]>),
+    previewPattern: (pattern) =>
+      post<PatternPreview>(`${base}/publish-targets/preview`, { pattern }),
     listPublishTargetChoices: () =>
       apiFetch(`${base}/publish-targets/choices`)
         .then(json<{ choices: TargetChoice[] }>)
