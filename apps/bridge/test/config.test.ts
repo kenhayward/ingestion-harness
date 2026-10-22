@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadBridgeConfig } from '../src/config.js';
+import { crossSiteWarning, loadBridgeConfig } from '../src/config.js';
 
 const base = {
   DATABASE_URL: 'postgres://x/y',
@@ -85,5 +85,29 @@ describe('BRIDGE_APP_ORIGIN', () => {
     ).toThrow(
       "BRIDGE_APP_ORIGIN must differ from BRIDGE_PUBLIC_URL's origin: a page on the app's own origin is never framed",
     );
+  });
+});
+
+describe('crossSiteWarning', () => {
+  it('is quiet for a subdomain of the app, the same host, or no framing at all', () => {
+    expect(crossSiteWarning('https://ctstudio.app', 'https://connections.ctstudio.app')).toBeNull();
+    expect(
+      crossSiteWarning('https://ct.example.com', 'https://connections.example.com'),
+    ).toBeNull();
+    expect(crossSiteWarning('http://localhost:8081', 'http://localhost:8082')).toBeNull();
+    expect(crossSiteWarning(undefined, 'https://elsewhere.example.org')).toBeNull();
+  });
+
+  it('warns when the page would be a third-party frame, whose cookie browsers block', () => {
+    for (const [app, page] of [
+      ['https://ctstudio.app', 'https://connections.other.app'],
+      ['http://localhost:8081', 'http://127.0.0.1:8082'],
+      ['https://ctstudio.app', 'http://connections.ctstudio.app'],
+      ['http://192.168.1.10:8081', 'http://192.168.1.11:8082'],
+    ]) {
+      expect(crossSiteWarning(app, page)).toMatch(
+        /^BRIDGE_PUBLIC_URL .* is not on the same site as BRIDGE_APP_ORIGIN .*: use a subdomain of the app's domain/,
+      );
+    }
   });
 });
