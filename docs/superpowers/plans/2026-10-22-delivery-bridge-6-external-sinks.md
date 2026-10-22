@@ -273,8 +273,8 @@ and contract package that CI publishes on each tag.
     connection. The handoff link takes no connection id, because the producer may not know it.
 - **Receipts.**
   - `JobDeliveryView` gains `links: { label, url }[]`, from the delivery's receipt, read from
-    the bridge's `GET /v1/deliveries/:id` when the job panel opens and cached on
-    `job_deliveries.receipt`.
+  - `JobDeliveryView` gains `links: { label, url }[]`, from the receipt the bridge's delivery
+    events already store (`job_deliveries.receipt`).
   - URLs must be `https:` or `http:`; anything else is dropped.
 
 ## Review Focus

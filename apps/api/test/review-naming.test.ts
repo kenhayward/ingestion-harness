@@ -265,7 +265,23 @@ describe('a review held up by a connection', () => {
   });
 
   it('another refusal does not', async () => {
-    const { app, job } = await seed();
+    const { app, repo, job, targets } = await seed();
+    const deliveryId = randomUUID();
+    await repo.recordDeliveries(job.id, [{ targetId: 'fake-target', deliveryId }]);
+    repo.jobs.set(job.id, { ...repo.jobs.get(job.id)!, status: 'delivering' });
+    await applyEvent(
+      { repo, targets },
+      {
+        eventId: randomUUID(),
+        deliveryId,
+        sequence: 1,
+        status: 'needs_user',
+        error: { class: 'needs_user', code: 'name_conflict', message: 'taken' },
+        receipt: null,
+        at: new Date().toISOString(),
+      },
+    );
+    expect(repo.jobs.get(job.id)!.status).toBe('awaiting_review');
     expect((await app.inject(`/api/jobs/${job.id}/review`)).json().connectionNeeded).toBe(false);
   });
 });

@@ -372,7 +372,12 @@ class PgJobQueue:
         return ActingUser(id=row[0], name=row[1], email=row[2]) if row else None
 
     def flag_connection_needed(self, job_id: str) -> None:
-        self._conn.execute("UPDATE jobs SET connection_needed = true WHERE id = %s", (job_id,))
+        # Only a job that is waiting in review now (not one cancelled meanwhile).
+        self._conn.execute(
+            """UPDATE jobs SET connection_needed = true
+                WHERE id = %s AND status = 'awaiting_review'""",
+            (job_id,),
+        )
 
     def record_delivered_as(self, job_id: str, user_id: str) -> None:
         self._conn.execute(

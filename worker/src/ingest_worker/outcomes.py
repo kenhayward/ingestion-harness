@@ -43,6 +43,8 @@ class AwaitReview:
     #: point if the job was cancelled meanwhile. False: a refused publish, which wrote nothing.
     drafts: bool = True
     note: str = "awaiting review"
+    #: A delivery needs a person's connection: the review offers to add one.
+    connection_needed: bool = False
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,8 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
             queue.record_drafts(job, outcome.outputs, bucket)
             check_cancelled(job, queue)
         queue.await_review(job, outcome.outputs, bucket, outcome.reasons)
+        if outcome.connection_needed:
+            queue.flag_connection_needed(job.id)
         log.info("job %s %s: %s", job.id, outcome.note, "; ".join(outcome.reasons))
         return
     if isinstance(outcome, Delivering):
@@ -102,7 +106,12 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         return
     check_cancelled(job, queue)
     from .bridge.client import BridgeRefused
-    from .template_pipeline import BACK_TO_REVIEW, NEEDS_A_CONNECTION, deliver_publication
+    from .template_pipeline import (
+        BACK_TO_REVIEW,
+        NEEDS_A_CONNECTION,
+        PUBLISH_REFUSED_FOR_A_PERSON,
+        deliver_publication,
+    )
 
     try:
         delivered = deliver_publication(
@@ -121,6 +130,7 @@ def apply_outcome(job: ClaimedJob, outcome: Outcome, queue: JobQueue, deps: Pipe
         if refused.error.code not in BACK_TO_REVIEW:
             raise
         # No uploader, or one without a connection: a reviewer approves it, and delivers it.
+        queue.event(job.id, "warn", PUBLISH_REFUSED_FOR_A_PERSON, {"reason": str(refused)})
         queue.await_review(job, outcome.outputs, bucket, [str(refused)])
         if refused.error.code in NEEDS_A_CONNECTION:
             queue.flag_connection_needed(job.id)

@@ -11,6 +11,7 @@ import {
 import { retiredProblem, RETIRED_DOC } from '../templates/retirement.js';
 import { checkSource, multipartField, NOT_A_SOURCE, TRACKED_CHANGES } from '../uploads.js';
 import { creatorOf } from '../access/routes.js';
+import { CONNECTION_CODES } from '../bridge/events.js';
 
 /**
  * POST /api/documents (multipart/form-data)
@@ -65,8 +66,9 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
         });
         const labelOf = new Map(records.flatMap((t) => (t ? [[t.id, t.label] as const] : [])));
         return {
+          // Only what the uploader can fix: their own connection (on the connections page).
           problems: targets.flatMap((t) =>
-            t.problem
+            t.problem && CONNECTION_CODES.has(t.problem.code)
               ? [{ targetLabel: labelOf.get(t.targetId) ?? t.targetId, message: t.problem.message }]
               : [],
           ),

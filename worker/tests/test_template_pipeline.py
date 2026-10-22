@@ -24,6 +24,7 @@ from ingest_worker.queue import ClaimedJob
 from ingest_worker.rdf import CT
 from ingest_worker.specs import load_specs
 from ingest_worker.storage import MemoryObjectStore
+from ingest_worker.template_pipeline import PUBLISH_REFUSED_FOR_A_PERSON
 
 from .fakes import (
     BucketView,
@@ -783,6 +784,8 @@ def test_an_approver_without_a_connection_sends_the_job_back_to_review_not_to_an
     queue.reviewers["job-1"] = RAE
     run_once(queue, deps, "w1")
     assert queue.reviewed == []  # never to an operator: a reviewer can approve it again
+    assert queue.completed == []  # parked, not also "published 0 outputs"
+    assert [m for _, _, m, _ in queue.event_details if m == PUBLISH_REFUSED_FOR_A_PERSON]
     [(_, _, reasons)] = [a for a in queue.awaiting if a[0] == "job-1"][-1:]
     assert reasons == ["Rae has no connection for default: add one on the connections page"]
     assert documents(bridge) == []

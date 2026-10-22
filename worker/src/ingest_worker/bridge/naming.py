@@ -34,10 +34,10 @@ def _number(value: int | float) -> str:
         return "0"
     magnitude = abs(value)
     if 1e-6 <= magnitude < 1e21:
-        if value.is_integer():
-            return str(int(value))
-        # The shortest round-trip digits (repr), written without an exponent.
-        return format(Decimal(repr(value)), "f")
+        # The shortest round-trip digits (repr), written without an exponent (and, for a whole
+        # number, without a fraction): JS's digits, even past 2**53.
+        text = format(Decimal(repr(value)), "f")
+        return text[:-2] if text.endswith(".0") else text
     mantissa, _, exponent = repr(value).partition("e")
     sign = "-" if exponent.startswith("-") else "+"
     return f"{mantissa.removesuffix('.0')}e{sign}{int(exponent.lstrip('+-'))}"

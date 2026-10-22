@@ -77,6 +77,7 @@ export function UploadStrip({
   const [needs, setNeeds] = useState<{ targetLabel: string; message: string }[]>([]);
   useEffect(() => {
     const specId = spec.split('@')[0];
+    setNeeds([]);
     if (!specId) return;
     let live = true;
     api.preflightUpload(specId).then(

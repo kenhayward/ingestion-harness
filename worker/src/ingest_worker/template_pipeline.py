@@ -104,6 +104,20 @@ GRAPH_VIOLATES = "graph violates shapes"
 PUBLISH_REFUSED = "publish refused: graph violates shapes"
 
 
+#: The event when a delivery refusal a person can settle sends the job back to review.
+PUBLISH_REFUSED_FOR_A_PERSON = "publish refused: a person must settle it"
+
+
+class BackToReview(Exception):
+    """A delivery refused for something a reviewer can settle (BACK_TO_REVIEW): the job goes back
+    to review with the bridge's message; `connection`: the refusal is about a connection."""
+
+    def __init__(self, reason: str, *, connection: bool) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.connection = connection
+
+
 class ShapesViolated(Exception):
     """A publish that delivers RDF whose graph violates the recipe's shapes: back to review."""
 
@@ -345,11 +359,10 @@ def publish_template_job(
             if refused.error.code not in BACK_TO_REVIEW:
                 raise
             # A person can settle it (their connection, a name): back to review, not to an
-            # operator. Approving again delivers as the new approver.
-            queue.await_review(job, [], deps.buckets.outputs, [str(refused)])
-            if refused.error.code in NEEDS_A_CONNECTION:
-                queue.flag_connection_needed(job.id)
-            return []
+            # operator (handle_publish). Approving again delivers as the new approver.
+            raise BackToReview(
+                str(refused), connection=refused.error.code in NEEDS_A_CONNECTION
+            ) from refused
         published = delivered.outputs
         if on_published is not None:
             on_published(targets, delivered)

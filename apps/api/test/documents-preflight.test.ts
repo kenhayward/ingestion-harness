@@ -65,6 +65,19 @@ describe('POST /api/documents/preflight', () => {
     ]);
   });
 
+  it("leaves out problems a connection can't fix (a sink that is down)", async () => {
+    const c = await setup();
+    c.bridge.preflightProblems = {
+      'fake-target': { class: 'retryable', code: 'sink_unavailable', message: 'down' },
+    };
+    const res = await c.app.inject({
+      method: 'POST',
+      url: '/api/documents/preflight',
+      payload: { specId: 'letter' },
+    });
+    expect(res.json()).toEqual({ problems: [] });
+  });
+
   it('never depends on the bridge: down, it answers no problems', async () => {
     const c = await setup();
     c.bridge.failNext = new Error('connect ECONNREFUSED');
