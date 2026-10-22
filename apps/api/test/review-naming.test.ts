@@ -182,7 +182,7 @@ describe('a name the target refused (name_conflict)', () => {
     );
   });
 
-  it('clears once a later delivery of that target succeeds', async () => {
+  it('clears once a later round of deliveries is recorded', async () => {
     const { app, repo, job } = await refused();
     await repo.recordDeliveries(job.id, [{ targetId: 'fake-target', deliveryId: randomUUID() }]);
     const [target] = (await app.inject(`/api/jobs/${job.id}/naming`)).json().targets;
@@ -195,5 +195,40 @@ describe('approving records who approved, by id', () => {
     const { app, repo, job } = await seed();
     await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/approve`, payload: {} });
     expect(repo.reviewerIds.get(job.id)).toBe('unit-test-admin');
+  });
+});
+
+describe("names follow the reviewer's edits", () => {
+  it('resolves against the edited field, and the latest edit wins', async () => {
+    const { app, job } = await seed();
+    await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job.id}/edits`,
+      payload: { field: 'sender', value: 'Acme Holdings' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job.id}/edits`,
+      payload: { field: 'sender', value: 'Acme Group' },
+    });
+    const [target] = (await app.inject(`/api/jobs/${job.id}/naming`)).json().targets;
+    expect(target.fields[0].value).toBe('Acme Group');
+  });
+
+  it('stores trimmed overrides, and refuses a target with no names', async () => {
+    const { app, repo, job } = await seed();
+    const empty = await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job.id}/approve`,
+      payload: { overrides: { 'fake-target': {} } },
+    });
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json()).toEqual({ error: 'fake-target: no name given' });
+    await app.inject({
+      method: 'POST',
+      url: `/api/jobs/${job.id}/approve`,
+      payload: { overrides: { 'fake-target': { name: '  Acme  ' } } },
+    });
+    expect(await repo.deliveryOverrides(job.id)).toEqual({ 'fake-target': { name: 'Acme' } });
   });
 });

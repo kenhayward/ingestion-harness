@@ -800,8 +800,7 @@ Part B covers names:
   - The worker sends them with the delivery.
 - **Name conflicts.** A sink's `name_conflict` with `details.field` (and `value`) marks that field
   in the naming view while it is the latest round's error ("<label> already has another document
-  named <value>: choose another name"). It clears once a later delivery of that target
-  succeeds.
+  named <value>: choose another name"). It clears once a later round of deliveries is recorded (the next approval).
 
 ## Left to the builder
 

@@ -104,6 +104,8 @@ export function parsePattern(pattern: string): Pattern | PatternError {
         if (!t.endsWith("'") || t.length < 2 || t.slice(1, -1).includes("'")) {
           return fail('text beside a literal', offset);
         }
+        // An empty literal never resolves to a name: it is a mistake, not a fallback.
+        if (t.length === 2) return fail('an empty literal', offset);
         alternatives.push({ literal: t.slice(1, -1) });
       } else if (KNOWN.has(t) || FIELD.test(t)) {
         alternatives.push({ variable: t });

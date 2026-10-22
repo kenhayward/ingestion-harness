@@ -96,13 +96,6 @@ export function choiceProblem(
 }
 
 /**
- * `validateTemplate` plus the models its steps name: only models offered on their endpoint run
- * (ADR 0010), so a step naming another one is an issue (and blocks publishing). An alias the
- * database does not define is left to the worker. A draft's steps and its document type model
- * name model choices (phase 4c): an `endpoint/model` ref there is an issue too, while published
- * versions keep running theirs.
- */
-/**
  * The recipe's name patterns per target (`delivery.settings`): each names a target it delivers
  * to and a pattern field of that target's sink, parses, and names only fields the recipe has;
  * and every required pattern field of a sink target has a pattern here or on the target. A sink
@@ -159,6 +152,13 @@ function settingsIssues(
   return out;
 }
 
+/**
+ * `validateTemplate` plus the models its steps name: only models offered on their endpoint run
+ * (ADR 0010), so a step naming another one is an issue (and blocks publishing). An alias the
+ * database does not define is left to the worker. A draft's steps and its document type model
+ * name model choices (phase 4c): an `endpoint/model` ref there is an issue too, while published
+ * versions keep running theirs.
+ */
 export async function templateIssues(
   deps: Pick<AppDeps, 'repo' | 'llm' | 'ontologies' | 'targets' | 'plugins'> &
     Partial<Pick<AppDeps, 'sinks' | 'bridge'>>,

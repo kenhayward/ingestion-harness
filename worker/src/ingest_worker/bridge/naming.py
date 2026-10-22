@@ -5,6 +5,7 @@ packages/bridge-contract/src/naming.ts by the shared fixture `naming.json`."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 
@@ -25,10 +26,21 @@ def _text(value: Any) -> str | None:
 
 
 def _number(value: int | float) -> str:
-    """As JavaScript's String(n) writes it: `42`, `0.5`, `3` for 3.0."""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return repr(value)
+    """As JavaScript's String(n) writes it: `42`, `0.5`, `3` for 3.0, `0.00005`, and the
+    exponent form below 1e-6 and from 1e21 (`1e-7`, `1.5e-8`, `1e+21`)."""
+    if isinstance(value, int):
+        return str(value)
+    if value == 0:
+        return "0"
+    magnitude = abs(value)
+    if 1e-6 <= magnitude < 1e21:
+        if value.is_integer():
+            return str(int(value))
+        # The shortest round-trip digits (repr), written without an exponent.
+        return format(Decimal(repr(value)), "f")
+    mantissa, _, exponent = repr(value).partition("e")
+    sign = "-" if exponent.startswith("-") else "+"
+    return f"{mantissa.removesuffix('.0')}e{sign}{int(exponent.lstrip('+-'))}"
 
 
 def naming_inputs(

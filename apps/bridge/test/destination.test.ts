@@ -135,3 +135,16 @@ describe('resolveDestination', () => {
     ).toEqual({ bucket: 'b', prefix: 'p/' });
   });
 });
+
+describe('resolveDestination, blank names', () => {
+  it('a required name that resolves to blanks is unresolved, naming the field', () => {
+    expect(refusal(() => resolve({ patterns: { name: '   ' } }))).toMatchObject({
+      code: 'pattern_unresolved',
+      message: 'Fake target: Name resolves to a blank name',
+    });
+    expect(resolve({ overrides: { name: '  Chosen  ' } })).toEqual({
+      space: 'reports',
+      name: 'Chosen',
+    });
+  });
+});

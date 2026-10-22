@@ -385,6 +385,15 @@ export const targetRoutes: FastifyPluginAsync = async (app) => {
             );
           }
           connectionId = own.id;
+        } else if (
+          described.instances.length
+            ? !described.instances.some((i) => i.id === body.instanceId)
+            : body.instanceId !== null
+        ) {
+          throw refuse(
+            'content_rejected',
+            `${body.instanceId ?? 'no instance'} is not an instance of ${body.sinkId}`,
+          );
         } else if (connectionId !== null) {
           // Only a shared connection of this sink: never a person's, nor another sink's.
           const shared = await app.deps.connections.get(connectionId);

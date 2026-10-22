@@ -4,19 +4,43 @@
       "name": "fields of every kind, the source, the recipe, the job and the date",
       "document": {
         "fields": {
-          "title": { "value": "Q3 report", "page": 1 },
-          "count": { "value": 42 },
-          "ratio": { "value": 0.5 },
-          "approved": { "value": true },
-          "tags": { "value": ["a", "b", 3] },
-          "path": { "value": "a/b" },
-          "missing": { "value": null },
-          "nested": { "value": { "unit": "mg" } },
-          "blank": { "value": "" }
+          "title": {
+            "value": "Q3 report",
+            "page": 1
+          },
+          "count": {
+            "value": 42
+          },
+          "ratio": {
+            "value": 0.5
+          },
+          "approved": {
+            "value": true
+          },
+          "tags": {
+            "value": ["a", "b", 3]
+          },
+          "path": {
+            "value": "a/b"
+          },
+          "missing": {
+            "value": null
+          },
+          "nested": {
+            "value": {
+              "unit": "mg"
+            }
+          },
+          "blank": {
+            "value": ""
+          }
         }
       },
       "jobId": "11111111-2222-4333-8444-555555555555",
-      "recipe": { "id": "letter", "version": 3 },
+      "recipe": {
+        "id": "letter",
+        "version": 3
+      },
       "source": {
         "filename": "Q3 report.final.docx",
         "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -40,9 +64,14 @@
     },
     {
       "name": "midnight UTC is the new day; a filename with no extension is its own stem",
-      "document": { "fields": {} },
+      "document": {
+        "fields": {}
+      },
       "jobId": "j1",
-      "recipe": { "id": "r", "version": 1 },
+      "recipe": {
+        "id": "r",
+        "version": 1
+      },
       "source": {
         "filename": "README",
         "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -57,17 +86,72 @@
         "job.id": "j1",
         "date": "2026-10-23"
       }
+    },
+    {
+      "name": "small and large numbers as JavaScript writes them",
+      "document": {
+        "fields": {
+          "tiny": {
+            "value": 5e-5
+          },
+          "tinier": {
+            "value": 1e-7
+          },
+          "smallest": {
+            "value": 1.5e-8
+          },
+          "big": {
+            "value": 1e21
+          },
+          "whole": {
+            "value": 3.0
+          },
+          "negative": {
+            "value": -0.25
+          }
+        }
+      },
+      "jobId": "j2",
+      "recipe": {
+        "id": "r",
+        "version": 1
+      },
+      "source": {
+        "filename": "n.pdf",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "publishedAt": "2026-10-22T12:00:00.000Z",
+      "naming": {
+        "field:tiny": "0.00005",
+        "field:tinier": "1e-7",
+        "field:smallest": "1.5e-8",
+        "field:big": "1e+21",
+        "field:whole": "3",
+        "field:negative": "-0.25",
+        "source.filename": "n.pdf",
+        "source.stem": "n",
+        "source.sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "recipe.id": "r",
+        "recipe.version": "1",
+        "job.id": "j2",
+        "date": "2026-10-22"
+      }
     }
   ],
   "patterns": [
     {
       "pattern": "{field:title} {date}",
-      "naming": { "field:title": "Q3", "date": "2026-10-22" },
+      "naming": {
+        "field:title": "Q3",
+        "date": "2026-10-22"
+      },
       "value": "Q3 2026-10-22"
     },
     {
       "pattern": "{field:title|source.stem}",
-      "naming": { "source.stem": "scan" },
+      "naming": {
+        "source.stem": "scan"
+      },
       "value": "scan"
     },
     {
@@ -77,15 +161,34 @@
     },
     {
       "pattern": "{field:title | source.stem}",
-      "naming": { "field:title": "", "source.stem": "scan" },
+      "naming": {
+        "field:title": "",
+        "source.stem": "scan"
+      },
       "value": "scan"
     },
-    { "pattern": "{{literal}} braces", "naming": {}, "value": "{literal} braces" },
-    { "pattern": "no placeholders", "naming": {}, "value": "no placeholders" },
-    { "pattern": "{field:path}", "naming": { "field:path": "a/b {x}" }, "value": "a/b {x}" },
+    {
+      "pattern": "{{literal}} braces",
+      "naming": {},
+      "value": "{literal} braces"
+    },
+    {
+      "pattern": "no placeholders",
+      "naming": {},
+      "value": "no placeholders"
+    },
+    {
+      "pattern": "{field:path}",
+      "naming": {
+        "field:path": "a/b {x}"
+      },
+      "value": "a/b {x}"
+    },
     {
       "pattern": "{field:title}-{field:code|recipe.id}",
-      "naming": { "field:title": "T" },
+      "naming": {
+        "field:title": "T"
+      },
       "unresolved": ["field:code", "recipe.id"]
     },
     {
@@ -122,6 +225,16 @@
       "pattern": "{'unclosed}",
       "naming": {},
       "error": "`{'unclosed}`: unclosed ' at 1"
+    },
+    {
+      "pattern": "{''}",
+      "naming": {},
+      "error": "`{''}`: an empty literal at 1"
+    },
+    {
+      "pattern": "{field:x|''}",
+      "naming": {},
+      "error": "`{field:x|''}`: an empty literal at 9"
     }
   ]
 }

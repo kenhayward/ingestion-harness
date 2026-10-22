@@ -61,11 +61,6 @@ export function validateDefinition(def: unknown): string[] {
 }
 
 /**
- * A delivery that publishes to `ids`, in order: a string for one target, a list for two or more
- * (so a recipe that keeps one target keeps its hash), and no `publishTo` for the default target
- * alone or none. No `delivery` at all when nothing is left.
- */
-/**
  * The delivery with the name pattern of one target's field set (blank: removed). `settings` is
  * written only while it holds a pattern, so an untouched recipe keeps its hash.
  */
@@ -87,6 +82,11 @@ export function withSetting(
   return Object.keys(rest).length === 0 ? undefined : rest;
 }
 
+/**
+ * A delivery that publishes to `ids`, in order: a string for one target, a list for two or more
+ * (so a recipe that keeps one target keeps its hash), and no `publishTo` for the default target
+ * alone or none. No `delivery` at all when nothing is left.
+ */
 export function withPublishTo(
   delivery: object | undefined,
   ids: readonly string[],

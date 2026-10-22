@@ -561,3 +561,32 @@ describe('a personal sink, polled', () => {
     expect(await connections.get('u-pat')).toMatchObject({ status: 'ok', lastUsedAt: at(60) });
   });
 });
+
+describe('a delivery accepted before phase 6', () => {
+  it('has no resolved destination: its overrides merge over the target, as before', async () => {
+    const { deps, deliveries, sink } = await setup();
+    await deliveries.create(
+      {
+        id: 'p-old',
+        kind: 'document',
+        idempotencyKey: documentPackage.idempotencyKey,
+        manifest: {},
+        stagedKey: 'packages/p-old.json',
+        expiresAt: null,
+      },
+      [
+        {
+          id: 'd-old',
+          targetId: 't1',
+          actingUser: null,
+          overrides: { prefix: 'old/' },
+          destination: null,
+        },
+      ],
+      T0,
+    );
+    await deps.packages.put('packages/p-old.json', documentPackage);
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.destination).toEqual({ bucket: 'b', prefix: 'old/' });
+  });
+});

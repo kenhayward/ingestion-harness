@@ -534,3 +534,35 @@ describe('POST /v1/targets:browse of a shared sink', () => {
     }
   });
 });
+
+describe('POST /v1/targets:browse, more', () => {
+  it("never uses a connection the client names for a personal sink: only the admin's own", async () => {
+    const { call, app } = await setup();
+    await call('POST', '/v1/targets:browse', {
+      sinkId: 'tree',
+      instanceId: 'sandbox',
+      connectionId: 'acme-shared',
+      field: 'space',
+      parentId: null,
+      cursor: null,
+      actingUser: { id: 'u1', name: 'Ada', email: null },
+    });
+    const tree = app.deps.sinks.get('tree') as unknown as TreeSink;
+    expect(tree.browsed.at(-1)?.credential).toEqual({ token: 'ada-token' });
+  });
+
+  it("refuses an instance a shared sink doesn't declare", async () => {
+    const { call } = await setup();
+    const res = await call('POST', '/v1/targets:browse', {
+      sinkId: 'shelf',
+      instanceId: 'elsewhere',
+      connectionId: 'shelf-keys',
+      field: 'space',
+      parentId: null,
+      cursor: null,
+      actingUser: null,
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().message).toBe('elsewhere is not an instance of shelf');
+  });
+});

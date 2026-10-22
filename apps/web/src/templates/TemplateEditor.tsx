@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { parse as parseYaml, stringify as toYaml } from 'yaml';
 import {
   describeDefinitionChange,
@@ -173,6 +173,8 @@ export function TemplateEditor({
   const modelName = (id: string) => choiceName(id, models);
   /** The publishing targets a recipe may name (any designer may list them); [] until loaded. */
   const [targets, setTargets] = useState<TargetChoice[]>([]);
+  // Stable, so a re-render of the editor does not ask for every preview again.
+  const previewPattern = useCallback((pattern: string) => api.previewPattern(pattern), [api]);
   useEffect(() => {
     let live = true;
     api.listPublishTargetChoices().then(
@@ -640,7 +642,7 @@ export function TemplateEditor({
                       onSetting={(targetId, fieldId, pattern) =>
                         update(['delivery'], withSetting(def.delivery, targetId, fieldId, pattern))
                       }
-                      preview={(pattern) => api.previewPattern(pattern)}
+                      preview={previewPattern}
                     />
                   </div>
                   <Area

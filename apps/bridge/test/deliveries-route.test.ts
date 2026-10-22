@@ -182,7 +182,7 @@ describe('POST /v1/deliveries to an unavailable sink', () => {
 });
 
 describe('POST /v1/deliveries resolves name patterns', () => {
-  it('refuses a pattern that resolves to nothing, writing nothing', async () => {
+  it('refuses an override of a fixed field, writing nothing', async () => {
     const { app, deliveries } = await setup();
     const res = await signedInject(app, KEY, {
       method: 'POST',
@@ -191,6 +191,50 @@ describe('POST /v1/deliveries resolves name patterns', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ code: 'content_rejected' });
+    expect(await deliveries.claim(new Date(), 300)).toBeNull();
+  });
+});
+
+describe('POST /v1/deliveries, a pattern that resolves to nothing', () => {
+  it('is pattern_unresolved, naming the field', async () => {
+    const named = new FakeSink({
+      capabilities: {
+        browse: false,
+        replace: true,
+        withdraw: false,
+        readBack: false,
+        accepts: ['files', 'data'],
+      },
+      destinationFields: [
+        {
+          id: 'bucket',
+          label: 'Bucket',
+          kind: 'fixed',
+          required: true,
+          overridable: false,
+          browse: false,
+        },
+        {
+          id: 'name',
+          label: 'Name',
+          kind: 'pattern',
+          required: true,
+          overridable: true,
+          browse: false,
+        },
+      ],
+    });
+    const { app, deliveries } = await setup(async () => new MapSinkRegistry({ fake: named }));
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: { ...request(['t1']), patterns: { t1: { name: '{field:nowhere}' } } },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      code: 'pattern_unresolved',
+      details: { targetId: 't1', field: 'name', variables: ['field:nowhere'] },
+    });
     expect(await deliveries.claim(new Date(), 300)).toBeNull();
   });
 });

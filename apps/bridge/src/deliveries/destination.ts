@@ -48,8 +48,8 @@ export function resolveDestination(input: {
   }
   for (const f of fields) {
     if (f.kind !== 'pattern') continue;
-    const override = overrides[f.id];
-    if (override !== undefined && override !== '') {
+    const override = overrides[f.id]?.trim();
+    if (override) {
       out[f.id] = override;
       continue;
     }
@@ -63,8 +63,9 @@ export function resolveDestination(input: {
       if ('value' in resolved) value = resolved.value;
       else variables = resolved.unresolved;
     }
-    if (value !== '') {
-      out[f.id] = value;
+    const name = value.trim();
+    if (name !== '') {
+      out[f.id] = name;
       continue;
     }
     if (!f.required) continue;
@@ -73,7 +74,9 @@ export function resolveDestination(input: {
         'pattern_unresolved',
         variables.length
           ? `${target.label}: ${f.label} resolves to nothing: the document has no ${variables.join(', ')}`
-          : `${target.label}: ${f.label} has no name pattern`,
+          : pattern
+            ? `${target.label}: ${f.label} resolves to a blank name`
+            : `${target.label}: ${f.label} has no name pattern`,
         { targetId, field: f.id, variables },
       ),
     );

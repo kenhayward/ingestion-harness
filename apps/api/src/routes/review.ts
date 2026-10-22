@@ -108,7 +108,15 @@ async function namingOf(app: FastifyInstance, ctx: ReviewContext): Promise<JobNa
   const sinks = app.deps.sinks!;
   const records = await Promise.all(listed.map((id) => app.deps.targets.get(id)));
   if (records.some((t) => t?.kind === 'sink')) await sinks.refresh(app.deps.bridge);
-  const fields = (ctx.document.fields ?? {}) as Record<string, { value?: unknown }>;
+  // The draft's fields with the reviewer's edits applied, as the worker delivers them (the
+  // latest edit of a field wins).
+  const fields: Record<string, { value?: unknown }> = {
+    ...((ctx.document.fields ?? {}) as Record<string, { value?: unknown }>),
+  };
+  const edits = [...(await app.deps.repo.listEdits(ctx.job.id))].sort((a, b) => a.id - b.id);
+  for (const e of edits) {
+    if (e.field !== null) fields[e.field] = { ...fields[e.field], value: e.newValue };
+  }
   const naming = namingInputs({
     fields,
     jobId: ctx.job.id,
@@ -156,6 +164,7 @@ function overridesProblem(overrides: DeliveryOverrides, naming: JobNaming): stri
   for (const [targetId, fields] of Object.entries(overrides)) {
     const target = naming.targets.find((t) => t.targetId === targetId);
     if (!target) return `${targetId}: no name a reviewer can change`;
+    if (Object.keys(fields).length === 0) return `${targetId}: no name given`;
     for (const [fieldId, value] of Object.entries(fields)) {
       if (!target.fields.some((f) => f.id === fieldId)) {
         return `${targetId}: ${fieldId} is not a name a reviewer can change`;
@@ -330,7 +339,13 @@ export const reviewRoutes: FastifyPluginAsync = async (app) => {
       if (!body.success) return reply.code(400).send({ error: body.error.issues });
       if (!UUID.safeParse(req.params.id).success)
         return reply.code(404).send({ error: 'not found' });
-      const overrides = body.data.overrides ?? {};
+      // Names as the reviewer means them: without surrounding spaces.
+      const overrides = Object.fromEntries(
+        Object.entries(body.data.overrides ?? {}).map(([t, fields]) => [
+          t,
+          Object.fromEntries(Object.entries(fields).map(([f, v]) => [f, v.trim()])),
+        ]),
+      );
       if (Object.keys(overrides).length) {
         const ctx = await loadContext(app, req.params.id, reply);
         if (!ctx) return reply;
