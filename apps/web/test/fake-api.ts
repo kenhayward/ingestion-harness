@@ -400,6 +400,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     listLlmEndpoints: vi.fn(async () => []),
     listPublishTargets: vi.fn(async () => []),
     openConnections: vi.fn(async () => undefined),
+    connectionsLink: vi.fn(async () => ({
+      url: 'https://connections.example.com/connections/start?code=x',
+      embed: null,
+    })),
     listMyConnections: vi.fn(async () => ({ personalSinks: false, connections: [] })),
     listSinks: vi.fn(async () => []),
     browseSink: vi.fn(async () => ({ nodes: [], nextCursor: null })),
