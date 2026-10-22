@@ -26,6 +26,7 @@ export interface BridgeDeps {
     | 'BRIDGE_PACKAGE_RETENTION_DAYS'
     | 'BRIDGE_PUBLIC_URL'
     | 'BRIDGE_COOKIE_SECURE'
+    | 'BRIDGE_APP_ORIGIN'
     | 'BRIDGE_STAGING_BUCKET'
     | 'secrets'
   >;

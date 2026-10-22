@@ -10,7 +10,7 @@ import { S3Sink } from '../src/sinks/s3.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import type { ProducerClient } from '../src/producer/client.js';
 import { connection } from './connections-contract.js';
-import { SECRETS, testBridge } from './helpers.js';
+import { SECRETS, TEST_CONFIG, testBridge } from './helpers.js';
 import { s3Failure, ThrowingStore } from './s3-fakes.js';
 
 const SECRET = 'wJalrXUtnFEMI-the-typed-secret';
@@ -45,7 +45,11 @@ const acmeSink = () =>
     ],
   });
 
-async function setup(store = new MemoryObjectStore(), acme: FakeSink | null = null) {
+async function setup(
+  store = new MemoryObjectStore(),
+  acme: FakeSink | null = null,
+  config: Partial<typeof TEST_CONFIG> = {},
+) {
   const targets = new MemoryTargetRepo();
   const connections = new MemoryConnectionRepo(targets);
   await connections.put(connection('internal', { name: 'This deployment', fields: {} }));
@@ -60,6 +64,7 @@ async function setup(store = new MemoryObjectStore(), acme: FakeSink | null = nu
     make: () => store,
   });
   const app = await testBridge({
+    config: { ...TEST_CONFIG, ...config },
     targets,
     connections,
     sinks: new MapSinkRegistry(acme ? { s3, acme } : { s3 }),
@@ -501,5 +506,89 @@ describe('personal connections on the page', () => {
     const res = await post(app, '/connections', cookie!.value, personal('forged'));
     expect(res.statusCode).toBe(403);
     expect(await connections.list({ kind: 'personal' })).toEqual([]);
+  });
+});
+
+describe('the page in a CT Studio frame', () => {
+  const APP = 'https://ctstudio.app';
+  const framed = (acme: FakeSink | null = acmeSink()) =>
+    setup(new MemoryObjectStore(), acme, { BRIDGE_APP_ORIGIN: APP });
+  const csp = (r: LightMyRequestResponse) => r.headers['content-security-policy'];
+  /** Follows a 303 with the session cookie. */
+  const follow = (app: FastifyInstance, r: LightMyRequestResponse, cookie: string) =>
+    app.inject({
+      url: `/connections${String(r.headers.location).split('/connections')[1]}`,
+      cookies: { bridge_session: cookie },
+    });
+
+  it('may be framed by BRIDGE_APP_ORIGIN alone, and by nobody without it', async () => {
+    const { app } = await framed();
+    const { page } = await login(app);
+    expect(csp(page)).toBe(`default-src 'self'; form-action 'self'; frame-ancestors ${APP}`);
+    expect(page.body).toContain(`data-app-origin="${APP}"`);
+    const plain = await setup();
+    const other = await login(plain.app);
+    expect(csp(other.page)).toBe("default-src 'self'; form-action 'self'; frame-ancestors 'none'");
+    expect(other.page.body).toContain('data-app-origin=""');
+  });
+
+  it('serves the script that tells CT Studio, and loads it on every page', async () => {
+    const { app } = await framed();
+    const js = await app.inject('/connections/page.js');
+    expect(js.statusCode).toBe(200);
+    expect(js.headers['content-type']).toMatch(/^text\/javascript/);
+    expect(js.body).toContain('postMessage');
+    expect(js.body).toContain('ct-bridge');
+    const { page } = await login(app);
+    expect(page.body).toContain('<script src="/bridge/connections/page.js" defer></script>');
+  });
+
+  it('shows the theme CT Studio asked for, and ignores any other', async () => {
+    const { app } = await framed();
+    const start = await app.inject('/connections/start?code=good&theme=dark');
+    const cookie = start.cookies.find((c) => c.name === 'bridge_session')!.value;
+    const page = await follow(app, start, cookie);
+    expect(page.body).toContain('<html lang="en" data-theme="dark">');
+    const odd = await app.inject('/connections/start?code=designer&theme=blue');
+    const oddPage = await follow(
+      app,
+      odd,
+      odd.cookies.find((c) => c.name === 'bridge_session')!.value,
+    );
+    expect(oddPage.body).toContain('<html lang="en">');
+    expect(oddPage.body).not.toContain('blue');
+  });
+
+  it('tells CT Studio after every change, and not after a refusal or a plain view', async () => {
+    const { app, connections } = await framed();
+    const { cookie, csrf, page } = await login(app, 'olive');
+    const c = cookie!.value;
+    expect(page.body).not.toContain('data-event');
+    const refused = await post(app, '/connections', c, personal(csrf, { name: '' }));
+    expect(refused.statusCode).toBe(422);
+    expect(refused.body).not.toContain('data-event');
+    const added = await post(app, '/connections', c, personal(csrf));
+    expect(added.body).toContain('data-event="changed"');
+    const [mine] = await connections.list({ kind: 'personal' });
+    const tested = await post(app, `/connections/${mine!.id}/test`, c, { csrf });
+    expect(tested.body).toContain('data-event="changed"');
+    const saved = await post(app, `/connections/${mine!.id}`, c, {
+      csrf,
+      name: 'Renamed',
+      username: 'alice',
+    });
+    expect(saved.statusCode).toBe(303);
+    expect((await follow(app, saved, c)).body).toContain('data-event="changed"');
+    const deleted = await post(app, `/connections/${mine!.id}/delete`, c, { csrf });
+    expect((await follow(app, deleted, c)).body).toContain('data-event="changed"');
+  });
+
+  it('tells CT Studio when the session has ended or the link expired', async () => {
+    const { app } = await framed();
+    const ended = await app.inject('/connections');
+    expect(ended.statusCode).toBe(401);
+    expect(ended.body).toContain('data-event="ended"');
+    const expired = await app.inject('/connections/start?code=nope');
+    expect(expired.body).toContain('data-event="ended"');
   });
 });

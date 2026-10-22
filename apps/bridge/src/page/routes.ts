@@ -21,6 +21,7 @@ import {
   type PersonalDraft,
   type Shell,
 } from './html.js';
+import { PAGE_JS } from './script.js';
 import {
   csrfMatches,
   newSession,
@@ -31,7 +32,9 @@ import {
   type PageSession,
 } from './session.js';
 
-const CSP = "default-src 'self'; form-action 'self'; frame-ancestors 'none'";
+/** The page's headers' CSP: framed by CT Studio's origin alone (BRIDGE_APP_ORIGIN), or nobody. */
+const cspFor = (appOrigin: string | undefined) =>
+  `default-src 'self'; form-action 'self'; frame-ancestors ${appOrigin ?? "'none'"}`;
 const EXPIRED = 'This link has expired. Open Connections again from CT Studio.';
 const ENDED = 'Your session has ended. Open Connections again from CT Studio.';
 /** A non-secret S3 field naming the variable its access key id is read from. */
@@ -71,6 +74,8 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   const publicUrl = new URL(config.BRIDGE_PUBLIC_URL);
   const base = publicUrl.pathname.replace(/\/+$/, '');
   const key = config.BRIDGE_CLIENT_KEY;
+  const CSP = cspFor(config.BRIDGE_APP_ORIGIN);
+  const appOrigin = config.BRIDGE_APP_ORIGIN ?? null;
 
   app.addContentTypeParser(
     'application/x-www-form-urlencoded',
@@ -85,11 +90,21 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     reply.header('referrer-policy', 'no-referrer');
   });
 
-  const shell = (s?: PageSession): Shell => ({ base, ...(s ? { user: s.user } : {}) });
+  const shell = (s?: PageSession, event?: Shell['event']): Shell => ({
+    base,
+    appOrigin,
+    ...(s ? { user: s.user } : {}),
+    ...(s?.theme ? { theme: s.theme } : {}),
+    ...(event ? { event } : {}),
+  });
+  /** The pages that end a session: CT Studio offers to open the page again. */
+  const ended = (reply: FastifyReply, title: string, text: string) =>
+    html(reply, 401, message(shell(undefined, 'ended'), title, text));
   const html = (reply: FastifyReply, code: number, body: string) =>
     reply.code(code).type('text/html; charset=utf-8').send(body);
+  /** Back to the list after a change, which the list then tells CT Studio about. */
   const toList = (reply: FastifyReply) =>
-    reply.code(303).header('location', `${base}/connections`).send();
+    reply.code(303).header('location', `${base}/connections?changed=1`).send();
 
   /** The sinks of one connection kind that ask for credentials: their describe, by id. */
   const sinksOf = async (kind: Connection['kind']): Promise<Record<string, SinkDescribe>> => {
@@ -117,7 +132,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
   const formPost = (req: FastifyRequest, reply: FastifyReply): PageSession | null => {
     const s = session(req);
     if (!s) {
-      void html(reply, 401, message(shell(), 'Session ended', ENDED));
+      void ended(reply, 'Session ended', ENDED);
       return null;
     }
     if (!csrfMatches(s, formOf(req.body).csrf)) {
@@ -136,12 +151,14 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       notice?: { text: string; error: boolean };
       draft?: FormValues;
       personalDraft?: PersonalDraft;
+      /** A connection was added, saved, tested or deleted: CT Studio refreshes its lists. */
+      changed?: boolean;
     } = {},
   ) =>
     html(
       reply,
       code,
-      listPage(shell(s), {
+      listPage(shell(s, extra.changed ? 'changed' : undefined), {
         personal: await app.deps.connections.list({ kind: 'personal', owner: s.user.id }),
         personalSinks: await personalSinks(),
         shared: isAdmin(s)
@@ -200,6 +217,10 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     reply.type('text/css; charset=utf-8').send(PAGE_CSS),
   );
 
+  app.get('/connections/page.js', { schema: { hide: true } }, async (_req, reply) =>
+    reply.type('text/javascript; charset=utf-8').send(PAGE_JS),
+  );
+
   app.get('/connections/start', { schema: { hide: true } }, async (req, reply) => {
     const code = (req.query as Record<string, unknown>).code;
     let user = null;
@@ -215,8 +236,10 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
         );
       }
     }
-    if (!user) return html(reply, 401, message(shell(), 'Link expired', EXPIRED));
-    const value = sealSession(newSession(user, Date.now()), key);
+    if (!user) return ended(reply, 'Link expired', EXPIRED);
+    const asked = (req.query as Record<string, unknown>).theme;
+    const theme = asked === 'light' || asked === 'dark' ? asked : undefined;
+    const value = sealSession(newSession(user, Date.now(), theme), key);
     const attrs = [
       `${SESSION_COOKIE}=${value}`,
       `Path=${base || '/'}`,
@@ -234,8 +257,10 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/connections', { schema: { hide: true } }, async (req, reply) => {
     const s = session(req);
-    if (!s) return html(reply, 401, message(shell(), 'Session ended', ENDED));
-    return renderList(reply, s);
+    if (!s) return ended(reply, 'Session ended', ENDED);
+    return renderList(reply, s, 200, {
+      changed: (req.query as Record<string, unknown>).changed === '1',
+    });
   });
 
   /**
@@ -267,7 +292,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/connections/:id', { schema: { hide: true } }, async (req, reply) => {
     const s = session(req);
-    if (!s) return html(reply, 401, message(shell(), 'Session ended', ENDED));
+    if (!s) return ended(reply, 'Session ended', ENDED);
     const c = await editable(reply, s, (req.params as { id: string }).id);
     if (!c) return reply;
     return html(
@@ -335,6 +360,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
       throw err;
     }
     return renderList(reply, s, 200, {
+      changed: true,
       notice: failure
         ? { text: `${values.name}: saved untested: ${failure}.`, error: true }
         : { text: connected({ kind: 'personal', name: values.name }, identity), error: false },
@@ -479,6 +505,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     }
     await app.deps.connections.mark(c.id, failure ? 'needs_attention' : 'ok', failure);
     return renderList(reply, s, 200, {
+      changed: true,
       notice: failure
         ? { text: `${c.name}: the test failed: ${failure}.`, error: true }
         : { text: connected(c, identity), error: false },

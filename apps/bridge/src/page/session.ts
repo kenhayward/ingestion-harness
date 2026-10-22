@@ -11,23 +11,29 @@ export interface PageSession {
   csrf: string;
   /** Unix seconds. */
   expires: number;
+  /** The colour mode CT Studio showed when it opened the page; unset: the OS's. */
+  theme?: PageTheme;
 }
+
+export type PageTheme = 'light' | 'dark';
 
 const SessionSchema = z.strictObject({
   user: HandoffUserSchema,
   csrf: z.string().min(1),
   expires: z.number().int(),
+  theme: z.enum(['light', 'dark']).optional(),
 });
 
 const mac = (key: string, payload: string) =>
   createHmac('sha256', `page-session\n${key}`).update(payload).digest('base64url');
 
 /** A new session for `user`, valid for 30 minutes from `now` (ms). */
-export function newSession(user: HandoffUser, now: number): PageSession {
+export function newSession(user: HandoffUser, now: number, theme?: PageTheme): PageSession {
   return {
     user,
     csrf: randomBytes(24).toString('base64url'),
     expires: Math.floor(now / 1000) + SESSION_SECONDS,
+    ...(theme ? { theme } : {}),
   };
 }
 

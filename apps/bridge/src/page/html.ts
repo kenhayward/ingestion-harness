@@ -15,18 +15,27 @@ export interface Shell {
   /** The page's path prefix under BRIDGE_PUBLIC_URL (`''` or e.g. `/bridge`). */
   base: string;
   user?: { name: string };
+  /** BRIDGE_APP_ORIGIN: where the page's script tells CT Studio of news; null: nowhere. */
+  appOrigin: string | null;
+  /** The colour mode to show; unset: the OS's. */
+  theme?: 'light' | 'dark';
+  /** News for CT Studio: connections changed, or the session ended. */
+  event?: 'changed' | 'ended';
 }
 
 export function layout(shell: Shell, title: string, body: string): string {
+  const theme = shell.theme ? ` data-theme="${shell.theme}"` : '';
+  const event = shell.event ? ` data-event="${shell.event}"` : '';
   return `<!doctype html>
-<html lang="en">
+<html lang="en"${theme}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} · CT Studio bridge</title>
 <link rel="stylesheet" href="${esc(shell.base)}/connections/page.css">
+<script src="${esc(shell.base)}/connections/page.js" defer></script>
 </head>
-<body>
+<body data-app-origin="${esc(shell.appOrigin ?? '')}"${event}>
 <header><strong>Connections</strong>${shell.user ? `<span>${esc(shell.user.name)}</span>` : ''}</header>
 <main>
 <h1>${esc(title)}</h1>
