@@ -234,14 +234,20 @@ describe('GET /api/profile/connections', () => {
 
   it('says when no system uses personal connections', async () => {
     const { app, userCookie } = await accessApp();
-    const res = await app.inject({ url: '/api/profile/connections', headers: { cookie: userCookie } });
+    const res = await app.inject({
+      url: '/api/profile/connections',
+      headers: { cookie: userCookie },
+    });
     expect(res.json()).toEqual({ personalSinks: false, connections: [] });
   });
 
   it('answers 502 while the bridge is down', async () => {
     const { app, userCookie, bridge } = await accessApp();
     bridge.failNext = new Error('connect ECONNREFUSED');
-    const res = await app.inject({ url: '/api/profile/connections', headers: { cookie: userCookie } });
+    const res = await app.inject({
+      url: '/api/profile/connections',
+      headers: { cookie: userCookie },
+    });
     expect(res.statusCode).toBe(502);
     expect(res.json()).toEqual({ error: 'connections are unavailable right now' });
   });

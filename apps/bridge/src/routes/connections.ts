@@ -11,7 +11,11 @@ import {
 } from '@ih/bridge-contract';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { connectionProblem, INTERNAL_CONNECTION_ID } from '../connections/repo.js';
+import {
+  connectionProblem,
+  INTERNAL_CONNECTION_ID,
+  PERSONAL_ID_PREFIX,
+} from '../connections/repo.js';
 import { encryptSecret } from '../secrets.js';
 
 const Params = z.strictObject({ id: z.string().regex(CONNECTION_ID) });
@@ -111,6 +115,13 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
       const refuse = (message: string) =>
         reply.code(422).send(bridgeError('content_rejected', message));
       if (id === INTERNAL_CONNECTION_ID) return refuse('the built-in connection cannot be written');
+      // A user's own connection is theirs alone: the producer can neither overwrite nor take it.
+      if ((await app.deps.connections.get(id))?.kind === 'personal') {
+        return refuse(`${id} is a personal connection`);
+      }
+      if (id.startsWith(PERSONAL_ID_PREFIX)) {
+        return refuse(`ids starting ${PERSONAL_ID_PREFIX} are kept for personal connections`);
+      }
       if (!app.deps.sinks.get(c.sinkId)) return refuse(`there is no sink ${c.sinkId}`);
       if (c.secret !== null && c.secretEnv !== null) {
         return refuse('a connection has a secret or a secret variable, not both');
@@ -158,7 +169,8 @@ export const connectionRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.post(
-    '/v1/users:reconcile',
+    // `::` is a literal colon: a single one would make `reconcile` a path parameter.
+    '/v1/users::reconcile',
     {
       schema: {
         summary: 'Keep the personal connections of live users only',

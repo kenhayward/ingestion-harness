@@ -259,4 +259,26 @@ describe('personal connections, as the producer reaches them', () => {
     expect(res.json()).toEqual({ deleted: 2 });
     expect((await connections.list({})).map((c) => c.id)).toEqual(['finance', 'u-2']);
   });
+
+  it('the reconcile is that one path, not any POST under /v1/users', async () => {
+    const { call, connections } = await setup();
+    await connections.put(mine('u-1', 'u1'));
+    const res = await call('POST', '/v1/usersXYZ', { liveUserIds: ['u2'] });
+    expect(res.statusCode).toBe(404);
+    expect(await connections.list({})).toHaveLength(1);
+  });
+
+  it("the producer's write never touches a personal connection, nor takes a personal id", async () => {
+    const { call, connections } = await setup();
+    await connections.put({ ...mine('u-1', 'u1'), secretEnc: 'v1:mine' });
+    const body = { name: 'Taken', sinkId: 's3', fields: {}, secret: 'x', secretEnv: null };
+    const over = await call('PUT', '/v1/connections/u-1', body);
+    expect(over.statusCode).toBe(422);
+    expect(over.json().message).toBe('u-1 is a personal connection');
+    expect(await connections.get('u-1')).toMatchObject({ kind: 'personal', owner: 'u1' });
+    expect((await connections.secretOf('u-1'))?.secretEnc).toBe('v1:mine');
+    const fresh = await call('PUT', '/v1/connections/u-new', body);
+    expect(fresh.statusCode).toBe(422);
+    expect(fresh.json().message).toBe('ids starting u- are kept for personal connections');
+  });
 });

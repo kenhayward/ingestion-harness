@@ -468,3 +468,73 @@ describe('a personal sink', () => {
     expect(sink.delivered).toEqual([]);
   });
 });
+
+describe('a personal sink, polled', () => {
+  const credentialFields = [{ id: 'password', label: 'Password', secret: true }];
+
+  async function pending() {
+    const sink = new FakeSink({
+      capabilities: caps(),
+      connectionKind: 'personal',
+      instances: [],
+      credentialFields,
+    }).script('pending');
+    const deliveries = new MemoryDeliveryRepo();
+    const packages = new MemoryPackageStore();
+    const targets = new MemoryTargetRepo();
+    await targets.put({
+      id: 'acme',
+      label: 'Acme',
+      sinkId: 'acme',
+      instanceId: null,
+      connectionId: null,
+      destination: { bucket: 'b' },
+    });
+    const connections = new MemoryConnectionRepo(targets);
+    await connections.put({
+      ...connection('u-pat', { kind: 'personal', owner: 'u1', sinkId: 'acme', fields: {} }),
+      secretEnc: encryptSecret('pw', SECRETS),
+    });
+    const sinks = new MapSinkRegistry({ acme: sink });
+    const deps = {
+      deliveries,
+      packages,
+      targets,
+      sinks,
+      connections,
+      credentials: new Credentials({ connections, secrets: SECRETS, env: {} }),
+      maxAttempts: 8,
+      leaseSeconds: 300,
+      pollSeconds: 30,
+    };
+    const { deliveries: made } = await acceptDeliveries(
+      { deliveries, packages, targets, sinks, connections, retentionDays: 30 },
+      {
+        targets: ['acme'],
+        actingUser: { id: 'u1', name: 'Pat', email: null },
+        overrides: {},
+        package: documentPackage,
+      },
+      T0,
+      randomUUID,
+    );
+    await runOnce(deps, T0);
+    return { deps, deliveries, connections, sink, id: made[0]!.deliveryId };
+  }
+
+  it('a pending job is still read when the connection went meanwhile', async () => {
+    const { deps, deliveries, connections, sink, id } = await pending();
+    expect((await deliveries.get(id))?.status).toBe('waiting');
+    await connections.removeOwner('u1');
+    sink.scriptStatus('succeed');
+    await runOnce(deps, at(60));
+    expect((await deliveries.get(id))?.status).toBe('succeeded');
+  });
+
+  it("a polled success marks the acting user's connection", async () => {
+    const { deps, connections, sink } = await pending();
+    sink.scriptStatus('succeed');
+    await runOnce(deps, at(60));
+    expect(await connections.get('u-pat')).toMatchObject({ status: 'ok', lastUsedAt: at(60) });
+  });
+});

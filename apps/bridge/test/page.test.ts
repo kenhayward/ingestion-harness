@@ -484,6 +484,17 @@ describe('personal connections on the page', () => {
     expect(page.body).not.toContain('name="kind" value="personal"');
   });
 
+  it("an admin's shared add cannot take a personal id, nor learn that one exists", async () => {
+    const { app, connections, mine } = await added();
+    const { cookie, csrf } = await login(app, 'good');
+    for (const id of [mine.id, 'u-0000000000000000']) {
+      const res = await post(app, '/connections', cookie!.value, newConnection(csrf, { id }));
+      expect(res.statusCode).toBe(422);
+      expect(res.body).toContain('Ids starting u- are kept for personal connections.');
+    }
+    expect(await connections.get(mine.id)).toMatchObject({ kind: 'personal', owner: 'u3' });
+  });
+
   it('a personal POST needs the CSRF token', async () => {
     const { app, connections } = await setup(new MemoryObjectStore(), acmeSink());
     const { cookie } = await login(app, 'olive');

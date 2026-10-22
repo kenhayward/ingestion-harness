@@ -85,6 +85,27 @@ async function personalConnection(
   return found.id;
 }
 
+/** The connection a polled delivery's outcome flags: never a reason to stop polling. */
+async function pollConnection(
+  row: DeliveryRow,
+  target: Target,
+  sink: SinkPort,
+  deps: RunnerDeps,
+): Promise<string | null> {
+  if (!row.actingUser || !deps.connections) return target.connectionId;
+  try {
+    if ((await sink.describe()).connectionKind !== 'personal') return target.connectionId;
+  } catch {
+    return target.connectionId;
+  }
+  const found = await deps.connections.findPersonal(
+    row.actingUser.id,
+    target.sinkId,
+    target.instanceId,
+  );
+  return found?.id ?? null;
+}
+
 async function step(
   row: DeliveryRow,
   deps: RunnerDeps,
@@ -101,14 +122,17 @@ async function step(
       bridgeError('sink_unavailable', `the sink of ${target.label} is not available`),
     );
   }
+  if (row.sinkJobId) {
+    // A pending job is read with no credential: what the sink did stands, even when the acting
+    // user's connection has gone since. Its outcome flags that connection when it still exists.
+    used.connectionId = await pollConnection(row, target, sink, deps);
+    return fromJobStatus(await sink.deliveryStatus(row.sinkJobId), row, deps, now);
+  }
   const described = await sink.describe();
   used.connectionId =
     described.connectionKind === 'personal'
       ? await personalConnection(row, target, deps)
       : target.connectionId;
-  if (row.sinkJobId) {
-    return fromJobStatus(await sink.deliveryStatus(row.sinkJobId), row, deps, now);
-  }
   const { capabilities } = described;
   if (!capabilities.replace && !capabilities.withdraw) {
     const earlier = await deps.deliveries.latestSucceeded(row.targetId, row.idempotencyKey, row.id);

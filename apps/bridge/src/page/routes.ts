@@ -6,6 +6,7 @@ import {
   ConnectionConflict,
   connectionProblem,
   INTERNAL_CONNECTION_ID,
+  PERSONAL_ID_PREFIX,
   type Connection,
 } from '../connections/repo.js';
 import { encryptSecret } from '../secrets.js';
@@ -317,7 +318,7 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     }
     try {
       await app.deps.connections.put({
-        id: `u-${randomBytes(8).toString('hex')}`,
+        id: `${PERSONAL_ID_PREFIX}${randomBytes(8).toString('hex')}`,
         kind: 'personal',
         owner: s.user.id,
         sinkId,
@@ -354,6 +355,9 @@ export const pageRoutes: FastifyPluginAsync = async (app) => {
     const draft = valuesOf(form, sink, id, sinkId);
     const refuse = (code: number, text: string) =>
       renderList(reply, s, code, { notice: { text, error: true }, draft });
+    if (id.startsWith(PERSONAL_ID_PREFIX)) {
+      return refuse(422, `Ids starting ${PERSONAL_ID_PREFIX} are kept for personal connections.`);
+    }
     if (id === INTERNAL_CONNECTION_ID || (await app.deps.connections.get(id))) {
       return refuse(409, `A connection with the id ${id} exists.`);
     }

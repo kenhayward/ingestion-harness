@@ -2870,7 +2870,7 @@
         }
       }
     },
-    "/v1/users{reconcile}": {
+    "/v1/users:reconcile": {
       "post": {
         "summary": "Keep the personal connections of live users only",
         "tags": [
@@ -2901,16 +2901,6 @@
             }
           }
         },
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "reconcile",
-            "required": true
-          }
-        ],
         "responses": {
           "200": {
             "description": "Default Response",

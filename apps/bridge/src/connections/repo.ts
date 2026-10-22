@@ -67,6 +67,9 @@ export interface ConnectionRepo {
 /** The built-in connection: the deployment's own SeaweedFS, with the bridge's `S3_*` keys. */
 export const INTERNAL_CONNECTION_ID = 'internal';
 
+/** Personal connections' ids start so (`u-` and 16 hex characters); shared ones never do. */
+export const PERSONAL_ID_PREFIX = 'u-';
+
 /**
  * The only environment variables a connection may read its keys from (as CT Studio's API
  * allowed for targets: apps/api/src/publish-targets/stores.ts), so a stored name can never make
