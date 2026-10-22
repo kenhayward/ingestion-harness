@@ -236,13 +236,21 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         ...base(
           'setLlmModelSettings',
-          "Set a model's output limit",
+          "Set a model's output limit and parallel calls",
           md`
             **Admins only.** \`maxOutputTokens\` is the most tokens one reply of this model may
             use where the step does not say: the Workbench drafting stages and the mapping stage
             (16,000 when null). A reply cut off at the limit fails the stage with a message that
             names this setting. Mainly a property of the model, so set it to what the model and
-            its context window allow. A model id containing \`/\` is URL-encoded.
+            its context window allow.
+
+            \`maxConcurrentCalls\` (1 to 32) is how many calls the workers together may send this
+            model at once: a step's occurrence and chunk calls, and OCR pages. Each call holds
+            one of the model's slots (a Postgres advisory lock of its worker, freed if the worker
+            dies) and waits while every slot is in use. Null: no slots, one call at a time in
+            each worker (OCR keeps \`ocr.concurrency\` of the config file). Set it to what the
+            model's server serves at once (LM Studio's parallel requests). A setting left out of
+            the body is kept; null clears it. A model id containing \`/\` is URL-encoded.
           `,
         ),
         params: NameParams.extend({
@@ -264,12 +272,7 @@ export async function llmRoutes(app: FastifyInstance): Promise<void> {
       if (!(await repo.getEndpoint(name))) {
         return reply.code(404).send({ error: 'endpoint not found' });
       }
-      const updated = await repo.setModelOutputLimit(
-        name,
-        modelId,
-        body.data.maxOutputTokens,
-        by(req),
-      );
+      const updated = await repo.setModelSettings(name, modelId, body.data, by(req));
       return updated ?? reply.code(404).send({ error: 'model not found' });
     },
   );

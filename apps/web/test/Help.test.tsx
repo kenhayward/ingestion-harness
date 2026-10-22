@@ -183,7 +183,15 @@ describe('help topics for Administration', () => {
     [
       'adminModels',
       'Models and model choices',
-      ['model choice', 'endpoint', 'Max output', 'Discover'],
+      [
+        'model choice',
+        'endpoint',
+        'Max output',
+        'Discover',
+        'Parallel calls',
+        'one at a time',
+        'parallel requests',
+      ],
     ],
     ['adminLinkedData', 'Linked data settings', ['base IRI', 'Customer id', 'triple store']],
     ['adminUsers', 'Users and sign-in', ['one-time password', 'Operator', 'Designer', 'locked']],

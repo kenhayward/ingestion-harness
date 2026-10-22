@@ -20,6 +20,12 @@ export const LlmModelViewSchema = z.object({
    * mapping); null: the default, DEFAULT_MAX_OUTPUT_TOKENS.
    */
   maxOutputTokens: z.number().int().nullable(),
+  /**
+   * How many calls the workers together may send this model at once (a step's occurrences and
+   * chunks, OCR pages; worker `call_slots`); null: one at a time in each worker (OCR:
+   * `ocr.concurrency` of the config file).
+   */
+  maxConcurrentCalls: z.number().int().nullable(),
 });
 export type LlmModelView = z.infer<typeof LlmModelViewSchema>;
 
@@ -28,12 +34,28 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 16_000;
 export const MIN_OUTPUT_TOKENS = 1024;
 export const MAX_OUTPUT_TOKENS = 1_000_000;
 
-/** `PATCH /api/llm/endpoints/:name/models/:modelId`: a model's output limit (null: the default). */
+/** A model's parallel calls (worker `ProviderConfig.max_concurrent_calls`, migration's CHECK). */
+export const MAX_CONCURRENT_CALLS = 32;
+
+/**
+ * `PATCH /api/llm/endpoints/:name/models/:modelId`: a model's output limit and parallel calls
+ * (null: the default; a setting left out is kept; at least one is set).
+ */
 export const ModelSettingsBodySchema = z
   .object({
-    maxOutputTokens: z.number().int().min(MIN_OUTPUT_TOKENS).max(MAX_OUTPUT_TOKENS).nullable(),
+    maxOutputTokens: z
+      .number()
+      .int()
+      .min(MIN_OUTPUT_TOKENS)
+      .max(MAX_OUTPUT_TOKENS)
+      .nullable()
+      .optional(),
+    maxConcurrentCalls: z.number().int().min(1).max(MAX_CONCURRENT_CALLS).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine((b) => b.maxOutputTokens !== undefined || b.maxConcurrentCalls !== undefined, {
+    message: 'set maxOutputTokens or maxConcurrentCalls',
+  });
 export type ModelSettingsBody = z.infer<typeof ModelSettingsBodySchema>;
 
 export const LlmEndpointViewSchema = z.object({

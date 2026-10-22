@@ -138,17 +138,38 @@ describe.skipIf(!url)('LLM endpoints SQL against Postgres', { timeout: 30_000 },
       null,
     );
     const before = await version();
-    const set = await repo.setModelOutputLimit(gpu, 'org/b', 32000, 'ken');
+    const set = await repo.setModelSettings(gpu, 'org/b', { maxOutputTokens: 32000 }, 'ken');
     expect(set!.models.map((m) => [m.modelId, m.maxOutputTokens])).toEqual([
       ['a', null],
       ['org/b', 32000],
     ]);
     expect(set!.updatedBy).toBe('ken');
     expect(await version()).toBeGreaterThan(before); // workers rebuild
-    const cleared = await repo.setModelOutputLimit(gpu, 'org/b', null, null);
-    expect(cleared!.models.find((m) => m.modelId === 'org/b')!.maxOutputTokens).toBeNull();
-    expect(await repo.setModelOutputLimit(gpu, 'missing', 8192, null)).toBeNull();
-    expect(await repo.setModelOutputLimit(name('nope'), 'a', 8192, null)).toBeNull();
+    // Parallel calls: set on their own, the output limit kept; a bump again.
+    const beforeCalls = await version();
+    const calls = await repo.setModelSettings(gpu, 'org/b', { maxConcurrentCalls: 4 }, null);
+    expect(calls!.models.find((m) => m.modelId === 'org/b')).toMatchObject({
+      maxOutputTokens: 32000,
+      maxConcurrentCalls: 4,
+    });
+    expect(await version()).toBeGreaterThan(beforeCalls);
+    const cleared = await repo.setModelSettings(
+      gpu,
+      'org/b',
+      { maxOutputTokens: null, maxConcurrentCalls: null },
+      null,
+    );
+    expect(cleared!.models.find((m) => m.modelId === 'org/b')).toMatchObject({
+      maxOutputTokens: null,
+      maxConcurrentCalls: null,
+    });
+    expect(await repo.setModelSettings(gpu, 'missing', { maxOutputTokens: 8192 }, null)).toBeNull();
+    expect(
+      await repo.setModelSettings(name('nope'), 'a', { maxOutputTokens: 8192 }, null),
+    ).toBeNull();
+    await expect(
+      pool.query(`UPDATE llm_models SET max_concurrent_calls = 0 WHERE provider = $1`, [gpu]),
+    ).rejects.toThrow(/max_concurrent_calls/);
     await expect(
       pool.query(`UPDATE llm_models SET max_output_tokens = 10 WHERE provider = $1`, [gpu]),
     ).rejects.toThrow(/max_output_tokens/);

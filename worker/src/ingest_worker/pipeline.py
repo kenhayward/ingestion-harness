@@ -4,16 +4,20 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from jsonschema import Draft202012Validator
 
+from .call_slots import CallSlots
 from .checks import run_check
 from .convert import ConversionRejected, DocumentConverter, is_docx
 from .errors import DocumentError as DocumentError
@@ -197,6 +201,9 @@ class PipelineDeps:
     #: Saves a recipe's steps after each one, so a stopped job resumes where it stopped
     #: (step_graph, the LangGraph trial; None: the steps run as before).
     step_checkpointer: BaseCheckpointSaver[Any] | None = None
+    #: The models' call slots, shared by every worker (call_slots); None: a model's parallel
+    #: calls hold in this worker only.
+    call_slots: CallSlots | None = None
 
 
 @dataclass(frozen=True)
@@ -646,11 +653,15 @@ def ocr_pages(
             pages[index] = parse_olmocr(raw.decode("utf-8"))[0]
             cached.append(index)
     todo = [i for i in targets if i not in cached]
+    # Its parallel calls hold across every worker when set (call slots).
+    ocr_limit = deps.models.max_concurrent_calls(model_ref)
+    gate = call_gate(deps, model_ref, ocr_limit)
 
     def run(index: int) -> OcrPage:
         check_cancelled(job, queue)  # a long OCR pass stops at the next page
         try:
-            page = ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
+            with gate(lambda: False) if gate is not None else nullcontext():
+                page = ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
         except RefusalError as exc:
             raise DocumentError(f"OCR page {index + 1}: {exc}") from exc
         except ModelUnavailableError as exc:  # a retry would repeat it
@@ -679,7 +690,9 @@ def ocr_pages(
     # and the first exception (transient or DocumentError) propagates.
     if progress is not None and todo:
         progress(len(cached), len(targets))  # the first page can take the whole run
-    with ThreadPoolExecutor(max_workers=max(1, settings.concurrency)) as pool:
+    # The OCR model's parallel calls (Administration > Models), else ocr.concurrency.
+    concurrency = ocr_limit or settings.concurrency
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         for done, page in enumerate(pool.map(run, todo), start=1):
             pages[page.index] = page.text
             if progress is not None:
@@ -714,6 +727,74 @@ def _ocr_cache_keyer(digest: str, model_ref: str, settings: OcrSettings) -> Call
 #: progress(attempt, chunk, occurrence) before each model call; chunk is {index, count} and
 #: occurrence {n, of, key}, each None when the step has none.
 StepProgress = Callable[[int, dict[str, int] | None, dict[str, Any] | None], None]
+
+
+#: Wraps one call in a model's call slot (call_slots.CallSlots.slot), given when to stop waiting.
+CallGate = Callable[[Callable[[], bool]], AbstractContextManager[None]]
+
+
+def call_gate(deps: PipelineDeps, model_ref: str, limit: int | None) -> CallGate | None:
+    """The model's call slots, when it has parallel calls set and the worker shares slots; None:
+    no slot to take (no database round trip)."""
+    slots = deps.call_slots
+    if limit is None or slots is None:
+        return None
+    return lambda stopped: slots.slot(model_ref, limit, stopped)
+
+
+def run_in_order[T](
+    calls: list[Callable[[], T]], limit: int, gate: CallGate | None = None
+) -> list[T]:
+    """Each call's result in the calls' order, at most `limit` running at once (one: one after
+    another, in this thread). The first failure in the calls' order is raised, as a run one at a
+    time would raise it, and once a call fails no call not yet started is started.
+
+    With `gate` (the model's call slots, shared by every worker), each call first waits for a
+    slot; a call still waiting stops (CallStopped) only when a call before it in the calls' order
+    has failed, so the failure raised is the same."""
+    failed_at = [len(calls)]  # the first call in order known to have failed
+
+    def gated(index: int, call: Callable[[], T]) -> T:
+        if gate is None:
+            return call()
+        with gate(lambda: failed_at[0] < index):
+            return call()
+
+    wrapped = [partial(gated, i, c) for i, c in enumerate(calls)]
+    if limit <= 1 or len(wrapped) <= 1:
+        return [w() for w in wrapped]
+    with ThreadPoolExecutor(max_workers=min(limit, len(wrapped))) as pool:
+        futures = [pool.submit(w) for w in wrapped]
+
+        def stop_on_failure(index: int) -> Callable[[Future[T]], None]:
+            def stop(done: Future[T]) -> None:
+                if not done.cancelled() and done.exception() is not None:
+                    failed_at[0] = min(failed_at[0], index)
+                    for f in futures:
+                        f.cancel()  # only those not started yet
+
+            return stop
+
+        for i, f in enumerate(futures):
+            f.add_done_callback(stop_on_failure(i))
+        # Calls start in order, so every call cancelled comes after the one that failed.
+        return [f.result() for f in futures]
+
+
+def _serialised(progress: StepProgress | None) -> StepProgress | None:
+    """`progress` called by one thread at a time."""
+    if progress is None:
+        return None
+    lock = threading.Lock()
+    report = progress
+
+    def serialised(
+        attempt: int, chunk: dict[str, int] | None, occurrence: dict[str, Any] | None
+    ) -> None:
+        with lock:
+            report(attempt, chunk, occurrence)
+
+    return serialised
 
 
 def _attempt_reporter(
@@ -884,9 +965,15 @@ def run_step_extraction(
         # An entry that no longer satisfies the schema is a miss; the fresh result replaces it.
 
     schema = _without_column(ex.schema_, key_column) if key_column else ex.schema_
-    merged: ExtractionResult | None = None
-    call_rows: list[int] = []
-    for audit_id, prompt, chunk, occurrence in rendered:
+    # Progress events come from every call running at once: one at a time, as a sequential run.
+    reporter = _serialised(progress)
+
+    def call(
+        audit_id: str,
+        prompt: str,
+        chunk: dict[str, Any] | None,
+        occurrence: Occurrence | None,
+    ) -> ExtractionResult:
         where = f" [chunk {chunk['index']}/{chunk['count']}]" if chunk else ""
         if occurrence is not None:
             where = f" [occurrence {occurrence.index}/{occurrence.count}]{where}"
@@ -900,7 +987,7 @@ def run_step_extraction(
                 max_attempts=ex.max_attempts,
                 images=images,
                 max_tokens=ex.max_tokens,
-                on_attempt=_attempt_reporter(progress, chunk, occurrence, repeat),
+                on_attempt=_attempt_reporter(reporter, chunk, occurrence, repeat),
                 check=check,
             )
         except ExtractionFailedError as exc:
@@ -925,11 +1012,23 @@ def run_step_extraction(
                 )
             ) from exc
         _audit(deps, job.id, audit_id, result.attempts)
-        if "rows" in result.data:
-            call_rows.append(len(result.data["rows"]))
         if key_column and occurrence is not None:
             for row in result.data["rows"]:
                 row[key_column] = occurrence.key
+        return result
+
+    # The calls read separate occurrences and pages, so they may run at once, up to the model's
+    # parallel calls (Administration > Models); merged below in plan order, as one at a time.
+    model_ref = f"{provider.name}/{model_id}"
+    limit = deps.models.max_concurrent_calls(model_ref)
+    results = run_in_order(
+        [partial(call, *r) for r in rendered], limit or 1, call_gate(deps, model_ref, limit)
+    )
+    merged: ExtractionResult | None = None
+    call_rows: list[int] = []
+    for result in results:
+        if "rows" in result.data:
+            call_rows.append(len(result.data["rows"]))
         if merged is None:
             merged = result
         else:

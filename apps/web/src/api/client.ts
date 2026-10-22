@@ -538,7 +538,7 @@ export interface Api {
   updateLlmEndpoint(name: string, patch: EndpointPatchBody): Promise<LlmEndpointView>;
   /** Exactly these models are offered in the pickers. */
   setLlmEndpointModels(name: string, models: string[]): Promise<LlmEndpointView>;
-  /** A model's output limit (admin; null: the default). */
+  /** A model's output limit or parallel calls (admin; a key left out is kept, null clears). */
   setLlmModelSettings(
     name: string,
     modelId: string,

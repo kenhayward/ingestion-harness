@@ -17,6 +17,7 @@ import psycopg
 from .bridge.client import HttpBridgeClient
 from .bridge.package import Delivered, record_delivered
 from .bundle import run_export
+from .call_slots import PgCallSlots
 from .config import Settings
 from .convert import GotenbergConverter
 from .drafting import run_draft
@@ -421,6 +422,9 @@ class _Worker:
             log.warning("could not publish the plugin catalogue", exc_info=True)
         # Its own connection: a publish holds the graph's lock in a transaction across the PUT.
         self.graph_conn = psycopg.connect(settings.database_url, autocommit=True)
+        # A model's parallel calls hold across every worker: slots as advisory locks on their own
+        # connection, opened when a model with the setting is first called.
+        self.call_slots = PgCallSlots(settings.database_url)
         # The LangGraph trial (WORKER_STEP_GRAPH=langgraph): a recipe's steps checkpointed in
         # Postgres, so a stopped job resumes at the step it stopped at (step_graph.py).
         self.step_checkpointer: BaseCheckpointSaver[Any] | None = None
@@ -464,6 +468,7 @@ class _Worker:
             graph_registry=PgGraphRegistry(self.graph_conn),
             delivered_jobs=PgRebuildSource(self.library),
             step_checkpointer=self.step_checkpointer,
+            call_slots=self.call_slots,
             ontology_max_triples=settings.ontology_max_triples,
             ontology_fetch=(
                 functools.partial(
@@ -521,6 +526,7 @@ class _Worker:
             self.target_store.close,
             self.library.close,
             self.graph_conn.close,
+            self.call_slots.close,
             self.close_checkpointer,
         ):
             with contextlib.suppress(Exception):

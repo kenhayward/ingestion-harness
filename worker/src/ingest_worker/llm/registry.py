@@ -5,7 +5,7 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -60,6 +60,12 @@ class ProviderConfig(BaseModel):
     #: An admin's output limit per offered model id (Administration > Models, migration 0043): the most
     #: tokens one reply may use where the step does not say (drafting, mapping).
     max_output_tokens: dict[str, int] = Field(default_factory=dict, alias="maxOutputTokens")
+    #: An admin's parallel calls per offered model id (Administration > Models, migration
+    #: 202610212105): how many calls a worker may send the model at once (a step's occurrences
+    #: and chunks, OCR pages). Absent: one at a time.
+    max_concurrent_calls: dict[str, Annotated[int, Field(ge=1, le=32)]] = Field(
+        default_factory=dict, alias="maxConcurrentCalls"
+    )
 
     @field_validator("models", mode="before")
     @classmethod
@@ -248,6 +254,16 @@ class ModelRegistry:
             return None
         config = self._configs.get(provider_name)
         return config.max_output_tokens.get(model_id) if config is not None else None
+
+    def max_concurrent_calls(self, ref: str) -> int | None:
+        """How many calls a worker may send the model at once (Administration > Models), or None
+        when not set (or the ref does not resolve): the caller's default."""
+        try:
+            provider_name, _, model_id = self._follow(ref).partition("/")
+        except ModelResolutionError:
+            return None
+        config = self._configs.get(provider_name)
+        return config.max_concurrent_calls.get(model_id) if config is not None else None
 
     def resolve(self, ref: str) -> tuple[LLMProvider, str]:
         """Resolve an alias or "provider/model-id" to a provider and model id."""

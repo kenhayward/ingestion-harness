@@ -787,6 +787,7 @@ describe('http api: LLM endpoints', () => {
     await api.updateLlmEndpoint('gpu 2', { enabled: false });
     await api.setLlmEndpointModels('gpu2', ['a']);
     await api.setLlmModelSettings('gpu2', 'org/b', { maxOutputTokens: 32000 });
+    await api.setLlmModelSettings('gpu2', 'org/b', { maxConcurrentCalls: null });
     await api.deleteLlmEndpoint('gpu2');
     const calls = fetch.mock.calls.map((c) => [
       c[0],
@@ -811,6 +812,11 @@ describe('http api: LLM endpoints', () => {
         '/api/llm/endpoints/gpu2/models/org%2Fb',
         'PATCH',
         JSON.stringify({ maxOutputTokens: 32000 }),
+      ],
+      [
+        '/api/llm/endpoints/gpu2/models/org%2Fb',
+        'PATCH',
+        JSON.stringify({ maxConcurrentCalls: null }),
       ],
       ['/api/llm/endpoints/gpu2', 'DELETE', null],
     ]);

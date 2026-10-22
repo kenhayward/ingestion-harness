@@ -20,6 +20,7 @@ const model = (modelId: string, over: Partial<LlmModelView> = {}): LlmModelView 
   curated: true,
   enabled: true,
   maxOutputTokens: null,
+  maxConcurrentCalls: null,
   ...over,
 });
 
@@ -157,6 +158,65 @@ describe('ModelsPage: endpoints', () => {
     expect(api.setLlmModelSettings).toHaveBeenCalledWith('local', 'qwen', {
       maxOutputTokens: null,
     });
+  });
+
+  it("sets an offered model's parallel calls, sending only that setting", async () => {
+    const api = page([endpoint({ models: [model('qwen', { maxOutputTokens: 48000 })] })], {
+      setLlmModelSettings: vi.fn(async () => endpoint()),
+    });
+    const local = await opened('local');
+    const calls = within(local).getByRole('spinbutton', { name: 'Parallel calls for qwen' });
+    expect(calls).toHaveAttribute('placeholder', '1');
+    expect(calls).toHaveValue(null);
+    // Set shows once something changed, and only accepts a whole number from 1 to 32.
+    expect(
+      within(local).queryByRole('button', { name: 'Set the parallel calls of qwen' }),
+    ).toBeNull();
+    await userEvent.type(calls, '33');
+    const set = within(local).getByRole('button', { name: 'Set the parallel calls of qwen' });
+    expect(set).toBeDisabled();
+    expect(set).toHaveAttribute('title', 'Between 1 and 32 calls, or empty for one at a time');
+    await userEvent.clear(calls);
+    await userEvent.type(calls, '0');
+    expect(set).toBeDisabled();
+    await userEvent.clear(calls);
+    await userEvent.type(calls, '4{Enter}');
+    expect(api.setLlmModelSettings).toHaveBeenCalledTimes(1);
+    expect(api.setLlmModelSettings).toHaveBeenCalledWith('local', 'qwen', {
+      maxConcurrentCalls: 4,
+    });
+  });
+
+  it('clears parallel calls back to one at a time', async () => {
+    const api = page([endpoint({ models: [model('qwen', { maxConcurrentCalls: 8 })] })], {
+      setLlmModelSettings: vi.fn(async () => endpoint()),
+    });
+    const local = await opened('local');
+    const calls = within(local).getByRole('spinbutton', { name: 'Parallel calls for qwen' });
+    expect(calls).toHaveValue(8);
+    await userEvent.clear(calls);
+    await userEvent.click(
+      within(local).getByRole('button', { name: 'Set the parallel calls of qwen' }),
+    );
+    expect(api.setLlmModelSettings).toHaveBeenCalledWith('local', 'qwen', {
+      maxConcurrentCalls: null,
+    });
+  });
+
+  it('shows a refused parallel calls setting in the endpoint', async () => {
+    page([endpoint()], {
+      setLlmModelSettings: vi.fn(async () => {
+        throw new ApiError('maxConcurrentCalls: Number must be less than or equal to 32', 400);
+      }),
+    });
+    const local = await opened('local');
+    await userEvent.type(
+      within(local).getByRole('spinbutton', { name: 'Parallel calls for qwen' }),
+      '2{Enter}',
+    );
+    expect(await within(local).findByRole('alert')).toHaveTextContent(
+      'maxConcurrentCalls: Number must be less than or equal to 32',
+    );
   });
 
   it('stops offering a model at once', async () => {

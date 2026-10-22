@@ -371,6 +371,8 @@ class MemoryLlmConfigStore:
         self.disabled: set[tuple[str, str]] = set()
         #: (provider, model_id) -> an admin's output limit (Administration > Models)
         self.limits: dict[tuple[str, str], int] = {}
+        #: (provider, model_id) -> an admin's parallel calls (Administration > Models)
+        self.parallel: dict[tuple[str, str], int] = {}
         self._version = 0
         if seed is not None:
             self.seed(seed)
@@ -387,6 +389,7 @@ class MemoryLlmConfigStore:
             dict(self.settings),
             frozenset(self.disabled),
             dict(self.limits),
+            dict(self.parallel),
         )
 
     def seed(self, seed: Seed) -> None:
@@ -445,6 +448,9 @@ class MemoryLlmConfigStore:
                     "max_output_tokens": {
                         m: self.limits[(n, m)] for m in offered if (n, m) in self.limits
                     },
+                    "max_concurrent_calls": {
+                        m: self.parallel[(n, m)] for m in offered if (n, m) in self.parallel
+                    },
                 }
             )
             for n in sorted(self.endpoints)
@@ -498,6 +504,14 @@ class MemoryLlmConfigStore:
             self.limits.pop((provider, model_id), None)
         else:
             self.limits[(provider, model_id)] = limit
+        self._changed(before)
+
+    def set_parallel_calls(self, provider: str, model_id: str, calls: int | None) -> None:
+        before = self._snapshot()
+        if calls is None:
+            self.parallel.pop((provider, model_id), None)
+        else:
+            self.parallel[(provider, model_id)] = calls
         self._changed(before)
 
     def uncurate(self, provider: str, model_id: str) -> None:

@@ -62,6 +62,7 @@ describe('LLM endpoints API', () => {
             curated: false,
             enabled: true,
             maxOutputTokens: null,
+            maxConcurrentCalls: null,
           },
           {
             modelId: 'olmocr',
@@ -69,6 +70,7 @@ describe('LLM endpoints API', () => {
             curated: true,
             enabled: true,
             maxOutputTokens: null,
+            maxConcurrentCalls: null,
           },
           {
             modelId: 'qwen',
@@ -76,6 +78,7 @@ describe('LLM endpoints API', () => {
             curated: true,
             enabled: true,
             maxOutputTokens: null,
+            maxConcurrentCalls: null,
           },
         ],
       },
@@ -268,6 +271,37 @@ describe('LLM endpoints API', () => {
     expect(qwen((await call('GET', '/endpoints')).json()[0])).toBe(32000);
     const cleared = await call('PATCH', '/endpoints/local/models/qwen', { maxOutputTokens: null });
     expect(qwen(cleared.json())).toBeNull();
+  });
+
+  it("sets a model's parallel calls, keeping the output limit, and clears them", async () => {
+    const { call } = await setup();
+    await call('PATCH', '/endpoints/local/models/qwen', { maxOutputTokens: 32000 });
+    const set = await call('PATCH', '/endpoints/local/models/qwen', { maxConcurrentCalls: 4 });
+    expect(set.statusCode).toBe(200);
+    type View = {
+      models: {
+        modelId: string;
+        maxOutputTokens: number | null;
+        maxConcurrentCalls: number | null;
+      }[];
+    };
+    const qwen = (v: View) => v.models.find((m) => m.modelId === 'qwen')!;
+    expect(qwen(set.json())).toMatchObject({ maxOutputTokens: 32000, maxConcurrentCalls: 4 });
+    expect(qwen((await call('GET', '/endpoints')).json()[0]).maxConcurrentCalls).toBe(4);
+    const both = await call('PATCH', '/endpoints/local/models/qwen', {
+      maxOutputTokens: null,
+      maxConcurrentCalls: null,
+    });
+    expect(qwen(both.json())).toMatchObject({ maxOutputTokens: null, maxConcurrentCalls: null });
+  });
+
+  it('refuses odd parallel calls and a body setting nothing', async () => {
+    const { call } = await setup();
+    for (const maxConcurrentCalls of [0, 33, 1.5, '2']) {
+      const bad = await call('PATCH', '/endpoints/local/models/qwen', { maxConcurrentCalls });
+      expect(bad.statusCode, String(maxConcurrentCalls)).toBe(400);
+    }
+    expect((await call('PATCH', '/endpoints/local/models/qwen', {})).statusCode).toBe(400);
   });
 
   it('takes a model id with a slash, and refuses unknown models and odd limits', async () => {
