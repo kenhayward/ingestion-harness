@@ -45,12 +45,22 @@ Outcome = Literal[
     "duplicate",
     "in_flight",
     "changed_in_target",
+    "unresolved",
     "failed",
 ]
 
 #: States whose content counts as on the tenant: an entry that failed without ever becoming a
 #: document (no persistent id) does not.
 _SETTLED_LOADED = ("delivered", "incomplete")
+
+#: The mark in a refused entry's `last_error.details`: the bridge took nothing, so nothing under
+#: the entry's key can have reached the target (see `deliver_decomposition`).
+REFUSED_BEFORE_ACCEPTANCE = "refusedBeforeAcceptance"
+
+_UNRESOLVED = (
+    "an earlier delivery of this source may have created a document in the target; "
+    "re-run the original file, or resolve it in the target"
+)
 
 
 @dataclass(frozen=True)
@@ -63,10 +73,18 @@ class Decision:
     create: bool
     entry: RegisterEntry | None
     reason: str
+    #: The key to deliver under when it must be the entry's stored one (an earlier delivery may
+    #: have created a document under it); None: derived from the content.
+    idempotency_key: str | None = None
 
 
 def _seen(e: RegisterEntry) -> bool:
     return e.persistent_id is not None or e.state != "failed"
+
+
+def _refused_before_acceptance(e: RegisterEntry) -> bool:
+    details = (e.last_error or {}).get("details")
+    return isinstance(details, dict) and details.get(REFUSED_BEFORE_ACCEPTANCE) is True
 
 
 def decide(
@@ -77,8 +95,12 @@ def decide(
     already loaded (force: update); under another key, a duplicate (force: create, or update
     the source's own document when it has one); the same key counts only once it became a
     document, so a never-created entry whose content another key holds is a duplicate too. New
-    content under a known key updates its document, or creates it again when it never got one;
-    a new key creates."""
+    content under a known key updates its document; a new key creates.
+
+    An entry with no persistent id is created again under a new key only when the bridge
+    refused its last delivery outright (nothing reached the target). Otherwise that delivery may
+    have made a document: the same content is created again under the entry's stored key, which
+    the sink answers with that document, if any; new content is `unresolved`, force or not."""
     if by_key is not None:
         if by_key.state == "pending":
             return Decision("in_flight", False, by_key, "a delivery of this source is in flight")
@@ -90,7 +112,7 @@ def decide(
                 f"document {by_key.persistent_id} has changed in the target since it was delivered",
             )
     if by_key is not None and by_key.content_sha256 == sha and _seen(by_key):
-        if by_key.state in _SETTLED_LOADED and not force:
+        if by_key.state in _SETTLED_LOADED and by_key.persistent_id is not None and not force:
             return Decision(
                 "already_loaded", False, by_key, f"already loaded as {by_key.persistent_id}"
             )
@@ -108,7 +130,17 @@ def decide(
     if by_key is None:
         return Decision(None, True, None, "a new source")
     if by_key.persistent_id is None:
-        return Decision(None, True, by_key, "created again: the last delivery made no document")
+        if _refused_before_acceptance(by_key):
+            return Decision(None, True, by_key, "created again: the bridge refused the last one")
+        if by_key.content_sha256 == sha:
+            return Decision(
+                None,
+                True,
+                by_key,
+                "created again under the last delivery's key: it may have made the document",
+                by_key.idempotency_key,
+            )
+        return Decision("unresolved", False, by_key, _UNRESOLVED)
     return Decision(None, False, by_key, f"an update of {by_key.persistent_id}")
 
 
@@ -227,11 +259,15 @@ def deliver_decomposition(
 
     A decomposition that fails or is rejected touches nothing. Otherwise the entry is written
     `pending` (committed) before the bridge is called; the hand-off then runs under the entry's
-    row lock, so the API's settling of it waits for `set_delivery`. When the bridge may have
-    taken it (BridgeUnavailable: unreachable, a timeout), the entry stays `pending`, so a retry
-    is in flight rather than a second create; a definite refusal (BridgeRefused) marks it
-    `failed` with the error, the one state the worker settles (a narrow exception to ruling R6).
-    Either way the outcome is `failed`. Every forced run gets a new idempotency key.
+    row lock, which serialises workers. It does not hold off the API: an event that arrives
+    before `set_delivery` commits matches no entry and is answered 409, and the bridge's resend
+    or the API's reconcile settles it. When the bridge may have taken it (BridgeUnavailable:
+    unreachable, a timeout), the entry stays `pending`, so a retry is in flight rather than a
+    second create; a definite refusal (BridgeRefused) marks it `failed` with the error, the one
+    state the worker settles (a narrow exception to ruling R6). The error is marked refused
+    before acceptance unless the delivery reused a key an earlier one may have created under:
+    only then may a later run create under a new key. Either way the outcome is `failed`. Every
+    forced run gets a new idempotency key, except one that must reuse the entry's stored key.
     """
     try:
         result = decompose_docx(data, renderer=deps.renderer)
@@ -261,7 +297,7 @@ def deliver_decomposition(
                 # Nothing to hold the target's copy to: phase 3's detach or accept resolves it.
                 return DeliveryOutcome("changed_in_target", None, decision.entry.id, _NO_VERSIONS)
             update = Update(persistent_id=decision.entry.persistent_id, expected=expected)
-        key = decomposition_idempotency_key(
+        key = decision.idempotency_key or decomposition_idempotency_key(
             sha,
             update.persistent_id if update else None,
             DECOMPOSER_VERSION,
@@ -307,8 +343,11 @@ def deliver_decomposition(
                 tx.set_delivery(entry.id, delivery_id)
     except BridgeRefused as exc:
         # A definite refusal: nothing was accepted, so nothing but this settles the entry.
+        error = exc.error.model_dump(by_alias=True, mode="json")
+        if decision.idempotency_key is None:
+            error["details"] = {**(error.get("details") or {}), REFUSED_BEFORE_ACCEPTANCE: True}
         with deps.register.transaction() as tx:
-            tx.set_failed(entry.id, exc.error.model_dump(by_alias=True, mode="json"))
+            tx.set_failed(entry.id, error)
         return DeliveryOutcome("failed", None, entry.id, f"the bridge refused it: {exc}")
     except BridgeUnavailable as exc:
         # It may have been accepted: the entry stays pending (the API's reconcile expires it).

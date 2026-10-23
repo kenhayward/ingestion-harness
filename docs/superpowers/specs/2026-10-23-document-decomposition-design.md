@@ -465,6 +465,10 @@ fails part-way, or the response is lost. None of these may lead to a second copy
   id, and the batch row says *read-back mismatch*, with the place.
 - **The bridge retries `retryable` errors** as it does today. A retry carries the same
   idempotency key, so it finds the first attempt's document.
+- **An entry with no persistent id** is created again under a new key only when the bridge
+  refused its last delivery outright. Otherwise that delivery may have made a document: the same
+  file is created again under the entry's stored key, which finds it, and a changed file is
+  *unresolved* until it is resolved in the target.
 - **A later run of an `incomplete` entry** is an update behind the version check, against the
   components reported so far, like any other.
 

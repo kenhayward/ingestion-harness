@@ -368,20 +368,134 @@ def test_a_definite_refusal_fails_the_entry() -> None:
     assert out.outcome == "failed" and "too large" in out.detail
     [stored] = store.entries()
     assert (stored.state, stored.delivery_id) == ("failed", None)
-    assert stored.last_error == REFUSAL.model_dump(by_alias=True, mode="json")
-    # Nothing was made: the next run creates again under the same entry.
+    assert stored.last_error == {
+        **REFUSAL.model_dump(by_alias=True, mode="json"),
+        "details": {"refusedBeforeAcceptance": True},
+    }
+    # Nothing was made: the next run creates again under the same entry, with the same key for
+    # the same file and a new one for a changed file.
     bridge = FakeBridge()
-    again = deliver_decomposition(
-        make_deps(bridge, store),
+    for n, source in enumerate((data, report_docx("Two"))):
+        again = deliver_decomposition(
+            make_deps(FakeBridge(refuse=True) if n == 0 else bridge, store),
+            data=source,
+            source_key="r1.docx",
+            target_id=TARGET,
+            started_by=USER,
+        )
+        assert again.entry_id == out.entry_id
+    assert again.outcome == "created"
+    assert bridge.requests[0].package.idempotency_key == decomposition_idempotency_key(
+        hashlib.sha256(report_docx("Two")).hexdigest(), None, DECOMPOSER_VERSION, None
+    )
+
+
+def _lost_then_expired(
+    store: MemoryRegisterStore, data: bytes, *, force: bool = False
+) -> tuple[str, str]:
+    """A create the bridge took but whose response was lost, then failed by the API's reconcile
+    (no persistent id): the entry's id and the key the sink may have created a document under."""
+    lost = FakeBridge(raise_after_accepting=True)
+    out = deliver_decomposition(
+        make_deps(lost, store),
+        data=data,
+        source_key="r1.docx",
+        target_id=TARGET,
+        started_by=USER,
+        batch_id="b1",
+        force=force,
+    )
+    assert out.entry_id is not None
+    store.settle(out.entry_id, state="failed")
+    return out.entry_id, lost.requests[0].package.idempotency_key
+
+
+def test_a_lost_create_run_again_reuses_its_key() -> None:
+    store = MemoryRegisterStore(clock=lambda: AT)
+    data = report_docx()
+    entry_id, key = _lost_then_expired(store, data)
+    bridge = FakeBridge()
+
+    out = deliver_decomposition(
+        make_deps(bridge, store), data=data, source_key="r1.docx", target_id=TARGET, started_by=USER
+    )
+
+    assert (out.outcome, out.entry_id) == ("created", entry_id)
+    assert [r.package.idempotency_key for r in bridge.requests] == [key]
+    assert [e.idempotency_key for e in store.entries()] == [key]
+
+
+def test_a_lost_forced_create_run_again_unforced_reuses_its_key() -> None:
+    """The Task 8 residual: the forced key carried a token no later run derives."""
+    store = MemoryRegisterStore(clock=lambda: AT)
+    data = report_docx()
+    _, key = _lost_then_expired(store, data, force=True)
+    sha = hashlib.sha256(data).hexdigest()
+    assert key != decomposition_idempotency_key(sha, None, DECOMPOSER_VERSION, None)
+    bridge = FakeBridge()
+
+    for force in (False, True):
+        out = deliver_decomposition(
+            make_deps(bridge, store),
+            data=data,
+            source_key="r1.docx",
+            target_id=TARGET,
+            started_by=USER,
+            force=force,
+        )
+        assert out.outcome == "created"
+        [entry] = store.entries()
+        store.settle(entry.id, state="failed")
+
+    assert [r.package.idempotency_key for r in bridge.requests] == [key, key]
+
+
+def test_a_lost_create_of_a_changed_file_is_unresolved() -> None:
+    store = MemoryRegisterStore(clock=lambda: AT)
+    entry_id, key = _lost_then_expired(store, report_docx())
+    bridge = FakeBridge()
+
+    for force in (False, True):
+        out = deliver_decomposition(
+            make_deps(bridge, store),
+            data=report_docx("Two"),
+            source_key="r1.docx",
+            target_id=TARGET,
+            started_by=USER,
+            force=force,
+        )
+        assert (out.outcome, out.delivery_id, out.entry_id) == ("unresolved", None, entry_id)
+        assert "may have created a document in the target" in out.detail
+
+    assert bridge.requests == []
+    assert [(e.state, e.idempotency_key) for e in store.entries()] == [("failed", key)]
+
+
+def test_a_refused_retry_under_a_stored_key_stays_unresolved() -> None:
+    """A refusal of a run that reused a key an earlier delivery may have created under says
+    nothing about that earlier delivery."""
+    store = MemoryRegisterStore(clock=lambda: AT)
+    data = report_docx()
+    _lost_then_expired(store, data)
+    refusing = FakeBridge(refuse=True)
+    deliver_decomposition(
+        make_deps(refusing, store),
         data=data,
         source_key="r1.docx",
         target_id=TARGET,
         started_by=USER,
     )
-    assert (again.outcome, again.entry_id) == ("created", out.entry_id)
-    assert (
-        bridge.requests[0].package.idempotency_key == refusing.requests[0].package.idempotency_key
+    [stored] = store.entries()
+    assert stored.last_error == REFUSAL.model_dump(by_alias=True, mode="json")
+
+    out = deliver_decomposition(
+        make_deps(FakeBridge(), store),
+        data=report_docx("Two"),
+        source_key="r1.docx",
+        target_id=TARGET,
+        started_by=USER,
     )
+    assert out.outcome == "unresolved"
 
 
 def test_an_acceptance_without_a_delivery_fails_and_stays_pending() -> None:

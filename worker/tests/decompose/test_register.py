@@ -99,10 +99,55 @@ def test_changed_entry_refuses() -> None:
         assert decide(e, [], NEW_SHA, force=force).outcome == "changed_in_target"
 
 
-def test_entry_without_persistent_id_creates_again() -> None:
-    e = entry(state="failed", persistent_id=None)
-    d = decide(e, [e], SHA, force=False)
+#: The worker's own definite refusal: the bridge took nothing (deliver_decomposition marks it).
+REFUSED = {
+    "class": "needs_user",
+    "code": "content_rejected",
+    "message": "too large",
+    "details": {"refusedBeforeAcceptance": True},
+}
+NOT_RECORDED = {"class": "retryable", "code": "not_recorded", "message": "never recorded"}
+SINK_FAILED = {"class": "permanent", "code": "sink_failed", "message": "the sink failed"}
+
+#: Entries without a persistent id whose last delivery may have reached the target.
+MAYBE_REACHED = {
+    "a bridge-reported failure": entry(state="failed", persistent_id=None, last_error=SINK_FAILED),
+    "an unrecorded delivery, expired": entry(
+        state="failed", persistent_id=None, last_error=NOT_RECORDED
+    ),
+    "incomplete without a document": entry(state="incomplete", persistent_id=None),
+}
+
+
+def test_an_entry_the_bridge_refused_creates_again_under_a_new_key() -> None:
+    e = entry(state="failed", persistent_id=None, last_error=REFUSED)
+    for sha in (SHA, NEW_SHA):
+        for force in (False, True):
+            d = decide(e, [e], sha, force=force)
+            assert (d.outcome, d.create, d.entry, d.idempotency_key) == (None, True, e, None)
+
+
+@pytest.mark.parametrize("name", MAYBE_REACHED)
+@pytest.mark.parametrize("force", [False, True])
+def test_same_content_without_persistent_id_creates_again_under_the_stored_key(
+    name: str, force: bool
+) -> None:
+    e = MAYBE_REACHED[name]
+    d = decide(e, [e], SHA, force=force)
     assert (d.outcome, d.create, d.entry) == (None, True, e)
+    assert d.idempotency_key == e.idempotency_key
+
+
+@pytest.mark.parametrize("name", MAYBE_REACHED)
+@pytest.mark.parametrize("force", [False, True])
+def test_new_content_without_persistent_id_is_unresolved(name: str, force: bool) -> None:
+    e = MAYBE_REACHED[name]
+    d = decide(e, [], NEW_SHA, force=force)
+    assert (d.outcome, d.create, d.entry) == ("unresolved", False, e)
+    assert d.reason == (
+        "an earlier delivery of this source may have created a document in the target; "
+        "re-run the original file, or resolve it in the target"
+    )
 
 
 def test_failed_entry_with_same_content_elsewhere_is_duplicate() -> None:
@@ -112,6 +157,7 @@ def test_failed_entry_with_same_content_elsewhere_is_duplicate() -> None:
     assert (d.outcome, d.entry) == ("duplicate", other)
     forced = decide(mine, [mine, other], SHA, force=True)
     assert (forced.outcome, forced.create, forced.entry) == (None, True, mine)
+    assert forced.idempotency_key == mine.idempotency_key
 
 
 def test_a_failed_create_elsewhere_is_no_duplicate() -> None:
