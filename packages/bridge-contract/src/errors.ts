@@ -43,19 +43,41 @@ export function bridgeError(
   return { class: ERROR_CODES[code], code, message, ...(details ? { details } : {}) };
 }
 
-/** At most this many components in `changed_in_target` details, so they stay under 4 KB. */
+/** At most this many components in `changed_in_target` details. */
 const CHANGED_SHOWN = 40;
+/** The most UTF-8 bytes the serialised details take, well inside 4 KB. */
+const CHANGED_BUDGET = 3500;
+/** Ids and versions longer than this many characters are cut, with `…` appended. */
+const CHANGED_TEXT = 200;
+
+const utf8Length = (v: unknown) => new TextEncoder().encode(JSON.stringify(v)).length;
+
+function cut(s: string): string {
+  const chars = Array.from(s.slice(0, CHANGED_TEXT * 2)); // whole code points, never half a pair
+  return chars.length > CHANGED_TEXT ? `${chars.slice(0, CHANGED_TEXT).join('')}…` : s;
+}
 
 /**
  * The details of a `changed_in_target` refusal: the components changed (or missing, `actual:
- * null`) in the target, the first 40 of them, and how many `more` there are.
+ * null`) in the target, and how many `more` there are. At most 40 are listed, each id and version
+ * cut to 200 characters, and no more than fit 3,500 bytes of JSON, so the details fit 4 KB.
  */
 export function changedInTargetDetails(
   changed: Array<{ id: string; expected: string; actual: string | null }>,
 ): Record<string, unknown> {
-  const shown = changed
-    .slice(0, CHANGED_SHOWN)
-    .map(({ id, expected, actual }) => ({ id, expected, actual }));
-  const more = changed.length - shown.length;
-  return more > 0 ? { changed: shown, more } : { changed: shown };
+  const detailsOf = (shown: unknown[]) => {
+    const more = changed.length - shown.length;
+    return more > 0 ? { changed: shown, more } : { changed: shown };
+  };
+  const shown: unknown[] = [];
+  for (const { id, expected, actual } of changed.slice(0, CHANGED_SHOWN)) {
+    const entry = {
+      id: cut(id),
+      expected: cut(expected),
+      actual: actual === null ? null : cut(actual),
+    };
+    if (utf8Length(detailsOf([...shown, entry])) > CHANGED_BUDGET) break;
+    shown.push(entry);
+  }
+  return detailsOf(shown);
 }

@@ -30,6 +30,8 @@ export const ProvenanceSchema = z.strictObject({
   publishedAt: z.string().datetime(),
 });
 export type Provenance = z.infer<typeof ProvenanceSchema>;
+/** The extraction variant of a package's provenance (version 1's only one). */
+export type ExtractionProvenance = Provenance;
 
 /** Where a decomposed document came from (version 2): one source, decomposed and published. */
 export const DecompositionProvenanceSchema = z.strictObject({
@@ -48,6 +50,20 @@ export type DecompositionProvenance = z.infer<typeof DecompositionProvenanceSche
 /** An extraction's provenance (version 1's shape, unchanged) or a decomposition's. */
 export const AnyProvenanceSchema = z.union([ProvenanceSchema, DecompositionProvenanceSchema]);
 export type AnyProvenance = z.infer<typeof AnyProvenanceSchema>;
+
+/** Whether a package's provenance is a decomposition's. */
+export function isDecompositionProvenance(
+  p: AnyProvenance | null | undefined,
+): p is DecompositionProvenance {
+  return p != null && 'kind' in p && p.kind === 'decomposition';
+}
+
+/** Whether a package's provenance is an extraction's (the version 1 shape). */
+export function isExtractionProvenance(
+  p: AnyProvenance | null | undefined,
+): p is ExtractionProvenance {
+  return p != null && !('kind' in p);
+}
 
 /** One rendered output; `name` is its path relative to the target (a file sink adds its prefix). */
 export const PackageFileSchema = z.strictObject({
@@ -144,7 +160,7 @@ export const PackageSchema = z
     });
     const issue = (path: (string | number)[], message: string) =>
       ctx.addIssue({ code: 'custom', path, message });
-    const decomposition = p.provenance !== null && 'kind' in p.provenance;
+    const decomposition = isDecompositionProvenance(p.provenance);
     if (!p.document) {
       if (decomposition) issue(['provenance'], 'decomposition provenance needs a document');
       return;

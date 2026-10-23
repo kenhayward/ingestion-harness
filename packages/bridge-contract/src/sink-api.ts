@@ -49,8 +49,15 @@ export const SinkDescribeSchema = z
   })
   .superRefine((d, ctx) => {
     const c = d.capabilities;
-    if (!c.decomposedDocuments) return;
     const takes = (part: (typeof PACKAGE_PARTS)[number]) => c.accepts.includes(part);
+    if (takes('document') && d.contractVersion !== 2) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['capabilities', 'accepts'],
+        message: 'accepting document needs contractVersion 2',
+      });
+    }
+    if (!c.decomposedDocuments) return;
     if (d.contractVersion !== 2 || !c.readBack || !takes('document') || !takes('images')) {
       ctx.addIssue({
         code: 'custom',
