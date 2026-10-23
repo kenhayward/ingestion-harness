@@ -22,6 +22,7 @@ dependencies = [
   "pyshacl>=0.40.1",
   "langgraph>=1.0",
   "langgraph-checkpoint-postgres>=3.0",
+  "defusedxml>=0.7",
 ]
 
 [project.scripts]
@@ -39,6 +40,7 @@ dev = [
   # The plugin-writing guide's example package (docs/plugins/writing-plugins.md), installed for
   # its tests and the worker's; the image installs plugins only through WORKER_PLUGINS.
   "ct-plugin-example",
+  "types-defusedxml>=0.7.0.20260504",
 ]
 
 [tool.uv.sources]
