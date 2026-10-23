@@ -2,14 +2,18 @@
 
 A paragraph's runs are read in document order into the model's inlines. Tracked changes are read
 as accepted, comments and hidden text are dropped, and a field keeps its result while its
-instruction is never output. Equations (`m:oMath`) sit among the runs as inline equations; a
-paragraph holding only display equations (`m:oMathPara`) is left for the caller to place as
-equation blocks. The context carries what later tasks need to act on fields and
+instruction is never output. A table of contents (or list of tables or figures) is dropped
+whole; a cross-reference field or internal hyperlink becomes an `XRef` to its bookmark (pointed
+at an element id by the last pass), and an external one a `Link`. Equations (`m:oMath`) sit
+among the runs as inline equations; a paragraph holding only display equations (`m:oMathPara`)
+is left for the caller to place as equation blocks. The context carries what later tasks need to act on fields and
 cross-references without this module knowing about them.
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal, NamedTuple
 from xml.etree.ElementTree import Element
@@ -18,9 +22,14 @@ from ingest_worker.symbol_fonts import FIRST, LAST, TABLES, Family, font_family
 
 from .equations import O_MATH, O_MATH_PARA, equation_of
 from .media import MediaContext, is_media, media_of
-from .model import Break, Flag, Inline, InlineEquation, InlineImage, Link, Text, XRef
+from .model import Break, Flag, Inline, InlineEquation, InlineImage, Link, NoteRef, Text, XRef
+from .package import DecompositionFailed, Rel
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+
+#: The prefix of an `XRef` target that names a bookmark, before the last pass resolves it.
+BOOKMARK = "bookmark:"
 
 Mark = Literal["bold", "italic", "underline", "superscript", "subscript"]
 _MARKS: tuple[Mark, ...] = ("bold", "italic", "underline", "superscript", "subscript")
@@ -30,11 +39,20 @@ _REPLACEMENT = "�"
 
 #: Containers whose children are runs in the paragraph's flow.
 _TRANSPARENT = {
-    f"{W}{name}"
-    for name in ("hyperlink", "smartTag", "sdt", "sdtContent", "customXml", "dir", "bdo")
+    f"{W}{name}" for name in ("smartTag", "sdt", "sdtContent", "customXml", "dir", "bdo")
 }
 _ACCEPTED = {f"{W}ins", f"{W}moveTo"}
 _REJECTED = {f"{W}del", f"{W}moveFrom"}
+
+#: Fields whose result is dropped whole: tables of contents and lists of tables or figures.
+_DROPPED_FIELDS = {"TOC"}
+#: Fields whose result is a cross-reference to the bookmark they name.
+_REFERENCE_FIELDS = {"REF", "PAGEREF", "NOTEREF"}
+#: Field switches followed by a value.
+_VALUED_SWITCHES = {r"\l", r"\o", r"\t", r"\*", r"\#", r"\@"}
+#: The addresses an external link may have; any other keeps its text without the link.
+_LINK_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
+_TOKEN = re.compile(r'"([^"]*)"|(\S+)')
 
 
 # --- Styles ----------------------------------------------------------------------------------
@@ -123,6 +141,10 @@ class FieldState:
     instruction: str = ""
     in_result: bool = False
     result: str = ""
+    #: The paragraph reader the field began in, while it is open, and its place in that
+    #: reader's output then; a field closed by the same reader can wrap its result.
+    opener: _Reader | None = field(default=None, repr=False, compare=False)
+    mark: int = field(default=0, repr=False, compare=False)
 
     @property
     def kind(self) -> str:
@@ -136,13 +158,22 @@ class FieldState:
         words = self.instruction.split()
         return words[1] if len(words) > 1 else ""
 
+    @property
+    def tokens(self) -> list[str]:
+        """The instruction's words, with quoted ones unquoted."""
+        return [
+            m.group(1) if m.group(1) is not None else m.group(2)
+            for m in _TOKEN.finditer(self.instruction)
+        ]
+
 
 @dataclass
 class InlineContext:
     """State shared by the paragraphs of a part.
 
     `fields` is the stack of open fields and `closed_fields` the finished ones, in closing order.
-    `bookmarks` maps a bookmark name to the id it resolves to (filled by a later task). `changes`
+    `bookmarks` maps a bookmark name to the id of the element it starts in, and
+    `pending_bookmarks` holds the names read since the last element was placed. `changes`
     counts tracked-change elements read as accepted. `caption_number_map` maps a caption's kind
     and the number the source displayed for it, such as `("table", 13)`, to the captioned
     element's id. `media` holds the images and equations read so far and what reading more
@@ -158,6 +189,39 @@ class InlineContext:
     changes: int = 0
     caption_number_map: dict[tuple[str, int], str] = field(default_factory=dict)
     media: MediaContext | None = None
+    pending_bookmarks: list[str] = field(default_factory=list)
+    _rels: dict[str, dict[str, Rel]] = field(default_factory=dict, repr=False)
+
+    def relationships(self) -> dict[str, Rel]:
+        """The relationships of the part being read, or none without a media context."""
+        if self.media is None:
+            return {}
+        part = self.media.part
+        if part not in self._rels:
+            self._rels[part] = self.media.pkg.rels(part)
+        return self._rels[part]
+
+
+def place_bookmarks(ctx: InlineContext, element_id: str) -> None:
+    """Map the bookmarks read since the last element was placed to `element_id`."""
+    for name in ctx.pending_bookmarks:
+        ctx.bookmarks.setdefault(name, element_id)
+    ctx.pending_bookmarks.clear()
+
+
+def move_bookmarks(ctx: InlineContext, old: str, new: str) -> None:
+    """Point the bookmarks mapped to `old`, or to something inside it, at `new`, which absorbed
+    it."""
+    for name, target in ctx.bookmarks.items():
+        if target == old or target.startswith(f"{old}#"):
+            ctx.bookmarks[name] = new
+
+
+def check_fields_closed(ctx: InlineContext, where: str) -> None:
+    """Refuse a part that leaves a field open, which would otherwise swallow what follows it."""
+    if ctx.fields:
+        kinds = ", ".join(f.kind or "unnamed" for f in ctx.fields)
+        raise DecompositionFailed(f"a field in {where} is never closed ({kinds})")
 
 
 # --- Reading ---------------------------------------------------------------------------------
@@ -193,6 +257,14 @@ class _Reader:
         self.objects: list[tuple[int, Element]] = []
         #: The equations among `objects` that are in display form (in an `m:oMathPara`).
         self.display: list[Element] = []
+        #: Stretches of the output, by `mark` at their start and end, to wrap as a
+        #: cross-reference or link, in the order they closed.
+        self.spans: list[tuple[int, int, _Wrap]] = []
+
+    @property
+    def mark(self) -> int:
+        """The place reached in the output, counting text and objects alike."""
+        return len(self.out) + len(self.objects)
 
     # -- flow --
 
@@ -209,6 +281,17 @@ class _Reader:
                 self.track_fields(child)
             elif tag in _TRANSPARENT:
                 self.walk(child)
+            elif tag == f"{W}hyperlink":
+                start = self.mark
+                self.walk(child)
+                wrap = self.hyperlink(child)
+                if wrap is not None and not self.suppressed:
+                    self.spans.append((start, self.mark, wrap))
+            elif tag == f"{W}bookmarkStart":
+                if name := child.get(f"{W}name"):
+                    self.ctx.pending_bookmarks.append(name)
+            elif self.suppressed and tag in (O_MATH, O_MATH_PARA):
+                continue
             elif tag == O_MATH:
                 self.objects.append((len(self.out), child))
             elif tag == O_MATH_PARA:
@@ -216,7 +299,9 @@ class _Reader:
                     self.objects.append((len(self.out), o))
                     self.display.append(o)
             elif tag == f"{W}fldSimple":
-                state = FieldState(child.get(f"{W}instr", ""), in_result=True)
+                state = FieldState(
+                    child.get(f"{W}instr", ""), in_result=True, opener=self, mark=self.mark
+                )
                 self.ctx.fields.append(state)
                 self.walk(child)
                 self.close_field()
@@ -234,12 +319,57 @@ class _Reader:
                 self.ctx.fields[-1].instruction += el.text or ""
 
     def close_field(self) -> None:
-        if self.ctx.fields:
-            self.ctx.closed_fields.append(self.ctx.fields.pop())
+        if not self.ctx.fields:
+            return
+        state = self.ctx.fields.pop()
+        self.ctx.closed_fields.append(state)
+        opened_here = state.opener is self
+        state.opener = None
+        if opened_here and not self.suppressed:
+            wrap = self.field_wrap(state)
+            if wrap is not None:
+                self.spans.append((state.mark, self.mark, wrap))
 
     @property
-    def in_instruction(self) -> bool:
-        return any(not f.in_result for f in self.ctx.fields)
+    def suppressed(self) -> bool:
+        """Whether output is held back: inside a field's instruction, or in the result of a
+        field that is dropped whole."""
+        return any(not f.in_result or f.kind in _DROPPED_FIELDS for f in self.ctx.fields)
+
+    # -- references --
+
+    def field_wrap(self, state: FieldState) -> _Wrap | None:
+        """How a closed field's result is wrapped: a cross-reference field, or a `HYPERLINK`
+        field to a bookmark (`\\l`), as an `XRef`; a `HYPERLINK` to an address as a `Link`."""
+        tokens = state.tokens
+        kind = state.kind
+        if kind in _REFERENCE_FIELDS:
+            name = next((t for t in tokens[1:] if not t.startswith("\\")), None)
+            return _xref(name) if name else None
+        if kind != "HYPERLINK":
+            return None
+        address: str | None = None
+        anchor: str | None = None
+        rest = iter(tokens[1:])
+        for token in rest:
+            lowered = token.lower()
+            if lowered == r"\l":
+                anchor = next(rest, None)
+            elif lowered in _VALUED_SWITCHES:
+                next(rest, None)
+            elif not token.startswith("\\") and address is None:
+                address = token
+        return _target(address, anchor)
+
+    def hyperlink(self, el: Element) -> _Wrap | None:
+        """How a `w:hyperlink`'s content is wrapped: to its external address as a `Link`, or to
+        its bookmark (`w:anchor`) as an `XRef`."""
+        rel_id = el.get(f"{R}id")
+        rel = self.ctx.relationships().get(rel_id) if rel_id else None
+        address = rel.target if rel is not None and rel.external else None
+        if rel_id and address is None:
+            return None  # an internal part or an unknown relationship: keep the text only
+        return _target(address, el.get(f"{W}anchor"))
 
     # -- runs --
 
@@ -261,8 +391,12 @@ class _Reader:
             elif tag == "instrText":
                 if self.ctx.fields and not self.ctx.fields[-1].in_result:
                     self.ctx.fields[-1].instruction += child.text or ""
-            elif not visible or self.in_instruction:
+            elif not visible or self.suppressed:
                 continue
+            elif tag in ("footnoteReference", "endnoteReference"):
+                if note := child.get(f"{W}id"):
+                    prefix = "fn" if tag == "footnoteReference" else "en"
+                    self.out.append(NoteRef(note_id=f"{prefix}-{note}"))
             elif is_media(child):
                 self.objects.append((len(self.out), child))
             elif tag == "t":
@@ -299,24 +433,32 @@ class _Reader:
 
     def placed(self) -> list[Inline]:
         """`out` with each picture or drawing read as an `InlineImage`, and each equation as an
-        `InlineEquation`, at its place."""
-        placed: list[Inline] = []
+        `InlineEquation`, at its place, and the spans of cross-references and links wrapped."""
+        # One slot per mark: text and objects in the order they were read.
+        slots: list[list[Inline]] = []
         pending = iter(self.objects)
         upcoming = next(pending, None)
         for index in range(len(self.out) + 1):
             while upcoming is not None and upcoming[0] == index:
-                el = upcoming[1]
-                if el.tag == O_MATH:
-                    equation = equation_of(el, self.ctx, at=self.at, display=False)
-                    placed.append(InlineEquation(equation_id=equation.id))
-                else:
-                    image = media_of(el, self.ctx, at=self.at, in_text=True)
-                    if isinstance(image, InlineImage):
-                        placed.append(image)
+                slots.append(self.place(upcoming[1]))
                 upcoming = next(pending, None)
             if index < len(self.out):
-                placed.append(self.out[index])
-        return placed
+                slots.append([self.out[index]])
+        # Inner spans close first; an outer one then wraps what they became.
+        for start, end, wrap in self.spans:
+            if start < end:
+                content = [item for slot in slots[start:end] for item in slot]
+                slots[start:end] = [wrap(content), *([] for _ in range(end - start - 1))]
+        return [item for slot in slots for item in slot]
+
+    def place(self, el: Element) -> list[Inline]:
+        """A picture or drawing as an `InlineImage` (or nothing), an equation as an
+        `InlineEquation`."""
+        if el.tag == O_MATH:
+            equation = equation_of(el, self.ctx, at=self.at, display=False)
+            return [InlineEquation(equation_id=equation.id)]
+        image = media_of(el, self.ctx, at=self.at, in_text=True)
+        return [image] if isinstance(image, InlineImage) else []
 
     def run_font(self, rpr: Element | None) -> tuple[Family | None, str]:
         fonts = rpr.find(f"{W}rFonts") if rpr is not None else None
@@ -331,7 +473,7 @@ class _Reader:
     def field_char(self, el: Element) -> None:
         kind = el.get(f"{W}fldCharType")
         if kind == "begin":
-            self.ctx.fields.append(FieldState())
+            self.ctx.fields.append(FieldState(opener=self, mark=self.mark))
         elif kind == "separate" and self.ctx.fields:
             self.ctx.fields[-1].in_result = True
         elif kind == "end":
@@ -370,12 +512,55 @@ class _Reader:
         self.emit(_map_symbol(code, font_family(font), font, self.ctx, self.at), marks)
 
 
+_Wrap = Callable[[list[Inline]], list[Inline]]
+
+
+def _xref(name: str) -> _Wrap:
+    """Wraps text as a cross-reference to bookmark `name`; content that is not only text (or
+    has none) is kept as it is."""
+
+    def wrap(content: list[Inline]) -> list[Inline]:
+        text = plain_text(content)
+        if not text.strip() or not all(isinstance(i, Text | Break) for i in content):
+            return content
+        return [XRef(target_id=f"{BOOKMARK}{name}", text=text)]
+
+    return wrap
+
+
+def _link(href: str) -> _Wrap:
+    def wrap(content: list[Inline]) -> list[Inline]:
+        return [Link(href=href, inlines=content)] if content else content
+
+    return wrap
+
+
+def _target(address: str | None, anchor: str | None) -> _Wrap | None:
+    """A link to `address` (with `anchor` as its fragment), or else a cross-reference to the
+    bookmark `anchor`; an address whose scheme is not allowed keeps its text only."""
+    if address:
+        if not address.lower().startswith(_LINK_SCHEMES):
+            return None
+        return _link(f"{address}#{anchor}" if anchor else address)
+    return _xref(anchor) if anchor else None
+
+
 def _read(p: Element, ctx: InlineContext, at: str) -> _Reader:
     style_el = p.find(f"{W}pPr/{W}pStyle")
     style = style_el.get(f"{W}val") if style_el is not None else None
     reader = _Reader(ctx, style, at)
     reader.walk(p)
     return reader
+
+
+def skip_paragraph(p: Element, ctx: InlineContext) -> None:
+    """Read a paragraph that is dropped (an entry of a generated list) only to keep the field
+    stack balanced; its bookmarks and flags are dropped with it."""
+    pending = list(ctx.pending_bookmarks)
+    flags = len(ctx.flags)
+    _read(p, ctx, at="")
+    ctx.pending_bookmarks[:] = pending
+    del ctx.flags[flags:]
 
 
 def inlines_of(p: Element, ctx: InlineContext, *, at: str) -> list[Inline]:

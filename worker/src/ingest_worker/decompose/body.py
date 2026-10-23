@@ -9,6 +9,12 @@ that table's notes, and a caption paragraph (`Caption` style, or holding a `SEQ`
 a table becomes its caption; next to an image, it makes the image a figure. Adjacency is in the
 block list, so empty paragraphs between them don't count. A paragraph that takes a caption keeps
 the ordinal it was given, unused.
+
+A bookmark maps to the id of the block it starts in (the next block, when it starts in an empty
+paragraph), or of the section whose heading it starts in. One inside a table maps to the table,
+and one in a caption, or a table of notes, to what took it. Entries of a table of contents or a
+list of tables or figures are dropped, by their style; a field left open at the end of the body
+refuses the document.
 """
 
 from __future__ import annotations
@@ -20,7 +26,17 @@ from xml.etree.ElementTree import Element
 
 from .equations import equation_of
 from .ids import child_id, normalise_title, section_id
-from .inline import InlineContext, W, inlines_of, plain_text, read_paragraph
+from .inline import (
+    InlineContext,
+    W,
+    check_fields_closed,
+    inlines_of,
+    move_bookmarks,
+    place_bookmarks,
+    plain_text,
+    read_paragraph,
+    skip_paragraph,
+)
 from .media import media_of
 from .model import (
     Block,
@@ -170,10 +186,12 @@ def adjacent_caption(
 
 
 def _move_flags(ctx: InlineContext, old: str, new: str) -> None:
-    """Point the flags raised at `old`, or inside it, at `new`, which absorbed it."""
+    """Point the flags raised at `old`, or inside it, and the bookmarks mapped there, at `new`,
+    which absorbed it."""
     for i, flag in enumerate(ctx.flags):
         if flag.at is not None and (flag.at == old or flag.at.startswith(f"{old}#")):
             ctx.flags[i] = flag.model_copy(update={"at": new})
+    move_bookmarks(ctx, old, new)
 
 
 def attach_captions(
@@ -280,15 +298,25 @@ def _attach_note_tables(
 # --- Flow ------------------------------------------------------------------------------------
 
 
+_BOOKMARK_START = f"{W}bookmarkStart"
+
+
 def _elements(parent: Element) -> Iterator[Element]:
-    """Paragraphs and tables under `parent`, with block content controls unwrapped."""
+    """Paragraphs, tables and the bookmarks between them under `parent`, with block content
+    controls unwrapped."""
     for child in parent:
         if child.tag == f"{W}sdt":
             content = child.find(f"{W}sdtContent")
             if content is not None:
                 yield from _elements(content)
-        elif child.tag in (f"{W}p", f"{W}tbl"):
+        elif child.tag in (f"{W}p", f"{W}tbl", _BOOKMARK_START):
             yield child
+
+
+def _pend_bookmark(el: Element, ctx: InlineContext) -> None:
+    """A bookmark between blocks starts in the block after it."""
+    if name := el.get(f"{W}name"):
+        ctx.pending_bookmarks.append(name)
 
 
 class _Flow:
@@ -315,7 +343,24 @@ class _Flow:
         if not self.lists:
             self.scope.blocks.append(closed)
 
+    def element(self, el: Element) -> None:
+        """A paragraph, table or bookmark of the flow."""
+        if el.tag == f"{W}tbl":
+            self.table(el)
+        elif el.tag == _BOOKMARK_START:
+            _pend_bookmark(el, self.ctx)
+        else:
+            self.paragraph(el)
+
+    def place(self, block: Block) -> None:
+        """Add a block to the scope, mapping the bookmarks read for it."""
+        place_bookmarks(self.ctx, block.id)
+        self.scope.blocks.append(block)
+
     def paragraph(self, p: Element) -> None:
+        if self.styles.is_generated_list(p):
+            skip_paragraph(p, self.ctx)
+            return
         start = len(self.ctx.closed_fields)
         inlines, lone, display = read_paragraph(p, self.ctx, at=self.scope.peek("p"))
         if not inlines and lone is None and not display:
@@ -324,13 +369,14 @@ class _Flow:
         if info is None:
             self.end_list()
             if lone is not None:
-                self.scope.blocks.append(self.image(p, lone))
+                self.place(self.image(p, lone))
                 return
             if display:
-                self.scope.blocks.extend(self.equations(display))
+                for block in self.equations(display):
+                    self.place(block)
                 return
             pid = self.scope.take("p")
-            self.scope.blocks.append(Paragraph(id=pid, inlines=inlines))
+            self.place(Paragraph(id=pid, inlines=inlines))
             seqs = [f for f in self.ctx.closed_fields[start:] if f.kind == "SEQ"]
             if seqs or self.styles.is_caption(p):
                 self.scope.captions[pid] = caption_parts(inlines, seqs)
@@ -354,6 +400,7 @@ class _Flow:
             item = list(self.equations(display))
         else:
             item = [Paragraph(id=self.scope.take("p"), inlines=inlines)]
+        place_bookmarks(self.ctx, item[0].id)
         target.items.append(item)
 
     def image(self, p: Element, run_child: Element) -> Block:
@@ -377,7 +424,14 @@ class _Flow:
     def table(self, tbl: Element) -> None:
         self.end_list()
         tid = self.scope.take("table")
+        # Every bookmark read just before the table, or inside it, is the table's.
+        names = list(self.ctx.pending_bookmarks)
+        self.ctx.pending_bookmarks.clear()
         block = table_of(tbl, self.ctx, id=tid, walk_blocks=self.walk_container, wide=self.wide)
+        names.extend(n for el in tbl.iter(_BOOKMARK_START) if (n := el.get(f"{W}name")))
+        for name in names:
+            self.ctx.bookmarks[name] = tid
+        self.ctx.pending_bookmarks.clear()
         self.scope.blocks.append(block)
         self.scope.sources[tid] = tbl
 
@@ -386,12 +440,17 @@ class _Flow:
         inner = _Flow(_Scope(prefix), self.styles, self.ctx)
         inner.wide = self.wide
         for el in _elements(parent):
-            if el.tag == f"{W}tbl":
-                inner.table(el)
-            else:
-                inner.paragraph(el)
+            inner.element(el)
         inner.end_list()
         return inner.scope.finish(self.ctx, flag_uncaptioned=False)
+
+
+def container_blocks(
+    parent: Element, prefix: str, styles: Styles, ctx: InlineContext
+) -> list[Block]:
+    """The blocks of a container outside the body, such as a footnote, with ids under `prefix`;
+    every paragraph is body text there."""
+    return _Flow(_Scope(prefix), styles, ctx).walk_container(parent, prefix)
 
 
 # --- Pages -----------------------------------------------------------------------------------
@@ -444,8 +503,8 @@ def walk_body(pkg: Package, ctx: InlineContext) -> tuple[list[Block], list[Secti
     wide = _landscape_elements(body, elements)
     for i, el in enumerate(elements):
         flow.wide = i in wide
-        if el.tag == f"{W}tbl":
-            flow.table(el)
+        if el.tag != f"{W}p" or styles.is_generated_list(el):
+            flow.element(el)
             continue
         level = styles.outline_level(el)
         if level is None:
@@ -464,11 +523,14 @@ def walk_body(pkg: Package, ctx: InlineContext) -> tuple[list[Block], list[Secti
         parent.slugs[slug] = parent.slugs.get(slug, 0) + 1
         sid = section_id(None if parent is root else parent.id, title, parent.slugs[slug])
         section = _Open(sid, level=level, title=[Text(text=_EMPTY_TITLE)] if blank else inlines)
+        place_bookmarks(ctx, sid)
         parent.sections.append(section)
         stack.append(section)
         _flag_heading(ctx, section, parent if parent is not root else None, blank)
         flow.switch(section)
     flow.end_list()
+    check_fields_closed(ctx, "the body")
+    ctx.pending_bookmarks.clear()  # bookmarks after the last block start in nothing
     return root.finish(ctx), [s.build(ctx) for s in root.sections]
 
 

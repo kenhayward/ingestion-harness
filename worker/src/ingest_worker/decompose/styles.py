@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from xml.etree.ElementTree import Element
 
 from .inline import W
 
 _BODY_LEVEL = 9
+_GENERATED_ID = re.compile(r"TOC[1-9]|TableofFigures")
+_GENERATED_NAME = re.compile(r"toc [1-9]|table of figures")
 _UNORDERED = {"bullet", "none"}
 
 
@@ -80,6 +83,14 @@ class Styles:
         """Whether the paragraph's style is Word's caption style, or is based on it."""
         return any(
             sid == "Caption" or self._names.get(sid) == "caption" for sid in self._style_chain(p)
+        )
+
+    def is_generated_list(self, p: Element) -> bool:
+        """Whether the paragraph is an entry of a table of contents or a list of tables or
+        figures, by its style (`TOC 1`-`TOC 9`, `Table of Figures`) or one it is based on."""
+        return any(
+            _GENERATED_ID.fullmatch(sid) or _GENERATED_NAME.fullmatch(self._names.get(sid, ""))
+            for sid in self._style_chain(p)
         )
 
     def outline_level(self, p: Element) -> int | None:

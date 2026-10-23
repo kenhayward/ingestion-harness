@@ -190,7 +190,7 @@ def test_fld_simple_and_nested_fields() -> None:
     body = (
         '<w:p><w:fldSimple w:instr=" PAGEREF _Toc1 \\h "><w:r><w:t>12</w:t></w:r></w:fldSimple>'
         '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
-        "<w:r><w:instrText> TOC </w:instrText></w:r>"
+        "<w:r><w:instrText> QUOTE </w:instrText></w:r>"
         '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
         "<w:r><w:instrText> SEQ Table </w:instrText></w:r>"
         '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
@@ -202,7 +202,7 @@ def test_fld_simple_and_nested_fields() -> None:
     )
     inl, ctx = _inlines(body)
     assert plain_text(inl) == "12toc"
-    assert [f.kind for f in ctx.closed_fields] == ["PAGEREF", "SEQ", "TOC"]
+    assert [f.kind for f in ctx.closed_fields] == ["PAGEREF", "SEQ", "QUOTE"]
 
 
 def test_hyperlink_and_unknown_container_keep_result() -> None:
