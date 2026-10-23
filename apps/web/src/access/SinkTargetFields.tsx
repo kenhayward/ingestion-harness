@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SinkInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { BrowseDialog } from './BrowseDialog.js';
@@ -22,6 +22,13 @@ export function sinkTargetComplete(sink: SinkInfo, value: SinkTargetValue): bool
       : value.connectionId !== null;
   return filled && placed;
 }
+
+/** How many pages of a field's list are read to name a saved value (a flat list, 100 a page). */
+const NAME_PAGES = 20;
+
+/** A browsed value as shown: its label and its id in brackets, or the id alone when unnamed. */
+export const shownValue = (id: string, label: string | undefined) =>
+  id && label ? `${label} [${id}]` : id;
 
 /**
  * A target's fields as its sink declares them: the instance (a personal sink) or the shared
@@ -49,6 +56,58 @@ export function SinkTargetFields({
   const set = (id: string, v: string) =>
     onChange({ ...value, destination: { ...value.destination, [id]: v } });
   const [browsing, setBrowsing] = useState<{ id: string; label: string } | null>(null);
+  /** The labels of browsed values, by field: picked here, or read from the sink for saved ones. */
+  const [labels, setLabels] = useState<Record<string, { id: string; label: string }>>({});
+  const browsable = (f: SinkInfo['destinationFields'][number]) =>
+    f.kind === 'fixed' && f.browse && sink.capabilities.browse;
+  // Browsing reads the sink as someone: a personal sink's instance, or a shared connection.
+  const ready =
+    sink.connectionKind === 'personal'
+      ? sink.instances.length === 0 || value.instanceId !== null
+      : value.connectionId !== null;
+  const notReady =
+    sink.connectionKind === 'personal' ? 'Choose an instance first' : 'Choose a connection first';
+  const labelOf = (fieldId: string) => {
+    const known = labels[fieldId];
+    return known && known.id === value.destination[fieldId] ? known.label : undefined;
+  };
+
+  // A saved value is an id: name it from the sink's list (the id alone when it isn't listed).
+  const unnamed = sink.destinationFields
+    .filter((f) => browsable(f) && value.destination[f.id] && !labelOf(f.id))
+    .map((f) => `${f.id}=${value.destination[f.id]}`)
+    .join('&');
+  useEffect(() => {
+    if (!ready || !unnamed) return;
+    let live = true;
+    for (const pair of unnamed.split('&')) {
+      const [fieldId, id] = pair.split('=') as [string, string];
+      void (async () => {
+        let cursor: string | null = null;
+        for (let pages = 0; pages < NAME_PAGES; pages++) {
+          const r = await api.browseSink({
+            sinkId: sink.id,
+            instanceId: value.instanceId,
+            connectionId: value.connectionId,
+            field: fieldId,
+            parentId: null,
+            cursor,
+          });
+          const hit = r.nodes.find((n) => n.id === id);
+          if (hit) {
+            if (live) setLabels((all) => ({ ...all, [fieldId]: { id, label: hit.label } }));
+            return;
+          }
+          if (!r.nextCursor) return;
+          cursor = r.nextCursor;
+        }
+      })().catch(() => undefined);
+    }
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, unnamed, sink.id, value.instanceId, value.connectionId]);
   return (
     <>
       {sink.connectionKind === 'personal' ? (
@@ -87,23 +146,41 @@ export function SinkTargetFields({
           <label>
             {f.label}
             {f.required ? '' : ' (optional)'}
-            <input
-              className="mono"
-              value={value.destination[f.id] ?? ''}
-              autoComplete="off"
-              spellCheck={false}
-              disabled={f.kind === 'fixed' && fixedLocked}
-              placeholder={f.kind === 'pattern' ? '{source.stem}' : ''}
-              onChange={(e) => set(f.id, e.target.value)}
-            />
+            {browsable(f) ? (
+              <input
+                className="browsed-value"
+                value={shownValue(value.destination[f.id] ?? '', labelOf(f.id))}
+                readOnly
+                disabled={fixedLocked}
+                placeholder={ready ? 'Browse to choose' : notReady}
+                title={value.destination[f.id] ?? ''}
+              />
+            ) : (
+              <input
+                className="mono"
+                value={value.destination[f.id] ?? ''}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={f.kind === 'fixed' && fixedLocked}
+                placeholder={f.kind === 'pattern' ? '{source.stem}' : ''}
+                onChange={(e) => set(f.id, e.target.value)}
+              />
+            )}
           </label>
-          {f.kind === 'fixed' && f.browse && sink.capabilities.browse && !fixedLocked && (
+          {browsable(f) && !fixedLocked && (
             <button
               type="button"
               aria-label={`Browse ${f.label}`}
+              disabled={!ready}
+              title={ready ? undefined : notReady}
               onClick={() => setBrowsing({ id: f.id, label: f.label })}
             >
               Browse…
+            </button>
+          )}
+          {browsable(f) && !f.required && !fixedLocked && value.destination[f.id] && (
+            <button type="button" aria-label={`Clear ${f.label}`} onClick={() => set(f.id, '')}>
+              Clear
             </button>
           )}
           {f.kind === 'pattern' && (
@@ -122,7 +199,10 @@ export function SinkTargetFields({
           connectionId={value.connectionId}
           field={browsing.id}
           label={browsing.label}
-          onPick={(id) => set(browsing.id, id)}
+          onPick={(id, label) => {
+            setLabels((all) => ({ ...all, [browsing.id]: { id, label } }));
+            set(browsing.id, id);
+          }}
           onClose={() => setBrowsing(null)}
         />
       )}

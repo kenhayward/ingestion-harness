@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 23 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">
+        Friday 23 October 2026: choosing an object storage or a repository for a 3DEXPERIENCE target
+        by name. PR #313, opened on Friday 23 October 2026 (UTC).
+      </p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#browse-by-name">Storages and repositories by name</a>
+            <span>— a filterable list to choose from, and names instead of ids</span>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            An object storage&apos;s project shows once the 3DEXPERIENCE sink is redeployed with its
+            own change (kenhayward/3ds-sink#7); before that, a storage shows by its name alone.
+          </li>
+        </ul>
+      </div>
+
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="browse-by-name">Storages and repositories by name</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/313">#313</a>
+      </p>
+      <p>
+        On a target of another system, <strong>Browse</strong> is available once you have chosen the
+        instance (or, for a shared system, the connection) to look with, instead of failing with a
+        message about a missing connection. Choosing an object storage or a document repository now
+        shows a list of their names with a filter box above it: type part of a name to narrow it,
+        and click one to choose it. The field then shows the name, with the storage&apos;s project,
+        and its id in brackets, for example <em>CMC_Integration (dp-cmc) [5a026f29-…]</em>; a saved
+        target shows the same when you open it. An optional repository can be cleared. The browse
+        window has a single Cancel button.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>

@@ -715,15 +715,26 @@ describe('AdminDialog Published outputs tab', () => {
             ]
           : [],
       ),
+      browseSink: vi.fn(async () => ({
+        nodes: [
+          { id: 'reports', label: 'Reports', kind: 'space', hasChildren: false, selectable: true },
+        ],
+        nextCursor: null,
+      })),
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Add target' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add publishing target' });
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Other system' }));
     await userEvent.type(within(dialog).getByLabelText('Label'), 'Fake target');
-    await userEvent.type(within(dialog).getByLabelText('Space'), 'reports');
     await userEvent.type(within(dialog).getByLabelText('Name'), '{{source.stem}');
+    // A browsable field is chosen, not typed: Browse waits for a connection to read with.
+    expect(within(dialog).getByRole('button', { name: 'Browse Space' })).toBeDisabled();
     await within(dialog).findByRole('option', { name: 'Fake account (OK)' });
     await userEvent.selectOptions(within(dialog).getByLabelText('Connection'), 'fake-account');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Browse Space' }));
+    const browse = await screen.findByRole('dialog', { name: 'Choose space' });
+    await userEvent.click(await within(browse).findByRole('button', { name: 'Reports' }));
+    expect(within(dialog).getByLabelText('Space')).toHaveValue('Reports [reports]');
     expect(within(dialog).queryByRole('button', { name: 'Test connection' })).toBeNull();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add' }));
     expect(api.createPublishTarget).toHaveBeenCalledWith({

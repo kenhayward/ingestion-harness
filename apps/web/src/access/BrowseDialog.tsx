@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { SinkBrowseNode } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
@@ -10,10 +10,15 @@ interface Level {
   next: string | null;
 }
 
+/** A flat list is read whole, up to this many pages, so the filter sees all of it. */
+const FLAT_PAGES = 50;
+
 /**
- * Picks a value for a sink's destination field from the tree the sink serves (a space, a
- * folder), one level at a time: open a node to see what is inside it, More for the next page.
- * Only a node the sink marks selectable can be picked; its id becomes the field's value.
+ * Picks a value for a sink's destination field from what the sink serves. A flat list (no node
+ * holds others: repositories, object storages) is read whole and shown as a list with a filter
+ * above it: a click on an item picks it. A tree (a space, a folder) is shown one level at a time:
+ * open a node to see what is inside it, More for the next page, Use to pick a selectable node.
+ * The picked node's id becomes the field's value; its label goes with it, for display.
  */
 export function BrowseDialog({
   api,
@@ -31,17 +36,30 @@ export function BrowseDialog({
   connectionId: string | null;
   field: string;
   label: string;
-  onPick: (id: string) => void;
+  onPick: (id: string, label: string) => void;
   onClose: () => void;
 }) {
+  const filterId = useId();
   const [levels, setLevels] = useState<Map<string | null, Level>>(new Map());
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [needsConnection, setNeedsConnection] = useState(false);
+  /** The root is a flat list, read whole (null: not known yet). */
+  const [flat, setFlat] = useState<SinkBrowseNode[] | null>(null);
+  const [filter, setFilter] = useState('');
+
+  const page = (parentId: string | null, cursor: string | null) =>
+    api.browseSink({ sinkId, instanceId, connectionId, field, parentId, cursor });
+
+  const fail = (err: unknown) => {
+    const message = (err as Error).message;
+    setNeedsConnection(/has no connection for/.test(message));
+    setError(message);
+  };
 
   const load = async (parentId: string | null, cursor: string | null) => {
     try {
-      const r = await api.browseSink({ sinkId, instanceId, connectionId, field, parentId, cursor });
+      const r = await page(parentId, cursor);
       setLevels((all) => {
         const next = new Map(all);
         const before = cursor ? (all.get(parentId)?.nodes ?? []) : [];
@@ -49,17 +67,40 @@ export function BrowseDialog({
         return next;
       });
     } catch (err) {
-      const message = (err as Error).message;
-      setNeedsConnection(/has no connection for/.test(message));
-      setError(message);
+      fail(err);
     }
   };
 
   useEffect(() => {
-    void load(null, null);
     // One first load per dialog: its props don't change while it is open.
+    let live = true;
+    void (async () => {
+      try {
+        let r = await page(null, null);
+        if (r.nodes.some((n) => n.hasChildren)) {
+          if (live) setLevels(new Map([[null, { nodes: r.nodes, next: r.nextCursor }]]));
+          return;
+        }
+        const nodes = [...r.nodes];
+        for (let pages = 1; r.nextCursor && pages < FLAT_PAGES; pages++) {
+          r = await page(null, r.nextCursor);
+          nodes.push(...r.nodes);
+        }
+        if (live) setFlat(nodes);
+      } catch (err) {
+        if (live) fail(err);
+      }
+    })();
+    return () => {
+      live = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const pick = (n: SinkBrowseNode) => {
+    onPick(n.id, n.label);
+    onClose();
+  };
 
   const toggle = (id: string) => {
     const next = new Set(open);
@@ -71,7 +112,7 @@ export function BrowseDialog({
     setOpen(next);
   };
 
-  const list = (parentId: string | null) => {
+  const tree = (parentId: string | null) => {
     const level = levels.get(parentId);
     if (!level) return <p className="muted">Loading…</p>;
     if (level.nodes.length === 0) return <p className="muted">Nothing here.</p>;
@@ -94,17 +135,11 @@ export function BrowseDialog({
             )}
             <span>{n.label}</span>
             {n.selectable && (
-              <button
-                type="button"
-                onClick={() => {
-                  onPick(n.id);
-                  onClose();
-                }}
-              >
+              <button type="button" onClick={() => pick(n)}>
                 Use {n.label}
               </button>
             )}
-            {open.has(n.id) && list(n.id)}
+            {open.has(n.id) && tree(n.id)}
           </li>
         ))}
         {level.next && (
@@ -118,25 +153,52 @@ export function BrowseDialog({
     );
   };
 
+  const list = (nodes: SinkBrowseNode[]) => {
+    const q = filter.trim().toLowerCase();
+    const shown = nodes.filter((n) => n.selectable && n.label.toLowerCase().includes(q));
+    return (
+      <>
+        <span className="filter-search browse-filter">
+          <Icon name="search" />
+          <input
+            id={filterId}
+            type="search"
+            aria-label={`Filter ${label.toLowerCase()}`}
+            placeholder={`Filter by name`}
+            value={filter}
+            autoFocus
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </span>
+        {nodes.length === 0 ? (
+          <p className="muted">Nothing here.</p>
+        ) : shown.length === 0 ? (
+          <p className="muted">Nothing matches “{filter.trim()}”.</p>
+        ) : (
+          <ul className="browse-list">
+            {shown.map((n) => (
+              <li key={n.id}>
+                <button type="button" onClick={() => pick(n)}>
+                  {n.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </>
+    );
+  };
+
   return (
     <Dialog
       title={`Choose ${label.toLowerCase()}`}
       icon={<Icon name="list" size={32} />}
       className="browse-dialog"
       onClose={onClose}
-      actions={
-        <button type="button" onClick={onClose}>
-          Cancel
-        </button>
-      }
     >
       {error ? (
         <div role="alert">
-          <p>
-            {needsConnection
-              ? `Add your connection for ${instanceId ?? sinkId} first: ${error}`
-              : error}
-          </p>
+          <p>{error}</p>
           {needsConnection && (
             <button type="button" onClick={() => void api.openConnections()}>
               <Icon name="key" />
@@ -144,8 +206,12 @@ export function BrowseDialog({
             </button>
           )}
         </div>
+      ) : flat ? (
+        list(flat)
+      ) : levels.size ? (
+        tree(null)
       ) : (
-        list(null)
+        <p className="muted">Loading…</p>
       )}
     </Dialog>
   );
