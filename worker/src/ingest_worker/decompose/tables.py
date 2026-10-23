@@ -49,8 +49,8 @@ _AMBIGUOUS = "ambiguous vertical merge in table"
 MAX_COLUMNS = 1000
 #: Grid slots (rows times columns) a table, and a whole document's tables, may have. Each slot
 #: becomes a cell or a filler, so a tiny file could otherwise claim gigabytes.
-MAX_TABLE_SLOTS = 200_000
-MAX_DOCUMENT_SLOTS = 2_000_000
+MAX_TABLE_SLOTS = 20_000
+MAX_DOCUMENT_SLOTS = 200_000
 TABLE_TOO_LARGE = "table too large"
 _WRAPPERS = {f"{W}sdt", f"{W}sdtContent", f"{W}customXml"}
 _H_ALIGN: dict[str, HAlign] = {
@@ -160,21 +160,30 @@ def _grid_columns(tbl: Element) -> list[int | None]:
 def _width(tbl: Element, rows: list[Element]) -> int:
     """The number of grid columns: the declared grid, or the widest row if that is wider.
 
-    Checked before anything is built from the grid: a `w:gridBefore` or `w:gridAfter` wider
-    than the declared grid is malformed, and a grid of more than `MAX_TABLE_SLOTS` slots is
-    refused.
+    Checked before anything is built from the grid: a `w:gridBefore` or `w:gridAfter` that
+    widens the grid on its own is malformed, and a grid of more than `MAX_TABLE_SLOTS` slots is
+    refused. With a declared grid a gap may not exceed it; with none (or an empty one) the grid
+    is the widest row's cells, and no gap may make a row wider than that.
     """
     declared = len(_grid_columns(tbl))
-    widest = 0
+    measured = []
     for tr in rows:
         before, after = row_gaps(tr)
+        cells = sum(cell_span(tc) for tc in cells_of(tr))
+        measured.append((before, cells, after))
+    # Without a declared grid, only the cells say how wide the table is.
+    base = declared or max((cells for _, cells, _ in measured), default=0)
+    what = f"{declared} grid columns" if declared else f"{base} columns of cells"
+    widest = base
+    for before, cells, after in measured:
         for name, gap in (("gridBefore", before), ("gridAfter", after)):
-            if declared and gap > declared:
+            too_wide = gap > declared if declared else gap and before + cells + after > base
+            if too_wide:
                 raise DecompositionFailed(
-                    f"a row's {name} of {gap} is wider than the table's {declared} grid columns"
+                    f"a row's {name} of {gap} is wider than the table's {what}"
                 )
-        widest = max(widest, before + sum(cell_span(tc) for tc in cells_of(tr)) + after)
-    width = max(declared, widest)
+        widest = max(widest, before + cells + after)
+    width = widest
     if width > MAX_COLUMNS:
         raise DecompositionFailed(f"a table {width} grid columns wide (at most {MAX_COLUMNS})")
     if len(rows) * width > MAX_TABLE_SLOTS:

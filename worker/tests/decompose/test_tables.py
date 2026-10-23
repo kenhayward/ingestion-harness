@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import time
+import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import Element
 
 import pytest
 
-from ingest_worker.decompose import tables
+from ingest_worker.decompose import decompose_docx, tables
 from ingest_worker.decompose.body import walk_body
 from ingest_worker.decompose.inline import InlineContext, RunStyles, W, plain_text
 from ingest_worker.decompose.media import MediaContext
@@ -573,9 +575,60 @@ def test_grid_after_wider_than_the_grid_is_malformed() -> None:
 
 
 def test_table_past_the_slot_cap_is_refused_before_building_cells() -> None:
-    rows = tr(tc("x", span=1000)) * 201  # 201 rows by 1000 columns
+    rows = tr(tc("x", span=1000)) * 21  # 21 rows by 1000 columns
     with pytest.raises(DecompositionRejected, match="table too large"):
         read(tbl(rows, cols=[1] * 1000))
+
+
+def _table_element(rows: int, cols: int) -> Element:
+    """A `w:tbl` of `rows` rows of one `cols`-wide cell, without a grid."""
+    row = tr(tc("x", span=cols))
+    return ET.fromstring(f"<w:tbl xmlns:w='{W[1:-1]}'>{row * rows}</w:tbl>")
+
+
+def test_table_slot_cap_is_20000() -> None:
+    assert tables.MAX_TABLE_SLOTS == 20_000
+    exactly = _table_element(20, 1000)
+    assert tables._width(exactly, tables.rows_of(exactly)) == 1000
+    over = _table_element(21, 1000)
+    with pytest.raises(DecompositionRejected, match="table too large"):
+        tables._width(over, tables.rows_of(over))
+
+
+def test_document_slot_cap_is_200000() -> None:
+    assert tables.MAX_DOCUMENT_SLOTS == 200_000
+    assert tables.count_slots(180_000, 20, 1000) == 200_000
+    with pytest.raises(DecompositionRejected, match="table too large"):
+        tables.count_slots(180_001, 20, 1000)
+
+
+def test_grid_before_without_tblgrid_cannot_widen_the_grid() -> None:
+    body = "<w:tbl>" + tr(tc("A"), tc("B")) + tr(tc("C"), before=5) + "</w:tbl>"
+    with pytest.raises(DecompositionFailed) as failed:
+        read(body)
+    assert failed.value.at is not None and failed.value.at.endswith("#table-1")
+    assert "gridBefore" in failed.value.detail
+
+
+def test_grid_after_without_tblgrid_cannot_widen_the_grid() -> None:
+    body = "<w:tbl>" + tr(tc("A"), tc("B")) + tr(tc("C"), after=5) + "</w:tbl>"
+    with pytest.raises(DecompositionFailed, match="gridAfter"):
+        read(body)
+
+
+def test_gaps_within_the_widest_row_are_fine_without_tblgrid() -> None:
+    body = "<w:tbl>" + tr(tc("A"), tc("B"), tc("C")) + tr(tc("D"), before=1, after=1) + "</w:tbl>"
+    t, _, _ = table(body)
+    assert len(t.rows[0].cells) == 3
+
+
+def test_slot_bomb_without_tblgrid_is_refused_fast() -> None:
+    row = '<w:tr><w:trPr><w:gridBefore w:val="999"/></w:trPr><w:tc><w:p/></w:tc></w:tr>'
+    data = build_docx(("<w:tbl>" + row * 200 + "</w:tbl><w:p/>") * 10)
+    started = time.perf_counter()
+    with pytest.raises((DecompositionFailed, DecompositionRejected)):
+        decompose_docx(data, renderer=FakeRenderer())
+    assert time.perf_counter() - started < 1.0
 
 
 def test_document_past_the_slot_cap_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
