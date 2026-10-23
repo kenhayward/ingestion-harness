@@ -47,8 +47,10 @@ static ones table by table. The two pipelines meet then, not now. **[owner]**
 - Keep tables and figures *numbered*, but let the target produce the numbers, and drop the tables
   of contents and the lists of tables and figures, which the target regenerates. **[owner]**
 - Keep equations as structured maths. **[owner]**
-- Run straight through, in batches of documents (a folder), with no review step in CT Studio.
-  Review happens in the target. **[owner]**
+- Run straight through, for a single document or a batch of documents (a folder), with no review
+  step in CT Studio. Review happens in the target. **[owner]**
+- Live on its own top-level tab in CT Studio, with no document types, recipes or Workbench: the
+  conversion is deterministic. **[owner]**
 - Re-run safely: never overwrite a document someone has changed in the target, and never load the
   same file twice by accident. **[owner]**
 
@@ -79,11 +81,12 @@ So:
 
 ## 3. The flow
 
-1. A person starts a **decomposition batch**: a source folder and one target. The folder is
-   uploaded from the browser with its relative paths; an S3 prefix as a source is a later addition
+1. A person starts a **decomposition batch** on the conversion tab (§10): one or more files, or a
+   folder, and one target. A single file is a batch of one, which is what testing needs. A folder is
+   uploaded from the browser with its relative paths. An S3 prefix as a source is a later addition
    (§12). The target must be one whose sink can take decomposed documents (§9). Every document in
-   the batch goes to the one destination chosen on that target. **[owner]** (folders, S3 later);
-   **[call]** (one destination per batch: the source's own subfolders are not mirrored).
+   the batch goes to the one destination chosen on that target. **[owner]** (files or folders, S3
+   later); **[call]** (one destination per batch: the source's own subfolders are not mirrored).
 2. Each document is one job, decomposed by the worker (§4, §5).
 3. The decomposer runs its fidelity checks (§7). A document that fails them stops here.
 4. CT Studio checks the **register** (§8) to decide whether this is a new document, an update, a
@@ -305,6 +308,8 @@ The flag codes:
 - `changes_accepted`: tracked changes were accepted (with the count);
 - `symbol_unmapped`;
 - `heading_skipped_level`;
+- `heading_empty`: a section whose heading has no text, which a target that needs titles has to
+  fill in;
 - `caption_not_found`: a table or figure has no caption that could be recognised;
 - `table_notes_unrecognised`;
 - `xref_unmatched`;
@@ -379,7 +384,7 @@ creates it. **[owner]** CT Studio keeps a **register** that links sources to tho
 One entry per delivered document, scoped to the target's sink and instance (so to one tenant):
 
 - the **source key**: the file's path relative to the batch's source folder, as the browser reports
-  it (including the folder's own name);
+  it (including the folder's own name). For a file uploaded on its own, the key is its file name;
 - the **content hash**: the SHA-256 of the file's bytes, which CT Studio already computes;
 - the **persistent id**;
 - the **last receipt**: every component the sink wrote, with its version;
@@ -519,10 +524,14 @@ so it changes deliberately, as a new contract version. **[call]**
   - The register and its two checks.
   - Force-load and redeliver.
   - Detach and accept-target-state, with the record of each acceptance.
-- **Web.**
-  - Starting a batch: a folder and a target.
-  - The batch view, with one row per document, its outcome, its link in the target and its
-    report.
+- **Web: a new top-level tab** beside the existing ones, for decomposition only. Its working name
+  is **Conversion**; the owner will settle the final name. **[owner]**
+  - Upload one or more files, or a folder, and choose a target. There is no document type, recipe
+    or Workbench step, because the conversion is deterministic. **[owner]**
+  - Progress while a batch runs, one row per document.
+  - Results: each document's outcome, its link in the target, its report, and the actions it
+    offers (force-load, redeliver, detach, accept the target's state).
+  - Earlier batches, newest first.
 - **Bridge.** Delivering version 2 packages, conditional updates and the new receipt fields.
 - **Contract package.** Version 2, published, with the conformance checks.
 
@@ -535,7 +544,7 @@ model-driven extraction and no review step. **[call]**
 |---|---|---|
 | 1 | **Word into the decomposed document**, with its fidelity checks and report, run from a test harness | The synthetic corpus decomposes and passes its checks, and the owner's private samples decompose with no fidelity failure |
 | 2 | **Contract version 2, the bridge, the register and the version check**, against a fake sink | The conformance suite's new checks pass against the fake sink; re-runs produce each outcome in §3 |
-| 3 | **Batches in CT Studio**: the API and web | A folder goes through to the fake sink with one row per document |
+| 3 | **Batches in CT Studio**: the API and the conversion tab | A single file, and then a folder, go through to the fake sink with one row per document |
 | 4 | **The first real sink** (in its own repository: its dialect capture and its writes) | A sample report reaches a sandbox, reads back equal, and updates and refuses as §8 says |
 | 5 | **PDF**, born-digital and scanned | PDF samples decompose; scanned pages are flagged |
 | 6 | **S3 prefix as a batch source** | A prefix runs as a folder does |
@@ -556,6 +565,6 @@ Phases 1 and 4's capture work need nothing from each other and can run side by s
   LaTeX. They must run locally, and CT Studio must be able to redistribute them.
 - The exact JSON shape of the decomposed document, within §5.
 - The register's table layout, within §8.
-- How the batch view looks, following the existing jobs pages.
+- How the conversion tab looks, following CT Studio's existing pages and styling.
 - How text is normalised for text accounting (§7), provided the documented conversions are the only
   differences allowed.
