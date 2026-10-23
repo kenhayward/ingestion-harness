@@ -551,6 +551,8 @@ model-driven extraction and no review step. **[call]**
 
 Phases 1 and 4's capture work need nothing from each other and can run side by side.
 
+**Phase 1 status.** Phase 1 (Word) is implemented: `uv run --directory worker python scripts/decompose.py <file.docx> <out-dir> [--converter-url URL]`.
+
 ## 12. Later
 
 - **Data-bound tables.** A table's key (§5.4) lets a later data-bound table find the static table
