@@ -3,9 +3,11 @@
 The grid is Word's own. `w:tblGrid/w:gridCol` gives the columns (widened if a row is wider),
 `w:gridSpan` a cell's column span, and `w:vMerge` its row span: a `restart` cell absorbs the
 `continue` cells (`w:vMerge` with no value, or `continue`) directly below it that start in the
-same grid column with the same column span. A continue cell with nothing to continue is a cell
-of its own. Slots a row leaves empty (`w:gridBefore`, `w:gridAfter`, or a row short of the grid)
-become empty cells, one per slot. A row deleted by a tracked change is dropped.
+same grid column with the same column span, and takes their content after its own. A continue
+cell under no merge is a cell of its own; one that overlaps a merge above without lining up
+with it is ambiguous and refused. Slots a row leaves empty (`w:gridBefore`, `w:gridAfter`, or a
+row short of the grid) become empty cells, one per slot. A row deleted by a tracked change is
+dropped; tracked cell-level changes and legacy horizontal merges are refused.
 
 `source_grid` resolves the grid slot by slot from the raw XML, and `table_of` builds cells with
 their spans; the two share only the reading of single elements, so a mistake in either one's
@@ -15,7 +17,7 @@ merge logic shows up as a difference the fidelity check refuses.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 from xml.etree.ElementTree import Element
 
@@ -33,6 +35,8 @@ VAlign = Literal["top", "middle", "bottom"]
 VMerge = Literal["restart", "continue"]
 
 _OFF = {"0", "false", "off"}
+_CELL_CHANGES = ("cellIns", "cellDel", "cellMerge")
+_AMBIGUOUS = "ambiguous vertical merge in table"
 #: Far beyond Word's own 63 columns; a source claiming more is refused, not allocated.
 MAX_COLUMNS = 1000
 _WRAPPERS = {f"{W}sdt", f"{W}sdtContent", f"{W}customXml"}
@@ -79,6 +83,10 @@ def _cells(tr: Element) -> list[Element]:
     for tc in cells:
         if tc.find(f"{W}tcPr/{W}hMerge") is not None:
             raise DecompositionFailed("a horizontally merged cell (w:hMerge) is not supported")
+        if any(tc.find(f"{W}tcPr/{W}{tag}") is not None for tag in _CELL_CHANGES):
+            raise DecompositionFailed(
+                "tracked cell changes are not supported; accept them in Word first"
+            )
     return cells
 
 
@@ -136,17 +144,34 @@ class GridSlot:
 
 
 def _plain_text(tc: Element) -> str:
-    """The cell's `w:t` text outside deleted or moved-away runs, one line per paragraph."""
-    lines: list[str] = []
-    for p in tc.iter(f"{W}p"):
-        lines.append("".join(_texts(p)))
-    return "\n".join(lines)
+    """The cell's `w:t` text, one line per paragraph, nested tables included.
+
+    Deleted and moved-away runs (`w:del`, `w:moveFrom`; `w:delText` is never `w:t`), rows
+    deleted at any depth, and text-box content (accounted for as image alt text) are left out.
+    """
+    return "\n".join(_lines(tc))
+
+
+def _excluded(el: Element) -> bool:
+    if el.tag in (f"{W}del", f"{W}moveFrom", f"{W}txbxContent"):
+        return True
+    return el.tag == f"{W}tr" and el.find(f"{W}trPr/{W}del") is not None
+
+
+def _lines(el: Element) -> Iterator[str]:
+    for child in el:
+        if _excluded(child):
+            continue
+        if child.tag == f"{W}p":
+            yield "".join(_texts(child))
+        else:
+            yield from _lines(child)
 
 
 def _texts(el: Element) -> Iterator[str]:
     for child in el:
-        if child.tag in (f"{W}del", f"{W}moveFrom", f"{W}p"):
-            continue  # a nested paragraph is a line of its own
+        if _excluded(child) or child.tag == f"{W}p":
+            continue
         if child.tag == f"{W}t":
             yield child.text or ""
         else:
@@ -167,7 +192,7 @@ def source_grid(tbl: Element) -> list[list[GridSlot]]:
     rows = _rows(tbl)
     width = _width(tbl, rows)
     texts: dict[tuple[int, int], str] = {}
-    grid: list[list[GridSlot]] = []
+    slots: list[list[_Owner]] = []
     above: list[_Owner | None] = [None] * width
     for r, tr in enumerate(rows):
         owners: list[_Owner] = []
@@ -177,23 +202,23 @@ def source_grid(tbl: Element) -> list[list[GridSlot]]:
         for tc in _cells(tr):
             c, span, merge = len(owners), _span(tc), _vmerge(tc)
             up = above[c]
-            if (
-                merge == "continue"
-                and up is not None
-                and up.mergeable
-                and up.origin[1] == c
-                and up.span == span
-            ):
+            merging = [o for o in above[c : c + span] if o is not None and o.mergeable]
+            if merge == "continue" and up in merging and up.origin[1] == c and up.span == span:
                 owner = up
+                text = _plain_text(tc)
+                if text.strip():
+                    texts[owner.origin] = "\n".join(t for t in (texts[owner.origin], text) if t)
+            elif merge == "continue" and merging:
+                raise DecompositionFailed(_AMBIGUOUS)
             else:
                 owner = _Owner((r, c), span, mergeable=merge == "restart")
                 texts[owner.origin] = _plain_text(tc)
             owners.extend([owner] * span)
         while len(owners) < width:
             owners.append(_Owner((r, len(owners)), 1, mergeable=False))
-        grid.append([GridSlot(o.origin, texts.get(o.origin, "")) for o in owners])
+        slots.append(owners)
         above = list(owners)
-    return grid
+    return [[GridSlot(o.origin, texts.get(o.origin, "")) for o in row] for row in slots]
 
 
 # --- Table -----------------------------------------------------------------------------------
@@ -207,8 +232,9 @@ class _Entry:
     span: int
     tc: Element | None = None
     merge: VMerge | None = None
-    absorbed: bool = False  # a continue cell that is part of the cell above it
+    head: _Entry | None = None  # for a continue cell: the restart cell that absorbs it
     row_span: int = 1
+    blocks: list[Block] = field(default_factory=list)
 
 
 def _layout(tr: Element, width: int) -> list[_Entry]:
@@ -223,17 +249,23 @@ def _layout(tr: Element, width: int) -> list[_Entry]:
     return entries
 
 
-def _resolve_merges(layouts: list[list[_Entry]]) -> None:
-    """Mark continue cells absorbed by the cell above, and count each origin's row span."""
-    heads: dict[int, _Entry] = {}  # grid column -> the merge head whose chain is still open
+def _resolve_merges(layouts: list[list[_Entry]], table_id: str) -> None:
+    """Join continue cells to the restart cell above, and count each origin's row span."""
+    heads: dict[int, _Entry] = {}  # start column -> a merge head whose chain is still open
     for row in layouts:
         nxt: dict[int, _Entry] = {}
         for entry in row:
-            head = heads.get(entry.col)
-            if entry.merge == "continue" and head is not None and head.span == entry.span:
-                entry.absorbed = True
-                head.row_span += 1
-                nxt[entry.col] = head
+            if entry.merge == "continue":
+                head = heads.get(entry.col)
+                if head is not None and head.span == entry.span:
+                    entry.head = head
+                    head.row_span += 1
+                    nxt[entry.col] = head
+                elif any(
+                    h.col < entry.col + entry.span and entry.col < h.col + h.span
+                    for h in heads.values()
+                ):
+                    raise DecompositionFailed(f"{_AMBIGUOUS} {table_id}", at=table_id)
             elif entry.merge == "restart":
                 nxt[entry.col] = entry
         heads = nxt
@@ -282,20 +314,27 @@ def table_of(tbl: Element, ctx: InlineContext, *, id: str, walk_blocks: WalkBloc
         raise DecompositionFailed(failed.detail, at=id) from None
     _count_changes(tbl, ctx)
     layouts = [_layout(tr, width) for tr in rows]
-    _resolve_merges(layouts)
+    _resolve_merges(layouts, id)
+
+    # Read every cell in document order; a continue cell's content goes after its origin's.
+    ordinal = 0
+    for row in layouts:
+        for entry in row:
+            ordinal += 1
+            if entry.tc is not None:
+                blocks = walk_blocks(entry.tc, child_id(id, "cell", ordinal))
+                (entry.head or entry).blocks.extend(blocks)
 
     header_rows = 0
     while header_rows < len(rows) and _is_header(rows[header_rows]):
         header_rows += 1
 
     built: list[Row] = []
-    ordinal = 0
     for r, row in enumerate(layouts):
         cells: list[Cell] = []
         for entry in row:
-            if entry.absorbed:
+            if entry.head is not None:
                 continue
-            ordinal += 1
             header = r < header_rows
             if entry.tc is None:
                 cells.append(Cell(header=header, blocks=[]))
@@ -307,7 +346,7 @@ def table_of(tbl: Element, ctx: InlineContext, *, id: str, walk_blocks: WalkBloc
                     h_align=_h_align(entry.tc),
                     v_align=_v_align(entry.tc),
                     header=header,
-                    blocks=walk_blocks(entry.tc, child_id(id, "cell", ordinal)),
+                    blocks=entry.blocks,
                 )
             )
         built.append(Row(cells=cells))

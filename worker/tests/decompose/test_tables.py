@@ -208,17 +208,80 @@ def test_continue_without_restart_is_its_own_cell() -> None:
     assert [s.text for s in grid[1]] == ["C", "D"]
 
 
-def test_continue_that_does_not_line_up_is_its_own_cell() -> None:
-    # The restart spans two columns; the continue below spans one, so it cannot merge.
+def element_of(body: str) -> Element:
+    document = open_package(build_docx(body)).xml("word/document.xml")
+    assert document is not None
+    element = document.find(f"{W}body/{W}tbl")
+    assert element is not None
+    return element
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        # The restart spans two columns; the continue below spans one, at either column.
+        [tr(tc("A", span=2, vmerge="restart")), tr(tc("B", vmerge="continue"), tc("C"))],
+        [tr(tc("A", span=2, vmerge="restart")), tr(tc("B"), tc("C", vmerge="continue"))],
+        # The restart spans one column; the continue below spans two.
+        [tr(tc("A", vmerge="restart"), tc("B")), tr(tc("C", span=2, vmerge="continue"))],
+    ],
+)
+def test_vmerge_with_mismatched_span_fails(rows: list[str]) -> None:
+    body = tbl(*rows, cols=[1, 1])
+    with pytest.raises(DecompositionFailed) as failed:
+        read(body)
+    assert failed.value.at == "s-0#table-1"
+    assert failed.value.detail == "ambiguous vertical merge in table s-0#table-1"
+    with pytest.raises(DecompositionFailed, match="ambiguous vertical merge"):
+        source_grid(element_of(body))
+
+
+def test_text_in_continue_cell_is_appended_to_origin() -> None:
     t, grid, _ = table(
         tbl(
-            tr(tc("A", span=2, vmerge="restart")),
-            tr(tc("B", vmerge="continue"), tc("C")),
+            tr(tc("A", vmerge="restart"), tc("x")),
+            tr(tc("B", vmerge="continue"), tc("y")),
+            tr(tc(vmerge="continue"), tc("z")),  # empty, the normal case: adds nothing
+            tr(tc("C", vmerge="continue"), tc("w")),
             cols=[1, 1],
         )
     )
-    assert spans(t) == [[(1, 2)], [(1, 1), (1, 1)]]
-    assert origins(grid) == model_grid(t) == [[(0, 0), (0, 0)], [(1, 0), (1, 1)]]
+    origin = t.rows[0].cells[0]
+    assert origin.row_span == 4
+    assert cell_text(origin) == "A\nB\nC"
+    assert [b.id for b in origin.blocks] == [
+        "s-0#table-1#cell-1#p-1",
+        "s-0#table-1#cell-3#p-1",
+        "s-0#table-1#cell-7#p-1",
+    ]
+    assert [[s.text for s in row] for row in grid] == [
+        ["A\nB\nC", "x"],
+        ["A\nB\nC", "y"],
+        ["A\nB\nC", "z"],
+        ["A\nB\nC", "w"],
+    ]
+    assert origins(grid) == model_grid(t)
+
+
+def test_tracked_cell_change_fails() -> None:
+    for tag in ("cellIns", "cellDel", "cellMerge"):
+        change = f'<w:{tag} w:id="1" w:author="x" w:date="2026-01-01T00:00:00Z"/>'
+        changed = f"<w:tc><w:tcPr>{change}</w:tcPr><w:p/></w:tc>"
+        body = tbl(f"<w:tr>{tc('A')}{changed}</w:tr>", cols=[1, 1])
+        with pytest.raises(DecompositionFailed) as failed:
+            read(body)
+        assert failed.value.at == "s-0#table-1"
+        assert failed.value.detail == (
+            "tracked cell changes are not supported; accept them in Word first"
+        )
+
+
+def test_tracked_cell_change_in_nested_table_fails_at_the_nested_table() -> None:
+    change = '<w:cellDel w:id="1" w:author="x" w:date="2026-01-01T00:00:00Z"/>'
+    inner = tbl(f"<w:tr><w:tc><w:tcPr>{change}</w:tcPr><w:p/></w:tc></w:tr>", cols=[1])
+    with pytest.raises(DecompositionFailed) as failed:
+        read(tbl(tr(tc(content=para("x") + inner)), cols=[1]))
+    assert failed.value.at == "s-0#table-1#cell-1#table-1"
 
 
 def test_continue_under_a_cell_that_was_never_merged_is_its_own_cell() -> None:
@@ -226,7 +289,7 @@ def test_continue_under_a_cell_that_was_never_merged_is_its_own_cell() -> None:
         tbl(tr(tc("A"), tc("B")), tr(tc("C", vmerge="continue"), tc("D")), cols=[1, 1])
     )
     assert spans(t) == [[(1, 1), (1, 1)], [(1, 1), (1, 1)]]
-    assert origins(grid) == model_grid(t)
+    assert origins(grid) == model_grid(t) == [[(0, 0), (0, 1)], [(1, 0), (1, 1)]]
 
 
 # --- Filler slots ----------------------------------------------------------------------------
@@ -386,6 +449,25 @@ def test_deleted_text_is_not_slot_text() -> None:
     assert grid[0][0].text == "kept\nsecond"
 
 
+def test_source_slot_text_excludes_deleted_and_textbox_content() -> None:
+    deleted = '<w:del w:id="1" w:author="x" w:date="2026-01-01T00:00:00Z"/>'
+    inner = tbl(
+        tr(tc("kept row")),
+        tr(tc("deleted row"), trpr=deleted),
+        cols=[1],
+    )
+    textbox = (
+        "<w:p><w:r><w:t>around</w:t></w:r><w:r><w:drawing><wp:inline><a:graphic>"
+        "<a:graphicData><w:txbxContent><w:p><w:r><w:t>boxed</w:t></w:r></w:p>"
+        "</w:txbxContent></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"
+    )
+    t, grid, _ = table(tbl(tr(tc(content=para("first") + inner + textbox)), cols=[1]))
+    assert grid[0][0].text == "first\nkept row\naround"
+    nested = t.rows[0].cells[0].blocks[1]
+    assert isinstance(nested, Table)
+    assert [[cell_text(c) for c in row.cells] for row in nested.rows] == [["kept row"]]
+
+
 def test_horizontal_merge_is_refused() -> None:
     legacy = (
         '<w:tc><w:tcPr><w:hMerge w:val="restart"/></w:tcPr><w:p/></w:tc>'
@@ -395,13 +477,8 @@ def test_horizontal_merge_is_refused() -> None:
     with pytest.raises(DecompositionFailed) as failed:
         read(body)
     assert failed.value.at == "s-0#table-1"
-    pkg = open_package(build_docx(body))
-    document = pkg.xml("word/document.xml")
-    assert document is not None
-    element = document.find(f"{W}body/{W}tbl")
-    assert element is not None
     with pytest.raises(DecompositionFailed):
-        source_grid(element)
+        source_grid(element_of(body))
 
 
 # --- Cell content ----------------------------------------------------------------------------
@@ -449,11 +526,12 @@ def test_cell_ids_count_every_cell_in_reading_order() -> None:
             cols=[1, 1],
         )
     )
+    # Absorbed continue cells and fillers take an ordinal too, so every source cell has one.
     ids = [[c.blocks[0].id for c in row.cells if c.blocks] for row in t.rows]
     assert ids == [
         ["s-0#table-1#cell-1#p-1", "s-0#table-1#cell-2#p-1"],
-        ["s-0#table-1#cell-3#p-1"],
         ["s-0#table-1#cell-4#p-1"],
+        ["s-0#table-1#cell-5#p-1"],
     ]
 
 
