@@ -8,10 +8,12 @@ import pytest
 
 from ingest_worker.decompose.body import walk_body
 from ingest_worker.decompose.inline import InlineContext, RunStyles, W, plain_text
+from ingest_worker.decompose.media import MediaContext
 from ingest_worker.decompose.model import Block, Cell, ListBlock, Paragraph, Table
 from ingest_worker.decompose.package import DecompositionFailed, open_package
 from ingest_worker.decompose.tables import GridSlot, source_grid
 from tests.decompose.docx import DEFAULT_STYLES, NAMESPACES, build_docx
+from tests.decompose.fakes import FakeRenderer
 
 NUMBERING = (
     f"<w:numbering {NAMESPACES}>"
@@ -71,7 +73,10 @@ def tbl(*rows: str, cols: list[int]) -> str:
 
 def read(body: str) -> tuple[list[Block], InlineContext, Element]:
     pkg = open_package(build_docx(body, styles=DEFAULT_STYLES, numbering=NUMBERING))
-    ctx = InlineContext(styles=RunStyles.from_xml(pkg.xml("word/styles.xml")))
+    ctx = InlineContext(
+        styles=RunStyles.from_xml(pkg.xml("word/styles.xml")),
+        media=MediaContext.for_package(pkg, FakeRenderer()),
+    )
     blocks, _ = walk_body(pkg, ctx)
     document = pkg.xml("word/document.xml")
     assert document is not None

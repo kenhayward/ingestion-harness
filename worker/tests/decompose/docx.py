@@ -13,7 +13,14 @@ NAMESPACES = (
     'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
     'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
     'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" '
-    'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+    'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" '
+    'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+    'xmlns:v="urn:schemas-microsoft-com:vml" '
+    'xmlns:o="urn:schemas-microsoft-com:office:office" '
+    'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+    'xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"'
 )
 _DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 _REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
@@ -47,9 +54,11 @@ def build_docx(
     media: dict[str, bytes] | None = None,
     rels: list[tuple[str, str, str]] | None = None,
     sect_pr: str | None = None,
+    extra_parts: dict[str, bytes] | None = None,
 ) -> bytes:
-    """Build a minimal valid package. `rels` entries are (id, type suffix or URI, target)."""
-    parts: dict[str, str | bytes] = {}
+    """Build a minimal valid package. `rels` entries are (id, type suffix or URI, target); a
+    target starting `http` is external. `extra_parts` adds raw parts by package path."""
+    parts: dict[str, str | bytes] = dict(extra_parts or {})
     overrides = ['<Override PartName="/word/document.xml" ContentType="application/xml"/>']
     doc_rels: list[tuple[str, str, str]] = [("rIdStyles", "styles", "styles.xml")]
     parts["word/styles.xml"] = _part(styles if styles is not None else DEFAULT_STYLES)
@@ -101,7 +110,9 @@ def build_docx(
 def _rels_xml(rels: list[tuple[str, str, str]]) -> str:
     items = "".join(
         f'<Relationship Id="{rid}" '
-        f'Type="{typ if typ.startswith("http") else _REL_BASE + typ}" Target="{target}"/>'
+        f'Type="{typ if typ.startswith("http") else _REL_BASE + typ}" Target="{target}"'
+        + (' TargetMode="External"' if target.startswith("http") else "")
+        + "/>"
         for rid, typ, target in rels
     )
     return f'<Relationships xmlns="{REL_NS}">{items}</Relationships>'

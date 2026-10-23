@@ -14,7 +14,8 @@ from xml.etree.ElementTree import Element
 
 from ingest_worker.symbol_fonts import FIRST, LAST, TABLES, Family, font_family
 
-from .model import Break, Flag, Inline, Link, Text, XRef
+from .media import MediaContext, is_media, media_of
+from .model import Break, Flag, Inline, InlineImage, Link, Text, XRef
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -141,7 +142,8 @@ class InlineContext:
     `bookmarks` maps a bookmark name to the id it resolves to (filled by a later task). `changes`
     counts tracked-change elements read as accepted. `caption_number_map` maps a caption's kind
     and the number the source displayed for it, such as `("table", 13)`, to the captioned
-    element's id.
+    element's id. `media` holds the images read so far and what reading more needs; the
+    decomposer always supplies it, and reading a picture or drawing without it fails.
     """
 
     styles: RunStyles = field(default_factory=RunStyles)
@@ -151,6 +153,7 @@ class InlineContext:
     flags: list[Flag] = field(default_factory=list)
     changes: int = 0
     caption_number_map: dict[tuple[str, int], str] = field(default_factory=dict)
+    media: MediaContext | None = None
 
 
 # --- Reading ---------------------------------------------------------------------------------
@@ -182,6 +185,8 @@ class _Reader:
         self.paragraph_style = paragraph_style
         self.at = at
         self.out: list[Inline] = []
+        #: Pictures and drawings met, with the position in `out` they sit before.
+        self.media: list[tuple[int, Element]] = []
 
     # -- flow --
 
@@ -246,6 +251,8 @@ class _Reader:
                     self.ctx.fields[-1].instruction += child.text or ""
             elif not visible or self.in_instruction:
                 continue
+            elif is_media(child):
+                self.media.append((len(self.out), child))
             elif tag == "t":
                 self.text(child.text or "", marks, family, font)
             elif tag in ("tab", "ptab"):
@@ -258,6 +265,31 @@ class _Reader:
                 self.emit("\u2011", marks)
             elif tag == "sym":
                 self.symbol(child, marks)
+
+    def lone_media(self) -> Element | None:
+        """The picture or drawing standing alone in the paragraph: the only one, with no
+        other content than whitespace."""
+        if len(self.media) != 1:
+            return None
+        blank = all(
+            isinstance(i, Break) or (isinstance(i, Text) and not i.text.strip()) for i in self.out
+        )
+        return self.media[0][1] if blank else None
+
+    def placed(self) -> list[Inline]:
+        """`out` with each picture or drawing read as an `InlineImage` at its place."""
+        placed: list[Inline] = []
+        pending = iter(self.media)
+        upcoming = next(pending, None)
+        for index in range(len(self.out) + 1):
+            while upcoming is not None and upcoming[0] == index:
+                image = media_of(upcoming[1], self.ctx, at=self.at, in_text=True)
+                if isinstance(image, InlineImage):
+                    placed.append(image)
+                upcoming = next(pending, None)
+            if index < len(self.out):
+                placed.append(self.out[index])
+        return placed
 
     def run_font(self, rpr: Element | None) -> tuple[Family | None, str]:
         fonts = rpr.find(f"{W}rFonts") if rpr is not None else None
@@ -311,13 +343,31 @@ class _Reader:
         self.emit(_map_symbol(code, font_family(font), font, self.ctx, self.at), marks)
 
 
-def inlines_of(p: Element, ctx: InlineContext, *, at: str) -> list[Inline]:
-    """The inlines of paragraph `p`; `at` locates it in any flag raised."""
+def _read(p: Element, ctx: InlineContext, at: str) -> _Reader:
     style_el = p.find(f"{W}pPr/{W}pStyle")
     style = style_el.get(f"{W}val") if style_el is not None else None
     reader = _Reader(ctx, style, at)
     reader.walk(p)
-    return merge_runs(reader.out)
+    return reader
+
+
+def inlines_of(p: Element, ctx: InlineContext, *, at: str) -> list[Inline]:
+    """The inlines of paragraph `p`, pictures and drawings as `InlineImage`s; `at` locates it
+    in any flag raised and names the images in it."""
+    return merge_runs(_read(p, ctx, at).placed())
+
+
+def read_paragraph(
+    p: Element, ctx: InlineContext, *, at: str
+) -> tuple[list[Inline], Element | None]:
+    """The inlines of paragraph `p`, as `inlines_of` gives them, or, when one picture or
+    drawing stands alone in it, no inlines and that run child, for the caller to place as a
+    block."""
+    reader = _read(p, ctx, at)
+    lone = reader.lone_media()
+    if lone is not None:
+        return [], lone
+    return merge_runs(reader.placed()), None
 
 
 def plain_text(inlines: list[Inline]) -> str:

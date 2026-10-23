@@ -1,12 +1,13 @@
-"""The document body: a tree of sections holding paragraphs, lists and tables.
+"""The document body: a tree of sections holding paragraphs, lists, tables and images.
 
 Headings (by outline level) open sections; ids come from the heading-title path and the ordinal
 of each kind of block within its section, so they survive edits elsewhere in the document.
 
 When a scope's blocks are complete, a one-cell table of notes directly after a table becomes
 that table's notes, and a caption paragraph (`Caption` style, or holding a `SEQ` field) next to
-a table becomes its caption. Adjacency is in the block list, so empty paragraphs between them
-don't count. A paragraph that takes a caption keeps the ordinal it was given, unused.
+a table becomes its caption; next to an image, it makes the image a figure. Adjacency is in the
+block list, so empty paragraphs between them don't count. A paragraph that takes a caption keeps
+the ordinal it was given, unused.
 """
 
 from __future__ import annotations
@@ -17,10 +18,12 @@ from typing import Literal
 from xml.etree.ElementTree import Element
 
 from .ids import child_id, normalise_title, section_id
-from .inline import InlineContext, W, inlines_of, plain_text
+from .inline import InlineContext, W, inlines_of, plain_text, read_paragraph
+from .media import media_of
 from .model import (
     Block,
     Break,
+    Figure,
     Flag,
     ImageBlock,
     Inline,
@@ -177,11 +180,15 @@ def attach_captions(
     *,
     flag_uncaptioned: bool = True,
 ) -> list[Block]:
-    """Tables given their caption paragraphs, whose flags move to the table. A table left
-    without a caption is flagged `caption_not_found` when `flag_uncaptioned` is on."""
+    """Tables given their caption paragraphs, and images with one made figures; the caption's
+    flags move to what took it. A table left without a caption is flagged `caption_not_found`
+    when `flag_uncaptioned` is on."""
     out = list(blocks)
     taken: set[int] = set()
     for i, block in enumerate(blocks):
+        if isinstance(block, ImageBlock):
+            out[i] = _figure(blocks, i, block, captions, ctx, taken)
+            continue
         if not isinstance(block, Table):
             continue
         hit = (
@@ -214,6 +221,32 @@ def attach_captions(
                 )
             )
     return [b for i, b in enumerate(out) if i not in taken]
+
+
+def _figure(
+    blocks: list[Block],
+    index: int,
+    image: ImageBlock,
+    captions: Mapping[str, Caption],
+    ctx: InlineContext,
+    taken: set[int],
+) -> Block:
+    """The image at `index` as a figure when a caption paragraph is next to it, else as is."""
+    hit = adjacent_caption(blocks, index, captions, "figure", taken)
+    if hit is None:
+        return image
+    j, position = hit
+    taken.add(j)
+    caption = captions[blocks[j].id]
+    register_caption(ctx, caption, image.id)
+    _move_flags(ctx, blocks[j].id, image.id)
+    return Figure(
+        id=image.id,
+        image_id=image.image_id,
+        numbered=caption.numbered,
+        caption=caption.inlines,
+        caption_position=position,
+    )
 
 
 def _attach_note_tables(
@@ -281,12 +314,15 @@ class _Flow:
 
     def paragraph(self, p: Element) -> None:
         start = len(self.ctx.closed_fields)
-        inlines = inlines_of(p, self.ctx, at=self.scope.peek("p"))
-        if not inlines:
+        inlines, lone = read_paragraph(p, self.ctx, at=self.scope.peek("p"))
+        if not inlines and lone is None:
             return  # an empty paragraph leaves no trace, even between list paragraphs
         info = self.styles.list_info(p)
         if info is None:
             self.end_list()
+            if lone is not None:
+                self.scope.blocks.append(self.image(p, lone))
+                return
             pid = self.scope.take("p")
             self.scope.blocks.append(Paragraph(id=pid, inlines=inlines))
             seqs = [f for f in self.ctx.closed_fields[start:] if f.kind == "SEQ"]
@@ -305,7 +341,21 @@ class _Flow:
             if self.lists:
                 self.lists[-1].items[-1].append(target)
             self.lists.append(target)
-        target.items.append([Paragraph(id=self.scope.take("p"), inlines=inlines)])
+        item = (
+            self.image(p, lone)
+            if lone is not None
+            else Paragraph(id=self.scope.take("p"), inlines=inlines)
+        )
+        target.items.append([item])
+
+    def image(self, p: Element, run_child: Element) -> Block:
+        """The block of a picture or drawing standing alone in paragraph `p`."""
+        block = media_of(
+            run_child, self.ctx, at=self.scope.take("image"), in_text=False, paragraph=p
+        )
+        if not isinstance(block, ImageBlock):
+            raise DecompositionFailed("a picture or drawing could not be placed", self.scope.id)
+        return block
 
     def table(self, tbl: Element) -> None:
         self.end_list()
