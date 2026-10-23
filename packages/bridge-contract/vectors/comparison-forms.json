@@ -1,0 +1,1165 @@
+[
+  {
+    "name": "merged-cells",
+    "document": {
+      "blocks": [],
+      "sections": [
+        {
+          "id": "s-data",
+          "title": [
+            {
+              "kind": "text",
+              "text": "Data",
+              "marks": []
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "table",
+              "id": "s-data#table-1",
+              "numbered": false,
+              "caption": [],
+              "caption_position": "above",
+              "column_widths": [0.25, 0.25, 0.25, 0.25],
+              "header_rows": 1,
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": true,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-1#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "Group",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 2,
+                      "h_align": "center",
+                      "v_align": "top",
+                      "header": true,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-2#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "Result",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": true,
+                      "blocks": []
+                    }
+                  ]
+                },
+                {
+                  "cells": [
+                    {
+                      "row_span": 2,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "middle",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-5#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "A",
+                              "marks": []
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-9#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "(continued)",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-6#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "1",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-7#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "2",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-8#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "3",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "cells": [
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-10#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "4",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 2,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-data#table-1#cell-11#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "5",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "notes": [],
+              "wide": false,
+              "key": null
+            }
+          ],
+          "sections": []
+        }
+      ],
+      "images": [],
+      "equations": [],
+      "notes": [],
+      "properties": [],
+      "report": []
+    },
+    "text_form": ["Data", "Group", "Result", "A (continued)", "1", "2", "3", "4", "5"],
+    "grid_forms": {
+      "s-data#table-1": [
+        ["0,0|Group", "0,1|Result", "0,1|Result", "0,3|"],
+        ["1,0|A (continued)", "1,1|1", "1,2|2", "1,3|3"],
+        ["1,0|A (continued)", "2,1|4", "2,2|5", "2,2|5"]
+      ]
+    }
+  },
+  {
+    "name": "captioned-table-with-notes",
+    "document": {
+      "blocks": [],
+      "sections": [
+        {
+          "id": "s-results",
+          "title": [
+            {
+              "kind": "text",
+              "text": "Results",
+              "marks": []
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "paragraph",
+              "id": "s-results#p-1",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "See ",
+                  "marks": []
+                },
+                {
+                  "kind": "xref",
+                  "target_id": "s-results#table-1",
+                  "text": "Table 13"
+                },
+                {
+                  "kind": "text",
+                  "text": ".",
+                  "marks": []
+                }
+              ]
+            },
+            {
+              "kind": "table",
+              "id": "s-results#table-1",
+              "numbered": true,
+              "caption": [
+                {
+                  "kind": "text",
+                  "text": "Dissolution of ",
+                  "marks": []
+                },
+                {
+                  "kind": "text",
+                  "text": "batch",
+                  "marks": ["italic"]
+                },
+                {
+                  "kind": "text",
+                  "text": " 7",
+                  "marks": []
+                }
+              ],
+              "caption_position": "below",
+              "column_widths": [0.5, 0.5],
+              "header_rows": 1,
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": true,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-results#table-1#cell-1#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "Time",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": true,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-results#table-1#cell-2#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "Release",
+                              "marks": []
+                            },
+                            {
+                              "kind": "text",
+                              "text": "a",
+                              "marks": ["superscript"]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "cells": [
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-results#table-1#cell-3#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "30 min",
+                              "marks": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-results#table-1#cell-4#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "85",
+                              "marks": []
+                            },
+                            {
+                              "kind": "text",
+                              "text": "b",
+                              "marks": ["superscript"]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "notes": [
+                {
+                  "marker": "a",
+                  "inlines": [
+                    {
+                      "kind": "text",
+                      "text": "Samples at infinity",
+                      "marks": []
+                    }
+                  ]
+                },
+                {
+                  "marker": "b",
+                  "inlines": [
+                    {
+                      "kind": "text",
+                      "text": "Mean of six",
+                      "marks": []
+                    },
+                    {
+                      "kind": "break"
+                    },
+                    {
+                      "kind": "text",
+                      "text": "(n = 6)",
+                      "marks": []
+                    }
+                  ]
+                }
+              ],
+              "wide": false,
+              "key": "dissolution-of-batch-7"
+            }
+          ],
+          "sections": []
+        }
+      ],
+      "images": [],
+      "equations": [],
+      "notes": [],
+      "properties": [],
+      "report": []
+    },
+    "text_form": [
+      "Results",
+      "See ⟦xref:s-results#table-1⟧.",
+      "Dissolution of batch 7",
+      "Time",
+      "Releasea",
+      "30 min",
+      "85b",
+      "a: Samples at infinity",
+      "b: Mean of six (n = 6)"
+    ],
+    "grid_forms": {
+      "s-results#table-1": [
+        ["0,0|Time", "0,1|Releasea"],
+        ["1,0|30 min", "1,1|85b"]
+      ]
+    }
+  },
+  {
+    "name": "cross-reference",
+    "document": {
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "id": "s-0#p-1",
+          "inlines": [
+            {
+              "kind": "text",
+              "text": "Before the first heading",
+              "marks": []
+            },
+            {
+              "kind": "note_ref",
+              "note_id": "fn-2"
+            }
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "id": "s-method",
+          "title": [
+            {
+              "kind": "text",
+              "text": "Method",
+              "marks": []
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "paragraph",
+              "id": "s-method#p-1",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "As shown in ",
+                  "marks": []
+                },
+                {
+                  "kind": "xref",
+                  "target_id": "s-method",
+                  "text": "Method"
+                },
+                {
+                  "kind": "text",
+                  "text": " and ",
+                  "marks": []
+                },
+                {
+                  "kind": "xref",
+                  "target_id": "s-method/s-detail#p-1",
+                  "text": "the detail"
+                },
+                {
+                  "kind": "text",
+                  "text": ", online at ",
+                  "marks": []
+                },
+                {
+                  "kind": "link",
+                  "href": "https://example.org",
+                  "inlines": [
+                    {
+                      "kind": "text",
+                      "text": "example",
+                      "marks": ["bold"]
+                    },
+                    {
+                      "kind": "text",
+                      "text": ".org",
+                      "marks": []
+                    }
+                  ]
+                },
+                {
+                  "kind": "note_ref",
+                  "note_id": "en-1"
+                }
+              ]
+            }
+          ],
+          "sections": [
+            {
+              "id": "s-method/s-detail",
+              "title": [
+                {
+                  "kind": "text",
+                  "text": "Detail of ",
+                  "marks": []
+                },
+                {
+                  "kind": "xref",
+                  "target_id": "s-method",
+                  "text": "Method"
+                }
+              ],
+              "blocks": [
+                {
+                  "kind": "paragraph",
+                  "id": "s-method/s-detail#p-1",
+                  "inlines": [
+                    {
+                      "kind": "text",
+                      "text": "Detail text.",
+                      "marks": []
+                    }
+                  ]
+                }
+              ],
+              "sections": []
+            }
+          ]
+        }
+      ],
+      "images": [],
+      "equations": [],
+      "notes": [
+        {
+          "id": "fn-2",
+          "blocks": [
+            {
+              "kind": "paragraph",
+              "id": "fn-2#p-1",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "A footnote on ",
+                  "marks": []
+                },
+                {
+                  "kind": "xref",
+                  "target_id": "s-method",
+                  "text": "Method"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "en-1",
+          "blocks": [
+            {
+              "kind": "paragraph",
+              "id": "en-1#p-1",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "An endnote.",
+                  "marks": []
+                }
+              ]
+            },
+            {
+              "kind": "paragraph",
+              "id": "en-1#p-2",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "Its second paragraph.",
+                  "marks": []
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "properties": [],
+      "report": []
+    },
+    "text_form": [
+      "Before the first heading",
+      "Method",
+      "As shown in ⟦xref:s-method⟧ and ⟦xref:s-method/s-detail#p-1⟧, online at example.org",
+      "Detail of ⟦xref:s-method⟧",
+      "Detail text.",
+      "A footnote on ⟦xref:s-method⟧",
+      "An endnote.",
+      "Its second paragraph."
+    ],
+    "grid_forms": {}
+  },
+  {
+    "name": "image-only-equation",
+    "document": {
+      "blocks": [],
+      "sections": [
+        {
+          "id": "s-maths",
+          "title": [
+            {
+              "kind": "text",
+              "text": "Maths",
+              "marks": []
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "paragraph",
+              "id": "s-maths#p-1",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "Where ",
+                  "marks": []
+                },
+                {
+                  "kind": "inline_equation",
+                  "equation_id": "s-maths#p-1#eq-1"
+                },
+                {
+                  "kind": "text",
+                  "text": " is boxed.",
+                  "marks": []
+                }
+              ]
+            },
+            {
+              "kind": "equation",
+              "id": "s-maths#equation-1",
+              "equation_id": "s-maths#equation-1#eq-1"
+            },
+            {
+              "kind": "table",
+              "id": "s-maths#table-1",
+              "numbered": false,
+              "caption": [],
+              "caption_position": "above",
+              "column_widths": [1.0],
+              "header_rows": 0,
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-maths#table-1#cell-1#p-1",
+                          "inlines": [
+                            {
+                              "kind": "inline_equation",
+                              "equation_id": "s-maths#table-1#cell-1#p-1#eq-1"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "notes": [],
+              "wide": false,
+              "key": null
+            }
+          ],
+          "sections": []
+        }
+      ],
+      "images": [
+        {
+          "id": "s-maths#p-1#eq-1#img-1",
+          "content_type": "image/png",
+          "width_mm": 10.0,
+          "height_mm": 5.0,
+          "align": "inline",
+          "alt": null,
+          "origin": "rendered",
+          "original_content_type": null
+        },
+        {
+          "id": "s-maths#equation-1#eq-1#img-1",
+          "content_type": "image/png",
+          "width_mm": 10.0,
+          "height_mm": 5.0,
+          "align": "center",
+          "alt": null,
+          "origin": "rendered",
+          "original_content_type": null
+        },
+        {
+          "id": "s-maths#table-1#cell-1#p-1#eq-1#img-1",
+          "content_type": "image/png",
+          "width_mm": 10.0,
+          "height_mm": 5.0,
+          "align": "inline",
+          "alt": null,
+          "origin": "rendered",
+          "original_content_type": null
+        }
+      ],
+      "equations": [
+        {
+          "id": "s-maths#p-1#eq-1",
+          "mathml": null,
+          "latex": null,
+          "image_id": "s-maths#p-1#eq-1#img-1"
+        },
+        {
+          "id": "s-maths#equation-1#eq-1",
+          "mathml": "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mi>a</mi><mi>b</mi></mfrac></math>",
+          "latex": "\\frac{a}{b}",
+          "image_id": "s-maths#equation-1#eq-1#img-1"
+        },
+        {
+          "id": "s-maths#table-1#cell-1#p-1#eq-1",
+          "mathml": null,
+          "latex": null,
+          "image_id": "s-maths#table-1#cell-1#p-1#eq-1#img-1"
+        }
+      ],
+      "notes": [],
+      "properties": [],
+      "report": []
+    },
+    "text_form": [
+      "Maths",
+      "Where ⟦eq:s-maths#p-1#eq-1#img-1⟧ is boxed.",
+      "⟦eq:<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mi>a</mi><mi>b</mi></mfrac></math>⟧",
+      "⟦eq:s-maths#table-1#cell-1#p-1#eq-1#img-1⟧"
+    ],
+    "grid_forms": {
+      "s-maths#table-1": [["0,0|⟦eq:s-maths#table-1#cell-1#p-1#eq-1#img-1⟧"]]
+    }
+  },
+  {
+    "name": "no-break-space-and-line-break",
+    "document": {
+      "blocks": [],
+      "sections": [
+        {
+          "id": "s-units-and-breaks",
+          "title": [
+            {
+              "kind": "text",
+              "text": "  Units and  breaks ",
+              "marks": []
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "paragraph",
+              "id": "s-units-and-breaks#p-1",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "25 °C",
+                  "marks": []
+                },
+                {
+                  "kind": "break"
+                },
+                {
+                  "kind": "text",
+                  "text": "next  line\tafter a tab",
+                  "marks": []
+                }
+              ]
+            },
+            {
+              "kind": "paragraph",
+              "id": "s-units-and-breaks#p-2",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "   ",
+                  "marks": []
+                },
+                {
+                  "kind": "break"
+                }
+              ]
+            },
+            {
+              "kind": "paragraph",
+              "id": "s-units-and-breaks#p-3",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "café",
+                  "marks": []
+                },
+                {
+                  "kind": "break"
+                },
+                {
+                  "kind": "break"
+                },
+                {
+                  "kind": "text",
+                  "text": "‑hyphen​zero-width",
+                  "marks": []
+                }
+              ]
+            }
+          ],
+          "sections": []
+        }
+      ],
+      "images": [],
+      "equations": [],
+      "notes": [],
+      "properties": [],
+      "report": []
+    },
+    "text_form": ["Units and breaks", "25 °C next line after a tab", "café ‑hyphen​zero-width"],
+    "grid_forms": {}
+  },
+  {
+    "name": "figure-image-list-and-nested-table",
+    "document": {
+      "blocks": [],
+      "sections": [
+        {
+          "id": "s-figures",
+          "title": [
+            {
+              "kind": "text",
+              "text": "Figures",
+              "marks": []
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "figure",
+              "id": "s-figures#image-1",
+              "image_id": "s-figures#image-1#img-1",
+              "numbered": true,
+              "caption": [
+                {
+                  "kind": "text",
+                  "text": "The plot",
+                  "marks": []
+                }
+              ],
+              "caption_position": "below"
+            },
+            {
+              "kind": "image",
+              "id": "s-figures#image-2",
+              "image_id": "s-figures#image-2#img-1"
+            },
+            {
+              "kind": "paragraph",
+              "id": "s-figures#p-1",
+              "inlines": [
+                {
+                  "kind": "text",
+                  "text": "Icon ",
+                  "marks": []
+                },
+                {
+                  "kind": "inline_image",
+                  "image_id": "s-figures#p-1#img-1"
+                },
+                {
+                  "kind": "text",
+                  "text": " here.",
+                  "marks": []
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "id": "s-figures#list-1",
+              "ordered": true,
+              "items": [
+                {
+                  "blocks": [
+                    {
+                      "kind": "paragraph",
+                      "id": "s-figures#p-2",
+                      "inlines": [
+                        {
+                          "kind": "text",
+                          "text": "First",
+                          "marks": []
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "list",
+                      "id": "s-figures#list-2",
+                      "ordered": false,
+                      "items": [
+                        {
+                          "blocks": [
+                            {
+                              "kind": "paragraph",
+                              "id": "s-figures#p-3",
+                              "inlines": [
+                                {
+                                  "kind": "text",
+                                  "text": "Nested",
+                                  "marks": []
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "blocks": [
+                    {
+                      "kind": "paragraph",
+                      "id": "s-figures#p-4",
+                      "inlines": [
+                        {
+                          "kind": "text",
+                          "text": "Second",
+                          "marks": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "table",
+              "id": "s-figures#table-1",
+              "numbered": false,
+              "caption": [],
+              "caption_position": "above",
+              "column_widths": [0.5, 0.5],
+              "header_rows": 0,
+              "rows": [
+                {
+                  "cells": [
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "paragraph",
+                          "id": "s-figures#table-1#cell-1#p-1",
+                          "inlines": [
+                            {
+                              "kind": "text",
+                              "text": "Outer",
+                              "marks": []
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "table",
+                          "id": "s-figures#table-1#cell-1#table-1",
+                          "numbered": false,
+                          "caption": [],
+                          "caption_position": "above",
+                          "column_widths": [0.5, 0.5],
+                          "header_rows": 0,
+                          "rows": [
+                            {
+                              "cells": [
+                                {
+                                  "row_span": 1,
+                                  "col_span": 1,
+                                  "h_align": "left",
+                                  "v_align": "top",
+                                  "header": false,
+                                  "blocks": [
+                                    {
+                                      "kind": "paragraph",
+                                      "id": "s-figures#table-1#cell-1#table-1#cell-1#p-1",
+                                      "inlines": [
+                                        {
+                                          "kind": "text",
+                                          "text": "In 1",
+                                          "marks": []
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "row_span": 1,
+                                  "col_span": 1,
+                                  "h_align": "left",
+                                  "v_align": "top",
+                                  "header": false,
+                                  "blocks": [
+                                    {
+                                      "kind": "paragraph",
+                                      "id": "s-figures#table-1#cell-1#table-1#cell-2#p-1",
+                                      "inlines": [
+                                        {
+                                          "kind": "text",
+                                          "text": "In 2",
+                                          "marks": []
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "notes": [],
+                          "wide": false,
+                          "key": null
+                        }
+                      ]
+                    },
+                    {
+                      "row_span": 1,
+                      "col_span": 1,
+                      "h_align": "left",
+                      "v_align": "top",
+                      "header": false,
+                      "blocks": [
+                        {
+                          "kind": "image",
+                          "id": "s-figures#table-1#cell-2#image-1",
+                          "image_id": "s-figures#table-1#cell-2#image-1#img-1"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "notes": [],
+              "wide": false,
+              "key": null
+            }
+          ],
+          "sections": []
+        }
+      ],
+      "images": [
+        {
+          "id": "s-figures#image-1#img-1",
+          "content_type": "image/png",
+          "width_mm": 10.0,
+          "height_mm": 5.0,
+          "align": "center",
+          "alt": "Box line one\nBox line two",
+          "origin": "rendered",
+          "original_content_type": null
+        },
+        {
+          "id": "s-figures#image-2#img-1",
+          "content_type": "image/png",
+          "width_mm": 10.0,
+          "height_mm": 5.0,
+          "align": "left",
+          "alt": null,
+          "origin": "embedded",
+          "original_content_type": null
+        },
+        {
+          "id": "s-figures#p-1#img-1",
+          "content_type": "image/png",
+          "width_mm": 10.0,
+          "height_mm": 5.0,
+          "align": "inline",
+          "alt": "a gear",
+          "origin": "embedded",
+          "original_content_type": null
+        },
+        {
+          "id": "s-figures#table-1#cell-2#image-1#img-1",
+          "content_type": "image/png",
+          "width_mm": 10.0,
+          "height_mm": 5.0,
+          "align": "left",
+          "alt": "cell picture",
+          "origin": "embedded",
+          "original_content_type": null
+        }
+      ],
+      "equations": [],
+      "notes": [],
+      "properties": [],
+      "report": []
+    },
+    "text_form": [
+      "Figures",
+      "The plot",
+      "Box line one Box line two",
+      "Icon a gear here.",
+      "First",
+      "Nested",
+      "Second",
+      "Outer In 1 In 2",
+      "cell picture"
+    ],
+    "grid_forms": {
+      "s-figures#table-1": [["0,0|Outer In 1 In 2", "0,1|cell picture"]],
+      "s-figures#table-1#cell-1#table-1": [["0,0|In 1", "0,1|In 2"]]
+    }
+  }
+]
