@@ -222,7 +222,8 @@ Tabs used to line things up become a single space. **[call]**
 A table holds the following.
 
 - **An id, numbered or not, and a caption** in inline content, with its position (above or below).
-  The source's literal "Table 13:" and its number field are removed; the target numbers it.
+  The source's literal "Table 13:" and its number field are removed; the target numbers it. A
+  multi-part number ("Table 3-1:", "Table 14.2.1", "Table A.1") is removed whole.
 - **A caption in a merged first row.** In the sample, each table's title is a merged first row
   that starts "Table n:". Such a row is recognised as the caption, not data.
 - **Columns**: relative widths.
@@ -266,8 +267,8 @@ paragraph, placed in the flow there, and flagged. **[call]**
 
 - **A Word cross-reference field** points at a bookmark; the decomposer resolves it to the section,
   table, figure or equation the bookmark is in. This is exact.
-- **A typed reference** ("see Table 3", "Figure 1 shows…") is matched to the caption with that
-  number in the source. Anything it can't match stays as plain text and is flagged. **[call]**
+- **A typed reference** ("see Table 3", "Figure 1 shows…", "Table 3-2") is matched to the caption
+  with that whole number in the source. Anything it can't match stays as plain text and is flagged. **[call]**
 - **An internal hyperlink** becomes a cross-reference to its target.
 
 ### 5.7 Equations

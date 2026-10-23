@@ -3,9 +3,11 @@ references."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
-from ingest_worker.decompose import fidelity
+from ingest_worker.decompose import fidelity, references, tables
 from ingest_worker.decompose.body import walk_body
 from ingest_worker.decompose.fidelity import (
     IMAGE_ONLY_EQUATION,
@@ -19,6 +21,7 @@ from ingest_worker.decompose.media import MediaContext
 from ingest_worker.decompose.model import (
     Cell,
     DecomposedDocument,
+    Figure,
     ImageBlock,
     InlineImage,
     NoteRef,
@@ -674,3 +677,60 @@ def test_typed_reference_split_by_a_bold_run_is_left_as_text_on_both_sides() -> 
     assert unit in text_form(doc)
     assert source_text_units(pkg, ctx) == text_form(doc)
     check(doc, pkg, ctx)
+
+
+# --- Multi-part caption numbers --------------------------------------------------------------
+
+MULTI_PART = (
+    heading("Results")
+    + caption_p("Table 3-1: Alpha")
+    + tbl(tr(tc("A"), tc("B")), cols=[2000, 2000])
+    + caption_p("Table 3-2: Beta")
+    + tbl(tr(tc("C"), tc("D")), cols=[2000, 2000])
+    + caption_p("Figure 14.2.1: Gamma")
+    + para(f"<w:r>{picture()}</w:r>")
+    + para(run("See Table 3-2 for beta and Figure 14.2.1."))
+)
+#: The patterns before multi-part numbers were read, standing in for a decomposer that cuts a
+#: caption number, or matches a typed reference, short.
+_SHORT_CAPTION = re.compile(r"^\s*(Table|Figure)\s*(\d+)\s*[:.\-\u2013\u2014]?\s*", re.I)
+_SHORT_REFERENCE = re.compile(r"\b(Table|Figure)\s+(\d+)\b")
+
+
+def test_multi_part_numbers_cut_whole_and_referenced_on_both_sides() -> None:
+    doc, pkg, ctx = decompose(MULTI_PART, **IMAGE)
+    (section,) = doc.sections
+    first, second = (b for b in section.blocks if isinstance(b, Table))
+    (figure,) = (b for b in section.blocks if isinstance(b, Figure))
+    assert first.caption == [Text(text="Alpha")] and second.caption == [Text(text="Beta")]
+    assert figure.caption == [Text(text="Gamma")]
+    *_, last = section.blocks
+    assert isinstance(last, Paragraph)
+    assert last.inlines == [
+        Text(text="See "),
+        XRef(target_id=second.id, text="Table 3-2"),
+        Text(text=" for beta and "),
+        XRef(target_id=figure.id, text="Figure 14.2.1"),
+        Text(text="."),
+    ]
+    assert source_text_units(pkg, ctx) == text_form(doc)
+    check(doc, pkg, ctx)
+
+
+def test_a_caption_number_cut_short_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tables, "CAPTION_PREFIX", _SHORT_CAPTION)
+    doc, pkg, ctx = decompose(MULTI_PART, **IMAGE)
+    first = next(b for b in doc.sections[0].blocks if isinstance(b, Table))
+    assert first.caption == [Text(text="1: Alpha")]  # the decomposer got it wrong
+    with pytest.raises(DecompositionFailed, match="differs from the source"):
+        check(doc, pkg, ctx)
+
+
+def test_a_typed_reference_matched_short_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(references, "TYPED_REFERENCE", _SHORT_REFERENCE)
+    doc, pkg, ctx = decompose(MULTI_PART, **IMAGE)
+    *_, last = doc.sections[0].blocks
+    assert isinstance(last, Paragraph)
+    assert not any(isinstance(i, XRef) for i in last.inlines)  # the decomposer got it wrong
+    with pytest.raises(DecompositionFailed, match="differs from the source"):
+        check(doc, pkg, ctx)

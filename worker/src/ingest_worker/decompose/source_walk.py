@@ -13,7 +13,8 @@ text dropped; caption number prefixes (and the `SEQ` result in them) removed; no
 tables as `marker: text`; symbols to Unicode, tabs to spaces; a drawing's text at its place as
 its image's alt text; images, note references, equations and cross-references (fields, internal
 hyperlinks and typed references) as the tokens of the text form, resolved from the same
-bookmarks and caption numbers. Pure readers are shared: styles, hidden-text resolution, the
+bookmarks and caption numbers (the walk finds caption numbers and typed references with its own
+patterns, and only looks their targets up in the map). Pure readers are shared: styles, hidden-text resolution, the
 symbol tables, row and cell enumeration, the table grid and which rows are a caption or notes,
 the choice of a drawing's form and its text, and the OMML converter.
 """
@@ -41,11 +42,9 @@ from .forms import (
 from .inline import EMBEDDED_DOCUMENT_TAGS, EMBEDDED_DOCUMENTS, InlineContext, R, W
 from .media import ALTERNATE, MediaContext, choose_media, doc_pr_alt, is_media, text_alternative
 from .package import DecompositionFailed, Package, Rel
-from .references import TYPED_REFERENCE
 from .render import RenderFragment
 from .styles import Styles
 from .tables import (
-    CAPTION_PREFIX,
     NOTE_PREFIX,
     cell_span,
     cells_of,
@@ -67,7 +66,14 @@ _REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 _WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 #: The title the decomposer gives an empty heading.
 _EMPTY_TITLE = "[]"
-_MAX_DIGITS = 9
+#: The walk reads caption numbers and typed references with its own patterns, so a decomposer
+#: that cut a caption's number short, or matched part of a typed reference, shows as a
+#: difference. A number is a letter or not, then digits in parts joined by `.`, `-`, U+2010,
+#: U+2011 or an en dash; its dashes as `-` key the caption numbers.
+_NUMBER = r"(?:(?-i:[A-Z])[.\-\u2010\u2011\u2013]?)?\d+(?:[.\-\u2010\u2011\u2013]\d+)*"
+_CAPTION_NUMBER = re.compile(rf"^\s*(Table|Figure)\s*({_NUMBER})\s*[:.\-\u2013\u2014]?\s*", re.I)
+_TYPED = re.compile(rf"\b(Table|Figure)\s+({_NUMBER})(?!\w|[.\-\u2010\u2011\u2013]\d)")
+_DASHES = {0x2010: "-", 0x2011: "-", 0x2013: "-"}
 _MARKS = ("bold", "italic", "underline", "superscript", "subscript")
 _REPLACEMENT = "\ufffd"
 _LINK_SCHEMES = ("http://", "https://", "mailto:", "ftp://")
@@ -272,7 +278,7 @@ def _caption(pieces: list[_Piece], fields: Sequence[_Field]) -> _Caption:
     """A caption without its number prefix: `Table 13:`, or the `SEQ` field's result with at
     most one word before it."""
     lead = _leading_text(pieces)
-    if match := CAPTION_PREFIX.match(lead):
+    if match := _CAPTION_NUMBER.match(lead):
         return _Caption(_strip_leading(pieces, match.end()), _label(match.group(1)), True)
     seq = next((f for f in fields if f.kind == "SEQ"), None)
     if seq is None:
@@ -866,13 +872,9 @@ class _Walk:
     def typed(self, text: str) -> str:
         out: list[str] = []
         done = 0
-        for match in TYPED_REFERENCE.finditer(text):
-            label, digits = match.group(1), match.group(2)
-            target = (
-                self.ctx.caption_number_map.get((label.lower(), int(digits)))
-                if len(digits) <= _MAX_DIGITS
-                else None
-            )
+        for match in _TYPED.finditer(text):
+            label, number = match.group(1), match.group(2).translate(_DASHES)
+            target = self.ctx.caption_number_map.get((label.lower(), number))
             if target is None:
                 continue
             out.extend([text[done : match.start()], xref_token(target)])

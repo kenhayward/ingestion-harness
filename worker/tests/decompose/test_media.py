@@ -374,7 +374,7 @@ def test_figure_with_caption() -> None:
             caption_position="below",
         )
     ]
-    assert ctx.caption_number_map[("figure", 1)] == "s-0#image-1"
+    assert ctx.caption_number_map[("figure", "1")] == "s-0#image-1"
 
 
 def test_image_ids_are_deterministic() -> None:

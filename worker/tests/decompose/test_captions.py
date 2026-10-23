@@ -91,7 +91,7 @@ def test_merged_first_row_caption(caption_row: str) -> None:
     assert t.numbered and t.caption_position == "above"
     assert grid(t) == [["A", "B"], ["1", "2"]]
     assert t.key == "dissolution"
-    assert ctx.caption_number_map == {("table", 13): t.id}
+    assert ctx.caption_number_map == {("table", "13"): t.id}
     assert ctx.flags == []
     assert structural_rows(el, ctx.styles).caption == 0
 
@@ -124,7 +124,7 @@ def test_caption_paragraph_after_figure_is_below() -> None:
     # Figures arrive with Task 7; the pairing rule is tested on a placeholder image block.
     caption = caption_parts([Text(text="Figure 1- Container Closure")], [])
     assert caption.inlines == [Text(text="Container Closure")]
-    assert caption.numbered and (caption.kind, caption.number) == ("figure", 1)
+    assert caption.numbered and (caption.kind, caption.number) == ("figure", "1")
     blocks: list[Block] = [
         Paragraph(id="s#p-1", inlines=[Text(text="Before.")]),
         ImageBlock(id="s#image-1", image_id="img-1"),
@@ -137,7 +137,7 @@ def test_seq_field_number_removed_after_another_label() -> None:
     seq = FieldState(" SEQ Table \\* ARABIC ", in_result=True, result="4")
     caption = caption_parts([Text(text="Tabelle 4: Gehalt")], [seq])
     assert caption.inlines == [Text(text="Gehalt")]
-    assert (caption.kind, caption.number, caption.numbered) == ("table", 4, True)
+    assert (caption.kind, caption.number, caption.numbered) == ("table", "4", True)
 
 
 @pytest.mark.parametrize(
@@ -151,7 +151,7 @@ def test_caption_paragraph_next_to_table(before: str, after: str, position: str)
     assert t.caption == [Text(text="Assay")] and t.numbered
     assert t.caption_position == position and t.key == "assay"
     assert [plain_text(b.inlines) for b in blocks if isinstance(b, Paragraph)] == ["After."]
-    assert ctx.caption_number_map == {("table", 2): t.id}
+    assert ctx.caption_number_map == {("table", "2"): t.id}
     assert ctx.flags == []
 
 
@@ -165,7 +165,7 @@ def test_seq_field_paragraph_is_a_caption_without_the_style() -> None:
     blocks, ctx, _ = read(SEQ_TABLE_13 + tbl(*DATA, cols=[100, 100]))
     (t,) = tables(blocks)
     assert t.caption == [Text(text="Dissolution")] and t.numbered
-    assert ctx.caption_number_map == {("table", 13): t.id}
+    assert ctx.caption_number_map == {("table", "13"): t.id}
 
 
 def test_plain_paragraph_is_not_a_caption() -> None:
@@ -333,3 +333,39 @@ def test_flags_in_attached_notes_table_point_at_the_table() -> None:
     (t,) = tables(blocks)
     assert [n.marker for n in t.notes] == ["a"]
     assert flags(ctx) == [("symbol_unmapped", "warning", t.id)]
+
+
+# --- Multi-part caption numbers --------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("typed", "rest", "kind", "number"),
+    [
+        ("Table 3-1: Alpha", "Alpha", "table", "3-1"),
+        ("Table 14.2.1 Beta", "Beta", "table", "14.2.1"),
+        ("Table A.1: Gamma", "Gamma", "table", "A.1"),
+        ("Table A1 Delta", "Delta", "table", "A1"),
+        ("Figure 2\u20133: Epsilon", "Epsilon", "figure", "2-3"),
+        ("Figure 1- Container Closure", "Container Closure", "figure", "1"),
+    ],
+)
+def test_multi_part_caption_number_is_removed_whole(
+    typed: str, rest: str, kind: str, number: str
+) -> None:
+    caption = caption_parts([Text(text=typed)], [])
+    assert caption.inlines == [Text(text=rest)]
+    assert (caption.kind, caption.number, caption.numbered) == (kind, number, True)
+
+
+def test_multi_part_caption_numbers_register_each_table() -> None:
+    body = (
+        caption_p("Table 3-1: Alpha")
+        + tbl(*DATA, cols=[100, 100])
+        + para("Between.")
+        + caption_p("Table 3-2: Beta")
+        + tbl(*DATA, cols=[100, 100])
+    )
+    blocks, ctx, _ = read(body)
+    first, second = tables(blocks)
+    assert first.caption == [Text(text="Alpha")] and second.caption == [Text(text="Beta")]
+    assert ctx.caption_number_map == {("table", "3-1"): first.id, ("table", "3-2"): second.id}

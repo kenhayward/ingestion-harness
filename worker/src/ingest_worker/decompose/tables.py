@@ -59,9 +59,16 @@ _H_ALIGN: dict[str, HAlign] = {
 }
 _V_ALIGN: dict[str, VAlign] = {"top": "top", "center": "middle", "bottom": "bottom"}
 
-#: A caption's label and number, typed or shown by a `SEQ` field: `Table 13:`, `Figure 1-`.
-#: The en and em dashes are separators, as Word users type them.
-CAPTION_PREFIX = re.compile(r"^\s*(Table|Figure)\s*(\d+)\s*[:.\-–—]?\s*", re.I)  # noqa: RUF001
+#: A caption number as the source displays it: `3`, `3-1`, `14.2.1`, `A.1`, `A1`. Its parts
+#: are joined by a full stop, a hyphen, a (non-breaking) hyphen or an en dash.
+CAPTION_NUMBER = r"(?:(?-i:[A-Z])[.\-\u2010\u2011\u2013]?)?\d+(?:[.\-\u2010\u2011\u2013]\d+)*"
+#: A caption's label and whole number, typed or shown by a `SEQ` field, and the separator after
+#: it: `Table 13:`, `Table 3-1:`, `Figure 1-`. The en and em dashes are separators too, as Word
+#: users type them.
+CAPTION_PREFIX = re.compile(
+    rf"^\s*(Table|Figure)\s*({CAPTION_NUMBER})\s*[:.\-\u2013\u2014]?\s*", re.I
+)
+_NUMBER_DASHES = str.maketrans("\u2010\u2011\u2013", "---")
 #: A table note's marker and separator: `a: `, `1. `, `*) `.
 NOTE_PREFIX = re.compile(r"^\s*([a-z]|\d{1,2}|[*†‡§])\s*[:.)]\s+")
 _SEPARATOR = r"\s*[:.\-–—]?\s*"  # noqa: RUF001
@@ -418,8 +425,13 @@ class Caption:
 
     inlines: list[Inline]
     kind: CaptionKind | None  # the label it gave, if any
-    number: int | None  # the number the source displayed
+    number: str | None  # the number the source displayed, as `caption_number` keys it
     numbered: bool
+
+
+def caption_number(displayed: str) -> str:
+    """A displayed caption number as `caption_number_map` keys it: its dashes as `-`."""
+    return displayed.translate(_NUMBER_DASHES)
 
 
 def _kind(label: str) -> CaptionKind | None:
@@ -455,19 +467,20 @@ def _strip_leading(inlines: Sequence[Inline], count: int) -> list[Inline]:
 def caption_parts(inlines: Sequence[Inline], seq_fields: Sequence[FieldState]) -> Caption:
     """A caption read from its inlines and the fields they held.
 
-    A leading `CAPTION_PREFIX` is removed and gives the label and number. Failing that, a `SEQ`
-    field still makes the caption numbered, and its result (with at most one word before it) is
-    removed when it leads the text. Without either, the caption is unnumbered and kept whole.
+    A leading `CAPTION_PREFIX` is removed, its whole number included, and gives the label and
+    number. Failing that, a `SEQ` field still makes the caption numbered, and its result (with
+    at most one word before it) is removed when it leads the text. Without either, the caption
+    is unnumbered and kept whole.
     """
     lead = _leading_text(inlines)
     if match := CAPTION_PREFIX.match(lead):
         rest = _strip_leading(inlines, match.end())
-        return Caption(rest, _kind(match.group(1)), int(match.group(2)), numbered=True)
+        return Caption(rest, _kind(match.group(1)), caption_number(match.group(2)), numbered=True)
     seq = next((f for f in seq_fields if f.kind == "SEQ"), None)
     if seq is None:
         return Caption(list(inlines), None, None, numbered=False)
     result = seq.result.strip()
-    number = int(result) if re.fullmatch(r"[0-9]+", result) else None
+    number = caption_number(result) if re.fullmatch(CAPTION_NUMBER, result) else None
     kept = list(inlines)
     if result:
         prefix = re.compile(rf"^\s*(?:[^\W\d_]+\.?\s*)?{re.escape(result)}{_SEPARATOR}")

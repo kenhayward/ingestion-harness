@@ -36,11 +36,13 @@ from .model import (
 )
 from .package import Package
 from .styles import Styles
+from .tables import CAPTION_NUMBER, caption_number
 
-#: A typed reference to a table or figure by the number its caption showed.
-TYPED_REFERENCE = re.compile(r"\b(Table|Figure)\s+(\d+)\b")
-#: Longer numbers are not caption numbers (and would be costly to convert).
-_MAX_DIGITS = 9
+#: A typed reference to a table or figure by the whole number its caption showed: `Table 13`,
+#: `Table 3-2`, `Figure 14.2.1`. A number running on into a letter or another part is not one.
+TYPED_REFERENCE = re.compile(
+    rf"\b(Table|Figure)\s+({CAPTION_NUMBER})(?!\w|[.\-\u2010\u2011\u2013]\d)"
+)
 
 _MAIN = "word/document.xml"
 _REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
@@ -151,12 +153,8 @@ class _Resolver:
         out: list[Inline] = []
         done = 0
         for match in TYPED_REFERENCE.finditer(item.text):
-            label, digits = match.group(1), match.group(2)
-            target = (
-                self.ctx.caption_number_map.get((label.lower(), int(digits)))
-                if len(digits) <= _MAX_DIGITS
-                else None
-            )
+            label, number = match.group(1), caption_number(match.group(2))
+            target = self.ctx.caption_number_map.get((label.lower(), number))
             if target is None:
                 self.flags.append(
                     Flag(
