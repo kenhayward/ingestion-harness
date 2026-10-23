@@ -87,10 +87,14 @@ class _Scope:
     captions: dict[str, Caption] = field(default_factory=dict)
     sources: dict[str, Element] = field(default_factory=dict)
 
-    def finish(self, ctx: InlineContext) -> list[Block]:
-        """The scope's blocks, with note tables and caption paragraphs attached to tables."""
+    def finish(self, ctx: InlineContext, *, flag_uncaptioned: bool = True) -> list[Block]:
+        """The scope's blocks, with note tables and caption paragraphs attached to tables.
+
+        A table left without a caption is flagged unless `flag_uncaptioned` is off, as it is
+        for the tables nested in a cell.
+        """
         blocks = _attach_note_tables(_built(self.blocks), self.sources, ctx)
-        return attach_captions(blocks, self.captions, ctx)
+        return attach_captions(blocks, self.captions, ctx, flag_uncaptioned=flag_uncaptioned)
 
     def peek(self, kind: str) -> str:
         return child_id(self.id, kind, self.counts.get(kind, 0) + 1)
@@ -159,10 +163,22 @@ def adjacent_caption(
     return None
 
 
+def _move_flags(ctx: InlineContext, old: str, new: str) -> None:
+    """Point the flags raised at `old`, or inside it, at `new`, which absorbed it."""
+    for i, flag in enumerate(ctx.flags):
+        if flag.at is not None and (flag.at == old or flag.at.startswith(f"{old}#")):
+            ctx.flags[i] = flag.model_copy(update={"at": new})
+
+
 def attach_captions(
-    blocks: list[Block], captions: Mapping[str, Caption], ctx: InlineContext
+    blocks: list[Block],
+    captions: Mapping[str, Caption],
+    ctx: InlineContext,
+    *,
+    flag_uncaptioned: bool = True,
 ) -> list[Block]:
-    """Tables given their caption paragraphs; a table left without a caption is flagged."""
+    """Tables given their caption paragraphs, whose flags move to the table. A table left
+    without a caption is flagged `caption_not_found` when `flag_uncaptioned` is on."""
     out = list(blocks)
     taken: set[int] = set()
     for i, block in enumerate(blocks):
@@ -178,6 +194,7 @@ def attach_captions(
             taken.add(j)
             caption = captions[blocks[j].id]
             register_caption(ctx, caption, block.id)
+            _move_flags(ctx, blocks[j].id, block.id)
             block = block.model_copy(
                 update={
                     "caption": caption.inlines,
@@ -187,7 +204,7 @@ def attach_captions(
                 }
             )
             out[i] = block
-        if not (block.caption or block.numbered):
+        if flag_uncaptioned and not (block.caption or block.numbered):
             ctx.flags.append(
                 Flag(
                     code="caption_not_found",
@@ -216,6 +233,7 @@ def _attach_note_tables(
             notes = notes_of_table(block, sources[block.id]) if match == "notes" else None
             if notes is not None:
                 out[-1] = prev.model_copy(update={"notes": [*prev.notes, *notes]})
+                _move_flags(ctx, block.id, prev.id)
                 continue
             if match is not None:
                 flag_unrecognised_notes(ctx, prev.id)
@@ -306,7 +324,7 @@ class _Flow:
             else:
                 inner.paragraph(el)
         inner.end_list()
-        return inner.scope.finish(self.ctx)
+        return inner.scope.finish(self.ctx, flag_uncaptioned=False)
 
 
 # --- Pages -----------------------------------------------------------------------------------

@@ -300,3 +300,36 @@ def test_nested_table_inherits_wide() -> None:
     (outer,) = tables(blocks)
     nested = outer.rows[0].cells[0].blocks[0]
     assert outer.wide and isinstance(nested, Table) and nested.wide
+
+
+# --- Flags -----------------------------------------------------------------------------------
+
+UNMAPPED = '<w:r><w:sym w:font="Wingdings" w:char="F001"/></w:r>'
+
+
+def test_nested_table_without_caption_is_not_flagged() -> None:
+    inner = tbl(*DATA, cols=[1, 1])
+    body = tbl(tr(tc("Table 1: Outer")), tr(tc(content=inner + para(""))), cols=[1])
+    blocks, ctx, _ = read(body)
+    (outer,) = tables(blocks)
+    assert isinstance(outer.rows[0].cells[0].blocks[0], Table)
+    assert ctx.flags == []
+
+
+def test_flags_on_attached_caption_point_at_the_table() -> None:
+    caption = (
+        f'<w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr>{run("Table 2: Assay ")}{UNMAPPED}</w:p>'
+    )
+    blocks, ctx, _ = read(caption + tbl(*DATA, cols=[100, 100]))
+    (t,) = tables(blocks)
+    assert t.caption_position == "above"
+    assert flags(ctx) == [("symbol_unmapped", "warning", t.id)]
+
+
+def test_flags_in_attached_notes_table_point_at_the_table() -> None:
+    notes = tbl(tr(cell_with(run("a: Samples "), UNMAPPED)), cols=[200])
+    body = tbl(tr(tc("Table 1: Release", span=2)), tr(tc("x"), cell_with(sup("a"))), cols=[1, 1])
+    blocks, ctx, _ = read(body + notes)
+    (t,) = tables(blocks)
+    assert [n.marker for n in t.notes] == ["a"]
+    assert flags(ctx) == [("symbol_unmapped", "warning", t.id)]
