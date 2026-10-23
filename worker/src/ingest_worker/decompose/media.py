@@ -24,7 +24,7 @@ from PIL import Image as PILImage
 from PIL import UnidentifiedImageError
 
 from .ids import child_id
-from .model import Flag, Image, ImageBlock, InlineImage
+from .model import Equation, Flag, Image, ImageBlock, InlineImage
 from .package import DecompositionFailed, Package, Rel
 from .render import _NAMESPACES, Renderer, RenderFragment
 
@@ -132,8 +132,9 @@ class _Picture:
 
 @dataclass
 class MediaContext:
-    """The images read so far, their bytes and originals (by image id), and what is needed to
-    read more: the package, the part being read (for its relationships) and the renderer."""
+    """The images and equations read so far, the images' bytes and originals (by image id), and
+    what is needed to read more: the package, the part being read (for its relationships) and
+    the renderer."""
 
     pkg: Package
     renderer: Renderer
@@ -143,7 +144,8 @@ class MediaContext:
     images: list[Image] = field(default_factory=list)
     image_bytes: dict[str, bytes] = field(default_factory=dict)
     originals: dict[str, bytes] = field(default_factory=dict)
-    _counts: dict[str, int] = field(default_factory=dict)
+    equations: list[Equation] = field(default_factory=list)
+    _counts: dict[tuple[str, str], int] = field(default_factory=dict)
 
     @classmethod
     def for_package(cls, pkg: Package, renderer: Renderer) -> MediaContext:
@@ -155,10 +157,12 @@ class MediaContext:
             styles_xml=pkg.part("word/styles.xml"),
         )
 
-    def new_id(self, at: str) -> str:
-        """The next image id inside the block or paragraph `at`."""
-        self._counts[at] = self._counts.get(at, 0) + 1
-        return child_id(at, "img", self._counts[at])
+    def new_id(self, at: str, kind: str = "img") -> str:
+        """The next id of a `kind` (an image, `img`, or an equation, `eq`) inside the block or
+        paragraph `at`."""
+        key = (at, kind)
+        self._counts[key] = self._counts.get(key, 0) + 1
+        return child_id(at, kind, self._counts[key])
 
     def add(
         self,
@@ -184,6 +188,10 @@ class MediaContext:
         if picture.original is not None:
             self.originals[image_id] = picture.original
         return image
+
+    def add_rendered(self, image_id: str, png: bytes, align: Align) -> Image:
+        """A PNG the renderer made, sized from its pixels, recorded as image `image_id`."""
+        return self.add(image_id, _Picture(png, "image/png", "rendered"), None, align, None)
 
     # -- package --
 

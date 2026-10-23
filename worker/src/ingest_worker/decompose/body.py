@@ -1,6 +1,7 @@
-"""The document body: a tree of sections holding paragraphs, lists, tables and images.
+"""The document body: a tree of sections holding paragraphs, lists, tables, images and equations.
 
-Headings (by outline level) open sections; ids come from the heading-title path and the ordinal
+A paragraph holding only display equations becomes one equation block for each. Headings (by
+outline level) open sections; ids come from the heading-title path and the ordinal
 of each kind of block within its section, so they survive edits elsewhere in the document.
 
 When a scope's blocks are complete, a one-cell table of notes directly after a table becomes
@@ -17,12 +18,14 @@ from dataclasses import dataclass, field
 from typing import Literal
 from xml.etree.ElementTree import Element
 
+from .equations import equation_of
 from .ids import child_id, normalise_title, section_id
 from .inline import InlineContext, W, inlines_of, plain_text, read_paragraph
 from .media import media_of
 from .model import (
     Block,
     Break,
+    EquationBlock,
     Figure,
     Flag,
     ImageBlock,
@@ -314,14 +317,17 @@ class _Flow:
 
     def paragraph(self, p: Element) -> None:
         start = len(self.ctx.closed_fields)
-        inlines, lone = read_paragraph(p, self.ctx, at=self.scope.peek("p"))
-        if not inlines and lone is None:
+        inlines, lone, display = read_paragraph(p, self.ctx, at=self.scope.peek("p"))
+        if not inlines and lone is None and not display:
             return  # an empty paragraph leaves no trace, even between list paragraphs
         info = self.styles.list_info(p)
         if info is None:
             self.end_list()
             if lone is not None:
                 self.scope.blocks.append(self.image(p, lone))
+                return
+            if display:
+                self.scope.blocks.extend(self.equations(display))
                 return
             pid = self.scope.take("p")
             self.scope.blocks.append(Paragraph(id=pid, inlines=inlines))
@@ -341,12 +347,14 @@ class _Flow:
             if self.lists:
                 self.lists[-1].items[-1].append(target)
             self.lists.append(target)
-        item = (
-            self.image(p, lone)
-            if lone is not None
-            else Paragraph(id=self.scope.take("p"), inlines=inlines)
-        )
-        target.items.append([item])
+        item: list[Block | _List]
+        if lone is not None:
+            item = [self.image(p, lone)]
+        elif display:
+            item = list(self.equations(display))
+        else:
+            item = [Paragraph(id=self.scope.take("p"), inlines=inlines)]
+        target.items.append(item)
 
     def image(self, p: Element, run_child: Element) -> Block:
         """The block of a picture or drawing standing alone in paragraph `p`."""
@@ -356,6 +364,15 @@ class _Flow:
         if not isinstance(block, ImageBlock):
             raise DecompositionFailed("a picture or drawing could not be placed", self.scope.id)
         return block
+
+    def equations(self, display: list[Element]) -> list[EquationBlock]:
+        """One block for each display equation of a paragraph that holds only them."""
+        blocks: list[EquationBlock] = []
+        for o in display:
+            block_id = self.scope.take("equation")
+            equation = equation_of(o, self.ctx, at=block_id, display=True)
+            blocks.append(EquationBlock(id=block_id, equation_id=equation.id))
+        return blocks
 
     def table(self, tbl: Element) -> None:
         self.end_list()

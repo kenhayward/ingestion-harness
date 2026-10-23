@@ -2,20 +2,23 @@
 
 A paragraph's runs are read in document order into the model's inlines. Tracked changes are read
 as accepted, comments and hidden text are dropped, and a field keeps its result while its
-instruction is never output. The context carries what later tasks need to act on fields and
+instruction is never output. Equations (`m:oMath`) sit among the runs as inline equations; a
+paragraph holding only display equations (`m:oMathPara`) is left for the caller to place as
+equation blocks. The context carries what later tasks need to act on fields and
 cross-references without this module knowing about them.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, NamedTuple
 from xml.etree.ElementTree import Element
 
 from ingest_worker.symbol_fonts import FIRST, LAST, TABLES, Family, font_family
 
+from .equations import O_MATH, O_MATH_PARA, equation_of
 from .media import MediaContext, is_media, media_of
-from .model import Break, Flag, Inline, InlineImage, Link, Text, XRef
+from .model import Break, Flag, Inline, InlineEquation, InlineImage, Link, Text, XRef
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -142,8 +145,9 @@ class InlineContext:
     `bookmarks` maps a bookmark name to the id it resolves to (filled by a later task). `changes`
     counts tracked-change elements read as accepted. `caption_number_map` maps a caption's kind
     and the number the source displayed for it, such as `("table", 13)`, to the captioned
-    element's id. `media` holds the images read so far and what reading more needs; the
-    decomposer always supplies it, and reading a picture or drawing without it fails.
+    element's id. `media` holds the images and equations read so far and what reading more
+    needs; the decomposer always supplies it, and reading a picture, drawing or equation
+    without it fails.
     """
 
     styles: RunStyles = field(default_factory=RunStyles)
@@ -185,8 +189,10 @@ class _Reader:
         self.paragraph_style = paragraph_style
         self.at = at
         self.out: list[Inline] = []
-        #: Pictures and drawings met, with the position in `out` they sit before.
-        self.media: list[tuple[int, Element]] = []
+        #: Pictures, drawings and equations met, with the position in `out` they sit before.
+        self.objects: list[tuple[int, Element]] = []
+        #: The equations among `objects` that are in display form (in an `m:oMathPara`).
+        self.display: list[Element] = []
 
     # -- flow --
 
@@ -203,6 +209,12 @@ class _Reader:
                 self.track_fields(child)
             elif tag in _TRANSPARENT:
                 self.walk(child)
+            elif tag == O_MATH:
+                self.objects.append((len(self.out), child))
+            elif tag == O_MATH_PARA:
+                for o in child.iter(O_MATH):
+                    self.objects.append((len(self.out), o))
+                    self.display.append(o)
             elif tag == f"{W}fldSimple":
                 state = FieldState(child.get(f"{W}instr", ""), in_result=True)
                 self.ctx.fields.append(state)
@@ -252,7 +264,7 @@ class _Reader:
             elif not visible or self.in_instruction:
                 continue
             elif is_media(child):
-                self.media.append((len(self.out), child))
+                self.objects.append((len(self.out), child))
             elif tag == "t":
                 self.text(child.text or "", marks, family, font)
             elif tag in ("tab", "ptab"):
@@ -266,26 +278,41 @@ class _Reader:
             elif tag == "sym":
                 self.symbol(child, marks)
 
-    def lone_media(self) -> Element | None:
-        """The picture or drawing standing alone in the paragraph: the only one, with no
-        other content than whitespace."""
-        if len(self.media) != 1:
-            return None
-        blank = all(
+    def blank(self) -> bool:
+        """Whether the paragraph's text is only whitespace."""
+        return all(
             isinstance(i, Break) or (isinstance(i, Text) and not i.text.strip()) for i in self.out
         )
-        return self.media[0][1] if blank else None
+
+    def lone_media(self) -> Element | None:
+        """The picture or drawing standing alone in the paragraph: the only object, with no
+        other content than whitespace."""
+        if len(self.objects) != 1 or self.objects[0][1].tag == O_MATH or not self.blank():
+            return None
+        return self.objects[0][1]
+
+    def display_math(self) -> list[Element]:
+        """The display equations of a paragraph that holds nothing else but whitespace."""
+        if self.display and len(self.objects) == len(self.display) and self.blank():
+            return self.display
+        return []
 
     def placed(self) -> list[Inline]:
-        """`out` with each picture or drawing read as an `InlineImage` at its place."""
+        """`out` with each picture or drawing read as an `InlineImage`, and each equation as an
+        `InlineEquation`, at its place."""
         placed: list[Inline] = []
-        pending = iter(self.media)
+        pending = iter(self.objects)
         upcoming = next(pending, None)
         for index in range(len(self.out) + 1):
             while upcoming is not None and upcoming[0] == index:
-                image = media_of(upcoming[1], self.ctx, at=self.at, in_text=True)
-                if isinstance(image, InlineImage):
-                    placed.append(image)
+                el = upcoming[1]
+                if el.tag == O_MATH:
+                    equation = equation_of(el, self.ctx, at=self.at, display=False)
+                    placed.append(InlineEquation(equation_id=equation.id))
+                else:
+                    image = media_of(el, self.ctx, at=self.at, in_text=True)
+                    if isinstance(image, InlineImage):
+                        placed.append(image)
                 upcoming = next(pending, None)
             if index < len(self.out):
                 placed.append(self.out[index])
@@ -352,22 +379,33 @@ def _read(p: Element, ctx: InlineContext, at: str) -> _Reader:
 
 
 def inlines_of(p: Element, ctx: InlineContext, *, at: str) -> list[Inline]:
-    """The inlines of paragraph `p`, pictures and drawings as `InlineImage`s; `at` locates it
-    in any flag raised and names the images in it."""
+    """The inlines of paragraph `p`, pictures and drawings as `InlineImage`s and equations as
+    `InlineEquation`s; `at` locates it in any flag raised and names the images and equations
+    in it."""
     return merge_runs(_read(p, ctx, at).placed())
 
 
-def read_paragraph(
-    p: Element, ctx: InlineContext, *, at: str
-) -> tuple[list[Inline], Element | None]:
-    """The inlines of paragraph `p`, as `inlines_of` gives them, or, when one picture or
-    drawing stands alone in it, no inlines and that run child, for the caller to place as a
-    block."""
+class ReadParagraph(NamedTuple):
+    """A paragraph as read: its inlines, or what stands alone in it for the caller to place as
+    blocks, which is a picture or drawing (`lone`) or its display equations (`display`)."""
+
+    inlines: list[Inline]
+    lone: Element | None
+    display: list[Element]
+
+
+def read_paragraph(p: Element, ctx: InlineContext, *, at: str) -> ReadParagraph:
+    """The inlines of paragraph `p`, as `inlines_of` gives them; or, when one picture or
+    drawing stands alone in it, no inlines and that run child; or, when it holds only display
+    equations, no inlines and their `m:oMath` elements, in order."""
     reader = _read(p, ctx, at)
     lone = reader.lone_media()
     if lone is not None:
-        return [], lone
-    return merge_runs(reader.placed()), None
+        return ReadParagraph([], lone, [])
+    display = reader.display_math()
+    if display:
+        return ReadParagraph([], None, display)
+    return ReadParagraph(merge_runs(reader.placed()), None, [])
 
 
 def plain_text(inlines: list[Inline]) -> str:

@@ -72,6 +72,9 @@ ignore = ["E501"] # ruff format owns line length; long SQL/f-strings are fine
 # The Symbol font's table is Greek letters and maths signs that look like Latin ones, on purpose.
 "src/ingest_worker/symbol_fonts.py" = ["RUF001"]
 "tests/test_symbol_fonts.py" = ["RUF001"]
+# So are the maths signs an equation's MathML and LaTeX are written with.
+"src/ingest_worker/decompose/equations.py" = ["RUF001"]
+"tests/decompose/test_equations.py" = ["RUF001"]
 
 [tool.mypy]
 strict = true
