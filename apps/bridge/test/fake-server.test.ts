@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildFakeServer } from '../src/sinks/fake-server.js';
 import { KEY } from './helpers.js';
-import { deliverRequest } from './sink-builders.js';
+import { decomposedPackage, deliverRequest } from './sink-builders.js';
 
 const open: FastifyInstance[] = [];
 afterEach(async () => {
@@ -82,5 +82,61 @@ describe('the fake external sink server, names', () => {
       message: 'another document is named taken-x',
       details: { field: 'name', value: 'taken-x' },
     });
+  });
+});
+
+describe('the fake external sink server, documents mode', () => {
+  it('documents mode serves describe v2 and /_edit', async () => {
+    const app = await buildFakeServer(KEY, false, 'documents');
+    open.push(app);
+    const signed = (method: 'GET' | 'POST', url: string, body?: unknown) => {
+      const payload = body === undefined ? '' : JSON.stringify(body);
+      return app.inject({
+        method,
+        url,
+        headers: {
+          ...signRequest(KEY, { method, path: url, body: payload }),
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { payload }),
+      });
+    };
+    const described = await signed('GET', '/describe');
+    expect(described.statusCode).toBe(200);
+    expect(described.json()).toMatchObject({
+      contractVersion: 2,
+      capabilities: { accepts: ['document', 'images'], readBack: true },
+    });
+
+    const created = await signed(
+      'POST',
+      '/deliveries',
+      deliverRequest({ package: decomposedPackage, destination: { space: 's' } }),
+    );
+    expect(created.statusCode).toBe(200);
+    const { persistentId, components } = created.json().receipt.document;
+    const section = components.find((c: { kind: string }) => c.kind === 'section');
+
+    const edit = (body: unknown) =>
+      app.inject({ method: 'POST', url: '/_edit', payload: body as object });
+    const edited = await edit({ persistentId, componentId: section.id });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json()).toMatchObject({ id: section.id, version: '2' });
+    expect((await edit({ persistentId, componentId: 'nope' })).statusCode).toBe(404);
+    expect((await edit({ persistentId: 'doc-404', componentId: section.id })).statusCode).toBe(404);
+
+    const refused = await signed('POST', '/deliveries', {
+      ...deliverRequest({ package: decomposedPackage, destination: { space: 's' } }),
+      idempotencyKey: 'an update',
+      update: { persistentId, expected: components },
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json()).toMatchObject({ code: 'changed_in_target' });
+  });
+
+  it('has no /_edit outside documents mode', async () => {
+    const { app } = await server();
+    const res = await app.inject({ method: 'POST', url: '/_edit', payload: {} });
+    expect(res.statusCode).toBe(401);
   });
 });
