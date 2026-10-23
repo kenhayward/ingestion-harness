@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
 import { MemoryPackageStore } from '../src/packages/store.js';
 import { FakeSink } from '../src/sinks/fake.js';
+import { FakeDocumentSink } from '../src/sinks/fake-documents.js';
 import { MapSinkRegistry, type SinkRegistry } from '../src/sinks/port.js';
 import { CachingSinkRegistry } from '../src/sinks/registry.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { KEY, signedInject, testBridge } from './helpers.js';
-import { documentPackage } from './sink-builders.js';
+import { decomposedPackage, documentPackage } from './sink-builders.js';
 
 const request = (targets: string[], pkg: unknown = documentPackage) => ({
   targets,
@@ -31,6 +32,14 @@ async function setup(registry?: (sink: FakeSink) => Promise<SinkRegistry>) {
     });
   }
   await targets.put({
+    id: 'd1',
+    label: 'd1',
+    sinkId: 'docs',
+    instanceId: null,
+    connectionId: null,
+    destination: { space: 'S' },
+  });
+  await targets.put({
     id: 'gone',
     label: 'gone',
     sinkId: 'nosuch',
@@ -47,7 +56,9 @@ async function setup(registry?: (sink: FakeSink) => Promise<SinkRegistry>) {
       accepts: ['files', 'data'],
     },
   });
-  const sinks = registry ? await registry(sink) : new MapSinkRegistry({ fake: sink });
+  const sinks = registry
+    ? await registry(sink)
+    : new MapSinkRegistry({ fake: sink, docs: new FakeDocumentSink() });
   const app = await testBridge({ deliveries, packages, targets, sinks });
   return { app, deliveries, packages };
 }
@@ -115,6 +126,93 @@ describe('POST /v1/deliveries', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ code: 'unsupported_part', details: { part: 'rdf' } });
+  });
+
+  it('document package to a v1 sink is unsupported_part', async () => {
+    const { app, deliveries } = await setup();
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: request(['t1'], decomposedPackage),
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      code: 'unsupported_part',
+      details: { targetId: 't1', part: 'document' },
+    });
+    expect(await deliveries.claim(new Date('2100-01-01'), 300)).toBeNull();
+  });
+
+  it('document package to a v2 sink without decomposedDocuments is unsupported_part', async () => {
+    const { app } = await setup(
+      async () =>
+        new MapSinkRegistry({
+          fake: new FakeSink({
+            contractVersion: 2,
+            capabilities: {
+              browse: false,
+              replace: true,
+              withdraw: false,
+              readBack: true,
+              accepts: ['document', 'images'],
+            },
+          }),
+        }),
+    );
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: request(['t1'], decomposedPackage),
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      code: 'unsupported_part',
+      details: { targetId: 't1', part: 'document' },
+    });
+  });
+
+  it('update is kept on the delivery', async () => {
+    const { app, deliveries } = await setup();
+    const update = {
+      persistentId: 'doc-1',
+      expected: [{ kind: 'map', id: 'doc-1/map', version: '1', element: null }],
+    };
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: { ...request(['d1'], decomposedPackage), update },
+    });
+    expect(res.statusCode).toBe(202);
+    const result = CreateDeliveriesResultSchema.parse(res.json());
+    expect((await deliveries.get(result.deliveries[0]!.deliveryId))?.update).toEqual(update);
+  });
+
+  it('a delivery without update keeps none', async () => {
+    const { app, deliveries } = await setup();
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: request(['d1'], decomposedPackage),
+    });
+    expect(res.statusCode).toBe(202);
+    const result = CreateDeliveriesResultSchema.parse(res.json());
+    expect((await deliveries.get(result.deliveries[0]!.deliveryId))?.update).toBeNull();
+  });
+
+  it('refuses an update for more than one target with 400', async () => {
+    const { app } = await setup();
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: {
+        ...request(['t1', 't2']),
+        update: {
+          persistentId: 'doc-1',
+          expected: [{ kind: 'map', id: 'doc-1/map', version: '1', element: null }],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(400);
   });
 
   it('refuses a malformed request with 400', async () => {

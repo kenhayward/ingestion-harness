@@ -107,7 +107,11 @@ export async function acceptDeliveries(
         naming: req.package.naming,
       }),
     );
-    const refused = parts.find((p) => !capabilities.accepts.includes(p));
+    // A decomposed document goes only to a sink that says it takes them (never a version 1 sink).
+    const refused =
+      req.package.document && !capabilities.decomposedDocuments
+        ? 'document'
+        : parts.find((p) => !capabilities.accepts.includes(p));
     if (refused) {
       throw new SinkError(
         bridgeError('unsupported_part', `${target.label} does not take ${refused}`, {
@@ -126,6 +130,8 @@ export async function acceptDeliveries(
     actingUser: req.actingUser,
     overrides: req.overrides[targetId] ?? {},
     destination: destinations.get(targetId) ?? null,
+    // The schema allows an update only with exactly one target.
+    update: req.update ?? null,
   }));
   await deps.deliveries.create(
     {

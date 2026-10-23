@@ -1,12 +1,13 @@
-import { MemoryNonceStore, verifyRequest } from '@ih/bridge-contract';
+import { changedInTargetDetails, MemoryNonceStore, verifyRequest } from '@ih/bridge-contract';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FakeSink } from '../src/sinks/fake.js';
+import { FakeDocumentSink } from '../src/sinks/fake-documents.js';
 import { HttpSink } from '../src/sinks/http.js';
 import { SinkError } from '../src/sinks/port.js';
 import { serveSink } from '../src/sinks/serve.js';
 import { KEY } from './helpers.js';
-import { deliverRequest } from './sink-builders.js';
+import { decomposedPackage, deliverRequest } from './sink-builders.js';
 
 const open: FastifyInstance[] = [];
 afterEach(async () => {
@@ -69,6 +70,60 @@ describe('HttpSink', () => {
       receipt: { written: [] },
     });
     expect(fake.delivered).toHaveLength(1);
+  });
+
+  it('describe v2 and a document receipt parse', async () => {
+    const fake = new FakeDocumentSink();
+    const sink = adapter(await listen(await serveSink(fake, KEY)));
+    const described = await sink.describe();
+    expect(described).toEqual(await fake.describe());
+    expect(described.contractVersion).toBe(2);
+    const created = await sink.deliver(
+      deliverRequest({
+        destination: { space: 'S' },
+        idempotencyKey: decomposedPackage.idempotencyKey,
+        package: decomposedPackage,
+      }),
+    );
+    expect(created).toMatchObject({
+      status: 'succeeded',
+      receipt: { document: { persistentId: 'doc-1', readBack: { ok: true } } },
+    });
+    const components = created.status === 'succeeded' ? created.receipt.document!.components : [];
+    fake.edit('doc-1', 'doc-1/map');
+    const refused = await failure(
+      sink.deliver(
+        deliverRequest({
+          destination: { space: 'S' },
+          idempotencyKey: 'e'.repeat(64),
+          package: { ...decomposedPackage, idempotencyKey: 'e'.repeat(64) },
+          update: { persistentId: 'doc-1', expected: components },
+        }),
+      ),
+    );
+    expect(refused.error).toMatchObject({
+      class: 'needs_user',
+      code: 'changed_in_target',
+      details: { changed: [{ id: 'doc-1/map', expected: '1', actual: '2' }] },
+    });
+  });
+
+  it('a changed_in_target refusal keeps its details at the 4 KB bound', async () => {
+    const many = Array.from({ length: 200 }, (_, i) => ({
+      id: `doc-1/section/${'s'.repeat(60)}-${i}`,
+      expected: '1',
+      actual: '2',
+    }));
+    const details = changedInTargetDetails(many);
+    const url = await stub(422, {
+      class: 'needs_user',
+      code: 'changed_in_target',
+      message: 'changed',
+      details,
+    });
+    const err = await failure(adapter(url).deliver(deliverRequest()));
+    expect(err.error.details).toEqual(details);
+    expect(err.error.details).toHaveProperty('more');
   });
 
   it('signs every request so the sink can verify it', async () => {

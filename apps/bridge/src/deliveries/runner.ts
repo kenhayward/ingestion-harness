@@ -134,7 +134,8 @@ async function step(
       ? await personalConnection(row, target, deps)
       : target.connectionId;
   const { capabilities } = described;
-  if (!capabilities.replace && !capabilities.withdraw) {
+  // A conditional update is a new write of a document the target holds, never a repeat to skip.
+  if (!capabilities.replace && !capabilities.withdraw && !row.update) {
     const earlier = await deps.deliveries.latestSucceeded(row.targetId, row.idempotencyKey, row.id);
     if (earlier) return { status: 'skipped', skippedFor: earlier.id };
   }
@@ -151,7 +152,14 @@ async function step(
     destination: row.destination ?? { ...target.destination, ...row.overrides },
     idempotencyKey: row.idempotencyKey,
     actingUser: row.actingUser,
-    package: pkg,
+    // A version 2 package is version 1 plus additions, so a version 1 package is sent to a
+    // version 2 sink as version 2; the staged copy stays as it was. Nothing is ever downgraded:
+    // accept refuses a document package to a sink without decomposedDocuments.
+    package:
+      described.contractVersion === 2 && pkg.contractVersion === 1
+        ? { ...pkg, contractVersion: 2 }
+        : pkg,
+    ...(row.update ? { update: row.update } : {}),
   });
   if (result.status === 'succeeded') return { status: 'succeeded', receipt: result.receipt };
   return {
