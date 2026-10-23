@@ -682,6 +682,20 @@ describe('runOnce, contract version 2', () => {
     expect(sink.delivered).toHaveLength(2);
   });
 
+  it('does not skip a repeated document package, even where the sink cannot replace', async () => {
+    // The sink is idempotent by key: a replay gets the first write's receipt, so the entry
+    // learns the document's persistent id instead of ending with none.
+    const { deps, deliveries, sink, submit } = await setup(
+      v2Sink({ replace: false, withdraw: false }),
+    );
+    await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    const second = await submit({}, at(1), { package: decomposedPackage });
+    await runOnce(deps, at(1));
+    expect((await deliveries.get(second))?.status).toBe('succeeded');
+    expect(sink.delivered).toHaveLength(2);
+  });
+
   it('stores a document receipt', async () => {
     const { deps, deliveries, submit } = await setup(new FakeDocumentSink(), 8, { space: 'S' });
     const id = await submit({}, T0, { package: decomposedPackage });
