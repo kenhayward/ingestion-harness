@@ -11,6 +11,8 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from ingest_worker.decompose.model import DecomposedDocument
+
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 ErrorClass = Literal["needs_user", "retryable"]
 DeliveryStatus = Literal[
@@ -38,6 +40,20 @@ class Provenance(Wire):
     recipe_version: int = Field(gt=0)
     approver: ActingUser | None
     extracted_at: str | None
+    published_at: str
+
+
+class DecompositionProvenance(Wire):
+    """Where a decomposed document came from (contract version 2)."""
+
+    kind: Literal["decomposition"]
+    source_sha256: Sha256
+    source_filename: str
+    source_key: str = Field(min_length=1)
+    batch_id: str | None
+    decomposer_version: int = Field(gt=0)
+    started_by: ActingUser
+    decomposed_at: str
     published_at: str
 
 
@@ -123,16 +139,18 @@ class BridgePackage(Wire):
     """One document's publication (or one graph), the same for every target."""
 
     kind: Literal["document", "graph"]
-    contract_version: Literal[1]
+    contract_version: Literal[1, 2]
     producer: Producer
     idempotency_key: Sha256
-    provenance: Provenance | None
+    provenance: Provenance | DecompositionProvenance | None
     naming: dict[str, str]
     files: list[PackageFile]
     data: PackageData | None
     rdf: PackageRdf | None
     narrative: list[NarrativeBlock] | None
     images: list[PackageImage] | None
+    #: Version 2: the decomposed document; its images' bytes travel in `images`. Absent in v1.
+    document: DecomposedDocument | None = Field(default=None, exclude_if=lambda v: v is None)
 
     @model_validator(mode="after")
     def _consistent(self) -> BridgePackage:
@@ -141,7 +159,47 @@ class BridgePackage(Wire):
         names = [f.name for f in self.files]
         if len(names) != len(set(names)):
             raise ValueError("files: duplicate file name")
+        decomposition = isinstance(self.provenance, DecompositionProvenance)
+        if self.document is None:
+            if decomposition:
+                raise ValueError("provenance: decomposition provenance needs a document")
+            return self
+        if self.contract_version != 2:
+            raise ValueError("document: a document needs contractVersion 2")
+        if self.files:
+            raise ValueError("files: a package with a document carries no files")
+        if self.data is not None:
+            raise ValueError("data: a package with a document carries no data")
+        if self.rdf is not None:
+            raise ValueError("rdf: a package with a document carries no rdf")
+        if self.narrative is not None:
+            raise ValueError("narrative: a package with a document carries no narrative")
+        if not decomposition:
+            raise ValueError("provenance: a document needs decomposition provenance")
+        carried = {i.id for i in self.images or []}
+        referenced = {i.id for i in self.document.images}
+        if referenced - carried:
+            raise ValueError("document.images: an image of the document is not in images")
+        if carried - referenced:
+            raise ValueError("images: an image not in the document")
         return self
+
+
+class ComponentVersion(Wire):
+    """One component of a document in the target, at the version the target holds."""
+
+    kind: str
+    id: str
+    version: str
+    element: str | None
+
+
+class Update(Wire):
+    """Version 2: replace the document `persistent_id` only if the target still holds every
+    component at its `expected` version."""
+
+    persistent_id: str = Field(min_length=1)
+    expected: list[ComponentVersion] = Field(min_length=1)
 
 
 class CreateDeliveriesRequest(Wire):
@@ -155,6 +213,14 @@ class CreateDeliveriesRequest(Wire):
     #: them against the package's naming).
     patterns: dict[str, dict[str, str]] = Field(default_factory=dict)
     package: BridgePackage
+    #: Version 2: a conditional update of a document already in the target (one target only).
+    update: Update | None = Field(default=None, exclude_if=lambda v: v is None)
+
+    @model_validator(mode="after")
+    def _update_has_one_target(self) -> CreateDeliveriesRequest:
+        if self.update is not None and len(self.targets) != 1:
+            raise ValueError("update: an update goes to exactly one target")
+        return self
 
 
 class DeliveryRef(Wire):
@@ -183,8 +249,23 @@ class ReceiptEntry(Wire):
     url: str | None
 
 
+class ReadBack(Wire):
+    ok: bool
+    at: str | None
+    detail: str | None
+
+
+class DocumentReceipt(Wire):
+    """Version 2, a delivered document: its persistent id, its components and the read-back."""
+
+    persistent_id: str = Field(min_length=1)
+    components: list[ComponentVersion]
+    read_back: ReadBack
+
+
 class Receipt(Wire):
     written: list[ReceiptEntry]
+    document: DocumentReceipt | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class DeliveryView(Wire):
@@ -230,17 +311,33 @@ def graph_idempotency_key(graph_name: str, version: int) -> str:
     return hashlib.sha256(f"graph\n{graph_name}\n{version}".encode()).hexdigest()
 
 
+def decomposition_idempotency_key(
+    source_sha256: str,
+    persistent_id: str | None,
+    decomposer_version: int,
+    force_batch_id: str | None,
+) -> str:
+    """What a decomposition delivery is about (as TypeScript's decompositionIdempotencyKey): one
+    source, the document it replaces (None: a new one), the decomposer version, and the batch
+    that forced a redelivery (None: none)."""
+    parts = ["decomposition", source_sha256, persistent_id or "", str(decomposer_version)]
+    parts.append(force_batch_id or "")
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+
 def package_archive_keys(prefix: str, package: BridgePackage) -> list[tuple[str, str]]:
     """Every key a package-layout (archive) target writes for `package`, in write order with
     `package.json` last, each with the output id it is recorded under (as TypeScript's
     packageArchiveKeys): a file's own output id, else `package:data`, `package:graph`,
-    `package:image:<id>` and `package:manifest`."""
+    `package:document`, `package:image:<id>` and `package:manifest`."""
     root = f"{prefix}packages/{package.idempotency_key}/"
     keys = [(f.output, f"{root}files/{f.name}") for f in package.files]
     if package.data is not None:
         keys.append(("package:data", f"{root}data.json"))
     if package.rdf is not None:
         keys.append(("package:graph", f"{root}graph.ttl"))
+    if package.document is not None:
+        keys.append(("package:document", f"{root}document.json"))
     keys += [(f"package:image:{i.id}", f"{root}images/{i.id}") for i in package.images or []]
     keys.append(("package:manifest", f"{root}package.json"))
     return keys
