@@ -26,6 +26,7 @@ export const ERROR_CODES = Object.freeze({
   instance_not_allowed: 'needs_user',
   unsupported_part: 'needs_user',
   not_found: 'needs_user',
+  changed_in_target: 'needs_user',
   instance_unavailable: 'retryable',
   sink_unavailable: 'retryable',
   timeout: 'retryable',
@@ -40,4 +41,21 @@ export function bridgeError(
   details?: Record<string, unknown>,
 ): BridgeError {
   return { class: ERROR_CODES[code], code, message, ...(details ? { details } : {}) };
+}
+
+/** At most this many components in `changed_in_target` details, so they stay under 4 KB. */
+const CHANGED_SHOWN = 40;
+
+/**
+ * The details of a `changed_in_target` refusal: the components changed (or missing, `actual:
+ * null`) in the target, the first 40 of them, and how many `more` there are.
+ */
+export function changedInTargetDetails(
+  changed: Array<{ id: string; expected: string; actual: string | null }>,
+): Record<string, unknown> {
+  const shown = changed
+    .slice(0, CHANGED_SHOWN)
+    .map(({ id, expected, actual }) => ({ id, expected, actual }));
+  const more = changed.length - shown.length;
+  return more > 0 ? { changed: shown, more } : { changed: shown };
 }

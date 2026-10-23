@@ -3,6 +3,7 @@ import { BridgeErrorSchema } from './errors.js';
 import { ActingUserSchema, PackageSchema } from './package.js';
 import {
   CapabilitiesSchema,
+  ConditionalUpdateSchema,
   CredentialFieldSchema,
   DestinationFieldSchema,
   DestinationSchema,
@@ -38,18 +39,30 @@ export const PreflightResultSchema = z.strictObject({
 export type PreflightResult = z.infer<typeof PreflightResultSchema>;
 
 /** `POST /v1/deliveries`: one package to one or more targets, as one user. */
-export const CreateDeliveriesRequestSchema = z.strictObject({
-  targets: z.array(z.string().min(1)).min(1),
-  actingUser: ActingUserSchema.nullable(),
-  /** Per target id, per destination field id: the reviewer's overrides (literal values). */
-  overrides: z.record(z.string(), z.record(z.string(), z.string())).default({}),
-  /**
-   * Per target id, per pattern field id: the recipe's name patterns, resolved by the bridge
-   * against the package's `naming` (they win over the target's own patterns).
-   */
-  patterns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
-  package: PackageSchema,
-});
+export const CreateDeliveriesRequestSchema = z
+  .strictObject({
+    targets: z.array(z.string().min(1)).min(1),
+    actingUser: ActingUserSchema.nullable(),
+    /** Per target id, per destination field id: the reviewer's overrides (literal values). */
+    overrides: z.record(z.string(), z.record(z.string(), z.string())).default({}),
+    /**
+     * Per target id, per pattern field id: the recipe's name patterns, resolved by the bridge
+     * against the package's `naming` (they win over the target's own patterns).
+     */
+    patterns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
+    package: PackageSchema,
+    /** Version 2: a conditional update of a document already in the target (one target only). */
+    update: ConditionalUpdateSchema.optional(),
+  })
+  .superRefine((r, ctx) => {
+    if (r.update && r.targets.length !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['update'],
+        message: 'an update goes to exactly one target',
+      });
+    }
+  });
 export type CreateDeliveriesRequest = z.infer<typeof CreateDeliveriesRequestSchema>;
 
 export const CreateDeliveriesResultSchema = z.strictObject({

@@ -6,7 +6,484 @@
     "description": "Producer API of the delivery bridge. Every /v1 request is signed (x-bridge-timestamp, x-bridge-nonce, x-bridge-signature: HMAC-SHA256 of the method, path, timestamp, nonce and body hash)."
   },
   "components": {
-    "schemas": {}
+    "schemas": {
+      "DecomposedBlock": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "paragraph"
+              },
+              "id": {
+                "type": "string"
+              },
+              "inlines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DecomposedInline"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "inlines"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "list"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ordered": {
+                "type": "boolean"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "blocks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DecomposedBlock"
+                      }
+                    }
+                  },
+                  "required": [
+                    "blocks"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "ordered",
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "table"
+              },
+              "id": {
+                "type": "string"
+              },
+              "numbered": {
+                "default": false,
+                "type": "boolean"
+              },
+              "caption": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DecomposedInline"
+                }
+              },
+              "captionPosition": {
+                "default": "above",
+                "type": "string",
+                "enum": [
+                  "above",
+                  "below"
+                ]
+              },
+              "columnWidths": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              },
+              "headerRows": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "cells": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rowSpan": {
+                            "default": 1,
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "colSpan": {
+                            "default": 1,
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "hAlign": {
+                            "default": "left",
+                            "type": "string",
+                            "enum": [
+                              "left",
+                              "center",
+                              "right",
+                              "justify"
+                            ]
+                          },
+                          "vAlign": {
+                            "default": "top",
+                            "type": "string",
+                            "enum": [
+                              "top",
+                              "middle",
+                              "bottom"
+                            ]
+                          },
+                          "header": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "blocks": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/DecomposedBlock"
+                            }
+                          }
+                        },
+                        "required": [
+                          "blocks"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "cells"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "notes": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "marker": {
+                      "type": "string"
+                    },
+                    "inlines": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DecomposedInline"
+                      }
+                    }
+                  },
+                  "required": [
+                    "marker",
+                    "inlines"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "wide": {
+                "default": false,
+                "type": "boolean"
+              },
+              "key": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "columnWidths",
+              "headerRows",
+              "rows"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "figure"
+              },
+              "id": {
+                "type": "string"
+              },
+              "imageId": {
+                "type": "string"
+              },
+              "numbered": {
+                "type": "boolean"
+              },
+              "caption": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DecomposedInline"
+                }
+              },
+              "captionPosition": {
+                "type": "string",
+                "enum": [
+                  "above",
+                  "below"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "imageId",
+              "numbered",
+              "caption",
+              "captionPosition"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "equation"
+              },
+              "id": {
+                "type": "string"
+              },
+              "equationId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "equationId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "image"
+              },
+              "id": {
+                "type": "string"
+              },
+              "imageId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "imageId"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "DecomposedInline": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "text"
+              },
+              "text": {
+                "type": "string"
+              },
+              "marks": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "bold",
+                    "italic",
+                    "underline",
+                    "superscript",
+                    "subscript"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "note_ref"
+              },
+              "noteId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "noteId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "xref"
+              },
+              "targetId": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "targetId",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "link"
+              },
+              "href": {
+                "type": "string"
+              },
+              "inlines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DecomposedInline"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "href",
+              "inlines"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "inline_equation"
+              },
+              "equationId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "equationId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "inline_image"
+              },
+              "imageId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "imageId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "break"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "DecomposedSection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecomposedInline"
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecomposedBlock"
+            }
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecomposedSection"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "blocks",
+          "sections"
+        ],
+        "additionalProperties": false
+      }
+    }
   },
   "paths": {
     "/healthz": {
@@ -373,9 +850,19 @@
                         ]
                       },
                       "contractVersion": {
-                        "type": "number",
-                        "enum": [
-                          1
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "enum": [
+                              1
+                            ]
+                          },
+                          {
+                            "type": "number",
+                            "enum": [
+                              2
+                            ]
+                          }
                         ]
                       },
                       "producer": {
@@ -401,29 +888,127 @@
                       "provenance": {
                         "anyOf": [
                           {
-                            "type": "object",
-                            "properties": {
-                              "sourceSha256": {
-                                "type": "string",
-                                "pattern": "^[0-9a-f]{64}$"
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "sourceSha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  },
+                                  "sourceFilename": {
+                                    "type": "string"
+                                  },
+                                  "jobId": {
+                                    "type": "string"
+                                  },
+                                  "recipeId": {
+                                    "type": "string"
+                                  },
+                                  "recipeVersion": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "approver": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "name": {
+                                            "type": "string"
+                                          },
+                                          "email": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "format": "email",
+                                                "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "name",
+                                          "email"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "extractedAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "format": "date-time",
+                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "publishedAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                  }
+                                },
+                                "required": [
+                                  "sourceSha256",
+                                  "sourceFilename",
+                                  "jobId",
+                                  "recipeId",
+                                  "recipeVersion",
+                                  "approver",
+                                  "extractedAt",
+                                  "publishedAt"
+                                ],
+                                "additionalProperties": false
                               },
-                              "sourceFilename": {
-                                "type": "string"
-                              },
-                              "jobId": {
-                                "type": "string"
-                              },
-                              "recipeId": {
-                                "type": "string"
-                              },
-                              "recipeVersion": {
-                                "type": "integer",
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991
-                              },
-                              "approver": {
-                                "anyOf": [
-                                  {
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "decomposition"
+                                    ]
+                                  },
+                                  "sourceSha256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                  },
+                                  "sourceFilename": {
+                                    "type": "string"
+                                  },
+                                  "sourceKey": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "batchId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "decomposerVersion": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "startedBy": {
                                     "type": "object",
                                     "properties": {
                                       "id": {
@@ -453,40 +1038,31 @@
                                     ],
                                     "additionalProperties": false
                                   },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "extractedAt": {
-                                "anyOf": [
-                                  {
+                                  "decomposedAt": {
                                     "type": "string",
                                     "format": "date-time",
                                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                                   },
-                                  {
-                                    "type": "null"
+                                  "publishedAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                                   }
-                                ]
-                              },
-                              "publishedAt": {
-                                "type": "string",
-                                "format": "date-time",
-                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                },
+                                "required": [
+                                  "kind",
+                                  "sourceSha256",
+                                  "sourceFilename",
+                                  "sourceKey",
+                                  "batchId",
+                                  "decomposerVersion",
+                                  "startedBy",
+                                  "decomposedAt",
+                                  "publishedAt"
+                                ],
+                                "additionalProperties": false
                               }
-                            },
-                            "required": [
-                              "sourceSha256",
-                              "sourceFilename",
-                              "jobId",
-                              "recipeId",
-                              "recipeVersion",
-                              "approver",
-                              "extractedAt",
-                              "publishedAt"
-                            ],
-                            "additionalProperties": false
+                            ]
                           },
                           {
                             "type": "null"
@@ -814,6 +1390,239 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "document": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "blocks": {
+                                "type": "array",
+                                "items": {
+                                  "$ref": "#/components/schemas/DecomposedBlock"
+                                }
+                              },
+                              "sections": {
+                                "type": "array",
+                                "items": {
+                                  "$ref": "#/components/schemas/DecomposedSection"
+                                }
+                              },
+                              "images": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "contentType": {
+                                      "type": "string",
+                                      "enum": [
+                                        "image/png",
+                                        "image/jpeg",
+                                        "image/svg+xml"
+                                      ]
+                                    },
+                                    "widthMm": {
+                                      "type": "number"
+                                    },
+                                    "heightMm": {
+                                      "type": "number"
+                                    },
+                                    "align": {
+                                      "type": "string",
+                                      "enum": [
+                                        "left",
+                                        "center",
+                                        "right",
+                                        "inline"
+                                      ]
+                                    },
+                                    "alt": {
+                                      "default": null,
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "origin": {
+                                      "type": "string",
+                                      "enum": [
+                                        "embedded",
+                                        "converted",
+                                        "rendered",
+                                        "cropped"
+                                      ]
+                                    },
+                                    "originalContentType": {
+                                      "default": null,
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "contentType",
+                                    "widthMm",
+                                    "heightMm",
+                                    "align",
+                                    "origin"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "equations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "mathml": {
+                                      "default": null,
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "latex": {
+                                      "default": null,
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "imageId": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "imageId"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "notes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "blocks": {
+                                      "type": "array",
+                                      "items": {
+                                        "$ref": "#/components/schemas/DecomposedBlock"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "blocks"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "properties": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "origin": {
+                                      "type": "string",
+                                      "enum": [
+                                        "core",
+                                        "custom",
+                                        "header-field",
+                                        "pdf-info"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "value",
+                                    "origin"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "report": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "changes_accepted",
+                                        "symbol_unmapped",
+                                        "heading_skipped_level",
+                                        "heading_empty",
+                                        "caption_not_found",
+                                        "table_notes_unrecognised",
+                                        "xref_unmatched",
+                                        "image_floating_anchored",
+                                        "image_converted",
+                                        "drawing_rendered",
+                                        "equation_image_only",
+                                        "structure_inferred",
+                                        "page_recognised"
+                                      ]
+                                    },
+                                    "severity": {
+                                      "type": "string",
+                                      "enum": [
+                                        "info",
+                                        "warning"
+                                      ]
+                                    },
+                                    "at": {
+                                      "default": null,
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "message": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "code",
+                                    "severity",
+                                    "message"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "blocks",
+                              "sections",
+                              "images",
+                              "equations",
+                              "notes",
+                              "properties",
+                              "report"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -828,6 +1637,51 @@
                       "rdf",
                       "narrative",
                       "images"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "update": {
+                    "type": "object",
+                    "properties": {
+                      "persistentId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "expected": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "string"
+                            },
+                            "element": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "id",
+                            "version",
+                            "element"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "persistentId",
+                      "expected"
                     ],
                     "additionalProperties": false
                   }
@@ -1145,6 +1999,77 @@
                                 ],
                                 "additionalProperties": false
                               }
+                            },
+                            "document": {
+                              "type": "object",
+                              "properties": {
+                                "persistentId": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "components": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string"
+                                      },
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "version": {
+                                        "type": "string"
+                                      },
+                                      "element": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "id",
+                                      "version",
+                                      "element"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "readBack": {
+                                  "type": "object",
+                                  "properties": {
+                                    "ok": {
+                                      "type": "boolean"
+                                    },
+                                    "at": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "ok",
+                                    "at",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "persistentId",
+                                "components",
+                                "readBack"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
@@ -1302,9 +2227,31 @@
                                     "data",
                                     "rdf",
                                     "narrative",
-                                    "images"
+                                    "images",
+                                    "document"
                                   ]
                                 }
+                              },
+                              "decomposedDocuments": {
+                                "type": "object",
+                                "properties": {
+                                  "equations": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "mathml",
+                                        "latex",
+                                        "image"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "equations"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [

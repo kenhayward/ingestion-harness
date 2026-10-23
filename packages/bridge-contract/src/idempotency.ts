@@ -21,3 +21,24 @@ export function idempotencyKey(
 export function graphIdempotencyKey(graphName: string, version: number): string {
   return createHash('sha256').update(`graph\n${graphName}\n${version}`).digest('hex');
 }
+
+/**
+ * What a decomposition delivery is about: one source, the document it replaces (null: a new one),
+ * the decomposer version, and the batch that forced a redelivery (null: none). The worker
+ * computes the same key.
+ */
+export function decompositionIdempotencyKey(
+  sourceSha256: string,
+  persistentId: string | null,
+  decomposerVersion: number,
+  forceBatchId: string | null,
+): string {
+  const parts = [
+    'decomposition',
+    sourceSha256,
+    persistentId ?? '',
+    String(decomposerVersion),
+    forceBatchId ?? '',
+  ];
+  return createHash('sha256').update(parts.join('\n')).digest('hex');
+}
