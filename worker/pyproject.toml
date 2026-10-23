@@ -22,6 +22,7 @@ dependencies = [
   "pyshacl>=0.40.1",
   "langgraph>=1.0",
   "langgraph-checkpoint-postgres>=3.0",
+  "defusedxml>=0.7",
 ]
 
 [project.scripts]
@@ -39,6 +40,7 @@ dev = [
   # The plugin-writing guide's example package (docs/plugins/writing-plugins.md), installed for
   # its tests and the worker's; the image installs plugins only through WORKER_PLUGINS.
   "ct-plugin-example",
+  "types-defusedxml>=0.7.0.20260504",
 ]
 
 [tool.uv.sources]
@@ -70,6 +72,9 @@ ignore = ["E501"] # ruff format owns line length; long SQL/f-strings are fine
 # The Symbol font's table is Greek letters and maths signs that look like Latin ones, on purpose.
 "src/ingest_worker/symbol_fonts.py" = ["RUF001"]
 "tests/test_symbol_fonts.py" = ["RUF001"]
+# So are the maths signs an equation's MathML and LaTeX are written with.
+"src/ingest_worker/decompose/equations.py" = ["RUF001"]
+"tests/decompose/test_equations.py" = ["RUF001"]
 
 [tool.mypy]
 strict = true
