@@ -13,7 +13,7 @@ cross-references without this module knowing about them.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal, NamedTuple
 from xml.etree.ElementTree import Element
@@ -21,7 +21,7 @@ from xml.etree.ElementTree import Element
 from ingest_worker.symbol_fonts import FIRST, LAST, TABLES, Family, font_family
 
 from .equations import O_MATH, O_MATH_PARA, equation_of
-from .media import MediaContext, is_media, media_of
+from .media import ALTERNATE, MediaContext, is_media, media_of, text_alternative
 from .model import Break, Flag, Inline, InlineEquation, InlineImage, Link, NoteRef, Text, XRef
 from .package import DecompositionFailed, Rel
 
@@ -41,6 +41,9 @@ _REPLACEMENT = "�"
 _TRANSPARENT = {
     f"{W}{name}" for name in ("smartTag", "sdt", "sdtContent", "customXml", "dir", "bdo")
 }
+#: Documents embedded in another part, whose content the decomposer cannot place, so refuses.
+EMBEDDED_DOCUMENT_TAGS = {f"{W}altChunk", f"{W}subDoc"}
+EMBEDDED_DOCUMENTS = "embedded documents (altChunk/subDoc) are not supported"
 _ACCEPTED = {f"{W}ins", f"{W}moveTo"}
 _REJECTED = {f"{W}del", f"{W}moveFrom"}
 
@@ -298,6 +301,12 @@ class _Reader:
                 for o in child.iter(O_MATH):
                     self.objects.append((len(self.out), o))
                     self.display.append(o)
+            elif tag in EMBEDDED_DOCUMENT_TAGS:
+                raise DecompositionFailed(EMBEDDED_DOCUMENTS, self.at or None)
+            elif tag == ALTERNATE:
+                chosen = text_alternative(child)
+                if chosen is not None:
+                    self.walk(chosen)
             elif tag == f"{W}fldSimple":
                 state = FieldState(
                     child.get(f"{W}instr", ""), in_result=True, opener=self, mark=self.mark
@@ -384,7 +393,7 @@ class _Reader:
         visible = not props["hidden"]
         family, font = self.run_font(rpr)
 
-        for child in run:
+        for child in run_children(run):
             tag = child.tag.removeprefix(W)
             if tag == "fldChar":
                 self.field_char(child)
@@ -513,6 +522,18 @@ class _Reader:
 
 
 _Wrap = Callable[[list[Inline]], list[Inline]]
+
+
+def run_children(run: Element) -> Iterator[Element]:
+    """A run's children, alternate content holding no drawing read as its text alternative's
+    children."""
+    for child in run:
+        if child.tag == ALTERNATE and not is_media(child):
+            chosen = text_alternative(child)
+            if chosen is not None:
+                yield from run_children(chosen)
+        else:
+            yield child
 
 
 def _xref(name: str) -> _Wrap:

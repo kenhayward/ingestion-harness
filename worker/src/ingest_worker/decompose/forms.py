@@ -13,13 +13,15 @@ left out:
 - a paragraph is one unit; a list gives the units of its items' blocks;
 - a table gives its caption, then one unit per cell, row by row (a cell's units joined by a
   space), then one per note, as `marker: text`;
-- a figure gives its caption, then its image's alt text; an image block its alt text; an
-  equation block its equation token;
+- a figure gives its caption, then its image; an image block its image; an equation block
+  its equation token;
 - the notes come last, in the order they are listed, as the units of their blocks.
 
 Within a unit, an `XRef` is `⟦xref:<target_id>⟧`, never its text; an equation is
-`⟦eq:<mathml>⟧`, or `⟦eq:<image_id>⟧` when it has no MathML; an inline image is its alt text;
-a `Break` is a space; a `Link` is its content; a `NoteRef` contributes nothing.
+`⟦eq:<mathml>⟧`, or `⟦eq:<image_id>⟧` when it has no MathML; an image (inline, in a block, a
+figure or a cell) is `⟦img⟧`, then a space and its alt text if it has any; a `NoteRef` is
+`⟦note:<note_id>⟧`; a `Break` is a space; a `Link` is its content. The image token carries no
+id, so that a source can be compared without knowing the ids the decomposition gave.
 
 The grid form of a table is its grid rebuilt from the cells' spans: one row of slots per row, each
 slot `"r,c|text"`, the row and column of the cell covering it and that cell's text. A slot no
@@ -45,6 +47,7 @@ from .model import (
     InlineImage,
     Link,
     ListBlock,
+    NoteRef,
     Paragraph,
     Section,
     Table,
@@ -73,6 +76,19 @@ def equation_token(value: str) -> str:
     return f"⟦eq:{value}⟧"
 
 
+def note_token(note_id: str) -> str:
+    return f"⟦note:{note_id}⟧"
+
+
+#: Where an image is, in the text form.
+IMAGE_TOKEN = "⟦img⟧"
+
+
+def image_text(alt: str | None) -> str:
+    """An image in the text form: its token, then its alt text if it has any."""
+    return f"{IMAGE_TOKEN} {alt}" if alt else IMAGE_TOKEN
+
+
 def join_units(units: Sequence[str]) -> str:
     """Units as one: each normalised, the empty ones left out, joined by a space."""
     return " ".join(u for u in (normalise(x) for x in units) if u)
@@ -92,7 +108,7 @@ class _Forms:
     equation that has no MathML, for comparison with a source that cannot know its image id."""
 
     def __init__(self, doc: DecomposedDocument, *, image_only: str | None = None) -> None:
-        self.alts = {i.id: i.alt or "" for i in doc.images}
+        self.alts = {i.id: i.alt for i in doc.images}
         self.equations = {e.id: e for e in doc.equations}
         self.image_only = image_only
 
@@ -113,8 +129,10 @@ class _Forms:
         if isinstance(item, InlineEquation):
             return self.equation(item.equation_id)
         if isinstance(item, InlineImage):
-            return self.alts.get(item.image_id, "")
-        return ""  # a NoteRef
+            return image_text(self.alts.get(item.image_id))
+        if isinstance(item, NoteRef):
+            return note_token(item.note_id)
+        return ""
 
     def equation(self, equation_id: str) -> str:
         equation = self.equations.get(equation_id)
@@ -143,9 +161,9 @@ class _Forms:
                 yield note_unit(note.marker, self.inline_text(note.inlines))
         elif isinstance(block, Figure):
             yield self.inline_text(block.caption)
-            yield self.alts.get(block.image_id, "")
+            yield image_text(self.alts.get(block.image_id))
         elif isinstance(block, ImageBlock):
-            yield self.alts.get(block.image_id, "")
+            yield image_text(self.alts.get(block.image_id))
         elif isinstance(block, EquationBlock):
             yield self.equation(block.equation_id)
 

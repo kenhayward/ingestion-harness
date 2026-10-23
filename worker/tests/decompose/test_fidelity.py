@@ -196,7 +196,7 @@ def test_source_units_apply_only_the_documented_conversions() -> None:
     assert source_text_units(pkg, ctx) == [
         "Contents",
         "Results",
-        f"Dose level 5°C, see ⟦xref:{section}⟧ and ⟦xref:{table.id}⟧. inserted",
+        f"Dose level 5°C, see ⟦xref:{section}⟧ and ⟦xref:{table.id}⟧.⟦note:fn-2⟧ inserted",
         "First item",
         "Nested item",
         "Dissolution",
@@ -208,9 +208,9 @@ def test_source_units_apply_only_the_documented_conversions() -> None:
         "a: Samples at infinity",
         "Figures",
         "The plot",
-        "A plot",
+        "⟦img⟧ A plot",
         f"Thus ⟦eq:{equation.mathml}⟧ holds.",
-        "Box line one Box line two",
+        "⟦img⟧ Box line one Box line two",
         "A footnote.",
     ]
     assert text_form(doc) == source_text_units(pkg, ctx)
@@ -389,12 +389,8 @@ def test_unbalanced_field_end_is_ignored_on_both_sides() -> None:
             ),
             "topbase",
         ),
-        (
-            '<w:customXml w:element="x">' + para(run("in custom XML")) + "</w:customXml>",
-            "in custom XML",
-        ),
     ],
-    ids=["ruby", "block-custom-xml"],
+    ids=["ruby"],
 )
 def test_text_the_decomposer_drops_is_refused(body: str, lost: str) -> None:
     doc, pkg, ctx = decompose(heading("A") + body)
@@ -532,3 +528,149 @@ def test_synthetic_corpus_passes(name: str) -> None:
     check(doc, pkg, ctx)
     located = located_text_form(doc, image_only=IMAGE_ONLY_EQUATION)
     assert [unit for unit, _ in located] == source_text_units(pkg, ctx)
+
+
+# --- Fix round 1 -----------------------------------------------------------------------------
+
+
+def source_only(body: str, **parts: object) -> tuple[Package, InlineContext]:
+    """A package and a fresh context, for a source the decomposer itself would refuse."""
+    kwargs: dict[str, object] = {"styles": STYLES, "numbering": NUMBERING, **parts}
+    pkg = open_package(build_docx(body, **kwargs))  # type: ignore[arg-type]
+    return pkg, InlineContext(styles=RunStyles.from_xml(pkg.xml("word/styles.xml")))
+
+
+def test_unterminated_field_is_refused_by_the_source_walk() -> None:
+    open_field = begin() + instr("TOC") + separate() + run("entry")
+    pkg, ctx = source_only(para(open_field) + para(run("Swallowed")))
+    with pytest.raises(DecompositionFailed, match="the body never closed"):
+        source_text_units(pkg, ctx)
+
+    footnotes = notes_part("footnote", (1, open_field))
+    pkg, ctx = source_only(para(run("Body")), footnotes=footnotes)
+    with pytest.raises(DecompositionFailed, match="the footnotes never closed"):
+        source_text_units(pkg, ctx)
+
+
+def test_lost_or_moved_picture_without_alt_text_fails() -> None:
+    body = heading("A") + para(f"<w:r>{picture()}</w:r>") + para(run("after"))
+    doc, pkg, ctx = decompose(body, **IMAGE)
+    (section,) = doc.sections
+    image, after = section.blocks
+    assert isinstance(image, ImageBlock)
+    assert text_form(doc) == ["A", "⟦img⟧", "after"]
+    check(doc, pkg, ctx)
+
+    lost = doc.model_copy(update={"sections": [section.model_copy(update={"blocks": [after]})]})
+    with pytest.raises(DecompositionFailed, match="⟦img⟧"):
+        check(lost, pkg, ctx)
+
+    moved = doc.model_copy(
+        update={"sections": [section.model_copy(update={"blocks": [after, image]})]}
+    )
+    with pytest.raises(DecompositionFailed, match="⟦img⟧"):
+        check(moved, pkg, ctx)
+
+
+def test_dropped_footnote_reference_fails() -> None:
+    doc, pkg, ctx = rich()
+    section = results(doc)
+    paragraph = next(b for b in section.blocks if isinstance(b, Paragraph))
+    inlines = [i for i in paragraph.inlines if not isinstance(i, NoteRef)]
+    assert len(inlines) < len(paragraph.inlines)
+    blocks = [
+        paragraph.model_copy(update={"inlines": inlines}) if b is paragraph else b
+        for b in section.blocks
+    ]
+    mutated = doc.model_copy(update={"sections": [section.model_copy(update={"blocks": blocks})]})
+    with pytest.raises(DecompositionFailed, match="note:fn-2") as failed:
+        check(mutated, pkg, ctx)
+    assert failed.value.at == section.id
+
+
+@pytest.mark.parametrize(
+    "embedded",
+    [
+        '<w:altChunk r:id="rIdChunk"/>',
+        '<w:p><w:subDoc r:id="rIdChunk"/></w:p>',
+    ],
+    ids=["altChunk", "subDoc"],
+)
+def test_embedded_documents_are_refused(embedded: str) -> None:
+    body = heading("A") + embedded + para(run("after"))
+    with pytest.raises(DecompositionFailed, match="embedded documents") as failed:
+        decompose(body)
+    assert failed.value.at is not None and failed.value.at.startswith("s-a")
+    pkg, ctx = source_only(body)
+    with pytest.raises(DecompositionFailed, match="embedded documents"):
+        source_text_units(pkg, ctx)
+
+
+ALTERNATE_TEXT = (
+    '<mc:AlternateContent><mc:Choice Requires="w14">{choice}</mc:Choice>'
+    "<mc:Fallback>{fallback}</mc:Fallback></mc:AlternateContent>"
+)
+
+
+def test_custom_xml_and_alternate_content_are_read_in_place() -> None:
+    body = (
+        heading("A")
+        + '<w:customXml w:element="block">'
+        + para(run("in block custom XML"))
+        + "</w:customXml>"
+        + para(run("Run "), '<w:customXml w:element="run">', run("in custom XML"), "</w:customXml>")
+        + para(
+            run("Paragraph "),
+            ALTERNATE_TEXT.format(choice=run("choice"), fallback=run("fallback")),
+        )
+        + para(
+            run("Run "),
+            "<w:r>"
+            + ALTERNATE_TEXT.format(
+                choice='<w:sym w:font="Wingdings" w:char="F0FC"/>', fallback="<w:t>check</w:t>"
+            )
+            + "</w:r>",
+        )
+        + ALTERNATE_TEXT.format(
+            choice=para(run("block choice")), fallback=para(run("block fallback"))
+        )
+    )
+    doc, pkg, ctx = decompose(body)
+    assert text_form(doc) == [
+        "A",
+        "in block custom XML",
+        "Run in custom XML",
+        "Paragraph fallback",
+        "Run check",
+        "block fallback",
+    ]
+    check(doc, pkg, ctx)
+
+
+def test_heading_holding_only_a_picture_agrees_on_both_sides() -> None:
+    body = (
+        heading("H")
+        + para(f"<w:r>{picture(descr='Logo')}</w:r>", style="Heading2")
+        + para(run("body"))
+        + para(f"<w:r>{picture()}</w:r>", style="Heading2")
+    )
+    doc, pkg, ctx = decompose(body, **IMAGE)
+    assert doc.sections[0].sections[0].title[0].kind == "inline_image"
+    assert text_form(doc) == ["H", "⟦img⟧ Logo", "body", "⟦img⟧"]
+    assert source_text_units(pkg, ctx) == text_form(doc)
+    check(doc, pkg, ctx)
+
+
+def test_typed_reference_split_by_a_bold_run_is_left_as_text_on_both_sides() -> None:
+    body = (
+        heading("Data")
+        + seq_caption("Table", 13, "Dissolution")
+        + tbl(tr(tc("A"), tc("B")), cols=[2000, 2000])
+        + para(run("see Table "), run("13", "<w:b/>"), run(" and Table 13."))
+    )
+    doc, pkg, ctx = decompose(body)
+    table = next(b for b in doc.sections[0].blocks if isinstance(b, Table))
+    unit = f"see Table 13 and ⟦xref:{table.id}⟧."
+    assert unit in text_form(doc)
+    assert source_text_units(pkg, ctx) == text_form(doc)
+    check(doc, pkg, ctx)

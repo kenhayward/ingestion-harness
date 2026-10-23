@@ -631,9 +631,9 @@
       "report": []
     },
     "text_form": [
-      "Before the first heading",
+      "Before the first heading⟦note:fn-2⟧",
       "Method",
-      "As shown in ⟦xref:s-method⟧ and ⟦xref:s-method/s-detail#p-1⟧, online at example.org",
+      "As shown in ⟦xref:s-method⟧ and ⟦xref:s-method/s-detail#p-1⟧, online at example.org⟦note:en-1⟧",
       "Detail of ⟦xref:s-method⟧",
       "Detail text.",
       "A footnote on ⟦xref:s-method⟧",
@@ -1149,16 +1149,17 @@
     "text_form": [
       "Figures",
       "The plot",
-      "Box line one Box line two",
-      "Icon a gear here.",
+      "⟦img⟧ Box line one Box line two",
+      "⟦img⟧",
+      "Icon ⟦img⟧ a gear here.",
       "First",
       "Nested",
       "Second",
       "Outer In 1 In 2",
-      "cell picture"
+      "⟦img⟧ cell picture"
     ],
     "grid_forms": {
-      "s-figures#table-1": [["0,0|Outer In 1 In 2", "0,1|cell picture"]],
+      "s-figures#table-1": [["0,0|Outer In 1 In 2", "0,1|⟦img⟧ cell picture"]],
       "s-figures#table-1#cell-1#table-1": [["0,0|In 1", "0,1|In 2"]]
     }
   }

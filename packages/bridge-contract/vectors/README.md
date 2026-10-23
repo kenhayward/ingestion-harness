@@ -42,8 +42,8 @@ empty units are left out.
   - one unit per cell, row by row, in the order of `rows[].cells[]`; a cell's unit is the units
     of its blocks, each normalised, empty ones left out, joined by one space;
   - one unit per note, as `marker: text`.
-- A figure gives its caption, then its image's alt text.
-- An image block gives its image's alt text.
+- A figure gives its caption, then its image.
+- An image block gives its image.
 - An equation block gives its equation's token.
 - The notes come last, in the order of `notes`, as the units of their blocks.
 
@@ -56,10 +56,13 @@ Within a unit:
 | `xref` | `⟦xref:<target_id>⟧`, never its text |
 | `link` | its inlines |
 | `inline_equation` | `⟦eq:<mathml>⟧`, or `⟦eq:<image_id>⟧` when the equation has no MathML |
-| `inline_image` | its image's alt text (nothing when it has none) |
-| `note_ref` | nothing |
+| `inline_image` | its image |
+| `note_ref` | `⟦note:<note_id>⟧` |
 
-The brackets are U+27E6 and U+27E7.
+An image, wherever it is (inline, an image block, a figure's or one in a cell), is `⟦img⟧`,
+then one space and its alt text when it has any: `⟦img⟧` alone when it has none. The token
+carries no id, so a source can be compared with the document without knowing the ids the
+decomposition gave. The brackets are U+27E6 and U+27E7.
 
 **The grid form** of a table is its grid rebuilt from its cells' spans. Each row of `rows` is
 placed in turn. A cell takes the first slot of its row that no cell above (by `row_span`) or

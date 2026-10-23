@@ -74,14 +74,17 @@ NotesMatch = Literal["notes", "unrecognised"]
 
 # --- Reading single elements (shared) ------------------------------------------------------
 
+# `unwrapped`, `rows_of`, `cells_of`, `row_gaps`, `cell_span` and `note_markers` are shared with
+# the fidelity check's source walk, which reads rows and cells the same way.
 
-def _unwrapped(parent: Element, tag: str) -> Iterator[Element]:
+
+def unwrapped(parent: Element, tag: str) -> Iterator[Element]:
     """Children of `parent` with `tag`, looking through content controls and custom XML."""
     for child in parent:
         if child.tag == tag:
             yield child
         elif child.tag in _WRAPPERS:
-            yield from _unwrapped(child, tag)
+            yield from unwrapped(child, tag)
 
 
 def _int_val(el: Element | None, default: int) -> int:
@@ -93,13 +96,14 @@ def _int_val(el: Element | None, default: int) -> int:
         return default
 
 
-def _rows(tbl: Element) -> list[Element]:
+def rows_of(tbl: Element) -> list[Element]:
     """The table's rows, without those deleted by a tracked change."""
-    return [tr for tr in _unwrapped(tbl, f"{W}tr") if tr.find(f"{W}trPr/{W}del") is None]
+    return [tr for tr in unwrapped(tbl, f"{W}tr") if tr.find(f"{W}trPr/{W}del") is None]
 
 
-def _cells(tr: Element) -> list[Element]:
-    cells = list(_unwrapped(tr, f"{W}tc"))
+def cells_of(tr: Element) -> list[Element]:
+    """The row's cells; a legacy horizontal merge or a tracked cell change is refused."""
+    cells = list(unwrapped(tr, f"{W}tc"))
     for tc in cells:
         if tc.find(f"{W}tcPr/{W}hMerge") is not None:
             raise DecompositionFailed("a horizontally merged cell (w:hMerge) is not supported")
@@ -110,14 +114,15 @@ def _cells(tr: Element) -> list[Element]:
     return cells
 
 
-def _gaps(tr: Element) -> tuple[int, int]:
+def row_gaps(tr: Element) -> tuple[int, int]:
     """The empty grid slots before and after the row's cells."""
     before = _int_val(tr.find(f"{W}trPr/{W}gridBefore"), 0)
     after = _int_val(tr.find(f"{W}trPr/{W}gridAfter"), 0)
     return max(before, 0), max(after, 0)
 
 
-def _span(tc: Element) -> int:
+def cell_span(tc: Element) -> int:
+    """The number of grid columns the cell spans."""
     return max(_int_val(tc.find(f"{W}tcPr/{W}gridSpan"), 1), 1)
 
 
@@ -144,8 +149,8 @@ def _width(tbl: Element, rows: list[Element]) -> int:
     """The number of grid columns: the declared grid, or the widest row if that is wider."""
     widest = 0
     for tr in rows:
-        before, after = _gaps(tr)
-        widest = max(widest, before + sum(_span(tc) for tc in _cells(tr)) + after)
+        before, after = row_gaps(tr)
+        widest = max(widest, before + sum(cell_span(tc) for tc in cells_of(tr)) + after)
     width = max(len(_grid_columns(tbl)), widest)
     if width > MAX_COLUMNS:
         raise DecompositionFailed(f"a table {width} grid columns wide (at most {MAX_COLUMNS})")
@@ -209,18 +214,18 @@ class _Owner:
 
 def source_grid(tbl: Element) -> list[list[GridSlot]]:
     """The table's grid, resolved from Word's markup: one row of slots per kept row."""
-    rows = _rows(tbl)
+    rows = rows_of(tbl)
     width = _width(tbl, rows)
     texts: dict[tuple[int, int], str] = {}
     slots: list[list[_Owner]] = []
     above: list[_Owner | None] = [None] * width
     for r, tr in enumerate(rows):
         owners: list[_Owner] = []
-        before, _ = _gaps(tr)
+        before, _ = row_gaps(tr)
         for _ in range(before):
             owners.append(_Owner((r, len(owners)), 1, mergeable=False))
-        for tc in _cells(tr):
-            c, span, merge = len(owners), _span(tc), _vmerge(tc)
+        for tc in cells_of(tr):
+            c, span, merge = len(owners), cell_span(tc), _vmerge(tc)
             up = above[c]
             merging = [o for o in above[c : c + span] if o is not None and o.mergeable]
             if merge == "continue" and up in merging and up.origin[1] == c and up.span == span:
@@ -258,11 +263,11 @@ class _Entry:
 
 
 def _layout(tr: Element, width: int) -> list[_Entry]:
-    before, _ = _gaps(tr)
+    before, _ = row_gaps(tr)
     entries = [_Entry(col, 1) for col in range(before)]
     col = before
-    for tc in _cells(tr):
-        span = _span(tc)
+    for tc in cells_of(tr):
+        span = cell_span(tc)
         entries.append(_Entry(col, span, tc, _vmerge(tc)))
         col += span
     entries.extend(_Entry(c, 1) for c in range(col, width))
@@ -292,7 +297,7 @@ def _resolve_merges(layouts: list[list[_Entry]], table_id: str) -> None:
 
 
 def _h_align(tc: Element) -> HAlign:
-    first = next(_unwrapped(tc, f"{W}p"), None)
+    first = next(unwrapped(tc, f"{W}p"), None)
     jc = first.find(f"{W}pPr/{W}jc") if first is not None else None
     return _H_ALIGN.get(jc.get(f"{W}val", "") if jc is not None else "", "left")
 
@@ -319,7 +324,7 @@ def _column_widths(tbl: Element, width: int) -> list[float]:
 
 
 def _count_changes(tbl: Element, ctx: InlineContext) -> None:
-    for tr in _unwrapped(tbl, f"{W}tr"):
+    for tr in unwrapped(tbl, f"{W}tr"):
         for tag in ("ins", "del"):
             if tr.find(f"{W}trPr/{W}{tag}") is not None:
                 ctx.changes += 1
@@ -334,7 +339,7 @@ def table_of(
     in a paragraph beside the table is attached later, by the body.
     """
     try:
-        rows = _rows(tbl)
+        rows = rows_of(tbl)
         width = _width(tbl, rows)
     except DecompositionFailed as failed:
         raise DecompositionFailed(failed.detail, at=id) from None
@@ -342,7 +347,7 @@ def table_of(
     structure = _structure(rows, width, ctx.styles)
     caption = None
     if structure.caption is not None:
-        caption = _caption_row(_cells(rows[structure.caption])[0], ctx, at=id)
+        caption = _caption_row(cells_of(rows[structure.caption])[0], ctx, at=id)
     kept = [rows[i] for i in structure.grid_rows(len(rows))]
     layouts = [_layout(tr, width) for tr in kept]
     _resolve_merges(layouts, id)
@@ -384,8 +389,8 @@ def table_of(
 
     notes: list[TableNote] = []
     for i in structure.notes:
-        tc = _cells(rows[i])[0]
-        notes.extend(_notes(_paragraph_inlines(tc, ctx, at=id), _note_markers(tc) or []))
+        tc = cells_of(rows[i])[0]
+        notes.extend(_notes(_paragraph_inlines(tc, ctx, at=id), note_markers(tc) or []))
     if structure.unrecognised:
         flag_unrecognised_notes(ctx, id)
     if caption is not None:
@@ -484,7 +489,7 @@ def register_caption(ctx: InlineContext, caption: Caption, element_id: str) -> N
 
 
 def _paragraph_inlines(tc: Element, ctx: InlineContext, *, at: str) -> list[list[Inline]]:
-    return [inlines_of(p, ctx, at=at) for p in _unwrapped(tc, f"{W}p")]
+    return [inlines_of(p, ctx, at=at) for p in unwrapped(tc, f"{W}p")]
 
 
 def _caption_row(tc: Element, ctx: InlineContext, *, at: str) -> Caption:
@@ -520,7 +525,7 @@ class StructuralRows:
 
 def structural_rows(tbl: Element, styles: RunStyles) -> StructuralRows:
     """Which of the table's source rows are its caption and its notes (§5.4)."""
-    rows = _rows(tbl)
+    rows = rows_of(tbl)
     return _structure(rows, _width(tbl, rows), styles)
 
 
@@ -532,7 +537,7 @@ def _structure(rows: list[Element], width: int, styles: RunStyles) -> Structural
     candidates: dict[int, list[str]] = {}
     for i in range(len(rows) - 1, first, -1):
         cell = _sole_cell(rows[i], width)
-        markers = _note_markers(cell) if cell is not None else None
+        markers = note_markers(cell) if cell is not None else None
         if markers is None:
             break
         candidates[i] = markers
@@ -545,12 +550,12 @@ def _structure(rows: list[Element], width: int, styles: RunStyles) -> Structural
 
 def _sole_cell(tr: Element, width: int) -> Element | None:
     """The row's only cell, if it spans the whole grid with no gaps, merge or nested table."""
-    before, after = _gaps(tr)
-    cells = _cells(tr)
+    before, after = row_gaps(tr)
+    cells = cells_of(tr)
     if before or after or len(cells) != 1:
         return None
     tc = cells[0]
-    if _span(tc) != width or _vmerge(tc) is not None or tc.find(f".//{W}tbl") is not None:
+    if cell_span(tc) != width or _vmerge(tc) is not None or tc.find(f".//{W}tbl") is not None:
         return None
     return tc
 
@@ -563,10 +568,10 @@ def _is_caption_cell(tc: Element) -> bool:
     return _SEQ_TABLE.search(instructions) is not None
 
 
-def _note_markers(tc: Element) -> list[str] | None:
+def note_markers(tc: Element) -> list[str] | None:
     """The markers of a cell whose every non-blank paragraph is a note, else None."""
     markers: list[str] = []
-    for p in _unwrapped(tc, f"{W}p"):
+    for p in unwrapped(tc, f"{W}p"):
         text = "".join(_texts(p))
         if not text.strip():
             continue
@@ -648,14 +653,14 @@ def notes_table(tbl: Element, following: Element, styles: RunStyles) -> NotesMat
     `notes` when every paragraph is a note whose marker is superscript in `tbl`'s grid,
     `unrecognised` when they are all note-like but a marker is missing, else None.
     """
-    rows = _rows(following)
+    rows = rows_of(following)
     if len(rows) != 1:
         return None
     cell = _sole_cell(rows[0], _width(following, rows))
-    markers = _note_markers(cell) if cell is not None else None
+    markers = note_markers(cell) if cell is not None else None
     if markers is None:
         return None
-    own = _rows(tbl)
+    own = rows_of(tbl)
     structure = _structure(own, _width(tbl, own), styles)
     found = _superscripts([own[i] for i in structure.grid_rows(len(own))], styles)
     return "notes" if all(m in found for m in markers) else "unrecognised"
@@ -667,5 +672,5 @@ def notes_of_table(table: Table, following: Element) -> list[TableNote] | None:
     paragraphs = [b.inlines for b in blocks if isinstance(b, Paragraph)]
     if len(paragraphs) != len(blocks):
         return None
-    cell = _cells(_rows(following)[0])[0]
-    return _notes(paragraphs, _note_markers(cell) or [])
+    cell = cells_of(rows_of(following)[0])[0]
+    return _notes(paragraphs, note_markers(cell) or [])

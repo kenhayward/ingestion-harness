@@ -55,7 +55,8 @@ for _prefix, _uri in {**_NAMESPACES, **_EXTRA_PREFIXES}.items():
 
 #: Run children that are pictures or drawings.
 MEDIA_TAGS = {f"{_W}drawing", f"{_W}pict", f"{_W}object"}
-_ALTERNATE = f"{_MC}AlternateContent"
+#: Markup-compatibility alternate content: a preferred form (`mc:Choice`) and a fallback.
+ALTERNATE = f"{_MC}AlternateContent"
 #: Content that is not part of a drawing's text: rejected tracked changes, and the fallback
 #: copy of a drawing that is read from its preferred form.
 _SKIPPED = {f"{_W}del", f"{_W}moveFrom", f"{_MC}Fallback"}
@@ -294,7 +295,7 @@ class MediaContext:
                 yield child.text or ""
             elif tag in _TABS:
                 yield " "
-            elif tag in MEDIA_TAGS or tag == _ALTERNATE:
+            elif tag in MEDIA_TAGS or tag == ALTERNATE:
                 nested.extend(self.drawing_lines(child))
             else:
                 yield from self._paragraph_text(child, nested)
@@ -311,10 +312,19 @@ class MediaContext:
 # --- Reading ---------------------------------------------------------------------------------
 
 
+def text_alternative(alternate: Element) -> Element | None:
+    """The branch of an `mc:AlternateContent` that holds no drawing to read as text: its
+    `mc:Fallback`, which is in markup every reader understands, else its first `mc:Choice`."""
+    fallback = alternate.find(f"{_MC}Fallback")
+    if fallback is not None:
+        return fallback
+    return alternate.find(f"{_MC}Choice")
+
+
 def is_media(run_child: Element) -> bool:
     """Whether a run's child is a picture or drawing (possibly in markup-compatibility form)."""
     return run_child.tag in MEDIA_TAGS or (
-        run_child.tag == _ALTERNATE and _choose(run_child)[0] is not None
+        run_child.tag == ALTERNATE and choose_media(run_child)[0] is not None
     )
 
 
@@ -335,7 +345,7 @@ def media_of(
     media = ctx.media
     if media is None:
         raise DecompositionFailed("pictures and drawings need a media context", at)
-    el, fallback = _choose(run_child)
+    el, fallback = choose_media(run_child)
     if el is None:
         return None
     align: Align = "inline" if in_text else _paragraph_align(paragraph)
@@ -350,11 +360,11 @@ def media_of(
     return ImageBlock(id=at, image_id=image.id)
 
 
-def _choose(run_child: Element) -> tuple[Element | None, Element | None]:
+def choose_media(run_child: Element) -> tuple[Element | None, Element | None]:
     """The picture or drawing to read, and the element holding its fallback picture, if any."""
     if run_child.tag in MEDIA_TAGS:
         return run_child, None
-    if run_child.tag != _ALTERNATE:
+    if run_child.tag != ALTERNATE:
         return None, None
     fallback = run_child.find(f"{_MC}Fallback")
     for choice in run_child.findall(f"{_MC}Choice"):
@@ -386,7 +396,7 @@ def _read_drawing(
             ctx, "image_floating_anchored", at, f"floating image {image_id} placed at its paragraph"
         )
     size = _extent_mm(container)
-    alt = _doc_pr_alt(container)
+    alt = doc_pr_alt(container)
     data = container.find(f"{_A}graphic/{_A}graphicData") if container is not None else None
     pic = data.find(f"{_PIC}pic") if data is not None else None
     if pic is not None:
@@ -520,7 +530,8 @@ def _pixel_size_mm(data: bytes, image_id: str) -> tuple[float, float]:
     return width / x_dpi * 25.4, height / y_dpi * 25.4
 
 
-def _doc_pr_alt(container: Element | None) -> str | None:
+def doc_pr_alt(container: Element | None) -> str | None:
+    """A drawing's description (`wp:docPr` `descr`, else `title`), or None."""
     doc_pr = container.find(f"{_WP}docPr") if container is not None else None
     if doc_pr is None:
         return None

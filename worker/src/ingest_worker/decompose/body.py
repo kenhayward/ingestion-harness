@@ -27,6 +27,8 @@ from xml.etree.ElementTree import Element
 from .equations import equation_of
 from .ids import child_id, normalise_title, section_id
 from .inline import (
+    EMBEDDED_DOCUMENT_TAGS,
+    EMBEDDED_DOCUMENTS,
     InlineContext,
     W,
     check_fields_closed,
@@ -37,7 +39,7 @@ from .inline import (
     read_paragraph,
     skip_paragraph,
 )
-from .media import media_of
+from .media import ALTERNATE, media_of, text_alternative
 from .model import (
     Block,
     Break,
@@ -303,13 +305,20 @@ _BOOKMARK_START = f"{W}bookmarkStart"
 
 def _elements(parent: Element) -> Iterator[Element]:
     """Paragraphs, tables and the bookmarks between them under `parent`, with block content
-    controls unwrapped."""
+    controls and custom XML unwrapped, and alternate content read as its text alternative.
+    An embedded document is yielded, for the flow to refuse."""
     for child in parent:
         if child.tag == f"{W}sdt":
             content = child.find(f"{W}sdtContent")
             if content is not None:
                 yield from _elements(content)
-        elif child.tag in (f"{W}p", f"{W}tbl", _BOOKMARK_START):
+        elif child.tag == f"{W}customXml":
+            yield from _elements(child)
+        elif child.tag == ALTERNATE:
+            chosen = text_alternative(child)
+            if chosen is not None:
+                yield from _elements(chosen)
+        elif child.tag in (f"{W}p", f"{W}tbl", _BOOKMARK_START, *EMBEDDED_DOCUMENT_TAGS):
             yield child
 
 
@@ -349,6 +358,8 @@ class _Flow:
             self.table(el)
         elif el.tag == _BOOKMARK_START:
             _pend_bookmark(el, self.ctx)
+        elif el.tag in EMBEDDED_DOCUMENT_TAGS:
+            raise DecompositionFailed(EMBEDDED_DOCUMENTS, self.scope.id)
         else:
             self.paragraph(el)
 
