@@ -25,6 +25,7 @@ const DOCUMENT_CHECKS = [
   'document: update with a wrong version is refused',
   'document: update with matching versions',
   'document: update retried with the same key',
+  "document: replayed create key returns the create's receipt",
 ];
 
 const run = (url: string) =>
@@ -121,6 +122,46 @@ describe('conformance suite', () => {
     const results = await run(await listen(await serveSink(forgetful, KEY)));
     expect(results.filter((r) => !r.ok).map((r) => r.name)).toEqual([
       'document: update retried with the same key',
+    ]);
+  });
+
+  it('fails a document sink that answers a replayed key with the current state', async () => {
+    const inner = new FakeDocumentSink();
+    const seen = new Map<string, string>();
+    // Right in everything but a replay: it answers with the document as it is now.
+    const current: SinkPort = {
+      describe: () => inner.describe(),
+      testConnection: (req) => inner.testConnection(req),
+      browse: () => inner.browse(),
+      deliveryStatus: (id) => inner.deliveryStatus(id),
+      deliver: async (req) => {
+        const pid = seen.get(req.idempotencyKey);
+        const stored = pid === undefined ? undefined : inner.documents.get(pid);
+        if (pid === undefined || !stored) {
+          const result = await inner.deliver(req);
+          if (result.status === 'succeeded' && result.receipt.document) {
+            seen.set(req.idempotencyKey, result.receipt.document.persistentId);
+          }
+          return result;
+        }
+        const components = [...stored.components].map(([id, c]) => ({
+          kind: c.kind,
+          id,
+          version: `${c.version}`,
+          element: c.element,
+        }));
+        return {
+          status: 'succeeded',
+          receipt: {
+            written: [{ kind: 'document', id: pid, label: null, url: null }],
+            document: { persistentId: pid, components, readBack: stored.readBack },
+          },
+        };
+      },
+    };
+    const results = await run(await listen(await serveSink(current, KEY)));
+    expect(results.filter((r) => !r.ok).map((r) => r.name)).toEqual([
+      "document: replayed create key returns the create's receipt",
     ]);
   });
 

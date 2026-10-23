@@ -137,7 +137,11 @@ export const ReceiptSchema = z.strictObject({
       url: z.string().url().nullable(),
     }),
   ),
-  /** Version 2, a delivered document: its persistent id, its components, and the read-back. */
+  /**
+   * Version 2, a delivered document: its persistent id, its components, and the read-back. For a
+   * replayed idempotency key this is the receipt the first write under that key produced (the
+   * same persistent id, the same component versions), never the document's current state.
+   */
   document: z
     .strictObject({
       persistentId: z.string().min(1),
@@ -156,6 +160,12 @@ export const SinkDeliverRequestSchema = z.strictObject({
   instanceId: z.string().nullable(),
   credential: CredentialSchema.nullable(),
   destination: DestinationSchema,
+  /**
+   * The same key means the same write. A sink writes at most once per key; a replayed key
+   * (a retry, or a later run that reuses it) changes nothing and gets back the receipt of the
+   * first write under that key: the same persistent id and the same component versions, never
+   * the current state, which may hold a change made in the target since.
+   */
   idempotencyKey: z.string(),
   actingUser: ActingUserSchema.nullable(),
   package: PackageSchema,

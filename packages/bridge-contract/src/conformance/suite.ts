@@ -11,6 +11,7 @@ import {
   SinkDeliverResultSchema,
   SinkDescribeSchema,
   SinkJobStatusSchema,
+  type ComponentVersion,
   type ConditionalUpdate,
   type Receipt,
   type SinkDescribe,
@@ -60,6 +61,7 @@ const DOCUMENT_CHECKS = {
   wrongVersion: 'document: update with a wrong version is refused',
   update: 'document: update with matching versions',
   retried: 'document: update retried with the same key',
+  replayedCreate: "document: replayed create key returns the create's receipt",
 } as const;
 
 const describeIssues = (r: z.ZodSafeParseResult<unknown>) =>
@@ -304,7 +306,8 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
 /**
  * The decomposed document checks: create, read back, the same key again, an update expecting one
  * wrong version (refused, and so changing nothing), the update expecting what the create wrote,
- * and that update retried. Each run has its own keys (a forced batch of its own), so the suite
+ * that update retried, and the create's key replayed after the update (it must answer with the
+ * create's receipt, not the updated document). Each run has its own keys (a forced batch of its own), so the suite
  * runs again against a real sink.
  */
 async function documentChecks(
@@ -400,4 +403,19 @@ async function documentChecks(
   for (const name of [DOCUMENT_CHECKS.update, DOCUMENT_CHECKS.retried]) {
     await attempt(name, async () => samePersistentId(await deliver(updated, update)));
   }
+
+  // The create's key replayed after the update: the sink answers with the receipt that write
+  // produced, never the document as it is now. A sink that answered with the current versions
+  // would let a change made in the target pass for CT Studio's own write.
+  await attempt(DOCUMENT_CHECKS.replayedCreate, async () => {
+    const d = await deliver(created);
+    const problem = samePersistentId(d);
+    if (problem) return problem;
+    const versionsOf = (components: ComponentVersion[]) =>
+      JSON.stringify(components.map((c) => `${c.id}@${c.version}`).sort());
+    const got = d.receipt!.document!.components;
+    return versionsOf(got) === versionsOf(expected)
+      ? undefined
+      : `component versions ${versionsOf(got)}, not the create's ${versionsOf(expected)}`;
+  });
 }

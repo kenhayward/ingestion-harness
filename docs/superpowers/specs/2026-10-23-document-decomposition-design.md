@@ -460,6 +460,7 @@ fails part-way, or the response is lost. None of these may lead to a second copy
 - **A sink's create is idempotent by its idempotency key.** The sink records the key on the
   document it creates, and before creating it looks for a document carrying that key. It returns
   that document's receipt instead of creating another.
+- **A replayed key returns the receipt of the first write under it, never the current state.**
 - **A failed read-back** is reported in a receipt. The entry is `incomplete` with the persistent
   id, and the batch row says *read-back mismatch*, with the place.
 - **The bridge retries `retryable` errors** as it does today. A retry carries the same

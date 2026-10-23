@@ -135,6 +135,30 @@ describe('FakeDocumentSink, create', () => {
     expect(sink.documents.size).toBe(1);
   });
 
+  it('a replayed key returns the receipt of its first write, not the current state', async () => {
+    const sink = new FakeDocumentSink();
+    const twoSections = withDocument({ sections: [section('a'), section('b')] });
+    const created = await receiptOf(sink, createReq(twoSections));
+    const b = created.components.find((c) => c.element === 'b')!;
+    sink.edit('doc-1', b.id);
+    expect(await receiptOf(sink, createReq(twoSections))).toEqual(created);
+
+    const updated = await receiptOf(
+      sink,
+      updateReq(
+        'doc-1',
+        [...created.components.filter((c) => c !== b), { ...b, version: '2' }],
+        twoSections,
+      ),
+    );
+    sink.edit('doc-1', b.id);
+    expect(await receiptOf(sink, createReq(twoSections))).toEqual(created);
+    expect(await receiptOf(sink, updateReq('doc-1', created.components, twoSections))).toEqual(
+      updated,
+    );
+    expect(sink.documents.size).toBe(1);
+  });
+
   it('refuses a package without a document as unsupported_part', async () => {
     const error = await refusal(new FakeDocumentSink().deliver(deliverRequest()));
     expect(error).toMatchObject({ class: 'needs_user', code: 'unsupported_part' });

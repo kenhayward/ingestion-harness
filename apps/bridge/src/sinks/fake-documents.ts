@@ -92,13 +92,16 @@ function compareForms(
 /**
  * A stateful fake target for decomposed documents: the reference for how a real document sink
  * behaves. It assigns persistent ids (`doc-<n>`), versions every component (the document's map,
- * each section, each image), creates idempotently by key, refuses a conditional update when any
+ * each section, each image), writes idempotently by key (a replayed key gets the receipt of its
+ * first write, never the current state), refuses a conditional update when any
  * component changed (`changed_in_target`), and reads each write back through the shared
  * comparison forms. `edit` and `corruptNextReadBack` stand for what happens in a real target.
  */
 export class FakeDocumentSink implements SinkPort {
   readonly documents = new Map<string, StoredDocument>();
   private readonly equations: EquationForm[];
+  /** The receipt each idempotency key's write produced, returned as it was on a replay. */
+  private readonly receipts = new Map<string, SinkDeliverResult>();
   private created = 0;
   private corruptNext = false;
 
@@ -171,10 +174,10 @@ export class FakeDocumentSink implements SinkPort {
         bridgeError('unsupported_part', 'this sink takes only decomposed documents'),
       );
     }
-    // A key seen before is a retry: it gets the receipt of the document it wrote.
-    for (const [pid, stored] of this.documents) {
-      if (stored.idempotencyKeys.has(req.idempotencyKey)) return this.receipt(pid, stored);
-    }
+    // A key seen before is a retry: it gets the receipt its first write produced, never the
+    // document's current state (that may hold a change made in the target since).
+    const replayed = this.receipts.get(req.idempotencyKey);
+    if (replayed) return structuredClone(replayed);
     const images = new Map((req.package.images ?? []).map((i) => [i.id, i.content]));
     if (req.update) {
       const pid = req.update.persistentId;
@@ -182,7 +185,7 @@ export class FakeDocumentSink implements SinkPort {
       const stored = this.documents.get(pid)!;
       stored.components = this.bumped(pid, stored, delivered, images);
       this.write(stored, req.idempotencyKey, delivered, images);
-      return this.receipt(pid, stored);
+      return this.receipt(req.idempotencyKey, pid, stored);
     }
     const pid = `doc-${++this.created}`;
     const components = new Map<string, StoredComponent>([
@@ -203,7 +206,7 @@ export class FakeDocumentSink implements SinkPort {
     };
     this.documents.set(pid, stored);
     this.write(stored, req.idempotencyKey, delivered, images);
-    return this.receipt(pid, stored);
+    return this.receipt(req.idempotencyKey, pid, stored);
   }
 
   /** Refuses the update unless the target holds exactly the expected components at their versions. */
@@ -294,19 +297,22 @@ export class FakeDocumentSink implements SinkPort {
     stored.readBack = compareForms(stored.document, delivered);
   }
 
-  private receipt(pid: string, stored: StoredDocument): SinkDeliverResult {
+  /** The receipt of the write just made under `key`, kept for that key's replays. */
+  private receipt(key: string, pid: string, stored: StoredDocument): SinkDeliverResult {
     const components = [...stored.components].map(([id, c]) => ({
       kind: c.kind,
       id,
       version: `${c.version}`,
       element: c.element,
     }));
-    return {
+    const result: SinkDeliverResult = {
       status: 'succeeded',
       receipt: {
         written: [{ kind: 'document', id: pid, label: null, url: null }],
         document: { persistentId: pid, components, readBack: { ...stored.readBack } },
       },
     };
+    this.receipts.set(key, structuredClone(result));
+    return result;
   }
 }
