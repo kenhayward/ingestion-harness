@@ -601,6 +601,16 @@ export interface IngestionRepo {
    * delivery's final event may have been lost.
    */
   registerStragglers(olderThanMinutes: number, now: Date): Promise<RegisterEntry[]>;
+  /**
+   * Fails register entries still `pending` without a delivery and not updated for
+   * `olderThanMinutes`, with `error`: the worker wrote them and never recorded a delivery (it
+   * stopped, or lost the bridge's answer). Returns how many moved.
+   */
+  expireUnrecordedRegisterEntries(
+    olderThanMinutes: number,
+    now: Date,
+    error: NonNullable<RegisterEntry['lastError']>,
+  ): Promise<number>;
   /** The register entry a delivery was made for, if any. */
   registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null>;
   /**

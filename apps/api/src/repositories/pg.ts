@@ -1764,6 +1764,24 @@ export class PgRepo implements IngestionRepo {
     return rows.map(toRegisterEntry);
   }
 
+  async expireUnrecordedRegisterEntries(
+    olderThanMinutes: number,
+    now: Date,
+    error: NonNullable<RegisterEntry['lastError']>,
+  ): Promise<number> {
+    // SKIP LOCKED: an entry the worker holds is being handed off right now.
+    const { rowCount } = await this.pool.query(
+      `UPDATE decomposition_register
+          SET state = 'failed', last_error = $3::jsonb, updated_at = now()
+        WHERE id IN (SELECT id FROM decomposition_register
+                      WHERE state = 'pending' AND delivery_id IS NULL
+                        AND updated_at < $1::timestamptz - make_interval(mins => $2)
+                      FOR UPDATE SKIP LOCKED)`,
+      [now, olderThanMinutes, JSON.stringify(error)],
+    );
+    return rowCount ?? 0;
+  }
+
   async registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null> {
     const { rows } = await this.pool.query<RegisterRow>(
       `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE delivery_id = $1`,

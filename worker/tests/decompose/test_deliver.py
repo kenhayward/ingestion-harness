@@ -12,9 +12,10 @@ from types import ModuleType
 
 import pytest
 
-from ingest_worker.bridge.client import BridgeUnavailable
+from ingest_worker.bridge.client import BridgeRefused, BridgeUnavailable
 from ingest_worker.bridge.models import (
     ActingUser,
+    BridgeError,
     ComponentVersion,
     CreateDeliveriesRequest,
     CreateDeliveriesResult,
@@ -48,22 +49,40 @@ def report_docx(title: str = "Results") -> bytes:
     )
 
 
+REFUSAL = BridgeError.model_validate(
+    {"class": "needs_user", "code": "content_rejected", "message": "too large"}
+)
+
+
 class FakeBridge:
     """A BridgeClient that records each request; with `raise_after_accepting`, it records the
-    request and then loses the response."""
+    request and then loses the response; with `refuse`, it refuses it outright; with
+    `no_deliveries`, it accepts it and names no delivery."""
 
-    def __init__(self, *, raise_after_accepting: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        raise_after_accepting: bool = False,
+        refuse: bool = False,
+        no_deliveries: bool = False,
+    ) -> None:
         self.requests: list[CreateDeliveriesRequest] = []
         self._raise = raise_after_accepting
+        self._refuse = refuse
+        self._none = no_deliveries
 
     def deliver(self, request: CreateDeliveriesRequest) -> CreateDeliveriesResult:
         self.requests.append(request)
         if self._raise:
             raise BridgeUnavailable("the bridge could not be reached: response lost")
+        if self._refuse:
+            raise BridgeRefused(REFUSAL)
         n = len(self.requests)
         return CreateDeliveriesResult(
             package_id=f"p{n}",
-            deliveries=[DeliveryRef(target_id=t, delivery_id=f"d{n}") for t in request.targets],
+            deliveries=[]
+            if self._none
+            else [DeliveryRef(target_id=t, delivery_id=f"d{n}") for t in request.targets],
         )
 
     def read_object(self, target_id: str, bucket: str, key: str) -> bytes | None:
@@ -178,7 +197,20 @@ def test_update_sends_expected_versions_from_last_receipt() -> None:
     )
 
 
-def test_force_update_keys_by_batch() -> None:
+def _receipt(persistent_id: str = "DOC-1") -> Receipt:
+    return Receipt(
+        written=[],
+        document=DocumentReceipt(
+            persistent_id=persistent_id,
+            components=[
+                ComponentVersion(kind="document", id=persistent_id, version="1", element=None)
+            ],
+            read_back=ReadBack(ok=True, at=None, detail=None),
+        ),
+    )
+
+
+def test_every_forced_update_is_a_new_delivery() -> None:
     bridge = FakeBridge()
     store = MemoryRegisterStore(clock=lambda: AT)
     deps = make_deps(bridge, store)
@@ -187,35 +219,58 @@ def test_force_update_keys_by_batch() -> None:
         deps, data=data, source_key="r1.docx", target_id=TARGET, started_by=USER
     )
     assert first.entry_id is not None
-    receipt = Receipt(
-        written=[],
-        document=DocumentReceipt(
-            persistent_id="DOC-1",
-            components=[ComponentVersion(kind="document", id="DOC-1", version="1", element=None)],
-            read_back=ReadBack(ok=True, at=None, detail=None),
-        ),
-    )
-    store.settle(first.entry_id, state="delivered", persistent_id="DOC-1", last_receipt=receipt)
+    store.settle(first.entry_id, state="delivered", persistent_id="DOC-1", last_receipt=_receipt())
 
     skipped = deliver_decomposition(
         deps, data=data, source_key="r1.docx", target_id=TARGET, started_by=USER
     )
-    forced = deliver_decomposition(
-        deps,
-        data=data,
-        source_key="r1.docx",
-        target_id=TARGET,
-        started_by=USER,
-        batch_id="b7",
-        force=True,
-    )
+    forced = []
+    for batch in ("b7", None):
+        out = deliver_decomposition(
+            deps,
+            data=data,
+            source_key="r1.docx",
+            target_id=TARGET,
+            started_by=USER,
+            batch_id=batch,
+            force=True,
+        )
+        forced.append(out.outcome)
+        store.settle(first.entry_id, state="delivered")
 
-    assert skipped.outcome == "already_loaded" and forced.outcome == "updated"
-    assert bridge.requests[1].package.idempotency_key == decomposition_idempotency_key(
-        hashlib.sha256(data).hexdigest(), "DOC-1", DECOMPOSER_VERSION, "b7"
-    )
+    assert skipped.outcome == "already_loaded" and forced == ["updated", "updated"]
+    sha = hashlib.sha256(data).hexdigest()
+    unforced = decomposition_idempotency_key(sha, "DOC-1", DECOMPOSER_VERSION, None)
+    keys = [r.package.idempotency_key for r in bridge.requests[1:]]
+    assert len({unforced, *keys}) == 3
+    assert keys[0] != decomposition_idempotency_key(sha, "DOC-1", DECOMPOSER_VERSION, "b7")
     provenance = bridge.requests[1].package.provenance
     assert isinstance(provenance, DecompositionProvenance) and provenance.batch_id == "b7"
+
+
+def test_every_forced_duplicate_is_a_new_document() -> None:
+    bridge = FakeBridge()
+    deps = make_deps(bridge)
+    data = report_docx()
+    deliver_decomposition(deps, data=data, source_key="r1.docx", target_id=TARGET, started_by=USER)
+
+    outcomes = [
+        deliver_decomposition(
+            deps,
+            data=data,
+            source_key=key,
+            target_id=TARGET,
+            started_by=USER,
+            batch_id="b1",
+            force=True,
+        ).outcome
+        for key in ("copy/r1.docx", "other/r1.docx")
+    ]
+
+    assert outcomes == ["created", "created"]
+    keys = [r.package.idempotency_key for r in bridge.requests]
+    assert len(set(keys)) == 3
+    assert all(r.update is None for r in bridge.requests)
 
 
 def test_already_loaded_sends_nothing() -> None:
@@ -275,7 +330,7 @@ def test_retry_after_lost_response_keeps_one_document() -> None:
     assert (stored.state, stored.delivery_id) == ("pending", None)
 
 
-def test_an_update_without_a_receipt_fails_before_delivering() -> None:
+def test_an_entry_without_component_versions_is_changed_in_target() -> None:
     bridge = FakeBridge()
     store = MemoryRegisterStore(clock=lambda: AT)
     deps = make_deps(bridge, store)
@@ -289,9 +344,59 @@ def test_an_update_without_a_receipt_fails_before_delivering() -> None:
         deps, data=report_docx("Two"), source_key="r1.docx", target_id=TARGET, started_by=USER
     )
 
-    assert out.outcome == "failed" and "receipt" in out.detail
+    assert (out.outcome, out.entry_id) == ("changed_in_target", first.entry_id)
+    assert out.detail == (
+        "no component versions are recorded for this document; resolve it in the target"
+    )
     assert len(bridge.requests) == 1
     assert [e.state for e in store.entries()] == ["incomplete"]
+
+
+def test_a_definite_refusal_fails_the_entry() -> None:
+    store = MemoryRegisterStore(clock=lambda: AT)
+    refusing = FakeBridge(refuse=True)
+    data = report_docx()
+
+    out = deliver_decomposition(
+        make_deps(refusing, store),
+        data=data,
+        source_key="r1.docx",
+        target_id=TARGET,
+        started_by=USER,
+    )
+
+    assert out.outcome == "failed" and "too large" in out.detail
+    [stored] = store.entries()
+    assert (stored.state, stored.delivery_id) == ("failed", None)
+    assert stored.last_error == REFUSAL.model_dump(by_alias=True, mode="json")
+    # Nothing was made: the next run creates again under the same entry.
+    bridge = FakeBridge()
+    again = deliver_decomposition(
+        make_deps(bridge, store),
+        data=data,
+        source_key="r1.docx",
+        target_id=TARGET,
+        started_by=USER,
+    )
+    assert (again.outcome, again.entry_id) == ("created", out.entry_id)
+    assert (
+        bridge.requests[0].package.idempotency_key == refusing.requests[0].package.idempotency_key
+    )
+
+
+def test_an_acceptance_without_a_delivery_fails_and_stays_pending() -> None:
+    store = MemoryRegisterStore(clock=lambda: AT)
+
+    out = deliver_decomposition(
+        make_deps(FakeBridge(no_deliveries=True), store),
+        data=report_docx(),
+        source_key="r1.docx",
+        target_id=TARGET,
+        started_by=USER,
+    )
+
+    assert out.outcome == "failed" and TARGET in out.detail
+    assert [(e.state, e.delivery_id) for e in store.entries()] == [("pending", None)]
 
 
 @pytest.mark.parametrize("force", [False, True])

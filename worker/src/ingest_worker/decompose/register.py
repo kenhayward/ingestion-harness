@@ -64,7 +64,9 @@ class RegisterTx(Protocol):
         ...
 
     def by_hash(self, sink_id: str, instance_id: str | None, sha: str) -> list[RegisterEntry]:
-        """Every entry on the tenant with this content, oldest first."""
+        """Every entry on the tenant with this content, oldest first. The content is locked on
+        the tenant until the transaction ends, so two new sources with the same bytes are
+        decided one after the other (the second sees the first's entry)."""
         ...
 
     def put_pending(
@@ -86,6 +88,11 @@ class RegisterTx(Protocol):
 
     def set_delivery(self, entry_id: str, delivery_id: str) -> None:
         """Record the delivery the bridge accepted for a pending entry."""
+        ...
+
+    def set_failed(self, entry_id: str, error: dict[str, Any]) -> None:
+        """A pending entry the bridge refused outright (nothing was accepted): `failed`, with
+        the refusal as its last error."""
         ...
 
 
@@ -174,10 +181,17 @@ class _MemoryTx:
         entry = self.rows[entry_id]
         self.rows[entry_id] = replace(entry, delivery_id=delivery_id, updated_at=self._clock())
 
+    def set_failed(self, entry_id: str, error: dict[str, Any]) -> None:
+        entry = self.rows[entry_id]
+        if entry.state == "pending":
+            self.rows[entry_id] = replace(
+                entry, state="failed", last_error=error, updated_at=self._clock()
+            )
+
 
 class MemoryRegisterStore:
-    """The register in memory, for tests: one transaction at a time, each on a copy of the rows
-    that replaces them when it commits."""
+    """The register in memory, for tests: one transaction at a time (so content is locked as on
+    Postgres, trivially), each on a copy of the rows that replaces them when it commits."""
 
     def __init__(self, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._rows: dict[str, RegisterEntry] = {}
@@ -258,6 +272,10 @@ class _PgTx:
         return _entry(row) if row else None
 
     def by_hash(self, sink_id: str, instance_id: str | None, sha: str) -> list[RegisterEntry]:
+        self._conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (f"decomposition_register\n{sink_id}\n{instance_id or ''}\n{sha}",),
+        )
         rows = self._conn.execute(
             f"""SELECT {_COLUMNS} FROM decomposition_register
                  WHERE sink_id = %s AND instance_id IS NOT DISTINCT FROM %s
@@ -310,6 +328,16 @@ class _PgTx:
             """UPDATE decomposition_register SET delivery_id = %s, updated_at = now()
                 WHERE id = %s AND state = 'pending'""",
             (delivery_id, entry_id),
+        )
+
+    def set_failed(self, entry_id: str, error: dict[str, Any]) -> None:
+        from psycopg.types.json import Jsonb
+
+        self._conn.execute(
+            """UPDATE decomposition_register
+                  SET state = 'failed', last_error = %s, updated_at = now()
+                WHERE id = %s AND state = 'pending'""",
+            (Jsonb(error), entry_id),
         )
 
 

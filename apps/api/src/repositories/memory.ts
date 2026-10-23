@@ -1183,6 +1183,23 @@ export class MemoryRepo implements IngestionRepo {
       .map((e) => ({ ...e }));
   }
 
+  async expireUnrecordedRegisterEntries(
+    olderThanMinutes: number,
+    now: Date,
+    error: NonNullable<RegisterEntry['lastError']>,
+  ): Promise<number> {
+    const before = now.getTime() - olderThanMinutes * 60_000;
+    let moved = 0;
+    for (const e of this.register.values()) {
+      if (e.state !== 'pending' || e.deliveryId !== null || Date.parse(e.updatedAt) >= before) {
+        continue;
+      }
+      Object.assign(e, { state: 'failed', lastError: error, updatedAt: now.toISOString() });
+      moved += 1;
+    }
+    return moved;
+  }
+
   async registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null> {
     const e = [...this.register.values()].find((r) => r.deliveryId === deliveryId);
     return e ? { ...e } : null;

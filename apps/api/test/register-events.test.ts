@@ -7,7 +7,7 @@ import {
 } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { applyEvent } from '../src/bridge/events.js';
-import { reconcileOnce, STRAGGLER_MINUTES } from '../src/bridge/reconcile.js';
+import { reconcileOnce, STRAGGLER_MINUTES, UNRECORDED_MINUTES } from '../src/bridge/reconcile.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 import { FakeBridgeApi } from './fake-bridge.js';
@@ -295,7 +295,7 @@ describe('reconciling the register', () => {
     const young = pending(repo);
     repo.ageRegisterEntry(young.entryId, ago(STRAGGLER_MINUTES - 1));
     const unsentId = unsent(repo);
-    repo.ageRegisterEntry(unsentId, ago(STRAGGLER_MINUTES + 30));
+    repo.ageRegisterEntry(unsentId, ago(UNRECORDED_MINUTES - 1));
     bridge.deliveries.set(young.deliveryId, view(young.deliveryId));
     const asked: string[] = [];
     const get = bridge.getDelivery.bind(bridge);
@@ -307,6 +307,29 @@ describe('reconciling the register', () => {
     expect(asked).toEqual([]);
     expect(repo.register.get(young.entryId)).toMatchObject({ state: 'pending' });
     expect(repo.register.get(unsentId)).toMatchObject({ state: 'pending' });
+  });
+
+  it('fails an entry left without a delivery for UNRECORDED_MINUTES', async () => {
+    const { repo, deps } = setup();
+    const bridge = new FakeBridgeApi();
+    const stale = unsent(repo);
+    repo.ageRegisterEntry(stale, ago(UNRECORDED_MINUTES + 1));
+    const fresh = unsent(repo);
+    repo.ageRegisterEntry(fresh, ago(UNRECORDED_MINUTES - 1));
+    const settled = pending(repo);
+    repo.ageRegisterEntry(settled.entryId, ago(UNRECORDED_MINUTES + 1));
+    bridge.deliveries.set(
+      settled.deliveryId,
+      view(settled.deliveryId, { status: 'running', receipt: null }),
+    );
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(1);
+    expect(repo.register.get(stale)).toMatchObject({
+      state: 'failed',
+      lastError: { code: 'not_recorded', message: 'the delivery was never recorded' },
+    });
+    expect(repo.register.get(fresh)).toMatchObject({ state: 'pending' });
+    expect(repo.register.get(settled.entryId)).toMatchObject({ state: 'pending' });
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(0);
   });
 
   it('fails a stuck entry whose delivery the bridge has no record of', async () => {

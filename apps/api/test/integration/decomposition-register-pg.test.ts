@@ -175,4 +175,31 @@ describe.skipIf(!url)('the decomposition register against Postgres', { timeout: 
     expect(ids).not.toContain(young.deliveryId);
     expect(ids).not.toContain(null);
   });
+
+  it('fails pending entries never given a delivery once they are old enough', async () => {
+    const now = new Date();
+    const age = async (deliveryId: string, minutes: number) =>
+      pool.query(
+        `UPDATE decomposition_register SET delivery_id = NULL, updated_at = $2
+          WHERE delivery_id = $1 RETURNING id::text`,
+        [deliveryId, new Date(now.getTime() - minutes * 60_000)],
+      );
+    const old = (await age((await pending()).deliveryId, 31)).rows[0].id as string;
+    const fresh = (await age((await pending()).deliveryId, 29)).rows[0].id as string;
+    const sent = await pending();
+    await pool.query(`UPDATE decomposition_register SET updated_at = $2 WHERE delivery_id = $1`, [
+      sent.deliveryId,
+      new Date(now.getTime() - 60 * 60_000),
+    ]);
+    const error = { class: 'retryable' as const, code: 'not_recorded', message: 'never recorded' };
+    expect(await repo.expireUnrecordedRegisterEntries(30, now, error)).toBeGreaterThanOrEqual(1);
+    const { rows } = await pool.query(
+      `SELECT id::text, state, last_error FROM decomposition_register WHERE id = ANY($1)`,
+      [[old, fresh]],
+    );
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId[old]).toMatchObject({ state: 'failed', last_error: error });
+    expect(byId[fresh]).toMatchObject({ state: 'pending' });
+    expect(await repo.registerEntryByDelivery(sent.deliveryId)).toMatchObject({ state: 'pending' });
+  });
 });

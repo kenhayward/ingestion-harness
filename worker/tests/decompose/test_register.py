@@ -105,6 +105,15 @@ def test_entry_without_persistent_id_creates_again() -> None:
     assert (d.outcome, d.create, d.entry) == (None, True, e)
 
 
+def test_failed_entry_with_same_content_elsewhere_is_duplicate() -> None:
+    mine = entry(state="failed", persistent_id=None)
+    other = entry(id="e2", source_key="elsewhere/r1.docx")
+    d = decide(mine, [mine, other], SHA, force=False)
+    assert (d.outcome, d.entry) == ("duplicate", other)
+    forced = decide(mine, [mine, other], SHA, force=True)
+    assert (forced.outcome, forced.create, forced.entry) == (None, True, mine)
+
+
 def test_a_failed_create_elsewhere_is_no_duplicate() -> None:
     """Content whose only entry never became a document is not seen on the tenant."""
     other = entry(id="e2", source_key="elsewhere/r1.docx", state="failed", persistent_id=None)

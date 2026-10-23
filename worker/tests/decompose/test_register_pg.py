@@ -144,3 +144,48 @@ def test_a_new_source_registered_twice_at_once_is_refused(
     assert len(raced) == 1
     with pg.transaction() as tx:
         assert len(tx.by_hash(sink, None, OLD_SHA)) == 1
+
+
+def test_new_sources_with_the_same_content_are_decided_one_at_a_time(
+    store: tuple[PgRegisterStore, str],
+) -> None:
+    """Two first runs of different keys with the same bytes: one creates, the other waits on the
+    content lock and then sees the first's entry, so it is a duplicate, never a second create."""
+    pg, sink = store
+    seen: list[str | None] = []
+    deciding = threading.Event()
+
+    def second_run() -> None:
+        with pg.transaction() as tx:
+            by_key = tx.by_key(sink, None, "copy/r1.docx")
+            deciding.set()
+            by_hash = tx.by_hash(sink, None, OLD_SHA)  # waits on the first run's content lock
+            seen.append(decide(by_key, by_hash, OLD_SHA, False).outcome)
+
+    with pg.transaction() as tx:
+        by_key = tx.by_key(sink, None, "r1.docx")
+        decision = decide(by_key, tx.by_hash(sink, None, OLD_SHA), OLD_SHA, False)
+        assert (decision.outcome, decision.create) == (None, True)
+        thread = threading.Thread(target=second_run)
+        thread.start()
+        assert deciding.wait(5)
+        thread.join(0.5)
+        assert thread.is_alive(), "the second run's by_hash should wait on the content lock"
+        _pending(tx, sink, None, OLD_SHA)
+    thread.join(10)
+
+    assert seen == ["duplicate"]
+
+
+def test_set_failed_settles_only_a_pending_entry(store: tuple[PgRegisterStore, str]) -> None:
+    pg, sink = store
+    with pg.transaction() as tx:
+        first = _pending(tx, sink, None, OLD_SHA)
+    error = {"class": "needs_user", "code": "content_rejected", "message": "too large"}
+    with pg.transaction() as tx:
+        tx.set_failed(first.id, error)
+    with pg.transaction() as tx:
+        failed = tx.by_key(sink, None, "r1.docx")
+        assert failed is not None and (failed.state, failed.last_error) == ("failed", error)
+        tx.set_failed(first.id, {"code": "other"})
+        assert tx.by_key(sink, None, "r1.docx") == failed

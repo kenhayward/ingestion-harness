@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -74,8 +75,10 @@ def decide(
     """Spec §8's two checks. A pending entry is in flight and a changed one refuses, force or
     not (force never bypasses the version check). The same content under the same key is
     already loaded (force: update); under another key, a duplicate (force: create, or update
-    the source's own document when it has one). New content under a known key updates its
-    document, or creates it again when it never got one; a new key creates."""
+    the source's own document when it has one); the same key counts only once it became a
+    document, so a never-created entry whose content another key holds is a duplicate too. New
+    content under a known key updates its document, or creates it again when it never got one;
+    a new key creates."""
     if by_key is not None:
         if by_key.state == "pending":
             return Decision("in_flight", False, by_key, "a delivery of this source is in flight")
@@ -86,12 +89,14 @@ def decide(
                 by_key,
                 f"document {by_key.persistent_id} has changed in the target since it was delivered",
             )
-    if by_key is not None and by_key.content_sha256 == sha:
+    if by_key is not None and by_key.content_sha256 == sha and _seen(by_key):
         if by_key.state in _SETTLED_LOADED and not force:
             return Decision(
                 "already_loaded", False, by_key, f"already loaded as {by_key.persistent_id}"
             )
-    elif not force and (others := [e for e in by_hash if _seen(e)]):
+    elif not force and (
+        others := [e for e in by_hash if _seen(e) and (by_key is None or e.id != by_key.id)]
+    ):
         first = others[0]
         return Decision(
             "duplicate",
@@ -192,6 +197,16 @@ def build_decomposition_package(
     )
 
 
+_NO_VERSIONS = "no component versions are recorded for this document; resolve it in the target"
+
+
+def _force_token(batch_id: str | None) -> str:
+    """A force-load's part of the idempotency key: new on every forced run, so it never shares
+    a key with an unforced run, another forced run, or another source of the same batch."""
+    token = uuid.uuid4().hex
+    return f"{batch_id}:{token}" if batch_id else token
+
+
 def _refused(decision: Decision) -> DeliveryOutcome:
     assert decision.outcome is not None
     entry_id = decision.entry.id if decision.entry is not None else None
@@ -212,9 +227,11 @@ def deliver_decomposition(
 
     A decomposition that fails or is rejected touches nothing. Otherwise the entry is written
     `pending` (committed) before the bridge is called; the hand-off then runs under the entry's
-    row lock, so the API's settling of it waits for `set_delivery`. When the bridge raises, the
-    entry stays `pending`, so a retry is in flight rather than a second create, and the outcome
-    is `failed` with the error.
+    row lock, so the API's settling of it waits for `set_delivery`. When the bridge may have
+    taken it (BridgeUnavailable: unreachable, a timeout), the entry stays `pending`, so a retry
+    is in flight rather than a second create; a definite refusal (BridgeRefused) marks it
+    `failed` with the error, the one state the worker settles (a narrow exception to ruling R6).
+    Either way the outcome is `failed`. Every forced run gets a new idempotency key.
     """
     try:
         result = decompose_docx(data, renderer=deps.renderer)
@@ -241,18 +258,14 @@ def deliver_decomposition(
             receipt = decision.entry.last_receipt
             expected = receipt.document.components if receipt and receipt.document else []
             if not expected:
-                return DeliveryOutcome(
-                    "failed",
-                    None,
-                    decision.entry.id,
-                    f"document {decision.entry.persistent_id} has no receipt to update against",
-                )
+                # Nothing to hold the target's copy to: phase 3's detach or accept resolves it.
+                return DeliveryOutcome("changed_in_target", None, decision.entry.id, _NO_VERSIONS)
             update = Update(persistent_id=decision.entry.persistent_id, expected=expected)
         key = decomposition_idempotency_key(
             sha,
             update.persistent_id if update else None,
             DECOMPOSER_VERSION,
-            batch_id if force else None,
+            _force_token(batch_id) if force else None,
         )
         try:
             entry = tx.put_pending(
@@ -288,11 +301,22 @@ def deliver_decomposition(
             tx.by_key(sink_id, instance_id, source_key)  # hold the entry while it is handed off
             delivered = deps.bridge.deliver(request)
             delivery_id = next(
-                d.delivery_id for d in delivered.deliveries if d.target_id == target_id
+                (d.delivery_id for d in delivered.deliveries if d.target_id == target_id), None
             )
-            tx.set_delivery(entry.id, delivery_id)
-    except (BridgeRefused, BridgeUnavailable) as exc:
+            if delivery_id is not None:
+                tx.set_delivery(entry.id, delivery_id)
+    except BridgeRefused as exc:
+        # A definite refusal: nothing was accepted, so nothing but this settles the entry.
+        with deps.register.transaction() as tx:
+            tx.set_failed(entry.id, exc.error.model_dump(by_alias=True, mode="json"))
+        return DeliveryOutcome("failed", None, entry.id, f"the bridge refused it: {exc}")
+    except BridgeUnavailable as exc:
+        # It may have been accepted: the entry stays pending (the API's reconcile expires it).
         return DeliveryOutcome("failed", None, entry.id, f"the bridge did not take it: {exc}")
+    if delivery_id is None:
+        return DeliveryOutcome(
+            "failed", None, entry.id, f"the bridge accepted it without a delivery to {target_id}"
+        )
     return DeliveryOutcome(
         "updated" if update else "created", delivery_id, entry.id, decision.reason
     )
