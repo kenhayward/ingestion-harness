@@ -1,0 +1,110 @@
+"""Paragraph-level structure from styles.xml and numbering.xml: outline level and list membership."""
+
+from __future__ import annotations
+
+from xml.etree.ElementTree import Element
+
+from .inline import W
+
+_BODY_LEVEL = 9
+_UNORDERED = {"bullet", "none"}
+
+
+def _val(el: Element | None) -> str | None:
+    return None if el is None else el.get(f"{W}val")
+
+
+class Styles:
+    """Outline levels and list numbering of paragraphs, from direct properties then style chains."""
+
+    def __init__(self, styles: Element | None = None, numbering: Element | None = None) -> None:
+        self._ppr: dict[str, Element | None] = {}
+        self._based_on: dict[str, str] = {}
+        self._default: str | None = None
+        if styles is not None:
+            for style in styles.findall(f"{W}style"):
+                sid = style.get(f"{W}styleId")
+                if sid is None or style.get(f"{W}type", "paragraph") != "paragraph":
+                    continue
+                self._ppr[sid] = style.find(f"{W}pPr")
+                if style.get(f"{W}default", "0").lower() in ("1", "true", "on"):
+                    self._default = sid
+                if parent := _val(style.find(f"{W}basedOn")):
+                    self._based_on[sid] = parent
+        self._num_abstract: dict[str, str] = {}
+        self._num_levels: dict[str, dict[str, Element]] = {}
+        self._abstract_levels: dict[str, dict[str, Element]] = {}
+        if numbering is not None:
+            for abstract in numbering.findall(f"{W}abstractNum"):
+                aid = abstract.get(f"{W}abstractNumId")
+                if aid is not None:
+                    self._abstract_levels[aid] = {
+                        lvl.get(f"{W}ilvl", "0"): lvl for lvl in abstract.findall(f"{W}lvl")
+                    }
+            for num in numbering.findall(f"{W}num"):
+                nid = num.get(f"{W}numId")
+                aid = _val(num.find(f"{W}abstractNumId"))
+                if nid is None or aid is None:
+                    continue
+                self._num_abstract[nid] = aid
+                self._num_levels[nid] = {
+                    o.get(f"{W}ilvl", "0"): lvl
+                    for o in num.findall(f"{W}lvlOverride")
+                    if (lvl := o.find(f"{W}lvl")) is not None
+                }
+
+    def _layers(self, p: Element) -> list[Element]:
+        """The paragraph's own `pPr`, then its style's and its ancestors', nearest first."""
+        layers: list[Element] = []
+        ppr = p.find(f"{W}pPr")
+        if ppr is not None:
+            layers.append(ppr)
+        style_id = _val(ppr.find(f"{W}pStyle") if ppr is not None else None) or self._default
+        seen: set[str] = set()
+        while style_id is not None and style_id in self._ppr and style_id not in seen:
+            seen.add(style_id)
+            if (style_ppr := self._ppr[style_id]) is not None:
+                layers.append(style_ppr)
+            style_id = self._based_on.get(style_id)
+        return layers
+
+    def outline_level(self, p: Element) -> int | None:
+        """0-based outline level (from `w:outlineLvl`, then the style chain); None for body text."""
+        for ppr in self._layers(p):
+            raw = _val(ppr.find(f"{W}outlineLvl"))
+            if raw is None:
+                continue
+            try:
+                level = int(raw)
+            except ValueError:
+                continue
+            return level if 0 <= level < _BODY_LEVEL else None
+        return None
+
+    def list_info(self, p: Element) -> tuple[str, int, bool] | None:
+        """`(numId, ilvl, ordered)` if the paragraph is numbered, else None."""
+        num_id: str | None = None
+        ilvl: str | None = None
+        for ppr in self._layers(p):
+            num_pr = ppr.find(f"{W}numPr")
+            if num_pr is None:
+                continue
+            if num_id is None:
+                num_id = _val(num_pr.find(f"{W}numId"))
+            if ilvl is None:
+                ilvl = _val(num_pr.find(f"{W}ilvl"))
+        if num_id is None or num_id == "0":
+            return None
+        try:
+            level = int(ilvl) if ilvl is not None else 0
+        except ValueError:
+            level = 0
+        return num_id, level, self._is_ordered(num_id, level)
+
+    def _is_ordered(self, num_id: str, ilvl: int) -> bool:
+        key = str(ilvl)
+        lvl = self._num_levels.get(num_id, {}).get(key)
+        if lvl is None:
+            lvl = self._abstract_levels.get(self._num_abstract.get(num_id, ""), {}).get(key)
+        fmt = _val(lvl.find(f"{W}numFmt") if lvl is not None else None)
+        return fmt not in _UNORDERED
