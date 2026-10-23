@@ -59,3 +59,15 @@ def test_document_round_trip_with_nested_blocks() -> None:
 def test_unknown_flag_code_rejected() -> None:
     with pytest.raises(ValidationError):
         Flag.model_validate({"code": "nope", "severity": "info", "message": "m"})
+
+
+def test_dumps_camel_case() -> None:
+    cell = Cell(row_span=2, blocks=[Paragraph(id="p", inlines=[Text(text="x")])])
+    table = Table(id="t", column_widths=[1.0], header_rows=1, rows=[Row(cells=[cell])])
+    dumped = table.model_dump(mode="json", by_alias=True)
+    assert {"captionPosition", "columnWidths", "headerRows"} <= dumped.keys()
+    assert "caption_position" not in dumped
+    dumped_cell = dumped["rows"][0]["cells"][0]
+    assert {"rowSpan", "colSpan", "hAlign", "vAlign"} <= dumped_cell.keys()
+    assert Table.model_validate(dumped) == table
+    assert Table.model_validate(table.model_dump(mode="json")) == table

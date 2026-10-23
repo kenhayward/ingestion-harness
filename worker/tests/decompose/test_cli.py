@@ -57,7 +57,7 @@ def test_writes_outputs_and_exit_codes(tmp_path: Path, capsys: pytest.CaptureFix
 
     expected = decompose_docx(pictures_docx(), renderer=FakeRenderer())
     document = json.loads((out / "document.json").read_text(encoding="utf-8"))
-    assert document == expected.document.model_dump(mode="json")
+    assert document == expected.document.model_dump(mode="json", by_alias=True)
     text = (out / "document.json").read_text(encoding="utf-8")
     assert text == json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     report = json.loads((out / "report.json").read_text(encoding="utf-8"))

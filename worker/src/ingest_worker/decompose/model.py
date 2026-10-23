@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 Marks = frozenset[Literal["bold", "italic", "underline", "superscript", "subscript"]]
 
@@ -26,7 +27,11 @@ FlagCode = Literal[
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """camelCase on the wire, like the rest of the contract; snake_case names are accepted too."""
+
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, alias_generator=to_camel, populate_by_name=True
+    )
 
 
 # --- Inlines ---------------------------------------------------------------------------------

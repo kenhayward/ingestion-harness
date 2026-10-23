@@ -19,17 +19,17 @@
               "id": "s-data#table-1",
               "numbered": false,
               "caption": [],
-              "caption_position": "above",
-              "column_widths": [0.25, 0.25, 0.25, 0.25],
-              "header_rows": 1,
+              "captionPosition": "above",
+              "columnWidths": [0.25, 0.25, 0.25, 0.25],
+              "headerRows": 1,
               "rows": [
                 {
                   "cells": [
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": true,
                       "blocks": [
                         {
@@ -46,10 +46,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 2,
-                      "h_align": "center",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 2,
+                      "hAlign": "center",
+                      "vAlign": "top",
                       "header": true,
                       "blocks": [
                         {
@@ -66,10 +66,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": true,
                       "blocks": []
                     }
@@ -78,10 +78,10 @@
                 {
                   "cells": [
                     {
-                      "row_span": 2,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "middle",
+                      "rowSpan": 2,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "middle",
                       "header": false,
                       "blocks": [
                         {
@@ -109,10 +109,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -129,10 +129,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -149,10 +149,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -173,10 +173,10 @@
                 {
                   "cells": [
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -193,10 +193,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 2,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 2,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -264,7 +264,7 @@
                 },
                 {
                   "kind": "xref",
-                  "target_id": "s-results#table-1",
+                  "targetId": "s-results#table-1",
                   "text": "Table 13"
                 },
                 {
@@ -295,17 +295,17 @@
                   "marks": []
                 }
               ],
-              "caption_position": "below",
-              "column_widths": [0.5, 0.5],
-              "header_rows": 1,
+              "captionPosition": "below",
+              "columnWidths": [0.5, 0.5],
+              "headerRows": 1,
               "rows": [
                 {
                   "cells": [
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": true,
                       "blocks": [
                         {
@@ -322,10 +322,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": true,
                       "blocks": [
                         {
@@ -351,10 +351,10 @@
                 {
                   "cells": [
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -371,10 +371,10 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -474,7 +474,7 @@
             },
             {
               "kind": "note_ref",
-              "note_id": "fn-2"
+              "noteId": "fn-2"
             }
           ]
         }
@@ -501,7 +501,7 @@
                 },
                 {
                   "kind": "xref",
-                  "target_id": "s-method",
+                  "targetId": "s-method",
                   "text": "Method"
                 },
                 {
@@ -511,7 +511,7 @@
                 },
                 {
                   "kind": "xref",
-                  "target_id": "s-method/s-detail#p-1",
+                  "targetId": "s-method/s-detail#p-1",
                   "text": "the detail"
                 },
                 {
@@ -537,7 +537,7 @@
                 },
                 {
                   "kind": "note_ref",
-                  "note_id": "en-1"
+                  "noteId": "en-1"
                 }
               ]
             }
@@ -553,7 +553,7 @@
                 },
                 {
                   "kind": "xref",
-                  "target_id": "s-method",
+                  "targetId": "s-method",
                   "text": "Method"
                 }
               ],
@@ -592,7 +592,7 @@
                 },
                 {
                   "kind": "xref",
-                  "target_id": "s-method",
+                  "targetId": "s-method",
                   "text": "Method"
                 }
               ]
@@ -668,7 +668,7 @@
                 },
                 {
                   "kind": "inline_equation",
-                  "equation_id": "s-maths#p-1#eq-1"
+                  "equationId": "s-maths#p-1#eq-1"
                 },
                 {
                   "kind": "text",
@@ -680,24 +680,24 @@
             {
               "kind": "equation",
               "id": "s-maths#equation-1",
-              "equation_id": "s-maths#equation-1#eq-1"
+              "equationId": "s-maths#equation-1#eq-1"
             },
             {
               "kind": "table",
               "id": "s-maths#table-1",
               "numbered": false,
               "caption": [],
-              "caption_position": "above",
-              "column_widths": [1.0],
-              "header_rows": 0,
+              "captionPosition": "above",
+              "columnWidths": [1.0],
+              "headerRows": 0,
               "rows": [
                 {
                   "cells": [
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -706,7 +706,7 @@
                           "inlines": [
                             {
                               "kind": "inline_equation",
-                              "equation_id": "s-maths#table-1#cell-1#p-1#eq-1"
+                              "equationId": "s-maths#table-1#cell-1#p-1#eq-1"
                             }
                           ]
                         }
@@ -726,33 +726,33 @@
       "images": [
         {
           "id": "s-maths#p-1#eq-1#img-1",
-          "content_type": "image/png",
-          "width_mm": 10.0,
-          "height_mm": 5.0,
+          "contentType": "image/png",
+          "widthMm": 10.0,
+          "heightMm": 5.0,
           "align": "inline",
           "alt": null,
           "origin": "rendered",
-          "original_content_type": null
+          "originalContentType": null
         },
         {
           "id": "s-maths#equation-1#eq-1#img-1",
-          "content_type": "image/png",
-          "width_mm": 10.0,
-          "height_mm": 5.0,
+          "contentType": "image/png",
+          "widthMm": 10.0,
+          "heightMm": 5.0,
           "align": "center",
           "alt": null,
           "origin": "rendered",
-          "original_content_type": null
+          "originalContentType": null
         },
         {
           "id": "s-maths#table-1#cell-1#p-1#eq-1#img-1",
-          "content_type": "image/png",
-          "width_mm": 10.0,
-          "height_mm": 5.0,
+          "contentType": "image/png",
+          "widthMm": 10.0,
+          "heightMm": 5.0,
           "align": "inline",
           "alt": null,
           "origin": "rendered",
-          "original_content_type": null
+          "originalContentType": null
         }
       ],
       "equations": [
@@ -760,19 +760,19 @@
           "id": "s-maths#p-1#eq-1",
           "mathml": null,
           "latex": null,
-          "image_id": "s-maths#p-1#eq-1#img-1"
+          "imageId": "s-maths#p-1#eq-1#img-1"
         },
         {
           "id": "s-maths#equation-1#eq-1",
           "mathml": "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mi>a</mi><mi>b</mi></mfrac></math>",
           "latex": "\\frac{a}{b}",
-          "image_id": "s-maths#equation-1#eq-1#img-1"
+          "imageId": "s-maths#equation-1#eq-1#img-1"
         },
         {
           "id": "s-maths#table-1#cell-1#p-1#eq-1",
           "mathml": null,
           "latex": null,
-          "image_id": "s-maths#table-1#cell-1#p-1#eq-1#img-1"
+          "imageId": "s-maths#table-1#cell-1#p-1#eq-1#img-1"
         }
       ],
       "notes": [],
@@ -890,7 +890,7 @@
             {
               "kind": "figure",
               "id": "s-figures#image-1",
-              "image_id": "s-figures#image-1#img-1",
+              "imageId": "s-figures#image-1#img-1",
               "numbered": true,
               "caption": [
                 {
@@ -899,12 +899,12 @@
                   "marks": []
                 }
               ],
-              "caption_position": "below"
+              "captionPosition": "below"
             },
             {
               "kind": "image",
               "id": "s-figures#image-2",
-              "image_id": "s-figures#image-2#img-1"
+              "imageId": "s-figures#image-2#img-1"
             },
             {
               "kind": "paragraph",
@@ -917,7 +917,7 @@
                 },
                 {
                   "kind": "inline_image",
-                  "image_id": "s-figures#p-1#img-1"
+                  "imageId": "s-figures#p-1#img-1"
                 },
                 {
                   "kind": "text",
@@ -990,17 +990,17 @@
               "id": "s-figures#table-1",
               "numbered": false,
               "caption": [],
-              "caption_position": "above",
-              "column_widths": [0.5, 0.5],
-              "header_rows": 0,
+              "captionPosition": "above",
+              "columnWidths": [0.5, 0.5],
+              "headerRows": 0,
               "rows": [
                 {
                   "cells": [
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
@@ -1019,17 +1019,17 @@
                           "id": "s-figures#table-1#cell-1#table-1",
                           "numbered": false,
                           "caption": [],
-                          "caption_position": "above",
-                          "column_widths": [0.5, 0.5],
-                          "header_rows": 0,
+                          "captionPosition": "above",
+                          "columnWidths": [0.5, 0.5],
+                          "headerRows": 0,
                           "rows": [
                             {
                               "cells": [
                                 {
-                                  "row_span": 1,
-                                  "col_span": 1,
-                                  "h_align": "left",
-                                  "v_align": "top",
+                                  "rowSpan": 1,
+                                  "colSpan": 1,
+                                  "hAlign": "left",
+                                  "vAlign": "top",
                                   "header": false,
                                   "blocks": [
                                     {
@@ -1046,10 +1046,10 @@
                                   ]
                                 },
                                 {
-                                  "row_span": 1,
-                                  "col_span": 1,
-                                  "h_align": "left",
-                                  "v_align": "top",
+                                  "rowSpan": 1,
+                                  "colSpan": 1,
+                                  "hAlign": "left",
+                                  "vAlign": "top",
                                   "header": false,
                                   "blocks": [
                                     {
@@ -1075,16 +1075,16 @@
                       ]
                     },
                     {
-                      "row_span": 1,
-                      "col_span": 1,
-                      "h_align": "left",
-                      "v_align": "top",
+                      "rowSpan": 1,
+                      "colSpan": 1,
+                      "hAlign": "left",
+                      "vAlign": "top",
                       "header": false,
                       "blocks": [
                         {
                           "kind": "image",
                           "id": "s-figures#table-1#cell-2#image-1",
-                          "image_id": "s-figures#table-1#cell-2#image-1#img-1"
+                          "imageId": "s-figures#table-1#cell-2#image-1#img-1"
                         }
                       ]
                     }
@@ -1102,43 +1102,43 @@
       "images": [
         {
           "id": "s-figures#image-1#img-1",
-          "content_type": "image/png",
-          "width_mm": 10.0,
-          "height_mm": 5.0,
+          "contentType": "image/png",
+          "widthMm": 10.0,
+          "heightMm": 5.0,
           "align": "center",
           "alt": "Box line one\nBox line two",
           "origin": "rendered",
-          "original_content_type": null
+          "originalContentType": null
         },
         {
           "id": "s-figures#image-2#img-1",
-          "content_type": "image/png",
-          "width_mm": 10.0,
-          "height_mm": 5.0,
+          "contentType": "image/png",
+          "widthMm": 10.0,
+          "heightMm": 5.0,
           "align": "left",
           "alt": null,
           "origin": "embedded",
-          "original_content_type": null
+          "originalContentType": null
         },
         {
           "id": "s-figures#p-1#img-1",
-          "content_type": "image/png",
-          "width_mm": 10.0,
-          "height_mm": 5.0,
+          "contentType": "image/png",
+          "widthMm": 10.0,
+          "heightMm": 5.0,
           "align": "inline",
           "alt": "a gear",
           "origin": "embedded",
-          "original_content_type": null
+          "originalContentType": null
         },
         {
           "id": "s-figures#table-1#cell-2#image-1#img-1",
-          "content_type": "image/png",
-          "width_mm": 10.0,
-          "height_mm": 5.0,
+          "contentType": "image/png",
+          "widthMm": 10.0,
+          "heightMm": 5.0,
           "align": "left",
           "alt": "cell picture",
           "origin": "embedded",
-          "original_content_type": null
+          "originalContentType": null
         }
       ],
       "equations": [],
