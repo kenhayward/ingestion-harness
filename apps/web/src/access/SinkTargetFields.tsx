@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SinkInfo } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { BrowseDialog } from './BrowseDialog.js';
+import { labelIn, readShape } from './browse.js';
 import { ConnectionPicker } from './ConnectionPicker.js';
 
 /** What a target of an external sink records, as its form edits it. */
@@ -22,9 +23,6 @@ export function sinkTargetComplete(sink: SinkInfo, value: SinkTargetValue): bool
       : value.connectionId !== null;
   return filled && placed;
 }
-
-/** How many pages of a field's list are read to name a saved value (a flat list, 100 a page). */
-const NAME_PAGES = 20;
 
 /** A browsed value as shown: its label and its id in brackets, or the id alone when unnamed. */
 export const shownValue = (id: string, label: string | undefined) =>
@@ -72,7 +70,8 @@ export function SinkTargetFields({
     return known && known.id === value.destination[fieldId] ? known.label : undefined;
   };
 
-  // A saved value is an id: name it from the sink's list (the id alone when it isn't listed).
+  // A saved value is an id: name it from the sink's list, read as Browse reads it (the id alone
+  // when it isn't listed, or the field is a tree).
   const unnamed = sink.destinationFields
     .filter((f) => browsable(f) && value.destination[f.id] && !labelOf(f.id))
     .map((f) => `${f.id}=${value.destination[f.id]}`)
@@ -82,26 +81,22 @@ export function SinkTargetFields({
     let live = true;
     for (const pair of unnamed.split('&')) {
       const [fieldId, id] = pair.split('=') as [string, string];
-      void (async () => {
-        let cursor: string | null = null;
-        for (let pages = 0; pages < NAME_PAGES; pages++) {
-          const r = await api.browseSink({
-            sinkId: sink.id,
-            instanceId: value.instanceId,
-            connectionId: value.connectionId,
-            field: fieldId,
-            parentId: null,
-            cursor,
-          });
-          const hit = r.nodes.find((n) => n.id === id);
-          if (hit) {
-            if (live) setLabels((all) => ({ ...all, [fieldId]: { id, label: hit.label } }));
-            return;
-          }
-          if (!r.nextCursor) return;
-          cursor = r.nextCursor;
-        }
-      })().catch(() => undefined);
+      readShape((parentId, cursor) =>
+        api.browseSink({
+          sinkId: sink.id,
+          instanceId: value.instanceId,
+          connectionId: value.connectionId,
+          field: fieldId,
+          parentId,
+          cursor,
+        }),
+      ).then(
+        (shape) => {
+          const label = labelIn(shape, id);
+          if (live && label) setLabels((all) => ({ ...all, [fieldId]: { id, label } }));
+        },
+        () => undefined,
+      );
     }
     return () => {
       live = false;

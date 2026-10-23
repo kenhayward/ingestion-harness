@@ -4161,6 +4161,24 @@ a.button.icon.bordered {
 .browse-list button:focus-visible {
   background: var(--ih-sel-row);
 }
+.browse-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(52vh, 480px);
+  overflow: auto;
+}
+.browse-groups h3 {
+  margin: 0 0 4px;
+  color: var(--ih-muted);
+  font-size: var(--ih-text-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.browse-groups .browse-list {
+  max-height: none;
+}
 .target-more {
   padding-top: 14px;
   border-top: 1px solid var(--ih-border-soft);

@@ -107,7 +107,8 @@ const INSTALL_LABEL = 'Install CT Studio';
  * the account menu: for admins Administration first (Models, Linked data and Access in one dialog);
  * Install CT Studio while the browser offers it (admins); Profile for everyone with an email (not
  * the admin from the log,
- * ADR 0013; docs/design/profile.md); Sign out. It closes on Escape (focus back on the name), a
+ * ADR 0013; docs/design/profile.md); Manage connections (everyone: their logins for publishing,
+ * on the delivery bridge's page); Sign out. It closes on Escape (focus back on the name), a
  * click outside, or a choice.
  */
 function AccountMenu({
@@ -115,6 +116,7 @@ function AccountMenu({
   onInstall,
   onAdmin,
   onProfile,
+  onConnections,
   onHelp,
   onAbout,
   onSignOut,
@@ -124,6 +126,8 @@ function AccountMenu({
   onInstall: (() => void) | null;
   onAdmin: () => void;
   onProfile: () => void;
+  /** The account menu's Manage connections (everyone). */
+  onConnections: () => void;
   /** The account menu's Help (everyone). */
   onHelp: () => void;
   /** The account menu's About (everyone): the version and the release notes. */
@@ -225,6 +229,17 @@ function AccountMenu({
             role="menuitem"
             onClick={() => {
               setOpen(false);
+              onConnections();
+            }}
+          >
+            <Icon name="key" />
+            Manage connections
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
               onHelp();
             }}
           >
@@ -270,6 +285,7 @@ export function AppShell({
   notify,
   onAdmin,
   onProfile,
+  onConnections,
   onHelp,
   onAbout,
   onSignOut,
@@ -288,6 +304,8 @@ export function AppShell({
   onAdmin: () => void;
   /** The account menu's Profile: opens the Profile dialog. */
   onProfile: () => void;
+  /** The account menu's Manage connections: the bridge's connections page (a modal or a tab). */
+  onConnections: () => void;
   /** The account menu's Help (everyone). */
   onHelp: () => void;
   /** About (everyone): from the account menu and the version at the bottom of the nav. */
@@ -373,6 +391,7 @@ export function AppShell({
             onInstall={onInstall}
             onAdmin={onAdmin}
             onProfile={onProfile}
+            onConnections={onConnections}
             onHelp={onHelp}
             onAbout={onAbout}
             onSignOut={onSignOut}

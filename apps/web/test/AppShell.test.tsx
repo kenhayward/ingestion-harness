@@ -349,6 +349,26 @@ describe('the admin name menu', () => {
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 
+  it('opens Manage connections from the account menu, for everyone', async () => {
+    const api = fakeApi({
+      me: vi.fn(async () => ({
+        role: 'operator' as const,
+        label: 'Olu',
+        email: 'olu@example.com',
+        mustChangePassword: false,
+        userId: 'u-test',
+      })),
+    });
+    render(<App api={api} pollMs={0} />);
+    const banner = await screen.findByRole('banner');
+    await userEvent.click(
+      within(banner).getByRole('button', { name: 'Olu (Operator): account menu' }),
+    );
+    await userEvent.click(within(banner).getByRole('menuitem', { name: 'Manage connections' }));
+    expect(within(banner).queryByRole('menu')).toBeNull();
+    expect(api.openConnections).toHaveBeenCalledOnce();
+  });
+
   it('opens Help from the account menu, for everyone', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
@@ -412,7 +432,7 @@ describe('the admin name menu', () => {
     expect(window.location.hash).toBe('#/');
   });
 
-  it('gives users a menu with Profile, Help, About and Sign out; Profile opens the dialog', async () => {
+  it('gives users a menu with Profile, Manage connections, Help, About and Sign out; Profile opens the dialog', async () => {
     const api = fakeApi({
       me: vi.fn(async () => ({
         role: 'designer' as const,
@@ -431,7 +451,7 @@ describe('the admin name menu', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((i) => i.textContent),
-    ).toEqual(['Profile', 'Help', 'About', 'Sign out']);
+    ).toEqual(['Profile', 'Manage connections', 'Help', 'About', 'Sign out']);
     await userEvent.keyboard('{Escape}');
     expect(trigger).toHaveFocus();
     await userEvent.click(trigger);

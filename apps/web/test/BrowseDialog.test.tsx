@@ -112,6 +112,39 @@ describe('BrowseDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('groups leaves under their parents, filters on the leaves only, and picks on a click', async () => {
+    const browseSink = vi.fn(async (req: { parentId: string | null }) => {
+      if (req.parentId === 'dp-cmc')
+        return { nodes: [node('os-1', { label: 'CMC_Integration' })], nextCursor: null };
+      if (req.parentId === 'dp-lab')
+        return {
+          nodes: [node('os-2', { label: 'Lab results' }), node('os-3', { label: 'Lab archive' })],
+          nextCursor: null,
+        };
+      return {
+        nodes: [
+          node('dp-cmc', { label: 'dp-cmc', hasChildren: true, selectable: false }),
+          node('dp-lab', { label: 'dp-lab', hasChildren: true, selectable: false }),
+        ],
+        nextCursor: null,
+      };
+    });
+    const { onPick, dialog } = open(browseSink);
+    const cmc = await within(dialog).findByRole('group', { name: 'dp-cmc' });
+    expect(within(cmc).getByRole('button', { name: 'CMC_Integration' })).toBeVisible();
+    expect(within(dialog).getByRole('group', { name: 'dp-lab' })).toBeVisible();
+    // The filter matches leaves, never a group's own name.
+    await userEvent.type(within(dialog).getByRole('searchbox', { name: 'Filter space' }), 'lab');
+    expect(within(dialog).queryByRole('group', { name: 'dp-cmc' })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Lab results' })).toBeVisible();
+    await userEvent.clear(within(dialog).getByRole('searchbox', { name: 'Filter space' }));
+    await userEvent.type(within(dialog).getByRole('searchbox', { name: 'Filter space' }), 'dp-');
+    expect(within(dialog).getByText('Nothing matches “dp-”.')).toBeVisible();
+    await userEvent.clear(within(dialog).getByRole('searchbox', { name: 'Filter space' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Lab archive' }));
+    expect(onPick).toHaveBeenCalledWith('os-3', 'Lab archive (dp-lab)');
+  });
+
   it('says when the filter matches nothing', async () => {
     const { dialog } = open(vi.fn(async () => ({ nodes: [node('training')], nextCursor: null })));
     await within(dialog).findByRole('button', { name: 'Training' });

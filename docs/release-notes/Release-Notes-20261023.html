@@ -161,7 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Friday 23 October 2026: choosing an object storage or a repository for a 3DEXPERIENCE target
-        by name. PR #313, opened on Friday 23 October 2026 (UTC).
+        by name, and Manage connections in the account menu. PRs #313 and #314, opened on Friday 23
+        October 2026 (UTC).
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -172,6 +173,10 @@
             <a href="#browse-by-name">Storages and repositories by name</a>
             <span>— a filterable list to choose from, and names instead of ids</span>
           </li>
+          <li>
+            <a href="#connections-menu">Manage connections in the account menu</a>
+            <span>— everyone can reach their publishing logins from their name</span>
+          </li>
         </ul>
       </nav>
 
@@ -179,8 +184,9 @@
         <strong>Watch out for</strong>
         <ul>
           <li>
-            An object storage&apos;s project shows once the 3DEXPERIENCE sink is redeployed with its
-            own change (kenhayward/3ds-sink#7); before that, a storage shows by its name alone.
+            Object storages are grouped under their projects once the 3DEXPERIENCE sink is
+            redeployed with its own change (kenhayward/3ds-sink#7); before that, they are one list
+            by name.
           </li>
         </ul>
       </div>
@@ -189,17 +195,30 @@
 
       <h3 id="browse-by-name">Storages and repositories by name</h3>
       <p class="prs">
-        <a href="https://github.com/kenhayward/ingestion-harness/pull/313">#313</a>
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/313">#313</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/314">#314</a>
       </p>
       <p>
         On a target of another system, <strong>Browse</strong> is available once you have chosen the
         instance (or, for a shared system, the connection) to look with, instead of failing with a
         message about a missing connection. Choosing an object storage or a document repository now
         shows a list of their names with a filter box above it: type part of a name to narrow it,
-        and click one to choose it. The field then shows the name, with the storage&apos;s project,
+        and click one to choose it. Object storages are listed under their projects, and the filter
+        matches storage names only. The field then shows the name, with the storage&apos;s project,
         and its id in brackets, for example <em>CMC_Integration (dp-cmc) [5a026f29-…]</em>; a saved
         target shows the same when you open it. An optional repository can be cleared. The browse
         window has a single Cancel button.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="connections-menu">Manage connections in the account menu</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/314">#314</a>
+      </p>
+      <p>
+        The menu under your name has <strong>Manage connections</strong>, for everyone: it opens the
+        connections window where you add the logins CT Studio publishes with as you (your
+        3DEXPERIENCE login, for example), without going through Profile or Administration.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
