@@ -133,3 +133,13 @@ def test_decomposition_failed_carries_detail_and_location() -> None:
     exc = DecompositionFailed("bad table", at="s-a#table-1")
     assert (exc.detail, exc.at) == ("bad table", "s-a#table-1")
     assert DecompositionFailed("x").at is None
+
+
+def _nested(depth: int) -> bytes:
+    return ("<a>" * depth + "</a>" * depth).encode()
+
+
+def test_nesting_is_capped_before_any_walk() -> None:
+    assert parse_xml(_nested(pkg.MAX_DEPTH)).tag == "a"
+    with pytest.raises(DecompositionRejected, match="document nesting too deep"):
+        parse_xml(_nested(pkg.MAX_DEPTH + 1))

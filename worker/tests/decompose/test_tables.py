@@ -6,11 +6,16 @@ from xml.etree.ElementTree import Element
 
 import pytest
 
+from ingest_worker.decompose import tables
 from ingest_worker.decompose.body import walk_body
 from ingest_worker.decompose.inline import InlineContext, RunStyles, W, plain_text
 from ingest_worker.decompose.media import MediaContext
 from ingest_worker.decompose.model import Block, Cell, ListBlock, Paragraph, Table
-from ingest_worker.decompose.package import DecompositionFailed, open_package
+from ingest_worker.decompose.package import (
+    DecompositionFailed,
+    DecompositionRejected,
+    open_package,
+)
 from ingest_worker.decompose.tables import GridSlot, source_grid
 from tests.decompose.docx import DEFAULT_STYLES, NAMESPACES, build_docx
 from tests.decompose.fakes import FakeRenderer
@@ -550,3 +555,32 @@ def test_rows_and_cells_in_content_controls() -> None:
     t, grid, _ = table(body)
     assert [[cell_text(c) for c in row.cells] for row in t.rows] == [["A", "B"], ["C", "D"]]
     assert [[s.text for s in row] for row in grid] == [["A", "B"], ["C", "D"]]
+
+
+# --- Size caps -------------------------------------------------------------------------------
+
+
+def test_grid_before_wider_than_the_grid_is_malformed() -> None:
+    with pytest.raises(DecompositionFailed) as failed:
+        read(tbl(tr(tc("A")), tr(tc("B"), before=3), cols=[1, 1]))
+    assert failed.value.at is not None and failed.value.at.endswith("#table-1")
+    assert "gridBefore" in failed.value.detail
+
+
+def test_grid_after_wider_than_the_grid_is_malformed() -> None:
+    with pytest.raises(DecompositionFailed, match="gridAfter"):
+        read(tbl(tr(tc("A"), after=3), cols=[1, 1]))
+
+
+def test_table_past_the_slot_cap_is_refused_before_building_cells() -> None:
+    rows = tr(tc("x", span=1000)) * 201  # 201 rows by 1000 columns
+    with pytest.raises(DecompositionRejected, match="table too large"):
+        read(tbl(rows, cols=[1] * 1000))
+
+
+def test_document_past_the_slot_cap_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(tables, "MAX_DOCUMENT_SLOTS", 10)
+    small = tbl(tr(tc("A"), tc("B")), tr(tc("C"), tc("D")), cols=[1, 1])  # 4 slots
+    read(small + para("between") + small)
+    with pytest.raises(DecompositionRejected, match="table too large"):
+        read(small + para("between") + small + para("again") + small)

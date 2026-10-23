@@ -48,6 +48,7 @@ from .tables import (
     NOTE_PREFIX,
     cell_span,
     cells_of,
+    count_slots,
     note_markers,
     notes_table,
     row_gaps,
@@ -647,6 +648,7 @@ class _Walk:
         self.fields: list[_Field] = []
         self.units: list[tuple[str, SourcePlace]] = []
         self.grids: list[list[list[str]]] = []
+        self.grid_slots = 0
         self._rels: dict[str, dict[str, Rel]] = {}
 
     def rels(self) -> dict[str, Rel]:
@@ -751,7 +753,8 @@ class _Walk:
                     joined.extend([_Br(), *pieces] if joined else pieces)
             own = _caption(joined, closed)
 
-        grid = source_grid(tbl)
+        grid = source_grid(tbl)  # its own size is capped before it is built
+        self.grid_slots = count_slots(self.grid_slots, len(grid), len(grid[0]) if grid else 0)
         kept = structure.grid_rows(len(rows))
         index = {r: i for i, r in enumerate(kept)}
         origins = [

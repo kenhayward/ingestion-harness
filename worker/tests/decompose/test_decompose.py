@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import struct
+import time
+import zlib
+
 import pytest
 
+import ingest_worker.decompose as decompose_module
 from ingest_worker.decompose import (
     DECOMPOSER_VERSION,
     Decomposition,
@@ -17,7 +22,7 @@ from tests.decompose.docx import DEFAULT_STYLES, NAMESPACES, build_docx
 from tests.decompose.fakes import FakeRenderer
 from tests.decompose.test_captions import cell_with, section_break, sup
 from tests.decompose.test_captions import run as text
-from tests.decompose.test_media import EMF, PNG, picture
+from tests.decompose.test_media import CHART_URI, EMF, PNG, drawing, picture
 from tests.decompose.test_references import field, notes_part
 from tests.decompose.test_tables import tbl, tc, tr
 
@@ -220,3 +225,94 @@ def test_rendering_failure_fails_the_document() -> None:
     converted = decompose_docx(data, renderer=FakeRenderer())
     (image,) = converted.document.images
     assert converted.originals == {image.id: EMF}
+
+
+# --- Hostile input is refused, never a crash or a hang ---------------------------------------
+
+_DEEP = 3000
+
+
+def _png_header(width: int, height: int) -> bytes:
+    """A PNG that claims `width` by `height` pixels, with almost no data."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"\0"))
+        + chunk(b"IEND", b"")
+    )
+
+
+#: A picture with no `wp:extent`, so its size is read from its pixels.
+_UNSIZED_PICTURE = (
+    '<w:p><w:r><w:drawing><wp:inline><wp:docPr id="1" name="p"/><a:graphic>'
+    '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+    '<pic:pic><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic>'
+    "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"
+)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<w:sdt><w:sdtContent>" * _DEEP + para(text("x")) + "</w:sdtContent></w:sdt>" * _DEEP,
+        "<w:p>" + "<w:smartTag>" * _DEEP + text("x") + "</w:smartTag>" * _DEEP + "</w:p>",
+    ],
+    ids=["block-sdt", "smart-tag"],
+)
+def test_deep_nesting_is_rejected(body: str) -> None:
+    with pytest.raises(DecompositionRejected, match="document nesting too deep"):
+        decompose_docx(build_docx(body), renderer=FakeRenderer())
+
+
+def test_recursion_anywhere_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    def recurse(*_: object) -> None:
+        raise RecursionError
+
+    monkeypatch.setattr(decompose_module, "walk_body", recurse)
+    with pytest.raises(DecompositionRejected, match="document nesting too deep"):
+        decompose_docx(build_docx(para(text("x"))), renderer=FakeRenderer())
+
+
+def test_chart_that_contains_itself_is_rejected() -> None:
+    graphic = '<c:chart r:id="rIdChart"/>'
+    chart = (
+        '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" '
+        f'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f"{graphic}</c:chartSpace>"
+    )
+    data = build_docx(
+        para(f"<w:r>{drawing(graphic, uri=CHART_URI)}</w:r>"),
+        rels=[("rIdChart", "chart", "charts/chart1.xml")],
+        extra_parts={"word/charts/chart1.xml": chart.encode()},
+    )
+    with pytest.raises(DecompositionRejected):
+        decompose_docx(data, renderer=FakeRenderer())
+
+
+@pytest.mark.parametrize(
+    "size", [(60000, 60000), (10000, 10000)], ids=["bomb-error", "bomb-warning"]
+)
+def test_decompression_bomb_image_is_rejected(size: tuple[int, int]) -> None:
+    data = build_docx(
+        _UNSIZED_PICTURE,
+        media={"big.png": _png_header(*size)},
+        rels=[("rIdImg", "image", "media/big.png")],
+    )
+    with pytest.raises(DecompositionRejected, match="image too large"):
+        decompose_docx(data, renderer=FakeRenderer())
+
+
+def test_grid_bomb_is_refused_fast() -> None:
+    row = '<w:tr><w:trPr><w:gridBefore w:val="999"/></w:trPr><w:tc><w:p/></w:tc></w:tr>'
+    body = '<w:tbl><w:tblGrid><w:gridCol w:w="1"/></w:tblGrid>' + row * 200 + "</w:tbl>"
+    data = build_docx(body)
+    started = time.perf_counter()
+    with pytest.raises((DecompositionFailed, DecompositionRejected)):
+        decompose_docx(data, renderer=FakeRenderer())
+    assert time.perf_counter() - started < 1.0

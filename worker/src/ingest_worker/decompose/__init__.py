@@ -32,6 +32,7 @@ from ingest_worker.decompose.model import (
     Table,
 )
 from ingest_worker.decompose.package import (
+    NESTING_TOO_DEEP,
     DecompositionFailed,
     DecompositionRejected,
     open_package,
@@ -69,8 +70,16 @@ def decompose_docx(data: bytes, *, renderer: Renderer) -> Decomposition:
     """Decompose a .docx, rendering drawings, equations and conversions through `renderer`.
 
     Raises `DecompositionRejected` when the source is unreadable or unsafe, and
-    `DecompositionFailed` when it can't be turned into a document that passes its checks.
+    `DecompositionFailed` when it can't be turned into a document that passes its checks. A
+    recursion too deep anywhere (parts referring to each other in a loop, say) is a rejection.
     """
+    try:
+        return _decompose(data, renderer)
+    except RecursionError:
+        raise DecompositionRejected(NESTING_TOO_DEEP) from None
+
+
+def _decompose(data: bytes, renderer: Renderer) -> Decomposition:
     pkg = open_package(data)
     media = MediaContext.for_package(pkg, renderer)
     ctx = InlineContext(styles=RunStyles.from_xml(pkg.xml("word/styles.xml")), media=media)

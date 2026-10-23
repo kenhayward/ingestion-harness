@@ -32,7 +32,7 @@ from xml.etree.ElementTree import Element
 from .ids import child_id, normalise_title
 from .inline import FieldState, InlineContext, RunStyles, W, inlines_of, merge_runs, plain_text
 from .model import Block, Break, Cell, Flag, Inline, Paragraph, Row, Table, TableNote, Text
-from .package import DecompositionFailed
+from .package import DecompositionFailed, DecompositionRejected
 
 #: Reads the block content of a container element (a table cell) into blocks whose ids are
 #: built from the given prefix.
@@ -47,6 +47,11 @@ _CELL_CHANGES = ("cellIns", "cellDel", "cellMerge")
 _AMBIGUOUS = "ambiguous vertical merge in table"
 #: Far beyond Word's own 63 columns; a source claiming more is refused, not allocated.
 MAX_COLUMNS = 1000
+#: Grid slots (rows times columns) a table, and a whole document's tables, may have. Each slot
+#: becomes a cell or a filler, so a tiny file could otherwise claim gigabytes.
+MAX_TABLE_SLOTS = 200_000
+MAX_DOCUMENT_SLOTS = 2_000_000
+TABLE_TOO_LARGE = "table too large"
 _WRAPPERS = {f"{W}sdt", f"{W}sdtContent", f"{W}customXml"}
 _H_ALIGN: dict[str, HAlign] = {
     "left": "left",
@@ -153,15 +158,36 @@ def _grid_columns(tbl: Element) -> list[int | None]:
 
 
 def _width(tbl: Element, rows: list[Element]) -> int:
-    """The number of grid columns: the declared grid, or the widest row if that is wider."""
+    """The number of grid columns: the declared grid, or the widest row if that is wider.
+
+    Checked before anything is built from the grid: a `w:gridBefore` or `w:gridAfter` wider
+    than the declared grid is malformed, and a grid of more than `MAX_TABLE_SLOTS` slots is
+    refused.
+    """
+    declared = len(_grid_columns(tbl))
     widest = 0
     for tr in rows:
         before, after = row_gaps(tr)
+        for name, gap in (("gridBefore", before), ("gridAfter", after)):
+            if declared and gap > declared:
+                raise DecompositionFailed(
+                    f"a row's {name} of {gap} is wider than the table's {declared} grid columns"
+                )
         widest = max(widest, before + sum(cell_span(tc) for tc in cells_of(tr)) + after)
-    width = max(len(_grid_columns(tbl)), widest)
+    width = max(declared, widest)
     if width > MAX_COLUMNS:
         raise DecompositionFailed(f"a table {width} grid columns wide (at most {MAX_COLUMNS})")
+    if len(rows) * width > MAX_TABLE_SLOTS:
+        raise DecompositionRejected(TABLE_TOO_LARGE)
     return width
+
+
+def count_slots(used: int, rows: int, width: int) -> int:
+    """`used` grid slots of the document plus a table's, refused past `MAX_DOCUMENT_SLOTS`."""
+    used += rows * width
+    if used > MAX_DOCUMENT_SLOTS:
+        raise DecompositionRejected(TABLE_TOO_LARGE)
+    return used
 
 
 # --- Source grid -----------------------------------------------------------------------------
@@ -350,6 +376,7 @@ def table_of(
         width = _width(tbl, rows)
     except DecompositionFailed as failed:
         raise DecompositionFailed(failed.detail, at=id) from None
+    ctx.grid_slots = count_slots(ctx.grid_slots, len(rows), width)
     _count_changes(tbl, ctx)
     structure = _structure(rows, width, ctx.styles)
     caption = None

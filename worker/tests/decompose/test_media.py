@@ -26,7 +26,7 @@ from tests.decompose.test_tables import tbl, tr
 
 _PIC_URI = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 _WPS_URI = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
-_CHART_URI = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+CHART_URI = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 _DGM_URI = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
 
 
@@ -314,7 +314,7 @@ def test_drawing_inline_with_text() -> None:
 
 
 CHART = (
-    f'<c:chartSpace xmlns:c="{_CHART_URI}" '
+    f'<c:chartSpace xmlns:c="{CHART_URI}" '
     'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart>'
     "<c:title><c:tx><c:rich><a:p><a:r><a:t>Assay over time</a:t></a:r></a:p></c:rich></c:tx>"
     "</c:title><c:plotArea><c:barChart><c:ser><c:tx><c:strRef><c:f>S!B1</c:f><c:strCache>"
@@ -328,7 +328,7 @@ def test_chart_text_as_alt() -> None:
     renderer = FakeRenderer()
     graphic = '<c:chart r:id="rIdChart"/>'
     _, _, media = read(
-        para(run(drawing(graphic, uri=_CHART_URI))),
+        para(run(drawing(graphic, uri=CHART_URI))),
         rels=[("rIdChart", "chart", "charts/chart1.xml")],
         extra_parts={"word/charts/chart1.xml": CHART},
         renderer=renderer,
@@ -396,7 +396,7 @@ def test_fragment_keeps_only_internal_relationships_of_related_parts() -> None:
     )
     renderer = FakeRenderer()
     read(
-        para(run(drawing('<c:chart r:id="rIdChart"/>', uri=_CHART_URI))),
+        para(run(drawing('<c:chart r:id="rIdChart"/>', uri=CHART_URI))),
         rels=[("rIdChart", "chart", "charts/chart1.xml")],
         extra_parts={
             "word/charts/chart1.xml": CHART,

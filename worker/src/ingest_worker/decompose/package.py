@@ -19,6 +19,9 @@ from defusedxml.ElementTree import fromstring
 MAX_PART_BYTES = 64 << 20
 MAX_TOTAL_BYTES = 512 << 20
 MAX_PARTS = 4000
+#: Far deeper than any document Word writes, and shallow enough for the recursive readers.
+MAX_DEPTH = 256
+NESTING_TOO_DEEP = "document nesting too deep"
 
 _MAIN_PART = "word/document.xml"
 _CHUNK = 1 << 16
@@ -49,11 +52,20 @@ class Rel:
 
 
 def parse_xml(data: bytes) -> Element:
-    """Parse XML with DTDs and entities forbidden; anything malformed or unsafe is rejected."""
+    """Parse XML with DTDs and entities forbidden; anything malformed or unsafe is rejected, and
+    so is markup nested more than `MAX_DEPTH` elements deep, which the readers' recursive walks
+    could not take."""
     try:
-        return fromstring(data, forbid_dtd=True)
+        root = fromstring(data, forbid_dtd=True)
     except (DefusedXmlException, ParseError, ValueError) as exc:
         raise DecompositionRejected(f"unreadable or unsafe XML: {exc}") from exc
+    stack = [(root, 1)]
+    while stack:
+        el, depth = stack.pop()
+        if depth > MAX_DEPTH:
+            raise DecompositionRejected(NESTING_TOO_DEEP)
+        stack.extend((child, depth + 1) for child in el)
+    return root
 
 
 class Package:

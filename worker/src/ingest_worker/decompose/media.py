@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import posixpath
 import re
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
@@ -25,7 +26,7 @@ from PIL import UnidentifiedImageError
 
 from .ids import child_id
 from .model import Equation, Flag, Image, ImageBlock, InlineImage
-from .package import DecompositionFailed, Package, Rel
+from .package import DecompositionFailed, DecompositionRejected, Package, Rel
 from .render import _NAMESPACES, Renderer, RenderFragment
 
 if TYPE_CHECKING:
@@ -521,9 +522,14 @@ def _length_mm(value: str | None) -> float | None:
 def _pixel_size_mm(data: bytes, image_id: str) -> tuple[float, float]:
     """An image's size from its pixels, at its own resolution or the renderer's."""
     try:
-        with PILImage.open(io.BytesIO(data)) as img:
-            width, height = img.size
-            dpi = img.info.get("dpi", (_RENDER_DPI, _RENDER_DPI))
+        with warnings.catch_warnings():
+            # Pillow's pixel limit stays in force; past it, its warning is a refusal too.
+            warnings.simplefilter("error", PILImage.DecompressionBombWarning)
+            with PILImage.open(io.BytesIO(data)) as img:
+                width, height = img.size
+                dpi = img.info.get("dpi", (_RENDER_DPI, _RENDER_DPI))
+    except (PILImage.DecompressionBombError, PILImage.DecompressionBombWarning) as exc:
+        raise DecompositionRejected("image too large") from exc
     except (UnidentifiedImageError, OSError) as exc:
         raise DecompositionFailed(f"image {image_id} is unreadable") from exc
     x_dpi, y_dpi = (float(d) or _RENDER_DPI for d in dpi)

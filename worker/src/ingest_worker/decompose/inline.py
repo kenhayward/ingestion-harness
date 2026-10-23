@@ -240,7 +240,8 @@ class InlineContext:
     `fields` is the stack of open fields and `closed_fields` the finished ones, in closing order.
     `bookmarks` maps a bookmark name to the id of the element it starts in, and
     `pending_bookmarks` holds the names read since the last element was placed. `changes`
-    counts tracked-change elements read as accepted. `caption_number_map` maps a caption's kind
+    counts tracked-change elements read as accepted, and `grid_slots` the grid slots of the
+    tables read, which `tables.count_slots` caps. `caption_number_map` maps a caption's kind
     and the number the source displayed for it, such as `("table", "13")` or `("table", "3-1")`
     (its dashes as `-`), to the captioned element's id. `media` holds the images and equations
     read so far and what reading more needs; the decomposer always supplies it, and reading a
@@ -253,6 +254,7 @@ class InlineContext:
     closed_fields: list[FieldState] = field(default_factory=list)
     flags: list[Flag] = field(default_factory=list)
     changes: int = 0
+    grid_slots: int = 0
     caption_number_map: dict[tuple[str, str], str] = field(default_factory=dict)
     media: MediaContext | None = None
     pending_bookmarks: list[str] = field(default_factory=list)
