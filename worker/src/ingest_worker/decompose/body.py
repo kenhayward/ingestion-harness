@@ -72,7 +72,9 @@ from .tables import (
 Position = Literal["above", "below"]
 
 _EMPTY_TITLE = "[]"
-_LEADING = "s-0"
+#: The scope of the blocks before the first heading: `~` is never in a title's slug, so no
+#: section can have this id.
+_LEADING = "s~lead"
 
 
 # --- Builders --------------------------------------------------------------------------------

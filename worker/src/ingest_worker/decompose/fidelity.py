@@ -3,8 +3,9 @@
 Content must never be silently changed, lost or moved. `check` compares three things and
 refuses the document, naming the place, on the first difference:
 
-- **References.** Every note reference, cross-reference, image and equation the document
-  mentions exists in it, and every equation's image does.
+- **References.** No two sections, blocks, notes, images or equations share an id. Every note
+  reference, cross-reference, image and equation the document mentions exists in it, and
+  every equation's image does.
 - **Text.** `source_walk` reads the source's OOXML itself, in the order and with the units of
   `forms.text_form`, and the two must be equal.
 - **Table grids.** For each table, the grid `tables.source_grid` resolves from the source (with
@@ -53,11 +54,17 @@ class _References:
         self.images = {i.id for i in doc.images}
         self.equations = {e.id for e in doc.equations}
         self.notes = {n.id for n in doc.notes}
-        self.ids: set[str] = set(self.notes)
-        for block in _all_blocks(doc):
-            self.ids.add(block.id)
-        for section in _all_sections(doc.sections):
-            self.ids.add(section.id)
+        targets = [
+            *(n.id for n in doc.notes),
+            *(b.id for b in _all_blocks(doc)),
+            *(s.id for s in _all_sections(doc.sections)),
+        ]
+        self.ids: set[str] = set()
+        for element_id in [*targets, *(i.id for i in doc.images), *(e.id for e in doc.equations)]:
+            if element_id in self.ids:
+                raise DecompositionFailed(f"duplicate id {element_id}", element_id)
+            self.ids.add(element_id)
+        self.ids = set(targets)
 
     def missing(self, what: str, at: str | None) -> DecompositionFailed:
         return DecompositionFailed(f"{what} does not resolve", at)

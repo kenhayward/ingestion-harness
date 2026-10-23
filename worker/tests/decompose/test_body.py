@@ -136,7 +136,7 @@ def test_document_starting_at_level_two_is_not_flagged() -> None:
 def test_leading_blocks_before_first_heading() -> None:
     blocks, sections, _ = walk(p("lead") + p("") + p("more") + h(1, "A"))
     assert texts(blocks) == ["lead", "more"]
-    assert [b.id for b in blocks] == ["s-0#p-1", "s-0#p-2"]
+    assert [b.id for b in blocks] == ["s~lead#p-1", "s~lead#p-2"]
     assert [title(s) for s in sections] == ["A"]
 
 
@@ -162,7 +162,11 @@ def test_nested_lists_and_bullets() -> None:
     assert isinstance(nested, ListBlock) and nested.ordered is False
     assert texts(nested.items[0].blocks) == ["a1"]
     assert texts(ordered.items[1].blocks) == ["two"]
-    assert [bullets.id, nested.id, ordered.id] == ["s-0#list-1", "s-0#list-2", "s-0#list-3"]
+    assert [bullets.id, nested.id, ordered.id] == [
+        "s~lead#list-1",
+        "s~lead#list-2",
+        "s~lead#list-3",
+    ]
 
 
 def test_paragraph_between_list_paragraphs_ends_the_list() -> None:
@@ -177,3 +181,12 @@ def test_content_control_unwrapped() -> None:
     _, sections, _ = walk(body + p("after"))
     assert [title(s) for s in sections] == ["In control"]
     assert texts(sections[0].blocks) == ["inside", "after"]
+
+
+def test_leading_blocks_never_share_an_id_with_a_section() -> None:
+    for title_text in ("0", "0.", "(0)", "lead"):
+        blocks, sections, _ = walk(p("Before.") + h(1, title_text) + p("After."))
+        (section,) = sections
+        assert [b.id for b in blocks] == ["s~lead#p-1"]
+        assert [b.id for b in section.blocks] == [f"{section.id}#p-1"]
+        assert section.id != "s~lead"

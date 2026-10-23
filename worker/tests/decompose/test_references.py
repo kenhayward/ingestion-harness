@@ -180,7 +180,7 @@ def test_footnote_and_endnote_become_notes() -> None:
         endnotes=notes_part("endnote", (1, run(" An endnote."))),
     )
     assert doc.blocks[0] == Paragraph(
-        id="s-0#p-1",
+        id="s~lead#p-1",
         inlines=[
             Text(text="Text"),
             NoteRef(note_id="fn-2"),
@@ -296,7 +296,7 @@ def test_internal_and_external_hyperlinks() -> None:
 
 def test_unsafe_link_scheme_keeps_text_only() -> None:
     doc, _ = decompose(para(field('HYPERLINK "javascript:alert(1)"', "click")))
-    assert doc.blocks[0] == Paragraph(id="s-0#p-1", inlines=[Text(text="click")])
+    assert doc.blocks[0] == Paragraph(id="s~lead#p-1", inlines=[Text(text="click")])
 
 
 # --- Dropped fields --------------------------------------------------------------------------

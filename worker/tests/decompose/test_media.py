@@ -152,7 +152,7 @@ def test_inline_picture_size_and_alt() -> None:
     assert (image.content_type, image.origin) == ("image/png", "embedded")
     assert media.image_bytes[image.id] == PNG
     assert media.originals == {}
-    assert blocks == [ImageBlock(id="s-0#image-1", image_id=image.id)]
+    assert blocks == [ImageBlock(id="s~lead#image-1", image_id=image.id)]
 
 
 def test_alt_falls_back_to_title() -> None:
@@ -168,7 +168,7 @@ def test_content_type_from_magic_bytes_not_extension() -> None:
 def test_centered_picture_alone_is_block() -> None:
     blocks, _, media = read(para(run(picture()), jc="center"))
     [image] = media.images
-    assert blocks == [ImageBlock(id="s-0#image-1", image_id=image.id)]
+    assert blocks == [ImageBlock(id="s~lead#image-1", image_id=image.id)]
     assert image.align == "center"
 
 
@@ -177,7 +177,7 @@ def test_picture_with_text_is_inline() -> None:
     [image] = media.images
     assert blocks == [
         Paragraph(
-            id="s-0#p-1",
+            id="s~lead#p-1",
             inlines=[Text(text="See "), InlineImage(image_id=image.id), Text(text=" here")],
         )
     ]
@@ -200,8 +200,8 @@ def test_picture_in_table_cell() -> None:
 def test_anchored_picture_placed_at_paragraph_and_flagged() -> None:
     blocks, ctx, media = read(para(text_run("Before")) + para(run(picture(anchor=True))))
     assert [type(b) for b in blocks] == [Paragraph, ImageBlock]
-    assert blocks[1] == ImageBlock(id="s-0#image-1", image_id=media.images[0].id)
-    assert ("image_floating_anchored", "s-0#image-1") in flags(ctx)
+    assert blocks[1] == ImageBlock(id="s~lead#image-1", image_id=media.images[0].id)
+    assert ("image_floating_anchored", "s~lead#image-1") in flags(ctx)
 
 
 def test_emf_converted_and_original_kept() -> None:
@@ -219,7 +219,7 @@ def test_emf_converted_and_original_kept() -> None:
     assert media.originals[image.id] == EMF
     [fragment] = renderer.fragments
     assert list(fragment.parts.values()) == [EMF]
-    assert ("image_converted", "s-0#image-1") in flags(ctx)
+    assert ("image_converted", "s~lead#image-1") in flags(ctx)
 
 
 def test_emf_conversion_failure_fails_document() -> None:
@@ -246,7 +246,9 @@ def test_external_picture_is_rendered_as_a_drawing() -> None:
 
 
 def test_external_picture_that_cannot_render_fails_document() -> None:
-    with pytest.raises(DecompositionFailed, match="drawing at s-0#image-1 could not be rendered"):
+    with pytest.raises(
+        DecompositionFailed, match="drawing at s~lead#image-1 could not be rendered"
+    ):
         read(
             para(run(picture())),
             media={},
@@ -275,8 +277,8 @@ def test_text_box_rendered_with_text_as_alt() -> None:
     assert image.alt == "Line one\nLine two"
     assert (image.origin, image.content_type) == ("rendered", "image/png")
     assert media.image_bytes[image.id] == renderer.png
-    assert blocks == [ImageBlock(id="s-0#image-1", image_id=image.id)]
-    assert ("drawing_rendered", "s-0#image-1") in flags(ctx)
+    assert blocks == [ImageBlock(id="s~lead#image-1", image_id=image.id)]
+    assert ("drawing_rendered", "s~lead#image-1") in flags(ctx)
 
 
 def test_render_failure_uses_fallback_picture() -> None:
@@ -287,11 +289,13 @@ def test_render_failure_uses_fallback_picture() -> None:
     [image] = media.images
     assert media.image_bytes[image.id] == PNG
     assert image.alt == "Line one\nLine two"
-    assert ("drawing_rendered", "s-0#image-1") in flags(ctx)
+    assert ("drawing_rendered", "s~lead#image-1") in flags(ctx)
 
 
 def test_render_failure_without_fallback_fails_document() -> None:
-    with pytest.raises(DecompositionFailed, match="drawing at s-0#image-1 could not be rendered"):
+    with pytest.raises(
+        DecompositionFailed, match="drawing at s~lead#image-1 could not be rendered"
+    ):
         read(para(run(text_box("Alone"))), renderer=FakeRenderer(fails=True))
 
 
@@ -308,7 +312,7 @@ def test_drawing_inline_with_text() -> None:
     blocks, _, media = read(para(text_run("Shape: "), run(text_box("Inside"))))
     [image] = media.images
     assert blocks == [
-        Paragraph(id="s-0#p-1", inlines=[Text(text="Shape: "), InlineImage(image_id=image.id)])
+        Paragraph(id="s~lead#p-1", inlines=[Text(text="Shape: "), InlineImage(image_id=image.id)])
     ]
     assert image.align == "inline"
 
@@ -367,14 +371,14 @@ def test_figure_with_caption() -> None:
     [image] = media.images
     assert blocks == [
         Figure(
-            id="s-0#image-1",
+            id="s~lead#image-1",
             image_id=image.id,
             numbered=True,
             caption=[Text(text="Container Closure")],
             caption_position="below",
         )
     ]
-    assert ctx.caption_number_map[("figure", "1")] == "s-0#image-1"
+    assert ctx.caption_number_map[("figure", "1")] == "s~lead#image-1"
 
 
 def test_image_ids_are_deterministic() -> None:

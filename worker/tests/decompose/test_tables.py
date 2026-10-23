@@ -240,8 +240,8 @@ def test_vmerge_with_mismatched_span_fails(rows: list[str]) -> None:
     body = tbl(*rows, cols=[1, 1])
     with pytest.raises(DecompositionFailed) as failed:
         read(body)
-    assert failed.value.at == "s-0#table-1"
-    assert failed.value.detail == "ambiguous vertical merge in table s-0#table-1"
+    assert failed.value.at == "s~lead#table-1"
+    assert failed.value.detail == "ambiguous vertical merge in table s~lead#table-1"
     with pytest.raises(DecompositionFailed, match="ambiguous vertical merge"):
         source_grid(element_of(body))
 
@@ -260,9 +260,9 @@ def test_text_in_continue_cell_is_appended_to_origin() -> None:
     assert origin.row_span == 4
     assert cell_text(origin) == "A\nB\nC"
     assert [b.id for b in origin.blocks] == [
-        "s-0#table-1#cell-1#p-1",
-        "s-0#table-1#cell-3#p-1",
-        "s-0#table-1#cell-7#p-1",
+        "s~lead#table-1#cell-1#p-1",
+        "s~lead#table-1#cell-3#p-1",
+        "s~lead#table-1#cell-7#p-1",
     ]
     assert [[s.text for s in row] for row in grid] == [
         ["A\nB\nC", "x"],
@@ -280,7 +280,7 @@ def test_tracked_cell_change_fails() -> None:
         body = tbl(f"<w:tr>{tc('A')}{changed}</w:tr>", cols=[1, 1])
         with pytest.raises(DecompositionFailed) as failed:
             read(body)
-        assert failed.value.at == "s-0#table-1"
+        assert failed.value.at == "s~lead#table-1"
         assert failed.value.detail == (
             "tracked cell changes are not supported; accept them in Word first"
         )
@@ -291,7 +291,7 @@ def test_tracked_cell_change_in_nested_table_fails_at_the_nested_table() -> None
     inner = tbl(f"<w:tr><w:tc><w:tcPr>{change}</w:tcPr><w:p/></w:tc></w:tr>", cols=[1])
     with pytest.raises(DecompositionFailed) as failed:
         read(tbl(tr(tc(content=para("x") + inner)), cols=[1]))
-    assert failed.value.at == "s-0#table-1#cell-1#table-1"
+    assert failed.value.at == "s~lead#table-1#cell-1#table-1"
 
 
 def test_continue_under_a_cell_that_was_never_merged_is_its_own_cell() -> None:
@@ -345,7 +345,7 @@ def test_absurd_span_is_refused_not_allocated() -> None:
     body = tbl(tr(tc("A", span=10**9)), cols=[1])
     with pytest.raises(DecompositionFailed) as failed:
         read(body)
-    assert failed.value.at == "s-0#table-1"
+    assert failed.value.at == "s~lead#table-1"
 
 
 def test_column_widths_are_relative() -> None:
@@ -486,7 +486,7 @@ def test_horizontal_merge_is_refused() -> None:
     body = tbl(f"<w:tr>{legacy}</w:tr>", cols=[1, 1])
     with pytest.raises(DecompositionFailed) as failed:
         read(body)
-    assert failed.value.at == "s-0#table-1"
+    assert failed.value.at == "s~lead#table-1"
     with pytest.raises(DecompositionFailed):
         source_grid(element_of(body))
 
@@ -501,9 +501,9 @@ def test_nested_table_in_cell() -> None:
     assert [b.kind for b in cell.blocks] == ["paragraph", "table"]
     nested = cell.blocks[1]
     assert isinstance(nested, Table)
-    assert nested.id == "s-0#table-1#cell-2#table-1"
+    assert nested.id == "s~lead#table-1#cell-2#table-1"
     assert spans(nested) == [[(1, 2)], [(1, 1), (1, 1)]]
-    assert cell.blocks[0].id == "s-0#table-1#cell-2#p-1"
+    assert cell.blocks[0].id == "s~lead#table-1#cell-2#p-1"
     assert [[cell_text(c) for c in row.cells] for row in nested.rows] == [["x"], ["y", "z"]]
     assert grid[0][1].text == "before\nx\ny\nz"
 
@@ -521,9 +521,9 @@ def test_cell_holds_paragraphs_and_list() -> None:
     assert isinstance(lst, ListBlock)
     assert len(lst.items) == 2 and not lst.ordered
     assert [b.id for b in blocks] == [
-        "s-0#table-1#cell-1#p-1",
-        "s-0#table-1#cell-1#list-1",
-        "s-0#table-1#cell-1#p-4",
+        "s~lead#table-1#cell-1#p-1",
+        "s~lead#table-1#cell-1#list-1",
+        "s~lead#table-1#cell-1#p-4",
     ]
 
 
@@ -539,9 +539,9 @@ def test_cell_ids_count_every_cell_in_reading_order() -> None:
     # Absorbed continue cells and fillers take an ordinal too, so every source cell has one.
     ids = [[c.blocks[0].id for c in row.cells if c.blocks] for row in t.rows]
     assert ids == [
-        ["s-0#table-1#cell-1#p-1", "s-0#table-1#cell-2#p-1"],
-        ["s-0#table-1#cell-4#p-1"],
-        ["s-0#table-1#cell-5#p-1"],
+        ["s~lead#table-1#cell-1#p-1", "s~lead#table-1#cell-2#p-1"],
+        ["s~lead#table-1#cell-4#p-1"],
+        ["s~lead#table-1#cell-5#p-1"],
     ]
 
 

@@ -186,7 +186,8 @@ section ids must survive sections being added or removed around them. **[call]**
 
 - A **section** has an id, a title (inline content, §5.3), its blocks in order and its child
   sections in order. Its level is its depth in the tree; it is not stored separately.
-- Content before the first heading belongs to the document itself, as its leading blocks.
+- Content before the first heading belongs to the document itself, as its leading blocks (their
+  ids are under `s~lead`, which no section title can produce).
 - An **empty heading** is kept as a section with no blocks; it is probably a placeholder.
   **[call]**
 - A heading level that skips (level 1, then level 3) gets no invented section in between; the level

@@ -224,20 +224,20 @@ def test_inline_vs_display() -> None:
     eq1, eq2, eq3 = media.equations
     assert blocks == [
         Paragraph(
-            id="s-0#p-1",
+            id="s~lead#p-1",
             inlines=[
                 Text(text="Where "),
                 InlineEquation(equation_id=eq1.id),
                 Text(text=" holds."),
             ],
         ),
-        EquationBlock(id="s-0#equation-1", equation_id=eq2.id),
-        EquationBlock(id="s-0#equation-2", equation_id=eq3.id),
+        EquationBlock(id="s~lead#equation-1", equation_id=eq2.id),
+        EquationBlock(id="s~lead#equation-2", equation_id=eq3.id),
     ]
     assert [e.id for e in media.equations] == [
-        "s-0#p-1#eq-1",
-        "s-0#equation-1#eq-1",
-        "s-0#equation-2#eq-1",
+        "s~lead#p-1#eq-1",
+        "s~lead#equation-1#eq-1",
+        "s~lead#equation-2#eq-1",
     ]
     assert eq2.latex == r"\frac{a}{b}"
     assert eq3.mathml == math_of("<mi>c</mi>")
@@ -245,7 +245,7 @@ def test_inline_vs_display() -> None:
     assert [images[e.image_id].origin for e in (eq1, eq2, eq3)] == ["rendered"] * 3
     assert images[eq1.image_id].align == "inline"
     assert images[eq2.image_id].align == "center"
-    assert eq1.image_id == "s-0#p-1#eq-1#img-1"
+    assert eq1.image_id == "s~lead#p-1#eq-1#img-1"
     assert flags(ctx) == []
 
 
@@ -264,7 +264,7 @@ def test_unsupported_box_is_image_only_and_flagged() -> None:
     [equation] = media.equations
     assert (equation.mathml, equation.latex) == (None, None)
     assert equation.image_id in {i.id for i in media.images}
-    assert flags(ctx) == [("equation_image_only", "s-0#equation-1")]
+    assert flags(ctx) == [("equation_image_only", "s~lead#equation-1")]
 
 
 def test_equation_that_cannot_render_fails_document() -> None:
@@ -286,7 +286,7 @@ def test_display_equations_beside_text_are_inline() -> None:
     [equation] = media.equations
     assert blocks == [
         Paragraph(
-            id="s-0#p-1",
+            id="s~lead#p-1",
             inlines=[Text(text="Thus "), InlineEquation(equation_id=equation.id)],
         )
     ]

@@ -802,3 +802,27 @@ def test_symbol_font_slot_chosen_by_the_text(props: str, expected: str) -> None:
     assert text_form(doc) == [expected]
     assert source_text_units(pkg, ctx) == [expected]
     check(doc, pkg, ctx)
+
+
+# --- Duplicate ids ---------------------------------------------------------------------------
+
+
+def test_duplicate_block_ids_are_refused() -> None:
+    doc, pkg, ctx = decompose(heading("Alpha") + para(run("One.")) + para(run("Two.")))
+    (section,) = doc.sections
+    first, second = section.blocks
+    clash = second.model_copy(update={"id": first.id})
+    mutated = doc.model_copy(
+        update={"sections": [section.model_copy(update={"blocks": [first, clash]})]}
+    )
+    with pytest.raises(DecompositionFailed, match=f"duplicate id {first.id}"):
+        check(mutated, pkg, ctx)
+
+
+def test_a_block_with_a_section_id_is_refused() -> None:
+    doc, pkg, ctx = decompose(para(run("Before.")) + heading("Alpha") + para(run("One.")))
+    (section,) = doc.sections
+    (leading,) = doc.blocks
+    mutated = doc.model_copy(update={"blocks": [leading.model_copy(update={"id": section.id})]})
+    with pytest.raises(DecompositionFailed, match=f"duplicate id {section.id}"):
+        check(mutated, pkg, ctx)

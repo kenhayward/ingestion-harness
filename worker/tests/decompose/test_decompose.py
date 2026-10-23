@@ -316,3 +316,10 @@ def test_grid_bomb_is_refused_fast() -> None:
     with pytest.raises((DecompositionFailed, DecompositionRejected)):
         decompose_docx(data, renderer=FakeRenderer())
     assert time.perf_counter() - started < 1.0
+
+
+def test_heading_titled_zero_after_leading_content_decomposes() -> None:
+    body = para(text("Before.")) + heading(1, "0") + para(text("After."))
+    doc = decompose_docx(build_docx(body), renderer=FakeRenderer()).document
+    assert [b.id for b in doc.blocks] == ["s~lead#p-1"]
+    assert [(s.id, [b.id for b in s.blocks]) for s in doc.sections] == [("s-0", ["s-0#p-1"])]
