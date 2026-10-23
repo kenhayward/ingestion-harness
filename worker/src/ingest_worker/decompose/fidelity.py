@@ -59,12 +59,12 @@ class _References:
             *(b.id for b in _all_blocks(doc)),
             *(s.id for s in _all_sections(doc.sections)),
         ]
-        self.ids: set[str] = set()
+        seen: set[str] = set()
         for element_id in [*targets, *(i.id for i in doc.images), *(e.id for e in doc.equations)]:
-            if element_id in self.ids:
+            if element_id in seen:
                 raise DecompositionFailed(f"duplicate id {element_id}", element_id)
-            self.ids.add(element_id)
-        self.ids = set(targets)
+            seen.add(element_id)
+        self.ids = set(targets)  # what a cross-reference may point at
 
     def missing(self, what: str, at: str | None) -> DecompositionFailed:
         return DecompositionFailed(f"{what} does not resolve", at)

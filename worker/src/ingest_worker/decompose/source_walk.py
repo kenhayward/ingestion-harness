@@ -14,9 +14,10 @@ tables as `marker: text`; symbols to Unicode, tabs to spaces; a drawing's text a
 its image's alt text; images, note references, equations and cross-references (fields, internal
 hyperlinks and typed references) as the tokens of the text form, resolved from the same
 bookmarks and caption numbers (the walk finds caption numbers and typed references with its own
-patterns, and only looks their targets up in the map). Pure readers are shared: styles, hidden-text resolution, the
-symbol tables, row and cell enumeration, the table grid and which rows are a caption or notes,
-the choice of a drawing's form and its text, and the OMML converter.
+patterns, and only looks their targets up in the map). Pure readers are shared: styles (marks,
+hidden text and fonts), the symbol tables, row and cell enumeration, the table grid and which
+rows are a caption or notes, the choice of a drawing's form and its text, and the OMML
+converter.
 """
 
 from __future__ import annotations
