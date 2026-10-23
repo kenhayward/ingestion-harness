@@ -208,8 +208,10 @@ def _flag_heading(ctx: InlineContext, section: _Open, parent: _Open | None, blan
         ctx.flags.append(
             Flag(code="heading_empty", severity="warning", at=section.id, message="empty heading")
         )
-    expected = parent.level + 1 if parent is not None else 0
-    if section.level > expected:
+    # Only a jump of two or more levels below a parent heading is a skip; a document that
+    # starts at level 2 is not.
+    if parent is not None and section.level > parent.level + 1:
+        expected = parent.level + 1
         ctx.flags.append(
             Flag(
                 code="heading_skipped_level",

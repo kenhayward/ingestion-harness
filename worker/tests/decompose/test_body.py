@@ -126,6 +126,13 @@ def test_skipped_level_nests_and_flags() -> None:
     assert [(f.code, f.at) for f in ctx.flags] == [("heading_skipped_level", "s-a/s-deep")]
 
 
+def test_document_starting_at_level_two_is_not_flagged() -> None:
+    _, sections, ctx = walk(h(2, "A") + p("a") + h(3, "B") + p("b") + h(2, "C"))
+    assert [title(s) for s in sections] == ["A", "C"]
+    assert [title(s) for s in sections[0].sections] == ["B"]
+    assert ctx.flags == []
+
+
 def test_leading_blocks_before_first_heading() -> None:
     blocks, sections, _ = walk(p("lead") + p("") + p("more") + h(1, "A"))
     assert texts(blocks) == ["lead", "more"]
