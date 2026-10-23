@@ -122,15 +122,78 @@ class RunStyles:
         chain.reverse()
         return chain
 
+    def _layers(
+        self, paragraph_style: str | None, char_style: str | None, direct: Element | None
+    ) -> list[Element | None]:
+        return [self._defaults, *self._chain(paragraph_style), *self._chain(char_style), direct]
+
     def resolve(
         self, paragraph_style: str | None, char_style: str | None, direct: Element | None
     ) -> dict[str, bool]:
         """Effective properties: defaults, paragraph style, character style, then direct."""
-        layers = [self._defaults, *self._chain(paragraph_style), *self._chain(char_style), direct]
         props = dict.fromkeys(_PROPS, False)
-        for layer in layers:
+        for layer in self._layers(paragraph_style, char_style, direct):
             props.update(_rpr_props(layer))
         return props
+
+    def fonts(
+        self, paragraph_style: str | None, char_style: str | None, direct: Element | None
+    ) -> RunFonts:
+        """The run's effective fonts, layered as `resolve` layers properties: each `w:rFonts`
+        slot a layer sets replaces the one before it, and a theme font (`w:asciiTheme`, ...)
+        takes its slot over a named font in the same element."""
+        slots: dict[str, str | None] = {}
+        script: dict[str, bool] = {}
+        for layer in self._layers(paragraph_style, char_style, direct):
+            if layer is None:
+                continue
+            fonts = layer.find(f"{W}rFonts")
+            if fonts is not None:
+                for slot in _FONT_SLOTS:
+                    if fonts.get(f"{W}{slot}Theme"):
+                        slots[slot] = None  # a theme font, never a symbol font
+                    elif name := fonts.get(f"{W}{slot}"):
+                        slots[slot] = name
+            for tag in ("cs", "rtl"):
+                if (el := layer.find(f"{W}{tag}")) is not None:
+                    script[tag] = _val_on(el)
+        named = {slot: name for slot, name in slots.items() if name}
+        return RunFonts(named, complex_script=any(script.values()))
+
+
+#: The `w:rFonts` slots: Word draws each character in the font of one of them.
+_FONT_SLOTS = ("ascii", "hAnsi", "eastAsia", "cs")
+#: Code point ranges Word draws in the complex-script (`cs`) and East Asian fonts.
+_COMPLEX_SCRIPT = ((0x0590, 0x08FF), (0x0900, 0x0DFF), (0x0E00, 0x0FFF), (0x1780, 0x17FF),
+                   (0xFB1D, 0xFDFF), (0xFE70, 0xFEFF))  # fmt: skip
+_EAST_ASIAN = ((0x1100, 0x11FF), (0x2E80, 0xA4CF), (0xAC00, 0xD7AF), (0xF900, 0xFAFF),
+               (0xFE30, 0xFE4F), (0xFF00, 0xFFEF), (0x20000, 0x3FFFF))  # fmt: skip
+
+
+def font_slot(ch: str, complex_script: bool) -> str:
+    """The `w:rFonts` slot Word draws `ch` in: `cs` in a complex-script run or for complex-script
+    text, `eastAsia` for East Asian text, else `ascii` up to U+007F and `hAnsi` above it."""
+    code = ord(ch)
+    if complex_script or any(lo <= code <= hi for lo, hi in _COMPLEX_SCRIPT):
+        return "cs"
+    if any(lo <= code <= hi for lo, hi in _EAST_ASIAN):
+        return "eastAsia"
+    return "ascii" if code < 0x80 else "hAnsi"
+
+
+@dataclass(frozen=True)
+class RunFonts:
+    """A run's fonts by `w:rFonts` slot (a slot with no named font is absent), and whether the
+    run is complex script (`w:cs` or `w:rtl`)."""
+
+    slots: dict[str, str] = field(default_factory=dict)
+    complex_script: bool = False
+
+    def symbol_font(self, ch: str) -> tuple[Family | None, str]:
+        """The symbol font family `ch` is drawn in, if any, and that font's name."""
+        name = self.slots.get(font_slot(ch, self.complex_script), "")
+        family = font_family(name) if name else None
+        return family, name if family is not None else ""
 
 
 # --- Context ---------------------------------------------------------------------------------
@@ -391,7 +454,7 @@ class _Reader:
         props = self.ctx.styles.resolve(self.paragraph_style, char_style, rpr)
         marks = frozenset(m for m in _MARKS if props[m])
         visible = not props["hidden"]
-        family, font = self.run_font(rpr)
+        fonts = self.ctx.styles.fonts(self.paragraph_style, char_style, rpr)
 
         for child in run_children(run):
             tag = child.tag.removeprefix(W)
@@ -409,7 +472,7 @@ class _Reader:
             elif is_media(child):
                 self.objects.append((len(self.out), child))
             elif tag == "t":
-                self.text(child.text or "", marks, family, font)
+                self.text(child.text or "", marks, fonts)
             elif tag in ("tab", "ptab"):
                 self.emit(" ", marks)
             elif tag == "cr" or (
@@ -469,16 +532,6 @@ class _Reader:
         image = media_of(el, self.ctx, at=self.at, in_text=True)
         return [image] if isinstance(image, InlineImage) else []
 
-    def run_font(self, rpr: Element | None) -> tuple[Family | None, str]:
-        fonts = rpr.find(f"{W}rFonts") if rpr is not None else None
-        if fonts is None:
-            return None, ""
-        for attr in ("ascii", "hAnsi", "cs"):
-            name = fonts.get(f"{W}{attr}")
-            if name and (family := font_family(name)) is not None:
-                return family, name
-        return None, ""
-
     def field_char(self, el: Element) -> None:
         kind = el.get(f"{W}fldCharType")
         if kind == "begin":
@@ -494,15 +547,23 @@ class _Reader:
             if self.ctx.fields and self.ctx.fields[-1].in_result:
                 self.ctx.fields[-1].result += text
 
-    def text(self, text: str, marks: frozenset[Mark], family: Family | None, font: str) -> None:
+    def text(self, text: str, marks: frozenset[Mark], fonts: RunFonts) -> None:
+        """Text with the characters drawn in a symbol font, by the slot each one is drawn in, as
+        Unicode; a private-use symbol code (U+F020 to U+F0FF) is Symbol's unless its slot names
+        another symbol font."""
         chars: list[str] = []
         for ch in text:
             code = ord(ch)
-            if FIRST + 0x20 <= code <= LAST:
+            private = FIRST + 0x20 <= code <= LAST
+            if not private and not 0x21 <= code <= 0xFF:
+                chars.append(ch)
+                continue
+            family, font = fonts.symbol_font(ch)
+            if private:
                 chars.append(
-                    _map_symbol(code, family or "symbol", family or "Symbol", self.ctx, self.at)
+                    _map_symbol(code, family or "symbol", font or "Symbol", self.ctx, self.at)
                 )
-            elif family is not None and 0x21 <= code <= 0xFF:
+            elif family is not None:
                 chars.append(_map_symbol(code, family, font, self.ctx, self.at))
             else:
                 chars.append(ch)

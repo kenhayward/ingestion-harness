@@ -123,8 +123,9 @@ existing Word-to-PDF conversion, which stays as it is for extraction jobs. **[ca
 - **Comments** are dropped. **[owner]**
 - **Headings** come from the outline level of each paragraph's style (or its direct outline level),
   so custom heading styles work. Heading numbers are not kept; the target numbers headings.
-- **Symbol-font characters** (`w:sym`, and text runs in Symbol or Wingdings) are converted to
-  their Unicode characters. One that has no mapping is flagged and kept as the replacement
+- **Symbol-font characters** (`w:sym`, and text runs in Symbol or Wingdings, whether the font is
+  set on the run or by its styles, read from the font slot Word draws each character in) are
+  converted to their Unicode characters. One that has no mapping is flagged and kept as the replacement
   character with its code in the report. The sample report has 34 of them (°, ± and the like).
 - **Fields** keep their last displayed text, with these exceptions:
   - table-of-contents fields and lists of tables or figures are dropped;

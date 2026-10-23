@@ -39,7 +39,7 @@ from .forms import (
     note_unit,
     xref_token,
 )
-from .inline import EMBEDDED_DOCUMENT_TAGS, EMBEDDED_DOCUMENTS, InlineContext, R, W
+from .inline import EMBEDDED_DOCUMENT_TAGS, EMBEDDED_DOCUMENTS, InlineContext, R, RunFonts, W
 from .media import ALTERNATE, MediaContext, choose_media, doc_pr_alt, is_media, text_alternative
 from .package import DecompositionFailed, Package, Rel
 from .render import RenderFragment
@@ -451,13 +451,13 @@ class _Para:
 
     def run(self, run: Element) -> None:
         rpr = run.find(f"{W}rPr")
-        char_style = rpr.find(f"{W}rStyle") if rpr is not None else None
-        props = self.source.ctx.styles.resolve(
-            self.style, char_style.get(f"{W}val") if char_style is not None else None, rpr
-        )
+        style_el = rpr.find(f"{W}rStyle") if rpr is not None else None
+        char_style = style_el.get(f"{W}val") if style_el is not None else None
+        styles = self.source.ctx.styles
+        props = styles.resolve(self.style, char_style, rpr)
         marks = frozenset(m for m in _MARKS if props[m])
         visible = not props["hidden"]
-        family = _run_family(rpr)
+        fonts = styles.fonts(self.style, char_style, rpr)
         for child in _run_children(run):
             tag = child.tag
             if tag == f"{W}fldChar":
@@ -474,7 +474,7 @@ class _Para:
             elif is_media(child):
                 self.items.append(_Obj(_Tok(image_text(self.source.alt(child))), media=True))
             elif tag == f"{W}t":
-                self.emit(_converted(child.text or "", family), marks)
+                self.emit(_converted(child.text or "", fonts), marks)
             elif tag in (f"{W}tab", f"{W}ptab"):
                 self.emit(" ", marks)
             elif tag == f"{W}cr" or (
@@ -568,17 +568,6 @@ def _run_children(parent: Element) -> Iterator[Element]:
             yield child
 
 
-def _run_family(rpr: Element | None) -> Family | None:
-    fonts = rpr.find(f"{W}rFonts") if rpr is not None else None
-    if fonts is None:
-        return None
-    for attr in ("ascii", "hAnsi", "cs"):
-        name = fonts.get(f"{W}{attr}")
-        if name and (family := font_family(name)) is not None:
-            return family
-    return None
-
-
 def _symbol(code: int, family: Family | None) -> str:
     low = code & 0xFF
     if family is not None:
@@ -590,14 +579,14 @@ def _symbol(code: int, family: Family | None) -> str:
     return _REPLACEMENT
 
 
-def _converted(text: str, family: Family | None) -> str:
-    """Text with Symbol and Wingdings characters as Unicode."""
+def _converted(text: str, fonts: RunFonts) -> str:
+    """Text with Symbol and Wingdings characters, by the font slot each is drawn in, as Unicode."""
     out: list[str] = []
     for ch in text:
         code = ord(ch)
         if FIRST + 0x20 <= code <= LAST:
-            out.append(_symbol(code, family or "symbol"))
-        elif family is not None and 0x21 <= code <= 0xFF:
+            out.append(_symbol(code, fonts.symbol_font(ch)[0] or "symbol"))
+        elif 0x21 <= code <= 0xFF and (family := fonts.symbol_font(ch)[0]) is not None:
             out.append(_symbol(code, family))
         else:
             out.append(ch)

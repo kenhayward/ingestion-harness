@@ -734,3 +734,71 @@ def test_a_typed_reference_matched_short_is_refused(monkeypatch: pytest.MonkeyPa
     assert not any(isinstance(i, XRef) for i in last.inlines)  # the decomposer got it wrong
     with pytest.raises(DecompositionFailed, match="differs from the source"):
         check(doc, pkg, ctx)
+
+
+# --- Symbol fonts set by styles --------------------------------------------------------------
+
+_SYMBOL_FONT = '<w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/>'
+SYMBOL_STYLES = STYLES.replace(
+    "</w:styles>",
+    f'<w:style w:type="character" w:styleId="Sym"><w:rPr>{_SYMBOL_FONT}</w:rPr></w:style>'
+    '<w:style w:type="character" w:styleId="SymChild"><w:basedOn w:val="Sym"/></w:style>'
+    f'<w:style w:type="paragraph" w:styleId="SymPara"><w:rPr>{_SYMBOL_FONT}</w:rPr></w:style>'
+    "</w:styles>",
+)
+SYMBOL_DEFAULTS = (
+    STYLES.replace("</w:styles>", "", 1).replace(
+        f"<w:styles {NAMESPACES}>",
+        f"<w:styles {NAMESPACES}><w:docDefaults><w:rPrDefault><w:rPr>{_SYMBOL_FONT}</w:rPr>"
+        "</w:rPrDefault></w:docDefaults>",
+    )
+    + "</w:styles>"
+)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        para(run("5 "), run("m", '<w:rStyle w:val="Sym"/>'), run("g")),
+        para(run("5 "), run(chr(0xF06D), '<w:rStyle w:val="Sym"/>'), run("g")),
+        para(run("5 "), run("m", '<w:rStyle w:val="SymChild"/>'), run("g")),
+    ],
+    ids=["character-style", "private-use", "based-on"],
+)
+def test_symbol_font_from_a_character_style_on_both_sides(body: str) -> None:
+    doc, pkg, ctx = decompose(body, styles=SYMBOL_STYLES)
+    assert text_form(doc) == ["5 µg"]
+    assert source_text_units(pkg, ctx) == ["5 µg"]
+    assert [f.code for f in doc.report] == []
+    check(doc, pkg, ctx)
+
+
+@pytest.mark.parametrize(
+    ("body", "styles"),
+    [(para(run("m"), style="SymPara"), SYMBOL_STYLES), (para(run("m")), SYMBOL_DEFAULTS)],
+    ids=["paragraph-style", "defaults"],
+)
+def test_symbol_font_from_a_paragraph_style_or_the_defaults_on_both_sides(
+    body: str, styles: str
+) -> None:
+    doc, pkg, ctx = decompose(body, styles=styles)
+    assert text_form(doc) == ["µ"]
+    assert source_text_units(pkg, ctx) == ["µ"]
+    check(doc, pkg, ctx)
+
+
+@pytest.mark.parametrize(
+    ("props", "expected"),
+    [
+        ('<w:rFonts w:ascii="Times New Roman" w:cs="Symbol"/>', "m"),
+        ('<w:rFonts w:ascii="Times New Roman" w:cs="Symbol"/><w:cs/>', "µ"),
+        ('<w:rStyle w:val="Sym"/><w:rFonts w:ascii="Arial"/>', "m"),
+        ('<w:rStyle w:val="Sym"/><w:rFonts w:asciiTheme="minorHAnsi"/>', "m"),
+    ],
+    ids=["complex-script-slot", "complex-script-run", "direct-overrides-style", "theme-font"],
+)
+def test_symbol_font_slot_chosen_by_the_text(props: str, expected: str) -> None:
+    doc, pkg, ctx = decompose(para(run("m", props)), styles=SYMBOL_STYLES)
+    assert text_form(doc) == [expected]
+    assert source_text_units(pkg, ctx) == [expected]
+    check(doc, pkg, ctx)
