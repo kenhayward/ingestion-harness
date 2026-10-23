@@ -1794,7 +1794,9 @@ export class PgRepo implements IngestionRepo {
     deliveryId: string,
     s: RegisterSettlement,
   ): Promise<'applied' | 'stale' | 'unknown'> {
-    // One statement: it waits on the worker's row lock, and only a pending entry moves.
+    // One statement, and only a pending entry moves. It does not wait for the worker's
+    // `set_delivery`: an event before that commits matches no row and is answered 409 (unknown),
+    // and the bridge's resend or the reconcile settles it.
     const { rowCount } = await this.pool.query(
       `UPDATE decomposition_register
           SET state = $2,
