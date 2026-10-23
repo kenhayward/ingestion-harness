@@ -58,12 +58,20 @@ const leaf = (id: string, label: string) => ({
   selectable: true,
 });
 
+/** The sink's lists: storages under their projects, repositories flat. */
 const browseSink = () =>
-  vi.fn(async (req: { field: string }) =>
-    req.field === 'objectStorage'
-      ? { nodes: [leaf('os-1', 'CMC_Integration (dp-cmc)')], nextCursor: null }
-      : { nodes: [leaf(REPO, 'Training (Rep-1)')], nextCursor: null },
-  );
+  vi.fn(async (req: { field: string; parentId: string | null }) => {
+    if (req.field !== 'objectStorage')
+      return { nodes: [leaf(REPO, 'Training (Rep-1)')], nextCursor: null };
+    if (req.parentId === 'dp-cmc')
+      return { nodes: [leaf('os-1', 'CMC_Integration')], nextCursor: null };
+    return {
+      nodes: [
+        { id: 'dp-cmc', label: 'dp-cmc', kind: 'project', hasChildren: true, selectable: false },
+      ],
+      nextCursor: null,
+    };
+  });
 
 function Harness({ api, start }: { api: ReturnType<typeof fakeApi>; start: SinkTargetValue }) {
   const [value, setValue] = useState(start);
@@ -91,9 +99,7 @@ describe('SinkTargetFields', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Browse Object storage' }));
     const dialog = screen.getByRole('dialog', { name: 'Choose object storage' });
-    await userEvent.click(
-      await within(dialog).findByRole('button', { name: 'CMC_Integration (dp-cmc)' }),
-    );
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'CMC_Integration' }));
     expect(screen.getByRole('textbox', { name: 'Object storage' })).toHaveValue(
       'CMC_Integration (dp-cmc) [os-1]',
     );

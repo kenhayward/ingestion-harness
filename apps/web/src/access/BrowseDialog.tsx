@@ -3,6 +3,7 @@ import type { SinkBrowseNode } from '@ih/shared';
 import type { Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
 import { Icon } from '../ui/Icon.js';
+import { groupedLabel, readShape, type BrowseShape } from './browse.js';
 
 /** One level of the tree as loaded: its nodes, and the cursor of the next page (null: none). */
 interface Level {
@@ -10,15 +11,14 @@ interface Level {
   next: string | null;
 }
 
-/** A flat list is read whole, up to this many pages, so the filter sees all of it. */
-const FLAT_PAGES = 50;
-
 /**
- * Picks a value for a sink's destination field from what the sink serves. A flat list (no node
- * holds others: repositories, object storages) is read whole and shown as a list with a filter
- * above it: a click on an item picks it. A tree (a space, a folder) is shown one level at a time:
- * open a node to see what is inside it, More for the next page, Use to pick a selectable node.
- * The picked node's id becomes the field's value; its label goes with it, for display.
+ * Picks a value for a sink's destination field from what the sink serves. A list is read whole
+ * and shown with a filter above it, a click on an item picking it: flat (repositories), or
+ * grouped under headings that can't be picked (object storages under their projects; the filter
+ * matches the items, never a heading). Anything deeper (a space, a folder) is a tree shown one
+ * level at a time: open a node to see what is inside it, More for the next page, Use to pick a
+ * selectable node. The picked node's id becomes the field's value; its label (a grouped item's
+ * with its group's in brackets) goes with it, for display.
  */
 export function BrowseDialog({
   api,
@@ -44,8 +44,8 @@ export function BrowseDialog({
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [needsConnection, setNeedsConnection] = useState(false);
-  /** The root is a flat list, read whole (null: not known yet). */
-  const [flat, setFlat] = useState<SinkBrowseNode[] | null>(null);
+  /** The tree's shape once read (a list is read whole). */
+  const [shape, setShape] = useState<BrowseShape | null>(null);
   const [filter, setFilter] = useState('');
 
   const page = (parentId: string | null, cursor: string | null) =>
@@ -74,31 +74,23 @@ export function BrowseDialog({
   useEffect(() => {
     // One first load per dialog: its props don't change while it is open.
     let live = true;
-    void (async () => {
-      try {
-        let r = await page(null, null);
-        if (r.nodes.some((n) => n.hasChildren)) {
-          if (live) setLevels(new Map([[null, { nodes: r.nodes, next: r.nextCursor }]]));
-          return;
-        }
-        const nodes = [...r.nodes];
-        for (let pages = 1; r.nextCursor && pages < FLAT_PAGES; pages++) {
-          r = await page(null, r.nextCursor);
-          nodes.push(...r.nodes);
-        }
-        if (live) setFlat(nodes);
-      } catch (err) {
-        if (live) fail(err);
-      }
-    })();
+    readShape(page).then(
+      (read) => {
+        if (!live) return;
+        if (read.kind === 'tree')
+          setLevels(new Map([[null, { nodes: read.nodes, next: read.next }]]));
+        setShape(read);
+      },
+      (err: unknown) => live && fail(err),
+    );
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const pick = (n: SinkBrowseNode) => {
-    onPick(n.id, n.label);
+  const pick = (n: SinkBrowseNode, as = n.label) => {
+    onPick(n.id, as);
     onClose();
   };
 
@@ -153,9 +145,34 @@ export function BrowseDialog({
     );
   };
 
-  const list = (nodes: SinkBrowseNode[]) => {
-    const q = filter.trim().toLowerCase();
-    const shown = nodes.filter((n) => n.selectable && n.label.toLowerCase().includes(q));
+  const q = filter.trim().toLowerCase();
+  const matches = (nodes: SinkBrowseNode[]) =>
+    nodes.filter((n) => n.selectable && n.label.toLowerCase().includes(q));
+  const items = (nodes: SinkBrowseNode[], label: (n: SinkBrowseNode) => string) => (
+    <ul className="browse-list">
+      {nodes.map((n) => (
+        <li key={n.id}>
+          <button type="button" onClick={() => pick(n, label(n))}>
+            {n.label}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const list = (read: Exclude<BrowseShape, { kind: 'tree' }>) => {
+    const total =
+      read.kind === 'flat'
+        ? read.nodes.length
+        : read.groups.reduce((n, g) => n + g.nodes.length, 0);
+    const groups =
+      read.kind === 'grouped'
+        ? read.groups
+            .map((g) => ({ group: g.group, nodes: matches(g.nodes) }))
+            .filter((g) => g.nodes.length > 0)
+        : [];
+    const flatShown = read.kind === 'flat' ? matches(read.nodes) : [];
+    const none = read.kind === 'flat' ? flatShown.length === 0 : groups.length === 0;
     return (
       <>
         <span className="filter-search browse-filter">
@@ -164,26 +181,27 @@ export function BrowseDialog({
             id={filterId}
             type="search"
             aria-label={`Filter ${label.toLowerCase()}`}
-            placeholder={`Filter by name`}
+            placeholder="Filter by name"
             value={filter}
             autoFocus
             onChange={(e) => setFilter(e.target.value)}
           />
         </span>
-        {nodes.length === 0 ? (
+        {total === 0 ? (
           <p className="muted">Nothing here.</p>
-        ) : shown.length === 0 ? (
+        ) : none ? (
           <p className="muted">Nothing matches “{filter.trim()}”.</p>
+        ) : read.kind === 'flat' ? (
+          items(flatShown, (n) => n.label)
         ) : (
-          <ul className="browse-list">
-            {shown.map((n) => (
-              <li key={n.id}>
-                <button type="button" onClick={() => pick(n)}>
-                  {n.label}
-                </button>
-              </li>
+          <div className="browse-groups">
+            {groups.map(({ group, nodes }) => (
+              <section key={group.id} role="group" aria-label={group.label}>
+                <h3>{group.label}</h3>
+                {items(nodes, (n) => groupedLabel(group, n))}
+              </section>
             ))}
-          </ul>
+          </div>
         )}
       </>
     );
@@ -206,9 +224,9 @@ export function BrowseDialog({
             </button>
           )}
         </div>
-      ) : flat ? (
-        list(flat)
-      ) : levels.size ? (
+      ) : shape && shape.kind !== 'tree' ? (
+        list(shape)
+      ) : shape ? (
         tree(null)
       ) : (
         <p className="muted">Loading…</p>
