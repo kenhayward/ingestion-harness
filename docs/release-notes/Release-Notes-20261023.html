@@ -161,8 +161,8 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Friday 23 October 2026: choosing an object storage or a repository for a 3DEXPERIENCE target
-        by name, and Manage connections in the account menu. PRs #313 and #314, opened on Friday 23
-        October 2026 (UTC).
+        by name, Manage connections in the account menu, and decomposed Word documents that can be
+        delivered to a target. PRs #313, #314, #315 and #PR, opened on Friday 23 October 2026 (UTC).
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -176,6 +176,13 @@
           <li>
             <a href="#connections-menu">Manage connections in the account menu</a>
             <span>— everyone can reach their publishing logins from their name</span>
+          </li>
+          <li>
+            <a href="#decomposed-documents">Decomposed documents can be delivered to a target</a>
+            <span
+              >— Word documents split into parts, kept in step with a target without overwriting
+              edits made there</span
+            >
           </li>
         </ul>
       </nav>
@@ -219,6 +226,29 @@
         The menu under your name has <strong>Manage connections</strong>, for everyone: it opens the
         connections window where you add the logins CT Studio publishes with as you (your
         3DEXPERIENCE login, for example), without going through Profile or Administration.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="decomposed-documents">Decomposed documents can be delivered to a target</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/315">#315</a>,
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/PR">#PR</a>
+      </p>
+      <p>
+        Phase 1 (#315, merged) decomposes a Word document into its sections, tables, images and
+        equations, checks that nothing was lost or changed in the process (a fidelity check), and
+        comes with a command-line tool to run it. This PR (phase 2) lets a decomposed document be
+        delivered to a target that supports it: the delivery contract moves to version 2, and a
+        structured-authoring target receives the document as separate parts instead of a file.
+        Targets that only take files and data are unchanged, and a decomposed document is refused
+        for them rather than sent.
+      </p>
+      <p>
+        Running the same document again is recognised: if it was already delivered, nothing is
+        created twice, and an updated version replaces the earlier one in the same place. A document
+        that someone has edited in the target is never overwritten. The delivery stops and asks for
+        a decision, naming the parts that changed there. CT Studio also keeps a register of what was
+        delivered where, so a re-run knows which document it is updating.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

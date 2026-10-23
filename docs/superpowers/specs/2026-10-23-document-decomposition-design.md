@@ -555,6 +555,11 @@ model-driven extraction and no review step. **[call]**
 
 Phases 1 and 4's capture work need nothing from each other and can run side by side.
 
+**Phase 2 status.** Phase 2 is implemented: contract version 2 (`document` part, conditional
+update, `changed_in_target`), the bridge's version check, the register and its reconcile, and the
+conformance suite's document checks, tested end to end through the bridge against the fake
+document sink (`apps/bridge/test/decomposed-e2e.test.ts`).
+
 **Phase 1 status.** Phase 1 (Word) is implemented; the owner's sample run is pending. Run it with
 `uv run --directory worker python scripts/decompose.py <file.docx> <out-dir> [--converter-url URL]`.
 

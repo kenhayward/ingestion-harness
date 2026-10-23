@@ -149,7 +149,8 @@ What each sink's `describe` declares:
 - its **destination fields**: a list of `{ id, label, kind: fixed | pattern, required, overridable, browse }`
   (simpler to render than raw JSON Schema, and carrying the same information);
 - its **capabilities**: `browse`, `replace`, `withdraw`, `readBack`, and the package parts it
-  accepts (`files`, `data`, `rdf`, `narrative`, `images`).
+  accepts (`files`, `data`, `rdf`, `document`, `images`; `narrative` was reserved and then
+  withdrawn, still a nullable field of a version 1 package).
 
 ## Decisions
 
@@ -326,7 +327,11 @@ One package is built per document and publication, the same for every target. It
 - **`data`**: the same fields and tables in structured form (ids, titles, types, values, units,
   and table rows by column). Data-oriented sinks use this rather than parsing the CSVs.
 - **`rdf`**: the Turtle graph and its graph name, when the recipe produces one.
-- **`narrative`** and **`images`** are reserved for full decomposition: an ordered block sequence
+- **`document`** (contract version 2) carries a decomposed document: sections, tables, equations
+  and their provenance, delivered to a sink that declares `decomposedDocuments`. A package with
+  `document` carries only `document` and `images`.
+- **`narrative`** was reserved and then withdrawn in favour of `document` (it stays nullable in
+  version 1). **`images`** was reserved for full decomposition: an ordered block sequence
   (paragraph, list, table, figure) and image blobs by reference. The schema is defined now, so
   sinks can plan for it, but CT Studio doesn't fill these sections yet.
 

@@ -11,8 +11,10 @@ export const STRAGGLER_MINUTES = 10;
 
 /**
  * A register entry the worker left `pending` without recording a delivery is failed after this
- * long. Safe: a later run that creates again reuses the same idempotency key, which the sink
+ * long. Safe in the usual case: a later run reuses the same idempotency key, which the sink
  * recognises, so a delivery the bridge did take finds its document rather than making another.
+ * The exception is a forced create, whose key carried a fresh token: there the sink cannot tell
+ * the two apart, so a second document is possible.
  */
 export const UNRECORDED_MINUTES = 30;
 

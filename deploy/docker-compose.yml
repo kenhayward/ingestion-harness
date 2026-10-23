@@ -224,6 +224,8 @@ services:
     command: ['node', 'apps/bridge/dist/sinks/fake-server.js']
     environment:
       FAKE_SINK_KEY: ${FAKE_SINK_KEY:-}
+      # Unset: files and data (contract version 1). `documents`: decomposed documents (version 2).
+      FAKE_SINK_MODE: ${FAKE_SINK_MODE:-}
     restart: unless-stopped
 
   api:
