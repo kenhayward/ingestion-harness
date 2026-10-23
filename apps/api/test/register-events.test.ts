@@ -1,9 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { bridgeError, type BridgeEvent, type Receipt } from '@ih/bridge-contract';
+import {
+  bridgeError,
+  type BridgeEvent,
+  type DeliveryView,
+  type Receipt,
+} from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { applyEvent } from '../src/bridge/events.js';
+import { reconcileOnce, STRAGGLER_MINUTES } from '../src/bridge/reconcile.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
+import { FakeBridgeApi } from './fake-bridge.js';
 
 const AT = '2026-10-23T10:00:00.000Z';
 
@@ -12,21 +19,31 @@ function setup() {
   return { repo, deps: { repo, targets: new MemoryPublishTargetRepo() } };
 }
 
-/** A pending entry, as the worker writes it before delivering. */
-function pending(repo: MemoryRepo, over: { persistentId?: string | null } = {}) {
-  const deliveryId = randomUUID();
-  const entry = repo.putRegisterEntry({
+/** A pending entry, as the worker writes it before delivering (before `set_delivery` if unsent). */
+function entry(
+  repo: MemoryRepo,
+  over: { persistentId?: string | null; deliveryId: string | null },
+) {
+  return repo.putRegisterEntry({
     sinkId: 'documents',
     instanceId: 'tenant-1',
     sourceKey: 'batch/a.docx',
     contentSha256: 'a'.repeat(64),
     persistentId: over.persistentId ?? null,
     idempotencyKey: 'k'.repeat(64),
-    deliveryId,
+    deliveryId: over.deliveryId,
     batchId: null,
-  });
-  return { deliveryId, entryId: entry.id };
+  }).id;
 }
+
+/** A pending entry whose delivery the bridge accepted. */
+function pending(repo: MemoryRepo, over: { persistentId?: string | null } = {}) {
+  const deliveryId = randomUUID();
+  return { deliveryId, entryId: entry(repo, { ...over, deliveryId }) };
+}
+
+/** A pending entry the worker has not recorded a delivery for yet. */
+const unsent = (repo: MemoryRepo) => entry(repo, { deliveryId: null });
 
 const documentReceipt = (persistentId: string, ok = true): Receipt => ({
   written: [{ kind: 'document', id: persistentId, label: null, url: null }],
@@ -174,7 +191,7 @@ describe('the register, kept from bridge events', () => {
       await applyEvent(deps, event(deliveryId, { sequence: 2, receipt: documentReceipt('d') })),
     ).toBe('applied');
     expect(await entryOf(repo, deliveryId)).toMatchObject({ state: 'delivered' });
-    // An older event the job delivery refuses as stale leaves the register alone too.
+    // An older event the job delivery refuses as stale finds the entry settled already.
     expect(
       await applyEvent(
         deps,
@@ -182,5 +199,126 @@ describe('the register, kept from bridge events', () => {
       ),
     ).toBe('stale');
     expect(await entryOf(repo, deliveryId)).toMatchObject({ state: 'delivered', lastError: null });
+  });
+
+  it('a skipped delivery marks incomplete, keeping the persistent id', async () => {
+    const { repo, deps } = setup();
+    const { deliveryId } = pending(repo, { persistentId: 'doc-1' });
+    await applyEvent(deps, event(deliveryId, { status: 'skipped', receipt: null }));
+    expect(await entryOf(repo, deliveryId)).toMatchObject({
+      state: 'incomplete',
+      persistentId: 'doc-1',
+      deliveredAt: null,
+    });
+  });
+
+  it('an event before the worker recorded its delivery is unknown and moves nothing', async () => {
+    const { repo, deps } = setup();
+    const entryId = unsent(repo);
+    expect(await applyEvent(deps, event(randomUUID(), { receipt: documentReceipt('d') }))).toBe(
+      'unknown',
+    );
+    expect(repo.register.get(entryId)).toMatchObject({ state: 'pending', persistentId: null });
+  });
+
+  it('a resent final event settles an entry whose first register write failed', async () => {
+    const { repo, deps } = setup();
+    const { deliveryId } = pending(repo);
+    await repo.recordDeliveries(randomUUID(), [{ targetId: 'documents', deliveryId }]);
+    const settle = repo.settleRegisterEntry.bind(repo);
+    let failures = 1;
+    repo.settleRegisterEntry = async (id, s) => {
+      if (failures-- > 0) throw new Error('connection lost');
+      return settle(id, s);
+    };
+    const final = event(deliveryId, { sequence: 2, receipt: documentReceipt('doc-1') });
+    await expect(applyEvent(deps, final)).rejects.toThrow('connection lost');
+    expect((await repo.deliveriesOf(repo.deliveries.get(deliveryId)!.jobId))[0]).toMatchObject({
+      status: 'succeeded',
+    });
+    expect(await entryOf(repo, deliveryId)).toMatchObject({ state: 'pending' });
+    // The bridge sends it again: the job delivery has it (stale), the register takes it now.
+    expect(await applyEvent(deps, { ...final, eventId: randomUUID() })).toBe('stale');
+    expect(await entryOf(repo, deliveryId)).toMatchObject({
+      state: 'delivered',
+      persistentId: 'doc-1',
+    });
+  });
+});
+
+describe('reconciling the register', () => {
+  const NOW = new Date(AT);
+  const view = (id: string, over: Partial<DeliveryView> = {}): DeliveryView => ({
+    id,
+    packageId: randomUUID(),
+    targetId: 'documents',
+    status: 'succeeded',
+    attempts: 1,
+    error: null,
+    receipt: documentReceipt('doc-1'),
+    skippedFor: null,
+    createdAt: AT,
+    updatedAt: AT,
+    ...over,
+  });
+  const ago = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
+
+  it('settles a stuck pending entry from a final bridge delivery', async () => {
+    const { repo, deps } = setup();
+    const bridge = new FakeBridgeApi();
+    const { deliveryId, entryId } = pending(repo);
+    repo.ageRegisterEntry(entryId, ago(STRAGGLER_MINUTES + 1));
+    bridge.deliveries.set(deliveryId, view(deliveryId));
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(1);
+    expect(await entryOf(repo, deliveryId)).toMatchObject({
+      state: 'delivered',
+      persistentId: 'doc-1',
+    });
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(0);
+  });
+
+  it('leaves an entry pending while its bridge delivery is still running', async () => {
+    const { repo, deps } = setup();
+    const bridge = new FakeBridgeApi();
+    const { deliveryId, entryId } = pending(repo);
+    repo.ageRegisterEntry(entryId, ago(STRAGGLER_MINUTES + 5));
+    bridge.deliveries.set(deliveryId, view(deliveryId, { status: 'running', receipt: null }));
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(0);
+    bridge.failNext = new Error('down');
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(0);
+    expect(await entryOf(repo, deliveryId)).toMatchObject({ state: 'pending' });
+  });
+
+  it('does not poll a young entry, nor one without a delivery', async () => {
+    const { repo, deps } = setup();
+    const bridge = new FakeBridgeApi();
+    const young = pending(repo);
+    repo.ageRegisterEntry(young.entryId, ago(STRAGGLER_MINUTES - 1));
+    const unsentId = unsent(repo);
+    repo.ageRegisterEntry(unsentId, ago(STRAGGLER_MINUTES + 30));
+    bridge.deliveries.set(young.deliveryId, view(young.deliveryId));
+    const asked: string[] = [];
+    const get = bridge.getDelivery.bind(bridge);
+    bridge.getDelivery = async (id) => {
+      asked.push(id);
+      return get(id);
+    };
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(0);
+    expect(asked).toEqual([]);
+    expect(repo.register.get(young.entryId)).toMatchObject({ state: 'pending' });
+    expect(repo.register.get(unsentId)).toMatchObject({ state: 'pending' });
+  });
+
+  it('fails a stuck entry whose delivery the bridge has no record of', async () => {
+    const { repo, deps } = setup();
+    const bridge = new FakeBridgeApi();
+    const { deliveryId, entryId } = pending(repo, { persistentId: 'doc-1' });
+    repo.ageRegisterEntry(entryId, ago(STRAGGLER_MINUTES + 1));
+    expect(await reconcileOnce({ ...deps, bridge }, NOW)).toBe(1);
+    expect(await entryOf(repo, deliveryId)).toMatchObject({
+      state: 'failed',
+      persistentId: 'doc-1',
+      lastError: { code: 'not_found' },
+    });
   });
 });

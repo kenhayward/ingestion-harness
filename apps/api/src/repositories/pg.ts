@@ -1753,6 +1753,17 @@ export class PgRepo implements IngestionRepo {
     return rows.map(toDelivery);
   }
 
+  async registerStragglers(olderThanMinutes: number, now: Date): Promise<RegisterEntry[]> {
+    const { rows } = await this.pool.query<RegisterRow>(
+      `SELECT ${REGISTER_COLUMNS} FROM decomposition_register
+        WHERE state = 'pending' AND delivery_id IS NOT NULL
+          AND updated_at < $1::timestamptz - make_interval(mins => $2)
+        ORDER BY updated_at`,
+      [now, olderThanMinutes],
+    );
+    return rows.map(toRegisterEntry);
+  }
+
   async registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null> {
     const { rows } = await this.pool.query<RegisterRow>(
       `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE delivery_id = $1`,

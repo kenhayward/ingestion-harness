@@ -596,6 +596,11 @@ export interface IngestionRepo {
   deliveriesOf(jobId: string): Promise<JobDelivery[]>;
   /** Deliveries not final and not updated for `olderThanMinutes`, of jobs still delivering. */
   stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]>;
+  /**
+   * Register entries still `pending` with a delivery, not updated for `olderThanMinutes`: their
+   * delivery's final event may have been lost.
+   */
+  registerStragglers(olderThanMinutes: number, now: Date): Promise<RegisterEntry[]>;
   /** The register entry a delivery was made for, if any. */
   registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null>;
   /**

@@ -155,4 +155,24 @@ describe.skipIf(!url)('the decomposition register against Postgres', { timeout: 
       instanceId: null,
     });
   });
+
+  it('lists pending entries with a delivery not updated for a while, oldest first', async () => {
+    const now = new Date();
+    const stuck = await pending();
+    const young = await pending();
+    await pool.query(`UPDATE decomposition_register SET updated_at = $2 WHERE delivery_id = $1`, [
+      stuck.deliveryId,
+      new Date(now.getTime() - 30 * 60_000),
+    ]);
+    const unsent = await pending();
+    await pool.query(
+      `UPDATE decomposition_register SET delivery_id = NULL, updated_at = $2
+        WHERE delivery_id = $1`,
+      [unsent.deliveryId, new Date(now.getTime() - 30 * 60_000)],
+    );
+    const ids = (await repo.registerStragglers(10, now)).map((e) => e.deliveryId);
+    expect(ids).toContain(stuck.deliveryId);
+    expect(ids).not.toContain(young.deliveryId);
+    expect(ids).not.toContain(null);
+  });
 });

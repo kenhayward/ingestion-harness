@@ -1167,6 +1167,22 @@ export class MemoryRepo implements IngestionRepo {
     return { ...row };
   }
 
+  /** Test helper: a register entry last updated at `at` (for the reconcile). */
+  ageRegisterEntry(id: string, at: Date): void {
+    const e = this.register.get(id);
+    if (e) e.updatedAt = at.toISOString();
+  }
+
+  async registerStragglers(olderThanMinutes: number, now: Date): Promise<RegisterEntry[]> {
+    const before = now.getTime() - olderThanMinutes * 60_000;
+    return [...this.register.values()]
+      .filter(
+        (e) => e.state === 'pending' && e.deliveryId !== null && Date.parse(e.updatedAt) < before,
+      )
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+      .map((e) => ({ ...e }));
+  }
+
   async registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null> {
     const e = [...this.register.values()].find((r) => r.deliveryId === deliveryId);
     return e ? { ...e } : null;

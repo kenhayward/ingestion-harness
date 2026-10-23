@@ -64,9 +64,11 @@ export async function applyEvent(
     { status: e.status, error: e.error, receipt: e.receipt, sequence: e.sequence },
     finishOf((id) => labels.get(id) ?? id),
   );
-  // An event the job's delivery refused as old or repeated moves the register no more.
-  if (outcome === 'stale') return outcome;
+  // A stale non-final event changes nothing anywhere. A final one still reaches the register,
+  // whose pending-only settle makes a repeat harmless, so a resend heals a register write that
+  // failed after the job's delivery was recorded.
+  if (outcome === 'stale' && !FINAL_DELIVERY.has(e.status)) return outcome;
   const registered = await applyRegisterEvent(deps.repo, e);
   // A decomposition delivered without a job is known to the register alone.
-  return outcome === 'applied' ? outcome : registered;
+  return outcome === 'unknown' ? registered : outcome;
 }
