@@ -826,3 +826,14 @@ def test_a_block_with_a_section_id_is_refused() -> None:
     mutated = doc.model_copy(update={"blocks": [leading.model_copy(update={"id": section.id})]})
     with pytest.raises(DecompositionFailed, match=f"duplicate id {section.id}"):
         check(mutated, pkg, ctx)
+
+
+def test_deleted_fraction_is_image_only_on_both_sides() -> None:
+    gone = '<w:del w:id="8" w:author="x">' + r("a") + "</w:del>"
+    ctrl = '<m:ctrlPr><w:del w:id="9" w:author="x"><w:rPr/></w:del></m:ctrlPr>'
+    fraction = f"<m:f><m:fPr>{ctrl}</m:fPr><m:num>{gone}</m:num><m:den>{gone}</m:den></m:f>"
+    doc, pkg, ctx = decompose(heading("Maths") + para(display(r("y=") + fraction)))
+    (equation,) = doc.equations
+    assert equation.mathml is None
+    assert source_text_units(pkg, ctx) == ["Maths", IMAGE_ONLY_EQUATION]
+    check(doc, pkg, ctx)

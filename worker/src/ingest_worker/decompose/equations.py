@@ -126,10 +126,18 @@ def _row(items: list[Element]) -> Element:
     return items[0] if len(items) == 1 else _m("mrow", *items)
 
 
-def _arg(parent: Element, name: str) -> Element:
-    """The MathML of argument `name` of `parent`, as one element."""
+def _arg(parent: Element, name: str, *, required: bool = True) -> Element:
+    """The MathML of argument `name` of `parent`, as one element.
+
+    A required argument (a numerator, a denominator, a base, a script) left empty, as a
+    structure whose content was deleted by a tracked change is, makes the equation unsupported,
+    so it is kept as its image rather than as MathML that shows something else.
+    """
     arg = parent.find(f"{M}{name}")
-    return _row(_content(arg) if arg is not None else [])
+    items = _content(arg) if arg is not None else []
+    if required and not items:
+        raise _Unsupported(f"empty {name}")
+    return _row(items)
 
 
 def _run(r: Element) -> list[Element]:
@@ -212,8 +220,8 @@ def _nary(el: Element) -> list[Element]:
     op_char = _val(props, "chr", "∫")
     loc = _val(props, "limLoc", "subSup" if op_char in _INTEGRALS else "undOvr")
     op = _m("mo", text=op_char)
-    lower = None if _flag_on(props, "subHide") else _arg(el, "sub")
-    upper = None if _flag_on(props, "supHide") else _arg(el, "sup")
+    lower = None if _flag_on(props, "subHide") else _arg(el, "sub", required=False)
+    upper = None if _flag_on(props, "supHide") else _arg(el, "sup", required=False)
     under, over, both = ("munder", "mover", "munderover")
     if loc == "subSup":
         under, over, both = ("msub", "msup", "msubsup")
@@ -247,6 +255,8 @@ def _function(el: Element) -> list[Element]:
         if r.tag != f"{M}r":
             raise _Unsupported("function name")
         texts.extend(t.text or "" for t in r.findall(f"{M}t"))
+    if not "".join(texts).strip():
+        raise _Unsupported("empty function name")
     function = _m("mi", text="".join(texts).strip())
     return [_m("mrow", function, _m("mo", text=_FUNCTION_APPLICATION), _arg(el, "e"))]
 

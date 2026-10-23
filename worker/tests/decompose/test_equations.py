@@ -290,3 +290,46 @@ def test_display_equations_beside_text_are_inline() -> None:
             inlines=[Text(text="Thus "), InlineEquation(equation_id=equation.id)],
         )
     ]
+
+
+# --- Empty arguments -------------------------------------------------------------------------
+
+_DELETED_CTRL = '<m:ctrlPr><w:del w:id="9" w:author="x"><w:rPr/></w:del></m:ctrlPr>'
+
+
+def deleted(inner: str) -> str:
+    return f'<w:del w:id="8" w:author="x">{inner}</w:del>'
+
+
+@pytest.mark.parametrize(
+    "omml",
+    [
+        f"<m:f><m:fPr>{_DELETED_CTRL}</m:fPr><m:num>{deleted(r('a'))}</m:num>"
+        f"<m:den>{deleted(r('b'))}</m:den></m:f>",
+        r("x") + frac(r("a"), deleted(r("b"))),
+        sup(deleted(r("a")), r("2")),
+        sub(r("a"), ""),
+        f"<m:rad><m:radPr><m:degHide m:val='1'/></m:radPr><m:deg/><m:e>{deleted(r('x'))}</m:e>"
+        "</m:rad>",
+    ],
+    ids=["deleted-fraction", "deleted-denominator", "deleted-base", "empty-script", "radical"],
+)
+def test_structure_left_with_an_empty_argument_gives_none(omml: str) -> None:
+    assert mathml(omml) == "None"
+
+
+def test_deleted_fraction_is_image_only_and_flagged() -> None:
+    omml = (
+        r("y=") + f"<m:f><m:fPr>{_DELETED_CTRL}</m:fPr><m:num>{deleted(r('a'))}</m:num>"
+        f"<m:den>{deleted(r('b'))}</m:den></m:f>"
+    )
+    _, ctx, media = read(para(display(omml)))
+    [equation] = media.equations
+    assert (equation.mathml, equation.latex) == (None, None)
+    assert flags(ctx) == [("equation_image_only", "s~lead#equation-1")]
+
+
+def test_optional_parts_may_be_empty() -> None:
+    radical = f"<m:rad><m:deg/><m:e>{r('x')}</m:e></m:rad>"
+    assert mathml(radical) == math_of("<msqrt><mi>x</mi></msqrt>")
+    assert mathml("<m:d><m:e/></m:d>") != "None"

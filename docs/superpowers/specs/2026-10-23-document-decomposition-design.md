@@ -282,7 +282,8 @@ can handle. **[owner]**
 - **LaTeX**, derived from the MathML.
 - **An image**, SVG and PNG, rendered as the fallback.
 
-An equation that doesn't convert is kept as the image only, and flagged. The converter must be one
+An equation that doesn't convert (including one with a fraction, script or other structure left
+empty once tracked changes are accepted) is kept as the image only, and flagged. The converter must be one
 CT Studio can redistribute (Microsoft's own conversion stylesheet ships with Office and can't be);
 the builder picks it. **[call]**
 
