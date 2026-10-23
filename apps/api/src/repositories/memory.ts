@@ -58,6 +58,8 @@ import {
   finishEvent,
   type JobDelivery,
   type JobFinish,
+  type RegisterEntry,
+  type RegisterSettlement,
   type EventFilter,
 } from './types.js';
 
@@ -1131,6 +1133,62 @@ export class MemoryRepo implements IngestionRepo {
         );
       })
       .map((d) => ({ ...d }));
+  }
+
+  /** The decomposition register, by entry id (the worker writes it; tests seed it). */
+  readonly register = new Map<string, RegisterEntry>();
+
+  /** Test helper: an entry as the worker writes it before delivering (`pending`). */
+  putRegisterEntry(
+    entry: Pick<
+      RegisterEntry,
+      | 'sinkId'
+      | 'instanceId'
+      | 'sourceKey'
+      | 'contentSha256'
+      | 'persistentId'
+      | 'idempotencyKey'
+      | 'deliveryId'
+      | 'batchId'
+    >,
+  ): RegisterEntry {
+    const now = new Date().toISOString();
+    const row: RegisterEntry = {
+      ...entry,
+      id: randomUUID(),
+      state: 'pending',
+      lastReceipt: null,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+      deliveredAt: null,
+    };
+    this.register.set(row.id, row);
+    return { ...row };
+  }
+
+  async registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null> {
+    const e = [...this.register.values()].find((r) => r.deliveryId === deliveryId);
+    return e ? { ...e } : null;
+  }
+
+  async settleRegisterEntry(
+    deliveryId: string,
+    s: RegisterSettlement,
+  ): Promise<'applied' | 'stale' | 'unknown'> {
+    const e = [...this.register.values()].find((r) => r.deliveryId === deliveryId);
+    if (!e) return 'unknown';
+    if (e.state !== 'pending') return 'stale';
+    const now = new Date().toISOString();
+    Object.assign(e, {
+      state: s.state,
+      persistentId: s.persistentId ?? e.persistentId,
+      lastReceipt: s.receipt ?? e.lastReceipt,
+      lastError: s.error,
+      updatedAt: now,
+      deliveredAt: s.delivered ? now : e.deliveredAt,
+    });
+    return 'applied';
   }
 
   private update(id: string, changes: Partial<JobSummary>): JobSummary {

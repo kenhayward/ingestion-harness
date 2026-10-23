@@ -58,6 +58,8 @@ import {
   type JobDelivery,
   type JobFinish,
   type EventFilter,
+  type RegisterEntry,
+  type RegisterSettlement,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -1750,7 +1752,82 @@ export class PgRepo implements IngestionRepo {
     );
     return rows.map(toDelivery);
   }
+
+  async registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null> {
+    const { rows } = await this.pool.query<RegisterRow>(
+      `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE delivery_id = $1`,
+      [deliveryId],
+    );
+    return rows[0] ? toRegisterEntry(rows[0]) : null;
+  }
+
+  async settleRegisterEntry(
+    deliveryId: string,
+    s: RegisterSettlement,
+  ): Promise<'applied' | 'stale' | 'unknown'> {
+    // One statement: it waits on the worker's row lock, and only a pending entry moves.
+    const { rowCount } = await this.pool.query(
+      `UPDATE decomposition_register
+          SET state = $2,
+              persistent_id = COALESCE($3, persistent_id),
+              last_receipt = COALESCE($4::jsonb, last_receipt),
+              last_error = $5::jsonb,
+              delivered_at = CASE WHEN $6::boolean THEN now() ELSE delivered_at END,
+              updated_at = now()
+        WHERE delivery_id = $1 AND state = 'pending'`,
+      [
+        deliveryId,
+        s.state,
+        s.persistentId,
+        s.receipt === null ? null : JSON.stringify(s.receipt),
+        s.error === null ? null : JSON.stringify(s.error),
+        s.delivered,
+      ],
+    );
+    if (rowCount) return 'applied';
+    return (await this.registerEntryByDelivery(deliveryId)) ? 'stale' : 'unknown';
+  }
 }
+
+interface RegisterRow {
+  id: string;
+  sink_id: string;
+  instance_id: string | null;
+  source_key: string;
+  content_sha256: string;
+  persistent_id: string | null;
+  state: RegisterEntry['state'];
+  idempotency_key: string;
+  delivery_id: string | null;
+  last_receipt: RegisterEntry['lastReceipt'];
+  last_error: RegisterEntry['lastError'];
+  batch_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+  delivered_at: Date | null;
+}
+
+const REGISTER_COLUMNS = `id::text, sink_id, instance_id, source_key, content_sha256, persistent_id,
+  state, idempotency_key, delivery_id, last_receipt, last_error, batch_id, created_at, updated_at,
+  delivered_at`;
+
+const toRegisterEntry = (r: RegisterRow): RegisterEntry => ({
+  id: r.id,
+  sinkId: r.sink_id,
+  instanceId: r.instance_id,
+  sourceKey: r.source_key,
+  contentSha256: r.content_sha256,
+  persistentId: r.persistent_id,
+  state: r.state,
+  idempotencyKey: r.idempotency_key,
+  deliveryId: r.delivery_id,
+  lastReceipt: r.last_receipt,
+  lastError: r.last_error,
+  batchId: r.batch_id,
+  createdAt: r.created_at.toISOString(),
+  updatedAt: r.updated_at.toISOString(),
+  deliveredAt: r.delivered_at?.toISOString() ?? null,
+});
 
 interface DeliveryRow {
   delivery_id: string;

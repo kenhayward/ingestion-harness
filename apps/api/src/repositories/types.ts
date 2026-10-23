@@ -61,6 +61,44 @@ export interface DeliveryUpdate {
   sequence: number;
 }
 
+/** The states of a decomposition register entry: `pending` while its delivery is on its way. */
+export type RegisterState = 'pending' | 'delivered' | 'incomplete' | 'changed' | 'failed';
+
+/**
+ * One delivered (or delivering) document in the decomposition register, scoped to a target's sink
+ * and instance (one tenant). The worker writes it `pending` before delivering; the bridge's
+ * events settle it.
+ */
+export interface RegisterEntry {
+  id: string;
+  sinkId: string;
+  instanceId: string | null;
+  sourceKey: string;
+  contentSha256: string;
+  persistentId: string | null;
+  state: RegisterState;
+  idempotencyKey: string;
+  deliveryId: string | null;
+  lastReceipt: Receipt | null;
+  lastError: BridgeError | null;
+  batchId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deliveredAt: string | null;
+}
+
+/** How a final delivery event settles a pending register entry. */
+export interface RegisterSettlement {
+  state: Exclude<RegisterState, 'pending'>;
+  /** The persistent id the sink reported; null keeps the entry's (a known id is never cleared). */
+  persistentId: string | null;
+  /** A receipt with a document; null keeps the entry's last one. */
+  receipt: Receipt | null;
+  error: BridgeError | null;
+  /** The document was delivered: `delivered_at` becomes now. */
+  delivered: boolean;
+}
+
 /** The job event a finished delivery writes. */
 /**
  * How a job without a document (a background republish) finishes: it has nothing to review, so a
@@ -558,6 +596,16 @@ export interface IngestionRepo {
   deliveriesOf(jobId: string): Promise<JobDelivery[]>;
   /** Deliveries not final and not updated for `olderThanMinutes`, of jobs still delivering. */
   stragglers(olderThanMinutes: number, now: Date): Promise<JobDelivery[]>;
+  /** The register entry a delivery was made for, if any. */
+  registerEntryByDelivery(deliveryId: string): Promise<RegisterEntry | null>;
+  /**
+   * Settles the register entry of this delivery while it is `pending` (else `stale`: a settled
+   * entry is moved only by the worker's next delivery; `unknown` when no entry has this delivery).
+   */
+  settleRegisterEntry(
+    deliveryId: string,
+    settlement: RegisterSettlement,
+  ): Promise<'applied' | 'stale' | 'unknown'>;
 }
 
 export class ReferenceConflictError extends Error {}

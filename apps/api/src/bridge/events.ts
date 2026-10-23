@@ -6,6 +6,7 @@ import {
   type JobDelivery,
   type JobFinish,
 } from '../repositories/types.js';
+import { applyRegisterEvent } from './register.js';
 
 /** Refusals a person settles with their connection on the bridge's page. */
 export const CONNECTION_CODES: ReadonlySet<string> = new Set([
@@ -49,8 +50,9 @@ export function finishOf(
  * Records one of the bridge's delivery events (signed, at least once, maybe out of order): only
  * an event newer than the delivery's last one, for a delivery not final yet, counts, and the job
  * finishes once, when its last
- * delivery is final and it is still delivering. `unknown`: no such delivery here yet (the worker
- * may not have recorded it), so the bridge should send it again later.
+ * delivery is final and it is still delivering. A final event also settles the decomposition
+ * register entry the delivery was made for (`register.ts`). `unknown`: no such delivery here yet
+ * (the worker may not have recorded it), so the bridge should send it again later.
  */
 export async function applyEvent(
   deps: { repo: IngestionRepo; targets: PublishTargetRepo },
@@ -62,5 +64,9 @@ export async function applyEvent(
     { status: e.status, error: e.error, receipt: e.receipt, sequence: e.sequence },
     finishOf((id) => labels.get(id) ?? id),
   );
-  return outcome;
+  // An event the job's delivery refused as old or repeated moves the register no more.
+  if (outcome === 'stale') return outcome;
+  const registered = await applyRegisterEvent(deps.repo, e);
+  // A decomposition delivered without a job is known to the register alone.
+  return outcome === 'applied' ? outcome : registered;
 }
