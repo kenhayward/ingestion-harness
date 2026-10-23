@@ -184,6 +184,7 @@ class _Reader:
                 self.walk(child)
             elif tag in _REJECTED:
                 self.ctx.changes += 1
+                self.track_fields(child)
             elif tag in _TRANSPARENT:
                 self.walk(child)
             elif tag == f"{W}fldSimple":
@@ -191,6 +192,18 @@ class _Reader:
                 self.ctx.fields.append(state)
                 self.walk(child)
                 self.close_field()
+
+    def track_fields(self, deleted: Element) -> None:
+        """Keep the field stack balanced across deleted content, which contributes no text."""
+        for el in deleted.iter():
+            if el.tag == f"{W}fldChar":
+                self.field_char(el)
+            elif (
+                el.tag == f"{W}delInstrText"
+                and self.ctx.fields
+                and not self.ctx.fields[-1].in_result
+            ):
+                self.ctx.fields[-1].instruction += el.text or ""
 
     def close_field(self) -> None:
         if self.ctx.fields:

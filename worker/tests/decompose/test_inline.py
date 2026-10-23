@@ -232,3 +232,35 @@ def test_merge_runs_joins_equal_marks_only() -> None:
         Break(),
         Text(text="d", marks=bold),
     ]
+
+
+def test_field_end_inside_deletion_keeps_later_text() -> None:
+    body = (
+        '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        "<w:r><w:instrText> REF x </w:instrText></w:r>"
+        '<w:del w:id="1"><w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        "<w:r><w:delText>old</w:delText></w:r>"
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:del></w:p>'
+        "<w:p><w:r><w:t>later</w:t></w:r></w:p>"
+    )
+    pkg = open_package(build_docx(body, styles=STYLES))
+    doc = pkg.xml("word/document.xml")
+    assert doc is not None
+    ctx = InlineContext()
+    paras = doc.findall(f".//{{{W_NS}}}p")
+    first = inlines_of(paras[0], ctx, at="p1")
+    later = inlines_of(paras[1], ctx, at="p2")
+    assert plain_text(first) == ""
+    assert plain_text(later) == "later"
+    assert ctx.fields == []
+
+
+def test_unmatched_field_end_is_ignored() -> None:
+    body = (
+        '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r>'
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        "<w:r><w:t>kept</w:t></w:r></w:p>"
+    )
+    inl, ctx = _inlines(body)
+    assert plain_text(inl) == "kept"
+    assert ctx.fields == []
