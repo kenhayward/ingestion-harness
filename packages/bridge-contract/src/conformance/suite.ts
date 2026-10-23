@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { z } from 'zod';
-import { BridgeErrorSchema } from '../errors.js';
-import { PackageSchema } from '../package.js';
+import { BridgeErrorSchema, type BridgeError } from '../errors.js';
+import { decompositionIdempotencyKey } from '../idempotency.js';
+import { isDecompositionProvenance, PackageSchema, type BridgePackage } from '../package.js';
 import { signRequest } from '../signing.js';
 import {
   BrowseResultSchema,
@@ -9,6 +11,8 @@ import {
   SinkDeliverResultSchema,
   SinkDescribeSchema,
   SinkJobStatusSchema,
+  type ConditionalUpdate,
+  type Receipt,
   type SinkDescribe,
 } from '../sink-api.js';
 
@@ -36,6 +40,27 @@ function fixturePackage(name = 'package-document.json') {
   const file = new URL(`../../test/fixtures/${name}`, import.meta.url);
   return PackageSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
 }
+
+/** A delivery's outcome: the receipt it wrote, or the problem (with the sink's error, if any). */
+type Delivered =
+  | { receipt: Receipt; problem: null; error: null }
+  | { receipt: null; problem: string; error: BridgeError | null };
+
+const refused = (problem: string, error: BridgeError | null = null): Delivered => ({
+  receipt: null,
+  problem,
+  error,
+});
+
+/** The names of the checks for decomposed documents, in the order they run. */
+const DOCUMENT_CHECKS = {
+  create: 'document: create',
+  readBack: 'document: read back',
+  sameKey: 'document: same key again',
+  wrongVersion: 'document: update with a wrong version is refused',
+  update: 'document: update with matching versions',
+  retried: 'document: update retried with the same key',
+} as const;
 
 const describeIssues = (r: z.ZodSafeParseResult<unknown>) =>
   r.success ? undefined : r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
@@ -84,14 +109,19 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
     described = parsed.success ? parsed.data : null;
     const personalWithoutFields =
       described?.connectionKind === 'personal' && described.credentialFields.length === 0;
-    // Every package carries files and data: a sink takes the parts it may ignore.
+    // Every version 1 package carries files and data, and every document package a document and
+    // images: a sink takes the parts it may ignore.
+    const accepts = described?.capabilities.accepts ?? [];
+    const takesAll = (parts: ReadonlyArray<(typeof accepts)[number]>) =>
+      parts.every((p) => accepts.includes(p));
     const takesTooLittle =
-      !!described &&
-      !(['files', 'data'] as const).every((p) => described!.capabilities.accepts.includes(p));
+      !!described && !takesAll(['files', 'data']) && !takesAll(['document', 'images']);
     const problem = personalWithoutFields
       ? 'a personal sink declares the credential fields its users enter'
       : takesTooLittle
-        ? 'a sink takes files and data (it may ignore them)'
+        ? accepts.includes('document')
+          ? 'a sink takes files and data, or document and images (it may ignore them)'
+          : 'a sink takes files and data (it may ignore them)'
         : null;
     check(
       'describe',
@@ -175,12 +205,21 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
   }
 
   // 5. deliver the fixture, waiting out a pending answer. A sink that takes graphs (`rdf`) gets
-  // the document whose package carries one, as CT Studio sends it.
-  const takesGraphs = described?.capabilities.accepts.includes('rdf') ?? false;
+  // the document whose package carries one, as CT Studio sends it. A sink that takes documents
+  // but not files gets no version 1 package: the document checks (8) cover its deliveries.
+  const takes = (part: SinkDescribe['capabilities']['accepts'][number]) =>
+    described?.capabilities.accepts.includes(part) ?? false;
+  const takesGraphs = takes('rdf');
+  const documentsOnly = takes('document') && !takes('files');
+  const documentsOnlySkip =
+    'skipped: the sink takes documents, not files (the document checks cover it)';
   const documentPackage = fixturePackage(
     takesGraphs ? 'package-document-rdf.json' : 'package-document.json',
   );
-  const deliver = async (pkg = documentPackage): Promise<string | null> => {
+  const deliver = async (
+    pkg: BridgePackage = documentPackage,
+    update?: ConditionalUpdate,
+  ): Promise<Delivered> => {
     const res = await call('POST', '/deliveries', {
       instanceId: opts.instanceId,
       credential: opts.credential,
@@ -188,32 +227,46 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
       idempotencyKey: pkg.idempotencyKey,
       actingUser: null,
       package: pkg,
+      ...(update ? { update } : {}),
     });
     const parsed = SinkDeliverResultSchema.safeParse(res.json);
-    if (res.status !== 200 || !parsed.success) return `status ${res.status}`;
-    if (parsed.data.status === 'succeeded') return null;
+    if (res.status !== 200 || !parsed.success) {
+      const error = BridgeErrorSchema.safeParse(res.json);
+      return refused(`status ${res.status}`, error.success ? error.data : null);
+    }
+    if (parsed.data.status === 'succeeded') {
+      return { receipt: parsed.data.receipt, problem: null, error: null };
+    }
     const deadline = Date.now() + (opts.pollTimeoutMs ?? 60_000);
     for (;;) {
       const poll = await call('GET', `/deliveries/${encodeURIComponent(parsed.data.sinkJobId)}`);
       const status = SinkJobStatusSchema.safeParse(poll.json);
-      if (!status.success) return `poll status ${poll.status}`;
-      if (status.data.status === 'succeeded') return null;
-      if (status.data.status === 'failed') return `failed: ${status.data.error.code}`;
-      if (Date.now() > deadline) return 'still pending after the timeout';
+      if (!status.success) return refused(`poll status ${poll.status}`);
+      if (status.data.status === 'succeeded') {
+        return { receipt: status.data.receipt, problem: null, error: null };
+      }
+      if (status.data.status === 'failed') {
+        return refused(`failed: ${status.data.error.code}`, status.data.error);
+      }
+      if (Date.now() > deadline) return refused('still pending after the timeout');
       await new Promise((r) => setTimeout(r, 500));
     }
   };
-  try {
-    const problem = await deliver();
-    check('deliver', problem === null, problem ?? undefined);
-  } catch (err) {
-    check('deliver', false, String(err));
+  if (documentsOnly) {
+    check('deliver', true, documentsOnlySkip);
+  } else {
+    try {
+      const { problem } = await deliver();
+      check('deliver', problem === null, problem ?? undefined);
+    } catch (err) {
+      check('deliver', false, String(err));
+    }
   }
 
   // 5b. a graph package (an ontology, a rebuilt graph), when the sink takes graphs
   if (takesGraphs) {
     try {
-      const problem = await deliver(fixturePackage('package-graph.json'));
+      const { problem } = await deliver(fixturePackage('package-graph.json'));
       check('deliver a graph package', problem === null, problem ?? undefined);
     } catch (err) {
       check('deliver a graph package', false, String(err));
@@ -221,9 +274,11 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
   }
 
   // 6. the same key again, when the sink can replace
-  if (described?.capabilities.replace) {
+  if (documentsOnly) {
+    check('same key again', true, documentsOnlySkip);
+  } else if (described?.capabilities.replace) {
     try {
-      const problem = await deliver();
+      const { problem } = await deliver();
       check('same key again', problem === null, problem ?? undefined);
     } catch (err) {
       check('same key again', false, String(err));
@@ -232,7 +287,117 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
     check('same key again', true, 'skipped: the sink does not replace');
   }
 
-  // 7. every error body seen is a contract error
+  // 8. decomposed documents, when the sink takes them
+  if (described?.capabilities.decomposedDocuments) {
+    await documentChecks(deliver, check);
+  } else {
+    for (const name of Object.values(DOCUMENT_CHECKS)) {
+      check(name, true, 'skipped: the sink does not take decomposed documents');
+    }
+  }
+
+  // 9. every error body seen is a contract error
   check('errors', badErrors.length === 0, badErrors.join(' | ') || undefined);
   return results;
+}
+
+/**
+ * The decomposed document checks: create, read back, the same key again, an update expecting one
+ * wrong version (refused, and so changing nothing), the update expecting what the create wrote,
+ * and that update retried. Each run has its own keys (a forced batch of its own), so the suite
+ * runs again against a real sink.
+ */
+async function documentChecks(
+  deliver: (pkg: BridgePackage, update?: ConditionalUpdate) => Promise<Delivered>,
+  check: (name: string, ok: boolean, detail?: string) => void,
+): Promise<void> {
+  const fixture = fixturePackage('package-decomposed.json');
+  const provenance = fixture.provenance;
+  if (!isDecompositionProvenance(provenance)) throw new Error('the fixture is not a decomposition');
+  const run = `conformance-${randomUUID()}`;
+  /** The fixture at a decomposer version, keyed for this run and the document it replaces. */
+  const packageFor = (persistentId: string | null, decomposerVersion: number): BridgePackage => ({
+    ...fixture,
+    idempotencyKey: decompositionIdempotencyKey(
+      provenance.sourceSha256,
+      persistentId,
+      decomposerVersion,
+      run,
+    ),
+    provenance: { ...provenance, decomposerVersion },
+  });
+  const attempt = async (name: string, body: () => Promise<string | undefined>) => {
+    try {
+      const problem = await body();
+      check(name, !problem, problem);
+    } catch (err) {
+      check(name, false, String(err));
+    }
+  };
+
+  // Create.
+  const created = packageFor(null, provenance.decomposerVersion);
+  let doc: Receipt['document'] = undefined;
+  await attempt(DOCUMENT_CHECKS.create, async () => {
+    const d = await deliver(created);
+    doc = d.receipt?.document;
+    if (!d.receipt) return d.problem;
+    if (!doc) return 'the receipt has no document';
+    return doc.components.length ? undefined : 'the receipt lists no components';
+  });
+  const document = doc as Receipt['document'];
+  if (!document?.components.length) {
+    for (const name of Object.values(DOCUMENT_CHECKS).slice(1)) {
+      check(name, false, 'no document was created');
+    }
+    return;
+  }
+  const pid = document.persistentId;
+  const samePersistentId = (d: Delivered) => {
+    if (!d.receipt) return d.problem;
+    const got = d.receipt.document?.persistentId;
+    return got === pid ? undefined : `persistent id ${got ?? 'missing'}, not ${pid}`;
+  };
+
+  // Read back.
+  const { readBack } = document;
+  check(
+    DOCUMENT_CHECKS.readBack,
+    readBack.ok,
+    readBack.ok ? undefined : `at ${readBack.at}: ${readBack.detail}`,
+  );
+
+  // The same key again.
+  await attempt(DOCUMENT_CHECKS.sameKey, async () => samePersistentId(await deliver(created)));
+
+  // An update expecting one component at a version it never had: refused, naming that component.
+  // Every other expected version matches, so only a sink that compares versions refuses it.
+  const expected = document.components;
+  await attempt(DOCUMENT_CHECKS.wrongVersion, async () => {
+    const wrong = expected.find((c) => c.kind !== 'map') ?? expected[0]!;
+    const d = await deliver(packageFor(pid, provenance.decomposerVersion + 2), {
+      persistentId: pid,
+      expected: expected.map((c) =>
+        c === wrong ? { ...c, version: `${c.version}-not-in-target` } : c,
+      ),
+    });
+    if (d.receipt) return 'the update was applied';
+    const { error } = d;
+    if (error?.code !== 'changed_in_target' || error.class !== 'needs_user') {
+      const got = error ? `${error.class} ${error.code}` : d.problem;
+      return `refused with ${got}, not needs_user changed_in_target`;
+    }
+    const changed = error.details?.changed;
+    const named =
+      Array.isArray(changed) && changed.some((c) => (c as { id?: unknown })?.id === wrong.id);
+    return named ? undefined : `details.changed does not name ${wrong.id}`;
+  });
+
+  // An update from the next decomposer version, expecting what the create wrote; then the same
+  // update retried, which the sink recognises by its key instead of refusing it as changed.
+  const update: ConditionalUpdate = { persistentId: pid, expected };
+  const updated = packageFor(pid, provenance.decomposerVersion + 1);
+  for (const name of [DOCUMENT_CHECKS.update, DOCUMENT_CHECKS.retried]) {
+    await attempt(name, async () => samePersistentId(await deliver(updated, update)));
+  }
 }
