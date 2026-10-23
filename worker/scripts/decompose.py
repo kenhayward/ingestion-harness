@@ -7,8 +7,13 @@ Drawings, equations and pictures that need converting are rendered through the d
 converter at `--converter-url`; without it, a document that needs rendering fails. `out-dir`
 must not exist or must be empty. Image files are named from image ids, never package paths.
 
-Exit codes: 0 decomposed; 1 usage or output problem; 2 the decomposition failed (a fidelity
-failure or something that couldn't be read or rendered); 3 the source was rejected.
+Exit codes:
+  0  decomposed
+  1  the output folder is not empty (or not a folder), or the source can't be read
+  2  the decomposition failed (a fidelity failure, or something that couldn't be read or
+     rendered); also argparse's usage errors, by its convention
+  3  the source was rejected (unreadable or unsafe)
+  4  the converter is unavailable (transient: run again later)
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ingest_worker.convert import GotenbergConverter
+from ingest_worker.convert import ConverterUnavailable, GotenbergConverter
 from ingest_worker.decompose import (
     DecompositionFailed,
     DecompositionRejected,
@@ -81,7 +86,12 @@ def _extension(content_type: str | None) -> str:
 
 
 def main(argv: Sequence[str] | None = None, *, renderer: Renderer | None = None) -> int:
-    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    usage = __doc__ or ""
+    parser = argparse.ArgumentParser(
+        description=usage.splitlines()[0],
+        epilog=usage[usage.index("Exit codes:") :] if "Exit codes:" in usage else None,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("docx", type=Path)
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("--converter-url", help="the document converter's base URL")
@@ -111,6 +121,9 @@ def main(argv: Sequence[str] | None = None, *, renderer: Renderer | None = None)
     except DecompositionFailed as exc:
         print(f"failed at {exc.at or 'the document'}: {exc.detail}", file=sys.stderr)
         return 2
+    except ConverterUnavailable as exc:
+        print(f"converter unavailable: {exc}", file=sys.stderr)
+        return 4
 
     doc = result.document
     images = out / "images"

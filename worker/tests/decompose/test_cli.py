@@ -9,7 +9,9 @@ from types import ModuleType
 
 import pytest
 
+from ingest_worker.convert import ConverterUnavailable
 from ingest_worker.decompose import decompose_docx
+from ingest_worker.decompose.render import RenderFragment
 from tests.decompose.docx import build_docx
 from tests.decompose.fakes import FakeRenderer
 from tests.decompose.test_media import EMF, PNG, picture
@@ -106,6 +108,20 @@ def test_refuses_non_empty_out_dir(tmp_path: Path) -> None:
     empty.mkdir()
     assert cli.main([str(source), str(empty)], renderer=FakeRenderer()) == 0
     assert (empty / "document.json").exists()
+
+
+class _UnreachableRenderer:
+    def render(self, fragment: RenderFragment) -> bytes | None:
+        raise ConverterUnavailable("converter unreachable: connection refused")
+
+
+def test_converter_unavailable_exits_4(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    source = tmp_path / "in.docx"
+    source.write_bytes(pictures_docx())
+    out = tmp_path / "out"
+    assert cli.main([str(source), str(out)], renderer=_UnreachableRenderer()) == 4
+    assert "converter unavailable: converter unreachable" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_file_names_are_sanitised_ids_that_never_collide() -> None:
