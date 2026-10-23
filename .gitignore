@@ -41,3 +41,6 @@ docs/samples/IMAGE process validation protocol.pdf
 
 # Brainstorming mockups (superpowers visual companion)
 .superpowers/
+
+# Understand Anything knowledge graph (local analysis output)
+.ua/

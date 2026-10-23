@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Thursday 22 October 2026: a new Review workspace, occurrence filters and parallel model
-        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #311,
+        calls, delivery to other systems, and one registry of publishing targets. PRs #289 to #312,
         merged between Wednesday 21 October 2026, 14:06 and Thursday 22 October 2026 (UTC).
       </p>
 
@@ -740,6 +740,15 @@
         their time (465 s to about 310 s of test time, the GitHub sync and Profile tests three to
         five times faster). Production hashing is unchanged, and one test still checks the real
         cost.
+      </p>
+
+      <h3 id="ua-ignored">Local code-map files ignored</h3>
+      <p class="prs">
+        <a href="https://github.com/kenhayward/ingestion-harness/pull/312">#312</a>
+      </p>
+      <p>
+        The repository ignores the <code>.ua/</code> folder, where a developer&apos;s local code-map
+        tool keeps its analysis, so it never ends up in a commit. Nothing in CT Studio changes.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
