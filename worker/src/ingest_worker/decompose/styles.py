@@ -19,6 +19,7 @@ class Styles:
 
     def __init__(self, styles: Element | None = None, numbering: Element | None = None) -> None:
         self._ppr: dict[str, Element | None] = {}
+        self._names: dict[str, str] = {}
         self._based_on: dict[str, str] = {}
         self._default: str | None = None
         if styles is not None:
@@ -27,6 +28,7 @@ class Styles:
                 if sid is None or style.get(f"{W}type", "paragraph") != "paragraph":
                     continue
                 self._ppr[sid] = style.find(f"{W}pPr")
+                self._names[sid] = (_val(style.find(f"{W}name")) or "").casefold()
                 if style.get(f"{W}default", "0").lower() in ("1", "true", "on"):
                     self._default = sid
                 if parent := _val(style.find(f"{W}basedOn")):
@@ -53,20 +55,32 @@ class Styles:
                     if (lvl := o.find(f"{W}lvl")) is not None
                 }
 
+    def _style_chain(self, p: Element) -> list[str]:
+        """The paragraph's style id and its ancestors', nearest first."""
+        ppr = p.find(f"{W}pPr")
+        style_id = _val(ppr.find(f"{W}pStyle") if ppr is not None else None) or self._default
+        chain: list[str] = []
+        while style_id is not None and style_id in self._ppr and style_id not in chain:
+            chain.append(style_id)
+            style_id = self._based_on.get(style_id)
+        return chain
+
     def _layers(self, p: Element) -> list[Element]:
         """The paragraph's own `pPr`, then its style's and its ancestors', nearest first."""
         layers: list[Element] = []
         ppr = p.find(f"{W}pPr")
         if ppr is not None:
             layers.append(ppr)
-        style_id = _val(ppr.find(f"{W}pStyle") if ppr is not None else None) or self._default
-        seen: set[str] = set()
-        while style_id is not None and style_id in self._ppr and style_id not in seen:
-            seen.add(style_id)
+        for style_id in self._style_chain(p):
             if (style_ppr := self._ppr[style_id]) is not None:
                 layers.append(style_ppr)
-            style_id = self._based_on.get(style_id)
         return layers
+
+    def is_caption(self, p: Element) -> bool:
+        """Whether the paragraph's style is Word's caption style, or is based on it."""
+        return any(
+            sid == "Caption" or self._names.get(sid) == "caption" for sid in self._style_chain(p)
+        )
 
     def outline_level(self, p: Element) -> int | None:
         """0-based outline level (from `w:outlineLvl`, then the style chain); None for body text."""

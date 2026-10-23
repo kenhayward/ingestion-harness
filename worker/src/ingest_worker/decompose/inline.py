@@ -113,16 +113,24 @@ class RunStyles:
 
 @dataclass
 class FieldState:
-    """A field Word has opened (or a `fldSimple`): its instruction and which half is being read."""
+    """A field Word has opened (or a `fldSimple`): its instruction, which half is being read, and
+    the text of its result read so far (outside any field nested in it)."""
 
     instruction: str = ""
     in_result: bool = False
+    result: str = ""
 
     @property
     def kind(self) -> str:
         """The field's keyword (`TOC`, `SEQ`, `REF`, `PAGEREF`, `NOTEREF`, `HYPERLINK`, ...)."""
         words = self.instruction.split()
         return words[0].upper() if words else ""
+
+    @property
+    def argument(self) -> str:
+        """The instruction's first argument, such as a `SEQ` field's identifier (`Table`)."""
+        words = self.instruction.split()
+        return words[1] if len(words) > 1 else ""
 
 
 @dataclass
@@ -131,7 +139,9 @@ class InlineContext:
 
     `fields` is the stack of open fields and `closed_fields` the finished ones, in closing order.
     `bookmarks` maps a bookmark name to the id it resolves to (filled by a later task). `changes`
-    counts tracked-change elements read as accepted.
+    counts tracked-change elements read as accepted. `caption_number_map` maps a caption's kind
+    and the number the source displayed for it, such as `("table", 13)`, to the captioned
+    element's id.
     """
 
     styles: RunStyles = field(default_factory=RunStyles)
@@ -140,6 +150,7 @@ class InlineContext:
     closed_fields: list[FieldState] = field(default_factory=list)
     flags: list[Flag] = field(default_factory=list)
     changes: int = 0
+    caption_number_map: dict[tuple[str, int], str] = field(default_factory=dict)
 
 
 # --- Reading ---------------------------------------------------------------------------------
@@ -270,6 +281,8 @@ class _Reader:
     def emit(self, text: str, marks: frozenset[Mark]) -> None:
         if text:
             self.out.append(Text(text=text, marks=marks))
+            if self.ctx.fields and self.ctx.fields[-1].in_result:
+                self.ctx.fields[-1].result += text
 
     def text(self, text: str, marks: frozenset[Mark], family: Family | None, font: str) -> None:
         chars: list[str] = []

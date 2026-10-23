@@ -12,18 +12,26 @@ dropped; tracked cell-level changes and legacy horizontal merges are refused.
 `source_grid` resolves the grid slot by slot from the raw XML, and `table_of` builds cells with
 their spans; the two share only the reading of single elements, so a mistake in either one's
 merge logic shows up as a difference the fidelity check refuses.
+
+Some source rows are not grid rows (§5.4). A first row of one full-width cell that starts
+`Table n:` or holds a `SEQ Table` field is the caption, and trailing full-width rows typed as
+notes (`a: ...`) are the notes when each marker appears superscript in the rest of the table;
+note-like rows whose marker doesn't stay in the grid and are flagged. `structural_rows` names
+these rows by their index in `source_grid`, which keeps every source row, so the fidelity check
+can set them aside the same way `table_of` did.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+import re
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 from xml.etree.ElementTree import Element
 
-from .ids import child_id
-from .inline import InlineContext, W
-from .model import Block, Cell, Row, Table
+from .ids import child_id, normalise_title
+from .inline import FieldState, InlineContext, RunStyles, W, inlines_of, merge_runs, plain_text
+from .model import Block, Break, Cell, Flag, Inline, Paragraph, Row, Table, TableNote, Text
 from .package import DecompositionFailed
 
 #: Reads the block content of a container element (a table cell) into blocks whose ids are
@@ -50,6 +58,18 @@ _H_ALIGN: dict[str, HAlign] = {
     "distribute": "justify",
 }
 _V_ALIGN: dict[str, VAlign] = {"top": "top", "center": "middle", "bottom": "bottom"}
+
+#: A caption's label and number, typed or shown by a `SEQ` field: `Table 13:`, `Figure 1-`.
+#: The en and em dashes are separators, as Word users type them.
+CAPTION_PREFIX = re.compile(r"^\s*(Table|Figure)\s*(\d+)\s*[:.\-–—]?\s*", re.I)  # noqa: RUF001
+#: A table note's marker and separator: `a: `, `1. `, `*) `.
+NOTE_PREFIX = re.compile(r"^\s*([a-z]|\d{1,2}|[*†‡§])\s*[:.)]\s+")
+_SEPARATOR = r"\s*[:.\-–—]?\s*"  # noqa: RUF001
+_SEQ_TABLE = re.compile(r"\bSEQ\s+Table\b", re.I)
+_MARKER_SPLIT = re.compile(r"[\s,;()\[\]]+")
+
+CaptionKind = Literal["table", "figure"]
+NotesMatch = Literal["notes", "unrecognised"]
 
 
 # --- Reading single elements (shared) ------------------------------------------------------
@@ -305,15 +325,26 @@ def _count_changes(tbl: Element, ctx: InlineContext) -> None:
                 ctx.changes += 1
 
 
-def table_of(tbl: Element, ctx: InlineContext, *, id: str, walk_blocks: WalkBlocks) -> Table:
-    """The `Table` for a `w:tbl` element; cell blocks are read through `walk_blocks`."""
+def table_of(
+    tbl: Element, ctx: InlineContext, *, id: str, walk_blocks: WalkBlocks, wide: bool = False
+) -> Table:
+    """The `Table` for a `w:tbl` element; cell blocks are read through `walk_blocks`.
+
+    A caption row and recognised note rows leave the grid for `caption` and `notes`; a caption
+    in a paragraph beside the table is attached later, by the body.
+    """
     try:
         rows = _rows(tbl)
         width = _width(tbl, rows)
     except DecompositionFailed as failed:
         raise DecompositionFailed(failed.detail, at=id) from None
     _count_changes(tbl, ctx)
-    layouts = [_layout(tr, width) for tr in rows]
+    structure = _structure(rows, width, ctx.styles)
+    caption = None
+    if structure.caption is not None:
+        caption = _caption_row(_cells(rows[structure.caption])[0], ctx, at=id)
+    kept = [rows[i] for i in structure.grid_rows(len(rows))]
+    layouts = [_layout(tr, width) for tr in kept]
     _resolve_merges(layouts, id)
 
     # Read every cell in document order; a continue cell's content goes after its origin's.
@@ -326,7 +357,7 @@ def table_of(tbl: Element, ctx: InlineContext, *, id: str, walk_blocks: WalkBloc
                 (entry.head or entry).blocks.extend(blocks)
 
     header_rows = 0
-    while header_rows < len(rows) and _is_header(rows[header_rows]):
+    while header_rows < len(kept) and _is_header(kept[header_rows]):
         header_rows += 1
 
     built: list[Row] = []
@@ -351,9 +382,290 @@ def table_of(tbl: Element, ctx: InlineContext, *, id: str, walk_blocks: WalkBloc
             )
         built.append(Row(cells=cells))
 
+    notes: list[TableNote] = []
+    for i in structure.notes:
+        tc = _cells(rows[i])[0]
+        notes.extend(_notes(_paragraph_inlines(tc, ctx, at=id), _note_markers(tc) or []))
+    if structure.unrecognised:
+        flag_unrecognised_notes(ctx, id)
+    if caption is not None:
+        register_caption(ctx, caption, id)
+
     return Table(
         id=id,
+        numbered=caption.numbered if caption is not None else False,
+        caption=caption.inlines if caption is not None else [],
         column_widths=_column_widths(tbl, width),
         header_rows=header_rows,
         rows=built,
+        notes=notes,
+        wide=wide,
+        key=caption_key(caption.inlines) if caption is not None else None,
     )
+
+
+# --- Captions --------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Caption:
+    """A caption's content without its label and number, and what that prefix declared."""
+
+    inlines: list[Inline]
+    kind: CaptionKind | None  # the label it gave, if any
+    number: int | None  # the number the source displayed
+    numbered: bool
+
+
+def _kind(label: str) -> CaptionKind | None:
+    folded = label.casefold()
+    return "table" if folded == "table" else "figure" if folded == "figure" else None
+
+
+def _leading_text(inlines: Sequence[Inline]) -> str:
+    """The text of the `Text` items before the first item of any other kind."""
+    parts: list[str] = []
+    for item in inlines:
+        if not isinstance(item, Text):
+            break
+        parts.append(item.text)
+    return "".join(parts)
+
+
+def _strip_leading(inlines: Sequence[Inline], count: int) -> list[Inline]:
+    """`inlines` without the first `count` characters of their leading text, and without the
+    breaks that leaves at the start."""
+    rest = list(inlines)
+    while count > 0 and rest and isinstance(first := rest[0], Text):
+        if len(first.text) > count:
+            rest[0] = Text(text=first.text[count:], marks=first.marks)
+            break
+        count -= len(first.text)
+        rest.pop(0)
+    while rest and isinstance(rest[0], Break):
+        rest.pop(0)
+    return rest
+
+
+def caption_parts(inlines: Sequence[Inline], seq_fields: Sequence[FieldState]) -> Caption:
+    """A caption read from its inlines and the fields they held.
+
+    A leading `CAPTION_PREFIX` is removed and gives the label and number. Failing that, a `SEQ`
+    field still makes the caption numbered, and its result (with at most one word before it) is
+    removed when it leads the text. Without either, the caption is unnumbered and kept whole.
+    """
+    lead = _leading_text(inlines)
+    if match := CAPTION_PREFIX.match(lead):
+        rest = _strip_leading(inlines, match.end())
+        return Caption(rest, _kind(match.group(1)), int(match.group(2)), numbered=True)
+    seq = next((f for f in seq_fields if f.kind == "SEQ"), None)
+    if seq is None:
+        return Caption(list(inlines), None, None, numbered=False)
+    result = seq.result.strip()
+    number = int(result) if re.fullmatch(r"[0-9]+", result) else None
+    kept = list(inlines)
+    if result:
+        prefix = re.compile(rf"^\s*(?:[^\W\d_]+\.?\s*)?{re.escape(result)}{_SEPARATOR}")
+        if match := prefix.match(lead):
+            kept = _strip_leading(inlines, match.end())
+    return Caption(kept, _kind(seq.argument), number, numbered=True)
+
+
+def caption_key(inlines: Sequence[Inline]) -> str | None:
+    """A table's key: its normalised caption text, or None when it has none."""
+    text = plain_text(list(inlines))
+    return normalise_title(text) if text.strip() else None
+
+
+def register_caption(ctx: InlineContext, caption: Caption, element_id: str) -> None:
+    """Record the source's displayed caption number for typed references; the first one wins."""
+    if caption.kind is not None and caption.number is not None:
+        ctx.caption_number_map.setdefault((caption.kind, caption.number), element_id)
+
+
+def _paragraph_inlines(tc: Element, ctx: InlineContext, *, at: str) -> list[list[Inline]]:
+    return [inlines_of(p, ctx, at=at) for p in _unwrapped(tc, f"{W}p")]
+
+
+def _caption_row(tc: Element, ctx: InlineContext, *, at: str) -> Caption:
+    """The caption in a caption row's cell, its paragraphs joined by breaks."""
+    start = len(ctx.closed_fields)
+    joined: list[Inline] = []
+    for inlines in _paragraph_inlines(tc, ctx, at=at):
+        if inlines:
+            joined.extend([Break(), *inlines] if joined else inlines)
+    return caption_parts(joined, ctx.closed_fields[start:])
+
+
+# --- Caption and note rows -------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StructuralRows:
+    """Source rows that are not grid rows, as indices into the rows of `source_grid`.
+
+    `caption` is the caption row and `notes` the rows that became notes; both leave the grid.
+    `unrecognised` are note-like rows whose markers were not found; they stay in the grid.
+    """
+
+    caption: int | None = None
+    notes: tuple[int, ...] = ()
+    unrecognised: tuple[int, ...] = ()
+
+    def grid_rows(self, count: int) -> list[int]:
+        """The indices, out of `count` source rows, of the rows that stay in the grid."""
+        left = {self.caption, *self.notes}
+        return [i for i in range(count) if i not in left]
+
+
+def structural_rows(tbl: Element, styles: RunStyles) -> StructuralRows:
+    """Which of the table's source rows are its caption and its notes (§5.4)."""
+    rows = _rows(tbl)
+    return _structure(rows, _width(tbl, rows), styles)
+
+
+def _structure(rows: list[Element], width: int, styles: RunStyles) -> StructuralRows:
+    caption = None
+    if len(rows) > 1 and (tc := _sole_cell(rows[0], width)) is not None and _is_caption_cell(tc):
+        caption = 0
+    first = 0 if caption is None else 1  # the first grid row, never a note row
+    candidates: dict[int, list[str]] = {}
+    for i in range(len(rows) - 1, first, -1):
+        cell = _sole_cell(rows[i], width)
+        markers = _note_markers(cell) if cell is not None else None
+        if markers is None:
+            break
+        candidates[i] = markers
+    rest = [tr for i, tr in enumerate(rows) if i != caption and i not in candidates]
+    found = _superscripts(rest, styles)
+    notes = tuple(sorted(i for i, ms in candidates.items() if all(m in found for m in ms)))
+    unrecognised = tuple(sorted(set(candidates) - set(notes)))
+    return StructuralRows(caption, notes, unrecognised)
+
+
+def _sole_cell(tr: Element, width: int) -> Element | None:
+    """The row's only cell, if it spans the whole grid with no gaps, merge or nested table."""
+    before, after = _gaps(tr)
+    cells = _cells(tr)
+    if before or after or len(cells) != 1:
+        return None
+    tc = cells[0]
+    if _span(tc) != width or _vmerge(tc) is not None or tc.find(f".//{W}tbl") is not None:
+        return None
+    return tc
+
+
+def _is_caption_cell(tc: Element) -> bool:
+    if CAPTION_PREFIX.match(_plain_text(tc)):
+        return True
+    instructions = "".join(el.text or "" for el in tc.iter(f"{W}instrText"))
+    instructions += " " + " ".join(el.get(f"{W}instr", "") for el in tc.iter(f"{W}fldSimple"))
+    return _SEQ_TABLE.search(instructions) is not None
+
+
+def _note_markers(tc: Element) -> list[str] | None:
+    """The markers of a cell whose every non-blank paragraph is a note, else None."""
+    markers: list[str] = []
+    for p in _unwrapped(tc, f"{W}p"):
+        text = "".join(_texts(p))
+        if not text.strip():
+            continue
+        match = NOTE_PREFIX.match(text)
+        if match is None:
+            return None
+        markers.append(match.group(1))
+    return markers or None
+
+
+def _descendants(el: Element, tag: str) -> Iterator[Element]:
+    """The outermost elements with `tag` under `el`, outside deleted content and text boxes."""
+    for child in el:
+        if _excluded(child):
+            continue
+        if child.tag == tag:
+            yield child
+        else:
+            yield from _descendants(child, tag)
+
+
+def _style_val(props: Element | None, tag: str) -> str | None:
+    style = props.find(f"{W}{tag}") if props is not None else None
+    return style.get(f"{W}val") if style is not None else None
+
+
+def _superscripts(rows: list[Element], styles: RunStyles) -> set[str]:
+    """The tokens of visible superscript runs in the rows: `a` and `b` from a run `a,b`."""
+    found: set[str] = set()
+    for tr in rows:
+        for p in _descendants(tr, f"{W}p"):
+            paragraph_style = _style_val(p.find(f"{W}pPr"), "pStyle")
+            for r in _descendants(p, f"{W}r"):
+                rpr = r.find(f"{W}rPr")
+                props = styles.resolve(paragraph_style, _style_val(rpr, "rStyle"), rpr)
+                if props["superscript"] and not props["hidden"]:
+                    text = "".join(t.text or "" for t in r.findall(f"{W}t"))
+                    found.update(token for token in _MARKER_SPLIT.split(text) if token)
+    return found
+
+
+def _notes(paragraphs: list[list[Inline]], markers: list[str]) -> list[TableNote]:
+    """One note per paragraph that starts with a marker, which is removed.
+
+    A paragraph that doesn't (its marker hidden, say) continues the note before it, or is a
+    note under the cell's first source marker; nothing is dropped.
+    """
+    notes: list[TableNote] = []
+    for inlines in paragraphs:
+        if not inlines:
+            continue
+        match = NOTE_PREFIX.match(_leading_text(inlines))
+        if match is not None:
+            rest = _strip_leading(inlines, match.end())
+            notes.append(TableNote(marker=match.group(1), inlines=rest))
+        elif notes:
+            last = notes[-1]
+            joined = merge_runs([*last.inlines, Break(), *inlines])
+            notes[-1] = TableNote(marker=last.marker, inlines=joined)
+        else:
+            notes.append(TableNote(marker=markers[0] if markers else "", inlines=inlines))
+    return notes
+
+
+def flag_unrecognised_notes(ctx: InlineContext, table_id: str) -> None:
+    ctx.flags.append(
+        Flag(
+            code="table_notes_unrecognised",
+            severity="warning",
+            at=table_id,
+            message="note rows whose markers are not superscript anywhere in the table",
+        )
+    )
+
+
+def notes_table(tbl: Element, following: Element, styles: RunStyles) -> NotesMatch | None:
+    """Whether `following`, the table directly after `tbl`, is a one-cell table of its notes.
+
+    `notes` when every paragraph is a note whose marker is superscript in `tbl`'s grid,
+    `unrecognised` when they are all note-like but a marker is missing, else None.
+    """
+    rows = _rows(following)
+    if len(rows) != 1:
+        return None
+    cell = _sole_cell(rows[0], _width(following, rows))
+    markers = _note_markers(cell) if cell is not None else None
+    if markers is None:
+        return None
+    own = _rows(tbl)
+    structure = _structure(own, _width(tbl, own), styles)
+    found = _superscripts([own[i] for i in structure.grid_rows(len(own))], styles)
+    return "notes" if all(m in found for m in markers) else "unrecognised"
+
+
+def notes_of_table(table: Table, following: Element) -> list[TableNote] | None:
+    """The notes of a one-cell notes table, or None if its cell holds more than paragraphs."""
+    blocks = table.rows[0].cells[0].blocks
+    paragraphs = [b.inlines for b in blocks if isinstance(b, Paragraph)]
+    if len(paragraphs) != len(blocks):
+        return None
+    cell = _cells(_rows(following)[0])[0]
+    return _notes(paragraphs, _note_markers(cell) or [])
