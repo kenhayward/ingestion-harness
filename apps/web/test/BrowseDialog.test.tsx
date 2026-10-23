@@ -51,7 +51,7 @@ describe('BrowseDialog', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'More' }));
     expect(await within(dialog).findByText('Later')).toBeVisible();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Use Reports' }));
-    expect(onPick).toHaveBeenCalledWith('reports');
+    expect(onPick).toHaveBeenCalledWith('reports', 'Reports');
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -70,10 +70,52 @@ describe('BrowseDialog', () => {
       throw new ApiError('Ada has no connection for sandbox: add one on the connections page', 422);
     });
     const { api, dialog } = open(browseSink);
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Add your connection for sandbox first',
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Ada has no connection for sandbox: add one on the connections page',
     );
+    expect(alert).not.toHaveTextContent('Add your connection');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Manage connections' }));
     expect(api.openConnections).toHaveBeenCalled();
+  });
+
+  it('has one Cancel', async () => {
+    const { dialog } = open(vi.fn(async () => ({ nodes: [node('reports')], nextCursor: null })));
+    await within(dialog).findByRole('button', { name: 'Reports' });
+    expect(within(dialog).getAllByRole('button', { name: 'Cancel' })).toHaveLength(1);
+  });
+
+  it('a flat list loads every page, filters as you type, and picks on a click', async () => {
+    const browseSink = vi.fn(async (req: { cursor: string | null }) =>
+      req.cursor === 'p2'
+        ? { nodes: [node('quality', { label: 'Quality records (Rep-3)' })], nextCursor: null }
+        : {
+            nodes: [
+              node('training', { label: 'Training (Rep-1)' }),
+              node('stability', { label: 'Stability studies (Rep-2)' }),
+            ],
+            nextCursor: 'p2',
+          },
+    );
+    const { onPick, onClose, dialog } = open(browseSink);
+    expect(
+      await within(dialog).findByRole('button', { name: 'Quality records (Rep-3)' }),
+    ).toBeVisible();
+    expect(within(dialog).queryByRole('button', { name: 'More' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /^Use / })).toBeNull();
+    await userEvent.type(within(dialog).getByRole('searchbox', { name: 'Filter space' }), 'STAB');
+    expect(within(dialog).queryByRole('button', { name: 'Training (Rep-1)' })).toBeNull();
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Stability studies (Rep-2)' }),
+    );
+    expect(onPick).toHaveBeenCalledWith('stability', 'Stability studies (Rep-2)');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('says when the filter matches nothing', async () => {
+    const { dialog } = open(vi.fn(async () => ({ nodes: [node('training')], nextCursor: null })));
+    await within(dialog).findByRole('button', { name: 'Training' });
+    await userEvent.type(within(dialog).getByRole('searchbox', { name: 'Filter space' }), 'zzz');
+    expect(within(dialog).getByText('Nothing matches “zzz”.')).toBeVisible();
   });
 });
