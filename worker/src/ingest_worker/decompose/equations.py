@@ -149,6 +149,8 @@ def _run(r: Element) -> list[Element]:
         elif child.tag not in (f"{M}rPr", f"{_W}rPr"):
             raise _Unsupported(child.tag)
     text = "".join(texts)
+    if _val(props, "scr", "roman") != "roman":
+        raise _Unsupported("math script")  # double-struck, script or fraktur letters
     if _flag_on(props, "nor"):
         return [_m("mtext", text=text)] if text else []
     variant = _STY_VARIANTS.get(_val(props, "sty", "i"))

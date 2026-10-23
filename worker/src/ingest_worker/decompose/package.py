@@ -75,6 +75,7 @@ class Package:
         self._zf = zf
         self._infos = {i.filename: i for i in zf.infolist() if not i.is_dir()}
         self._cache: dict[str, bytes] = {}
+        self._rels: dict[str, dict[str, Rel]] = {}
         self._read_total = 0
 
     def part(self, name: str) -> bytes | None:
@@ -118,10 +119,13 @@ class Package:
         return None if data is None else parse_xml(data)
 
     def rels(self, part: str) -> dict[str, Rel]:
-        """The relationships of `part`, keyed by id (empty if it has none)."""
+        """The relationships of `part`, keyed by id (empty if it has none), parsed once."""
+        if part in self._rels:
+            return self._rels[part]
         directory, base = posixpath.split(part.lstrip("/"))
         root = self.xml(posixpath.join(directory, "_rels", f"{base}.rels"))
         found: dict[str, Rel] = {}
+        self._rels[part] = found
         if root is None:
             return found
         for el in root.iter(f"{_REL_NS}Relationship"):
@@ -159,6 +163,9 @@ def open_package(data: bytes) -> Package:
         raise DecompositionRejected(f"package has more than {MAX_PARTS} parts")
     if sum(i.file_size for i in infos) > MAX_TOTAL_BYTES:
         raise DecompositionRejected(f"package is larger than {MAX_TOTAL_BYTES} bytes")
-    if _MAIN_PART not in {i.filename for i in infos}:
+    names = {i.filename for i in infos}
+    if len(names) != len(infos):
+        raise DecompositionRejected("a part name appears more than once in the package")
+    if _MAIN_PART not in names:
         raise DecompositionRejected(f"not a .docx: no {_MAIN_PART}")
     return Package(zf)

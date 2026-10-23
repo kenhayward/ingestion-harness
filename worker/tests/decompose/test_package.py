@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import warnings
 import zipfile
 
 import pytest
@@ -143,3 +144,29 @@ def test_nesting_is_capped_before_any_walk() -> None:
     assert parse_xml(_nested(pkg.MAX_DEPTH)).tag == "a"
     with pytest.raises(DecompositionRejected, match="document nesting too deep"):
         parse_xml(_nested(pkg.MAX_DEPTH + 1))
+
+
+def test_rejects_duplicate_part_names() -> None:
+    buf = io.BytesIO()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # zipfile warns of the duplicate it writes
+        with zipfile.ZipFile(buf, "w") as zf:
+            for data in ("<w:document/>", "<w:other/>"):
+                zf.writestr("word/document.xml", data)
+    with pytest.raises(DecompositionRejected, match="more than once"):
+        open_package(buf.getvalue())
+
+
+def test_relationships_are_parsed_once_per_part(monkeypatch: pytest.MonkeyPatch) -> None:
+    package = open_package(build_docx("<w:p/>", rels=[("rIdX", "image", "media/x.png")]))
+    parsed: list[bytes] = []
+    real = pkg.parse_xml
+
+    def counting(data: bytes) -> object:
+        parsed.append(data)
+        return real(data)
+
+    monkeypatch.setattr(pkg, "parse_xml", counting)
+    for _ in range(3):
+        assert package.target("word/document.xml", "rIdX") == "word/media/x.png"
+    assert len(parsed) == 1

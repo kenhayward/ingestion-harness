@@ -555,7 +555,8 @@ model-driven extraction and no review step. **[call]**
 
 Phases 1 and 4's capture work need nothing from each other and can run side by side.
 
-**Phase 1 status.** Phase 1 (Word) is implemented: `uv run --directory worker python scripts/decompose.py <file.docx> <out-dir> [--converter-url URL]`.
+**Phase 1 status.** Phase 1 (Word) is implemented; the owner's sample run is pending. Run it with
+`uv run --directory worker python scripts/decompose.py <file.docx> <out-dir> [--converter-url URL]`.
 
 ## 12. Later
 

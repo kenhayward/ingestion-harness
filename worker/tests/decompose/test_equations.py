@@ -333,3 +333,9 @@ def test_optional_parts_may_be_empty() -> None:
     radical = f"<m:rad><m:deg/><m:e>{r('x')}</m:e></m:rad>"
     assert mathml(radical) == math_of("<msqrt><mi>x</mi></msqrt>")
     assert mathml("<m:d><m:e/></m:d>") != "None"
+
+
+@pytest.mark.parametrize("script", ["double-struck", "script", "fraktur"])
+def test_non_roman_math_script_gives_none(script: str) -> None:
+    assert mathml(r("R", f'<m:scr m:val="{script}"/>')) == "None"
+    assert mathml(r("R", '<m:scr m:val="roman"/>')) == math_of("<mi>R</mi>")
