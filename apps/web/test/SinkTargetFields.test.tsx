@@ -7,8 +7,8 @@ import { SinkTargetFields, type SinkTargetValue } from '../src/access/SinkTarget
 import { fakeApi } from './fake-api.js';
 
 const SINK: SinkInfo = {
-  id: '3dexperience',
-  name: '3DEXPERIENCE',
+  id: 'docs-platform',
+  name: 'Docs platform',
   status: 'available',
   contractVersion: 1,
   connectionKind: 'personal',
