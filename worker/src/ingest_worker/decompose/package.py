@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import posixpath
 import zipfile
+import zlib
 from dataclasses import dataclass
 from xml.etree.ElementTree import Element, ParseError
 
@@ -81,9 +82,16 @@ class Package:
                     out += chunk
                     if len(out) > MAX_PART_BYTES:
                         raise DecompositionRejected(
-                            f"part {name} is larger than {MAX_PART_BYTES} bytes"
+                            f"part {name} grew past {MAX_PART_BYTES} bytes while being read"
                         )
-        except (zipfile.BadZipFile, NotImplementedError, RuntimeError, OSError) as exc:
+        except (
+            zipfile.BadZipFile,
+            zlib.error,
+            EOFError,
+            NotImplementedError,
+            RuntimeError,
+            OSError,
+        ) as exc:
             raise DecompositionRejected(f"part {name} is unreadable: {exc}") from exc
         self._read_total += len(out)
         if self._read_total > MAX_TOTAL_BYTES:

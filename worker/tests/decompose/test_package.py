@@ -61,8 +61,42 @@ def test_rejects_declared_total_oversize(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_rejects_understated_size_by_counted_read(monkeypatch: pytest.MonkeyPatch) -> None:
     # A header that understates the real size must still be caught by the counted read.
     monkeypatch.setattr(pkg, "MAX_PART_BYTES", 1000)
-    package = open_package(_zip({"word/document.xml": b"x" * 5000}))
-    package._infos["word/document.xml"].file_size = 10
+    monkeypatch.setattr(pkg, "_CHUNK", 100)
+
+    class LyingZip:
+        def infolist(self) -> list[zipfile.ZipInfo]:
+            info = zipfile.ZipInfo("word/document.xml")
+            info.file_size = 10
+            return [info]
+
+        def open(self, info: zipfile.ZipInfo) -> io.BytesIO:
+            return io.BytesIO(b"x" * 5000)
+
+    package = pkg.Package(LyingZip())  # type: ignore[arg-type]
+    with pytest.raises(DecompositionRejected, match="grew past"):
+        package.part("word/document.xml")
+
+
+def test_rejects_corrupt_deflate_stream() -> None:
+    raw = bytearray(_zip({"word/document.xml": b"<a>" + b"hello world " * 200 + b"</a>"}))
+    # Scramble the compressed bytes just after the local file header.
+    start = 30 + len("word/document.xml") + 4
+    for i in range(start, start + 20):
+        raw[i] ^= 0xFF
+    with pytest.raises(DecompositionRejected):
+        open_package(bytes(raw)).part("word/document.xml")
+
+
+def test_rejects_truncated_part() -> None:
+    # zipfile raises EOFError when the compressed stream ends early.
+    class TruncatedZip:
+        def infolist(self) -> list[zipfile.ZipInfo]:
+            return [zipfile.ZipInfo("word/document.xml")]
+
+        def open(self, info: zipfile.ZipInfo) -> io.BytesIO:
+            raise EOFError("Compressed file ended before the end-of-stream marker was reached")
+
+    package = pkg.Package(TruncatedZip())  # type: ignore[arg-type]
     with pytest.raises(DecompositionRejected):
         package.part("word/document.xml")
 
