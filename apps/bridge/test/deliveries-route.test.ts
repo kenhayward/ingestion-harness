@@ -10,6 +10,11 @@ import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { KEY, signedInject, testBridge } from './helpers.js';
 import { decomposedPackage, documentPackage } from './sink-builders.js';
 
+const update = {
+  persistentId: 'doc-1',
+  expected: [{ kind: 'map', id: 'doc-1/map', version: '1', element: null }],
+};
+
 const request = (targets: string[], pkg: unknown = documentPackage) => ({
   targets,
   actingUser: { id: 'u1', name: 'Pat', email: null },
@@ -173,10 +178,6 @@ describe('POST /v1/deliveries', () => {
 
   it('update is kept on the delivery', async () => {
     const { app, deliveries } = await setup();
-    const update = {
-      persistentId: 'doc-1',
-      expected: [{ kind: 'map', id: 'doc-1/map', version: '1', element: null }],
-    };
     const res = await signedInject(app, KEY, {
       method: 'POST',
       url: '/v1/deliveries',
@@ -185,6 +186,38 @@ describe('POST /v1/deliveries', () => {
     expect(res.statusCode).toBe(202);
     const result = CreateDeliveriesResultSchema.parse(res.json());
     expect((await deliveries.get(result.deliveries[0]!.deliveryId))?.update).toEqual(update);
+  });
+
+  it('update without a document is refused', async () => {
+    const { app, deliveries } = await setup();
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: { ...request(['d1'], { ...documentPackage, contractVersion: 2 }), update },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      code: 'unsupported_part',
+      message: expect.stringContaining('a conditional update needs a decomposed document'),
+      details: { targetId: 'd1', part: 'document' },
+    });
+    expect(await deliveries.claim(new Date('2100-01-01'), 300)).toBeNull();
+  });
+
+  it('update to a sink without decomposedDocuments is refused', async () => {
+    const { app, deliveries } = await setup();
+    const res = await signedInject(app, KEY, {
+      method: 'POST',
+      url: '/v1/deliveries',
+      body: { ...request(['t1'], decomposedPackage), update },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      code: 'unsupported_part',
+      message: expect.stringContaining('a sink that takes them'),
+      details: { targetId: 't1', part: 'document' },
+    });
+    expect(await deliveries.claim(new Date('2100-01-01'), 300)).toBeNull();
   });
 
   it('a delivery without update keeps none', async () => {

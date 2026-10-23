@@ -107,6 +107,15 @@ export async function acceptDeliveries(
         naming: req.package.naming,
       }),
     );
+    if (req.update && (!req.package.document || !capabilities.decomposedDocuments)) {
+      throw new SinkError(
+        bridgeError(
+          'unsupported_part',
+          `${target.label}: a conditional update needs a decomposed document and a sink that takes them`,
+          { targetId, part: 'document' },
+        ),
+      );
+    }
     // A decomposed document goes only to a sink that says it takes them (never a version 1 sink).
     const refused =
       req.package.document && !capabilities.decomposedDocuments

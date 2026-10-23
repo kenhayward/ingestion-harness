@@ -1,10 +1,28 @@
-import { bridgeError, type BridgeError, type SinkJobStatus } from '@ih/bridge-contract';
+import {
+  bridgeError,
+  type BridgeError,
+  type BridgePackage,
+  type ContractVersion,
+  type SinkJobStatus,
+} from '@ih/bridge-contract';
 import type { Credentials } from '../connections/credential.js';
 import type { ConnectionRepo } from '../connections/repo.js';
 import type { PackageStore } from '../packages/store.js';
 import { SinkError, type SinkPort, type SinkRegistry } from '../sinks/port.js';
 import type { Target, TargetRepo } from '../targets/repo.js';
 import type { DeliveryRepo, DeliveryRow, Transition } from './repo.js';
+
+/**
+ * What a sink of `sinkVersion` is sent; the staged copy is never changed. A newer version is a
+ * superset of an older one, so an older package is lifted to the sink's version, and a newer one
+ * without a `document` part (the only addition a package carries) has the older shape and is sent
+ * as the sink's version. A document package never reaches an older sink: accept refuses it.
+ */
+function packageFor(pkg: BridgePackage, sinkVersion: ContractVersion): BridgePackage {
+  if (pkg.contractVersion === sinkVersion) return pkg;
+  if (pkg.contractVersion > sinkVersion && pkg.document) return pkg;
+  return { ...pkg, contractVersion: sinkVersion };
+}
 
 export interface RunnerDeps {
   deliveries: DeliveryRepo;
@@ -152,13 +170,7 @@ async function step(
     destination: row.destination ?? { ...target.destination, ...row.overrides },
     idempotencyKey: row.idempotencyKey,
     actingUser: row.actingUser,
-    // A version 2 package is version 1 plus additions, so a version 1 package is sent to a
-    // version 2 sink as version 2; the staged copy stays as it was. Nothing is ever downgraded:
-    // accept refuses a document package to a sink without decomposedDocuments.
-    package:
-      described.contractVersion === 2 && pkg.contractVersion === 1
-        ? { ...pkg, contractVersion: 2 }
-        : pkg,
+    package: packageFor(pkg, described.contractVersion),
     ...(row.update ? { update: row.update } : {}),
   });
   if (result.status === 'succeeded') return { status: 'succeeded', receipt: result.receipt };

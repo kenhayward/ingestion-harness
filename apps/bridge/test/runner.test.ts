@@ -645,6 +645,24 @@ describe('runOnce, contract version 2', () => {
     expect(meta!.manifest).toMatchObject({ contractVersion: 1 });
   });
 
+  it('downgrades a v2 package without a document for a v1 sink', async () => {
+    const { deps, deliveries, packages, sink, submit } = await setup();
+    const v2 = { ...documentPackage, contractVersion: 2 as const };
+    const id = await submit({}, T0, { package: v2 });
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.package).toEqual(documentPackage);
+    const meta = await deliveries.getPackage((await deliveries.get(id))!.packageId);
+    expect(await packages.get(meta!.stagedKey)).toEqual(v2);
+    expect(meta!.manifest).toMatchObject({ contractVersion: 2 });
+  });
+
+  it('a v2 sink gets a v2 package as it was', async () => {
+    const { deps, sink, submit } = await setup(v2Sink());
+    await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.package).toEqual(decomposedPackage);
+  });
+
   it('a v1 sink gets the v1 package as it was', async () => {
     const { deps, sink, submit } = await setup();
     await submit();
