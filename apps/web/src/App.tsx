@@ -436,6 +436,8 @@ function SignedInApp({
       notify={notify}
       onAdmin={() => setAdmin(true)}
       onProfile={() => setProfile({ tab: 'details' })}
+      // A failure to open the page (the bridge down) has nowhere to show from a menu: logged.
+      onConnections={() => void api.openConnections().catch((err: unknown) => console.warn(err))}
       onHelp={() => setHelp('introduction')}
       onAbout={() => setAbout({})}
       onSignOut={onSignOut}
