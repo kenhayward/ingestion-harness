@@ -128,8 +128,10 @@ def main(argv: Sequence[str] | None = None, *, renderer: Renderer | None = None)
     doc = result.document
     images = out / "images"
     images.mkdir(parents=True, exist_ok=True)
-    (out / "document.json").write_text(_json(doc.model_dump(mode="json")), encoding="utf-8")
-    report = [flag.model_dump(mode="json") for flag in doc.report]
+    (out / "document.json").write_text(
+        _json(doc.model_dump(mode="json", by_alias=True)), encoding="utf-8"
+    )
+    report = [flag.model_dump(mode="json", by_alias=True) for flag in doc.report]
     (out / "report.json").write_text(_json(report), encoding="utf-8")
     names = file_names([image.id for image in doc.images])
     for image in doc.images:

@@ -12,8 +12,9 @@ import {
   type Transition,
 } from './repo.js';
 
-const COLUMNS = `id, package_id, target_id, idempotency_key, acting_user, overrides, destination, status, attempts,
-  run_after, sink_job_id, error, receipt, skipped_for, claim_id, created_at, updated_at`;
+const COLUMNS = `id, package_id, target_id, idempotency_key, acting_user, overrides, destination,
+  conditional_update, status, attempts, run_after, sink_job_id, error, receipt, skipped_for, claim_id,
+  created_at, updated_at`;
 
 interface Row {
   id: string;
@@ -23,6 +24,7 @@ interface Row {
   acting_user: DeliveryRow['actingUser'];
   overrides: Record<string, string>;
   destination: Record<string, string> | null;
+  conditional_update: DeliveryRow['update'];
   status: DeliveryRow['status'];
   attempts: number;
   run_after: Date;
@@ -43,6 +45,7 @@ const toRow = (r: Row): DeliveryRow => ({
   actingUser: r.acting_user,
   overrides: r.overrides,
   destination: r.destination,
+  update: r.conditional_update,
   status: r.status,
   attempts: r.attempts,
   runAfter: r.run_after,
@@ -107,8 +110,9 @@ export class PgDeliveryRepo implements DeliveryRepo {
       for (const d of deliveries) {
         const { rows } = await c.query<Row>(
           `INSERT INTO bridge.deliveries
-             (id, package_id, target_id, idempotency_key, acting_user, overrides, destination, status, run_after, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $8, 'queued', $7, $7, $7)
+             (id, package_id, target_id, idempotency_key, acting_user, overrides, destination,
+              conditional_update, status, run_after, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $8, $9, 'queued', $7, $7, $7)
            RETURNING ${COLUMNS}`,
           [
             d.id,
@@ -119,6 +123,7 @@ export class PgDeliveryRepo implements DeliveryRepo {
             JSON.stringify(d.overrides),
             now,
             d.destination === null ? null : JSON.stringify(d.destination),
+            json(d.update),
           ],
         );
         await this.emit(c, toRow(rows[0]!), now);

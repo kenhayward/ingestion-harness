@@ -152,7 +152,11 @@ least 32 characters, signs the bridge's calls to that sink and is shared with it
   checks a sink before you register it. A test stack can run the fake sink: compose profile
   `fake-sink`, with `FAKE_SINK_KEY` and a `BRIDGE_SINKS` entry for `http://fake-sink:8080`. Add
   it to `COMPOSE_PROFILES` (`rdf,fake-sink`): a `--profile` flag replaces that list and leaves
-  Fuseki out.
+  Fuseki out. Set `FAKE_SINK_MODE=documents` and the fake sink takes decomposed documents
+  (contract version 2) instead of files and data; in that mode it also serves an unsigned
+  `POST /_edit` (`{persistentId, componentId}`) that changes one component, to try the
+  *changed in target* refusal. The endpoint is for test stacks only: never run documents mode
+  where the sink is reachable by anyone you do not trust.
 
 **After upgrading:** on first start the API moves each external target's keys to the bridge as the
 connection `target-<id>` (named after the target; `target-<id>-2`, … if a connection of that id

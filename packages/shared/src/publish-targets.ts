@@ -324,6 +324,9 @@ export const SinkInfoSchema = z.object({
     withdraw: z.boolean(),
     readBack: z.boolean(),
     accepts: z.array(z.string()),
+    decomposedDocuments: z
+      .object({ equations: z.array(z.enum(['mathml', 'latex', 'image'])) })
+      .optional(),
   }),
 });
 export type SinkInfo = z.infer<typeof SinkInfoSchema>;

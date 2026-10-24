@@ -6,3 +6,5 @@ export * from './sink-api.js';
 export * from './producer-api.js';
 export * from './conformance/suite.js';
 export * from './naming.js';
+export * from './decomposed/model.js';
+export * from './decomposed/forms.js';

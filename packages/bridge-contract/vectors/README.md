@@ -6,16 +6,17 @@ decomposer's fidelity check compares them with the source, and a sink's read-bac
 with what it wrote. A mismatch must never be just two implementations disagreeing, so every
 implementation must reproduce these vectors **exactly**.
 
-Phase 1 implements the forms in Python (`worker/src/ingest_worker/decompose/forms.py`), which
-generated these vectors. Phase 2's TypeScript forms in this package must reproduce every vector
-exactly before they are used. Changing a form means changing the vectors, and both
-implementations, together.
+The forms are implemented in Python (`worker/src/ingest_worker/decompose/forms.py`), which
+generated these vectors, and in TypeScript in this package (`textForm` and `gridForms`, from
+`src/decomposed/forms.ts`). Both are tested against every vector. Changing a form means changing
+the vectors, and both implementations, together.
 
 ## Shape
 
 An array of `{ name, document, text_form, grid_forms }`:
 
-- `document`: a decomposed document (the worker's `DecomposedDocument`, as JSON).
+- `document`: a decomposed document as it travels in the contract: camelCase keys, parsed by
+  `DecomposedDocumentSchema` (the worker's `DecomposedDocument`, dumped `by_alias=True`).
 - `text_form`: an array of strings, one per text unit.
 - `grid_forms`: an object, from table id to that table's grid (an array of rows, each an array
   of slot strings).
@@ -53,11 +54,11 @@ Within a unit:
 |---|---|
 | `text` | its text |
 | `break` | a space |
-| `xref` | `⟦xref:<target_id>⟧`, never its text |
+| `xref` | `⟦xref:<targetId>⟧`, never its text |
 | `link` | its inlines |
-| `inline_equation` | `⟦eq:<mathml>⟧`, or `⟦eq:<image_id>⟧` when the equation has no MathML |
+| `inline_equation` | `⟦eq:<mathml>⟧`, or `⟦eq:<imageId>⟧` when the equation has no MathML |
 | `inline_image` | its image |
-| `note_ref` | `⟦note:<note_id>⟧` |
+| `note_ref` | `⟦note:<noteId>⟧` |
 
 An image, wherever it is (inline, an image block, a figure's or one in a cell), is `⟦img⟧`,
 then one space and its alt text when it has any: `⟦img⟧` alone when it has none. The token
@@ -65,8 +66,8 @@ carries no id, so a source can be compared with the document without knowing the
 decomposition gave. The brackets are U+27E6 and U+27E7.
 
 **The grid form** of a table is its grid rebuilt from its cells' spans. Each row of `rows` is
-placed in turn. A cell takes the first slot of its row that no cell above (by `row_span`) or
-before it already covers. It covers `row_span` rows and `col_span` columns from there. Each
+placed in turn. A cell takes the first slot of its row that no cell above (by `rowSpan`) or
+before it already covers. It covers `rowSpan` rows and `colSpan` columns from there. Each
 slot is `"r,c|text"`: the row and column of the cell covering it, then that cell's text, as in
 the text form. A slot no cell covers is `""`. There is one row per row of `rows` (more if a
 row span runs past the last), and as many slots as the widest row reaches. Every table has a

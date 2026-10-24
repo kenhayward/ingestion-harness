@@ -53,6 +53,8 @@ class TargetRow:
     inert: bool = False
     #: When the cache last took the row from the bridge; None: not yet (the worker waits).
     synced_at: datetime | None = None
+    #: The sink's instance (one tenant with the sink); None for a sink without instances.
+    instance_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,8 @@ class Target:
     layout: str = "files"
     #: The bridge sink it delivers through.
     sink_id: str = S3_SINK_ID
+    #: The sink's instance: with `sink_id`, the tenant the target writes to.
+    instance_id: str | None = None
 
 
 class PublishTargetStore(Protocol):
@@ -81,7 +85,7 @@ class PublishTargetStore(Protocol):
         ...
 
 
-_COLUMNS = "id, label, kind, sink_id, destination, inert_at IS NOT NULL, synced_at"
+_COLUMNS = "id, label, kind, sink_id, destination, inert_at IS NOT NULL, synced_at, instance_id"
 
 
 class PgPublishTargetStore:
@@ -188,10 +192,14 @@ class LiveTargets:
         if row.synced_at is None:
             raise TargetNotSynced(target_id)
         if row.sink_id != S3_SINK_ID:
-            return Target(row.id, "", "", layout="sink", sink_id=row.sink_id)
+            return Target(
+                row.id, "", "", layout="sink", sink_id=row.sink_id, instance_id=row.instance_id
+            )
         d = row.destination
         layout = "package" if d.get("layout") == "package" else "files"
-        return Target(row.id, d.get("bucket", ""), d.get("prefix", ""), layout)
+        return Target(
+            row.id, d.get("bucket", ""), d.get("prefix", ""), layout, instance_id=row.instance_id
+        )
 
     def rdf(self) -> Target | None:
         """The triple store target (its dataset as the bucket), or None without one.

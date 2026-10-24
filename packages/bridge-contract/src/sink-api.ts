@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BridgeErrorSchema } from './errors.js';
-import { ActingUserSchema, PACKAGE_PARTS, PackageSchema } from './package.js';
+import { ActingUserSchema, ContractVersion, PACKAGE_PARTS, PackageSchema } from './package.js';
 
 /** One credential a sink asks a connection for. */
 export const CredentialFieldSchema = z.strictObject({
@@ -26,19 +26,47 @@ export const CapabilitiesSchema = z.strictObject({
   withdraw: z.boolean(),
   readBack: z.boolean(),
   accepts: z.array(z.enum(PACKAGE_PARTS)).min(1),
+  /**
+   * Version 2: the sink takes decomposed documents (the `document` part), with equations in these
+   * forms. Needs `contractVersion: 2`, `readBack` and `accepts` holding `document` and `images`.
+   */
+  decomposedDocuments: z
+    .strictObject({ equations: z.array(z.enum(['mathml', 'latex', 'image'])).min(1) })
+    .optional(),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
 
 /** What a sink says about itself (`GET /describe`). */
-export const SinkDescribeSchema = z.strictObject({
-  name: z.string(),
-  contractVersion: z.literal(1),
-  connectionKind: z.enum(['shared', 'personal']),
-  instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
-  credentialFields: z.array(CredentialFieldSchema),
-  destinationFields: z.array(DestinationFieldSchema),
-  capabilities: CapabilitiesSchema,
-});
+export const SinkDescribeSchema = z
+  .strictObject({
+    name: z.string(),
+    contractVersion: ContractVersion,
+    connectionKind: z.enum(['shared', 'personal']),
+    instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+    credentialFields: z.array(CredentialFieldSchema),
+    destinationFields: z.array(DestinationFieldSchema),
+    capabilities: CapabilitiesSchema,
+  })
+  .superRefine((d, ctx) => {
+    const c = d.capabilities;
+    const takes = (part: (typeof PACKAGE_PARTS)[number]) => c.accepts.includes(part);
+    if (takes('document') && d.contractVersion !== 2) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['capabilities', 'accepts'],
+        message: 'accepting document needs contractVersion 2',
+      });
+    }
+    if (!c.decomposedDocuments) return;
+    if (d.contractVersion !== 2 || !c.readBack || !takes('document') || !takes('images')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['capabilities', 'decomposedDocuments'],
+        message:
+          'decomposedDocuments needs contractVersion 2, readBack, and accepts document and images',
+      });
+    }
+  });
 export type SinkDescribe = z.infer<typeof SinkDescribeSchema>;
 
 /** Resolved destination values (patterns already applied). */
@@ -80,6 +108,25 @@ export const BrowseResultSchema = z.strictObject({
 });
 export type BrowseResult = z.infer<typeof BrowseResultSchema>;
 
+/** One component of a document in the target, at the version the target holds. */
+export const ComponentVersionSchema = z.strictObject({
+  kind: z.string(),
+  id: z.string(),
+  version: z.string(),
+  element: z.string().nullable(),
+});
+export type ComponentVersion = z.infer<typeof ComponentVersionSchema>;
+
+/**
+ * Version 2: replace the document `persistentId` only if the target still holds every component
+ * at its `expected` version; any changed or missing one refuses with `changed_in_target`.
+ */
+export const ConditionalUpdateSchema = z.strictObject({
+  persistentId: z.string().min(1),
+  expected: z.array(ComponentVersionSchema).min(1),
+});
+export type ConditionalUpdate = z.infer<typeof ConditionalUpdateSchema>;
+
 /** What a successful delivery wrote, with links where the sink can give them. */
 export const ReceiptSchema = z.strictObject({
   written: z.array(
@@ -90,6 +137,22 @@ export const ReceiptSchema = z.strictObject({
       url: z.string().url().nullable(),
     }),
   ),
+  /**
+   * Version 2, a delivered document: its persistent id, its components, and the read-back. For a
+   * replayed idempotency key this is the receipt the first write under that key produced (the
+   * same persistent id, the same component versions), never the document's current state.
+   */
+  document: z
+    .strictObject({
+      persistentId: z.string().min(1),
+      components: z.array(ComponentVersionSchema),
+      readBack: z.strictObject({
+        ok: z.boolean(),
+        at: z.string().nullable(),
+        detail: z.string().nullable(),
+      }),
+    })
+    .optional(),
 });
 export type Receipt = z.infer<typeof ReceiptSchema>;
 
@@ -97,9 +160,16 @@ export const SinkDeliverRequestSchema = z.strictObject({
   instanceId: z.string().nullable(),
   credential: CredentialSchema.nullable(),
   destination: DestinationSchema,
+  /**
+   * The same key means the same write. A sink writes at most once per key; a replayed key
+   * (a retry, or a later run that reuses it) changes nothing and gets back the receipt of the
+   * first write under that key: the same persistent id and the same component versions, never
+   * the current state, which may hold a change made in the target since.
+   */
   idempotencyKey: z.string(),
   actingUser: ActingUserSchema.nullable(),
   package: PackageSchema,
+  update: ConditionalUpdateSchema.optional(),
 });
 export type SinkDeliverRequest = z.infer<typeof SinkDeliverRequestSchema>;
 

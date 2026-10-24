@@ -1,9 +1,13 @@
 import { pathToFileURL } from 'node:url';
 import { bridgeError, type BrowseRequest } from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
+import { FakeDocumentSink } from './fake-documents.js';
 import { FakeSink } from './fake.js';
 import { SinkError } from './port.js';
 import { serveSink } from './serve.js';
+
+/** What the fake serves: files and data (version 1), or decomposed documents (version 2). */
+export type FakeSinkMode = 'files' | 'documents';
 
 /** How many deliveries `/_delivered` keeps. */
 const KEPT = 50;
@@ -14,8 +18,17 @@ const KEPT = 50;
  * fixed field `space` and an overridable name pattern `name`. It replaces what an idempotency
  * key delivered before, and refuses a name starting `taken-` (`name_conflict`). `GET /_delivered` (unsigned, test stacks only) lists the last deliveries
  * without their bytes, and how many keys it holds.
+ *
+ * In `documents` mode (env `FAKE_SINK_MODE=documents`) it serves the FakeDocumentSink instead,
+ * with an unsigned `POST /_edit` (`{persistentId, componentId}`, test stacks only) that changes one
+ * component in the target, answering the component's new version or 404.
  */
-export async function buildFakeServer(key: string, logger = false): Promise<FastifyInstance> {
+export async function buildFakeServer(
+  key: string,
+  logger = false,
+  mode: FakeSinkMode = 'files',
+): Promise<FastifyInstance> {
+  if (mode === 'documents') return buildDocumentServer(key, logger);
   const sink = new FakeSink({
     name: 'Fake sink',
     destinationFields: [
@@ -107,12 +120,28 @@ export async function buildFakeServer(key: string, logger = false): Promise<Fast
   return app;
 }
 
+async function buildDocumentServer(key: string, logger: boolean): Promise<FastifyInstance> {
+  const sink = new FakeDocumentSink();
+  const app = await serveSink(sink, key, { unsigned: ['/_edit'], logger });
+  app.post('/_edit', async (req, reply) => {
+    const body = (req.body ?? {}) as { persistentId?: unknown; componentId?: unknown };
+    const edited =
+      typeof body.persistentId === 'string' && typeof body.componentId === 'string'
+        ? sink.edit(body.persistentId, body.componentId)
+        : null;
+    if (!edited) return reply.code(404).send(bridgeError('not_found', 'no such component'));
+    return edited;
+  });
+  return app;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const key = process.env.FAKE_SINK_KEY ?? '';
   if (key.length < 32) {
     console.error('FAKE_SINK_KEY must be at least 32 characters');
     process.exit(2);
   }
-  const app = await buildFakeServer(key, true);
+  const mode = process.env.FAKE_SINK_MODE === 'documents' ? 'documents' : 'files';
+  const app = await buildFakeServer(key, true, mode);
   await app.listen({ host: '0.0.0.0', port: Number(process.env.PORT ?? 8080) });
 }

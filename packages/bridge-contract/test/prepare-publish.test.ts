@@ -24,7 +24,7 @@ describe('prepareContractManifest', () => {
   });
 
   it('ships what the conformance suite reads at run time', () => {
-    expect(published.files).toEqual(['dist', 'src', 'test/fixtures', 'LICENSE']);
+    expect(published.files).toEqual(['dist', 'src', 'test/fixtures', 'vectors', 'LICENSE']);
   });
 
   it('names its source repository', () => {

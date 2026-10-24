@@ -1,0 +1,323 @@
+{
+  "kind": "document",
+  "contractVersion": 2,
+  "producer": {
+    "name": "ct-studio",
+    "deployment": "test"
+  },
+  "idempotencyKey": "94272c6b2a68fe7f0bb80994ceac3e804b264d676e266b6f7d2d0ff20bb7e730",
+  "provenance": {
+    "kind": "decomposition",
+    "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceFilename": "example-report.docx",
+    "sourceKey": "example/source-1",
+    "batchId": "batch-example-1",
+    "decomposerVersion": 1,
+    "startedBy": {
+      "id": "u-example",
+      "name": "Example Operator",
+      "email": "operator@example.com"
+    },
+    "decomposedAt": "2026-10-23T09:00:00.000Z",
+    "publishedAt": "2026-10-23T09:05:00.000Z"
+  },
+  "naming": {},
+  "files": [],
+  "data": null,
+  "rdf": null,
+  "narrative": null,
+  "images": [
+    {
+      "id": "s-figures#image-1#img-1",
+      "contentType": "image/png",
+      "content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    },
+    {
+      "id": "s-figures#image-2#img-1",
+      "contentType": "image/png",
+      "content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    },
+    {
+      "id": "s-figures#p-1#img-1",
+      "contentType": "image/png",
+      "content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    },
+    {
+      "id": "s-figures#table-1#cell-2#image-1#img-1",
+      "contentType": "image/png",
+      "content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    }
+  ],
+  "document": {
+    "blocks": [],
+    "sections": [
+      {
+        "id": "s-figures",
+        "title": [
+          {
+            "kind": "text",
+            "text": "Figures",
+            "marks": []
+          }
+        ],
+        "blocks": [
+          {
+            "kind": "figure",
+            "id": "s-figures#image-1",
+            "imageId": "s-figures#image-1#img-1",
+            "numbered": true,
+            "caption": [
+              {
+                "kind": "text",
+                "text": "The plot",
+                "marks": []
+              }
+            ],
+            "captionPosition": "below"
+          },
+          {
+            "kind": "image",
+            "id": "s-figures#image-2",
+            "imageId": "s-figures#image-2#img-1"
+          },
+          {
+            "kind": "paragraph",
+            "id": "s-figures#p-1",
+            "inlines": [
+              {
+                "kind": "text",
+                "text": "Icon ",
+                "marks": []
+              },
+              {
+                "kind": "inline_image",
+                "imageId": "s-figures#p-1#img-1"
+              },
+              {
+                "kind": "text",
+                "text": " here.",
+                "marks": []
+              }
+            ]
+          },
+          {
+            "kind": "list",
+            "id": "s-figures#list-1",
+            "ordered": true,
+            "items": [
+              {
+                "blocks": [
+                  {
+                    "kind": "paragraph",
+                    "id": "s-figures#p-2",
+                    "inlines": [
+                      {
+                        "kind": "text",
+                        "text": "First",
+                        "marks": []
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "list",
+                    "id": "s-figures#list-2",
+                    "ordered": false,
+                    "items": [
+                      {
+                        "blocks": [
+                          {
+                            "kind": "paragraph",
+                            "id": "s-figures#p-3",
+                            "inlines": [
+                              {
+                                "kind": "text",
+                                "text": "Nested",
+                                "marks": []
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "blocks": [
+                  {
+                    "kind": "paragraph",
+                    "id": "s-figures#p-4",
+                    "inlines": [
+                      {
+                        "kind": "text",
+                        "text": "Second",
+                        "marks": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "table",
+            "id": "s-figures#table-1",
+            "numbered": false,
+            "caption": [],
+            "captionPosition": "above",
+            "columnWidths": [0.5, 0.5],
+            "headerRows": 0,
+            "rows": [
+              {
+                "cells": [
+                  {
+                    "rowSpan": 1,
+                    "colSpan": 1,
+                    "hAlign": "left",
+                    "vAlign": "top",
+                    "header": false,
+                    "blocks": [
+                      {
+                        "kind": "paragraph",
+                        "id": "s-figures#table-1#cell-1#p-1",
+                        "inlines": [
+                          {
+                            "kind": "text",
+                            "text": "Outer",
+                            "marks": []
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "table",
+                        "id": "s-figures#table-1#cell-1#table-1",
+                        "numbered": false,
+                        "caption": [],
+                        "captionPosition": "above",
+                        "columnWidths": [0.5, 0.5],
+                        "headerRows": 0,
+                        "rows": [
+                          {
+                            "cells": [
+                              {
+                                "rowSpan": 1,
+                                "colSpan": 1,
+                                "hAlign": "left",
+                                "vAlign": "top",
+                                "header": false,
+                                "blocks": [
+                                  {
+                                    "kind": "paragraph",
+                                    "id": "s-figures#table-1#cell-1#table-1#cell-1#p-1",
+                                    "inlines": [
+                                      {
+                                        "kind": "text",
+                                        "text": "In 1",
+                                        "marks": []
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "rowSpan": 1,
+                                "colSpan": 1,
+                                "hAlign": "left",
+                                "vAlign": "top",
+                                "header": false,
+                                "blocks": [
+                                  {
+                                    "kind": "paragraph",
+                                    "id": "s-figures#table-1#cell-1#table-1#cell-2#p-1",
+                                    "inlines": [
+                                      {
+                                        "kind": "text",
+                                        "text": "In 2",
+                                        "marks": []
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ],
+                        "notes": [],
+                        "wide": false,
+                        "key": null
+                      }
+                    ]
+                  },
+                  {
+                    "rowSpan": 1,
+                    "colSpan": 1,
+                    "hAlign": "left",
+                    "vAlign": "top",
+                    "header": false,
+                    "blocks": [
+                      {
+                        "kind": "image",
+                        "id": "s-figures#table-1#cell-2#image-1",
+                        "imageId": "s-figures#table-1#cell-2#image-1#img-1"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "notes": [],
+            "wide": false,
+            "key": null
+          }
+        ],
+        "sections": []
+      }
+    ],
+    "images": [
+      {
+        "id": "s-figures#image-1#img-1",
+        "contentType": "image/png",
+        "widthMm": 10,
+        "heightMm": 5,
+        "align": "center",
+        "alt": "Box line one\nBox line two",
+        "origin": "rendered",
+        "originalContentType": null
+      },
+      {
+        "id": "s-figures#image-2#img-1",
+        "contentType": "image/png",
+        "widthMm": 10,
+        "heightMm": 5,
+        "align": "left",
+        "alt": null,
+        "origin": "embedded",
+        "originalContentType": null
+      },
+      {
+        "id": "s-figures#p-1#img-1",
+        "contentType": "image/png",
+        "widthMm": 10,
+        "heightMm": 5,
+        "align": "inline",
+        "alt": "a gear",
+        "origin": "embedded",
+        "originalContentType": null
+      },
+      {
+        "id": "s-figures#table-1#cell-2#image-1#img-1",
+        "contentType": "image/png",
+        "widthMm": 10,
+        "heightMm": 5,
+        "align": "left",
+        "alt": "cell picture",
+        "origin": "embedded",
+        "originalContentType": null
+      }
+    ],
+    "equations": [],
+    "notes": [],
+    "properties": [],
+    "report": []
+  }
+}

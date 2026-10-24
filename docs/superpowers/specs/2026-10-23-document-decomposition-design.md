@@ -460,10 +460,15 @@ fails part-way, or the response is lost. None of these may lead to a second copy
 - **A sink's create is idempotent by its idempotency key.** The sink records the key on the
   document it creates, and before creating it looks for a document carrying that key. It returns
   that document's receipt instead of creating another.
+- **A replayed key returns the receipt of the first write under it, never the current state.**
 - **A failed read-back** is reported in a receipt. The entry is `incomplete` with the persistent
   id, and the batch row says *read-back mismatch*, with the place.
 - **The bridge retries `retryable` errors** as it does today. A retry carries the same
   idempotency key, so it finds the first attempt's document.
+- **An entry with no persistent id** is created again under a new key only when the bridge
+  refused its last delivery outright. Otherwise that delivery may have made a document: the same
+  file is created again under the entry's stored key, which finds it, and a changed file is
+  *unresolved* until it is resolved in the target.
 - **A later run of an `incomplete` entry** is an update behind the version check, against the
   components reported so far, like any other.
 
@@ -554,6 +559,11 @@ model-driven extraction and no review step. **[call]**
 | 6 | **S3 prefix as a batch source** | A prefix runs as a folder does |
 
 Phases 1 and 4's capture work need nothing from each other and can run side by side.
+
+**Phase 2 status.** Phase 2 is implemented: contract version 2 (`document` part, conditional
+update, `changed_in_target`), the bridge's version check, the register and its reconcile, and the
+conformance suite's document checks, tested end to end through the bridge against the fake
+document sink (`apps/bridge/test/decomposed-e2e.test.ts`).
 
 **Phase 1 status.** Phase 1 (Word) is implemented; the owner's sample run is pending. Run it with
 `uv run --directory worker python scripts/decompose.py <file.docx> <out-dir> [--converter-url URL]`.

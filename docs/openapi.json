@@ -78784,9 +78784,31 @@
                                     "data",
                                     "rdf",
                                     "narrative",
-                                    "images"
+                                    "images",
+                                    "document"
                                   ]
                                 }
+                              },
+                              "decomposedDocuments": {
+                                "type": "object",
+                                "properties": {
+                                  "equations": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "mathml",
+                                        "latex",
+                                        "image"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "equations"
+                                ],
+                                "additionalProperties": false
                               }
                             },
                             "required": [
@@ -81927,6 +81949,77 @@
                               ],
                               "additionalProperties": false
                             }
+                          },
+                          "document": {
+                            "type": "object",
+                            "properties": {
+                              "persistentId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "components": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string"
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "version": {
+                                      "type": "string"
+                                    },
+                                    "element": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "id",
+                                    "version",
+                                    "element"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "readBack": {
+                                "type": "object",
+                                "properties": {
+                                  "ok": {
+                                    "type": "boolean"
+                                  },
+                                  "at": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "ok",
+                                  "at",
+                                  "detail"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "persistentId",
+                              "components",
+                              "readBack"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [

@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { Capabilities } from '@ih/bridge-contract';
+import type { BridgePackage, Capabilities, ConditionalUpdate } from '@ih/bridge-contract';
 import { describe, expect, it } from 'vitest';
 import { acceptDeliveries } from '../src/deliveries/accept.js';
 import { MemoryDeliveryRepo } from '../src/deliveries/repo.js';
 import { backoff, runOnce } from '../src/deliveries/runner.js';
 import { MemoryPackageStore } from '../src/packages/store.js';
 import { FakeSink } from '../src/sinks/fake.js';
+import { FakeDocumentSink } from '../src/sinks/fake-documents.js';
 import { MapSinkRegistry } from '../src/sinks/port.js';
 import { MemoryTargetRepo } from '../src/targets/repo.js';
 import { Credentials } from '../src/connections/credential.js';
@@ -13,7 +14,7 @@ import { MemoryConnectionRepo } from '../src/connections/repo.js';
 import { encryptSecret } from '../src/secrets.js';
 import { connection } from './connections-contract.js';
 import { SECRETS } from './helpers.js';
-import { documentPackage } from './sink-builders.js';
+import { decomposedPackage, documentPackage } from './sink-builders.js';
 
 const T0 = new Date('2026-10-19T12:00:00.000Z');
 const at = (s: number) => new Date(T0.getTime() + s * 1000);
@@ -27,7 +28,11 @@ const caps = (over: Partial<Capabilities> = {}): Capabilities => ({
   ...over,
 });
 
-async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts = 8) {
+async function setup<S extends FakeSink | FakeDocumentSink = FakeSink>(
+  sink: S = new FakeSink({ capabilities: caps() }) as S,
+  maxAttempts = 8,
+  destination: Record<string, string> = { bucket: 'b', prefix: 'out/' },
+) {
   const deliveries = new MemoryDeliveryRepo();
   const packages = new MemoryPackageStore();
   const targets = new MemoryTargetRepo();
@@ -37,7 +42,7 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
     sinkId: 'fake',
     instanceId: null,
     connectionId: null,
-    destination: { bucket: 'b', prefix: 'out/' },
+    destination,
   });
   const sinks = new MapSinkRegistry({ fake: sink });
   const connections = new MemoryConnectionRepo(targets);
@@ -50,7 +55,11 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
     leaseSeconds: 300,
     pollSeconds: 30,
   };
-  const submit = async (overrides: Record<string, string> = {}, now = T0) => {
+  const submit = async (
+    overrides: Record<string, string> = {},
+    now = T0,
+    extra: { package?: BridgePackage; update?: ConditionalUpdate } = {},
+  ) => {
     const result = await acceptDeliveries(
       { deliveries, packages, targets, sinks, connections, retentionDays: 30 },
       {
@@ -58,14 +67,15 @@ async function setup(sink = new FakeSink({ capabilities: caps() }), maxAttempts 
         actingUser: { id: 'u1', name: 'Pat', email: null },
         overrides: { t1: overrides },
         patterns: {},
-        package: documentPackage,
+        package: extra.package ?? documentPackage,
+        ...(extra.update ? { update: extra.update } : {}),
       },
       now,
       randomUUID,
     );
     return result.deliveries[0]!.deliveryId;
   };
-  return { deps, deliveries, sink, submit };
+  return { deps, deliveries, packages, sink, submit };
 }
 
 describe('backoff', () => {
@@ -588,5 +598,150 @@ describe('a delivery accepted before phase 6', () => {
     await deps.packages.put('packages/p-old.json', documentPackage);
     await runOnce(deps, T0);
     expect(sink.delivered[0]!.destination).toEqual({ bucket: 'b', prefix: 'old/' });
+  });
+});
+
+describe('runOnce, contract version 2', () => {
+  /** A version 2 sink that records what it is sent, taking decomposed documents. */
+  const v2Sink = (over: Partial<Capabilities> = {}) =>
+    new FakeSink({
+      contractVersion: 2,
+      capabilities: caps({
+        readBack: true,
+        accepts: ['files', 'data', 'document', 'images'],
+        decomposedDocuments: { equations: ['mathml'] },
+        ...over,
+      }),
+    });
+  const update: ConditionalUpdate = {
+    persistentId: 'doc-1',
+    expected: [{ kind: 'map', id: 'doc-1/map', version: '1', element: null }],
+  };
+  /** The decomposed fixture under another key: a later edit of the same document. */
+  const edited = { ...decomposedPackage, idempotencyKey: 'e'.repeat(64) };
+
+  it('passes update to the sink', async () => {
+    const { deps, deliveries, sink, submit } = await setup(v2Sink());
+    const id = await submit({}, T0, { package: decomposedPackage, update });
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.update).toEqual(update);
+    expect((await deliveries.get(id))?.status).toBe('succeeded');
+  });
+
+  it('sends no update when the delivery has none', async () => {
+    const { deps, sink, submit } = await setup(v2Sink());
+    await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]).not.toHaveProperty('update');
+  });
+
+  it('upgrades v1 packages for v2 sinks', async () => {
+    const { deps, deliveries, packages, sink, submit } = await setup(v2Sink());
+    const id = await submit();
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.package).toEqual({ ...documentPackage, contractVersion: 2 });
+    const meta = await deliveries.getPackage((await deliveries.get(id))!.packageId);
+    expect(await packages.get(meta!.stagedKey)).toEqual(documentPackage);
+    expect(meta!.manifest).toMatchObject({ contractVersion: 1 });
+  });
+
+  it('downgrades a v2 package without a document for a v1 sink', async () => {
+    const { deps, deliveries, packages, sink, submit } = await setup();
+    const v2 = { ...documentPackage, contractVersion: 2 as const };
+    const id = await submit({}, T0, { package: v2 });
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.package).toEqual(documentPackage);
+    const meta = await deliveries.getPackage((await deliveries.get(id))!.packageId);
+    expect(await packages.get(meta!.stagedKey)).toEqual(v2);
+    expect(meta!.manifest).toMatchObject({ contractVersion: 2 });
+  });
+
+  it('a v2 sink gets a v2 package as it was', async () => {
+    const { deps, sink, submit } = await setup(v2Sink());
+    await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.package).toEqual(decomposedPackage);
+  });
+
+  it('a v1 sink gets the v1 package as it was', async () => {
+    const { deps, sink, submit } = await setup();
+    await submit();
+    await runOnce(deps, T0);
+    expect(sink.delivered[0]!.package).toEqual(documentPackage);
+  });
+
+  it('does not skip a repeated key that carries an update, even where the sink cannot replace', async () => {
+    const { deps, deliveries, sink, submit } = await setup(
+      v2Sink({ replace: false, withdraw: false }),
+    );
+    await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    const second = await submit({}, at(1), { package: decomposedPackage, update });
+    await runOnce(deps, at(1));
+    expect((await deliveries.get(second))?.status).toBe('succeeded');
+    expect(sink.delivered).toHaveLength(2);
+  });
+
+  it('does not skip a repeated document package, even where the sink cannot replace', async () => {
+    // The sink is idempotent by key: a replay gets the first write's receipt, so the entry
+    // learns the document's persistent id instead of ending with none.
+    const { deps, deliveries, sink, submit } = await setup(
+      v2Sink({ replace: false, withdraw: false }),
+    );
+    await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    const second = await submit({}, at(1), { package: decomposedPackage });
+    await runOnce(deps, at(1));
+    expect((await deliveries.get(second))?.status).toBe('succeeded');
+    expect(sink.delivered).toHaveLength(2);
+  });
+
+  it('stores a document receipt', async () => {
+    const { deps, deliveries, submit } = await setup(new FakeDocumentSink(), 8, { space: 'S' });
+    const id = await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    const row = await deliveries.get(id);
+    expect(row?.status).toBe('succeeded');
+    expect(row?.receipt?.document?.persistentId).toBe('doc-1');
+    expect(row?.receipt?.document?.readBack.ok).toBe(true);
+  });
+
+  it('changed_in_target ends in needs_user with details', async () => {
+    const { deps, deliveries, sink, submit } = await setup(new FakeDocumentSink(), 8, {
+      space: 'S',
+    });
+    const created = await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    const components = (await deliveries.get(created))!.receipt!.document!.components;
+    sink.edit('doc-1', 'doc-1/map');
+    const id = await submit({}, at(1), {
+      package: edited,
+      update: { persistentId: 'doc-1', expected: components },
+    });
+    await runOnce(deps, at(1));
+    expect(await deliveries.get(id)).toMatchObject({
+      status: 'needs_user',
+      attempts: 1,
+      error: {
+        class: 'needs_user',
+        code: 'changed_in_target',
+        details: { changed: [{ id: 'doc-1/map', expected: '1', actual: '2' }] },
+      },
+    });
+  });
+
+  it('an update the target still matches replaces the document', async () => {
+    const { deps, deliveries, submit } = await setup(new FakeDocumentSink(), 8, { space: 'S' });
+    const created = await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    const components = (await deliveries.get(created))!.receipt!.document!.components;
+    const id = await submit({}, at(1), {
+      package: edited,
+      update: { persistentId: 'doc-1', expected: components },
+    });
+    await runOnce(deps, at(1));
+    const document = (await deliveries.get(id))?.receipt?.document;
+    expect(document?.persistentId).toBe('doc-1');
+    expect(document?.components.find((c) => c.id === 'doc-1/map')?.version).toBe('2');
   });
 });

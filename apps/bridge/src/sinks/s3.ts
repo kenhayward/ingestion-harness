@@ -82,6 +82,7 @@ function archiveObjects(prefix: string, p: BridgePackage): S3Object[] {
     ...p.files.map((f) => Buffer.from(f.content, 'base64')),
     ...(p.data ? [json(p.data)] : []),
     ...(p.rdf ? [Buffer.from(p.rdf.turtle, 'utf8')] : []),
+    ...(p.document ? [json(p.document)] : []),
     ...(p.images ?? []).map((i) => Buffer.from(i.content, 'base64')),
     json(archivedPackageOf(p)),
   ];
@@ -89,6 +90,7 @@ function archiveObjects(prefix: string, p: BridgePackage): S3Object[] {
     ...p.files.map((f) => f.contentType),
     ...(p.data ? ['application/json'] : []),
     ...(p.rdf ? ['text/turtle; charset=utf-8'] : []),
+    ...(p.document ? ['application/json'] : []),
     ...(p.images ?? []).map((i) => i.contentType),
     'application/json',
   ];

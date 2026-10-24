@@ -14,6 +14,19 @@ export const documentPackage = PackageSchema.parse(
   ),
 );
 
+/** The contract's decomposed fixture (version 2): one section `s-figures` and four images. */
+export const decomposedPackage = PackageSchema.parse(
+  JSON.parse(
+    readFileSync(
+      new URL(
+        '../../../packages/bridge-contract/test/fixtures/package-decomposed.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ),
+);
+
 export const deliverRequest = (over: Partial<SinkDeliverRequest> = {}): SinkDeliverRequest => ({
   instanceId: null,
   credential: null,

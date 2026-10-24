@@ -3,6 +3,7 @@ import type {
   ActingUser,
   BridgeError,
   BridgeEvent,
+  ConditionalUpdate,
   DeliveryStatus,
   Receipt,
 } from '@ih/bridge-contract';
@@ -24,6 +25,8 @@ export interface NewDelivery {
   overrides: Record<string, string>;
   /** The destination resolved at accept (pattern fields applied). */
   destination: Record<string, string> | null;
+  /** Version 2: replace this document in the target only if it is unchanged there. */
+  update?: ConditionalUpdate | null;
 }
 
 export interface DeliveryRow {
@@ -35,6 +38,8 @@ export interface DeliveryRow {
   overrides: Record<string, string>;
   /** The destination resolved at accept; null for a delivery accepted before phase 6. */
   destination: Record<string, string> | null;
+  /** The conditional update the sink is sent with the package; null for a plain delivery. */
+  update: ConditionalUpdate | null;
   status: DeliveryStatus;
   attempts: number;
   runAfter: Date;
@@ -178,6 +183,7 @@ export class MemoryDeliveryRepo implements DeliveryRepo {
     for (const d of deliveries) {
       const row: MemoryDelivery = {
         ...d,
+        update: d.update ?? null,
         packageId: pkg.id,
         idempotencyKey: pkg.idempotencyKey,
         status: 'queued',

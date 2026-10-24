@@ -1,10 +1,28 @@
-import { bridgeError, type BridgeError, type SinkJobStatus } from '@ih/bridge-contract';
+import {
+  bridgeError,
+  type BridgeError,
+  type BridgePackage,
+  type ContractVersion,
+  type SinkJobStatus,
+} from '@ih/bridge-contract';
 import type { Credentials } from '../connections/credential.js';
 import type { ConnectionRepo } from '../connections/repo.js';
 import type { PackageStore } from '../packages/store.js';
 import { SinkError, type SinkPort, type SinkRegistry } from '../sinks/port.js';
 import type { Target, TargetRepo } from '../targets/repo.js';
 import type { DeliveryRepo, DeliveryRow, Transition } from './repo.js';
+
+/**
+ * What a sink of `sinkVersion` is sent; the staged copy is never changed. A newer version is a
+ * superset of an older one, so an older package is lifted to the sink's version, and a newer one
+ * without a `document` part (the only addition a package carries) has the older shape and is sent
+ * as the sink's version. A document package never reaches an older sink: accept refuses it.
+ */
+function packageFor(pkg: BridgePackage, sinkVersion: ContractVersion): BridgePackage {
+  if (pkg.contractVersion === sinkVersion) return pkg;
+  if (pkg.contractVersion > sinkVersion && pkg.document) return pkg;
+  return { ...pkg, contractVersion: sinkVersion };
+}
 
 export interface RunnerDeps {
   deliveries: DeliveryRepo;
@@ -134,12 +152,22 @@ async function step(
       ? await personalConnection(row, target, deps)
       : target.connectionId;
   const { capabilities } = described;
-  if (!capabilities.replace && !capabilities.withdraw) {
+  const load = async () => {
+    const meta = await deps.deliveries.getPackage(row.packageId);
+    return meta ? await deps.packages.get(meta.stagedKey) : null;
+  };
+  let pkg: BridgePackage | null | undefined;
+  // A repeat a sink can neither replace nor withdraw is skipped, but never a document package: a
+  // conditional update is a new write, and a sink is idempotent by key for a document (a replay
+  // answers with its first write's receipt, which the register needs to learn the persistent id).
+  if (!capabilities.replace && !capabilities.withdraw && !row.update) {
     const earlier = await deps.deliveries.latestSucceeded(row.targetId, row.idempotencyKey, row.id);
-    if (earlier) return { status: 'skipped', skippedFor: earlier.id };
+    if (earlier) {
+      pkg = await load();
+      if (!pkg?.document) return { status: 'skipped', skippedFor: earlier.id };
+    }
   }
-  const meta = await deps.deliveries.getPackage(row.packageId);
-  const pkg = meta ? await deps.packages.get(meta.stagedKey) : null;
+  if (pkg === undefined) pkg = await load();
   if (!pkg) return { status: 'failed', error: bridgeError('internal', 'package expired') };
   const credential = deps.credentials
     ? await deps.credentials.resolve(used.connectionId, described)
@@ -151,7 +179,8 @@ async function step(
     destination: row.destination ?? { ...target.destination, ...row.overrides },
     idempotencyKey: row.idempotencyKey,
     actingUser: row.actingUser,
-    package: pkg,
+    package: packageFor(pkg, described.contractVersion),
+    ...(row.update ? { update: row.update } : {}),
   });
   if (result.status === 'succeeded') return { status: 'succeeded', receipt: result.receipt };
   return {
@@ -163,7 +192,7 @@ async function step(
 
 /**
  * Runs one due delivery: polls a pending sink job, skips a repeat a sink can neither replace nor
- * withdraw, or delivers the staged package. Failures stop for a person (`needs_user`) or retry
+ * withdraw (never a document package), or delivers the staged package. Failures stop for a person (`needs_user`) or retry
  * with backoff until `maxAttempts`.
  */
 export async function runOnce(deps: RunnerDeps, now: Date): Promise<'idle' | 'worked'> {

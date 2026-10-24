@@ -16,7 +16,10 @@ from ingest_worker.bridge.models import (
     BridgePackage,
     CreateDeliveriesRequest,
     DeliveryView,
+    DocumentReceipt,
+    Receipt,
     TargetTestResult,
+    decomposition_idempotency_key,
     graph_idempotency_key,
     idempotency_key,
     package_archive_keys,
@@ -37,6 +40,7 @@ def fixture(name: str) -> Any:
         ("package-document.json", BridgePackage),
         ("package-graph.json", BridgePackage),
         ("package-document-rdf.json", BridgePackage),
+        ("package-decomposed.json", BridgePackage),
         ("delivery-request.json", CreateDeliveriesRequest),
         ("delivery-view.json", DeliveryView),
         ("event.json", BridgeEvent),
@@ -92,3 +96,113 @@ def test_package_archive_keys_match_the_fixture() -> None:
     assert package_archive_keys(fx["prefix"], package) == [
         (k["outputId"], k["key"]) for k in fx["keys"]
     ]
+
+
+def test_decomposed_fixture_round_trips() -> None:
+    data = fixture("package-decomposed.json")
+    package = BridgePackage.model_validate(data)
+    assert package.contract_version == 2
+    assert package.document is not None
+    assert package.model_dump(by_alias=True, mode="json") == data
+
+
+def test_v1_fixtures_unchanged() -> None:
+    for name in ("package-document.json", "package-graph.json", "package-document-rdf.json"):
+        data = fixture(name)
+        package = BridgePackage.model_validate(data)
+        assert package.document is None
+        dumped = package.model_dump(by_alias=True, mode="json")
+        assert "document" not in dumped
+        assert dumped == data
+
+
+def test_decomposition_key_matches_typescript() -> None:
+    assert (
+        decomposition_idempotency_key("a" * 64, None, 1, None)
+        == "94272c6b2a68fe7f0bb80994ceac3e804b264d676e266b6f7d2d0ff20bb7e730"
+    )
+    assert (
+        decomposition_idempotency_key("a" * 64, "doc-1", 2, "batch-1")
+        == "1096d758e38351123f98cefa632e569a8d122b940258f51851f2f0ddb59534fd"
+    )
+
+
+def test_document_refinements() -> None:
+    data = fixture("package-decomposed.json")
+    pkg = BridgePackage.model_validate
+
+    with pytest.raises(ValidationError, match="needs contractVersion 2"):
+        pkg({**data, "contractVersion": 1})
+
+    file = fixture("package-document.json")["files"][0]
+    with pytest.raises(ValidationError, match="no files"):
+        pkg({**data, "files": [file]})
+    with pytest.raises(ValidationError, match="no data"):
+        pkg({**data, "data": {"fields": [], "tables": []}})
+    with pytest.raises(ValidationError, match="no rdf"):
+        pkg({**data, "rdf": {"graphName": "https://x.test/g", "version": 1, "turtle": ""}})
+    with pytest.raises(ValidationError, match="no narrative"):
+        pkg({**data, "narrative": []})
+
+    extraction = fixture("package-document.json")["provenance"]
+    with pytest.raises(ValidationError, match="decomposition provenance"):
+        pkg({**data, "provenance": extraction})
+
+    without_document = {k: v for k, v in data.items() if k != "document"}
+    with pytest.raises(ValidationError, match="needs a document"):
+        pkg({**without_document, "files": [], "images": None})
+
+
+def test_images_match_the_documents_images_both_ways() -> None:
+    data = fixture("package-decomposed.json")
+    assert data["images"], "the fixture carries an image"
+    with pytest.raises(ValidationError, match="not in images"):
+        BridgePackage.model_validate({**data, "images": []})
+    extra = {"id": "stray", "contentType": "image/png", "content": "AAAA"}
+    with pytest.raises(ValidationError, match="not in the document"):
+        BridgePackage.model_validate({**data, "images": [*data["images"], extra]})
+
+
+def test_update_needs_exactly_one_target() -> None:
+    request = fixture("delivery-request.json")
+    update = {
+        "persistentId": "doc-1",
+        "expected": [{"kind": "section", "id": "c1", "version": "3", "element": None}],
+    }
+    one = CreateDeliveriesRequest.model_validate({**request, "targets": ["t1"], "update": update})
+    assert one.update is not None
+    assert one.model_dump(by_alias=True, mode="json")["update"] == update
+    with pytest.raises(ValidationError, match="exactly one target"):
+        CreateDeliveriesRequest.model_validate(
+            {**request, "targets": ["t1", "t2"], "update": update}
+        )
+    with pytest.raises(ValidationError):
+        CreateDeliveriesRequest.model_validate(
+            {**request, "targets": ["t1"], "update": {**update, "expected": []}}
+        )
+
+
+def test_receipt_document_is_optional_and_round_trips() -> None:
+    assert "document" not in Receipt(written=[]).model_dump(by_alias=True, mode="json")
+    data = {
+        "written": [],
+        "document": {
+            "persistentId": "doc-1",
+            "components": [{"kind": "section", "id": "c1", "version": "1", "element": None}],
+            "readBack": {"ok": True, "at": None, "detail": None},
+        },
+    }
+    receipt = Receipt.model_validate(data)
+    assert isinstance(receipt.document, DocumentReceipt)
+    assert receipt.model_dump(by_alias=True, mode="json") == data
+
+
+def test_archive_keys_include_the_document() -> None:
+    package = BridgePackage.model_validate(fixture("package-decomposed.json"))
+    keys = package_archive_keys("p/", package)
+    outputs = [k[0] for k in keys]
+    assert outputs[-1] == "package:manifest"
+    assert "package:document" in outputs
+    assert outputs.index("package:document") < outputs.index(
+        f"package:image:{package.images[0].id}"  # type: ignore[index]
+    )

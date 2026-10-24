@@ -94,6 +94,12 @@ def test_a_target_of_another_sink_is_delivered_to_with_no_s3_place() -> None:
         targets.get("early")
 
 
+def test_a_target_knows_its_sink_instance() -> None:
+    docs = row(id="docs", kind="sink", sink_id="docs", destination={}, instance_id="tenant-1")
+    targets, _ = live([docs])
+    assert (targets.get("docs").sink_id, targets.get("docs").instance_id) == ("docs", "tenant-1")
+
+
 def test_a_target_not_synced_yet_is_not_ready_and_is_no_document_error() -> None:
     targets, store = live([row(synced_at=None)])
     with pytest.raises(TargetNotSynced, match="default"):

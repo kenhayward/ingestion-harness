@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { BridgePackage } from '../src/index.js';
 
 /** A package file named `name`, carrying a tiny CSV. */
@@ -35,3 +36,8 @@ export const docPackage: BridgePackage = {
   narrative: null,
   images: null,
 };
+
+/** A valid version 2 package: the decomposed fixture (a document and the images it references). */
+export const decomposedPackage = JSON.parse(
+  readFileSync(new URL('./fixtures/package-decomposed.json', import.meta.url), 'utf8'),
+) as BridgePackage;

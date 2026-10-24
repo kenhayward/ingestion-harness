@@ -1,4 +1,5 @@
 import swagger from '@fastify/swagger';
+import { BlockSchema, InlineSchema, SectionSchema } from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -11,6 +12,21 @@ declare module 'fastify' {
 
 export const DOCS_PREFIX = '/docs';
 
+/**
+ * The contract's recursive schemas (the decomposed document's tree), by name: a JSON Schema can
+ * only express them by reference, so they live under `components.schemas`.
+ */
+const NAMED = z.registry<{ id: string }>();
+NAMED.add(InlineSchema, { id: 'DecomposedInline' });
+NAMED.add(BlockSchema, { id: 'DecomposedBlock' });
+NAMED.add(SectionSchema, { id: 'DecomposedSection' });
+
+/** The named schemas the routes refer to, collected as their JSON Schemas are made. */
+const components: Record<string, unknown> = {};
+
+const refsToComponents = <T>(v: T): T =>
+  JSON.parse(JSON.stringify(v).replaceAll('"#/definitions/', '"#/components/schemas/')) as T;
+
 /** JSON Schema for a Zod schema (route `schema` blocks hold Zod; swagger wants JSON Schema). */
 function toJsonSchema(schema: unknown): unknown {
   if (!(schema instanceof z.ZodType)) return schema;
@@ -18,9 +34,12 @@ function toJsonSchema(schema: unknown): unknown {
     target: 'draft-7',
     io: 'input',
     unrepresentable: 'any',
+    metadata: NAMED,
   }) as Record<string, unknown>;
   delete json.$schema;
-  return json;
+  const { definitions, ...rest } = json;
+  if (definitions) Object.assign(components, refsToComponents(definitions));
+  return refsToComponents(rest);
 }
 
 type RouteSchema = Record<string, unknown> & { response?: Record<string, unknown> };
@@ -77,5 +96,10 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
   });
   app.decorate('registeredRoutes', () => [...routes]);
   await app.register(swagger, { openapi: OPENAPI as never, transform: transform as never });
-  app.get(`${DOCS_PREFIX}/openapi.json`, { schema: { hide: true } }, async () => app.swagger());
+  app.get(`${DOCS_PREFIX}/openapi.json`, { schema: { hide: true } }, async () => {
+    const doc = app.swagger() as { components?: { schemas?: Record<string, unknown> } };
+    // Made while swagger transformed the routes, so read after it.
+    const schemas = { ...doc.components?.schemas, ...components };
+    return { ...doc, components: { ...doc.components, schemas } };
+  });
 }

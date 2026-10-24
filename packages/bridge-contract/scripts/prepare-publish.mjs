@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * The manifest as published: scoped to the owning account (GitHub Packages requires it), public,
- * typed from the built declarations, and shipping the fixtures the conformance suite reads.
+ * typed from the built declarations, and shipping the fixtures the conformance suite reads and
+ * the comparison-form vectors sinks run.
  */
 export function prepareContractManifest(pkg, owner) {
   const rest = { ...pkg };
@@ -18,7 +19,7 @@ export function prepareContractManifest(pkg, owner) {
     ...rest,
     name: `@${owner}/bridge-contract`,
     exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
-    files: ['dist', 'src', 'test/fixtures', 'LICENSE'],
+    files: ['dist', 'src', 'test/fixtures', 'vectors', 'LICENSE'],
     repository: {
       type: 'git',
       url: `git+https://github.com/${owner}/ingestion-harness.git`,

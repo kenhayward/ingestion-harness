@@ -51,6 +51,21 @@ export function deliveriesContract(name: string, make: () => Promise<DeliveryRep
       );
     });
 
+    it("create keeps a delivery's conditional update, and none when it has none", async () => {
+      const repo = await make();
+      const update = {
+        persistentId: 'doc-1',
+        expected: [{ kind: 'map', id: 'doc-1/map', version: '3', element: null }],
+      };
+      const withUpdate = { ...delivery(), update };
+      const without = delivery();
+      await repo.create(pkg(), [withUpdate], T0);
+      await repo.create(pkg(), [without], at(1));
+      expect((await repo.get(withUpdate.id))?.update).toEqual(update);
+      expect((await repo.get(without.id))?.update).toBeNull();
+      expect((await repo.claim(T0, 300))?.update).toEqual(update);
+    });
+
     it('claim takes the oldest due delivery and leases it', async () => {
       const repo = await make();
       const early = delivery();
