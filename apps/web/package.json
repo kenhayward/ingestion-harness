@@ -20,7 +20,7 @@
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@ih/shared": "*",
     "@lezer/highlight": "^1.2.5",
-    "cytoscape": "^3.34.3",
+    "cytoscape": "^3.34.4",
     "cytoscape-fcose": "^2.2.0",
     "n3": "2.8.0",
     "react": "^19.1.0",
