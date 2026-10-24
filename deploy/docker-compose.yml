@@ -124,7 +124,7 @@ services:
     # LibreOffice-only image, pinned to an exact release. It parses untrusted documents, so it
     # sits on an internal network with no route out, publishes no ports, and LibreOffice may
     # not fetch linked content (deny flags) nor Gotenberg download URLs or call webhooks.
-    image: gotenberg/gotenberg:8.37.0-libreoffice
+    image: gotenberg/gotenberg:8.38.1-libreoffice
     restart: unless-stopped
     command:
       - gotenberg
