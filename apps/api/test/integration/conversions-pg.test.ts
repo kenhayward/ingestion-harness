@@ -7,8 +7,9 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { migrate } from '../../src/db/migrate.js';
+import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
 import { PgRepo } from '../../src/repositories/pg.js';
 import { DOCX_MIME } from '@ih/shared';
 import { conversionsContract } from '../conversions-contract.js';
@@ -22,6 +23,23 @@ const migrations = fileURLToPath(new URL('../../../../db/migrations', import.met
 describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }, () => {
   let pool: pg.Pool | undefined;
   let repo: PgRepo | undefined;
+  /**
+   * A connection or a lock that never comes fails the test with that reason instead of a silent
+   * 30 s timeout (a statement waiting on a lock held by another session, or a connect that the
+   * host's port forwarding never completes).
+   */
+  const poolOptions = {
+    connectionString: url,
+    max: 4,
+    connectionTimeoutMillis: 5_000,
+    options: '-c lock_timeout=5000',
+  };
+
+  beforeAll(async () => {
+    await migrate(url!, migrations);
+    pool = new pg.Pool(poolOptions);
+    repo = new PgRepo(new pg.Pool(poolOptions));
+  });
 
   /** Items hold their jobs: other tests' `DELETE FROM jobs` needs them gone first. */
   const clear = async (p: pg.Pool) => {
@@ -33,13 +51,8 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
   };
 
   const make = async () => {
-    if (!pool) {
-      await migrate(url!, migrations);
-      pool = new pg.Pool({ connectionString: url, max: 4 });
-      repo = PgRepo.fromUrl(url!);
-    }
-    await clear(pool);
-    const p = pool;
+    const p = pool!;
+    await clear(p);
     return {
       repo: repo!,
       p,
@@ -143,7 +156,10 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
 
   it('refuses a NUL in a source key or a file name before Postgres sees it', async () => {
     const { repo } = await make();
-    const c = await testApp({ repo });
+    // testApp's own target repo counts deliveries from a MemoryRepo's maps; with PgRepo the
+    // targets need a repo of their own (nothing here depends on target usage).
+    const c = await testApp({ repo, targets: new MemoryPublishTargetRepo() });
+    onTestFinished(() => c.app.close());
     c.bridge.sinkViews = [FAKE_DOCUMENT_SINK];
     const target = await c.app.inject({
       method: 'POST',
