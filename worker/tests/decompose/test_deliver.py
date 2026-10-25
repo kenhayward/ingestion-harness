@@ -186,8 +186,10 @@ def test_update_sends_expected_versions_from_last_receipt() -> None:
     assert request.update is not None
     assert request.update.persistent_id == "DOC-1"
     assert request.update.expected == components
+    # The run token is what the update expects: the digest of its sorted `id@version` lines.
+    expects = hashlib.sha256(b"DOC-1@1\nS-1@3").hexdigest()
     assert request.package.idempotency_key == decomposition_idempotency_key(
-        hashlib.sha256(data).hexdigest(), "DOC-1", DECOMPOSER_VERSION, None
+        hashlib.sha256(data).hexdigest(), "DOC-1", DECOMPOSER_VERSION, expects
     )
     [stored] = store.entries()
     assert (stored.state, stored.persistent_id, stored.last_receipt) == (

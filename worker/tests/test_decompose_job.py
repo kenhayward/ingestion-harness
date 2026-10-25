@@ -3,6 +3,7 @@ delivered through the register, and the item's outcome recorded."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -48,6 +49,7 @@ USER = ActingUser(id="u1", name="Operator", email=None)
 BATCH_A = "00000000-0000-4000-8000-00000000000a"
 BATCH_B = "00000000-0000-4000-8000-00000000000b"
 BATCH_C = "00000000-0000-4000-8000-00000000000c"
+BATCH_D = "00000000-0000-4000-8000-00000000000d"
 #: The register action that detached an entry (the API's `register_actions` row).
 DETACH_ACTION = "00000000-0000-4000-8000-0000000000de"
 
@@ -457,6 +459,64 @@ def test_an_accept_makes_the_next_run_of_the_same_file_an_update() -> None:
         "doc-1/map": "2",
         "doc-1/section/s1": "3",
     }
+
+
+def _versions(world: World) -> dict[str, str]:
+    [entry] = world.register.entries()
+    assert entry.last_receipt is not None and entry.last_receipt.document is not None
+    return {c.id: c.version for c in entry.last_receipt.document.components}
+
+
+def test_a_then_b_then_a_again_is_three_writes() -> None:
+    """Updating with A over B is a different write from A's first update of the document: its
+    key takes the versions it expects, so the target can't answer it with A's first receipt
+    (which would write nothing and leave the register with stale versions)."""
+    sink = DocumentSink()
+    world = World(bridge=sink)
+    a, b = report_docx("One"), report_docx("Two")
+    _run(world, sink, world.upload(report_docx("Draft"), "r1.docx"))  # creates doc-1
+    _run(world, sink, world.upload(a, "r1.docx", batch=BATCH_B))
+    _run(world, sink, world.upload(b, "r1.docx", batch=BATCH_C))
+    assert _versions(world) == {"doc-1/map": "3", "doc-1/section/s1": "3"}
+
+    _run(world, sink, world.upload(a, "r1.docx", batch=BATCH_D))
+
+    updates = sink.requests[1:]
+    keys = [r.package.idempotency_key for r in updates]
+    assert all(r.update is not None for r in updates) and len(set(keys)) == 3
+    # A new write: the target holds a fourth version, and the register knows it.
+    assert sink.documents["doc-1"] == {"doc-1/map": 4, "doc-1/section/s1": 4}
+    assert _versions(world) == {"doc-1/map": "4", "doc-1/section/s1": "4"}
+    assert keys[-1] == decomposition_idempotency_key(
+        hashlib.sha256(a).hexdigest(),
+        "doc-1",
+        DECOMPOSER_VERSION,
+        hashlib.sha256(b"doc-1/map@3\ndoc-1/section/s1@3").hexdigest(),
+    )
+
+
+def test_the_same_update_retried_replays() -> None:
+    """A retry of the same update (the register as it was, the same file) has the same key, so
+    the target answers it with the first write's receipt and writes nothing more."""
+    sink = DocumentSink()
+    world = World(bridge=sink)
+    _run(world, sink, world.upload(report_docx("One"), "r1.docx"))
+    with world.register.transaction() as tx:
+        before = dict(tx.rows)  # type: ignore[attr-defined]
+    edited = report_docx("Two")
+    _run(world, sink, world.upload(edited, "r1.docx", batch=BATCH_B))
+    written = dict(sink.documents["doc-1"])
+    # As if the register never heard of that update (its answer lost), it is made again.
+    with world.register.transaction() as tx:
+        tx.rows.clear()  # type: ignore[attr-defined]
+        tx.rows.update(before)  # type: ignore[attr-defined]
+
+    _run(world, sink, world.upload(edited, "r1.docx", batch=BATCH_C))
+
+    first, retry = sink.requests[1:]
+    assert retry.package.idempotency_key == first.package.idempotency_key
+    assert sink.documents["doc-1"] == written  # replayed: nothing more written
+    assert _versions(world) == {"doc-1/map": "2", "doc-1/section/s1": "2"}
 
 
 def test_a_fidelity_failure_fails_the_item_with_the_check(monkeypatch: pytest.MonkeyPatch) -> None:

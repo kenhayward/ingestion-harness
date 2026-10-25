@@ -241,13 +241,31 @@ def _force_token(batch_id: str | None) -> str:
     return f"{batch_id}:{token}" if batch_id else token
 
 
-def _run_token(batch_id: str | None, force: bool, tombstone: RegisterEntry | None) -> str | None:
-    """The run's part of a derived idempotency key: a force-load's new token; for the first
-    create after a detach, the detach action's id, so the key differs from the detached
-    document's and the target can't answer with it (spec §8); otherwise none, so the same file
-    gets the same key ("same file, same result")."""
-    if force:
-        return _force_token(batch_id)
+def _expected_digest(update: Update) -> str:
+    """What an update expects, as a digest: the SHA-256 of its components' sorted
+    `id@version` lines. Two updates of one document expecting different versions are
+    different writes, even of the same file."""
+    lines = sorted(f"{c.id}@{c.version}" for c in update.expected)
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
+def _run_token(
+    batch_id: str | None, force: bool, tombstone: RegisterEntry | None, update: Update | None
+) -> str | None:
+    """The run's part of a derived idempotency key ("the same key means the same write"):
+    - an update's: the digest of the versions it expects, so A, then B, then A again is a new
+      write rather than a replay of A's first receipt, while a retry of the same update keeps
+      its key; a forced update joins it to the force-load's token (`token:digest`);
+    - a forced create's: the force-load's new token;
+    - the first create after a detach: the detach action's id, so the key differs from the
+      detached document's and the target can't answer with it (spec §8);
+    - any other create: none, so the same file gets the same key ("same file, same result")."""
+    token = _force_token(batch_id) if force else None
+    if update is not None:
+        digest = _expected_digest(update)
+        return f"{token}:{digest}" if token else digest
+    if token:
+        return token
     return tombstone.detach_action_id if tombstone is not None else None
 
 
@@ -355,7 +373,7 @@ def deliver_decomposition(
             sha,
             update.persistent_id if update else None,
             DECOMPOSER_VERSION,
-            _run_token(batch_id, force, tombstone),
+            _run_token(batch_id, force, tombstone, update),
         )
         try:
             entry = tx.put_pending(
