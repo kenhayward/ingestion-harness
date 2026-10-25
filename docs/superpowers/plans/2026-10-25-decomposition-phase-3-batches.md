@@ -52,18 +52,19 @@ document").
   "Watch out for" item for the migrations and the new routes.
 - **The gate:** `npm run check` (lint, typecheck, tests, worker lint and worker tests), plus
   `npm run format:check`. Stage files by name, never with `git add -A`.
-- **Names in the UI.** The tab's working name is **Conversion** (the owner settles the final
-  name, §10), and the app is "CT Studio".
+- **Names in the UI.** The tab is named **Conversion** (the owner's choice, 2026-10-25), and the
+  app is "CT Studio".
 
 ## Rulings made while planning
 
-- **R1, who may convert.** Designers and admins may start batches and act on rows. Operators may
-  not: they are refused by default, and the spec doesn't grant them this. Target choices
-  (`/api/publish-targets/choices`) already refuse operators. If this is wrong, adding the routes
-  to `OPERATOR_CALLS` opens them.
+- **R1, who may convert.** Operators, designers and admins may all start batches and act on rows
+  (owner, 2026-10-25). Every conversion route is added to `OPERATOR_CALLS`, and the page to
+  `OPERATOR_PAGES`. Operators can't read `/api/publish-targets/choices`, so the tab gets its own
+  target list, `GET /api/conversions/targets`, open to all three roles. It returns only targets
+  that take documents (R2).
 - **R2, a target that takes documents.** A target qualifies when its sink's catalog entry has
-  `capabilities.decomposedDocuments` (`SinkCatalog.get(target.sinkId)`). The choices list gains
-  `takesDocuments: boolean`, and the tab offers only those targets. The bridge's own
+  `capabilities.decomposedDocuments` (`SinkCatalog.get(target.sinkId)`).
+  `GET /api/conversions/targets` lists only those targets, as `{id, label, sinkName}`. The bridge's own
   `unsupported_part` refusal stays as the backstop.
 - **R3, the item outcome.** The worker's `DeliveryOutcome` is the item's outcome. The register's
   state alone can't show `already_loaded`, `duplicate` or a failure before delivery. A
@@ -171,10 +172,11 @@ document").
 
 **Files:**
 - Create: `apps/api/src/conversions/repo.ts`, `apps/api/src/routes/conversions.ts`, `apps/api/test/conversions.test.ts`, `apps/api/test/conversions-contract.ts` (shared by the memory and Pg repos)
-- Modify: `apps/api/src/repositories/{types,memory,pg}.ts`, `apps/api/src/app.ts` (register the route, with a per-route multipart limit of one file), `apps/api/src/openapi/document.ts` (tag `Conversions`), `apps/api/src/publish-targets/*` and `packages/shared/src/publish-targets.ts` (`TargetChoice.takesDocuments`, R2), `docs/openapi.json`
+- Modify: `apps/api/src/repositories/{types,memory,pg}.ts`, `apps/api/src/app.ts` (register the route, with a per-route multipart limit of one file), `apps/api/src/openapi/document.ts` (tag `Conversions`), the access allow-list `OPERATOR_CALLS` (R1), `docs/openapi.json`
 
 **Interfaces:**
-- Routes, all under `/api/conversions`, for designers and admins only (R1):
+- Routes, all under `/api/conversions`, open to operators, designers and admins (R1):
+  - `GET /targets` lists the targets that take documents (R2).
   - `POST /batches {targetId, force?}` returns `Batch`. The target must exist and `takesDocuments`, else 422 `target_takes_no_documents`.
   - `POST /batches/:id/items` takes multipart `file` plus `sourceKey` and returns `Item`.
     - The file is byte-checked with `checkSource`: only `.docx` in phase 3, since PDF is phase 5.
@@ -194,7 +196,8 @@ document").
   - `refuses an unreadable file per item, not the batch`;
   - `a batch with no items cannot start`;
   - `start queues one decompose job per item with its params`;
-  - `operators are refused`;
+  - `operators may convert`;
+  - `targets lists only those that take documents`;
   - `lists batches newest first with outcome counts`;
   - `serves an item's report`.
 
@@ -246,7 +249,7 @@ document").
 - Test: `apps/api/test/conversion-actions.test.ts`, `worker/tests/test_decompose_job.py`
 
 **Interfaces:**
-- Every action is a route for designers and admins only:
+- Every action is a route open to operators, designers and admins:
   - `POST /items/:id/force`: a new single-item batch with `force: true`, reusing the item's stored source (§8: an already-loaded item becomes an update, and a duplicate becomes a create).
   - `POST /items/:id/redeliver`: a new single-item batch with `force: true` for the entry's source key and target (R6). It takes an optional multipart `file`, the replacement, which keeps the source key.
   - `POST /items/:id/detach`: deletes the register entry and logs `register_actions{action:'detach', by, details:{persistentId, sourceKey}}`. The item's detail says it was detached. The next run of that source creates a new document.
@@ -263,7 +266,7 @@ document").
   - `accept rewrites the expected versions and records who`;
   - `accept refuses when more components changed than the refusal lists`;
   - `an accept followed by a further edit refuses again`: the fake sink edits again, and the next update gives `changed_in_target`;
-  - `actions are refused to operators`.
+  - `operators may act on rows`.
 - [ ] **Step 2: Run** `npx vitest run --project api conversion-actions` and `npm run worker:test -- -k decompose_job`. Expected: FAIL.
 - [ ] **Step 3: Implement**, then run `npm run openapi`.
 - [ ] **Step 4: Run** `npm run check`. Expected: green.
@@ -273,12 +276,12 @@ document").
 
 **Files:**
 - Create: `apps/web/src/conversion/ConversionPage.tsx`, `apps/web/src/conversion/NewBatch.tsx`, `apps/web/test/conversion-new-batch.test.tsx`
-- Modify: `apps/web/src/router.ts` (route `conversion` and `conversion/<batchId>`), `apps/web/src/App.tsx`, `apps/web/src/shell/AppShell.tsx` (a nav link beside Document types, hidden from operators), `apps/web/src/shell/derive.ts`, `packages/shared/src/roles.ts` (not in `OPERATOR_PAGES`), `apps/web/src/api/client.ts` and `apps/web/test/fake-api.ts` (the new `Api` methods), `apps/web/src/help/index.ts` (topic `conversion`)
+- Modify: `apps/web/src/router.ts` (route `conversion` and `conversion/<batchId>`), `apps/web/src/App.tsx`, `apps/web/src/shell/AppShell.tsx` (a nav link, shown to every role), `apps/web/src/shell/derive.ts`, `packages/shared/src/roles.ts` (added to `OPERATOR_PAGES`), `apps/web/src/api/client.ts` and `apps/web/test/fake-api.ts` (the new `Api` methods), `apps/web/src/help/index.ts` (topic `conversion`)
 
 **Interfaces:**
-- The `Api` gains `createConversionBatch`, `uploadConversionItem`, `startConversionBatch`, `discardConversionBatch`, `listConversionBatches`, `getConversionBatch`, `getConversionReport`, `forceConversionItem`, `redeliverConversionItem`, `detachConversionItem`, `previewAccept` and `acceptTargetState`.
+- The `Api` gains `listConversionTargets`, `createConversionBatch`, `uploadConversionItem`, `startConversionBatch`, `discardConversionBatch`, `listConversionBatches`, `getConversionBatch`, `getConversionReport`, `forceConversionItem`, `redeliverConversionItem`, `detachConversionItem`, `previewAccept` and `acceptTargetState`.
 - `NewBatch` works like this:
-  - it has a target select listing only the `takesDocuments` targets;
+  - it has a target select fed by `listConversionTargets`;
   - it offers "Choose files", "Choose folder" (`webkitdirectory`) and a drop zone using `readDrop`;
   - it lists the chosen files with their source keys, skipping `~$*` files and dot files, and lets the person remove any;
   - it has a force-load checkbox and a Start button.
@@ -291,7 +294,7 @@ document").
   - `skips lock and hidden files`;
   - `a refused file shows its reason and the others upload`;
   - `start opens the batch view`;
-  - `the tab is hidden from operators`.
+  - `operators see the tab`.
 - [ ] **Step 2: Run** `npx vitest run --project web conversion`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Use the existing UI pieces: `UploadStrip` patterns, `folder-drop.ts`, `Meter`, `Dialog`, `HelpButton`.
 - [ ] **Step 4: Run** `npm run check`. Expected: green.
