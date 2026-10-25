@@ -22,6 +22,7 @@ import {
 import { z } from 'zod';
 import { creatorOf } from '../access/routes.js';
 import { acceptPlanOf } from '../conversions/accept.js';
+import type { RegisterEntry } from '../repositories/types.js';
 import {
   batchCreator,
   RUNNING_OUTCOMES,
@@ -434,6 +435,12 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
     return entry?.state === 'detached' ? null : entry;
   };
 
+  /** The targets on an entry's tenant (its sink and instance): register entries are per tenant. */
+  const tenantTargets = async (entry: RegisterEntry) =>
+    (await app.deps.targets.list())
+      .filter((t) => t.sinkId === entry.sinkId && t.instanceId === entry.instanceId)
+      .map((t) => t.id);
+
   /** A new batch of one, forced and started, rerunning `of` with `source` (R6). */
   const rerun = (
     req: FastifyRequest,
@@ -637,19 +644,18 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const item = await findItem(req.params.id);
       if (!item) return reply.code(404).send({ error: 'not found' });
-      const batch = await app.deps.repo.getBatch(item.batchId);
-      const detached =
-        item.registerEntryId && batch
-          ? await app.deps.repo.detachRegisterEntry({
-              itemId: item.id,
-              entryId: item.registerEntryId,
-              targetId: batch.targetId,
-              by: batchCreator(creatorOf(req)),
-              detail: (e) =>
-                `detached${e.persistentId ? ` from document ${e.persistentId}` : ''}: ` +
-                'the next run of this source creates a new document',
-            })
-          : ({ ok: false, reason: 'missing' } as const);
+      const entry = await entryOf(item);
+      const detached = entry
+        ? await app.deps.repo.detachRegisterEntry({
+            itemId: item.id,
+            entryId: entry.id,
+            targetIds: await tenantTargets(entry),
+            by: batchCreator(creatorOf(req)),
+            detail: (e) =>
+              `detached${e.persistentId ? ` from document ${e.persistentId}` : ''}: ` +
+              'the next run of this source creates a new document',
+          })
+        : ({ ok: false, reason: 'missing' } as const);
       if (detached.ok) return detached.item;
       if (detached.reason === 'pending') {
         return reply.code(409).send({ error: IN_FLIGHT, code: 'in_flight' });

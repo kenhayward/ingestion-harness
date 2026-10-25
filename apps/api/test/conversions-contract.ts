@@ -326,11 +326,12 @@ export function conversionsContract(
       const { repo, facts, batch, item: a } = await finished();
       const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
       await facts.settleItem(a.id, 'changed_in_target', entryId);
+      const before = (await repo.registerEntry(entryId))!;
 
       const done = await repo.detachRegisterEntry({
         itemId: a.id,
         entryId,
-        targetId: 'manuals',
+        targetIds: ['manuals'],
         by: ADA,
         detail: (e) => `gone ${e.persistentId}`,
       });
@@ -356,7 +357,9 @@ export function conversionsContract(
         detachActionId: actions[0]!.id,
       });
       expect(await repo.registerEntry(entryId)).toEqual(done.entry);
-      const again = { itemId: a.id, entryId, targetId: 'manuals', by: ADA, detail: () => 'x' };
+      // Later as `updatedAt` reads (to the millisecond): a preview from before is stale.
+      expect(Date.parse(done.entry.updatedAt)).toBeGreaterThan(Date.parse(before.updatedAt));
+      const again = { itemId: a.id, entryId, targetIds: ['manuals'], by: ADA, detail: () => 'x' };
       expect(await repo.detachRegisterEntry(again)).toEqual({ ok: false, reason: 'missing' });
       expect(await facts.actions(entryId)).toHaveLength(1);
     });
@@ -367,7 +370,7 @@ export function conversionsContract(
         ...changedSeed(a.sourceKey, batch.id),
         state: 'pending',
       });
-      const detach = { itemId: a.id, entryId, targetId: 'manuals', by: ADA, detail: () => 'x' };
+      const detach = { itemId: a.id, entryId, targetIds: ['manuals'], by: ADA, detail: () => 'x' };
       expect(await repo.detachRegisterEntry(detach)).toEqual({ ok: false, reason: 'pending' });
       expect((await repo.registerEntry(entryId))?.state).toBe('pending');
 

@@ -55,8 +55,9 @@ class RegisterEntry:
     created_at: datetime
     updated_at: datetime
     delivered_at: datetime | None
-    #: The `register_actions` row that detached it (state `detached`): the next create of the
-    #: source takes it into its idempotency key.
+    #: The `register_actions` row that detached it (state `detached`), kept by the entry that
+    #: replaces the tombstone: every create of the source takes it into its idempotency key
+    #: until the entry has a document.
     detach_action_id: str | None = None
 
 
@@ -92,7 +93,7 @@ class RegisterTx(Protocol):
         """The source's entry, now `pending` under `idempotency_key`. `replacing` (the entry
         `by_key` found and locked) is reset: its delivery and error cleared, its persistent id
         and last receipt kept, unless it is a `detached` tombstone, which is replaced by a new
-        entry. Without it a new entry is inserted, and RegisterRaced raised when one appeared
+        entry that keeps its `detach_action_id`. Without it a new entry is inserted, and RegisterRaced raised when one appeared
         meanwhile."""
         ...
 
@@ -151,10 +152,11 @@ class _MemoryTx:
         batch_id: str | None,
     ) -> RegisterEntry:
         now = self._clock()
+        detached_by = None
         if replacing is not None and replacing.state == "detached":
-            # A create replaces the tombstone with a new entry.
+            # A create replaces the tombstone with a new entry, which keeps the detach.
             del self.rows[replacing.id]
-            replacing = None
+            detached_by, replacing = replacing.detach_action_id, None
         current = self.by_key(sink_id, instance_id, source_key)
         if replacing is None:
             if current is not None:
@@ -175,6 +177,7 @@ class _MemoryTx:
                 created_at=now,
                 updated_at=now,
                 delivered_at=None,
+                detach_action_id=detached_by,
             )
         else:
             base = self.rows[replacing.id]
@@ -351,10 +354,12 @@ class _PgTx:
         idempotency_key: str,
         batch_id: str | None,
     ) -> RegisterEntry:
+        detached_by = None
         if replacing is not None and replacing.state == "detached":
-            # A create replaces the tombstone (locked by `by_key`) with a new entry.
+            # A create replaces the tombstone (locked by `by_key`) with a new entry, which keeps
+            # the detach.
             self._conn.execute("DELETE FROM decomposition_register WHERE id = %s", (replacing.id,))
-            replacing = None
+            detached_by, replacing = replacing.detach_action_id, None
         if replacing is not None:
             row = self._conn.execute(
                 f"""UPDATE decomposition_register
@@ -370,11 +375,19 @@ class _PgTx:
             row = self._conn.execute(
                 f"""INSERT INTO decomposition_register
                        (sink_id, instance_id, source_key, content_sha256, state,
-                        idempotency_key, batch_id)
-                    VALUES (%s, %s, %s, %s, 'pending', %s, %s)
+                        idempotency_key, batch_id, detach_action_id)
+                    VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s)
                     ON CONFLICT (sink_id, instance_id, source_key) DO NOTHING
                  RETURNING {_COLUMNS}""",
-                (sink_id, instance_id, source_key, content_sha256, idempotency_key, batch_id),
+                (
+                    sink_id,
+                    instance_id,
+                    source_key,
+                    content_sha256,
+                    idempotency_key,
+                    batch_id,
+                    detached_by,
+                ),
             ).fetchone()
             if row is None:
                 raise RegisterRaced(source_key)

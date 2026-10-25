@@ -1444,7 +1444,7 @@ export class MemoryRepo implements IngestionRepo {
   async detachRegisterEntry({
     itemId,
     entryId,
-    targetId,
+    targetIds,
     by,
     detail,
   }: Detach): Promise<DetachResult> {
@@ -1454,7 +1454,7 @@ export class MemoryRepo implements IngestionRepo {
       (i) =>
         i.sourceKey === entry.sourceKey &&
         RUNNING_OUTCOMES.includes(i.outcome) &&
-        this.conversionBatches.get(i.batchId)?.targetId === targetId,
+        targetIds.includes(this.conversionBatches.get(i.batchId)?.targetId ?? ''),
     );
     if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
     const action: RegisterAction = {

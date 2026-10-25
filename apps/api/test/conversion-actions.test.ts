@@ -452,6 +452,63 @@ describe('detach', () => {
     expect(c.repo.register.get(entry.id)?.state).toBe('changed');
   });
 
+  it("refuses while the source is queued for any target on the entry's tenant", async () => {
+    const c = await setup();
+    // A second target on the same sink (one tenant), and one on another sink.
+    const handbooks = await c.app.inject({
+      method: 'POST',
+      url: '/api/publish-targets',
+      payload: { kind: 'sink', label: 'Handbooks', sinkId: 'docs', destination: { space: 'hb' } },
+    });
+    expect(handbooks.statusCode).toBe(201);
+    const reports = await c.app.inject({
+      method: 'POST',
+      url: '/api/publish-targets',
+      payload: {
+        kind: 'sink',
+        label: 'Reports',
+        sinkId: 'fake',
+        destination: { space: 'lib', name: '{source.stem}' },
+      },
+    });
+    expect(reports.statusCode).toBe(201);
+    const item = await startedItem(c);
+    const entry = changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
+    /** The same source queued in a started batch for `targetId`. */
+    const queue = async (targetId: string) => {
+      const batch = await c.repo.createBatch({
+        targetId,
+        force: false,
+        createdBy: { id: null, name: null },
+      });
+      const id = randomUUID();
+      await c.repo.addItem({
+        id,
+        batchId: batch.id,
+        sourceKey: item.sourceKey,
+        filename: item.filename,
+        contentSha256: item.contentSha256,
+        sizeBytes: item.sizeBytes,
+        objectKey: item.objectKey,
+      });
+      await c.repo.startBatch(batch.id, null);
+      return id;
+    };
+    const detach = () => post(c.app, `/api/conversions/items/${item.id}/detach`);
+
+    const elsewhere = await queue(reports.json().id);
+    const onTenant = await queue(handbooks.json().id);
+    const refused = await detach();
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'in_flight' });
+
+    // The run to the other tenant does not hold it off.
+    c.repo.conversionItems.get(onTenant)!.outcome = 'created';
+    expect(c.repo.conversionItems.get(elsewhere)!.outcome).toBe('queued');
+    expect((await detach()).statusCode).toBe(200);
+    expect(c.repo.register.get(entry.id)?.state).toBe('detached');
+  });
+
   it('a detached entry has nothing to redeliver or accept', async () => {
     const c = await setup();
     const item = await startedItem(c);

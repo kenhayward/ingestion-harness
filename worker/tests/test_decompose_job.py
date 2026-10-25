@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 import ingest_worker.decompose as decompose_module
+from ingest_worker.bridge.client import BridgeRefused
 from ingest_worker.bridge.models import (
     ActingUser,
     ComponentVersion,
@@ -40,7 +41,7 @@ from ingest_worker.storage import (
     decomposition_source_key,
 )
 from tests.decompose.fakes import FakeRenderer
-from tests.decompose.test_deliver import FakeBridge, report_docx
+from tests.decompose.test_deliver import REFUSAL, FakeBridge, report_docx
 from tests.fakes import FakeQueue
 
 AT = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
@@ -291,9 +292,14 @@ class DocumentSink:
         self.documents: dict[str, dict[str, int]] = {}
         self._replies: dict[str, Receipt] = {}
         self._results: dict[str, Receipt | dict[str, Any]] = {}
+        #: The next request is refused outright (BridgeRefused): nothing reaches the target.
+        self.refuse_next = False
 
     def deliver(self, request: CreateDeliveriesRequest) -> CreateDeliveriesResult:
         self.requests.append(request)
+        if self.refuse_next:
+            self.refuse_next = False
+            raise BridgeRefused(REFUSAL)
         delivery_id = f"d{len(self.requests)}"
         self._results[delivery_id] = self._write(request)
         return CreateDeliveriesResult(
@@ -404,9 +410,37 @@ def test_the_next_run_after_detach_creates_a_new_document() -> None:
     assert (entry.state, entry.persistent_id, entry.detach_action_id) == (
         "delivered",
         "doc-2",
-        None,
+        DETACH_ACTION,
     )
     assert world.item(again).register_entry_id == entry.id
+
+
+def test_a_refused_create_after_detach_keeps_the_detach_token() -> None:
+    """The first create after a detach is refused outright, so its entry has no document; the
+    rerun of the identical file is created again under a new key, which must still carry the
+    detach, or the target would answer with the detached document."""
+    sink = DocumentSink()
+    world = World(bridge=sink)
+    data = report_docx()
+    _run(world, sink, world.upload(data, "r1.docx"))
+    [first] = world.register.entries()
+    world.register.detach(first.id, action_id=DETACH_ACTION)
+    sink.refuse_next = True
+    refused = world.upload(data, "r1.docx", batch=BATCH_B)
+    assert isinstance(run_decompose(refused, world.deps()), Complete)
+    [failed] = world.register.entries()
+    assert (failed.state, failed.persistent_id, failed.detach_action_id) == (
+        "failed",
+        None,
+        DETACH_ACTION,
+    )
+
+    _run(world, sink, world.upload(data, "r1.docx", batch=BATCH_C))
+
+    keys = [r.package.idempotency_key for r in sink.requests]
+    assert keys[-1] != keys[0]
+    [entry] = world.register.entries()
+    assert (entry.state, entry.persistent_id) == ("delivered", "doc-2")
 
 
 def test_a_detached_entry_is_absent_from_both_checks() -> None:

@@ -1463,7 +1463,7 @@ export class PgRepo implements IngestionRepo {
   async detachRegisterEntry({
     itemId,
     entryId,
-    targetId,
+    targetIds,
     by,
     detail,
   }: Detach): Promise<DetachResult> {
@@ -1480,9 +1480,10 @@ export class PgRepo implements IngestionRepo {
       // entry this detaches.
       const running = await client.query(
         `SELECT 1 FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id
-          WHERE i.source_key = $1 AND b.target_id = $2 AND i.outcome = ANY($3::text[])
+          WHERE i.source_key = $1 AND b.target_id = ANY($2::text[])
+            AND i.outcome = ANY($3::text[])
           LIMIT 1`,
-        [row.source_key, targetId, RUNNING_OUTCOMES],
+        [row.source_key, targetIds, RUNNING_OUTCOMES],
       );
       if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
       const action = await client.query<{ id: string }>(
@@ -1496,7 +1497,9 @@ export class PgRepo implements IngestionRepo {
       );
       const updated = await client.query<RegisterRow>(
         `UPDATE decomposition_register
-            SET state = 'detached', detach_action_id = $2, updated_at = now()
+            SET state = 'detached', detach_action_id = $2,
+                updated_at = GREATEST(now(), date_trunc('milliseconds', updated_at)
+                                             + interval '1 millisecond')
           WHERE id = $1
          RETURNING ${REGISTER_COLUMNS}`,
         [entryId, action.rows[0]!.id],

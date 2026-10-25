@@ -214,6 +214,7 @@ def test_a_create_replaces_a_detached_tombstone(store: tuple[PgRegisterStore, st
 
     assert created.id != first.id
     assert (created.state, created.persistent_id, created.last_receipt) == ("pending", None, None)
-    assert created.detach_action_id is None
+    # The detach goes on with the new entry until it has a document (`deliver._run_token`).
+    assert created.detach_action_id == action
     with pg.transaction() as tx:
         assert tx.by_key(sink, None, "r1.docx") == created

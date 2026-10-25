@@ -48,8 +48,9 @@ export interface ConversionRepo {
   /**
    * Detach (spec §8): records `register_actions{action: 'detach'}` and leaves the entry a
    * `detached` tombstone naming that action, and sets the item's detail, all at once. Refused
-   * (`pending`) while a delivery for the entry is in flight, or a run of its source on the
-   * target is unfinished (a rerun queued, say); `missing` when it is gone or detached already.
+   * (`pending`) while a delivery for the entry is in flight, or a run of its source to a target
+   * on its tenant is unfinished (a rerun queued, say); `missing` when it is gone or detached
+   * already.
    */
   detachRegisterEntry(detach: Detach): Promise<DetachResult>;
   /**
@@ -65,8 +66,11 @@ export interface ConversionRepo {
 export interface Detach {
   itemId: string;
   entryId: string;
-  /** The item's batch's target: a run of the same source key to it holds the detach off. */
-  targetId: string;
+  /**
+   * The targets on the entry's tenant (its sink and instance): a run of the same source key to
+   * any of them holds the detach off.
+   */
+  targetIds: string[];
   by: Batch['createdBy'];
   detail: (entry: RegisterEntry) => string;
 }

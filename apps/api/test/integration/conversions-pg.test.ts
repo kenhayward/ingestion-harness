@@ -187,7 +187,7 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       const detaching = repo.detachRegisterEntry({
         itemId: id,
         entryId,
-        targetId: 'manuals',
+        targetIds: ['manuals'],
         by,
         detail: () => 'detached',
       });
