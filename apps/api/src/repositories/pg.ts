@@ -29,7 +29,7 @@ import {
   type Item,
   type ItemOutcome,
 } from '@ih/shared';
-import { acceptedReceipt, type AcceptPlan } from '../conversions/accept.js';
+import { acceptedReceipt } from '../conversions/accept.js';
 import {
   emptyCounts,
   type AcceptResult,
@@ -38,7 +38,11 @@ import {
   type DiscardBatchResult,
   type NewBatch,
   type NewItem,
+  type Accept,
+  type Detach,
   type Rerun,
+  type RerunResult,
+  RUNNING_OUTCOMES,
   type StartBatchResult,
 } from '../conversions/repo.js';
 import {
@@ -1398,8 +1402,16 @@ export class PgRepo implements IngestionRepo {
     createdBy,
     by,
     source,
-  }: Rerun): Promise<{ batch: Batch; item: Item }> {
+  }: Rerun): Promise<RerunResult> {
     return this.inTransaction(async (client) => {
+      // The item rerun, locked: a repeated request waits here, then finds the first's rerun.
+      await client.query('SELECT 1 FROM decomposition_items WHERE id = $1 FOR UPDATE', [of.id]);
+      const running = await client.query(
+        `SELECT 1 FROM decomposition_items WHERE redeliver_of = $1 AND outcome = ANY($2::text[])
+          LIMIT 1`,
+        [of.id, RUNNING_OUTCOMES],
+      );
+      if (running.rowCount) return { ok: false, reason: 'running' };
       const batch = await client.query<BatchRow>(
         `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
          VALUES ($1, $2, true, $3, 'started', now())
@@ -1436,7 +1448,7 @@ export class PgRepo implements IngestionRepo {
           of.id,
         ],
       );
-      return { batch: toBatch(batch.rows[0]!), item: toItem(item.rows[0]!) };
+      return { ok: true, batch: toBatch(batch.rows[0]!), item: toItem(item.rows[0]!) };
     });
   }
 
@@ -1448,12 +1460,13 @@ export class PgRepo implements IngestionRepo {
     return rows[0] ? toRegisterEntry(rows[0]) : null;
   }
 
-  async detachRegisterEntry(
-    itemId: string,
-    entryId: string,
-    by: Batch['createdBy'],
-    detail: (entry: RegisterEntry) => string,
-  ): Promise<DetachResult> {
+  async detachRegisterEntry({
+    itemId,
+    entryId,
+    targetId,
+    by,
+    detail,
+  }: Detach): Promise<DetachResult> {
     return this.inTransaction(async (client) => {
       // The worker holds the row while it decides and hands a delivery off: this waits for it,
       // then sees the entry pending and leaves it.
@@ -1462,18 +1475,33 @@ export class PgRepo implements IngestionRepo {
         [entryId],
       );
       const row = found.rows[0];
-      if (!row) return { ok: false, reason: 'missing' };
-      const entry = toRegisterEntry(row);
-      if (entry.state === 'pending') return { ok: false, reason: 'pending' };
-      await client.query('DELETE FROM decomposition_register WHERE id = $1', [entryId]);
-      await client.query(
-        `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'detach', $2, $3)`,
+      if (!row || row.state === 'detached') return { ok: false, reason: 'missing' };
+      // A run of the source not at the register yet (a queued rerun, say) would deliver to the
+      // entry this detaches.
+      const running = await client.query(
+        `SELECT 1 FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id
+          WHERE i.source_key = $1 AND b.target_id = $2 AND i.outcome = ANY($3::text[])
+          LIMIT 1`,
+        [row.source_key, targetId, RUNNING_OUTCOMES],
+      );
+      if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
+      const action = await client.query<{ id: string }>(
+        `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'detach', $2, $3)
+         RETURNING id::text`,
         [
           entryId,
           JSON.stringify(by),
-          JSON.stringify({ persistentId: entry.persistentId, sourceKey: entry.sourceKey }),
+          JSON.stringify({ persistentId: row.persistent_id, sourceKey: row.source_key }),
         ],
       );
+      const updated = await client.query<RegisterRow>(
+        `UPDATE decomposition_register
+            SET state = 'detached', detach_action_id = $2, updated_at = now()
+          WHERE id = $1
+         RETURNING ${REGISTER_COLUMNS}`,
+        [entryId, action.rows[0]!.id],
+      );
+      const entry = toRegisterEntry(updated.rows[0]!);
       const item = await client.query<ItemRow>(
         `UPDATE decomposition_items SET detail = $2 WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
         [itemId, detail(entry)],
@@ -1482,13 +1510,14 @@ export class PgRepo implements IngestionRepo {
     });
   }
 
-  async acceptTargetState(
-    itemId: string,
-    entryId: string,
-    by: Batch['createdBy'],
-    plan: (entry: RegisterEntry) => AcceptPlan,
-    detail: (entry: RegisterEntry) => string,
-  ): Promise<AcceptResult> {
+  async acceptTargetState({
+    itemId,
+    entryId,
+    seen,
+    by,
+    plan,
+    detail,
+  }: Accept): Promise<AcceptResult> {
     return this.inTransaction(async (client) => {
       const found = await client.query<RegisterRow>(
         `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE id = $1 FOR UPDATE`,
@@ -1497,13 +1526,18 @@ export class PgRepo implements IngestionRepo {
       const row = found.rows[0];
       if (!row) return { ok: false, reason: 'missing' };
       const entry = toRegisterEntry(row);
+      if (entry.updatedAt !== seen) return { ok: false, reason: 'stale' };
       const accepted = plan(entry);
       if (accepted.reason !== null) {
         return { ok: false, reason: 'not_acceptable', why: accepted.reason };
       }
+      // Later than before by at least a millisecond, as `updatedAt` reads, so a preview of the
+      // entry as it was is stale now.
       const updated = await client.query<RegisterRow>(
         `UPDATE decomposition_register
-            SET state = 'delivered', last_receipt = $2, last_error = NULL, updated_at = now()
+            SET state = 'accepted', last_receipt = $2, last_error = NULL,
+                updated_at = GREATEST(now(), date_trunc('milliseconds', updated_at)
+                                             + interval '1 millisecond')
           WHERE id = $1
          RETURNING ${REGISTER_COLUMNS}`,
         [entryId, JSON.stringify(acceptedReceipt(entry.lastReceipt!, accepted.components))],
@@ -2239,11 +2273,12 @@ interface RegisterRow {
   created_at: Date;
   updated_at: Date;
   delivered_at: Date | null;
+  detach_action_id: string | null;
 }
 
 const REGISTER_COLUMNS = `id::text, sink_id, instance_id, source_key, content_sha256, persistent_id,
   state, idempotency_key, delivery_id, last_receipt, last_error, batch_id, created_at, updated_at,
-  delivered_at`;
+  delivered_at, detach_action_id::text`;
 
 const toRegisterEntry = (r: RegisterRow): RegisterEntry => ({
   id: r.id,
@@ -2261,6 +2296,7 @@ const toRegisterEntry = (r: RegisterRow): RegisterEntry => ({
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
   deliveredAt: r.delivered_at?.toISOString() ?? null,
+  detachActionId: r.detach_action_id,
 });
 
 interface DeliveryRow {

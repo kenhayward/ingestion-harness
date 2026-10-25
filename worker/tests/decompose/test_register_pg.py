@@ -189,3 +189,31 @@ def test_set_failed_settles_only_a_pending_entry(store: tuple[PgRegisterStore, s
         assert failed is not None and (failed.state, failed.last_error) == ("failed", error)
         tx.set_failed(first.id, {"code": "other"})
         assert tx.by_key(sink, None, "r1.docx") == failed
+
+
+def test_a_create_replaces_a_detached_tombstone(store: tuple[PgRegisterStore, str]) -> None:
+    """The API's detach leaves a tombstone naming its action; the next create of the source
+    reads it, then replaces it with a new entry (migration 202610252220)."""
+    pg, sink = store
+    with pg.transaction() as tx:
+        first = _pending(tx, sink, None, OLD_SHA)
+    _settle_delivered(sink)
+    action = str(uuid.uuid4())
+    with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn:
+        conn.execute(
+            """UPDATE decomposition_register SET state = 'detached', detach_action_id = %s
+                WHERE id = %s""",
+            (action, first.id),
+        )
+
+    with pg.transaction() as tx:
+        tombstone = tx.by_key(sink, None, "r1.docx")
+        assert tombstone is not None
+        assert (tombstone.state, tombstone.detach_action_id) == ("detached", action)
+        created = _pending(tx, sink, tombstone, OLD_SHA)
+
+    assert created.id != first.id
+    assert (created.state, created.persistent_id, created.last_receipt) == ("pending", None, None)
+    assert created.detach_action_id is None
+    with pg.transaction() as tx:
+        assert tx.by_key(sink, None, "r1.docx") == created

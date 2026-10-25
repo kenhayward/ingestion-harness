@@ -14,11 +14,15 @@ import ingest_worker.decompose as decompose_module
 from ingest_worker.bridge.models import (
     ActingUser,
     ComponentVersion,
+    CreateDeliveriesRequest,
+    CreateDeliveriesResult,
+    DeliveryRef,
     DocumentReceipt,
     ReadBack,
     Receipt,
+    decomposition_idempotency_key,
 )
-from ingest_worker.decompose import DecompositionFailed
+from ingest_worker.decompose import DECOMPOSER_VERSION, DecompositionFailed
 from ingest_worker.decompose.deliver import DeliverDeps
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
@@ -43,16 +47,19 @@ TARGET = "manuals"
 USER = ActingUser(id="u1", name="Operator", email=None)
 BATCH_A = "00000000-0000-4000-8000-00000000000a"
 BATCH_B = "00000000-0000-4000-8000-00000000000b"
+BATCH_C = "00000000-0000-4000-8000-00000000000c"
+#: The register action that detached an entry (the API's `register_actions` row).
+DETACH_ACTION = "00000000-0000-4000-8000-0000000000de"
 
 
 class World:
     """The runs bucket, the items, the register, the bridge and the queue one worker shares."""
 
-    def __init__(self) -> None:
+    def __init__(self, bridge: Any = None) -> None:
         self.store = MemoryObjectStore()
         self.items = MemoryItemStore()
         self.register = MemoryRegisterStore(clock=lambda: AT)
-        self.bridge = FakeBridge()
+        self.bridge = bridge if bridge is not None else FakeBridge()
         self.queue = FakeQueue()
         self.renderer = FakeRenderer()
         self._n = 0
@@ -270,23 +277,186 @@ def test_force_load_turns_a_duplicate_into_a_create() -> None:
     assert world.item(forced).register_entry_id == entry.id
 
 
+class DocumentSink:
+    """A bridge in front of a document target that behaves like the bridge's fake document sink
+    (apps/bridge/src/sinks/fake-documents.ts): idempotent by key (a replayed key answers with
+    its first write's receipt), a conditional update refused when any component changed, and
+    `edit` for a change made in the target. `settle` is the API applying the delivery's final
+    event to the register."""
+
+    def __init__(self) -> None:
+        self.requests: list[CreateDeliveriesRequest] = []
+        self.documents: dict[str, dict[str, int]] = {}
+        self._replies: dict[str, Receipt] = {}
+        self._results: dict[str, Receipt | dict[str, Any]] = {}
+
+    def deliver(self, request: CreateDeliveriesRequest) -> CreateDeliveriesResult:
+        self.requests.append(request)
+        delivery_id = f"d{len(self.requests)}"
+        self._results[delivery_id] = self._write(request)
+        return CreateDeliveriesResult(
+            package_id=f"p{len(self.requests)}",
+            deliveries=[DeliveryRef(target_id=t, delivery_id=delivery_id) for t in request.targets],
+        )
+
+    def _write(self, request: CreateDeliveriesRequest) -> Receipt | dict[str, Any]:
+        key = request.package.idempotency_key
+        if key in self._replies:
+            return self._replies[key]
+        if request.update is not None:
+            pid = request.update.persistent_id
+            stored = self.documents[pid]
+            expected = {c.id: c.version for c in request.update.expected}
+            changed = [
+                {"id": cid, "expected": expected.get(cid, "none"), "actual": str(v)}
+                for cid, v in stored.items()
+                if expected.get(cid) != str(v)
+            ]
+            if changed:
+                return {
+                    "class": "needs_user",
+                    "code": "changed_in_target",
+                    "message": f"{len(changed)} component(s) of {pid} changed in the target",
+                    "details": {"changed": changed},
+                }
+            for cid in stored:
+                stored[cid] += 1
+        else:
+            pid = f"doc-{len(self.documents) + 1}"
+            self.documents[pid] = {f"{pid}/map": 1, f"{pid}/section/s1": 1}
+        receipt = Receipt(
+            written=[],
+            document=DocumentReceipt(
+                persistent_id=pid,
+                components=[
+                    ComponentVersion(kind="section", id=cid, version=str(v), element=None)
+                    for cid, v in self.documents[pid].items()
+                ],
+                read_back=ReadBack(ok=True, at=None, detail=None),
+            ),
+        )
+        self._replies[key] = receipt
+        return receipt
+
+    def edit(self, pid: str, component_id: str) -> None:
+        self.documents[pid][component_id] += 1
+
+    def settle(self, register: MemoryRegisterStore, delivery_id: str) -> None:
+        entry = next(e for e in register.entries() if e.delivery_id == delivery_id)
+        result = self._results[delivery_id]
+        if isinstance(result, Receipt):
+            assert result.document is not None
+            register.settle(
+                entry.id,
+                state="delivered",
+                persistent_id=result.document.persistent_id,
+                last_receipt=result,
+            )
+        else:
+            register.settle(entry.id, state="changed", last_error=result)
+
+    def read_object(self, target_id: str, bucket: str, key: str) -> bytes | None:
+        raise NotImplementedError
+
+    def put_object(
+        self, target_id: str, bucket: str, key: str, body: bytes, content_type: str
+    ) -> None:
+        raise NotImplementedError
+
+    def delete_objects(self, target_id: str, objects: list[tuple[str, str]]) -> int:
+        raise NotImplementedError
+
+
+def _run(world: World, sink: DocumentSink, job: ClaimedJob) -> str:
+    """The job's run, its delivery settled from the sink's answer; the delivery id."""
+    outcome = run_decompose(job, world.deps())
+    assert isinstance(outcome, Delivering)
+    [(_, delivery_id)] = outcome.deliveries
+    sink.settle(world.register, delivery_id)
+    return delivery_id
+
+
 def test_the_next_run_after_detach_creates_a_new_document() -> None:
+    """Detach (the API's row action) leaves a tombstone; the identical file run again is a
+    create under a new key, so the target can't answer with the detached document (spec §8)."""
+    sink = DocumentSink()
+    world = World(bridge=sink)
+    data = report_docx()
+    _run(world, sink, world.upload(data, "r1.docx"))
+    [first] = world.register.entries()
+    assert first.persistent_id == "doc-1"
+    world.register.detach(first.id, action_id=DETACH_ACTION)
+
+    again = world.upload(data, "r1.docx", batch=BATCH_B)
+    _run(world, sink, again)
+
+    create = sink.requests[-1]
+    assert create.update is None
+    assert create.package.idempotency_key != sink.requests[0].package.idempotency_key
+    assert create.package.idempotency_key == decomposition_idempotency_key(
+        first.content_sha256, None, DECOMPOSER_VERSION, DETACH_ACTION
+    )
+    # The tombstone was replaced by a new entry, for a new document.
+    [entry] = world.register.entries()
+    assert entry.id != first.id
+    assert (entry.state, entry.persistent_id, entry.detach_action_id) == (
+        "delivered",
+        "doc-2",
+        None,
+    )
+    assert world.item(again).register_entry_id == entry.id
+
+
+def test_a_detached_entry_is_absent_from_both_checks() -> None:
+    """The same bytes under another source key are no duplicate of a detached document."""
     world = World()
     data = report_docx()
     entry_id = _delivered(world, world.upload(data, "r1.docx"))
-    # Detach (the API's row action): the register forgets the entry.
-    with world.register.transaction() as tx:
-        del tx.rows[entry_id]  # type: ignore[attr-defined]
+    world.register.detach(entry_id, action_id=DETACH_ACTION)
 
-    again = world.upload(data, "r1.docx", batch=BATCH_B)
-    outcome = run_decompose(again, world.deps())
+    copy = world.upload(data, "copies/r1.docx", batch=BATCH_B)
+    outcome = run_decompose(copy, world.deps())
 
     assert isinstance(outcome, Delivering)
-    assert world.bridge.requests[-1].update is None  # a create, not an update of DOC-1
+    assert world.bridge.requests[-1].update is None
+    # A file never detached keeps the content's own key ("same file, same result").
+    assert world.bridge.requests[-1].package.idempotency_key == decomposition_idempotency_key(
+        world.bridge.requests[0].package.provenance.source_sha256,  # type: ignore[union-attr]
+        None,
+        DECOMPOSER_VERSION,
+        None,
+    )
+
+
+def test_an_accept_makes_the_next_run_of_the_same_file_an_update() -> None:
+    """After the target's state is accepted, the file that was refused is run again: an update
+    against the accepted versions, never already loaded, and it goes through."""
+    sink = DocumentSink()
+    world = World(bridge=sink)
+    _run(world, sink, world.upload(report_docx("One"), "r1.docx"))
+    sink.edit("doc-1", "doc-1/section/s1")
+    edited = report_docx("Two")
+    refused = _run(world, sink, world.upload(edited, "r1.docx", batch=BATCH_B))
     [entry] = world.register.entries()
-    assert entry.id != entry_id
-    assert (entry.state, entry.persistent_id, entry.batch_id) == ("pending", None, BATCH_B)
-    assert world.item(again).register_entry_id == entry.id
+    assert (entry.state, entry.delivery_id) == ("changed", refused)
+    world.register.accept(entry.id)  # the API's accept, from the refusal's details
+
+    again = world.upload(edited, "r1.docx", batch=BATCH_C)
+    _run(world, sink, again)
+
+    update = sink.requests[-1]
+    assert update.update is not None and update.update.persistent_id == "doc-1"
+    assert {c.id: c.version for c in update.update.expected} == {
+        "doc-1/map": "1",
+        "doc-1/section/s1": "2",
+    }
+    [after] = world.register.entries()
+    assert after.state == "delivered"
+    assert after.last_receipt is not None and after.last_receipt.document is not None
+    assert {c.id: c.version for c in after.last_receipt.document.components} == {
+        "doc-1/map": "2",
+        "doc-1/section/s1": "3",
+    }
 
 
 def test_a_fidelity_failure_fails_the_item_with_the_check(monkeypatch: pytest.MonkeyPatch) -> None:

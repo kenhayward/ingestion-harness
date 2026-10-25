@@ -50,7 +50,9 @@ Outcome = Literal[
 ]
 
 #: States whose content counts as on the tenant: an entry that failed without ever becoming a
-#: document (no persistent id) does not.
+#: document (no persistent id) does not. Nor does an `accepted` one: the target's state was
+#: accepted, so its next run is an update against those versions, whatever its content, until
+#: that update is delivered (spec §8).
 _SETTLED_LOADED = ("delivered", "incomplete")
 
 #: The mark in a refused entry's `last_error.details`: the bridge took nothing, so nothing under
@@ -239,6 +241,16 @@ def _force_token(batch_id: str | None) -> str:
     return f"{batch_id}:{token}" if batch_id else token
 
 
+def _run_token(batch_id: str | None, force: bool, tombstone: RegisterEntry | None) -> str | None:
+    """The run's part of a derived idempotency key: a force-load's new token; for the first
+    create after a detach, the detach action's id, so the key differs from the detached
+    document's and the target can't answer with it (spec §8); otherwise none, so the same file
+    gets the same key ("same file, same result")."""
+    if force:
+        return _force_token(batch_id)
+    return tombstone.detach_action_id if tombstone is not None else None
+
+
 _RESUMED = "resumed: an earlier run of this batch handed it to the bridge"
 
 
@@ -310,6 +322,11 @@ def deliver_decomposition(
 
     with deps.register.transaction() as tx:
         by_key = tx.by_key(sink_id, instance_id, source_key)
+        # A detached entry is a tombstone (the API's detach): absent from both checks, and the
+        # next create replaces it, under a key its detach makes new.
+        tombstone = by_key if by_key is not None and by_key.state == "detached" else None
+        if tombstone is not None:
+            by_key = None
         own = _own_pending(by_key, batch_id, sha)
         if own is not None and own.delivery_id is not None:
             # This batch's own earlier run handed it over (the worker stopped before recording
@@ -321,7 +338,8 @@ def deliver_decomposition(
             # under the stored key, which the sink answers with the same document.
             decision = Decision(None, own.persistent_id is None, own, _RESUMED, own.idempotency_key)
         else:
-            decision = decide(by_key, tx.by_hash(sink_id, instance_id, sha), sha, force)
+            by_hash = [e for e in tx.by_hash(sink_id, instance_id, sha) if e.state != "detached"]
+            decision = decide(by_key, by_hash, sha, force)
         if decision.outcome is not None:
             return _refused(decision)
         update: Update | None = None
@@ -337,11 +355,11 @@ def deliver_decomposition(
             sha,
             update.persistent_id if update else None,
             DECOMPOSER_VERSION,
-            _force_token(batch_id) if force else None,
+            _run_token(batch_id, force, tombstone),
         )
         try:
             entry = tx.put_pending(
-                replacing=decision.entry,
+                replacing=decision.entry or tombstone,
                 sink_id=sink_id,
                 instance_id=instance_id,
                 source_key=source_key,

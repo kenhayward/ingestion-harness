@@ -69,8 +69,13 @@ export interface DeliveryUpdate {
   sequence: number;
 }
 
-/** The states of a decomposition register entry: `pending` while its delivery is on its way. */
-export type RegisterState = 'pending' | 'delivered' | 'incomplete' | 'changed' | 'failed';
+/**
+ * The states of a decomposition register entry: `pending` while its delivery is on its way.
+ * The row actions (migration 202610252220) leave `detached`, a tombstone the worker's checks
+ * treat as absent, and `accepted`, the target's state accepted: the next run is an update.
+ */
+export type RegisterState =
+  'pending' | 'delivered' | 'incomplete' | 'changed' | 'failed' | 'detached' | 'accepted';
 
 /**
  * One delivered (or delivering) document in the decomposition register, scoped to a target's sink
@@ -93,11 +98,16 @@ export interface RegisterEntry {
   createdAt: string;
   updatedAt: string;
   deliveredAt: string | null;
+  /**
+   * The `register_actions` row that detached it (`detached`): the next create of its source
+   * takes it into the idempotency key, so the target can't answer with the detached document.
+   */
+  detachActionId: string | null;
 }
 
 /** How a final delivery event settles a pending register entry. */
 export interface RegisterSettlement {
-  state: Exclude<RegisterState, 'pending'>;
+  state: Exclude<RegisterState, 'pending' | 'detached' | 'accepted'>;
   /** The persistent id the sink reported; null keeps the entry's (a known id is never cleared). */
   persistentId: string | null;
   /** A receipt with a document; null keeps the entry's last one. */

@@ -529,6 +529,11 @@ describe('conversion source keys and uploads', () => {
       ['POST', `/api/conversions/batches/${id}/items`],
       ['POST', `/api/conversions/batches/${id}/start`],
       ['GET', `/api/conversions/items/${id}/report`],
+      ['POST', `/api/conversions/items/${id}/force`],
+      ['POST', `/api/conversions/items/${id}/redeliver`],
+      ['POST', `/api/conversions/items/${id}/detach`],
+      ['GET', `/api/conversions/items/${id}/accept`],
+      ['POST', `/api/conversions/items/${id}/accept`],
     ] as const) {
       const res = await app.inject({ method, url });
       expect(res.statusCode, `${method} ${url}`).toBe(401);

@@ -14032,7 +14032,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Delivers the item's stored file again as an explicit update, in a new batch of one that\nstarts at once: an already loaded document is updated (after a better decomposer, say),\nand a duplicate is created as a second document of its own. The target's version check\nstill applies. The new item keeps the source key and names the item it reruns\n(`redeliverOf`).",
+        "description": "Delivers the item's stored file again as an explicit update, in a new batch of one that\nstarts at once: an already loaded document is updated (after a better decomposer, say),\nand a duplicate is created as a second document of its own. The target's version check\nstill applies. The new item keeps the source key and names the item it reruns\n(`redeliverOf`). Refused while an earlier rerun of the item is unfinished, so a\nrepeated request makes one batch.",
         "parameters": [
           {
             "schema": {
@@ -14346,7 +14346,7 @@
             }
           },
           "409": {
-            "description": "The item never started, or is still running.",
+            "description": "The item never started, is still running, or a rerun of it is still running (a repeated request).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14378,7 +14378,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item never started, or is still running."
+                  "description": "The item never started, is still running, or a rerun of it is still running (a repeated request)."
                 }
               }
             }
@@ -14477,7 +14477,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Updates the item's document explicitly, in a new batch of one that starts at once\n(forced; the target's version check still applies). Send no body to deliver the stored\nfile again, or a `multipart/form-data` body with one `file` part, a replacement Word\ndocument (`.docx`): it keeps the item's source key, so it updates the same document,\nwhich is how a renamed or moved file updates the right one. Only an item with a\nregister entry has a document to redeliver.",
+        "description": "Updates the item's document explicitly, in a new batch of one that starts at once\n(forced; the target's version check still applies). Send no body to deliver the stored\nfile again, or a `multipart/form-data` body with one `file` part, a replacement Word\ndocument (`.docx`): it keeps the item's source key, so it updates the same document,\nwhich is how a renamed or moved file updates the right one. Only an item with a\nregister entry has a document to redeliver. Refused while an earlier rerun of the item\nis unfinished, so a repeated request makes one batch and stores one file.",
         "requestBody": {
           "required": true,
           "content": {
@@ -14490,7 +14490,8 @@
                     "format": "binary",
                     "description": "The replacement Word document (optional)."
                   }
-                }
+                },
+                "required": []
               }
             }
           }
@@ -14839,7 +14840,7 @@
             }
           },
           "409": {
-            "description": "The item never started, is still running (`not_finished`), or has no register entry (`no_register_entry`).",
+            "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14872,7 +14873,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item never started, is still running (`not_finished`), or has no register entry (`no_register_entry`)."
+                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached)."
                 }
               }
             }
@@ -15033,7 +15034,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Forgets the register entry of the item's document. The document stays in the target,\nuntouched, and the next run of the same source creates a new document. Refused while\na delivery for it is in flight. Recorded with who and when; the item's detail says it\nwas detached.",
+        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight. Recorded with\nwho and when; the item's detail says it was detached.",
         "parameters": [
           {
             "schema": {
@@ -15269,7 +15270,7 @@
             }
           },
           "409": {
-            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), or a delivery for it is in flight (`in_flight`).",
+            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), or a delivery for it or a run of its file is in flight (`in_flight`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15302,7 +15303,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), or a delivery for it is in flight (`in_flight`)."
+                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), or a delivery for it or a run of its file is in flight (`in_flight`)."
                 }
               }
             }
@@ -15363,7 +15364,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "What accepting the target's current state would record for a document refused as\nchanged in the target: each component the refusal listed, with its version when it\nwas delivered (`expected`) and now (`actual`, null when it is gone). The target does\nnot say who changed it. `acceptable` is false, with the `reason`, when it can't be\naccepted here: the document is not changed in the target, the refusal lists only some\nof the changes, or the document is gone. Detach it instead.",
+        "description": "What accepting the target's current state would record for a document refused as\nchanged in the target: each component the refusal listed, with its version when it\nwas delivered (`expected`) and now (`actual`, null when it is gone). The target does\nnot say who changed it. `acceptable` is false, with the `reason`, when it can't be\naccepted here: the document is not changed in the target, the refusal lists only some\nof the changes, or the document is gone. Detach it instead. `updatedAt` says which\nstate of the register entry this is; the confirm sends it back as `seen`.",
         "parameters": [
           {
             "schema": {
@@ -15415,11 +15416,18 @@
                     },
                     "reason": {
                       "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
                     "changed",
-                    "acceptable"
+                    "acceptable",
+                    "updatedAt"
                   ],
                   "additionalProperties": false,
                   "description": "The preview."
@@ -15556,7 +15564,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Takes the target's current versions (as the preview lists them) into the register\nentry, so that the next run's update goes through, **overwriting the edits made in the\ntarget**. The body must be `{ \"confirm\": true }`. Recorded with who, when and the\ncomponents. If the document changes again before the next run, that update is refused\nagain. Refused (422) where the preview says it can't be accepted.",
+        "description": "Takes the target's current versions (as the preview lists them) into the register\nentry, so that the next run of the source is an update that goes through, even from the\nsame file, **overwriting the edits made in the target**. The body must be\n`{ \"confirm\": true, \"seen\": <the preview's updatedAt> }`: if the entry changed since\nthat preview, the confirm is refused (409 `stale_preview`) and the preview must be\nlooked at again. Recorded with who, when and the components. If the document changes\nagain before the next run, that update is refused again. Refused (422) where the\npreview says it can't be accepted.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15569,10 +15577,15 @@
                     "enum": [
                       true
                     ]
+                  },
+                  "seen": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
-                  "confirm"
+                  "confirm",
+                  "seen"
                 ],
                 "additionalProperties": false
               }
@@ -15755,7 +15768,7 @@
             }
           },
           "400": {
-            "description": "The body is not `{ confirm: true }`.",
+            "description": "The body is not `{ confirm: true, seen }`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15780,7 +15793,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "The body is not `{ confirm: true }`."
+                  "description": "The body is not `{ confirm: true, seen }`."
                 }
               }
             }
@@ -15881,7 +15894,7 @@
             }
           },
           "409": {
-            "description": "The item has no register entry.",
+            "description": "The item has no register entry (`no_register_entry`), or the entry changed since the preview (`stale_preview`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15905,7 +15918,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "no_register_entry"
+                        "no_register_entry",
+                        "stale_preview"
                       ]
                     }
                   },
@@ -15913,7 +15927,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item has no register entry."
+                  "description": "The item has no register entry (`no_register_entry`), or the entry changed since the preview (`stale_preview`)."
                 }
               }
             }

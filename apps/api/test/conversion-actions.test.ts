@@ -24,6 +24,7 @@ import type { RegisterEntry } from '../src/repositories/types.js';
 import { docx, para } from './docx-fixtures.js';
 import { FAKE_DOCUMENT_SINK, FAKE_SINK } from './fake-sink.js';
 import { accessApp, multipart, signInNewUser, testApp } from './helpers.js';
+import { takeViolations } from './openapi-conformance.js';
 
 type Ctx = Awaited<ReturnType<typeof testApp>>;
 type App = Ctx['app'];
@@ -140,8 +141,29 @@ const changedEntry = (
 const post = (app: App, url: string, payload?: object, cookie?: string) =>
   app.inject({ method: 'POST', url, headers: headers(cookie), ...(payload ? { payload } : {}) });
 
+/** The preview, then the confirm with the `seen` it returned: what the Conversion tab does. */
+async function confirmAccept(c: Ctx, item: Item, cookie?: string) {
+  const preview = AcceptPreviewSchema.parse(
+    (
+      await c.app.inject({
+        url: `/api/conversions/items/${item.id}/accept`,
+        headers: headers(cookie),
+      })
+    ).json(),
+  );
+  return post(
+    c.app,
+    `/api/conversions/items/${item.id}/accept`,
+    { confirm: true, seen: preview.updatedAt },
+    cookie,
+  );
+}
+
 const jobOf = (c: Ctx, item: Item) =>
   c.repo.backgroundJobs.find((j) => (j.params as { itemId?: string }).itemId === item.id);
+
+/** A body with a tracked insertion, which the API refuses. */
+const TRACKED_BODY = '<w:p><w:ins w:id="1"><w:r><w:t>new</w:t></w:r></w:ins></w:p>';
 
 const runsObjects = (c: Ctx) => [...c.store.objects.keys()].filter((k) => k.startsWith('runs/'));
 
@@ -201,6 +223,25 @@ describe('force-load', () => {
     expect(batch.force).toBe(true);
     expect(items[0]).toMatchObject({ sourceKey: item.sourceKey, objectKey: item.objectKey });
     expect((jobOf(c, items[0]!)!.params as { force: boolean }).force).toBe(true);
+  });
+
+  it('a second force-load while the first is unfinished is refused', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    settle(c, item, 'already_loaded', { state: 'delivered' });
+
+    const first = await post(c.app, `/api/conversions/items/${item.id}/force`);
+    const second = await post(c.app, `/api/conversions/items/${item.id}/force`);
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({ code: 'not_finished' });
+    expect(c.repo.conversionBatches.size).toBe(2); // the original and one rerun
+    expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
+    // Once the rerun has an outcome, the row may be rerun again.
+    const [rerun] = BatchDetailSchema.parse(first.json()).items as [Item];
+    c.repo.conversionItems.get(rerun.id)!.outcome = 'updated';
+    expect((await post(c.app, `/api/conversions/items/${item.id}/force`)).statusCode).toBe(201);
   });
 
   it('refuses an item still running, or one not found', async () => {
@@ -270,6 +311,67 @@ describe('redeliver', () => {
     expect(rerun).toMatchObject({ objectKey: item.objectKey, sourceKey: item.sourceKey });
   });
 
+  it('a second redeliver with a replacement stores nothing more', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    settle(c, item, 'created', { state: 'delivered' });
+    const objects = runsObjects(c);
+    const replacement = docx({ body: para('Pumps, revised') });
+
+    const first = await redeliver(c, item, replacement);
+    const second = await redeliver(c, item, replacement);
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({ code: 'not_finished' });
+    const [rerun] = BatchDetailSchema.parse(first.json()).items as [Item];
+    expect(runsObjects(c)).toEqual([...objects, `runs/${rerun.objectKey}`]);
+    expect(c.repo.conversionBatches.size).toBe(2);
+    expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
+  });
+
+  it('checks a replacement as an upload is checked', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    settle(c, item, 'created', { state: 'delivered' });
+    const objects = runsObjects(c);
+    const send = (filename: string, content: Buffer) => {
+      const form = multipart({}, { filename, content, contentType: DOCX_MIME });
+      return c.app.inject({
+        method: 'POST',
+        url: `/api/conversions/items/${item.id}/redeliver`,
+        ...form,
+      });
+    };
+
+    const badName = await send('bad\u0007name.docx', docx());
+    expect(badName.statusCode).toBe(422);
+    expect(badName.json()).toMatchObject({ code: 'bad_filename' });
+    const tracked = await send('tracked.docx', docx({ body: TRACKED_BODY }));
+    expect(tracked.statusCode).toBe(422);
+    expect(tracked.json().error).toMatch(/tracked changes/);
+    const tooLarge = await send('big.docx', Buffer.alloc(1024 * 1024 + 1));
+    expect(tooLarge.statusCode).toBe(413);
+    expect(runsObjects(c)).toEqual(objects);
+    expect(c.repo.conversionBatches.size).toBe(1);
+  });
+
+  it('leaves no replacement behind when the batch cannot be written', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    settle(c, item, 'created', { state: 'delivered' });
+    const objects = runsObjects(c);
+    c.repo.rerunItem = async () => {
+      throw new Error('database down');
+    };
+
+    const res = await redeliver(c, item, docx({ body: para('Pumps, revised') }));
+
+    expect(res.statusCode).toBe(500);
+    expect(takeViolations()).toEqual([expect.stringContaining('500')]);
+    expect(runsObjects(c)).toEqual(objects);
+  });
+
   it('needs a register entry, and a Word file as the replacement', async () => {
     const c = await setup();
     const item = await startedItem(c);
@@ -301,7 +403,13 @@ describe('detach', () => {
     const detached = ItemSchema.parse(res.json());
     expect(detached.detail).toMatch(/detached/);
     expect(detached.detail).toContain('doc-1');
-    expect(c.repo.register.has(entry.id)).toBe(false);
+    // A tombstone naming the action: the register's checks treat it as absent, and the next
+    // create of the source takes the action's id into its key (worker `deliver.py`).
+    const [action] = c.repo.registerActions;
+    expect(c.repo.register.get(entry.id)).toMatchObject({
+      state: 'detached',
+      detachActionId: action!.id,
+    });
     expect(c.repo.registerActions).toEqual([
       {
         id: expect.any(String),
@@ -327,8 +435,36 @@ describe('detach', () => {
 
     expect(res.statusCode).toBe(409);
     expect(res.json()).toMatchObject({ code: 'in_flight' });
-    expect(c.repo.register.has(entry.id)).toBe(true);
+    expect(c.repo.register.get(entry.id)?.state).toBe('pending');
     expect(c.repo.registerActions).toEqual([]);
+  });
+
+  it('refuses while a rerun of the source is queued', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    const entry = changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
+    expect((await post(c.app, `/api/conversions/items/${item.id}/redeliver`)).statusCode).toBe(201);
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/detach`);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'in_flight' });
+    expect(c.repo.register.get(entry.id)?.state).toBe('changed');
+  });
+
+  it('a detached entry has nothing to redeliver or accept', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
+    expect((await post(c.app, `/api/conversions/items/${item.id}/detach`)).statusCode).toBe(200);
+
+    const redelivered = await post(c.app, `/api/conversions/items/${item.id}/redeliver`);
+    expect(redelivered.statusCode).toBe(409);
+    expect(redelivered.json()).toMatchObject({ code: 'no_register_entry' });
+    const preview = AcceptPreviewSchema.parse(
+      (await c.app.inject(`/api/conversions/items/${item.id}/accept`)).json(),
+    );
+    expect(preview).toMatchObject({ acceptable: false, updatedAt: null });
   });
 });
 
@@ -342,10 +478,16 @@ describe("accepting the target's state", () => {
     ];
     changedEntry(c, item, changed);
 
+    const entry = c.repo.register.get(c.repo.conversionItems.get(item.id)!.registerEntryId!)!;
+
     const res = await c.app.inject(`/api/conversions/items/${item.id}/accept`);
 
     expect(res.statusCode).toBe(200);
-    expect(AcceptPreviewSchema.parse(res.json())).toEqual({ changed, acceptable: true });
+    expect(AcceptPreviewSchema.parse(res.json())).toEqual({
+      changed,
+      acceptable: true,
+      updatedAt: entry.updatedAt,
+    });
   });
 
   it('the preview says why an entry not changed in the target cannot be accepted', async () => {
@@ -367,7 +509,14 @@ describe("accepting the target's state", () => {
     const entry = changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
     const before = structuredClone(entry);
 
-    for (const payload of [undefined, {}, { confirm: false }, { confirm: 'yes' }]) {
+    const seen = entry.updatedAt;
+    for (const payload of [
+      undefined,
+      {},
+      { confirm: false, seen },
+      { confirm: 'yes', seen },
+      { confirm: true }, // the preview's `seen` is required too
+    ]) {
       const res = await post(c.app, `/api/conversions/items/${item.id}/accept`, payload);
       expect(res.statusCode, JSON.stringify(payload)).toBe(400);
     }
@@ -387,19 +536,17 @@ describe("accepting the target's state", () => {
     ];
     const entry = changedEntry(c, item, changed);
 
-    const res = await post(
-      c.app,
-      `/api/conversions/items/${item.id}/accept`,
-      { confirm: true },
-      cookie,
-    );
+    const res = await confirmAccept(c, item, cookie);
 
     expect(res.statusCode).toBe(200);
     const accepted = AcceptedTargetStateSchema.parse(res.json());
     expect(accepted.changed).toEqual(changed);
     expect(accepted.item.detail).toMatch(/accepted/);
+    expect(accepted.item.detail).toMatch(/next run of this source updates document doc-1/);
     const after = c.repo.register.get(entry.id)!;
-    expect(after.state).toBe('delivered');
+    // `accepted`: the next run of the source is an update whatever its content, never already
+    // loaded (worker `deliver.decide`); its delivery makes the entry `delivered` again.
+    expect(after.state).toBe('accepted');
     expect(after.lastError).toBeNull();
     expect(after.persistentId).toBe('doc-1');
     expect(after.lastReceipt?.document?.components).toEqual([
@@ -421,7 +568,7 @@ describe("accepting the target's state", () => {
     const again = await post(
       c.app,
       `/api/conversions/items/${item.id}/accept`,
-      { confirm: true },
+      { confirm: true, seen: after.updatedAt },
       cookie,
     );
     expect(again.statusCode).toBe(422);
@@ -449,7 +596,7 @@ describe("accepting the target's state", () => {
     });
     expect(preview.changed).toHaveLength(40);
 
-    const res = await post(c.app, `/api/conversions/items/${item.id}/accept`, { confirm: true });
+    const res = await confirmAccept(c, item);
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({
       code: 'not_acceptable',
@@ -474,9 +621,37 @@ describe("accepting the target's state", () => {
     const c = await setup();
     const item = await startedItem(c);
     changedEntry(c, item, [{ id: 'doc-1', expected: '1', actual: null }]);
-    const res = await post(c.app, `/api/conversions/items/${item.id}/accept`, { confirm: true });
+    const res = await confirmAccept(c, item);
     expect(res.statusCode).toBe(422);
     expect(res.json().error).toMatch(/gone from the target; detach instead/);
+  });
+
+  it('refuses a confirm from a preview the entry has moved on from', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    const entry = changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
+    const preview = AcceptPreviewSchema.parse(
+      (await c.app.inject(`/api/conversions/items/${item.id}/accept`)).json(),
+    );
+    // Meanwhile someone else accepted, a rerun was refused again, and the refusal lists more.
+    Object.assign(entry, {
+      lastError: refusal([
+        { id: 'doc-1/section/s1', expected: '2', actual: '3' },
+        { id: 'doc-1/section/s2', expected: '1', actual: '2' },
+      ]),
+      updatedAt: new Date(Date.parse(entry.updatedAt) + 1000).toISOString(),
+    });
+    const before = structuredClone(entry);
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/accept`, {
+      confirm: true,
+      seen: preview.updatedAt,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'stale_preview' });
+    expect(c.repo.register.get(entry.id)).toEqual(before);
+    expect(c.repo.registerActions).toEqual([]);
   });
 
   it('an accept followed by a further edit refuses again', async () => {
@@ -500,12 +675,13 @@ describe("accepting the target's state", () => {
     const preview = AcceptPreviewSchema.parse(
       (await c.app.inject(`/api/conversions/items/${rerun.id}/accept`)).json(),
     );
-    expect(preview).toEqual({
+    expect(preview).toMatchObject({
       changed: [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }],
       acceptable: true,
     });
     const accepted = await post(c.app, `/api/conversions/items/${rerun.id}/accept`, {
       confirm: true,
+      seen: preview.updatedAt,
     });
     expect(accepted.statusCode).toBe(200);
     // As accepted, the next update would go through.
@@ -515,6 +691,7 @@ describe("accepting the target's state", () => {
     // version, so nothing the person did not see is overwritten.
     target.edit('doc-1/section/s1');
     const third = await workerDelivers(c, await redeliverItem(c, rerun));
+    expect(c.repo.register.get(third.entryId)?.state).toBe('pending');
     const refused = target.update(expectedOf(c, third.entryId));
     expect(refused?.code).toBe('changed_in_target');
     expect(refused?.details).toEqual({
@@ -535,16 +712,23 @@ describe('row actions', () => {
       changedEntry(c, item, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
       const url = (action: string) => `/api/conversions/items/${item.id}/${action}`;
 
+      /** A rerun's item given an outcome, so the row may be acted on again. */
+      const finish = (res: { json(): unknown }) => {
+        const [rerun] = BatchDetailSchema.parse(res.json()).items as [Item];
+        c.repo.conversionItems.get(rerun.id)!.outcome = 'changed_in_target';
+        return rerun;
+      };
+
       const forced = await post(c.app, url('force'), undefined, cookie);
       expect(forced.statusCode, `${role} force`).toBe(201);
       expect(BatchDetailSchema.parse(forced.json()).batch.createdBy.name).toBe(`Olu ${role}`);
-      expect(jobOf(c, BatchDetailSchema.parse(forced.json()).items[0]!)?.createdBy).toBe(
-        `Olu ${role}`,
-      );
-      expect((await post(c.app, url('redeliver'), undefined, cookie)).statusCode, role).toBe(201);
+      expect(jobOf(c, finish(forced))?.createdBy).toBe(`Olu ${role}`);
+      const redelivered = await post(c.app, url('redeliver'), undefined, cookie);
+      expect(redelivered.statusCode, role).toBe(201);
+      finish(redelivered);
       const preview = await c.app.inject({ url: url('accept'), headers: { cookie } });
       expect(preview.statusCode, `${role} preview`).toBe(200);
-      const accept = await post(c.app, url('accept'), { confirm: true }, cookie);
+      const accept = await confirmAccept(c, item, cookie);
       expect(accept.statusCode, `${role} accept`).toBe(200);
       expect((await post(c.app, url('detach'), undefined, cookie)).statusCode, role).toBe(200);
     }

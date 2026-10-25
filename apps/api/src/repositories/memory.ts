@@ -27,7 +27,7 @@ import {
   type BatchSummary,
   type Item,
 } from '@ih/shared';
-import { acceptedReceipt, type AcceptPlan } from '../conversions/accept.js';
+import { acceptedReceipt } from '../conversions/accept.js';
 import {
   emptyCounts,
   type AcceptResult,
@@ -36,8 +36,12 @@ import {
   type DiscardBatchResult,
   type NewBatch,
   type NewItem,
+  type Accept,
+  type Detach,
   type RegisterAction,
   type Rerun,
+  type RerunResult,
+  RUNNING_OUTCOMES,
   type StartBatchResult,
 } from '../conversions/repo.js';
 import {
@@ -1173,6 +1177,8 @@ export class MemoryRepo implements IngestionRepo {
 
   /** The decomposition register, by entry id (the worker writes it; tests seed it). */
   readonly register = new Map<string, RegisterEntry>();
+  /** What people did to register entries (register_actions), oldest first. */
+  readonly registerActions: RegisterAction[] = [];
 
   /** Test helper: an entry as the worker writes it before delivering (`pending`). */
   putRegisterEntry(
@@ -1198,6 +1204,7 @@ export class MemoryRepo implements IngestionRepo {
       createdAt: now,
       updatedAt: now,
       deliveredAt: null,
+      detachActionId: null,
     };
     this.register.set(row.id, row);
     return { ...row };
@@ -1391,7 +1398,11 @@ export class MemoryRepo implements IngestionRepo {
     createdBy,
     by,
     source,
-  }: Rerun): Promise<{ batch: Batch; item: Item }> {
+  }: Rerun): Promise<RerunResult> {
+    const running = [...this.conversionItems.values()].some(
+      (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
+    );
+    if (running) return { ok: false, reason: 'running' };
     const batch: Batch = {
       id: batchId,
       targetId,
@@ -1422,57 +1433,69 @@ export class MemoryRepo implements IngestionRepo {
     );
     this.conversionBatches.set(batchId, batch);
     this.conversionItems.set(itemId, item);
-    return { batch: structuredClone(batch), item: { ...item } };
+    return { ok: true, batch: structuredClone(batch), item: { ...item } };
   }
-
-  /** What people did to register entries (register_actions), oldest first. */
-  readonly registerActions: RegisterAction[] = [];
 
   async registerEntry(id: string): Promise<RegisterEntry | null> {
     const e = this.register.get(id);
     return e ? structuredClone(e) : null;
   }
 
-  async detachRegisterEntry(
-    itemId: string,
-    entryId: string,
-    by: Batch['createdBy'],
-    detail: (entry: RegisterEntry) => string,
-  ): Promise<DetachResult> {
+  async detachRegisterEntry({
+    itemId,
+    entryId,
+    targetId,
+    by,
+    detail,
+  }: Detach): Promise<DetachResult> {
     const entry = this.register.get(entryId);
-    if (!entry) return { ok: false, reason: 'missing' };
-    if (entry.state === 'pending') return { ok: false, reason: 'pending' };
-    this.register.delete(entryId);
-    this.registerActions.push({
+    if (!entry || entry.state === 'detached') return { ok: false, reason: 'missing' };
+    const running = [...this.conversionItems.values()].some(
+      (i) =>
+        i.sourceKey === entry.sourceKey &&
+        RUNNING_OUTCOMES.includes(i.outcome) &&
+        this.conversionBatches.get(i.batchId)?.targetId === targetId,
+    );
+    if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
+    const action: RegisterAction = {
       id: randomUUID(),
       entryId,
       action: 'detach',
       by: { ...by },
       at: new Date().toISOString(),
       details: { persistentId: entry.persistentId, sourceKey: entry.sourceKey },
+    };
+    this.registerActions.push(action);
+    Object.assign(entry, {
+      state: 'detached',
+      detachActionId: action.id,
+      updatedAt: laterThan(entry.updatedAt),
     });
     const item = this.conversionItems.get(itemId)!;
     item.detail = detail(entry);
     return { ok: true, entry: structuredClone(entry), item: { ...item } };
   }
 
-  async acceptTargetState(
-    itemId: string,
-    entryId: string,
-    by: Batch['createdBy'],
-    plan: (entry: RegisterEntry) => AcceptPlan,
-    detail: (entry: RegisterEntry) => string,
-  ): Promise<AcceptResult> {
+  async acceptTargetState({
+    itemId,
+    entryId,
+    seen,
+    by,
+    plan,
+    detail,
+  }: Accept): Promise<AcceptResult> {
     const entry = this.register.get(entryId);
     if (!entry) return { ok: false, reason: 'missing' };
+    if (entry.updatedAt !== seen) return { ok: false, reason: 'stale' };
     const accepted = plan(structuredClone(entry));
-    if (accepted.reason !== null)
+    if (accepted.reason !== null) {
       return { ok: false, reason: 'not_acceptable', why: accepted.reason };
+    }
     Object.assign(entry, {
-      state: 'delivered',
+      state: 'accepted',
       lastReceipt: acceptedReceipt(entry.lastReceipt!, accepted.components),
       lastError: null,
-      updatedAt: new Date().toISOString(),
+      updatedAt: laterThan(entry.updatedAt),
     });
     this.registerActions.push({
       id: randomUUID(),
@@ -1492,4 +1515,9 @@ export class MemoryRepo implements IngestionRepo {
     this.jobs.set(id, updated);
     return updated;
   }
+}
+
+/** A time after `previous` (an ISO time): now, or a millisecond later when now is no later. */
+function laterThan(previous: string): string {
+  return new Date(Math.max(Date.now(), Date.parse(previous) + 1)).toISOString();
 }

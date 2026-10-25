@@ -159,19 +159,26 @@ export type ChangedComponent = z.infer<typeof ChangedComponentSchema>;
 
 /**
  * `GET /api/conversions/items/:id/accept`: what accepting the target's state would record, read
- * from the refusal (plan ruling R5). `reason` says why it can't be accepted here.
+ * from the refusal (plan ruling R5). `reason` says why it can't be accepted here. `updatedAt` is
+ * when the register entry last changed (null: no entry); the confirm sends it back as `seen`.
  */
 export const AcceptPreviewSchema = z
   .object({
     changed: z.array(ChangedComponentSchema),
     acceptable: z.boolean(),
     reason: z.string().optional(),
+    updatedAt: z.string().nullable(),
   })
   .strict();
 export type AcceptPreview = z.infer<typeof AcceptPreviewSchema>;
 
-/** `POST /api/conversions/items/:id/accept`: the person's explicit confirmation. */
-export const AcceptTargetStateSchema = z.object({ confirm: z.literal(true) }).strict();
+/**
+ * `POST /api/conversions/items/:id/accept`: the person's explicit confirmation of the preview
+ * they saw (`seen`: its `updatedAt`), refused when the entry has changed since.
+ */
+export const AcceptTargetStateSchema = z
+  .object({ confirm: z.literal(true), seen: z.string().min(1) })
+  .strict();
 export type AcceptTargetState = z.infer<typeof AcceptTargetStateSchema>;
 
 /** What an accepted target state recorded: the item, and the components accepted. */

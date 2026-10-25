@@ -71,11 +71,13 @@ export const binary = (description: string, ...contentTypes: string[]) => ({
 /**
  * A `multipart/form-data` body (use with `consumes: ['multipart/form-data']`): text fields, then
  * the `file` part. Uploads read fields as they stream in, so fields must come before the file.
+ * `fileRequired: false` for a route whose file is optional.
  */
 export function multipart(
   fields: Record<string, { type: 'string'; description: string; enum?: string[] }>,
   required: string[],
   fileDescription = 'The PDF. Send it last.',
+  { fileRequired = true }: { fileRequired?: boolean } = {},
 ) {
   return {
     type: 'object',
@@ -83,7 +85,7 @@ export function multipart(
       ...fields,
       file: { type: 'string', format: 'binary', description: fileDescription },
     },
-    required: [...required, 'file'],
+    required: fileRequired ? [...required, 'file'] : required,
   };
 }
 

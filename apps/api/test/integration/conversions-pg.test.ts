@@ -175,6 +175,8 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       lastError: null,
       batchId: batch.id,
     });
+    // The item has its outcome: only the worker's lock can hold the detach off.
+    await facts.settleItem(id, 'created', entryId);
     // The worker's next run locks the entry (`by_key`), decides, and writes it pending.
     const worker = await p.connect();
     try {
@@ -182,7 +184,13 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       await worker.query('SELECT 1 FROM decomposition_register WHERE id = $1 FOR UPDATE', [
         entryId,
       ]);
-      const detaching = repo.detachRegisterEntry(id, entryId, by, () => 'detached');
+      const detaching = repo.detachRegisterEntry({
+        itemId: id,
+        entryId,
+        targetId: 'manuals',
+        by,
+        detail: () => 'detached',
+      });
       await new Promise((r) => setTimeout(r, 200));
       await worker.query(`UPDATE decomposition_register SET state = 'pending' WHERE id = $1`, [
         entryId,

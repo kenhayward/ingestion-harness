@@ -39,34 +39,49 @@ export interface ConversionRepo {
    * A row action's rerun of an item (force-load, redeliver): a new batch of one item, forced and
    * started at once, its `decompose` job queued, all at once. The item keeps `of`'s source key
    * and records `redeliverOf`; it delivers `source` (the stored file, or a replacement already
-   * stored under the new ids).
+   * stored under the new ids). With `of` locked, refused (`running`) while an earlier rerun of
+   * it is unfinished, so a repeated request makes one batch.
    */
-  rerunItem(rerun: Rerun): Promise<{ batch: Batch; item: Item }>;
+  rerunItem(rerun: Rerun): Promise<RerunResult>;
   /** A decomposition register entry by id. */
   registerEntry(id: string): Promise<RegisterEntry | null>;
   /**
-   * Detach (spec §8): deletes the entry unless a delivery for it is in flight (`pending`),
-   * records `register_actions{action: 'detach'}` and sets the item's detail, all at once.
+   * Detach (spec §8): records `register_actions{action: 'detach'}` and leaves the entry a
+   * `detached` tombstone naming that action, and sets the item's detail, all at once. Refused
+   * (`pending`) while a delivery for the entry is in flight, or a run of its source on the
+   * target is unfinished (a rerun queued, say); `missing` when it is gone or detached already.
    */
-  detachRegisterEntry(
-    itemId: string,
-    entryId: string,
-    by: Batch['createdBy'],
-    detail: (entry: RegisterEntry) => string,
-  ): Promise<DetachResult>;
+  detachRegisterEntry(detach: Detach): Promise<DetachResult>;
   /**
-   * Accept the target's state (spec §8, ruling R5): with the entry locked, `plan` decides; when
-   * it can be accepted the entry's last receipt takes the plan's components and the entry becomes
-   * `delivered`, `register_actions{action: 'accept'}` records it and the item takes `detail`.
+   * Accept the target's state (spec §8, ruling R5): with the entry locked, refused (`stale`)
+   * unless it is as the preview showed it (`seen`, its `updatedAt`), then `plan` decides. When it
+   * can be accepted the entry's last receipt takes the plan's components and the entry becomes
+   * `accepted` (the next run is an update), `register_actions{action: 'accept'}` records it and
+   * the item takes `detail`.
    */
-  acceptTargetState(
-    itemId: string,
-    entryId: string,
-    by: Batch['createdBy'],
-    plan: (entry: RegisterEntry) => AcceptPlan,
-    detail: (entry: RegisterEntry) => string,
-  ): Promise<AcceptResult>;
+  acceptTargetState(accept: Accept): Promise<AcceptResult>;
 }
+
+export interface Detach {
+  itemId: string;
+  entryId: string;
+  /** The item's batch's target: a run of the same source key to it holds the detach off. */
+  targetId: string;
+  by: Batch['createdBy'];
+  detail: (entry: RegisterEntry) => string;
+}
+
+export interface Accept {
+  itemId: string;
+  entryId: string;
+  /** The entry's `updatedAt` as the preview showed it. */
+  seen: string;
+  by: Batch['createdBy'];
+  plan: (entry: RegisterEntry) => AcceptPlan;
+  detail: (entry: RegisterEntry) => string;
+}
+
+export type RerunResult = { ok: true; batch: Batch; item: Item } | { ok: false; reason: 'running' };
 
 export interface Rerun {
   /** The new batch's and item's ids (a replacement file is stored under them first). */
@@ -86,8 +101,11 @@ export type DetachResult =
 
 export type AcceptResult =
   | { ok: true; item: Item; changed: ChangedComponent[] }
-  | { ok: false; reason: 'missing' }
+  | { ok: false; reason: 'missing' | 'stale' }
   | { ok: false; reason: 'not_acceptable'; why: string };
+
+/** The item outcomes of a run not finished yet. */
+export const RUNNING_OUTCOMES: readonly Item['outcome'][] = ['queued', 'decomposing', 'delivering'];
 
 /** One row of `register_actions`: what a person did to a register entry. */
 export type RegisterAction =

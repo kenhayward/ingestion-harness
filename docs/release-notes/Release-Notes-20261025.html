@@ -184,6 +184,11 @@
             <code>decompose</code>. It runs on its own when the API starts.
           </li>
           <li>
+            A second migration (<code>202610252220_register_detached_accepted</code>) lets the
+            register of delivered documents record a detached document and an accepted target state.
+            It also runs on its own when the API starts.
+          </li>
+          <li>
             New API routes under <code>/api/conversions</code>: the targets that take documents, and
             batches to create, fill one file at a time, start, discard, list and read, with each
             item's report. Each item's row also has actions:
@@ -226,19 +231,23 @@
         </li>
         <li>
           <strong>Detach</strong> makes CT Studio forget the document. It stays in the target
-          untouched, and the next run of the same file creates a new document.
+          untouched, and the next run of the same file creates a new document, even when the file
+          hasn't changed.
         </li>
         <li>
           <strong>Accept the target's state</strong>, for a document someone changed in the target,
           first shows each changed part with its version before and now. Once confirmed, the next
-          run updates the document, overwriting those changes. If it changes again in the meantime,
-          that run is refused again.
+          run of that file updates the document, even when the file hasn't changed, overwriting
+          those changes. If it changes again in the meantime, that run is refused again. If the
+          document changed again while the confirmation was open, the confirmation is refused, and
+          the changes must be looked at again.
         </li>
       </ul>
       <p>
-        Force-load and redeliver each start a new batch of one. The target's version check always
-        applies, so nothing changed in the target is overwritten without being accepted first.
-        Detaching and accepting are recorded with who did it and when.
+        Force-load and redeliver each start a new batch of one, and only one while it runs, however
+        often the action is chosen. The target's version check always applies, so nothing changed in
+        the target is overwritten without being accepted first. Detaching and accepting are recorded
+        with who did it and when.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
