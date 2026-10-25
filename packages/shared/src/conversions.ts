@@ -147,3 +147,35 @@ export const CreateBatchSchema = z
   .object({ targetId: TargetIdSchema, force: z.boolean().optional() })
   .strict();
 export type CreateBatch = z.infer<typeof CreateBatchSchema>;
+
+/**
+ * One component a `changed_in_target` refusal lists (bridge contract `changedInTargetDetails`):
+ * its version when it was delivered, and now (null: gone from the target).
+ */
+export const ChangedComponentSchema = z
+  .object({ id: z.string(), expected: z.string(), actual: z.string().nullable() })
+  .strict();
+export type ChangedComponent = z.infer<typeof ChangedComponentSchema>;
+
+/**
+ * `GET /api/conversions/items/:id/accept`: what accepting the target's state would record, read
+ * from the refusal (plan ruling R5). `reason` says why it can't be accepted here.
+ */
+export const AcceptPreviewSchema = z
+  .object({
+    changed: z.array(ChangedComponentSchema),
+    acceptable: z.boolean(),
+    reason: z.string().optional(),
+  })
+  .strict();
+export type AcceptPreview = z.infer<typeof AcceptPreviewSchema>;
+
+/** `POST /api/conversions/items/:id/accept`: the person's explicit confirmation. */
+export const AcceptTargetStateSchema = z.object({ confirm: z.literal(true) }).strict();
+export type AcceptTargetState = z.infer<typeof AcceptTargetStateSchema>;
+
+/** What an accepted target state recorded: the item, and the components accepted. */
+export const AcceptedTargetStateSchema = z
+  .object({ item: ItemSchema, changed: z.array(ChangedComponentSchema) })
+  .strict();
+export type AcceptedTargetState = z.infer<typeof AcceptedTargetStateSchema>;

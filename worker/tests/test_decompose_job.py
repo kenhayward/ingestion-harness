@@ -11,7 +11,13 @@ from typing import Any
 import pytest
 
 import ingest_worker.decompose as decompose_module
-from ingest_worker.bridge.models import ActingUser
+from ingest_worker.bridge.models import (
+    ActingUser,
+    ComponentVersion,
+    DocumentReceipt,
+    ReadBack,
+    Receipt,
+)
 from ingest_worker.decompose import DecompositionFailed
 from ingest_worker.decompose.deliver import DeliverDeps
 from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
@@ -97,6 +103,24 @@ class World:
         )
         self.queue.uploaders[job.id] = USER
         return job
+
+    def rerun(self, job: ClaimedJob, *, batch: str) -> ClaimedJob:
+        """A force-load of `job`'s item, as the API's row action writes it: a new single-item
+        batch, forced, whose item reuses the stored source object under the same source key."""
+        original = self.item(job)
+        self._n += 1
+        item_id = f"00000000-0000-4000-8000-{self._n:012d}"
+        self.items.add(
+            ConversionItem(item_id, batch, original.source_key, original.object_key, "queued")
+        )
+        assert job.params is not None
+        rerun = replace(
+            job,
+            id=f"job-{self._n}",
+            params={**job.params, "batchId": batch, "itemId": item_id, "force": True},
+        )
+        self.queue.uploaders[rerun.id] = USER
+        return rerun
 
     def item(self, job: ClaimedJob) -> ConversionItem:
         assert job.params is not None
@@ -185,6 +209,84 @@ def test_same_bytes_under_another_key_is_duplicate_naming_the_first() -> None:
     assert item.register_entry_id is None
     assert len(world.bridge.requests) == 1
     assert world.messages(copy)[-1] == f"duplicate: {item.detail}"
+
+
+COMPONENTS = [
+    ComponentVersion(kind="map", id="DOC-1/map", version="1", element=None),
+    ComponentVersion(kind="section", id="DOC-1/section/s1", version="1", element="s1"),
+]
+
+
+def _delivered(world: World, job: ClaimedJob) -> str:
+    """The job's delivery settled as document DOC-1, as the API does from the bridge's event."""
+    run_decompose(job, world.deps())
+    entry = next(e for e in world.register.entries() if e.source_key == world.item(job).source_key)
+    receipt = Receipt(
+        written=[],
+        document=DocumentReceipt(
+            persistent_id="DOC-1",
+            components=COMPONENTS,
+            read_back=ReadBack(ok=True, at=None, detail=None),
+        ),
+    )
+    world.register.settle(entry.id, state="delivered", persistent_id="DOC-1", last_receipt=receipt)
+    return entry.id
+
+
+def test_force_load_turns_already_loaded_into_an_update() -> None:
+    """The row action's batch reuses the stored source: the same bytes, now an update."""
+    world = World()
+    first = world.upload(report_docx(), "r1.docx")
+    entry_id = _delivered(world, first)
+
+    forced = world.rerun(first, batch=BATCH_B)
+    outcome = run_decompose(forced, world.deps())
+
+    assert outcome == Delivering([], [(TARGET, "d2")], note="handed r1.docx to the bridge")
+    item = world.item(forced)
+    assert (item.outcome, item.register_entry_id) == ("delivering", entry_id)
+    request = world.bridge.requests[1]
+    assert request.update is not None
+    assert (request.update.persistent_id, request.update.expected) == ("DOC-1", COMPONENTS)
+    assert request.package.idempotency_key != world.bridge.requests[0].package.idempotency_key
+
+
+def test_force_load_turns_a_duplicate_into_a_create() -> None:
+    world = World()
+    data = report_docx()
+    _delivered(world, world.upload(data, "reports/r1.docx"))
+    copy = world.upload(data, "copies/r1-copy.docx")
+    run_decompose(copy, world.deps())
+    assert world.item(copy).outcome == "duplicate"
+
+    forced = world.rerun(copy, batch=BATCH_B)
+    outcome = run_decompose(forced, world.deps())
+
+    assert isinstance(outcome, Delivering)
+    request = world.bridge.requests[-1]
+    assert request.update is None  # a deliberate second document
+    entry = next(e for e in world.register.entries() if e.source_key == "copies/r1-copy.docx")
+    assert (entry.state, entry.persistent_id) == ("pending", None)
+    assert world.item(forced).register_entry_id == entry.id
+
+
+def test_the_next_run_after_detach_creates_a_new_document() -> None:
+    world = World()
+    data = report_docx()
+    entry_id = _delivered(world, world.upload(data, "r1.docx"))
+    # Detach (the API's row action): the register forgets the entry.
+    with world.register.transaction() as tx:
+        del tx.rows[entry_id]  # type: ignore[attr-defined]
+
+    again = world.upload(data, "r1.docx", batch=BATCH_B)
+    outcome = run_decompose(again, world.deps())
+
+    assert isinstance(outcome, Delivering)
+    assert world.bridge.requests[-1].update is None  # a create, not an update of DOC-1
+    [entry] = world.register.entries()
+    assert entry.id != entry_id
+    assert (entry.state, entry.persistent_id, entry.batch_id) == ("pending", None, BATCH_B)
+    assert world.item(again).register_entry_id == entry.id
 
 
 def test_a_fidelity_failure_fails_the_item_with_the_check(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import {
+  AcceptedTargetStateSchema,
+  AcceptPreviewSchema,
+  AcceptTargetStateSchema,
   BatchDetailSchema,
   BatchSchema,
   BatchSummarySchema,
@@ -14,10 +17,13 @@ import {
   MAX_SOURCE_KEY,
   sourceKeyProblem,
   type Batch,
+  type Item,
+  type ItemOutcome,
 } from '@ih/shared';
 import { z } from 'zod';
 import { creatorOf } from '../access/routes.js';
-import { batchCreator, type AddItemResult } from '../conversions/repo.js';
+import { acceptPlanOf } from '../conversions/accept.js';
+import { batchCreator, type AddItemResult, type Rerun } from '../conversions/repo.js';
 import { ErrorBody, error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { checkSource, multipartField, TRACKED_CHANGES } from '../uploads.js';
 
@@ -35,6 +41,10 @@ const notOpen = (batch: Batch | null) =>
 /** The most batches `GET /api/conversions/batches` lists. */
 const LISTED_BATCHES = 100;
 const BAD_FILENAME = 'the file name holds a control character';
+const NO_ENTRY = 'the item has no register entry: it was never delivered, or was detached';
+const IN_FLIGHT = 'a delivery of this document is in flight';
+/** The outcomes of an item not finished yet: a row action waits for its outcome. */
+const RUNNING: readonly ItemOutcome[] = ['queued', 'decomposing', 'delivering'];
 
 const UUID = z.string().uuid();
 const BatchParams = z.object({ id: z.string().uuid().describe('The batch id.') });
@@ -391,6 +401,310 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       }
       req.log.warn({ item: item.id }, 'a conversion report is not a JSON object');
       return reply.code(404).send({ error: 'no report' });
+    },
+  );
+
+  // --- Row actions (spec §8): force-load, redeliver, detach, accept the target's state ---------
+
+  /** The item the path names, or null (not a uuid, or no such item). */
+  const findItem = async (id: string) =>
+    UUID.safeParse(id).success ? app.deps.repo.getItem(id) : null;
+
+  /** Why an item can't be rerun yet, or null: its batch started and its outcome decided. */
+  const notFinished = (item: Item, batch: Batch | null) =>
+    batch?.state !== 'started'
+      ? 'the item was never started'
+      : RUNNING.includes(item.outcome)
+        ? 'the item is still running'
+        : null;
+
+  /** The item's register entry: the one its delivery settled, or the worker decided about. */
+  const entryOf = async (item: Item) =>
+    item.registerEntryId ? app.deps.repo.registerEntry(item.registerEntryId) : null;
+
+  /** A new batch of one, forced and started, rerunning `of` with `source` (R6). */
+  const rerun = (
+    req: FastifyRequest,
+    ids: { batchId: string; itemId: string },
+    of: Item,
+    batch: Batch,
+    source: Rerun['source'],
+  ) =>
+    app.deps.repo.rerunItem({
+      ...ids,
+      of,
+      targetId: batch.targetId,
+      createdBy: batchCreator(creatorOf(req)),
+      by: creatorOf(req),
+      source,
+    });
+
+  /** The stored source an item delivered, for a rerun that sends no replacement. */
+  const storedSource = (item: Item): Rerun['source'] => ({
+    filename: item.filename,
+    contentSha256: item.contentSha256,
+    sizeBytes: item.sizeBytes,
+    objectKey: item.objectKey,
+  });
+
+  const RerunResponses = {
+    201: res('The new batch of one, started, and its item.', BatchDetailSchema),
+    404: error('No such item.'),
+    409: CodedError('The item never started, or is still running.', 'not_finished'),
+    422: CodedError("The batch's target no longer takes documents.", 'target_takes_no_documents'),
+  };
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/items/:id/force',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'forceLoadConversionItem',
+        summary: 'Force-load an item',
+        description: md`
+          Delivers the item's stored file again as an explicit update, in a new batch of one that
+          starts at once: an already loaded document is updated (after a better decomposer, say),
+          and a duplicate is created as a second document of its own. The target's version check
+          still applies. The new item keeps the source key and names the item it reruns
+          (\`redeliverOf\`).
+        `,
+        params: ItemParams,
+        response: RerunResponses,
+      },
+    },
+    async (req, reply) => {
+      const item = await findItem(req.params.id);
+      if (!item) return reply.code(404).send({ error: 'not found' });
+      const batch = await app.deps.repo.getBatch(item.batchId);
+      const why = notFinished(item, batch);
+      if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
+      if (!(await takesDocuments(app, batch.targetId))) {
+        return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
+      }
+      const ids = { batchId: randomUUID(), itemId: randomUUID() };
+      const done = await rerun(req, ids, item, batch, storedSource(item));
+      return reply.code(201).send({ batch: done.batch, items: [done.item] });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/items/:id/redeliver',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'redeliverConversionItem',
+        summary: "Redeliver an item's document",
+        consumes: ['multipart/form-data'],
+        description: md`
+          Updates the item's document explicitly, in a new batch of one that starts at once
+          (forced; the target's version check still applies). Send no body to deliver the stored
+          file again, or a \`multipart/form-data\` body with one \`file\` part, a replacement Word
+          document (\`.docx\`): it keeps the item's source key, so it updates the same document,
+          which is how a renamed or moved file updates the right one. Only an item with a
+          register entry has a document to redeliver.
+        `,
+        params: ItemParams,
+        body: {
+          type: 'object',
+          properties: {
+            file: {
+              type: 'string',
+              format: 'binary',
+              description: 'The replacement Word document (optional).',
+            },
+          },
+        },
+        response: {
+          ...RerunResponses,
+          400: error('A multipart body whose part is not named `file`.'),
+          409: res(
+            'The item never started, is still running (`not_finished`), or has no register ' +
+              'entry (`no_register_entry`).',
+            ErrorBody.extend({ code: z.enum(['not_finished', 'no_register_entry']) }),
+          ),
+          413: error('The replacement is larger than the upload limit.'),
+          415: error(`\`${NOT_A_WORD_DOCUMENT}\`.`),
+          422: res(
+            `\`${TRACKED_CHANGES}\`, a replacement whose name holds a control character ` +
+              '(`bad_filename`), or a target that no longer takes documents.',
+            ErrorBody.extend({
+              code: z.enum(['bad_filename', 'target_takes_no_documents']).optional(),
+            }),
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { repo, store, buckets, maxUploadBytes } = app.deps;
+      const item = await findItem(req.params.id);
+      if (!item) return reply.code(404).send({ error: 'not found' });
+      const batch = await repo.getBatch(item.batchId);
+      const why = notFinished(item, batch);
+      if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
+      if (!(await entryOf(item))) {
+        return reply.code(409).send({ error: NO_ENTRY, code: 'no_register_entry' });
+      }
+      if (!(await takesDocuments(app, batch.targetId))) {
+        return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
+      }
+      const ids = { batchId: randomUUID(), itemId: randomUUID() };
+      if (!req.isMultipart()) {
+        const done = await rerun(req, ids, item, batch, storedSource(item));
+        return reply.code(201).send({ batch: done.batch, items: [done.item] });
+      }
+
+      const file = await req.file({ limits: { files: 1, fileSize: maxUploadBytes } });
+      if (!file || file.fieldname !== 'file') {
+        return reply.code(400).send({ error: 'the replacement part must be named file' });
+      }
+      if (hasControlCharacter(file.filename)) {
+        return reply.code(422).send({ error: BAD_FILENAME, code: 'bad_filename' });
+      }
+      const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
+      const source = checkSource(body);
+      if (!source.ok && source.code === 422) return reply.code(422).send({ error: source.error });
+      if (!source.ok || source.kind !== 'docx') {
+        return reply.code(415).send({ error: NOT_A_WORD_DOCUMENT });
+      }
+      const objectKey = decompositionSourceKey(ids.batchId, ids.itemId, 'docx');
+      await store.put(buckets.runs, objectKey, body, DOCX_MIME);
+      try {
+        const done = await rerun(req, ids, item, batch, {
+          filename: file.filename,
+          contentSha256: createHash('sha256').update(body).digest('hex'),
+          sizeBytes: body.length,
+          objectKey,
+        });
+        return reply.code(201).send({ batch: done.batch, items: [done.item] });
+      } catch (err) {
+        await store.delete(buckets.runs, objectKey); // no file is left behind
+        throw err;
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/items/:id/detach',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'detachConversionItem',
+        summary: "Detach an item's document",
+        description: md`
+          Forgets the register entry of the item's document. The document stays in the target,
+          untouched, and the next run of the same source creates a new document. Refused while
+          a delivery for it is in flight. Recorded with who and when; the item's detail says it
+          was detached.
+        `,
+        params: ItemParams,
+        response: {
+          200: res('The item, its detail saying it was detached.', ItemSchema),
+          404: error('No such item.'),
+          409: res(
+            'The item has no register entry (`no_register_entry`: never delivered, or detached ' +
+              'already), or a delivery for it is in flight (`in_flight`).',
+            ErrorBody.extend({ code: z.enum(['no_register_entry', 'in_flight']) }),
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const item = await findItem(req.params.id);
+      if (!item) return reply.code(404).send({ error: 'not found' });
+      const detached = item.registerEntryId
+        ? await app.deps.repo.detachRegisterEntry(
+            item.id,
+            item.registerEntryId,
+            batchCreator(creatorOf(req)),
+            (e) =>
+              `detached${e.persistentId ? ` from document ${e.persistentId}` : ''}: ` +
+              'the next run of this source creates a new document',
+          )
+        : ({ ok: false, reason: 'missing' } as const);
+      if (detached.ok) return detached.item;
+      if (detached.reason === 'pending') {
+        return reply.code(409).send({ error: IN_FLIGHT, code: 'in_flight' });
+      }
+      return reply.code(409).send({ error: NO_ENTRY, code: 'no_register_entry' });
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/conversions/items/:id/accept',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'previewAcceptTargetState',
+        summary: "Preview accepting the target's state",
+        description: md`
+          What accepting the target's current state would record for a document refused as
+          changed in the target: each component the refusal listed, with its version when it
+          was delivered (\`expected\`) and now (\`actual\`, null when it is gone). The target does
+          not say who changed it. \`acceptable\` is false, with the \`reason\`, when it can't be
+          accepted here: the document is not changed in the target, the refusal lists only some
+          of the changes, or the document is gone. Detach it instead.
+        `,
+        params: ItemParams,
+        response: { 200: res('The preview.', AcceptPreviewSchema), 404: error('No such item.') },
+      },
+    },
+    async (req, reply) => {
+      const item = await findItem(req.params.id);
+      if (!item) return reply.code(404).send({ error: 'not found' });
+      const entry = await entryOf(item);
+      if (!entry) return { changed: [], acceptable: false, reason: NO_ENTRY };
+      const { changed, reason } = acceptPlanOf(entry);
+      return reason === null
+        ? { changed, acceptable: true }
+        : { changed, acceptable: false, reason };
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/items/:id/accept',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'acceptTargetState',
+        summary: "Accept the target's state",
+        description: md`
+          Takes the target's current versions (as the preview lists them) into the register
+          entry, so that the next run's update goes through, **overwriting the edits made in the
+          target**. The body must be \`{ "confirm": true }\`. Recorded with who, when and the
+          components. If the document changes again before the next run, that update is refused
+          again. Refused (422) where the preview says it can't be accepted.
+        `,
+        params: ItemParams,
+        body: AcceptTargetStateSchema,
+        response: {
+          200: res('The item and the components accepted.', AcceptedTargetStateSchema),
+          400: error('The body is not `{ confirm: true }`.'),
+          404: error('No such item.'),
+          409: CodedError('The item has no register entry.', 'no_register_entry'),
+          422: CodedError('It cannot be accepted here: the error says why.', 'not_acceptable'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = AcceptTargetStateSchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      const item = await findItem(req.params.id);
+      if (!item) return reply.code(404).send({ error: 'not found' });
+      const accepted = item.registerEntryId
+        ? await app.deps.repo.acceptTargetState(
+            item.id,
+            item.registerEntryId,
+            batchCreator(creatorOf(req)),
+            acceptPlanOf,
+            (e) =>
+              `the target's state was accepted: the next run updates document ${e.persistentId}`,
+          )
+        : ({ ok: false, reason: 'missing' } as const);
+      if (accepted.ok) return { item: accepted.item, changed: accepted.changed };
+      if (accepted.reason === 'not_acceptable') {
+        return reply.code(422).send({ error: accepted.why, code: 'not_acceptable' });
+      }
+      return reply.code(409).send({ error: NO_ENTRY, code: 'no_register_entry' });
     },
   );
 };

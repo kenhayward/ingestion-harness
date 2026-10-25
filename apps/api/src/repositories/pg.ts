@@ -29,12 +29,16 @@ import {
   type Item,
   type ItemOutcome,
 } from '@ih/shared';
+import { acceptedReceipt, type AcceptPlan } from '../conversions/accept.js';
 import {
   emptyCounts,
+  type AcceptResult,
   type AddItemResult,
+  type DetachResult,
   type DiscardBatchResult,
   type NewBatch,
   type NewItem,
+  type Rerun,
   type StartBatchResult,
 } from '../conversions/repo.js';
 import {
@@ -1383,6 +1387,136 @@ export class PgRepo implements IngestionRepo {
         [id],
       );
       return { ok: true, objectKeys: rows.map((r) => r.object_key) };
+    });
+  }
+
+  async rerunItem({
+    batchId,
+    itemId,
+    of,
+    targetId,
+    createdBy,
+    by,
+    source,
+  }: Rerun): Promise<{ batch: Batch; item: Item }> {
+    return this.inTransaction(async (client) => {
+      const batch = await client.query<BatchRow>(
+        `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
+         VALUES ($1, $2, true, $3, 'started', now())
+         RETURNING ${BATCH_COLUMNS}`,
+        [batchId, targetId, JSON.stringify(createdBy)],
+      );
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+         VALUES ('decompose', $1, $2, $3, $4, $5) RETURNING id`,
+        [
+          priority,
+          maxAttempts,
+          JSON.stringify({ batchId, itemId, targetId, sourceKey: of.sourceKey, force: true }),
+          by?.name ?? null,
+          by?.userId ?? null,
+        ],
+      );
+      const item = await client.query<ItemRow>(
+        `INSERT INTO decomposition_items
+           (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key, job_id,
+            redeliver_of)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING ${ITEM_COLUMNS}`,
+        [
+          itemId,
+          batchId,
+          of.sourceKey,
+          source.filename,
+          source.contentSha256,
+          source.sizeBytes,
+          source.objectKey,
+          job.rows[0]!.id,
+          of.id,
+        ],
+      );
+      return { batch: toBatch(batch.rows[0]!), item: toItem(item.rows[0]!) };
+    });
+  }
+
+  async registerEntry(id: string): Promise<RegisterEntry | null> {
+    const { rows } = await this.pool.query<RegisterRow>(
+      `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? toRegisterEntry(rows[0]) : null;
+  }
+
+  async detachRegisterEntry(
+    itemId: string,
+    entryId: string,
+    by: Batch['createdBy'],
+    detail: (entry: RegisterEntry) => string,
+  ): Promise<DetachResult> {
+    return this.inTransaction(async (client) => {
+      // The worker holds the row while it decides and hands a delivery off: this waits for it,
+      // then sees the entry pending and leaves it.
+      const found = await client.query<RegisterRow>(
+        `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE id = $1 FOR UPDATE`,
+        [entryId],
+      );
+      const row = found.rows[0];
+      if (!row) return { ok: false, reason: 'missing' };
+      const entry = toRegisterEntry(row);
+      if (entry.state === 'pending') return { ok: false, reason: 'pending' };
+      await client.query('DELETE FROM decomposition_register WHERE id = $1', [entryId]);
+      await client.query(
+        `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'detach', $2, $3)`,
+        [
+          entryId,
+          JSON.stringify(by),
+          JSON.stringify({ persistentId: entry.persistentId, sourceKey: entry.sourceKey }),
+        ],
+      );
+      const item = await client.query<ItemRow>(
+        `UPDATE decomposition_items SET detail = $2 WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
+        [itemId, detail(entry)],
+      );
+      return { ok: true, entry, item: toItem(item.rows[0]!) };
+    });
+  }
+
+  async acceptTargetState(
+    itemId: string,
+    entryId: string,
+    by: Batch['createdBy'],
+    plan: (entry: RegisterEntry) => AcceptPlan,
+    detail: (entry: RegisterEntry) => string,
+  ): Promise<AcceptResult> {
+    return this.inTransaction(async (client) => {
+      const found = await client.query<RegisterRow>(
+        `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE id = $1 FOR UPDATE`,
+        [entryId],
+      );
+      const row = found.rows[0];
+      if (!row) return { ok: false, reason: 'missing' };
+      const entry = toRegisterEntry(row);
+      const accepted = plan(entry);
+      if (accepted.reason !== null) {
+        return { ok: false, reason: 'not_acceptable', why: accepted.reason };
+      }
+      const updated = await client.query<RegisterRow>(
+        `UPDATE decomposition_register
+            SET state = 'delivered', last_receipt = $2, last_error = NULL, updated_at = now()
+          WHERE id = $1
+         RETURNING ${REGISTER_COLUMNS}`,
+        [entryId, JSON.stringify(acceptedReceipt(entry.lastReceipt!, accepted.components))],
+      );
+      await client.query(
+        `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'accept', $2, $3)`,
+        [entryId, JSON.stringify(by), JSON.stringify({ changed: accepted.changed })],
+      );
+      const item = await client.query<ItemRow>(
+        `UPDATE decomposition_items SET detail = $2 WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
+        [itemId, detail(toRegisterEntry(updated.rows[0]!))],
+      );
+      return { ok: true, item: toItem(item.rows[0]!), changed: accepted.changed };
     });
   }
 

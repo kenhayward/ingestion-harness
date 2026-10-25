@@ -35,6 +35,23 @@ conversionsContract('memory', async () => {
             }
           : null;
       },
+      entry: async (seed) => {
+        const { state, lastReceipt, lastError, ...rest } = seed;
+        const put = repo.putRegisterEntry({
+          ...rest,
+          sinkId: 'docs',
+          instanceId: null,
+          contentSha256: 'a'.repeat(64),
+          idempotencyKey: 'k'.repeat(64),
+          deliveryId: null,
+        });
+        Object.assign(repo.register.get(put.id)!, { state, lastReceipt, lastError });
+        return put.id;
+      },
+      settleItem: async (itemId, outcome, entryId) => {
+        Object.assign(repo.conversionItems.get(itemId)!, { outcome, registerEntryId: entryId });
+      },
+      actions: async (entryId) => repo.registerActions.filter((a) => a.entryId === entryId),
     },
   };
 });

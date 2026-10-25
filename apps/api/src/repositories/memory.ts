@@ -27,12 +27,17 @@ import {
   type BatchSummary,
   type Item,
 } from '@ih/shared';
+import { acceptedReceipt, type AcceptPlan } from '../conversions/accept.js';
 import {
   emptyCounts,
+  type AcceptResult,
   type AddItemResult,
+  type DetachResult,
   type DiscardBatchResult,
   type NewBatch,
   type NewItem,
+  type RegisterAction,
+  type Rerun,
   type StartBatchResult,
 } from '../conversions/repo.js';
 import {
@@ -1376,6 +1381,110 @@ export class MemoryRepo implements IngestionRepo {
       .filter((i) => i.batchId === id)
       .map((i) => i.objectKey);
     return { ok: true, objectKeys };
+  }
+
+  async rerunItem({
+    batchId,
+    itemId,
+    of,
+    targetId,
+    createdBy,
+    by,
+    source,
+  }: Rerun): Promise<{ batch: Batch; item: Item }> {
+    const batch: Batch = {
+      id: batchId,
+      targetId,
+      createdBy: { ...createdBy },
+      state: 'started',
+      force: true,
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+    };
+    const item: Item = {
+      id: itemId,
+      batchId,
+      sourceKey: of.sourceKey,
+      ...source,
+      jobId: null,
+      outcome: 'queued',
+      detail: null,
+      registerEntryId: null,
+      reportKey: null,
+      link: null,
+      redeliverOf: of.id,
+    };
+    item.jobId = this.queueBackground(
+      'decompose',
+      { batchId, itemId, targetId, sourceKey: of.sourceKey, force: true },
+      by?.name ?? null,
+      by?.userId ?? null,
+    );
+    this.conversionBatches.set(batchId, batch);
+    this.conversionItems.set(itemId, item);
+    return { batch: structuredClone(batch), item: { ...item } };
+  }
+
+  /** What people did to register entries (register_actions), oldest first. */
+  readonly registerActions: RegisterAction[] = [];
+
+  async registerEntry(id: string): Promise<RegisterEntry | null> {
+    const e = this.register.get(id);
+    return e ? structuredClone(e) : null;
+  }
+
+  async detachRegisterEntry(
+    itemId: string,
+    entryId: string,
+    by: Batch['createdBy'],
+    detail: (entry: RegisterEntry) => string,
+  ): Promise<DetachResult> {
+    const entry = this.register.get(entryId);
+    if (!entry) return { ok: false, reason: 'missing' };
+    if (entry.state === 'pending') return { ok: false, reason: 'pending' };
+    this.register.delete(entryId);
+    this.registerActions.push({
+      id: randomUUID(),
+      entryId,
+      action: 'detach',
+      by: { ...by },
+      at: new Date().toISOString(),
+      details: { persistentId: entry.persistentId, sourceKey: entry.sourceKey },
+    });
+    const item = this.conversionItems.get(itemId)!;
+    item.detail = detail(entry);
+    return { ok: true, entry: structuredClone(entry), item: { ...item } };
+  }
+
+  async acceptTargetState(
+    itemId: string,
+    entryId: string,
+    by: Batch['createdBy'],
+    plan: (entry: RegisterEntry) => AcceptPlan,
+    detail: (entry: RegisterEntry) => string,
+  ): Promise<AcceptResult> {
+    const entry = this.register.get(entryId);
+    if (!entry) return { ok: false, reason: 'missing' };
+    const accepted = plan(structuredClone(entry));
+    if (accepted.reason !== null)
+      return { ok: false, reason: 'not_acceptable', why: accepted.reason };
+    Object.assign(entry, {
+      state: 'delivered',
+      lastReceipt: acceptedReceipt(entry.lastReceipt!, accepted.components),
+      lastError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    this.registerActions.push({
+      id: randomUUID(),
+      entryId,
+      action: 'accept',
+      by: { ...by },
+      at: new Date().toISOString(),
+      details: { changed: accepted.changed },
+    });
+    const item = this.conversionItems.get(itemId)!;
+    item.detail = detail(entry);
+    return { ok: true, item: { ...item }, changed: accepted.changed };
   }
 
   private update(id: string, changes: Partial<JobSummary>): JobSummary {

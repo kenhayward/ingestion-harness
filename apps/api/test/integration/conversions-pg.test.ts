@@ -14,12 +14,15 @@ import { migrate } from '../../src/db/migrate.js';
 import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
 import { PgRepo } from '../../src/repositories/pg.js';
 import { DOCX_MIME } from '@ih/shared';
-import { conversionsContract } from '../conversions-contract.js';
+import type { RegisterAction } from '../../src/conversions/repo.js';
+import { conversionsContract, type EntrySeed } from '../conversions-contract.js';
 import { docx } from '../docx-fixtures.js';
 import { FAKE_DOCUMENT_SINK } from '../fake-sink.js';
 import { multipart, testApp } from '../helpers.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
+/** The sink the contract's register entries are seeded on (and cleared from). */
+const CONTRACT_SINK = 'conversions-contract';
 const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
 
 describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }, () => {
@@ -45,6 +48,9 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
 
   /** Items hold their jobs: other tests' `DELETE FROM jobs` needs them gone first. */
   const clear = async (p: pg.Pool) => {
+    // A detached entry is gone, so its actions are found by nothing but the table itself.
+    await p.query('DELETE FROM register_actions');
+    await p.query(`DELETE FROM decomposition_register WHERE sink_id = '${CONTRACT_SINK}'`);
     await p.query('DELETE FROM decomposition_items');
     await p.query('DELETE FROM decomposition_batches');
     await p.query(`DELETE FROM job_events WHERE job_id IN
@@ -84,6 +90,57 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
               }
             : null;
         },
+        entry: async (seed: EntrySeed) => {
+          const { rows } = await p.query<{ id: string }>(
+            `INSERT INTO decomposition_register
+               (sink_id, instance_id, source_key, content_sha256, persistent_id, state,
+                idempotency_key, last_receipt, last_error, batch_id)
+             VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id::text`,
+            [
+              CONTRACT_SINK,
+              seed.sourceKey,
+              'a'.repeat(64),
+              seed.persistentId,
+              seed.state,
+              'k'.repeat(64),
+              seed.lastReceipt === null ? null : JSON.stringify(seed.lastReceipt),
+              seed.lastError === null ? null : JSON.stringify(seed.lastError),
+              seed.batchId,
+            ],
+          );
+          return rows[0]!.id;
+        },
+        settleItem: async (itemId: string, outcome: string, entryId: string | null) => {
+          await p.query(
+            `UPDATE decomposition_items SET outcome = $2, register_entry_id = $3 WHERE id = $1`,
+            [itemId, outcome, entryId],
+          );
+        },
+        actions: async (entryId: string): Promise<RegisterAction[]> => {
+          const { rows } = await p.query<{
+            id: string;
+            entry_id: string;
+            action: RegisterAction['action'];
+            by: RegisterAction['by'];
+            at: Date;
+            details: RegisterAction['details'];
+          }>(
+            `SELECT id::text, entry_id::text, action, by, at, details FROM register_actions
+              WHERE entry_id = $1 ORDER BY at, id`,
+            [entryId],
+          );
+          return rows.map(
+            (r) =>
+              ({
+                id: r.id,
+                entryId: r.entry_id,
+                action: r.action,
+                by: r.by,
+                at: r.at.toISOString(),
+                details: r.details,
+              }) as RegisterAction,
+          );
+        },
       },
     };
   };
@@ -95,6 +152,50 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
   });
 
   conversionsContract('pg', make);
+
+  it('a detach waits for a worker holding the entry, and leaves it once it is pending', async () => {
+    const { repo, p, facts } = await make();
+    const by = { id: null, name: 'Ada' };
+    const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: by });
+    const id = randomUUID();
+    await repo.addItem({
+      id,
+      batchId: batch.id,
+      sourceKey: 'a.docx',
+      filename: 'a.docx',
+      contentSha256: 'a'.repeat(64),
+      sizeBytes: 1,
+      objectKey: `decompositions/${batch.id}/${id}.docx`,
+    });
+    const entryId = await facts.entry({
+      sourceKey: 'a.docx',
+      state: 'delivered',
+      persistentId: 'doc-1',
+      lastReceipt: null,
+      lastError: null,
+      batchId: batch.id,
+    });
+    // The worker's next run locks the entry (`by_key`), decides, and writes it pending.
+    const worker = await p.connect();
+    try {
+      await worker.query('BEGIN');
+      await worker.query('SELECT 1 FROM decomposition_register WHERE id = $1 FOR UPDATE', [
+        entryId,
+      ]);
+      const detaching = repo.detachRegisterEntry(id, entryId, by, () => 'detached');
+      await new Promise((r) => setTimeout(r, 200));
+      await worker.query(`UPDATE decomposition_register SET state = 'pending' WHERE id = $1`, [
+        entryId,
+      ]);
+      await worker.query('COMMIT');
+      expect(await detaching).toEqual({ ok: false, reason: 'pending' });
+    } finally {
+      worker.release();
+    }
+    expect((await repo.registerEntry(entryId))?.state).toBe('pending');
+    expect(await facts.actions(entryId)).toEqual([]);
+    expect((await repo.getItem(id))?.detail).toBeNull();
+  });
 
   it('refuses an item outcome outside the twelve', async () => {
     const { repo, p } = await make();

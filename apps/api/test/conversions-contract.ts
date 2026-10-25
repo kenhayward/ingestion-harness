@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { BatchSchema, BatchSummarySchema, DecomposeParamsSchema, ItemSchema } from '@ih/shared';
+import { bridgeError, changedInTargetDetails, type Receipt } from '@ih/bridge-contract';
+import {
+  BatchSchema,
+  BatchSummarySchema,
+  DecomposeParamsSchema,
+  ItemSchema,
+  type Item,
+} from '@ih/shared';
 import { describe, expect, it } from 'vitest';
-import type { ConversionRepo, NewItem } from '../src/conversions/repo.js';
+import { acceptPlanOf } from '../src/conversions/accept.js';
+import type { ConversionRepo, NewItem, RegisterAction } from '../src/conversions/repo.js';
+import type { RegisterEntry } from '../src/repositories/types.js';
 
 /** A queued job as the repo wrote it (the jobs table, or MemoryRepo's background jobs). */
 export interface QueuedJob {
@@ -13,11 +22,50 @@ export interface QueuedJob {
   createdByUser: string | null;
 }
 
+/** A register entry as the worker and the bridge's events leave it (a test seeds it). */
+export type EntrySeed = Pick<
+  RegisterEntry,
+  'sourceKey' | 'state' | 'persistentId' | 'lastReceipt' | 'lastError' | 'batchId'
+>;
+
 export interface ConversionFacts {
   job(id: string): Promise<QueuedJob | null>;
+  /** Seeds a register entry; its id. */
+  entry(seed: EntrySeed): Promise<string>;
+  /** Links an item to an entry with an outcome, as the worker or an event does. */
+  settleItem(itemId: string, outcome: Item['outcome'], entryId: string | null): Promise<void>;
+  /** The register actions recorded on an entry, oldest first. */
+  actions(entryId: string): Promise<RegisterAction[]>;
 }
 
 const ADA = { id: '7a1f3c52-1b2e-4c3d-8e4f-5a6b7c8d9e0f', name: 'Ada' };
+
+const RECEIPT: Receipt = {
+  written: [{ kind: 'document', id: 'doc-1', label: null, url: null }],
+  document: {
+    persistentId: 'doc-1',
+    components: [
+      { kind: 'map', id: 'doc-1/map', version: '1', element: null },
+      { kind: 'section', id: 'doc-1/section/s1', version: '1', element: 's1' },
+      { kind: 'section', id: 'doc-1/section/s2', version: '1', element: 's2' },
+    ],
+    readBack: { ok: true, at: null, detail: null },
+  },
+};
+
+const CHANGED = [
+  { id: 'doc-1/section/s1', expected: '1', actual: '2' },
+  { id: 'doc-1/section/s2', expected: '1', actual: null },
+];
+
+const changedSeed = (sourceKey: string, batchId: string): EntrySeed => ({
+  sourceKey,
+  state: 'changed',
+  persistentId: 'doc-1',
+  lastReceipt: RECEIPT,
+  lastError: bridgeError('changed_in_target', '2 changed', changedInTargetDetails(CHANGED)),
+  batchId,
+});
 
 /** The same contract for MemoryRepo (unit) and PgRepo (integration/conversions-pg.test.ts). */
 export function conversionsContract(
@@ -184,6 +232,155 @@ export function conversionsContract(
       expect(Object.keys(listed[1]!.counts)).toHaveLength(12);
       expect(listed[0]).toMatchObject({ itemCount: 0 });
       expect(await repo.listBatches(1)).toHaveLength(1);
+    });
+
+    /** A started batch of one finished item, and its batch. */
+    const finished = async (sourceKey = 'manuals/a.docx') => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const a = item(batch.id, sourceKey);
+      await repo.addItem(a);
+      await repo.startBatch(batch.id, null);
+      return { repo, facts, batch, item: (await repo.getItem(a.id))! };
+    };
+
+    it('reruns an item as a started batch of one, forced, under its source key', async () => {
+      const { repo, facts, item: of } = await finished();
+      const batchId = randomUUID();
+      const itemId = randomUUID();
+      const objectKey = `decompositions/${batchId}/${itemId}.docx`;
+
+      const { batch, item: rerun } = await repo.rerunItem({
+        batchId,
+        itemId,
+        of,
+        targetId: 'manuals',
+        createdBy: ADA,
+        by: { name: 'Ada', userId: ADA.id },
+        source: { filename: 'new.docx', contentSha256: 'b'.repeat(64), sizeBytes: 9, objectKey },
+      });
+
+      expect(BatchSchema.parse(batch)).toMatchObject({
+        id: batchId,
+        targetId: 'manuals',
+        force: true,
+        state: 'started',
+        createdBy: ADA,
+      });
+      expect(batch.startedAt).not.toBeNull();
+      expect(ItemSchema.parse(rerun)).toEqual({
+        id: itemId,
+        batchId,
+        sourceKey: of.sourceKey,
+        filename: 'new.docx',
+        contentSha256: 'b'.repeat(64),
+        sizeBytes: 9,
+        objectKey,
+        jobId: expect.any(String),
+        outcome: 'queued',
+        detail: null,
+        registerEntryId: null,
+        reportKey: null,
+        link: null,
+        redeliverOf: of.id,
+      });
+      expect(await repo.listItems(batchId)).toEqual([rerun]);
+      expect(await facts.job(rerun.jobId!)).toEqual({
+        task: 'decompose',
+        priority: 0,
+        maxAttempts: 3,
+        params: { batchId, itemId, targetId: 'manuals', sourceKey: of.sourceKey, force: true },
+        createdBy: 'Ada',
+        createdByUser: ADA.id,
+      });
+    });
+
+    it('detaches an entry: forgotten, recorded, and said on the item', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
+      await facts.settleItem(a.id, 'changed_in_target', entryId);
+
+      const done = await repo.detachRegisterEntry(
+        a.id,
+        entryId,
+        ADA,
+        (e) => `gone ${e.persistentId}`,
+      );
+
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.entry).toMatchObject({ id: entryId, persistentId: 'doc-1' });
+      expect(done.item).toMatchObject({ id: a.id, detail: 'gone doc-1', registerEntryId: entryId });
+      expect(await repo.getItem(a.id)).toEqual(done.item);
+      expect(await repo.registerEntry(entryId)).toBeNull();
+      expect(await facts.actions(entryId)).toEqual([
+        {
+          id: expect.any(String),
+          entryId,
+          action: 'detach',
+          by: ADA,
+          at: expect.any(String),
+          details: { persistentId: 'doc-1', sourceKey: a.sourceKey },
+        },
+      ]);
+      expect(await repo.detachRegisterEntry(a.id, entryId, ADA, () => 'x')).toEqual({
+        ok: false,
+        reason: 'missing',
+      });
+    });
+
+    it('detaches no pending entry', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry({
+        ...changedSeed(a.sourceKey, batch.id),
+        state: 'pending',
+      });
+      expect(await repo.detachRegisterEntry(a.id, entryId, ADA, () => 'x')).toEqual({
+        ok: false,
+        reason: 'pending',
+      });
+      expect((await repo.registerEntry(entryId))?.state).toBe('pending');
+      expect(await facts.actions(entryId)).toEqual([]);
+    });
+
+    it("accepts the target's state of a changed entry, and records who", async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
+      await facts.settleItem(a.id, 'changed_in_target', entryId);
+
+      const done = await repo.acceptTargetState(a.id, entryId, ADA, acceptPlanOf, () => 'ok');
+
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.changed).toEqual(CHANGED);
+      expect(done.item).toMatchObject({ id: a.id, detail: 'ok' });
+      const entry = (await repo.registerEntry(entryId))!;
+      expect(entry).toMatchObject({ state: 'delivered', lastError: null, persistentId: 'doc-1' });
+      expect(entry.lastReceipt).toEqual({
+        ...RECEIPT,
+        document: {
+          ...RECEIPT.document!,
+          components: [
+            { kind: 'map', id: 'doc-1/map', version: '1', element: null },
+            { kind: 'section', id: 'doc-1/section/s1', version: '2', element: 's1' },
+          ],
+        },
+      });
+      expect(await facts.actions(entryId)).toEqual([
+        {
+          id: expect.any(String),
+          entryId,
+          action: 'accept',
+          by: ADA,
+          at: expect.any(String),
+          details: { changed: CHANGED },
+        },
+      ]);
+      // No longer changed: a second accept is refused, and nothing more is recorded.
+      const again = await repo.acceptTargetState(a.id, entryId, ADA, acceptPlanOf, () => 'ok');
+      expect(again).toMatchObject({ ok: false, reason: 'not_acceptable' });
+      expect(await facts.actions(entryId)).toHaveLength(1);
+      expect(
+        await repo.acceptTargetState(a.id, randomUUID(), ADA, acceptPlanOf, () => 'ok'),
+      ).toEqual({ ok: false, reason: 'missing' });
     });
   });
 }

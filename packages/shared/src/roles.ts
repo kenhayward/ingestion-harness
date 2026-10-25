@@ -71,6 +71,11 @@ const OPERATOR_CALLS = new Set([
   'POST /api/conversions/batches/:id/items',
   'POST /api/conversions/batches/:id/start',
   'GET /api/conversions/items/:id/report',
+  'POST /api/conversions/items/:id/force',
+  'POST /api/conversions/items/:id/redeliver',
+  'POST /api/conversions/items/:id/detach',
+  'GET /api/conversions/items/:id/accept',
+  'POST /api/conversions/items/:id/accept',
 ]);
 
 export const operatorMayCall = (method: string, route: string) =>

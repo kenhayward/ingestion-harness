@@ -186,7 +186,13 @@
           <li>
             New API routes under <code>/api/conversions</code>: the targets that take documents, and
             batches to create, fill one file at a time, start, discard, list and read, with each
-            item's report. Operators, designers and administrators may all use them.
+            item's report. Each item's row also has actions:
+            <code>POST /api/conversions/items/{id}/force</code> (force-load),
+            <code>POST /api/conversions/items/{id}/redeliver</code> (optionally with a replacement
+            file), <code>POST /api/conversions/items/{id}/detach</code>, and <code>GET</code> and
+            <code>POST /api/conversions/items/{id}/accept</code> (accept the target's state: a
+            preview, then a confirmed accept). Operators, designers and administrators may all use
+            them.
           </li>
         </ul>
       </div>
@@ -205,6 +211,34 @@
       <p>
         Only Word documents (<code>.docx</code>) are taken for now. The same file name or folder
         path can't be added to a batch twice.
+      </p>
+      <p>Each document's row offers four actions, each run on that one document:</p>
+      <ul>
+        <li>
+          <strong>Force-load</strong> delivers the stored file again as an explicit update. A
+          document that was already loaded is updated, and a duplicate is created as a second
+          document of its own.
+        </li>
+        <li>
+          <strong>Redeliver</strong> updates the document, optionally from a replacement file. The
+          replacement keeps the original's name in the batch, so a renamed or moved file updates the
+          right document.
+        </li>
+        <li>
+          <strong>Detach</strong> makes CT Studio forget the document. It stays in the target
+          untouched, and the next run of the same file creates a new document.
+        </li>
+        <li>
+          <strong>Accept the target's state</strong>, for a document someone changed in the target,
+          first shows each changed part with its version before and now. Once confirmed, the next
+          run updates the document, overwriting those changes. If it changes again in the meantime,
+          that run is refused again.
+        </li>
+      </ul>
+      <p>
+        Force-load and redeliver each start a new batch of one. The target's version check always
+        applies, so nothing changed in the target is overwritten without being accepted first.
+        Detaching and accepting are recorded with who did it and when.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>
