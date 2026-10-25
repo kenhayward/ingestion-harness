@@ -7653,6 +7653,7 @@ button.evidence-chip[aria-expanded='true'] {
   max-width: 420px;
 }
 .conversion-drop {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   padding: 12px 14px;
@@ -7666,7 +7667,8 @@ button.evidence-chip[aria-expanded='true'] {
   flex-wrap: wrap;
   gap: 8px;
 }
-.conversion-drop:has(input:focus-visible) {
+/* The focused chooser (its input is visually hidden just before it). */
+.conversion-choose input:focus-visible + label.button {
   outline: 2px solid var(--ih-accent);
 }
 .conversion-row-end {

@@ -24,7 +24,8 @@ export function ConversionHelp() {
           Each file is listed by the name that identifies its document: its file name, or for a
           folder, its path in the folder (<code>Policies/2025/leave.docx</code>). Running the same
           file or path again later updates the same document. A name that can't be used, such as one
-          with a backslash, is marked and left out. <strong>×</strong> removes a file from the list.
+          with a backslash, or one already in the list, is marked and left out. <strong>×</strong>{' '}
+          removes a file from the list.
         </li>
         <li>
           <strong>Force-load</strong> delivers every file as an update, even one that is already

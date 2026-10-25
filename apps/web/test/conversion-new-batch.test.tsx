@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Item } from '@ih/shared';
@@ -161,6 +161,83 @@ describe('the Conversion tab: a new batch', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Start' }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
     expect(vi.mocked(api.uploadConversionItem).mock.calls.map((c) => c[2])).toEqual(['good.docx']);
+  });
+
+  /** The row of each listed source key, in list order: [key, its message]. */
+  const rowsOf = () =>
+    within(screen.getByRole('list', { name: 'Files to convert' }))
+      .getAllByRole('listitem')
+      .map((li) => [li.querySelector('.mono')?.textContent, li.textContent]);
+
+  it('a later pick of a source key already listed is flagged and never sent', async () => {
+    const api = conversionApi();
+    render(<ConversionPage api={api} />);
+    await screen.findByRole('option', { name: 'Archive · Document sink' });
+    const first = word('a.docx');
+    await userEvent.upload(screen.getByLabelText('Choose files'), first);
+    await userEvent.upload(screen.getByLabelText('Choose files'), word('a.docx'));
+    const rows = rowsOf();
+    expect(rows.map(([key]) => key)).toEqual(['a.docx', 'a.docx']);
+    expect(rows[0]![1]).toContain('Ready');
+    expect(rows[1]![1]).toContain('Already in the list');
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
+    expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.uploadConversionItem).mock.calls[0]![1]).toBe(first);
+  });
+
+  it('two loose files of the same name in one pick: the second is flagged', async () => {
+    const api = conversionApi();
+    render(<ConversionPage api={api} />);
+    await screen.findByRole('option', { name: 'Archive · Document sink' });
+    fireEvent.drop(screen.getByText(/Drop Word files or a folder here/).closest('.drop-zone')!, {
+      dataTransfer: droppedItems([word('a.docx'), word('a.docx')]),
+    });
+    await waitFor(() => expect(rowsOf()).toHaveLength(2));
+    expect(rowsOf()[0]![1]).toContain('Ready');
+    expect(rowsOf()[1]![1]).toContain('Already in the list');
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
+    expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('two dropped folders of the same name: the repeated paths are flagged', async () => {
+    const api = conversionApi();
+    render(<ConversionPage api={api} />);
+    await screen.findByRole('option', { name: 'Archive · Document sink' });
+    fireEvent.drop(screen.getByText(/Drop Word files or a folder here/).closest('.drop-zone')!, {
+      dataTransfer: droppedItems([
+        droppedFolder('Policies', [word('a.docx'), word('b.docx')]),
+        droppedFolder('Policies', [word('a.docx')]),
+      ]),
+    });
+    await waitFor(() => expect(rowsOf()).toHaveLength(3));
+    expect(rowsOf().map(([key, text]) => [key, text?.includes('Already in the list')])).toEqual([
+      ['Policies/a.docx', false],
+      ['Policies/b.docx', false],
+      ['Policies/a.docx', true],
+    ]);
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
+    expect(vi.mocked(api.uploadConversionItem).mock.calls.map((c) => c[2])).toEqual([
+      'Policies/a.docx',
+      'Policies/b.docx',
+    ]);
+  });
+
+  it('a second Start before the first renders opens no second batch', async () => {
+    const api = conversionApi();
+    render(<ConversionPage api={api} />);
+    await screen.findByRole('option', { name: 'Archive · Document sink' });
+    await userEvent.upload(screen.getByLabelText('Choose files'), word('a.docx'));
+    const start = screen.getByRole('button', { name: 'Start' });
+    act(() => {
+      start.click();
+      start.click();
+    });
+    await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
+    expect(api.createConversionBatch).toHaveBeenCalledTimes(1);
+    expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
   });
 
   it('lets the person remove a file from the list', async () => {

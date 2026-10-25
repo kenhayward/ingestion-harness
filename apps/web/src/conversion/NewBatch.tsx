@@ -68,6 +68,8 @@ export function NewBatch({ api }: { api: Api }) {
   const [started, setStarted] = useState<string | null>(null);
   const nextKey = useRef(0);
   const cancelled = useRef(false);
+  /** Set from the first Start until it settles, before any render can disable the button. */
+  const starting = useRef(false);
   const gone = useRef(false);
 
   useEffect(() => {
@@ -105,11 +107,20 @@ export function NewBatch({ api }: { api: Api }) {
         message: problem ?? 'Ready',
       };
     });
-    // A file picked again (the same source key) replaces the one listed.
-    setRows((prev) => [
-      ...(fresh ? [] : prev).filter((r) => !added.some((a) => a.sourceKey === r.sourceKey)),
-      ...added,
-    ]);
+    // A source key names one document, and the API takes it once a batch: a key already listed
+    // (from an earlier pick, or earlier in this one) is flagged, and the first row is the one sent.
+    setRows((prev) => {
+      const kept = fresh ? [] : prev;
+      const seen = new Set(kept.map((r) => r.sourceKey));
+      const flagged = added.map<Row>((row) => {
+        const repeated = seen.has(row.sourceKey);
+        seen.add(row.sourceKey);
+        return repeated && row.status === 'ready'
+          ? { ...row, status: 'invalid', message: 'Already in the list' }
+          : row;
+      });
+      return [...kept, ...flagged];
+    });
   }
 
   const update = (key: string, status: Row['status'], message: string) =>
@@ -135,11 +146,13 @@ export function NewBatch({ api }: { api: Api }) {
 
   async function start() {
     const todo = rows.filter((r) => r.status === 'ready');
-    if (!todo.length || !target) return;
+    if (!todo.length || !target || starting.current) return;
+    starting.current = true;
     setBusy(true);
     setError(null);
     cancelled.current = false;
     const done = () => {
+      starting.current = false;
       setBusy(false);
       setProgress(null);
     };
@@ -168,7 +181,12 @@ export function NewBatch({ api }: { api: Api }) {
         refused++;
       }
     }
-    if (gone.current) return;
+    setProgress(null); // the uploads are over: Cancel no longer applies
+    if (gone.current) {
+      // Left mid-upload: a batch with files stays open (unstarted); an empty one goes.
+      if (!taken) await discard(batchId);
+      return;
+    }
     if (cancelled.current) {
       await discard(batchId);
       unsend();
@@ -263,41 +281,41 @@ export function NewBatch({ api }: { api: Api }) {
           <small>Each Word document (.docx) is delivered as a document of its own</small>
         </span>
         <span className="conversion-choose">
+          <input
+            id={filesId}
+            className="visually-hidden"
+            type="file"
+            accept={WORD_ACCEPT}
+            multiple
+            disabled={busy}
+            onChange={(e) => {
+              add([...(e.target.files ?? [])].map((file) => ({ file, path: file.name })));
+              e.target.value = ''; // the same file can be picked again
+            }}
+          />
           <label htmlFor={filesId} className="button">
             Choose files
           </label>
+          <input
+            id={folderId}
+            className="visually-hidden"
+            type="file"
+            multiple
+            disabled={busy}
+            {...{ webkitdirectory: '', directory: '' }}
+            onChange={(e) => {
+              add(
+                [...(e.target.files ?? [])]
+                  .map((file) => ({ file, path: file.webkitRelativePath || file.name }))
+                  .sort(byPath),
+              );
+              e.target.value = '';
+            }}
+          />
           <label htmlFor={folderId} className="button">
             Choose folder
           </label>
         </span>
-        <input
-          id={filesId}
-          className="visually-hidden"
-          type="file"
-          accept={WORD_ACCEPT}
-          multiple
-          disabled={busy}
-          onChange={(e) => {
-            add([...(e.target.files ?? [])].map((file) => ({ file, path: file.name })));
-            e.target.value = ''; // the same file can be picked again
-          }}
-        />
-        <input
-          id={folderId}
-          className="visually-hidden"
-          type="file"
-          multiple
-          disabled={busy}
-          {...{ webkitdirectory: '', directory: '' }}
-          onChange={(e) => {
-            add(
-              [...(e.target.files ?? [])]
-                .map((file) => ({ file, path: file.webkitRelativePath || file.name }))
-                .sort(byPath),
-            );
-            e.target.value = '';
-          }}
-        />
       </div>
 
       {leftOut > 0 && (
@@ -362,7 +380,7 @@ export function NewBatch({ api }: { api: Api }) {
       )}
 
       <div className="card-actions">
-        {busy ? (
+        {progress ? (
           <button
             type="button"
             onClick={() => {
