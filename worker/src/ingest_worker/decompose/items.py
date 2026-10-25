@@ -88,12 +88,14 @@ class MemoryItemStore:
 
     def set_report(self, item_id: str, report_key: str) -> None:
         with self._lock:
-            self.items[item_id] = replace(self.items[item_id], report_key=report_key)
+            item = self.items.get(item_id)
+            if item is not None:  # as on Postgres: a missing item is no error
+                self.items[item_id] = replace(item, report_key=report_key)
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
         with self._lock:
-            item = self.items[item_id]
-            if item.outcome not in UNDECIDED:
+            item = self.items.get(item_id)
+            if item is None or item.outcome not in UNDECIDED:
                 return False
             self.items[item_id] = replace(
                 item,

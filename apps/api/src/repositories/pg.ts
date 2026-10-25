@@ -73,7 +73,7 @@ import {
   type RegisterEntry,
   type ItemSettlement,
   type RegisterSettlement,
-  UNSETTLED_ITEM,
+  SETTLEABLE_ITEM,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -1271,6 +1271,15 @@ export class PgRepo implements IngestionRepo {
     return rows.map(toItem);
   }
 
+  async itemByDelivery(deliveryId: string): Promise<Item | null> {
+    const { rows } = await this.pool.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM decomposition_items
+        WHERE job_id = (SELECT job_id FROM job_deliveries WHERE delivery_id = $1)`,
+      [deliveryId],
+    );
+    return rows[0] ? toItem(rows[0]) : null;
+  }
+
   async getItem(id: string): Promise<Item | null> {
     const { rows } = await this.pool.query<ItemRow>(
       `SELECT ${ITEM_COLUMNS} FROM decomposition_items WHERE id = $1`,
@@ -1877,7 +1886,7 @@ export class PgRepo implements IngestionRepo {
   async applyDeliveryUpdate(
     deliveryId: string,
     update: DeliveryUpdate,
-    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+    finish: (deliveries: JobDelivery[], job: { task: string }) => JobFinish | null,
   ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }> {
     const client = await this.pool.connect();
     try {
@@ -1893,8 +1902,9 @@ export class PgRepo implements IngestionRepo {
       }
       // The job's row first: events for its other deliveries wait, so the one that makes the
       // last delivery final sees every other one final too, and finishes the job once.
-      const job = await client.query<{ status: string; background: boolean }>(
-        'SELECT status, document_id IS NULL AS background FROM jobs WHERE id = $1 FOR UPDATE',
+      const job = await client.query<{ status: string; background: boolean; task: string }>(
+        `SELECT status, document_id IS NULL AS background, task FROM jobs WHERE id = $1
+           FOR UPDATE`,
         [jobId],
       );
       const updated = await client.query(
@@ -1923,7 +1933,9 @@ export class PgRepo implements IngestionRepo {
           [deliveryId],
         );
       }
-      const finishedAs = finish(await deliveriesIn(client, jobId));
+      const finishedAs = finish(await deliveriesIn(client, jobId), {
+        task: job.rows[0]?.task ?? 'process',
+      });
       const outcome =
         finishedAs && job.rows[0]?.background ? backgroundFinish(finishedAs) : finishedAs;
       let finished: JobFinish | null = null;
@@ -2050,14 +2062,15 @@ export class PgRepo implements IngestionRepo {
           s.delivered,
         ],
       );
-      if (before.batchId !== null) {
+      // A batch's entry names its batch by id (a uuid); a CLI delivery's may not.
+      if (before.batchId !== null && UUID_TEXT.test(before.batchId)) {
         // The item that made this delivery: its batch and source key (unique in a batch), found
         // whether or not the worker has recorded it delivering yet.
         const settled = item(before);
         await client.query(
           `UPDATE decomposition_items
               SET outcome = $3, detail = $4, link = $5, register_entry_id = $6::uuid
-            WHERE batch_id::text = $1 AND source_key = $2 AND outcome = ANY($7::text[])`,
+            WHERE batch_id = $1::uuid AND source_key = $2 AND outcome = ANY($7::text[])`,
           [
             before.batchId,
             before.sourceKey,
@@ -2065,7 +2078,7 @@ export class PgRepo implements IngestionRepo {
             settled.detail,
             settled.link,
             before.id,
-            UNSETTLED_ITEM,
+            SETTLEABLE_ITEM,
           ],
         );
       }
@@ -2073,6 +2086,8 @@ export class PgRepo implements IngestionRepo {
     });
   }
 }
+
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface RegisterRow {
   id: string;

@@ -58,6 +58,8 @@ async function delivered(over: { persistentId?: string | null } = {}) {
     entryId: entry.id,
     item: (): Item => ({ ...repo.conversionItems.get(itemId)! }),
     jobStatus: () => repo.backgroundJobs.find((j) => j.id === jobId)!.status,
+    /** The job's last event: how it finished. */
+    lastEvent: () => repo.events.get(jobId)?.at(-1)?.message,
     /** The worker's write once the bridge took the document (PgItemStore.decide's guard). */
     workerRecords: () => {
       const item = repo.conversionItems.get(itemId)!;
@@ -201,5 +203,54 @@ describe('a conversion item, settled from the bridge events', () => {
     t.repo.conversionItems.get(t.item().id)!.outcome = 'already_loaded';
     await applyEvent(t.deps, event(t.deliveryId));
     expect(t.item().outcome).toBe('already_loaded');
+  });
+
+  it("the job's final event names the item's outcome, not just delivered", async () => {
+    const created = await delivered();
+    created.workerRecords();
+    await applyEvent(created.deps, event(created.deliveryId));
+    expect(created.lastEvent()).toBe('created: document doc-1');
+
+    const changed = await delivered({ persistentId: 'doc-1' });
+    changed.workerRecords();
+    const error = bridgeError('changed_in_target', 'the document changed in the target');
+    await applyEvent(
+      changed.deps,
+      event(changed.deliveryId, { status: 'needs_user', error, receipt: null }),
+    );
+    expect(changed.lastEvent()).toBe('changed in target: the document changed in the target');
+  });
+
+  it('a straggler event finishes the job succeeded after its entry moved on', async () => {
+    // The register settled from an earlier event, and another batch re-pointed the entry, before
+    // the job's own delivery row heard its final status (the reconcile's straggler pass).
+    const t = await delivered();
+    t.workerRecords();
+    const entry = t.repo.register.get(t.entryId)!;
+    Object.assign(entry, { state: 'pending', deliveryId: randomUUID() });
+    const error = bridgeError('content_rejected', 'the sink refused the content');
+    await applyEvent(t.deps, event(t.deliveryId, { status: 'failed', error, receipt: null }));
+    expect(t.jobStatus()).toBe('succeeded');
+  });
+
+  it('a delivered event settles an item a late worker error failed', async () => {
+    // The worker's last attempt failed after the bridge took the document: the document still
+    // arrives, and the item says so.
+    const t = await delivered();
+    t.repo.conversionItems.get(t.item().id)!.outcome = 'failed';
+    await applyEvent(t.deps, event(t.deliveryId));
+    expect(t.item()).toMatchObject({ outcome: 'created', registerEntryId: t.entryId });
+  });
+
+  it('links only the document itself, never another written part', async () => {
+    const t = await delivered();
+    t.workerRecords();
+    const receipt = documentReceipt('doc-1');
+    receipt.written = [
+      { kind: 'image', id: 'img-1', label: null, url: 'https://docs.example.test/img-1' },
+      { kind: 'document', id: 'doc-1', label: null, url: null },
+    ];
+    await applyEvent(t.deps, event(t.deliveryId, { receipt }));
+    expect(t.item()).toMatchObject({ outcome: 'created', link: null });
   });
 });

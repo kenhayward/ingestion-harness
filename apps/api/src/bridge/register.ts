@@ -1,4 +1,5 @@
 import type { BridgeEvent, Receipt } from '@ih/bridge-contract';
+import type { ItemOutcome } from '@ih/shared';
 import {
   FINAL_DELIVERY,
   type IngestionRepo,
@@ -37,11 +38,34 @@ export function settlementOf(
   return { ...reported, state: 'failed', delivered: false };
 }
 
-/** The document's link in the target: the receipt's document entry with a URL, else any URL. */
+/**
+ * The document's link in the target: the receipt's document entry's URL. Never another part's
+ * (an image, say): without one the item has no link.
+ */
 export function linkOf(receipt: Receipt | null): string | null {
   const written = receipt?.written ?? [];
-  const document = written.find((w) => w.kind === 'document' && w.url !== null);
-  return (document ?? written.find((w) => w.url !== null))?.url ?? null;
+  return written.find((w) => w.kind === 'document' && w.url !== null)?.url ?? null;
+}
+
+/** How an item outcome reads in a job's events (worker `job.OUTCOME_LABELS`). */
+export const OUTCOME_LABELS: Record<ItemOutcome, string> = {
+  queued: 'queued',
+  decomposing: 'decomposing',
+  delivering: 'delivering',
+  created: 'created',
+  updated: 'updated',
+  already_loaded: 'already loaded',
+  duplicate: 'duplicate',
+  in_flight: 'in flight',
+  changed_in_target: 'changed in target',
+  read_back_mismatch: 'read-back mismatch',
+  unresolved: 'unresolved',
+  failed: 'failed',
+};
+
+/** An outcome and its detail as one event message, e.g. `changed in target: …`. */
+export function describeOutcome(outcome: ItemOutcome, detail: string | null): string {
+  return detail ? `${OUTCOME_LABELS[outcome]}: ${detail}` : OUTCOME_LABELS[outcome];
 }
 
 /**

@@ -72,7 +72,7 @@ import {
   type RegisterEntry,
   type ItemSettlement,
   type RegisterSettlement,
-  UNSETTLED_ITEM,
+  SETTLEABLE_ITEM,
   type EventFilter,
 } from './types.js';
 
@@ -1102,7 +1102,7 @@ export class MemoryRepo implements IngestionRepo {
   async applyDeliveryUpdate(
     deliveryId: string,
     update: DeliveryUpdate,
-    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+    finish: (deliveries: JobDelivery[], job: { task: string }) => JobFinish | null,
   ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }> {
     const d = this.deliveries.get(deliveryId);
     if (!d) return { outcome: 'unknown', finished: null };
@@ -1116,10 +1116,11 @@ export class MemoryRepo implements IngestionRepo {
       lastSequence: update.sequence,
       updatedAt: new Date().toISOString(),
     });
-    const finishedAs = finish(await this.deliveriesOf(d.jobId));
-    if (!finishedAs) return { outcome: 'applied', finished: null };
     const job = this.jobs.get(d.jobId);
     const background = this.backgroundJobs.find((j) => j.id === d.jobId);
+    const task = background?.task ?? job?.task ?? 'process';
+    const finishedAs = finish(await this.deliveriesOf(d.jobId), { task });
+    if (!finishedAs) return { outcome: 'applied', finished: null };
     const outcome = background ? backgroundFinish(finishedAs) : finishedAs;
     const status = job?.status ?? background?.status;
     if (status !== 'delivering') return { outcome: 'applied', finished: null };
@@ -1248,7 +1249,7 @@ export class MemoryRepo implements IngestionRepo {
       (i) =>
         i.batchId === e.batchId &&
         i.sourceKey === e.sourceKey &&
-        UNSETTLED_ITEM.includes(i.outcome),
+        SETTLEABLE_ITEM.includes(i.outcome),
     );
     if (mine) Object.assign(mine, { ...settled, registerEntryId: e.id });
     const now = new Date().toISOString();
@@ -1304,6 +1305,14 @@ export class MemoryRepo implements IngestionRepo {
     return [...this.conversionItems.values()]
       .filter((i) => i.batchId === batchId)
       .map((i) => ({ ...i }));
+  }
+
+  async itemByDelivery(deliveryId: string): Promise<Item | null> {
+    const jobId = this.deliveries.get(deliveryId)?.jobId;
+    const item = jobId
+      ? [...this.conversionItems.values()].find((i) => i.jobId === jobId)
+      : undefined;
+    return item ? structuredClone(item) : null;
   }
 
   async getItem(id: string): Promise<Item | null> {

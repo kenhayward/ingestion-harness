@@ -239,6 +239,25 @@ def _force_token(batch_id: str | None) -> str:
     return f"{batch_id}:{token}" if batch_id else token
 
 
+_RESUMED = "resumed: an earlier run of this batch handed it to the bridge"
+
+
+def _own_pending(
+    by_key: RegisterEntry | None, batch_id: str | None, sha: str
+) -> RegisterEntry | None:
+    """The source's pending entry when this batch's own earlier run wrote it (the same item: a
+    source key is unique in a batch), for the same content: never in flight against itself."""
+    if (
+        by_key is None
+        or batch_id is None
+        or by_key.state != "pending"
+        or by_key.batch_id != batch_id
+        or by_key.content_sha256 != sha
+    ):
+        return None
+    return by_key
+
+
 def _refused(decision: Decision) -> DeliveryOutcome:
     assert decision.outcome is not None
     entry_id = decision.entry.id if decision.entry is not None else None
@@ -270,6 +289,10 @@ def deliver_decomposition(
     only then may a later run create under a new key. Either way the outcome is `failed`. Every
     forced run gets a new idempotency key, except one that must reuse the entry's stored key.
 
+    A pending entry this batch's own earlier run wrote (the worker stopped mid-way) is resumed,
+    never reported in flight: its recorded delivery is returned, or, when none was recorded, the
+    document is handed over again under the entry's stored key.
+
     `decomposed`: `data`'s decomposition when the caller made it already (the `decompose` job,
     which writes its report first), so nothing is rendered twice.
     """
@@ -286,12 +309,19 @@ def deliver_decomposition(
     sink_id, instance_id = deps.target_lookup(target_id)
 
     with deps.register.transaction() as tx:
-        decision = decide(
-            tx.by_key(sink_id, instance_id, source_key),
-            tx.by_hash(sink_id, instance_id, sha),
-            sha,
-            force,
-        )
+        by_key = tx.by_key(sink_id, instance_id, source_key)
+        own = _own_pending(by_key, batch_id, sha)
+        if own is not None and own.delivery_id is not None:
+            # This batch's own earlier run handed it over (the worker stopped before recording
+            # it): wait for that delivery.
+            outcome: Outcome = "updated" if own.persistent_id else "created"
+            return DeliveryOutcome(outcome, own.delivery_id, own.id, _RESUMED)
+        if own is not None:
+            # The bridge may have taken it before `set_delivery` committed: hand it over again
+            # under the stored key, which the sink answers with the same document.
+            decision = Decision(None, own.persistent_id is None, own, _RESUMED, own.idempotency_key)
+        else:
+            decision = decide(by_key, tx.by_hash(sink_id, instance_id, sha), sha, force)
         if decision.outcome is not None:
             return _refused(decision)
         update: Update | None = None

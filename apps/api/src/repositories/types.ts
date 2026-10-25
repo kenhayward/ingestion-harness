@@ -47,7 +47,13 @@ export interface JobDelivery {
 
 /** How a delivering job ends once every delivery is final. */
 export type JobFinish =
-  | { status: 'succeeded'; targets: string[] }
+  | {
+      status: 'succeeded';
+      targets: string[];
+      /** The finish event's message (default `delivered`): a `decompose` job names its
+       * item's outcome. */
+      message?: string;
+    }
   | {
       status: 'awaiting_review';
       reasons: string[];
@@ -115,8 +121,17 @@ export interface ItemSettlement {
   link: string | null;
 }
 
-/** The item outcomes a register settlement may still move: nothing final decided yet. */
-export const UNSETTLED_ITEM: readonly ItemOutcome[] = ['queued', 'decomposing', 'delivering'];
+/**
+ * The item outcomes a register settlement may move: nothing final decided yet, or `failed`,
+ * which the worker's last attempt may write after the bridge took the document. The entry is
+ * pending for this very delivery, so the delivery's own outcome replaces that failure.
+ */
+export const SETTLEABLE_ITEM: readonly ItemOutcome[] = [
+  'queued',
+  'decomposing',
+  'delivering',
+  'failed',
+];
 
 /** The job event a finished delivery writes. */
 /**
@@ -129,7 +144,11 @@ export function backgroundFinish(f: JobFinish): JobFinish {
 
 export function finishEvent(f: JobFinish): { level: string; message: string; data: unknown } {
   if (f.status === 'succeeded') {
-    return { level: 'info', message: DELIVERED_EVENT, data: { targets: f.targets } };
+    return {
+      level: 'info',
+      message: f.message ?? DELIVERED_EVENT,
+      data: { targets: f.targets },
+    };
   }
   if (f.status === 'awaiting_review') {
     return { level: 'warn', message: 'delivery needs review', data: { reasons: f.reasons } };
@@ -614,7 +633,7 @@ export interface IngestionRepo extends ConversionRepo {
   applyDeliveryUpdate(
     deliveryId: string,
     update: DeliveryUpdate,
-    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+    finish: (deliveries: JobDelivery[], job: { task: string }) => JobFinish | null,
   ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }>;
   deliveriesOf(jobId: string): Promise<JobDelivery[]>;
   /** Deliveries not final and not updated for `olderThanMinutes`, of jobs still delivering. */
@@ -640,8 +659,8 @@ export interface IngestionRepo extends ConversionRepo {
    * Settles the register entry of this delivery while it is `pending` (else `stale`: a settled
    * entry is moved only by the worker's next delivery; `unknown` when no entry has this delivery).
    * In the same transaction, the conversion item that made the delivery (the entry's batch and
-   * source key) takes `item(entry as it was)` and is linked to the entry, while it is still
-   * `queued`, `decomposing` or `delivering`: whether or not the worker recorded it delivering yet.
+   * source key) takes `item(entry as it was)` and is linked to the entry, while its outcome is
+   * in `SETTLEABLE_ITEM`: whether or not the worker recorded it delivering yet.
    */
   settleRegisterEntry(
     deliveryId: string,

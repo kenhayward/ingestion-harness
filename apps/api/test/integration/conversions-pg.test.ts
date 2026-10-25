@@ -225,7 +225,7 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     const jobStatus = async () =>
       (await p.query<{ status: string }>('SELECT status FROM jobs WHERE id = $1', [jobId])).rows[0]
         ?.status;
-    return { repo, p, deps, event, itemId, entryId: entry.rows[0]!.id, jobStatus };
+    return { repo, p, deps, event, itemId, jobId, entryId: entry.rows[0]!.id, jobStatus };
   }
 
   it('settles the item from its delivery, before the worker recorded it delivering', async () => {
@@ -255,6 +255,39 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       detail: 'the document changed in the target',
     });
     expect(await t.jobStatus()).toBe('succeeded');
+    const { rows } = await t.p.query<{ message: string }>(
+      `SELECT message FROM job_events WHERE job_id = $1 ORDER BY id DESC LIMIT 1`,
+      [t.jobId],
+    );
+    expect(rows[0]?.message).toBe('changed in target: the document changed in the target');
+  });
+
+  it('settles an entry whose batch id is not a batch (a command-line delivery)', async () => {
+    const { repo, p } = await make();
+    const deliveryId = randomUUID();
+    const sinkId = `sink-${randomUUID()}`;
+    await p.query(
+      `INSERT INTO decomposition_register
+         (sink_id, instance_id, source_key, content_sha256, state, idempotency_key, delivery_id,
+          batch_id)
+       VALUES ($1, NULL, 'r1.docx', $2, 'pending', $3, $4, 'cli-batch')`,
+      [sinkId, 'a'.repeat(64), 'k'.repeat(64), deliveryId],
+    );
+    onTestFinished(async () => {
+      await p.query('DELETE FROM decomposition_register WHERE sink_id = $1', [sinkId]);
+    });
+    const deps = { repo, targets: new MemoryPublishTargetRepo() };
+    const final: BridgeEvent = {
+      eventId: randomUUID(),
+      deliveryId,
+      sequence: 1,
+      status: 'failed',
+      error: bridgeError('internal', 'x'),
+      receipt: null,
+      at: new Date().toISOString(),
+    };
+    expect(await applyEvent(deps, final)).toBe('applied');
+    expect((await repo.registerEntryByDelivery(deliveryId))?.state).toBe('failed');
   });
 
   it('refuses a NUL in a source key or a file name before Postgres sees it', async () => {

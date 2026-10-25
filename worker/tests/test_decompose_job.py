@@ -14,9 +14,10 @@ import ingest_worker.decompose as decompose_module
 from ingest_worker.bridge.models import ActingUser
 from ingest_worker.decompose import DecompositionFailed
 from ingest_worker.decompose.deliver import DeliverDeps
-from ingest_worker.decompose.items import ConversionItem, MemoryItemStore
+from ingest_worker.decompose.items import ConversionItem, ItemOutcome, MemoryItemStore
 from ingest_worker.decompose.job import DecomposeDeps, DecompositionStores, run_decompose
 from ingest_worker.decompose.register import MemoryRegisterStore
+from ingest_worker.errors import DocumentError
 from ingest_worker.main import TASKS
 from ingest_worker.outcomes import Complete, Delivering
 from ingest_worker.pipeline import Buckets, JobCancelled, PipelineDeps
@@ -160,7 +161,8 @@ def test_a_repeat_is_already_loaded() -> None:
     assert (item.outcome, item.register_entry_id) == ("already_loaded", entry.id)
     assert item.detail is not None and "DOC-1" in item.detail
     assert len(world.bridge.requests) == 1
-    assert world.messages(again)[-1] == "already_loaded"
+    # The job's last event names the outcome.
+    assert world.messages(again)[-1] == "already loaded: already loaded as DOC-1"
 
 
 def test_same_bytes_under_another_key_is_duplicate_naming_the_first() -> None:
@@ -182,6 +184,7 @@ def test_same_bytes_under_another_key_is_duplicate_naming_the_first() -> None:
     # The item is not linked to the other source's entry.
     assert item.register_entry_id is None
     assert len(world.bridge.requests) == 1
+    assert world.messages(copy)[-1] == f"duplicate: {item.detail}"
 
 
 def test_a_fidelity_failure_fails_the_item_with_the_check(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -200,7 +203,7 @@ def test_a_fidelity_failure_fails_the_item_with_the_check(monkeypatch: pytest.Mo
     assert item.detail == "decomposition failed at sec-beta: text differs at unit 4: 'Three.'"
     assert item.report_key is None
     assert world.bridge.requests == [] and world.register.entries() == []
-    assert world.messages(job) == ["decomposing", "failed"]
+    assert world.messages(job) == ["decomposing", f"failed: {item.detail}"]
 
 
 def test_an_unreadable_file_fails_its_own_item() -> None:
@@ -253,6 +256,113 @@ def test_a_retry_after_the_hand_off_resumes_its_own_delivery() -> None:
         entry.id,
     )
     assert len(world.bridge.requests) == 1
+
+
+def test_a_crash_before_the_delivery_was_recorded_resumes_it_under_its_key() -> None:
+    """The worker stopped after the bridge accepted the document but before `set_delivery`
+    committed: the entry is this batch's own, pending, with no delivery. The retry hands it to
+    the bridge again under the entry's stored key (the sink answers with the same document),
+    and never reports its own delivery as in flight."""
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    run_decompose(job, world.deps())
+    [entry] = world.register.entries()
+    with world.register.transaction() as tx:
+        tx.rows[entry.id] = replace(entry, delivery_id=None)  # type: ignore[attr-defined]
+    item = world.item(job)
+    world.items.items[item.id] = replace(item, outcome="decomposing", register_entry_id=None)
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Delivering([], [(TARGET, "d2")], note="handed r1.docx to the bridge")
+    first, second = world.bridge.requests
+    assert second.package.idempotency_key == first.package.idempotency_key
+    assert (world.item(job).outcome, world.item(job).register_entry_id) == (
+        "delivering",
+        entry.id,
+    )
+    [resumed] = world.register.entries()
+    assert (resumed.state, resumed.delivery_id) == ("pending", "d2")
+
+
+def test_a_retry_of_an_item_already_delivering_waits_for_its_delivery() -> None:
+    """The worker recorded the item delivering, then stopped before the job did: the retry
+    waits for that delivery rather than finishing the job before any outcome exists."""
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    run_decompose(job, world.deps())
+
+    outcome = run_decompose(job, world.deps())
+
+    assert outcome == Delivering([], [(TARGET, "d1")], note="handed r1.docx to the bridge")
+    assert world.item(job).outcome == "delivering"
+    assert len(world.bridge.requests) == 1
+
+
+def test_an_item_settled_before_the_worker_records_it_ends_the_job() -> None:
+    """The bridge's event settled the item before the worker's `delivering` write: the job has
+    nothing left to wait for."""
+
+    class SettledFirst(MemoryItemStore):
+        def decide(
+            self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None
+        ) -> bool:
+            if outcome == "delivering":
+                self.items[item_id] = replace(self.items[item_id], outcome="created")
+            return super().decide(item_id, outcome, detail, entry_id)
+
+    world = World()
+    world.items = SettledFirst()
+    job = world.upload(report_docx(), "r1.docx")
+
+    outcome = run_decompose(job, world.deps())
+
+    assert isinstance(outcome, Complete)
+    assert world.item(job).outcome == "created"
+
+
+def test_invalid_params_fail_the_item_with_the_reason() -> None:
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    assert job.params is not None
+    broken = replace(job, params={**job.params, "force": "sometimes"})
+
+    outcome = run_decompose(broken, world.deps())
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed"
+    assert item.detail is not None and item.detail.startswith("invalid decompose parameters")
+    assert world.bridge.requests == []
+
+
+def test_params_too_broken_to_find_the_item_go_to_review() -> None:
+    world = World()
+    job = replace(world.upload(report_docx(), "r1.docx"), params={"itemId": 7})
+
+    with pytest.raises(DocumentError):
+        run_decompose(job, world.deps())
+
+
+def test_a_source_key_unlike_the_items_fails_the_item() -> None:
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    assert job.params is not None
+    other = replace(job, params={**job.params, "sourceKey": "elsewhere.docx"})
+
+    outcome = run_decompose(other, world.deps())
+
+    assert isinstance(outcome, Complete)
+    item = world.item(job)
+    assert item.outcome == "failed" and item.detail is not None
+    assert "elsewhere.docx" in item.detail and "r1.docx" in item.detail
+    assert world.bridge.requests == []
+
+
+def test_the_memory_store_ignores_a_missing_item_like_postgres() -> None:
+    items = MemoryItemStore()
+    items.set_report("nope", "k")
+    assert items.decide("nope", "failed", "x", None) is False
 
 
 def test_writes_the_report_beside_the_source() -> None:

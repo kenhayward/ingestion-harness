@@ -20,6 +20,8 @@ export interface ConversionRepo {
   /** The batch's items, in upload order. */
   listItems(batchId: string): Promise<Item[]>;
   getItem(id: string): Promise<Item | null>;
+  /** The item whose `decompose` job made this delivery (by the job, not the register). */
+  itemByDelivery(deliveryId: string): Promise<Item | null>;
   /** Adds an item to an open batch; its source key must be new in the batch. */
   addItem(item: NewItem): Promise<AddItemResult>;
   /**
