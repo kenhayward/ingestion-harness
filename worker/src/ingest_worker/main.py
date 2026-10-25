@@ -203,6 +203,12 @@ def handle_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Ou
     return Delivering([], deliveries, note=f"handed {len(deliveries)} deliveries to the bridge")
 
 
+def handle_decompose(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
+    """Placeholder until the decompose task lands (phase 3): no route queues one yet, and a
+    stray job must fail loudly rather than run as a `process` job."""
+    raise NotImplementedError("the decompose task is not implemented yet")
+
+
 def handle_rebuild(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
     """Rebuild, backfill or re-mint the triple store; the bridge's events finish the job."""
     lines, deliveries = run_rebuild_job(job, deps, queue)
@@ -244,6 +250,7 @@ TASKS: dict[str, TaskHandler] = {
     "withdraw": _completes(run_withdraw, lambda w: "withdrew {} objects, {} graphs".format(*w)),
     "republish": handle_republish,
     "rebuild": handle_rebuild,
+    "decompose": handle_decompose,
     "ontology": _completes(run_ontology_import, lambda p: f"indexed {len(p.terms)} ontology terms"),
 }
 

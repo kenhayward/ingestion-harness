@@ -1,0 +1,78 @@
+import { z } from 'zod';
+import { TargetIdSchema } from './publish-targets.js';
+
+/**
+ * Decomposition batches (phase 3, migration 202610251200): a person uploads Word files or a
+ * folder and delivers them as decomposed documents. Each file is an item; a `decompose` job
+ * converts and delivers it (worker `decompose`). The outcome is the worker's `DeliveryOutcome`.
+ */
+export const ITEM_OUTCOMES = [
+  'queued',
+  'decomposing',
+  'delivering',
+  'created',
+  'updated',
+  'already_loaded',
+  'duplicate',
+  'in_flight',
+  'changed_in_target',
+  'read_back_mismatch',
+  'unresolved',
+  'failed',
+] as const;
+export const ItemOutcomeSchema = z.enum(ITEM_OUTCOMES);
+export type ItemOutcome = z.infer<typeof ItemOutcomeSchema>;
+
+export const BATCH_STATES = ['open', 'started', 'discarded'] as const;
+export const BatchStateSchema = z.enum(BATCH_STATES);
+export type BatchState = z.infer<typeof BatchStateSchema>;
+
+/** Who started a batch: the acting-user snapshot (null parts without access control). */
+export const BatchCreatorSchema = z
+  .object({ id: z.string().nullable(), name: z.string().nullable() })
+  .strict();
+
+export const BatchSchema = z
+  .object({
+    id: z.string().uuid(),
+    targetId: TargetIdSchema,
+    createdBy: BatchCreatorSchema,
+    state: BatchStateSchema,
+    force: z.boolean(),
+    createdAt: z.string(),
+    startedAt: z.string().nullable(),
+  })
+  .strict();
+export type Batch = z.infer<typeof BatchSchema>;
+
+export const ItemSchema = z
+  .object({
+    id: z.string().uuid(),
+    batchId: z.string().uuid(),
+    sourceKey: z.string().min(1),
+    filename: z.string().min(1),
+    contentSha256: z.string().min(1),
+    sizeBytes: z.number().int().nonnegative(),
+    objectKey: z.string().min(1),
+    jobId: z.string().uuid().nullable(),
+    outcome: ItemOutcomeSchema,
+    detail: z.string().nullable(),
+    registerEntryId: z.string().uuid().nullable(),
+    reportKey: z.string().nullable(),
+    link: z.string().nullable(),
+    redeliverOf: z.string().uuid().nullable(),
+  })
+  .strict();
+export type Item = z.infer<typeof ItemSchema>;
+
+/** A `decompose` job's params (worker `decompose.DecomposeParams`). */
+export const DecomposeParamsSchema = z
+  .object({
+    batchId: z.string().uuid(),
+    itemId: z.string().uuid(),
+    targetId: TargetIdSchema,
+    sourceKey: z.string().min(1),
+    force: z.boolean(),
+  })
+  .strict();
+export type DecomposeParams = z.infer<typeof DecomposeParamsSchema>;

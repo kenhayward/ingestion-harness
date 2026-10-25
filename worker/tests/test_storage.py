@@ -48,3 +48,10 @@ def test_export_key_mirrors_the_typescript_helper() -> None:
     from ingest_worker.storage import export_key
 
     assert export_key("letter", "j1") == "exports/letter/j1.zip"
+
+
+def test_decomposition_keys_mirror_the_typescript_helpers() -> None:
+    from ingest_worker.storage import decomposition_report_key, decomposition_source_key
+
+    assert decomposition_source_key("b1", "i1", "docx") == "decompositions/b1/i1.docx"
+    assert decomposition_report_key("b1", "i1") == "decompositions/b1/i1.report.json"
