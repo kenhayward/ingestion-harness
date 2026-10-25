@@ -71,7 +71,9 @@ import {
   type JobFinish,
   type EventFilter,
   type RegisterEntry,
+  type ItemSettlement,
   type RegisterSettlement,
+  UNSETTLED_ITEM,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -2015,30 +2017,60 @@ export class PgRepo implements IngestionRepo {
   async settleRegisterEntry(
     deliveryId: string,
     s: RegisterSettlement,
+    item: (before: RegisterEntry) => ItemSettlement,
   ): Promise<'applied' | 'stale' | 'unknown'> {
-    // One statement, and only a pending entry moves. It does not wait for the worker's
-    // `set_delivery`: an event before that commits matches no row and is answered 409 (unknown),
-    // and the bridge's resend or the reconcile settles it.
-    const { rowCount } = await this.pool.query(
-      `UPDATE decomposition_register
-          SET state = $2,
-              persistent_id = COALESCE($3, persistent_id),
-              last_receipt = COALESCE($4::jsonb, last_receipt),
-              last_error = $5::jsonb,
-              delivered_at = CASE WHEN $6::boolean THEN now() ELSE delivered_at END,
-              updated_at = now()
-        WHERE delivery_id = $1 AND state = 'pending'`,
-      [
-        deliveryId,
-        s.state,
-        s.persistentId,
-        s.receipt === null ? null : JSON.stringify(s.receipt),
-        s.error === null ? null : JSON.stringify(s.error),
-        s.delivered,
-      ],
-    );
-    if (rowCount) return 'applied';
-    return (await this.registerEntryByDelivery(deliveryId)) ? 'stale' : 'unknown';
+    // Only a pending entry moves. It does not wait for the worker's `set_delivery`: until that
+    // commits the row's delivery is not this one, so an event before it matches no row and is
+    // answered 409 (unknown), and the bridge's resend or the reconcile settles it.
+    return this.inTransaction(async (client) => {
+      const found = await client.query<RegisterRow>(
+        `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE delivery_id = $1
+           FOR UPDATE`,
+        [deliveryId],
+      );
+      const row = found.rows[0];
+      if (!row) return 'unknown';
+      if (row.state !== 'pending') return 'stale';
+      const before = toRegisterEntry(row);
+      await client.query(
+        `UPDATE decomposition_register
+            SET state = $2,
+                persistent_id = COALESCE($3, persistent_id),
+                last_receipt = COALESCE($4::jsonb, last_receipt),
+                last_error = $5::jsonb,
+                delivered_at = CASE WHEN $6::boolean THEN now() ELSE delivered_at END,
+                updated_at = now()
+          WHERE id = $1`,
+        [
+          before.id,
+          s.state,
+          s.persistentId,
+          s.receipt === null ? null : JSON.stringify(s.receipt),
+          s.error === null ? null : JSON.stringify(s.error),
+          s.delivered,
+        ],
+      );
+      if (before.batchId !== null) {
+        // The item that made this delivery: its batch and source key (unique in a batch), found
+        // whether or not the worker has recorded it delivering yet.
+        const settled = item(before);
+        await client.query(
+          `UPDATE decomposition_items
+              SET outcome = $3, detail = $4, link = $5, register_entry_id = $6::uuid
+            WHERE batch_id::text = $1 AND source_key = $2 AND outcome = ANY($7::text[])`,
+          [
+            before.batchId,
+            before.sourceKey,
+            settled.outcome,
+            settled.detail,
+            settled.link,
+            before.id,
+            UNSETTLED_ITEM,
+          ],
+        );
+      }
+      return 'applied';
+    });
   }
 }
 

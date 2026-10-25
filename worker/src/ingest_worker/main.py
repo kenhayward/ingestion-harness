@@ -20,6 +20,9 @@ from .bundle import run_export
 from .call_slots import PgCallSlots
 from .config import Settings
 from .convert import GotenbergConverter
+from .decompose.items import PgItemStore
+from .decompose.job import DecompositionStores, decompose_deps, run_decompose
+from .decompose.register import PgRegisterStore
 from .drafting import run_draft
 from .embeddings import run_embed
 from .graph_preview import run_graph_preview
@@ -108,9 +111,9 @@ def run_once(
     heartbeat_s: float = HEARTBEAT_S,
 ) -> bool:
     """Claim and run one job (any task: process, publish, rerun, prepare, segment, draft,
-    export, ontology, graph, suggest, embed, withdraw, republish or rebuild), beating its
-    heartbeat while it runs (heartbeat.py). Nothing is claimed while the queue is paused.
-    Returns False when the queue is empty."""
+    export, ontology, graph, suggest, embed, withdraw, republish, rebuild or decompose),
+    beating its heartbeat while it runs (heartbeat.py). Nothing is claimed while the queue is
+    paused. Returns False when the queue is empty."""
     job = queue.claim(worker_id)
     if job is None:
         return False
@@ -204,9 +207,9 @@ def handle_republish(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Ou
 
 
 def handle_decompose(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
-    """Placeholder until the decompose task lands (phase 3): no route queues one yet, and a
-    stray job must fail loudly rather than run as a `process` job."""
-    raise NotImplementedError("the decompose task is not implemented yet")
+    """Decompose and deliver one conversion batch item (decompose/job.py); a delivered one
+    waits for the bridge's events, which settle the item and finish the job."""
+    return run_decompose(job, decompose_deps(deps, queue))
 
 
 def handle_rebuild(job: ClaimedJob, deps: PipelineDeps, queue: JobQueue) -> Outcome:
@@ -488,6 +491,10 @@ class _Worker:
             delivered_jobs=PgRebuildSource(self.library),
             step_checkpointer=self.step_checkpointer,
             call_slots=self.call_slots,
+            decomposition=DecompositionStores(
+                register=PgRegisterStore.for_url(settings.database_url),
+                items=PgItemStore(self.library),
+            ),
             ontology_max_triples=settings.ontology_max_triples,
             ontology_fetch=(
                 functools.partial(

@@ -6,8 +6,10 @@
  */
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { bridgeError, type BridgeEvent } from '@ih/bridge-contract';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { applyEvent } from '../../src/bridge/events.js';
 import { migrate } from '../../src/db/migrate.js';
 import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
 import { PgRepo } from '../../src/repositories/pg.js';
@@ -152,6 +154,107 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       [started.jobIds[0]],
     );
     expect(rows[0]?.document_id).toBeNull();
+  });
+
+  /**
+   * A started one-item batch whose job handed the document to the bridge: the entry pending with
+   * its delivery, the job delivering with it, and the item still `decomposing` (the worker records
+   * `delivering` after the bridge answers, so the event may come first).
+   */
+  async function handedOff(over: { persistentId?: string | null } = {}) {
+    const { repo, p } = await make();
+    const inserted = await p.query(
+      `INSERT INTO publish_targets (id, label, kind, sink_id, connection_id, destination)
+       VALUES ('manuals', 'Manuals', 'sink', 'docs', 'manuals-keys', '{"space": "lib"}')
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    const batch = await repo.createBatch({
+      targetId: 'manuals',
+      force: false,
+      createdBy: { id: null, name: null },
+    });
+    const itemId = randomUUID();
+    await repo.addItem({
+      id: itemId,
+      batchId: batch.id,
+      sourceKey: 'reports/r1.docx',
+      filename: 'r1.docx',
+      contentSha256: 'a'.repeat(64),
+      sizeBytes: 1,
+      objectKey: `decompositions/${batch.id}/${itemId}.docx`,
+    });
+    const started = await repo.startBatch(batch.id, null);
+    if (!started.ok) throw new Error(started.reason);
+    const jobId = started.jobIds[0]!;
+    const deliveryId = randomUUID();
+    const sinkId = `sink-${randomUUID()}`;
+    const entry = await p.query<{ id: string }>(
+      `INSERT INTO decomposition_register
+         (sink_id, instance_id, source_key, content_sha256, persistent_id, state,
+          idempotency_key, delivery_id, batch_id)
+       VALUES ($1, 'tenant-1', 'reports/r1.docx', $2, $3, 'pending', $4, $5, $6)
+       RETURNING id::text`,
+      [sinkId, 'a'.repeat(64), over.persistentId ?? null, 'k'.repeat(64), deliveryId, batch.id],
+    );
+    onTestFinished(async () => {
+      await p.query('DELETE FROM job_deliveries WHERE delivery_id = $1', [deliveryId]);
+      await p.query('DELETE FROM decomposition_register WHERE sink_id = $1', [sinkId]);
+      if (inserted.rowCount) await p.query(`DELETE FROM publish_targets WHERE id = 'manuals'`);
+    });
+    await p.query(`UPDATE jobs SET status = 'delivering' WHERE id = $1`, [jobId]);
+    await p.query(`UPDATE decomposition_items SET outcome = 'decomposing' WHERE id = $1`, [itemId]);
+    await repo.recordDeliveries(jobId, [{ targetId: 'manuals', deliveryId }]);
+    const deps = { repo, targets: new MemoryPublishTargetRepo() };
+    const event = (o: Partial<BridgeEvent> = {}): BridgeEvent => ({
+      eventId: randomUUID(),
+      deliveryId,
+      sequence: 1,
+      status: 'succeeded',
+      error: null,
+      receipt: {
+        written: [{ kind: 'document', id: 'doc-1', label: null, url: 'https://docs.test/doc-1' }],
+        document: {
+          persistentId: 'doc-1',
+          components: [{ kind: 'section', element: 's1', id: 'c1', version: '1' }],
+          readBack: { ok: true, at: null, detail: null },
+        },
+      },
+      at: new Date().toISOString(),
+      ...o,
+    });
+    const jobStatus = async () =>
+      (await p.query<{ status: string }>('SELECT status FROM jobs WHERE id = $1', [jobId])).rows[0]
+        ?.status;
+    return { repo, p, deps, event, itemId, entryId: entry.rows[0]!.id, jobStatus };
+  }
+
+  it('settles the item from its delivery, before the worker recorded it delivering', async () => {
+    const t = await handedOff();
+    expect(await applyEvent(t.deps, t.event())).toBe('applied');
+    expect(await t.repo.getItem(t.itemId)).toMatchObject({
+      outcome: 'created',
+      link: 'https://docs.test/doc-1',
+      registerEntryId: t.entryId,
+      detail: 'document doc-1',
+    });
+    expect(await t.jobStatus()).toBe('succeeded');
+    // A repeated event changes nothing.
+    await applyEvent(t.deps, t.event({ sequence: 2 }));
+    expect((await t.repo.getItem(t.itemId))?.outcome).toBe('created');
+  });
+
+  it('settles a changed document as changed_in_target, and the job never awaits review', async () => {
+    const t = await handedOff({ persistentId: 'doc-1' });
+    await t.p.query(`UPDATE decomposition_items SET outcome = 'delivering' WHERE id = $1`, [
+      t.itemId,
+    ]);
+    const error = bridgeError('changed_in_target', 'the document changed in the target');
+    await applyEvent(t.deps, t.event({ status: 'needs_user', error, receipt: null }));
+    expect(await t.repo.getItem(t.itemId)).toMatchObject({
+      outcome: 'changed_in_target',
+      detail: 'the document changed in the target',
+    });
+    expect(await t.jobStatus()).toBe('succeeded');
   });
 
   it('refuses a NUL in a source key or a file name before Postgres sees it', async () => {

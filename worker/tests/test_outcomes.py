@@ -117,8 +117,3 @@ def test_a_cancel_before_delivery_delivers_nothing() -> None:
     with pytest.raises(JobCancelled):
         apply_outcome(JOB, Deliver([CSV], [CSV], [Target("b", "b", "")]), queue, deps(bridge))
     assert not bridge.requests and not queue.published and not queue.handed_over
-
-
-def test_a_decompose_job_fails_until_its_task_exists() -> None:
-    with pytest.raises(NotImplementedError):
-        TASKS["decompose"](JOB, deps(), FakeQueue())

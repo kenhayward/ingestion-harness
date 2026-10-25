@@ -70,7 +70,9 @@ import {
   type JobDelivery,
   type JobFinish,
   type RegisterEntry,
+  type ItemSettlement,
   type RegisterSettlement,
+  UNSETTLED_ITEM,
   type EventFilter,
 } from './types.js';
 
@@ -1236,10 +1238,19 @@ export class MemoryRepo implements IngestionRepo {
   async settleRegisterEntry(
     deliveryId: string,
     s: RegisterSettlement,
+    item: (before: RegisterEntry) => ItemSettlement,
   ): Promise<'applied' | 'stale' | 'unknown'> {
     const e = [...this.register.values()].find((r) => r.deliveryId === deliveryId);
     if (!e) return 'unknown';
     if (e.state !== 'pending') return 'stale';
+    const settled = item({ ...e });
+    const mine = [...this.conversionItems.values()].find(
+      (i) =>
+        i.batchId === e.batchId &&
+        i.sourceKey === e.sourceKey &&
+        UNSETTLED_ITEM.includes(i.outcome),
+    );
+    if (mine) Object.assign(mine, { ...settled, registerEntryId: e.id });
     const now = new Date().toISOString();
     Object.assign(e, {
       state: s.state,

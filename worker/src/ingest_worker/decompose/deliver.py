@@ -254,6 +254,7 @@ def deliver_decomposition(
     started_by: ActingUser,
     batch_id: str | None = None,
     force: bool = False,
+    decomposed: Decomposition | None = None,
 ) -> DeliveryOutcome:
     """Decompose `data` and deliver it to `target_id` as the register decides.
 
@@ -268,9 +269,14 @@ def deliver_decomposition(
     before acceptance unless the delivery reused a key an earlier one may have created under:
     only then may a later run create under a new key. Either way the outcome is `failed`. Every
     forced run gets a new idempotency key, except one that must reuse the entry's stored key.
+
+    `decomposed`: `data`'s decomposition when the caller made it already (the `decompose` job,
+    which writes its report first), so nothing is rendered twice.
     """
     try:
-        result = decompose_docx(data, renderer=deps.renderer)
+        result = (
+            decomposed if decomposed is not None else decompose_docx(data, renderer=deps.renderer)
+        )
     except DecompositionRejected as exc:
         return DeliveryOutcome("failed", None, None, f"rejected: {exc}")
     except DecompositionFailed as exc:

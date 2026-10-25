@@ -18,6 +18,7 @@ import type {
   StatusGroup,
   JobPage,
   JobPageQuery,
+  ItemOutcome,
 } from '@ih/shared';
 import type { BridgeError, DeliveryStatus, Receipt } from '@ih/bridge-contract';
 import type { ConversionRepo } from '../conversions/repo.js';
@@ -99,6 +100,23 @@ export interface RegisterSettlement {
   /** The document was delivered: `delivered_at` becomes now. */
   delivered: boolean;
 }
+
+/**
+ * How settling a register entry settles the conversion item that delivered it (phase 3): its
+ * outcome once the bridge's event is final, the detail shown on its row and its link in the
+ * target.
+ */
+export interface ItemSettlement {
+  outcome: Extract<
+    ItemOutcome,
+    'created' | 'updated' | 'changed_in_target' | 'read_back_mismatch' | 'failed'
+  >;
+  detail: string | null;
+  link: string | null;
+}
+
+/** The item outcomes a register settlement may still move: nothing final decided yet. */
+export const UNSETTLED_ITEM: readonly ItemOutcome[] = ['queued', 'decomposing', 'delivering'];
 
 /** The job event a finished delivery writes. */
 /**
@@ -621,10 +639,14 @@ export interface IngestionRepo extends ConversionRepo {
   /**
    * Settles the register entry of this delivery while it is `pending` (else `stale`: a settled
    * entry is moved only by the worker's next delivery; `unknown` when no entry has this delivery).
+   * In the same transaction, the conversion item that made the delivery (the entry's batch and
+   * source key) takes `item(entry as it was)` and is linked to the entry, while it is still
+   * `queued`, `decomposing` or `delivering`: whether or not the worker recorded it delivering yet.
    */
   settleRegisterEntry(
     deliveryId: string,
     settlement: RegisterSettlement,
+    item: (before: RegisterEntry) => ItemSettlement,
   ): Promise<'applied' | 'stale' | 'unknown'>;
 }
 

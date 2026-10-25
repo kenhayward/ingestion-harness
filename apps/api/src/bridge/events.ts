@@ -47,11 +47,24 @@ export function finishOf(
 }
 
 /**
+ * How a `decompose` job ends once its delivery is final (plan ruling R3): it succeeded, since an
+ * outcome was decided, whatever the delivery's status. The item records that outcome (refused,
+ * changed in the target, failed: `register.ts`), so the job never goes to review. Null while any
+ * delivery is still on its way.
+ */
+export function decompositionFinish(deliveries: JobDelivery[]): JobFinish | null {
+  if (deliveries.length === 0 || deliveries.some((d) => !FINAL_DELIVERY.has(d.status))) {
+    return null;
+  }
+  return { status: 'succeeded', targets: deliveries.map((d) => d.targetId) };
+}
+
+/**
  * Records one of the bridge's delivery events (signed, at least once, maybe out of order): only
  * an event newer than the delivery's last one, for a delivery not final yet, counts, and the job
  * finishes once, when its last
  * delivery is final and it is still delivering. A final event also settles the decomposition
- * register entry the delivery was made for (`register.ts`). `unknown`: no such delivery here yet
+ * register entry the delivery was made for, and its conversion item (`register.ts`). `unknown`: no such delivery here yet
  * (the worker may not have recorded it), so the bridge should send it again later.
  */
 export async function applyEvent(
@@ -59,10 +72,13 @@ export async function applyEvent(
   e: BridgeEvent,
 ): Promise<'applied' | 'stale' | 'unknown'> {
   const labels = new Map((await deps.targets.list()).map((t) => [t.id, t.label]));
+  // Only a decomposition is delivered through the register, and only a `decompose` job delivers
+  // one (R3: it never awaits review).
+  const decomposition = (await deps.repo.registerEntryByDelivery(e.deliveryId)) !== null;
   const { outcome } = await deps.repo.applyDeliveryUpdate(
     e.deliveryId,
     { status: e.status, error: e.error, receipt: e.receipt, sequence: e.sequence },
-    finishOf((id) => labels.get(id) ?? id),
+    decomposition ? decompositionFinish : finishOf((id) => labels.get(id) ?? id),
   );
   // A stale non-final event changes nothing anywhere. A final one still reaches the register,
   // whose pending-only settle makes a repeat harmless, so a resend heals a register write that
