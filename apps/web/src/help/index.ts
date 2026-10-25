@@ -30,6 +30,7 @@ export const HELP_INDEX: HelpEntry[] = [
     label: 'Results',
     children: [{ topic: 'result', label: 'A published result' }],
   },
+  { topic: 'conversion', label: 'Conversion' },
   {
     topic: 'templates',
     label: 'Document types',

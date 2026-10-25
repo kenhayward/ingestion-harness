@@ -7642,3 +7642,48 @@ button.evidence-chip[aria-expanded='true'] {
     border-radius: 0;
   }
 }
+
+/* The Conversion tab: a new batch (decomposition phase 3). */
+.new-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.new-batch > .field {
+  max-width: 420px;
+}
+.conversion-drop {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  cursor: default;
+}
+.conversion-drop .drop-text {
+  flex: 1 1 220px;
+}
+.conversion-choose {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.conversion-drop:has(input:focus-visible) {
+  outline: 2px solid var(--ih-accent);
+}
+.conversion-row-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.conversion-hint {
+  margin: -8px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.conversion-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.conversion-progress .meter {
+  flex: 1 1 auto;
+  max-width: 420px;
+}

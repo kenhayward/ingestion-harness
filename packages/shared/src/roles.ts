@@ -81,13 +81,17 @@ const OPERATOR_CALLS = new Set([
 export const operatorMayCall = (method: string, route: string) =>
   OPERATOR_CALLS.has(`${method} ${route}`);
 
-/** The web routes an operator may open; the rest (Document types, Ontologies, Workbench) are not. */
+/**
+ * The web routes an operator may open; the rest (Document types, Ontologies, Workbench) are not.
+ * Operators convert documents too (decomposition phase 3, ruling R1).
+ */
 const OPERATOR_PAGES = new Set([
   'home',
   'jobs',
   'review',
   'results',
   'result',
+  'conversion',
   'profile',
   'password',
 ]);

@@ -27,6 +27,7 @@ import { useJobs } from './shell/useJobs.js';
 import { TemplateEditor } from './templates/TemplateEditor.js';
 import { TemplatesPage } from './templates/TemplatesPage.js';
 import { ProjectPage } from './workbench/ProjectPage.js';
+import { ConversionPage } from './conversion/ConversionPage.js';
 import { WorkbenchPage } from './workbench/WorkbenchPage.js';
 import { Icon } from './ui/Icon.js';
 import { AboutDialog } from './about/AboutDialog.js';
@@ -328,7 +329,9 @@ function SignedInApp({
     page = (
       <section className="card not-for-operators">
         <h1>Not available to operators</h1>
-        <p>Operators upload documents, follow and review jobs, and read results.</p>
+        <p>
+          Operators upload documents, follow and review jobs, read results and convert documents.
+        </p>
         <a href="#/">Go to Home</a>
       </section>
     );
@@ -384,6 +387,14 @@ function SignedInApp({
         version={route.version}
         onNavigate={navigate}
         jobs={jobs}
+      />
+    );
+  } else if (route.name === 'conversion') {
+    page = (
+      <ConversionPage
+        key={route.batchId ?? ''}
+        api={api}
+        {...(route.batchId ? { batchId: route.batchId } : {})}
       />
     );
   } else if (route.name === 'workbench') {

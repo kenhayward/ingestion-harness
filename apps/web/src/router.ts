@@ -42,6 +42,8 @@ export type Route =
   | { name: 'result'; jobId: string }
   | { name: 'template'; templateId: string; version: number }
   | { name: 'workbench' }
+  /** The Conversion tab: a new batch, or one batch (`#/conversion/<batchId>`). */
+  | { name: 'conversion'; batchId?: string }
   /** `view`: a tab within the project tab (`#/workbench/<id>/survey/ontologies`). */
   | { name: 'project'; projectId: string; tab: ProjectTab; view?: string };
 
@@ -82,6 +84,12 @@ export function parseHash(hash: string): Route {
       ? { name: 'project', projectId, tab, view: project[3] }
       : { name: 'project', projectId, tab };
   }
+  const conversion = /^#\/conversion(?:\/([^/]+))?$/.exec(hash);
+  if (conversion) {
+    return conversion[1]
+      ? { name: 'conversion', batchId: decodeURIComponent(conversion[1]) }
+      : { name: 'conversion' };
+  }
   if (hash === '#/jobs') return { name: 'jobs' };
   const help = /^#\/help(?:\/([A-Za-z-]+))?$/.exec(hash);
   if (help) return help[1] ? { name: 'help', topic: help[1] } : { name: 'help' };
@@ -105,8 +113,9 @@ export function parseHash(hash: string): Route {
 /**
  * Minimal hash routing: #/ (home), #/upload (home, upload strip focused), #/jobs, #/jobs/<jobId>,
  * #/review/<jobId>, #/results, #/results/<jobId>, #/templates, #/templates/<id>/<version>,
- * #/ontologies, #/ontologies/<id>, #/workbench, #/workbench/<id>[/<tab>[/<view>]] (Overview by
- * default; a view is a tab within that tab, e.g. survey/ontologies).
+ * #/ontologies, #/ontologies/<id>, #/conversion, #/conversion/<batchId>, #/workbench,
+ * #/workbench/<id>[/<tab>[/<view>]] (Overview by default; a view is a tab within that tab, e.g.
+ * survey/ontologies).
  */
 export function useHashRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));

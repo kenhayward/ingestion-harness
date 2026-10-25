@@ -1,4 +1,12 @@
 import type {
+  AcceptPreview,
+  AcceptedTargetState,
+  Batch,
+  BatchDetail,
+  BatchSummary,
+  ConversionTarget,
+  CreateBatch,
+  Item as ConversionItem,
   RetriedRuns,
   StepAttempts,
   BackupView,
@@ -871,6 +879,36 @@ export interface Api {
   /** Preview anchors over the prepared samples; omit `document` to use the draft's. */
   startSegmentation(projectId: string, document?: SegmentDocument): Promise<SegmentationView>;
   getSegmentation(projectId: string, jobId: string): Promise<SegmentationView>;
+  /** The Conversion tab (phase 3): the targets that take documents (operators may read it). */
+  listConversionTargets(): Promise<ConversionTarget[]>;
+  /** An open batch for one target; files go up one per request, then it starts. */
+  createConversionBatch(body: CreateBatch): Promise<Batch>;
+  /** One Word document into an open batch, named by its source key; with progress. */
+  uploadConversionItem(
+    batchId: string,
+    file: File,
+    sourceKey: string,
+    onProgress?: (sent: number, total: number) => void,
+  ): Promise<ConversionItem>;
+  /** Closes the batch and queues a job per item. */
+  startConversionBatch(batchId: string): Promise<Batch>;
+  /** Throws away a batch that was never started, with its uploaded files. */
+  discardConversionBatch(batchId: string): Promise<void>;
+  /** The newest batches, newest first, with their items counted per outcome. */
+  listConversionBatches(): Promise<BatchSummary[]>;
+  getConversionBatch(batchId: string): Promise<BatchDetail>;
+  /** An item's decomposition report (its flags). */
+  getConversionReport(itemId: string): Promise<Record<string, unknown>>;
+  /** Delivers the item's stored file again as an explicit update: a new batch of one. */
+  forceConversionItem(itemId: string): Promise<BatchDetail>;
+  /** Updates the item's document, from the stored file or a replacement: a new batch of one. */
+  redeliverConversionItem(itemId: string, file?: File): Promise<BatchDetail>;
+  /** Forgets the item's document; it stays in the target untouched. */
+  detachConversionItem(itemId: string): Promise<ConversionItem>;
+  /** What accepting the target's state would record. */
+  previewAccept(itemId: string): Promise<AcceptPreview>;
+  /** Accepts the target's state as previewed (`seen`: the preview's `updatedAt`). */
+  acceptTargetState(itemId: string, seen: string): Promise<AcceptedTargetState>;
 }
 
 /** A user as listed to admins (ADR 0013; never a password). */
@@ -1817,6 +1855,60 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return apiFetch(`${base}/documents`, { method: 'POST', body: form }).then(json<JobSummary>);
     },
+    listConversionTargets: () =>
+      apiFetch(`${base}/conversions/targets`)
+        .then(json<{ targets: ConversionTarget[] }>)
+        .then((r) => r.targets),
+    createConversionBatch: (body) => post<Batch>(`${base}/conversions/batches`, body),
+    uploadConversionItem: (batchId, file, sourceKey, onProgress) => {
+      const form = new FormData();
+      form.append('sourceKey', sourceKey); // fields before the file part
+      form.append('file', file);
+      const url = `${base}/conversions/batches/${encodeURIComponent(batchId)}/items`;
+      // fetch cannot report upload progress; XMLHttpRequest can.
+      if (onProgress) return xhrPost<ConversionItem>(url, form, onProgress);
+      return apiFetch(url, { method: 'POST', body: form }).then(json<ConversionItem>);
+    },
+    startConversionBatch: (batchId) =>
+      post<Batch>(`${base}/conversions/batches/${encodeURIComponent(batchId)}/start`, {}),
+    discardConversionBatch: (batchId) =>
+      noContent(
+        apiFetch(`${base}/conversions/batches/${encodeURIComponent(batchId)}`, {
+          method: 'DELETE',
+        }),
+      ),
+    listConversionBatches: () =>
+      apiFetch(`${base}/conversions/batches`)
+        .then(json<{ batches: BatchSummary[] }>)
+        .then((r) => r.batches),
+    getConversionBatch: (batchId) =>
+      apiFetch(`${base}/conversions/batches/${encodeURIComponent(batchId)}`).then(
+        json<BatchDetail>,
+      ),
+    getConversionReport: (itemId) =>
+      apiFetch(`${base}/conversions/items/${encodeURIComponent(itemId)}/report`).then(
+        json<Record<string, unknown>>,
+      ),
+    forceConversionItem: (itemId) =>
+      post<BatchDetail>(`${base}/conversions/items/${encodeURIComponent(itemId)}/force`, {}),
+    redeliverConversionItem: (itemId, file) => {
+      const url = `${base}/conversions/items/${encodeURIComponent(itemId)}/redeliver`;
+      if (!file) return post<BatchDetail>(url, {});
+      const form = new FormData();
+      form.append('file', file);
+      return apiFetch(url, { method: 'POST', body: form }).then(json<BatchDetail>);
+    },
+    detachConversionItem: (itemId) =>
+      post<ConversionItem>(`${base}/conversions/items/${encodeURIComponent(itemId)}/detach`, {}),
+    previewAccept: (itemId) =>
+      apiFetch(`${base}/conversions/items/${encodeURIComponent(itemId)}/accept`).then(
+        json<AcceptPreview>,
+      ),
+    acceptTargetState: (itemId, seen) =>
+      post<AcceptedTargetState>(`${base}/conversions/items/${encodeURIComponent(itemId)}/accept`, {
+        confirm: true,
+        seen,
+      }),
   };
 }
 

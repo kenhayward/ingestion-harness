@@ -315,7 +315,7 @@ export function AppShell({
 }) {
   const search = useRef<HTMLInputElement>(null);
   const section = sectionOf(route);
-  /** Operators see Home, Jobs and Results only: no design pages, no API docs. */
+  /** Operators see Home, Jobs, Results and Conversion only: no design pages, no API docs. */
   const designs = me.role !== 'operator';
   const attention = attentionCount(jobs);
   const onInstall = useInstallAvailable(install) ? () => void install.install() : null;
@@ -438,6 +438,13 @@ export function AppShell({
             icon="results"
             label="Results"
             current={section === 'results'}
+            compact={compact}
+          />
+          <NavLink
+            href="#/conversion"
+            icon="swap"
+            label="Conversion"
+            current={section === 'conversion'}
             compact={compact}
           />
           {designs && (

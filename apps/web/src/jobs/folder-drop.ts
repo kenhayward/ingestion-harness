@@ -4,6 +4,8 @@ import { isSourceFile } from '../documents.js';
 export interface DroppedFolder {
   name: string;
   files: File[];
+  /** Each file's path in the drop, the folder's name first (`Invoices/2025/a.pdf`). */
+  paths: string[];
   skipped: number;
 }
 
@@ -60,7 +62,12 @@ async function readFolder(folder: FileSystemDirectoryEntry): Promise<DroppedFold
   await walk(folder);
   // Entries come in no particular order: list them by path, as a file manager would.
   found.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
-  return { name: folder.name, files: found.map((f) => f.file), skipped };
+  return {
+    name: folder.name,
+    files: found.map((f) => f.file),
+    paths: found.map((f) => f.path.replace(/^\//, '')),
+    skipped,
+  };
 }
 
 /** Every entry of a folder: browsers hand them over in batches until an empty one. */

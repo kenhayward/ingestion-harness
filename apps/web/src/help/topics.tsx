@@ -26,6 +26,7 @@ import { OutputsHelp } from './OutputsHelp.js';
 import { PipelineHelp } from './PipelineHelp.js';
 import { PublishedOutputsHelp } from './PublishedOutputsHelp.js';
 import { ConnectionsHelp } from './ConnectionsHelp.js';
+import { ConversionHelp } from './ConversionHelp.js';
 import { NamesHelp } from './NamesHelp.js';
 import { QualityHelp } from './QualityHelp.js';
 import { ResultHelp } from './ResultHelp.js';
@@ -67,6 +68,7 @@ export const HELP_TOPICS = {
   jobs: { title: 'Using the Jobs page', body: <JobsHelp /> },
   results: { title: 'Using the Results page', body: <ResultsHelp /> },
   result: { title: 'Reading a published result', body: <ResultHelp /> },
+  conversion: { title: 'Converting Word documents', body: <ConversionHelp /> },
   templates: { title: 'Using the Document types page', body: <TemplatesHelp /> },
   workbench: { title: 'Using the Workbench', body: <WorkbenchHelp /> },
   wbOverview: { title: 'The project overview', body: <WbOverviewHelp /> },

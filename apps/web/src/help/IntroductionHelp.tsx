@@ -57,8 +57,8 @@ export function IntroductionHelp() {
       <h3>Who does what</h3>
       <ul>
         <li>
-          <strong>Operators</strong> upload documents, follow and review jobs, and use the results:
-          Home, Jobs and Results.
+          <strong>Operators</strong> upload documents, follow and review jobs, use the results and
+          convert Word documents for a target: Home, Jobs, Results and Conversion.
         </li>
         <li>
           <strong>Recipe designers</strong> build and improve document types: the Workbench (from

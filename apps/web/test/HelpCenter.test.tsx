@@ -131,8 +131,8 @@ describe('HelpCenter', () => {
     await userEvent.keyboard('{ArrowDown}');
     expect(within(menu).getByRole('button', { name: 'A published result' })).toHaveFocus();
     await userEvent.keyboard('{ArrowDown}');
-    // The next main topic: its list opens and the Results list closes.
-    expect(within(menu).getByRole('button', { name: 'Document types' })).toHaveFocus();
+    // The next main topic: it opens and the Results list closes.
+    expect(within(menu).getByRole('button', { name: 'Conversion' })).toHaveFocus();
     expect(within(menu).queryByRole('button', { name: 'A published result' })).toBeNull();
   });
 
