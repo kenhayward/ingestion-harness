@@ -6,13 +6,18 @@ import {
   BatchSummarySchema,
   ConversionTargetSchema,
   CreateBatchSchema,
+  decompositionReportKey,
   decompositionSourceKey,
   DOCX_MIME,
+  hasControlCharacter,
   ItemSchema,
+  MAX_SOURCE_KEY,
+  sourceKeyProblem,
+  type Batch,
 } from '@ih/shared';
 import { z } from 'zod';
 import { creatorOf } from '../access/routes.js';
-import { batchCreator } from '../conversions/repo.js';
+import { batchCreator, type AddItemResult } from '../conversions/repo.js';
 import { ErrorBody, error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { checkSource, multipartField, TRACKED_CHANGES } from '../uploads.js';
 
@@ -20,9 +25,16 @@ import { checkSource, multipartField, TRACKED_CHANGES } from '../uploads.js';
 export const NOT_A_WORD_DOCUMENT = 'file is not a Word document (.docx)';
 const NO_DOCUMENTS = 'the target takes no documents';
 const NOT_OPEN = 'the batch is not open: it was started or discarded';
+/** Why a batch is not open, from its state (the generic reason when it is unknown). */
+const notOpen = (batch: Batch | null) =>
+  batch?.state === 'started'
+    ? 'the batch was already started'
+    : batch?.state === 'discarded'
+      ? 'the batch was discarded'
+      : NOT_OPEN;
 /** The most batches `GET /api/conversions/batches` lists. */
 const LISTED_BATCHES = 100;
-const MAX_SOURCE_KEY = 1024;
+const BAD_FILENAME = 'the file name holds a control character';
 
 const UUID = z.string().uuid();
 const BatchParams = z.object({ id: z.string().uuid().describe('The batch id.') });
@@ -128,7 +140,11 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           One Word document (\`.docx\`) per request, so a large folder never meets the upload
           limit in one go. \`sourceKey\` names the document: the file's path in its folder, or
           its name. It must be new in the batch: the same source key twice is refused (409).
-          Send it **before** the file part.
+          Send it **before** the file part. A source key is relative and \`/\`-separated
+          (at most ${MAX_SOURCE_KEY} characters; no control characters, backslashes, empty,
+          \`.\` or \`..\` parts, or \`/\` at either end) and is stored in its NFC form.
+          Another is refused (422 \`bad_source_key\`), as is a file name with a control
+          character (422 \`bad_filename\`).
 
           The file's bytes decide what it is, never its name. A file that isn't a Word document
           (a PDF, a \`.doc\`, a damaged file) is refused (415) and one with tracked changes
@@ -147,15 +163,17 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         ),
         response: {
           201: res('The item.', ItemSchema),
-          400: error('A missing `file` part or `sourceKey`.'),
+          400: error('A missing `file` part (the part must be named `file`) or `sourceKey`.'),
           404: NOT_FOUND,
           406: error('The request is not `multipart/form-data`.'),
           409: error('The batch is not open, or the source key is already in it.'),
           413: error('The file is larger than the upload limit.'),
           415: error(`\`${NOT_A_WORD_DOCUMENT}\`.`),
-          422: error(
-            `\`${TRACKED_CHANGES}\`, or \`the Word document is too large to check (over 64 MiB ` +
-              'unpacked)`.',
+          422: res(
+            `\`${TRACKED_CHANGES}\`, \`the Word document is too large to check (over 64 MiB ` +
+              'unpacked)`, a source key the rule refuses (`code: bad_source_key`) or a file ' +
+              'name with a control character (`code: bad_filename`).',
+            ErrorBody.extend({ code: z.enum(['bad_source_key', 'bad_filename']).optional() }),
           ),
         },
       },
@@ -165,15 +183,19 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const batchId = req.params.id;
       const batch = UUID.safeParse(batchId).success ? await repo.getBatch(batchId) : null;
       if (!batch) return reply.code(404).send({ error: 'not found' });
-      if (batch.state !== 'open') return reply.code(409).send({ error: NOT_OPEN });
+      if (batch.state !== 'open') return reply.code(409).send({ error: notOpen(batch) });
 
       const file = await req.file({ limits: { files: 1, fileSize: maxUploadBytes } });
-      if (!file) return reply.code(400).send({ error: 'file part is required' });
-      const sourceKey = multipartField(file, 'sourceKey');
-      if (!sourceKey || sourceKey.length > MAX_SOURCE_KEY) {
-        return reply
-          .code(400)
-          .send({ error: `sourceKey field is required (at most ${MAX_SOURCE_KEY} characters)` });
+      if (!file || file.fieldname !== 'file') {
+        return reply.code(400).send({ error: 'file part is required' });
+      }
+      const sent = multipartField(file, 'sourceKey');
+      if (sent === undefined) return reply.code(400).send({ error: 'sourceKey field is required' });
+      const problem = sourceKeyProblem(sent);
+      if (problem) return reply.code(422).send({ error: problem, code: 'bad_source_key' });
+      const sourceKey = sent.normalize('NFC');
+      if (hasControlCharacter(file.filename)) {
+        return reply.code(422).send({ error: BAD_FILENAME, code: 'bad_filename' });
       }
       const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
       const source = checkSource(body);
@@ -185,19 +207,28 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const id = randomUUID();
       const objectKey = decompositionSourceKey(batchId, id, 'docx');
       await store.put(buckets.runs, objectKey, body, DOCX_MIME);
-      const added = await repo.addItem({
-        id,
-        batchId,
-        sourceKey,
-        filename: file.filename,
-        contentSha256: createHash('sha256').update(body).digest('hex'),
-        sizeBytes: body.length,
-        objectKey,
-      });
+      // Whatever happens to the item (refused, or the database fails), no file is left behind.
+      let added: AddItemResult;
+      try {
+        added = await repo.addItem({
+          id,
+          batchId,
+          sourceKey,
+          filename: file.filename,
+          contentSha256: createHash('sha256').update(body).digest('hex'),
+          sizeBytes: body.length,
+          objectKey,
+        });
+      } catch (err) {
+        await store.delete(buckets.runs, objectKey);
+        throw err;
+      }
       if (added.ok) return reply.code(201).send(added.item);
       await store.delete(buckets.runs, objectKey);
       if (added.reason === 'missing') return reply.code(404).send({ error: 'not found' });
-      if (added.reason === 'not_open') return reply.code(409).send({ error: NOT_OPEN });
+      if (added.reason === 'not_open') {
+        return reply.code(409).send({ error: notOpen(await repo.getBatch(batchId)) });
+      }
       return reply.code(409).send({ error: `${sourceKey} is already in the batch` });
     },
   );
@@ -231,7 +262,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const started = await app.deps.repo.startBatch(req.params.id, creatorOf(req));
       if (started.ok) return started.batch;
       if (started.reason === 'missing') return reply.code(404).send({ error: 'not found' });
-      if (started.reason === 'not_open') return reply.code(409).send({ error: NOT_OPEN });
+      if (started.reason === 'not_open') {
+        const batch = await app.deps.repo.getBatch(req.params.id);
+        return reply.code(409).send({ error: notOpen(batch) });
+      }
       return reply.code(422).send({ error: 'the batch has no items', code: 'empty_batch' });
     },
   );
@@ -263,9 +297,18 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const discarded = await repo.discardBatch(req.params.id);
       if (!discarded.ok) {
         if (discarded.reason === 'missing') return reply.code(404).send({ error: 'not found' });
-        return reply.code(409).send({ error: NOT_OPEN });
+        return reply.code(409).send({ error: notOpen(await repo.getBatch(req.params.id)) });
       }
-      for (const key of discarded.objectKeys) await store.delete(buckets.runs, key);
+      // The batch is discarded already: one failed delete must not keep the others.
+      const deleted = await Promise.allSettled(
+        discarded.objectKeys.map((key) => store.delete(buckets.runs, key)),
+      );
+      deleted.forEach((d, i) => {
+        if (d.status === 'rejected') {
+          const key = discarded.objectKeys[i];
+          req.log.warn({ err: d.reason, key }, 'a discarded batch file was not deleted');
+        }
+      });
       return reply.code(204).send();
     },
   );
@@ -335,9 +378,19 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
     async (req, reply) => {
       const { repo, store, buckets } = app.deps;
       const item = UUID.safeParse(req.params.id).success ? await repo.getItem(req.params.id) : null;
-      const body = item?.reportKey ? await store.get(buckets.runs, item.reportKey) : null;
-      if (!body) return reply.code(404).send({ error: 'no report' });
-      return JSON.parse(body.toString('utf8')) as Record<string, unknown>;
+      // Only the item's own report key (as the worker names it) is ever read.
+      const key = item?.reportKey;
+      const own = item !== null && key === decompositionReportKey(item.batchId, item.id);
+      const body = own ? await store.get(buckets.runs, key) : null;
+      if (!item || !body) return reply.code(404).send({ error: 'no report' });
+      try {
+        const report: unknown = JSON.parse(body.toString('utf8'));
+        if (report && typeof report === 'object' && !Array.isArray(report)) return report;
+      } catch {
+        // Corrupt: answered as no report, below.
+      }
+      req.log.warn({ item: item.id }, 'a conversion report is not a JSON object');
+      return reply.code(404).send({ error: 'no report' });
     },
   );
 };

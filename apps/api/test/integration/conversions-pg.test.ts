@@ -10,7 +10,11 @@ import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 import { migrate } from '../../src/db/migrate.js';
 import { PgRepo } from '../../src/repositories/pg.js';
+import { DOCX_MIME } from '@ih/shared';
 import { conversionsContract } from '../conversions-contract.js';
+import { docx } from '../docx-fixtures.js';
+import { FAKE_DOCUMENT_SINK } from '../fake-sink.js';
+import { multipart, testApp } from '../helpers.js';
 
 const url = process.env.IH_TEST_DATABASE_URL;
 const migrations = fileURLToPath(new URL('../../../../db/migrations', import.meta.url));
@@ -47,9 +51,12 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             max_attempts: number;
             params: unknown;
             created_by: string | null;
-          }>('SELECT task, priority, max_attempts, params, created_by FROM jobs WHERE id = $1', [
-            id,
-          ]);
+            created_by_user: string | null;
+          }>(
+            `SELECT task, priority, max_attempts, params, created_by, created_by_user
+               FROM jobs WHERE id = $1`,
+            [id],
+          );
           const r = rows[0];
           return r
             ? {
@@ -58,6 +65,7 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
                 maxAttempts: r.max_attempts,
                 params: r.params,
                 createdBy: r.created_by,
+                createdByUser: r.created_by_user,
               }
             : null;
         },
@@ -131,5 +139,47 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       [started.jobIds[0]],
     );
     expect(rows[0]?.document_id).toBeNull();
+  });
+
+  it('refuses a NUL in a source key or a file name before Postgres sees it', async () => {
+    const { repo } = await make();
+    const c = await testApp({ repo });
+    c.bridge.sinkViews = [FAKE_DOCUMENT_SINK];
+    const target = await c.app.inject({
+      method: 'POST',
+      url: '/api/publish-targets',
+      payload: {
+        kind: 'sink',
+        label: 'Manuals',
+        sinkId: 'docs',
+        destination: { space: 'lib', name: '{source.stem}' },
+      },
+    });
+    expect(target.statusCode).toBe(201);
+    const batch = await c.app.inject({
+      method: 'POST',
+      url: '/api/conversions/batches',
+      payload: { targetId: 'manuals' },
+    });
+    const batchId = batch.json<{ id: string }>().id;
+    const upload = (sourceKey: string, filename: string) =>
+      c.app.inject({
+        method: 'POST',
+        url: `/api/conversions/batches/${batchId}/items`,
+        ...multipart({ sourceKey }, { filename, content: docx(), contentType: DOCX_MIME }),
+      });
+    const nul = String.fromCharCode(0);
+
+    const badKey = await upload(`a${nul}.docx`, 'a.docx');
+    expect(badKey.statusCode).toBe(422);
+    expect(badKey.json()).toMatchObject({ code: 'bad_source_key' });
+    const badName = await upload('a.docx', `a${nul}.docx`);
+    expect(badName.statusCode).toBe(422);
+    expect(badName.json()).toMatchObject({ code: 'bad_filename' });
+    expect([...c.store.objects.keys()].filter((k) => k.startsWith('runs/'))).toEqual([]);
+
+    const good = await upload('Manuals/a.docx', 'a.docx');
+    expect(good.statusCode).toBe(201);
+    expect(await repo.listItems(batchId)).toHaveLength(1);
   });
 });

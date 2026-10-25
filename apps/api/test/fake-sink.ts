@@ -35,3 +35,17 @@ export const FAKE_SINK: SinkView = {
   ],
   credentialFields: [{ id: 'token', label: 'Token', secret: true }],
 };
+
+/** A sink that takes decomposed documents (contract version 2), as the bridge's catalog lists it. */
+export const FAKE_DOCUMENT_SINK: SinkView = {
+  ...FAKE_SINK,
+  id: 'docs',
+  name: 'Document sink',
+  contractVersion: 2,
+  capabilities: {
+    ...FAKE_SINK.capabilities,
+    readBack: true,
+    accepts: ['document', 'images'],
+    decomposedDocuments: { equations: ['mathml'] },
+  },
+};

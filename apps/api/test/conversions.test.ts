@@ -1,4 +1,3 @@
-import type { SinkView } from '@ih/bridge-contract';
 import {
   BatchDetailSchema,
   BatchSchema,
@@ -9,11 +8,14 @@ import {
   ItemSchema,
 } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
+import type { NewItem } from '../src/conversions/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
+import { MemoryObjectStore } from '../src/storage/object-store.js';
 import { conversionsContract } from './conversions-contract.js';
 import { docx, para } from './docx-fixtures.js';
-import { FAKE_SINK } from './fake-sink.js';
+import { FAKE_DOCUMENT_SINK, FAKE_SINK } from './fake-sink.js';
 import { accessApp, fakePdf, multipart, signInNewUser, testApp } from './helpers.js';
+import { takeViolations } from './openapi-conformance.js';
 
 conversionsContract('memory', async () => {
   const repo = new MemoryRepo();
@@ -29,6 +31,7 @@ conversionsContract('memory', async () => {
               maxAttempts: j.maxAttempts,
               params: j.params,
               createdBy: j.createdBy,
+              createdByUser: j.createdByUser ?? null,
             }
           : null;
       },
@@ -36,19 +39,7 @@ conversionsContract('memory', async () => {
   };
 });
 
-/** A sink that takes decomposed documents (contract version 2). */
-const DOC_SINK: SinkView = {
-  ...FAKE_SINK,
-  id: 'docs',
-  name: 'Document sink',
-  contractVersion: 2,
-  capabilities: {
-    ...FAKE_SINK.capabilities,
-    readBack: true,
-    accepts: ['document', 'images'],
-    decomposedDocuments: { equations: ['mathml'] },
-  },
-};
+const DOC_SINK = FAKE_DOCUMENT_SINK;
 
 type Ctx = Awaited<ReturnType<typeof testApp>>;
 
@@ -358,5 +349,172 @@ describe('conversion batches', () => {
       (await c.app.inject('/api/conversions/items/00000000-0000-4000-8000-000000000000/report'))
         .statusCode,
     ).toBe(404);
+  });
+});
+
+/** An upload whose file part has its own name (and field name). */
+async function uploadAs(
+  app: App,
+  batchId: string,
+  sourceKey: string,
+  filename: string,
+  fieldname = 'file',
+) {
+  const form = multipart({ sourceKey }, { filename, content: docx(), contentType: DOCX_MIME });
+  const payload =
+    fieldname === 'file'
+      ? form.payload
+      : Buffer.from(
+          form.payload.toString('latin1').replace('name="file"', `name="${fieldname}"`),
+          'latin1',
+        );
+  return app.inject({
+    method: 'POST',
+    url: `/api/conversions/batches/${batchId}/items`,
+    payload,
+    headers: form.headers,
+  });
+}
+
+const runsObjects = (c: Ctx) => [...c.store.objects.keys()].filter((k) => k.startsWith('runs/'));
+
+describe('conversion source keys and uploads', () => {
+  it.each([
+    '../a.docx',
+    '/a.docx',
+    'a/',
+    'a\\b.docx',
+    'a//b.docx',
+    './a.docx',
+    'a/../b.docx',
+    'a\u0000.docx',
+    'a\u001fb.docx',
+    'a\u007f.docx',
+    'x'.repeat(1025),
+  ])('refuses the source key %j before storing anything', async (key) => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    const res = await uploadAs(c.app, batch.id, key, 'a.docx');
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ code: 'bad_source_key' });
+    expect(typeof res.json().error).toBe('string');
+    expect(runsObjects(c)).toEqual([]);
+    expect(await c.repo.listItems(batch.id)).toEqual([]);
+  });
+
+  it('stores the NFC form of a source key, so both spellings are one key', async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    const composed = 'café/a.docx';
+    const decomposed = `cafe${String.fromCharCode(0x301)}/a.docx`;
+    const first = await uploadAs(c.app, batch.id, decomposed, 'a.docx');
+    expect(first.statusCode).toBe(201);
+    expect(ItemSchema.parse(first.json()).sourceKey).toBe(composed);
+    expect((await uploadAs(c.app, batch.id, composed, 'a.docx')).statusCode).toBe(409);
+  });
+
+  it('refuses a file name with a control character', async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    const res = await uploadAs(c.app, batch.id, 'a.docx', 'a\u0001.docx');
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ code: 'bad_filename' });
+    expect(runsObjects(c)).toEqual([]);
+  });
+
+  it('takes the file only from the `file` part', async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    const res = await uploadAs(c.app, batch.id, 'a.docx', 'a.docx', 'document');
+    expect(res.statusCode).toBe(400);
+    expect(runsObjects(c)).toEqual([]);
+  });
+
+  it('deletes the stored file when recording the item throws', async () => {
+    class FailingRepo extends MemoryRepo {
+      override async addItem(_item: NewItem): Promise<never> {
+        throw new Error('connection lost');
+      }
+    }
+    const c = await withTargets(await testApp({ repo: new FailingRepo() }));
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    const res = await upload(c.app, batch.id, 'a.docx');
+    expect(res.statusCode).toBe(500);
+    // An undocumented 500 (the failure itself), which the docs check would otherwise flag.
+    expect(takeViolations()).toEqual([expect.stringContaining('500')]);
+    expect(runsObjects(c)).toEqual([]);
+  });
+
+  it('says whether a batch that will not start was started or discarded', async () => {
+    const c = await setup();
+    const started = BatchSchema.parse((await newBatch(c.app)).json());
+    await upload(c.app, started.id, 'a.docx');
+    await start(c.app, started.id);
+    const again = await start(c.app, started.id);
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error).toMatch(/already started/);
+
+    const gone = BatchSchema.parse((await newBatch(c.app)).json());
+    await c.app.inject({ method: 'DELETE', url: `/api/conversions/batches/${gone.id}` });
+    const res = await start(c.app, gone.id);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/discarded/);
+  });
+
+  it('a discard deletes every file it can, even when one delete fails', async () => {
+    class FlakyStore extends MemoryObjectStore {
+      failed = 0;
+      override async delete(bucket: string, key: string): Promise<void> {
+        if (this.failed === 0 && key.startsWith('decompositions/')) {
+          this.failed += 1;
+          throw new Error('storage unavailable');
+        }
+        await super.delete(bucket, key);
+      }
+    }
+    const store = new FlakyStore();
+    const c = await withTargets(await testApp({ store }));
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    for (const key of ['a.docx', 'b.docx', 'c.docx']) await upload(c.app, batch.id, key);
+    const res = await c.app.inject({
+      method: 'DELETE',
+      url: `/api/conversions/batches/${batch.id}`,
+    });
+    expect(res.statusCode).toBe(204);
+    expect([...store.objects.keys()].filter((k) => k.startsWith('runs/'))).toHaveLength(1);
+  });
+
+  it("serves no report from a corrupt file or a key that is not the item's own", async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+    const item = ItemSchema.parse((await upload(c.app, batch.id, 'a.docx')).json());
+    const url = `/api/conversions/items/${item.id}/report`;
+    const own = `decompositions/${batch.id}/${item.id}.report.json`;
+    await c.store.put('runs', own, Buffer.from('{not json'), 'application/json');
+    c.repo.conversionItems.get(item.id)!.reportKey = own;
+    expect((await c.app.inject(url)).statusCode).toBe(404);
+
+    const other = 'elsewhere/report.json';
+    await c.store.put('runs', other, Buffer.from('{"flags":[]}'), 'application/json');
+    c.repo.conversionItems.get(item.id)!.reportKey = other;
+    expect((await c.app.inject(url)).statusCode).toBe(404);
+  });
+
+  it('needs a session for every conversion route', async () => {
+    const { app } = await accessApp();
+    const id = '00000000-0000-4000-8000-000000000000';
+    for (const [method, url] of [
+      ['GET', '/api/conversions/targets'],
+      ['GET', '/api/conversions/batches'],
+      ['POST', '/api/conversions/batches'],
+      ['GET', `/api/conversions/batches/${id}`],
+      ['DELETE', `/api/conversions/batches/${id}`],
+      ['POST', `/api/conversions/batches/${id}/items`],
+      ['POST', `/api/conversions/batches/${id}/start`],
+      ['GET', `/api/conversions/items/${id}/report`],
+    ] as const) {
+      const res = await app.inject({ method, url });
+      expect(res.statusCode, `${method} ${url}`).toBe(401);
+    }
   });
 });

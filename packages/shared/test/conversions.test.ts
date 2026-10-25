@@ -4,6 +4,8 @@ import {
   ITEM_OUTCOMES,
   decompositionReportKey,
   decompositionSourceKey,
+  hasControlCharacter,
+  sourceKeyProblem,
 } from '../src/index.js';
 
 const BATCH = '0f6c1c52-3a54-4c7e-9a43-6a1d1f0e2b11';
@@ -47,5 +49,50 @@ describe('decomposition keys', () => {
   it('name the source and the report (mirrored in worker storage.py)', () => {
     expect(decompositionSourceKey('b1', 'i1', 'docx')).toBe('decompositions/b1/i1.docx');
     expect(decompositionReportKey('b1', 'i1')).toBe('decompositions/b1/i1.report.json');
+  });
+});
+
+describe('source keys', () => {
+  it.each(['a.docx', 'Manuals/Pumps/intro.docx', 'a b/c (1).docx', 'é/ü.docx', '.hidden/a.docx'])(
+    'take %s',
+    (key) => {
+      expect(sourceKeyProblem(key)).toBeNull();
+    },
+  );
+
+  it.each([
+    ['', /empty/],
+    ['a'.repeat(1025), /1024/],
+    ['a\u0000.docx', /control/],
+    ['a\u001f.docx', /control/],
+    ['a\u007f.docx', /control/],
+    ['a\nb.docx', /control/],
+    ['a\\b.docx', /backslash/],
+    ['/a.docx', /start or end/],
+    ['a/', /start or end/],
+    ['a//b.docx', /empty part/],
+    ['./a.docx', /`\.`/],
+    ['a/../b.docx', /`\.\.`/],
+    ['..', /`\.\.`/],
+  ])('refuse %j', (key, reason) => {
+    expect(sourceKeyProblem(key)).toMatch(reason);
+  });
+
+  it('judge the NFC form: 1024 composed characters are within the limit', () => {
+    // e + combining acute (U+0301): 2048 code units, 1024 once composed.
+    const decomposed = `e${String.fromCharCode(0x301)}`.repeat(1024);
+    expect(decomposed).toHaveLength(2048);
+    expect(sourceKeyProblem(decomposed)).toBeNull();
+  });
+
+  it('find control characters in file names too', () => {
+    expect(hasControlCharacter('a\u0000.docx')).toBe(true);
+    expect(hasControlCharacter('a.docx')).toBe(false);
+  });
+
+  it('decompose params refuse a key the rule refuses', () => {
+    const params = { batchId: BATCH, itemId: ITEM, targetId: 'default', force: false };
+    expect(() => DecomposeParamsSchema.parse({ ...params, sourceKey: '../a.docx' })).toThrow();
+    expect(() => DecomposeParamsSchema.parse({ ...params, sourceKey: 'a/b.docx' })).not.toThrow();
   });
 });

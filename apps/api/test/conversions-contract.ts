@@ -10,6 +10,7 @@ export interface QueuedJob {
   maxAttempts: number;
   params: unknown;
   createdBy: string | null;
+  createdByUser: string | null;
 }
 
 export interface ConversionFacts {
@@ -134,6 +135,7 @@ export function conversionsContract(
             force: true,
           },
           createdBy: 'Ada',
+          createdByUser: ADA.id,
         });
         DecomposeParamsSchema.parse(job!.params);
       }

@@ -22,8 +22,8 @@ export const OPERATOR_REFUSED = 'operators cannot use this';
 /**
  * Every guarded route an operator may call (`METHOD /api/route-pattern`, the pattern as Fastify
  * registered it): signing in and their profile, uploads, jobs with review (but not step re-runs),
- * results, conversion batches and what the upload strip and job panel read. Anything else is a 403, so a route added
- * later is closed to operators until listed here.
+ * results, conversion batches and what the upload strip and job panel read. Anything else is a
+ * 403, so a route added later is closed to operators until listed here.
  */
 const OPERATOR_CALLS = new Set([
   'GET /api/auth/me',

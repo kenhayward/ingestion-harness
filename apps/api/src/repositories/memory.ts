@@ -134,6 +134,8 @@ export class MemoryRepo implements IngestionRepo {
     params: unknown;
     status: JobStatus;
     createdBy: string | null;
+    /** jobs.created_by_user: set by decompose jobs (tests pushing their own may leave it out). */
+    createdByUser?: string | null;
   }[] = [];
   /** job_events: what the API writes itself (cancellations) and what tests add for the worker. */
   readonly events = new Map<
@@ -664,7 +666,12 @@ export class MemoryRepo implements IngestionRepo {
     });
   }
 
-  private queueBackground(task: BackgroundTask, params: unknown, by: string | null): string {
+  private queueBackground(
+    task: BackgroundTask,
+    params: unknown,
+    by: string | null,
+    byUser: string | null = null,
+  ): string {
     const id = randomUUID();
     const { priority, maxAttempts } = BACKGROUND_JOBS[task];
     this.backgroundJobs.push({
@@ -675,6 +682,7 @@ export class MemoryRepo implements IngestionRepo {
       params,
       status: 'queued',
       createdBy: by,
+      ...(byUser !== null ? { createdByUser: byUser } : {}),
     });
     return id;
   }
@@ -1331,6 +1339,7 @@ export class MemoryRepo implements IngestionRepo {
           force: batch.force,
         },
         by?.name ?? null,
+        by?.userId ?? null,
       );
       return item.jobId;
     });

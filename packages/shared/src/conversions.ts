@@ -65,13 +65,55 @@ export const ItemSchema = z
   .strict();
 export type Item = z.infer<typeof ItemSchema>;
 
+/** The longest source key a batch takes (in its NFC form). */
+export const MAX_SOURCE_KEY = 1024;
+
+/** Whether a text holds a control character (U+0000 to U+001F, or U+007F). */
+export function hasControlCharacter(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * Why a source key can't name a document, or null when it can. A source key is the register's
+ * identity for a document (a folder path or a file name), so one document has one spelling: the
+ * key is judged (and stored) in its NFC form, relative, `/`-separated, with no empty, `.` or
+ * `..` parts. The API refuses others on upload; the Conversion tab checks the same rule.
+ */
+export function sourceKeyProblem(key: string): string | null {
+  const nfc = key.normalize('NFC');
+  if (!nfc) return 'the source key is empty';
+  if (nfc.length > MAX_SOURCE_KEY) {
+    return `the source key is longer than ${MAX_SOURCE_KEY} characters`;
+  }
+  if (hasControlCharacter(nfc)) return 'the source key holds a control character';
+  if (nfc.includes('\\')) return 'the source key holds a backslash: use / between folders';
+  if (nfc.startsWith('/') || nfc.endsWith('/')) {
+    return 'the source key must not start or end with /';
+  }
+  for (const part of nfc.split('/')) {
+    if (!part) return 'the source key has an empty part (//)';
+    if (part === '.' || part === '..') return 'the source key has a `' + part + '` part';
+  }
+  return null;
+}
+
+/** A source key the rule takes (`sourceKeyProblem`). */
+export const SourceKeySchema = z
+  .string()
+  .min(1)
+  .refine((key) => sourceKeyProblem(key) === null, { message: 'not a valid source key' });
+
 /** A `decompose` job's params (worker `decompose.DecomposeParams`). */
 export const DecomposeParamsSchema = z
   .object({
     batchId: z.string().uuid(),
     itemId: z.string().uuid(),
     targetId: TargetIdSchema,
-    sourceKey: z.string().min(1),
+    sourceKey: SourceKeySchema,
     force: z.boolean(),
   })
   .strict();

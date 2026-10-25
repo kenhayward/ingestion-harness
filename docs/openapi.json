@@ -12513,7 +12513,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "One Word document (`.docx`) per request, so a large folder never meets the upload\nlimit in one go. `sourceKey` names the document: the file's path in its folder, or\nits name. It must be new in the batch: the same source key twice is refused (409).\nSend it **before** the file part.\n\nThe file's bytes decide what it is, never its name. A file that isn't a Word document\n(a PDF, a `.doc`, a damaged file) is refused (415) and one with tracked changes\n(422); the batch stays open for the others.",
+        "description": "One Word document (`.docx`) per request, so a large folder never meets the upload\nlimit in one go. `sourceKey` names the document: the file's path in its folder, or\nits name. It must be new in the batch: the same source key twice is refused (409).\nSend it **before** the file part. A source key is relative and `/`-separated\n(at most 1024 characters; no control characters, backslashes, empty,\n`.` or `..` parts, or `/` at either end) and is stored in its NFC form.\nAnother is refused (422 `bad_source_key`), as is a file name with a control\ncharacter (422 `bad_filename`).\n\nThe file's bytes decide what it is, never its name. A file that isn't a Word document\n(a PDF, a `.doc`, a damaged file) is refused (415) and one with tracked changes\n(422); the batch stays open for the others.",
         "requestBody": {
           "required": true,
           "content": {
@@ -12679,7 +12679,7 @@
             }
           },
           "400": {
-            "description": "A missing `file` part or `sourceKey`.",
+            "description": "A missing `file` part (the part must be named `file`) or `sourceKey`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12704,7 +12704,7 @@
                   "required": [
                     "error"
                   ],
-                  "description": "A missing `file` part or `sourceKey`."
+                  "description": "A missing `file` part (the part must be named `file`) or `sourceKey`."
                 }
               }
             }
@@ -12929,7 +12929,7 @@
             }
           },
           "422": {
-            "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, or `the Word document is too large to check (over 64 MiB unpacked)`.",
+            "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, `the Word document is too large to check (over 64 MiB unpacked)`, a source key the rule refuses (`code: bad_source_key`) or a file name with a control character (`code: bad_filename`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -12949,12 +12949,19 @@
                           }
                         }
                       ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "bad_source_key",
+                        "bad_filename"
+                      ]
                     }
                   },
                   "required": [
                     "error"
                   ],
-                  "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, or `the Word document is too large to check (over 64 MiB unpacked)`."
+                  "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, `the Word document is too large to check (over 64 MiB unpacked)`, a source key the rule refuses (`code: bad_source_key`) or a file name with a control character (`code: bad_filename`)."
                 }
               }
             }

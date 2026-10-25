@@ -1315,34 +1315,38 @@ export class PgRepo implements IngestionRepo {
       const batch = locked.rows[0];
       if (!batch) return { ok: false, reason: 'missing' };
       if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
-      const items = await client.query<{ id: string; source_key: string }>(
-        `SELECT id, source_key FROM decomposition_items WHERE batch_id = $1
-          ORDER BY created_at, id`,
-        [id],
-      );
-      if (!items.rows.length) return { ok: false, reason: 'empty' };
+      // One statement for every item's job, and one to record them: a large folder holds the
+      // batch's lock for two round trips, not two per file.
       const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
-      const jobIds: string[] = [];
-      for (const item of items.rows) {
-        const params = {
-          batchId: id,
-          itemId: item.id,
-          targetId: batch.target_id,
-          sourceKey: item.source_key,
-          force: batch.force,
-        };
-        const job = await client.query<{ id: string }>(
-          `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
-           VALUES ('decompose', $1, $2, $3, $4, $5) RETURNING id`,
-          [priority, maxAttempts, JSON.stringify(params), by?.name ?? null, by?.userId ?? null],
-        );
-        const jobId = job.rows[0]!.id;
-        await client.query('UPDATE decomposition_items SET job_id = $2 WHERE id = $1', [
-          item.id,
-          jobId,
-        ]);
-        jobIds.push(jobId);
-      }
+      const queued = await client.query<{ job_id: string }>(
+        `WITH items AS (
+           SELECT id, source_key, created_at FROM decomposition_items WHERE batch_id = $1
+         ), jobs_in AS (
+           INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+           SELECT 'decompose', $2, $3,
+                  jsonb_build_object('batchId', $1::uuid, 'itemId', i.id, 'targetId', $4::text,
+                                     'sourceKey', i.source_key, 'force', $5::boolean),
+                  $6, $7
+             FROM items i
+           RETURNING id, (params->>'itemId')::uuid AS item_id
+         ), recorded AS (
+           UPDATE decomposition_items d SET job_id = j.id
+             FROM jobs_in j WHERE d.id = j.item_id
+           RETURNING d.id, d.created_at, j.id AS job_id
+         )
+         SELECT job_id FROM recorded ORDER BY created_at, id`,
+        [
+          id,
+          priority,
+          maxAttempts,
+          batch.target_id,
+          batch.force,
+          by?.name ?? null,
+          by?.userId ?? null,
+        ],
+      );
+      if (!queued.rows.length) return { ok: false, reason: 'empty' };
+      const jobIds = queued.rows.map((r) => r.job_id);
       const { rows } = await client.query<BatchRow>(
         `UPDATE decomposition_batches SET state = 'started', started_at = now() WHERE id = $1
          RETURNING ${BATCH_COLUMNS}`,
