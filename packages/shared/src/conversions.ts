@@ -186,3 +186,20 @@ export const AcceptedTargetStateSchema = z
   .object({ item: ItemSchema, changed: z.array(ChangedComponentSchema) })
   .strict();
 export type AcceptedTargetState = z.infer<typeof AcceptedTargetStateSchema>;
+
+/**
+ * One flag of a decomposition report (spec §5.9; worker `decompose.model.Flag`): its code, how
+ * much it matters, where it applies (a section, block or table id) and what it says. The code is
+ * any string, so a flag the worker learns later still shows.
+ */
+export const ReportFlagSchema = z.object({
+  code: z.string(),
+  severity: z.enum(['info', 'warning']),
+  at: z.string().nullable().optional(),
+  message: z.string(),
+});
+export type ReportFlag = z.infer<typeof ReportFlagSchema>;
+
+/** `GET /api/conversions/items/:id/report`: the report the worker wrote beside the source (R4). */
+export const DecompositionReportSchema = z.object({ flags: z.array(ReportFlagSchema) });
+export type DecompositionReport = z.infer<typeof DecompositionReportSchema>;

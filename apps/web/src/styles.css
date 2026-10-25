@@ -7689,3 +7689,55 @@ button.evidence-chip[aria-expanded='true'] {
   flex: 1 1 auto;
   max-width: 420px;
 }
+
+/* The Conversion tab: one batch, and the earlier ones. */
+.conversion-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.batch-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.batch-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.batch-view-head p {
+  margin: 4px 0 0;
+}
+.batch-table-wrap {
+  overflow-x: auto;
+}
+.batch-table .mono {
+  overflow-wrap: anywhere;
+}
+.conversion-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.conversion-hint-tight {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.conversion-report {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conversion-report li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}

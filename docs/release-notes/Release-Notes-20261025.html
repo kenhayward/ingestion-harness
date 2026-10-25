@@ -226,7 +226,21 @@
         Only Word documents (<code>.docx</code>) are taken for now. The same file name or folder
         path can't be added to a batch twice.
       </p>
-      <p>Each document's row offers four actions, each run on that one document:</p>
+      <p>
+        Once started, the batch opens in its own view, which can be reopened later, or after a
+        reload, from its address. It has one row per document, with the outcome: Created, Updated,
+        Already loaded, Duplicate, Changed in target, Read-back mismatch, Unresolved, In flight or
+        Failed, and Queued, Decomposing or Delivering while it runs. Beside the outcome is a line
+        saying more, such as why a file failed. A document in the target has a link to it there.
+        Every row has a <strong>Report</strong>, showing what converting the file noticed for
+        someone to check, such as an empty heading or a table with no caption. While any document is
+        still under way the rows refresh every few seconds, and the refreshing stops once every
+        document has settled. <strong>Needs attention</strong> narrows the rows to the documents
+        someone should look at, and <strong>Done</strong> to the ones that went through. Under a new
+        batch, <strong>Earlier batches</strong> lists the batches started before, newest first, each
+        with its documents counted by outcome.
+      </p>
+      <p>Each document's row offers the actions that apply to it, each run on that one document:</p>
       <ul>
         <li>
           <strong>Force-load</strong> delivers the stored file again as an explicit update. A
@@ -249,9 +263,16 @@
           run of that file updates the document, even when the file hasn't changed, overwriting
           those changes. If it changes again in the meantime, that run is refused again. If the
           document changed again while the confirmation was open, the confirmation is refused, and
-          the changes must be looked at again.
+          the changes must be looked at again. The confirmation needs a tick in
+          <strong>I understand the edits in the target will be overwritten</strong>. When too many
+          parts changed to list them all, it can't be accepted, and detach is offered instead.
         </li>
       </ul>
+      <p>
+        Force-load is offered on a document already loaded and on a duplicate, redeliver on one
+        delivered or refused, and detach and accept on one changed in the target. Once a document
+        has been detached or its target state accepted, its row says so and offers neither again.
+      </p>
       <p>
         Force-load and redeliver each start a new batch of one, and only one while it runs, however
         often the action is chosen. The target's version check always applies, so nothing changed in
