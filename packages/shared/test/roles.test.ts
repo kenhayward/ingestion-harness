@@ -41,6 +41,11 @@ describe('roles', () => {
     'GET /api/results',
     'GET /api/results/:jobId',
     'GET /api/results/:jobId/archive',
+    'GET /api/conversions/targets',
+    'POST /api/conversions/batches',
+    'POST /api/conversions/batches/:id/items',
+    'POST /api/conversions/batches/:id/start',
+    'GET /api/conversions/items/:id/report',
   ])('operators may call %s', (call) => {
     const [method, route] = call.split(' ') as [string, string];
     expect(operatorMayCall(method, route)).toBe(true);

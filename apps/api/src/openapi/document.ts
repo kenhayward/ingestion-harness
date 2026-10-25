@@ -10,6 +10,11 @@ export const TAGS = {
     Upload a PDF to process it with a document type. The API stores the file in the inbox
     bucket, records a document and queues a job; the worker does the rest.
   `,
+  Conversions: md`
+    Convert Word documents into decomposed documents for a target that takes them. A batch is
+    one upload of files, or of a folder, to one target; each file is an item that a
+    \`decompose\` job decomposes and delivers. Operators, designers and admins may convert.
+  `,
   Jobs: md`
     A job processes one document with one version of a document type. Jobs move through
     \`queued\`, \`running\` and then \`succeeded\`, \`awaiting_review\`, \`needs_review\`
@@ -138,7 +143,7 @@ export const TAGS = {
 export type Tag = keyof typeof TAGS;
 
 export const TAG_GROUPS: { name: string; tags: Tag[] }[] = [
-  { name: 'Pipeline', tags: ['Documents', 'Jobs', 'Review & steps', 'Results'] },
+  { name: 'Pipeline', tags: ['Documents', 'Conversions', 'Jobs', 'Review & steps', 'Results'] },
   {
     name: 'Configuration',
     tags: ['Specs', 'Recipes', 'References & regression', 'Models', 'Ontologies'],

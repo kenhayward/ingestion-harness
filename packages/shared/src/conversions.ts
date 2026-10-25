@@ -76,3 +76,32 @@ export const DecomposeParamsSchema = z
   })
   .strict();
 export type DecomposeParams = z.infer<typeof DecomposeParamsSchema>;
+
+/** How many of a batch's items have each outcome (every outcome present, zero or more). */
+export const ItemCountsSchema = z.record(ItemOutcomeSchema, z.number().int().nonnegative());
+export type ItemCounts = z.infer<typeof ItemCountsSchema>;
+
+/** A batch as the Conversion tab lists it: its items counted per outcome. */
+export const BatchSummarySchema = BatchSchema.extend({
+  itemCount: z.number().int().nonnegative(),
+  counts: ItemCountsSchema,
+}).strict();
+export type BatchSummary = z.infer<typeof BatchSummarySchema>;
+
+/** A batch with its items, in upload order. */
+export const BatchDetailSchema = z
+  .object({ batch: BatchSchema, items: z.array(ItemSchema) })
+  .strict();
+export type BatchDetail = z.infer<typeof BatchDetailSchema>;
+
+/** A target that takes decomposed documents, as the Conversion tab offers it. */
+export const ConversionTargetSchema = z
+  .object({ id: TargetIdSchema, label: z.string(), sinkName: z.string() })
+  .strict();
+export type ConversionTarget = z.infer<typeof ConversionTargetSchema>;
+
+/** `POST /api/conversions/batches`: the target, and whether this is an explicit update. */
+export const CreateBatchSchema = z
+  .object({ targetId: TargetIdSchema, force: z.boolean().optional() })
+  .strict();
+export type CreateBatch = z.infer<typeof CreateBatchSchema>;

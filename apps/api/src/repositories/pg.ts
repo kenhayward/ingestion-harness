@@ -24,7 +24,19 @@ import {
   statusGroup,
   type Creator,
   type JobPage,
+  type Batch,
+  type BatchSummary,
+  type Item,
+  type ItemOutcome,
 } from '@ih/shared';
+import {
+  emptyCounts,
+  type AddItemResult,
+  type DiscardBatchResult,
+  type NewBatch,
+  type NewItem,
+  type StartBatchResult,
+} from '../conversions/repo.js';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -210,6 +222,65 @@ const toReference = (r: ReferenceRow): Reference => ({
   copiedFrom: r.copied_from,
   verifiedOutputs: r.verified_outputs ?? null,
   supersededAt: r.superseded_at?.toISOString() ?? null,
+});
+
+interface BatchRow {
+  id: string;
+  target_id: string;
+  created_by: Batch['createdBy'];
+  state: Batch['state'];
+  force: boolean;
+  created_at: Date;
+  started_at: Date | null;
+}
+
+const BATCH_COLUMNS = 'id, target_id, created_by, state, force, created_at, started_at';
+
+const toBatch = (r: BatchRow): Batch => ({
+  id: r.id,
+  targetId: r.target_id,
+  createdBy: r.created_by,
+  state: r.state,
+  force: r.force,
+  createdAt: r.created_at.toISOString(),
+  startedAt: r.started_at?.toISOString() ?? null,
+});
+
+interface ItemRow {
+  id: string;
+  batch_id: string;
+  source_key: string;
+  filename: string;
+  content_sha256: string;
+  size_bytes: string;
+  object_key: string;
+  job_id: string | null;
+  outcome: ItemOutcome;
+  detail: string | null;
+  register_entry_id: string | null;
+  report_key: string | null;
+  link: string | null;
+  redeliver_of: string | null;
+}
+
+const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
+  job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of`;
+
+const toItem = (r: ItemRow): Item => ({
+  id: r.id,
+  batchId: r.batch_id,
+  sourceKey: r.source_key,
+  filename: r.filename,
+  contentSha256: r.content_sha256,
+  sizeBytes: Number(r.size_bytes),
+  objectKey: r.object_key,
+  jobId: r.job_id,
+  outcome: r.outcome,
+  detail: r.detail,
+  registerEntryId: r.register_entry_id,
+  reportKey: r.report_key,
+  link: r.link,
+  redeliverOf: r.redeliver_of,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -1151,6 +1222,153 @@ export class PgRepo implements IngestionRepo {
       running: n('running'),
       failed: n('failed') + n('needs_review'),
     };
+  }
+
+  async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
+    const { rows } = await this.pool.query<BatchRow>(
+      `INSERT INTO decomposition_batches (target_id, force, created_by) VALUES ($1, $2, $3)
+       RETURNING ${BATCH_COLUMNS}`,
+      [targetId, force, JSON.stringify(createdBy)],
+    );
+    return toBatch(rows[0]!);
+  }
+
+  async getBatch(id: string): Promise<Batch | null> {
+    const { rows } = await this.pool.query<BatchRow>(
+      `SELECT ${BATCH_COLUMNS} FROM decomposition_batches WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? toBatch(rows[0]) : null;
+  }
+
+  async listBatches(limit: number): Promise<BatchSummary[]> {
+    const { rows } = await this.pool.query<BatchRow>(
+      `SELECT ${BATCH_COLUMNS} FROM decomposition_batches WHERE state <> 'discarded'
+        ORDER BY created_at DESC, id DESC LIMIT $1`,
+      [limit],
+    );
+    const counted = await this.pool.query<{ batch_id: string; outcome: ItemOutcome; n: number }>(
+      `SELECT batch_id, outcome, count(*)::int AS n FROM decomposition_items
+        WHERE batch_id = ANY($1::uuid[]) GROUP BY batch_id, outcome`,
+      [rows.map((r) => r.id)],
+    );
+    return rows.map((r) => {
+      const counts = emptyCounts();
+      for (const c of counted.rows) if (c.batch_id === r.id) counts[c.outcome] = c.n;
+      const itemCount = Object.values(counts).reduce((a, b) => a + b, 0);
+      return { ...toBatch(r), itemCount, counts };
+    });
+  }
+
+  async listItems(batchId: string): Promise<Item[]> {
+    const { rows } = await this.pool.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM decomposition_items WHERE batch_id = $1
+        ORDER BY created_at, id`,
+      [batchId],
+    );
+    return rows.map(toItem);
+  }
+
+  async getItem(id: string): Promise<Item | null> {
+    const { rows } = await this.pool.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM decomposition_items WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? toItem(rows[0]) : null;
+  }
+
+  async addItem(item: NewItem): Promise<AddItemResult> {
+    return this.inTransaction(async (client) => {
+      // Shared: uploads go in side by side, while a start or a discard waits for them.
+      const batch = await client.query<{ state: Batch['state'] }>(
+        'SELECT state FROM decomposition_batches WHERE id = $1 FOR SHARE',
+        [item.batchId],
+      );
+      if (!batch.rows[0]) return { ok: false, reason: 'missing' };
+      if (batch.rows[0].state !== 'open') return { ok: false, reason: 'not_open' };
+      const { rows } = await client.query<ItemRow>(
+        `INSERT INTO decomposition_items
+           (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (batch_id, source_key) DO NOTHING
+         RETURNING ${ITEM_COLUMNS}`,
+        [
+          item.id,
+          item.batchId,
+          item.sourceKey,
+          item.filename,
+          item.contentSha256,
+          item.sizeBytes,
+          item.objectKey,
+        ],
+      );
+      return rows[0] ? { ok: true, item: toItem(rows[0]) } : { ok: false, reason: 'duplicate' };
+    });
+  }
+
+  async startBatch(id: string, by: Creator | null): Promise<StartBatchResult> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<BatchRow>(
+        `SELECT ${BATCH_COLUMNS} FROM decomposition_batches WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      const batch = locked.rows[0];
+      if (!batch) return { ok: false, reason: 'missing' };
+      if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+      const items = await client.query<{ id: string; source_key: string }>(
+        `SELECT id, source_key FROM decomposition_items WHERE batch_id = $1
+          ORDER BY created_at, id`,
+        [id],
+      );
+      if (!items.rows.length) return { ok: false, reason: 'empty' };
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const jobIds: string[] = [];
+      for (const item of items.rows) {
+        const params = {
+          batchId: id,
+          itemId: item.id,
+          targetId: batch.target_id,
+          sourceKey: item.source_key,
+          force: batch.force,
+        };
+        const job = await client.query<{ id: string }>(
+          `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+           VALUES ('decompose', $1, $2, $3, $4, $5) RETURNING id`,
+          [priority, maxAttempts, JSON.stringify(params), by?.name ?? null, by?.userId ?? null],
+        );
+        const jobId = job.rows[0]!.id;
+        await client.query('UPDATE decomposition_items SET job_id = $2 WHERE id = $1', [
+          item.id,
+          jobId,
+        ]);
+        jobIds.push(jobId);
+      }
+      const { rows } = await client.query<BatchRow>(
+        `UPDATE decomposition_batches SET state = 'started', started_at = now() WHERE id = $1
+         RETURNING ${BATCH_COLUMNS}`,
+        [id],
+      );
+      return { ok: true, batch: toBatch(rows[0]!), jobIds };
+    });
+  }
+
+  async discardBatch(id: string): Promise<DiscardBatchResult> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<{ state: Batch['state'] }>(
+        'SELECT state FROM decomposition_batches WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!locked.rows[0]) return { ok: false, reason: 'missing' };
+      if (locked.rows[0].state !== 'open') return { ok: false, reason: 'not_open' };
+      await client.query(`UPDATE decomposition_batches SET state = 'discarded' WHERE id = $1`, [
+        id,
+      ]);
+      const { rows } = await client.query<{ object_key: string }>(
+        `SELECT object_key FROM decomposition_items WHERE batch_id = $1 ORDER BY created_at, id`,
+        [id],
+      );
+      return { ok: true, objectKeys: rows.map((r) => r.object_key) };
+    });
   }
 
   private async inTransaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {

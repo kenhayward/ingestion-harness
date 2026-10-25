@@ -24,13 +24,19 @@ CREATE TABLE decomposition_items (
   -- The uploaded file in the runs bucket (`decompositionSourceKey`).
   object_key     text NOT NULL,
   job_id         uuid REFERENCES jobs (id),
-  outcome        text NOT NULL DEFAULT 'queued',
+  -- The worker's DeliveryOutcome once decided (TS ITEM_OUTCOMES).
+  outcome        text NOT NULL DEFAULT 'queued' CHECK (outcome IN (
+                   'queued', 'decomposing', 'delivering', 'created', 'updated', 'already_loaded',
+                   'duplicate', 'in_flight', 'changed_in_target', 'read_back_mismatch',
+                   'unresolved', 'failed')),
   detail         text,
   -- The register entry this item settled; no foreign key, the entry may be removed later.
   register_entry_id uuid,
   report_key     text,
   link           text,
   redeliver_of   uuid,
+  -- Upload order (one upload per transaction).
+  created_at     timestamptz NOT NULL DEFAULT now(),
   UNIQUE (batch_id, source_key)
 );
 CREATE INDEX decomposition_items_job ON decomposition_items (job_id);

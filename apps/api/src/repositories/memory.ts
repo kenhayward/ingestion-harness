@@ -23,7 +23,18 @@ import {
   pageOfJobs,
   type Creator,
   type JobPage,
+  type Batch,
+  type BatchSummary,
+  type Item,
 } from '@ih/shared';
+import {
+  emptyCounts,
+  type AddItemResult,
+  type DiscardBatchResult,
+  type NewBatch,
+  type NewItem,
+  type StartBatchResult,
+} from '../conversions/repo.js';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -114,7 +125,7 @@ export class MemoryRepo implements IngestionRepo {
     string,
     { graphIri: string; version: number; jobId: string; targetId: string }
   >();
-  /** Document-less withdraw/republish jobs queued (ADR 0011 step 7). */
+  /** Document-less withdraw/republish/rebuild/decompose jobs queued (ADR 0011 step 7). */
   readonly backgroundJobs: {
     id: string;
     task: BackgroundTask;
@@ -455,7 +466,13 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async getJobParams(id: string): Promise<Record<string, unknown> | null> {
-    return this.jobParams.get(id) ?? this.exportJobs.get(id)?.params ?? null;
+    const background = this.backgroundJobs.find((j) => j.id === id)?.params;
+    return (
+      this.jobParams.get(id) ??
+      this.exportJobs.get(id)?.params ??
+      (background as Record<string, unknown> | undefined) ??
+      null
+    );
   }
 
   async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {
@@ -708,7 +725,10 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async withdrawalStatus(): Promise<WithdrawalStatus> {
-    const count = (s: JobStatus) => this.backgroundJobs.filter((j) => j.status === s).length;
+    const count = (s: JobStatus) =>
+      this.backgroundJobs.filter(
+        (j) => (j.task === 'withdraw' || j.task === 'republish') && j.status === s,
+      ).length;
     return {
       queued: count('queued'),
       running: count('running'),
@@ -1222,6 +1242,111 @@ export class MemoryRepo implements IngestionRepo {
       deliveredAt: s.delivered ? now : e.deliveredAt,
     });
     return 'applied';
+  }
+
+  /** Conversion batches (decomposition_batches), in creation order. */
+  readonly conversionBatches = new Map<string, Batch>();
+  /** Their items (decomposition_items), in upload order; tests set outcomes and reports. */
+  readonly conversionItems = new Map<string, Item>();
+
+  async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
+    const batch: Batch = {
+      id: randomUUID(),
+      targetId,
+      createdBy: { ...createdBy },
+      state: 'open',
+      force,
+      createdAt: new Date().toISOString(),
+      startedAt: null,
+    };
+    this.conversionBatches.set(batch.id, batch);
+    return structuredClone(batch);
+  }
+
+  async getBatch(id: string): Promise<Batch | null> {
+    const batch = this.conversionBatches.get(id);
+    return batch ? structuredClone(batch) : null;
+  }
+
+  async listBatches(limit: number): Promise<BatchSummary[]> {
+    return [...this.conversionBatches.values()]
+      .filter((b) => b.state !== 'discarded')
+      .reverse()
+      .slice(0, limit)
+      .map((b) => {
+        const items = [...this.conversionItems.values()].filter((i) => i.batchId === b.id);
+        const counts = emptyCounts();
+        for (const i of items) counts[i.outcome] += 1;
+        return { ...structuredClone(b), itemCount: items.length, counts };
+      });
+  }
+
+  async listItems(batchId: string): Promise<Item[]> {
+    return [...this.conversionItems.values()]
+      .filter((i) => i.batchId === batchId)
+      .map((i) => ({ ...i }));
+  }
+
+  async getItem(id: string): Promise<Item | null> {
+    const item = this.conversionItems.get(id);
+    return item ? { ...item } : null;
+  }
+
+  async addItem(item: NewItem): Promise<AddItemResult> {
+    const batch = this.conversionBatches.get(item.batchId);
+    if (!batch) return { ok: false, reason: 'missing' };
+    if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+    const items = [...this.conversionItems.values()];
+    if (items.some((i) => i.batchId === item.batchId && i.sourceKey === item.sourceKey)) {
+      return { ok: false, reason: 'duplicate' };
+    }
+    const row: Item = {
+      ...item,
+      jobId: null,
+      outcome: 'queued',
+      detail: null,
+      registerEntryId: null,
+      reportKey: null,
+      link: null,
+      redeliverOf: null,
+    };
+    this.conversionItems.set(row.id, row);
+    return { ok: true, item: { ...row } };
+  }
+
+  async startBatch(id: string, by: Creator | null): Promise<StartBatchResult> {
+    const batch = this.conversionBatches.get(id);
+    if (!batch) return { ok: false, reason: 'missing' };
+    if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+    const items = [...this.conversionItems.values()].filter((i) => i.batchId === id);
+    if (!items.length) return { ok: false, reason: 'empty' };
+    const jobIds = items.map((item) => {
+      item.jobId = this.queueBackground(
+        'decompose',
+        {
+          batchId: id,
+          itemId: item.id,
+          targetId: batch.targetId,
+          sourceKey: item.sourceKey,
+          force: batch.force,
+        },
+        by?.name ?? null,
+      );
+      return item.jobId;
+    });
+    Object.assign(batch, { state: 'started', startedAt: new Date().toISOString() });
+    return { ok: true, batch: structuredClone(batch), jobIds };
+  }
+
+  async discardBatch(id: string): Promise<DiscardBatchResult> {
+    const batch = this.conversionBatches.get(id);
+    if (!batch) return { ok: false, reason: 'missing' };
+    if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+    batch.state = 'discarded';
+    const objectKeys = [...this.conversionItems.values()]
+      .filter((i) => i.batchId === id)
+      .map((i) => i.objectKey);
+    return { ok: true, objectKeys };
   }
 
   private update(id: string, changes: Partial<JobSummary>): JobSummary {

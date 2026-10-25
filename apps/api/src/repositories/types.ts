@@ -20,6 +20,7 @@ import type {
   JobPageQuery,
 } from '@ih/shared';
 import type { BridgeError, DeliveryStatus, Receipt } from '@ih/bridge-contract';
+import type { ConversionRepo } from '../conversions/repo.js';
 
 /**
  * A reference to save. `templateVersion` pins it to a version (Workbench types) together with the
@@ -238,12 +239,16 @@ export const REPUBLISH_JOB = { priority: -10, maxAttempts: 10 } as const;
 /** `rebuild`: a copy restore's re-mint of the graphs under this server's base (params `{mode}`). */
 export const REBUILD_JOB = { priority: -10, maxAttempts: 10 } as const;
 
+/** `decompose`: one conversion batch item (params `DecomposeParams`), at an upload's priority. */
+export const DECOMPOSE_JOB = { priority: 0, maxAttempts: 3 } as const;
+
 /** Document- and project-less jobs the API queues for the worker. */
-export type BackgroundTask = 'withdraw' | 'republish' | 'rebuild';
+export type BackgroundTask = 'withdraw' | 'republish' | 'rebuild' | 'decompose';
 export const BACKGROUND_JOBS: Record<BackgroundTask, { priority: number; maxAttempts: number }> = {
   withdraw: WITHDRAW_JOB,
   republish: REPUBLISH_JOB,
   rebuild: REBUILD_JOB,
+  decompose: DECOMPOSE_JOB,
 };
 
 /** One graph of a `withdraw` job's params: its version copies on one publishing target. */
@@ -360,7 +365,7 @@ export interface EventFilter {
 }
 
 /** Persistence port. `PgRepo` in production, `MemoryRepo` in unit tests. */
-export interface IngestionRepo {
+export interface IngestionRepo extends ConversionRepo {
   ping(): Promise<void>;
   createDocumentAndJob(
     doc: NewDocument,

@@ -34,6 +34,7 @@ import { healthRoutes } from './routes/health.js';
 import { versionRoutes } from './routes/version.js';
 import { specRoutes } from './routes/specs.js';
 import { documentRoutes } from './routes/documents.js';
+import { conversionRoutes } from './routes/conversions.js';
 import { jobRoutes } from './routes/jobs.js';
 import { modelRoutes } from './routes/models.js';
 import { reviewRoutes } from './routes/review.js';
@@ -196,6 +197,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(specRoutes, { prefix: '/api' });
   await app.register(documentRoutes, { prefix: '/api' });
+  // One file per item upload: the route sets its own multipart limit of one file (R8).
+  await app.register(conversionRoutes, { prefix: '/api' });
   await app.register(jobRoutes, { prefix: '/api' });
   await app.register(jobLiveRoutes, { prefix: '/api' });
   await app.register(modelRoutes, { prefix: '/api' });
