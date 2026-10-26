@@ -33,6 +33,7 @@ DropReason = Literal[
     "caption-number",
     "repeated-header",
     "note-separator",
+    "note-marker",
 ]
 
 #: Chars share a line when their baselines differ by at most this many times the font size.
@@ -75,6 +76,10 @@ class Line:
 
     def runs(self) -> list[Text]:
         """The line as text runs: spaces added where pdfium saw a word gap, marks from the chars."""
+        return [run for run, _ in self.char_runs()]
+
+    def char_runs(self) -> list[tuple[Text, Char | None]]:
+        """`runs`, one per char, each with the char it came from (None for an added space)."""
         chars = list(self.chars)
         while chars and chars[0].text.isspace():
             chars.pop(0)
@@ -83,7 +88,7 @@ class Line:
         if not chars:
             return []
         size, baseline = _usual(chars)
-        runs: list[Text] = []
+        runs: list[tuple[Text, Char | None]] = []
         previous: Char | None = None
         previous_marks: frozenset[_Mark] = frozenset()
         for c in chars:
@@ -94,8 +99,8 @@ class Line:
                 and not previous.text.isspace()
                 and not c.text.isspace()
             ):
-                runs.append(Text(text=" ", marks=previous_marks & marks))
-            runs.append(Text(text=c.text, marks=marks))
+                runs.append((Text(text=" ", marks=previous_marks & marks), None))
+            runs.append((Text(text=c.text, marks=marks), c))
             previous, previous_marks = c, marks
         return runs
 
@@ -270,7 +275,7 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
 
     pieces: list[Piece] = []
     for i, item in enumerate(items):
-        piece = _piece(i, item, owned)
+        piece = _piece(i, item, owned) if item.page in pages else None
         if piece is None:
             continue
         pieces.append(piece)
@@ -304,11 +309,12 @@ def _piece(index: int, item: object, owned: dict[_Target, list[Char]]) -> Piece 
             item.ref, "table", item.page, item.bbox, [], None, None, table=item, cells=cells
         )
     chars = owned.get((index, None), [])
+    if isinstance(item, LayoutPicture):
+        # a picture is kept with no text inside it: it is an image all the same
+        lines = _lines(item.page, chars) if chars else []
+        return Piece(item.ref, "picture", item.page, item.bbox, lines, None, None, picture=item)
     if not chars:
         return None
-    if isinstance(item, LayoutPicture):
-        lines = _lines(item.page, chars)
-        return Piece(item.ref, "picture", item.page, item.bbox, lines, None, None, picture=item)
     assert isinstance(item, LayoutText)
     lines = _lines(item.page, chars)
     return Piece(

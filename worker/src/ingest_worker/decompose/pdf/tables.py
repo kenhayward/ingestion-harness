@@ -359,23 +359,29 @@ def _is_text(piece: Piece) -> bool:
 
 
 @dataclass
-class _Caption:
+class PieceCaption:
+    """A caption found beside a table or picture, or in a table's first row."""
+
     lines: list[Line]
     position: Literal["above", "below"]
     ref: str | None  # the piece it was, if not a row of the grid
 
 
-def _table_prefix(text: str) -> re.Match[str] | None:
-    """A "Table N" prefix at the start of `text`, or None (a "Figure N" one included)."""
+CaptionLabel = Literal["table", "figure"]
+
+
+def _prefix(text: str, label: CaptionLabel) -> re.Match[str] | None:
+    """A "Table N" (or "Figure N") prefix at the start of `text`, or None (one with the other
+    label included)."""
     match = CAPTION_PREFIX.match(text)
-    return match if match is not None and match.group(1).lower() == "table" else None
+    return match if match is not None and match.group(1).lower() == label else None
 
 
-def _reads_as_caption(piece: Piece) -> bool:
+def _reads_as_caption(piece: Piece, label: CaptionLabel) -> bool:
     """A "Table N" piece is a caption when Docling labels it one, or when it is short and its
     number has an explicit separator: "Table 3 shows the doses" is a paragraph."""
     text = piece.lines[0].text
-    match = _table_prefix(text)
+    match = _prefix(text, label)
     if match is None:
         return False
     if piece.label == "caption":
@@ -383,27 +389,33 @@ def _reads_as_caption(piece: Piece) -> bool:
     return len(piece.lines) <= _CAPTION_LINES and bool(_SEPARATOR.match(text, match.end(2)))
 
 
-def _find_caption(piece: Piece, before: list[Piece], after: list[Piece]) -> _Caption | None:
-    """Docling's caption beside the table, else a "Table N" piece just above or below it."""
-    assert piece.table is not None
+def find_caption(piece: Piece, before: list[Piece], after: list[Piece]) -> PieceCaption | None:
+    """Docling's caption beside a table or picture, else a "Table N" (for a picture, "Figure N")
+    piece just above or below it."""
+    if piece.table is not None:
+        label: CaptionLabel = "table"
+        captions = piece.table.captions
+    else:
+        assert piece.picture is not None
+        label, captions = "figure", piece.picture.captions
     neighbours: list[Piece] = []
     if before and _is_text(before[-1]) and before[-1].page == piece.page:
         neighbours.append(before[-1])
     if after and _is_text(after[0]) and after[0].page == _last_page(piece):
         neighbours.append(after[0])
-    docling = {k for k in map(_key, piece.table.captions) if k}
+    docling = {k for k in map(_key, captions) if k}
     chosen = next((p for p in neighbours if _cell_key(p.lines) in docling), None)
     if chosen is None:
-        chosen = next((p for p in neighbours if _reads_as_caption(p)), None)
+        chosen = next((p for p in neighbours if _reads_as_caption(p, label)), None)
     if chosen is None:
         return None
     above = (chosen.page, chosen.bbox[1]) < (piece.page, piece.bbox[1])
-    return _Caption(list(chosen.lines), "above" if above else "below", chosen.ref)
+    return PieceCaption(list(chosen.lines), "above" if above else "below", chosen.ref)
 
 
-def _caption_inlines(caption: _Caption, ledger: Ledger) -> tuple[list[Inline], bool]:
-    """The caption without its "Table N:" prefix, whose chars are dropped, and whether it had
-    one."""
+def caption_inlines(caption: PieceCaption, ledger: Ledger) -> tuple[list[Inline], bool]:
+    """The caption without its "Table N:" (or "Figure N:") prefix, whose chars are dropped as
+    `caption-number`, and whether it had one."""
     lines = caption.lines
     match = CAPTION_PREFIX.match(lines[0].text) if lines else None
     if match is None:
@@ -530,20 +542,20 @@ def build_table(
     consumed: set[str] = set()
 
     # The caption: Docling's or a piece beside the table, else a spanning first row.
-    caption = _find_caption(piece, pieces_before, pieces_after)
+    caption = find_caption(piece, pieces_before, pieces_after)
     first_row = 0
     if caption is None and rows > 1:
         slot = _sole_cell(0, cols, slots, covered)
-        if slot is not None and slot.lines and _table_prefix(slot.lines[0].text):
-            caption = _Caption(slot.lines, "above", None)
+        if slot is not None and slot.lines and _prefix(slot.lines[0].text, "table"):
+            caption = PieceCaption(slot.lines, "above", None)
             first_row = 1
-    caption_inlines: list[Inline] = []
+    caption_text: list[Inline] = []
     numbered = False
     if caption is not None:
         if caption.ref is not None:
             consumed.add(caption.ref)
             _owned_by(caption.lines, piece.ref, ledger)
-        caption_inlines, numbered = _caption_inlines(caption, ledger)
+        caption_text, numbered = caption_inlines(caption, ledger)
 
     # Note rows at the foot of the grid leave it, never its first row, when each of their
     # markers is a superscript in the rows above them (spec section 4.6, as for Word).
@@ -630,7 +642,7 @@ def build_table(
     table = Table(
         id=table_id,
         numbered=numbered,
-        caption=caption_inlines,
+        caption=caption_text,
         caption_position=caption.position if caption is not None else "above",
         column_widths=_column_widths(
             (s for (r, _), s in slots.items() if first_row <= r < last_row), cols
@@ -639,6 +651,6 @@ def build_table(
         rows=built,
         notes=notes,
         wide=page.width > page.height,
-        key=caption_key(caption_inlines) if caption is not None else None,
+        key=caption_key(caption_text) if caption is not None else None,
     )
     return table, consumed, [flag]

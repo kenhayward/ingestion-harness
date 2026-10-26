@@ -1,4 +1,5 @@
-"""A PDF's text layer: every character with its font, size and box on the displayed page.
+"""A PDF's text layer: every character with its font, size and box on the displayed page, and
+each page's image objects and URI link annotations.
 
 Read through pypdfium2's text page and its raw API. Coordinates are in points with the origin at
 the top left of the page as displayed (`/Rotate` applied). A PDF pdfium cannot open, a
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 import ctypes
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -22,6 +24,9 @@ _INVISIBLE_RENDER_MODE = 3
 #: A page with no visible text and at least this fraction covered by images is a scan.
 _SCANNED_IMAGE_AREA = 0.5
 _FONT_NAME_BYTES = 256
+
+#: x0, y0, x1, y1 in points on the page as displayed, top-left origin (as `layout.BBox`).
+Box = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
@@ -50,6 +55,10 @@ class PageText:
     chars: tuple[Char, ...]
     #: The fraction of the page covered by image objects.
     image_area: float
+    #: The box of each image object, clipped to the page.
+    images: tuple[Box, ...] = ()
+    #: The box and URI of each link annotation with a `/URI` action.
+    links: tuple[tuple[Box, str], ...] = ()
 
     @property
     def kind(self) -> Literal["born_digital", "scanned"]:
@@ -167,21 +176,67 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
             gap = False
     finally:
         text_page.close()
-    return PageText(number, width, height, tuple(chars), _image_area(page, (left, bottom, uw, uh)))
+    images = _image_boxes(page, display, width, height)
+    covered = sum((b[2] - b[0]) * (b[3] - b[1]) for b in images)
+    area = min(covered / (width * height), 1.0) if width > 0 and height > 0 else 0.0
+    links = _links(page, display)
+    return PageText(number, width, height, tuple(chars), area, images, links)
 
 
-def _image_area(page: object, box: tuple[float, float, float, float]) -> float:
-    """The fraction of the page's box covered by image objects, each clipped to the box."""
+def _displayed(
+    display: Callable[[float, float], tuple[float, float]],
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+) -> Box:
+    """A box in page space, as displayed."""
+    xa, ya = display(x0, y0)
+    xb, yb = display(x1, y1)
+    return (min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb))
+
+
+def _image_boxes(
+    page: object,
+    display: Callable[[float, float], tuple[float, float]],
+    width: float,
+    height: float,
+) -> tuple[Box, ...]:
+    """The displayed box of each image object, clipped to the page; those outside it left out."""
     import pypdfium2.raw as raw
 
-    left, bottom, uw, uh = box
-    if uw <= 0 or uh <= 0:
-        return 0.0
-    covered = 0.0
+    boxes: list[Box] = []
     for obj in page.get_objects(filter=[raw.FPDF_PAGEOBJ_IMAGE]):  # type: ignore[attr-defined]
-        x0, y0, x1, y1 = obj.get_bounds()
-        w = min(x1, left + uw) - max(x0, left)
-        h = min(y1, bottom + uh) - max(y0, bottom)
-        if w > 0 and h > 0:
-            covered += w * h
-    return min(covered / (uw * uh), 1.0)
+        x0, y0, x1, y1 = _displayed(display, *obj.get_bounds())
+        clipped = (max(x0, 0.0), max(y0, 0.0), min(x1, width), min(y1, height))
+        if clipped[0] < clipped[2] and clipped[1] < clipped[3]:
+            boxes.append(clipped)
+    return tuple(boxes)
+
+
+def _links(
+    page: object, display: Callable[[float, float], tuple[float, float]]
+) -> tuple[tuple[Box, str], ...]:
+    """The displayed rect and URI of each link annotation whose action is a `/URI`."""
+    import pypdfium2.raw as raw
+
+    handle = page.raw  # type: ignore[attr-defined]
+    doc = page.pdf.raw  # type: ignore[attr-defined]
+    found: list[tuple[Box, str]] = []
+    position = ctypes.c_int(0)
+    link = raw.FPDF_LINK()
+    while raw.FPDFLink_Enumerate(handle, ctypes.byref(position), ctypes.byref(link)):
+        action = raw.FPDFLink_GetAction(link)
+        if not action or raw.FPDFAction_GetType(action) != raw.PDFACTION_URI:
+            continue
+        size = raw.FPDFAction_GetURIPath(doc, action, None, 0)
+        if size <= 1:
+            continue
+        buffer = ctypes.create_string_buffer(size)
+        raw.FPDFAction_GetURIPath(doc, action, buffer, size)
+        rect = raw.FS_RECTF()
+        if not raw.FPDFLink_GetAnnotRect(link, rect):
+            continue
+        box = _displayed(display, rect.left, rect.bottom, rect.right, rect.top)
+        found.append((box, buffer.value.decode("utf-8", "replace")))
+    return tuple(found)
