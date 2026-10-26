@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Monday 26 October 2026: Word documents converted in batches, for a target that takes
-        decomposed documents. PRs #329 to #330, opened on Monday 26 October 2026 (UTC).
+        decomposed documents. PRs #329 to #TBD, opened on Monday 26 October 2026 (UTC).
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -171,6 +171,10 @@
           <li>
             <a href="#conversion-batches">Word documents converted in batches</a>
             <span>— one file, several or a whole folder, each delivered as its own document</span>
+          </li>
+          <li>
+            <a href="#conversion-fixes">Conversion: times, links and empty headings</a>
+            <span>— how long each document took, its link in the target, no empty sections</span>
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -199,6 +203,19 @@
             A third migration (<code>202610261200_decomposition_items_source_key</code>) indexes
             batch items by source key, so detaching a document stays quick as batches accumulate. It
             also runs on its own when the API starts.
+          </li>
+          <li>
+            Two more migrations run on their own when the API starts:
+            <code>202610261330_decomposition_items_link_backfill</code> fills in the link of
+            documents already delivered whose link was missing, and
+            <code>202610261331_decomposition_items_times</code> records when each document started
+            and finished converting. Documents converted before it show no time. Each item now has
+            <code>startedAt</code> and <code>finishedAt</code> (null until known).
+          </li>
+          <li>
+            An empty heading in a Word file no longer becomes a section titled <code>[]</code>, so a
+            document converted again after this change may have fewer sections than before. The text
+            under an empty heading now stays in the section before it.
           </li>
           <li>
             New API routes under <code>/api/conversions</code>: the targets that take documents, and
@@ -307,6 +324,33 @@
         target: created, already loaded, updated, changed in the target, accepted and detached. The
         next step is converting a sample report through the tab to the first real target.
       </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="conversion-fixes">Conversion: times, links and empty headings</h3>
+      <p class="prs">#TBD</p>
+      <p>Four things found converting a large report through the Conversion tab:</p>
+      <ul>
+        <li>
+          Each row now says how long its document took to convert, such as
+          <strong>took 1 min 12 s</strong>, and <strong>running for 40 s</strong> while it is still
+          going.
+        </li>
+        <li>
+          <strong>Open in the target</strong> now shows for a target that calls its documents maps,
+          including for documents already delivered. It always opens the document itself, never one
+          of its topics or images.
+        </li>
+        <li>
+          An empty heading, which Word shows as nothing, no longer makes an empty section titled
+          <code>[]</code>. It is left out, what follows it stays where it was, and the report notes
+          that an empty heading was left out.
+        </li>
+        <li>
+          A file sent again after an earlier attempt that may have reached the target now says why
+          that is safe: it was sent again with the same key as the earlier attempt, so the target
+          can't create it twice.
+        </li>
+      </ul>
       <p class="top"><a href="#contents">Back to contents</a></p>
       <h2 id="other">Other updates</h2>
 

@@ -281,7 +281,7 @@ describe('a conversion item, settled from the bridge events', () => {
     const t = await delivered();
     t.workerRecords();
     const receipt = documentReceipt('doc-1');
-    const map = 'https://docs.example.test/#app:doc-1%2Ftopicmap%2Fdoc-1%2Fmap';
+    const map = 'https://docs.example.test/maps/doc-1';
     receipt.written = [
       { kind: 'topic', id: 'doc-1/t1', label: 'Intro', url: 'https://docs.example.test/t1' },
       { kind: 'map', id: 'doc-1/map', label: 'Results', url: map },
