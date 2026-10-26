@@ -248,29 +248,27 @@ def test_vmerge_with_mismatched_span_fails(rows: list[str]) -> None:
         source_grid(element_of(body))
 
 
-def test_text_in_continue_cell_is_appended_to_origin() -> None:
+def test_text_in_continue_cell_is_left_out_as_word_shows_it() -> None:
+    # Word shows only the restart cell's content; some generators repeat it in the hidden
+    # continue cells, which would otherwise appear once per merged row.
     t, grid, _ = table(
         tbl(
             tr(tc("A", vmerge="restart"), tc("x")),
-            tr(tc("B", vmerge="continue"), tc("y")),
-            tr(tc(vmerge="continue"), tc("z")),  # empty, the normal case: adds nothing
+            tr(tc("A", vmerge="continue"), tc("y")),
+            tr(tc(vmerge="continue"), tc("z")),
             tr(tc("C", vmerge="continue"), tc("w")),
             cols=[1, 1],
         )
     )
     origin = t.rows[0].cells[0]
     assert origin.row_span == 4
-    assert cell_text(origin) == "A\nB\nC"
-    assert [b.id for b in origin.blocks] == [
-        "s~lead#table-1#cell-1#p-1",
-        "s~lead#table-1#cell-3#p-1",
-        "s~lead#table-1#cell-7#p-1",
-    ]
+    assert cell_text(origin) == "A"
+    assert [b.id for b in origin.blocks] == ["s~lead#table-1#cell-1#p-1"]
     assert [[s.text for s in row] for row in grid] == [
-        ["A\nB\nC", "x"],
-        ["A\nB\nC", "y"],
-        ["A\nB\nC", "z"],
-        ["A\nB\nC", "w"],
+        ["A", "x"],
+        ["A", "y"],
+        ["A", "z"],
+        ["A", "w"],
     ]
     assert origins(grid) == model_grid(t)
 
