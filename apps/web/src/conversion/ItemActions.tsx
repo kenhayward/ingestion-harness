@@ -97,11 +97,14 @@ export function ItemActions({
   item,
   onOpen,
   onResult,
+  menu = false,
 }: {
   api: Api;
   item: Item;
   onOpen: (kind: DialogKind) => void;
   onResult: (result: ActionResult) => void;
+  /** As items of a row's menu: named by their words alone, the first after a line. */
+  menu?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   /** Set from the first click until the request settles, before a render can disable it. */
@@ -121,13 +124,16 @@ export function ItemActions({
   }
 
   const key = item.sourceKey;
+  /** A button's own name: on the panel it names its document, in a row's menu the menu does. */
+  const named = (label: string) =>
+    menu ? { role: 'menuitem' as const } : { 'aria-label': `${label} ${key}` };
   return (
     <>
       {canForce(item) && (
         <button
           type="button"
           disabled={busy}
-          aria-label={`Force-load ${key}`}
+          {...named('Force-load')}
           onClick={() => void forceLoad()}
         >
           Force-load
@@ -137,7 +143,7 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          aria-label={`Redeliver ${key}`}
+          {...named('Redeliver')}
           onClick={() => onOpen('redeliver')}
         >
           Redeliver
@@ -157,19 +163,14 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          aria-label={`Accept the target's state for ${key}`}
+          {...named("Accept the target's state for")}
           onClick={() => onOpen('accept')}
         >
           Accept the target&apos;s state
         </button>
       )}
       {canDetach(item) && (
-        <button
-          type="button"
-          disabled={busy}
-          aria-label={`Detach ${key}`}
-          onClick={() => onOpen('detach')}
-        >
+        <button type="button" disabled={busy} {...named('Detach')} onClick={() => onOpen('detach')}>
           Detach
         </button>
       )}

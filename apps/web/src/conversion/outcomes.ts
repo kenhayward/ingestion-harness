@@ -1,5 +1,5 @@
-import type { Item, ItemOutcome, ItemResolution } from '@ih/shared';
-import type { Tone } from '../jobs/derive.js';
+import type { BatchSummary, Item, ItemOutcome, ItemResolution } from '@ih/shared';
+import type { StatusIcon, Tone } from '../jobs/derive.js';
 
 /** How an item's outcome reads on its row (spec §3's wording, and phase 3's own outcomes). */
 export const OUTCOME: Record<ItemOutcome, { label: string; tone: Tone }> = {
@@ -88,4 +88,46 @@ export function itemTiming(
   return UNFINISHED.includes(item.outcome)
     ? `running for ${spokenDuration((now - start) / 1000)}`
     : null;
+}
+
+/** The glyph a row shows for its outcome (the label names it). */
+export const OUTCOME_ICON: Record<ItemOutcome, StatusIcon> = {
+  queued: 'queued',
+  decomposing: 'spinner',
+  delivering: 'spinner',
+  created: 'done',
+  updated: 'done',
+  already_loaded: 'cancelled',
+  duplicate: 'warning',
+  in_flight: 'cancelled',
+  changed_in_target: 'warning',
+  read_back_mismatch: 'warning',
+  unresolved: 'warning',
+  failed: 'failed',
+};
+
+/** Delivered as a document: created or updated. */
+export const isDelivered = (item: Pick<Item, 'outcome'>) =>
+  item.outcome === 'created' || item.outcome === 'updated';
+export const isFailed = (item: Pick<Item, 'outcome'>) => item.outcome === 'failed';
+
+/** How a batch stands, as one glyph on its row in Earlier batches. */
+export function batchState(b: BatchSummary): { icon: StatusIcon; tone: Tone; label: string } {
+  const n = (o: ItemOutcome) => b.counts[o] ?? 0;
+  if (b.state === 'discarded') return { icon: 'rejected', tone: 'neutral', label: 'Discarded' };
+  if (b.state === 'open') return { icon: 'cancelled', tone: 'neutral', label: 'Never started' };
+  if (UNFINISHED.some((o) => n(o) > 0)) return { icon: 'spinner', tone: 'info', label: 'Under way' };
+  if (n('failed') > 0) return { icon: 'failed', tone: 'danger', label: 'Some failed' };
+  if (NEEDS_ATTENTION.some((o) => n(o) > 0))
+    return { icon: 'warning', tone: 'warn', label: 'Needs attention' };
+  if (b.itemCount > 0 && n('created') + n('updated') === 0)
+    return { icon: 'cancelled', tone: 'neutral', label: 'Nothing new' };
+  return { icon: 'done', tone: 'ok', label: 'Done' };
+}
+
+/** A size as the panel says it: "412 KB", "1.2 MB". */
+export function spokenSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

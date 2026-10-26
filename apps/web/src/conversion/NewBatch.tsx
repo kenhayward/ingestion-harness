@@ -235,169 +235,227 @@ export function NewBatch({ api }: { api: Api }) {
   };
 
   const ready = rows.filter((r) => r.status === 'ready').length;
+  const skipped = rows.filter((r) => r.status === 'invalid').length;
   const noTargets = targets !== null && targets.length === 0;
+  const chosen = targets?.find((t) => t.id === target);
+  const convert = ready ? `Convert ${plural(ready, 'document')}` : 'Convert documents';
 
   return (
-    <section className="card new-batch" aria-labelledby={`${filesId}-heading`}>
-      <h2 className="section-heading" id={`${filesId}-heading`}>
-        New batch
-      </h2>
-      <label className="field">
-        Target
-        <select
-          value={target}
-          disabled={!targets?.length || busy}
-          onChange={(e) => setTarget(e.target.value)}
-        >
-          {(targets ?? []).map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label} · {t.sinkName}
-            </option>
-          ))}
-        </select>
-      </label>
-      {noTargets && (
-        <p className="muted">
-          No target takes Word documents yet. An administrator sets one up under Administration &gt;
-          Publishing targets.
-        </p>
-      )}
-      {targetsError && <p role="alert">The targets could not be read: {targetsError}</p>}
+    <section className="card new-batch" aria-label="New batch">
+      <div className="new-batch-side">
+        <div className="new-batch-step">
+          <h2 className="new-batch-step-title">
+            <span className="step-no">1</span> Target
+          </h2>
+          <select
+            aria-label="Target"
+            value={target}
+            disabled={!targets?.length || busy}
+            onChange={(e) => setTarget(e.target.value)}
+          >
+            {(targets ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label} · {t.sinkName}
+              </option>
+            ))}
+          </select>
+          {chosen && (
+            <p className="muted new-batch-note">
+              <span className="sink-tag">{chosen.sinkName}</span> takes Word documents
+            </p>
+          )}
+          {noTargets && (
+            <p className="muted new-batch-note">
+              No target takes Word documents yet. An administrator sets one up under Administration
+              &gt; Publishing targets.
+            </p>
+          )}
+          {targetsError && <p role="alert">The targets could not be read: {targetsError}</p>}
+        </div>
 
-      <div
-        className={over ? 'drop-zone conversion-drop over' : 'drop-zone conversion-drop'}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setOver(true);
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={onDrop}
-      >
-        <span className="drop-icon" aria-hidden="true">
-          <Icon name="upload" size={20} />
-        </span>
-        <span className="drop-text">
-          <strong>Drop Word files or a folder here</strong>
-          <small>Each Word document (.docx) is delivered as a document of its own</small>
-        </span>
-        <span className="conversion-choose">
-          <input
-            id={filesId}
-            className="visually-hidden"
-            type="file"
-            accept={WORD_ACCEPT}
-            multiple
-            disabled={busy}
-            onChange={(e) => {
-              add([...(e.target.files ?? [])].map((file) => ({ file, path: file.name })));
-              e.target.value = ''; // the same file can be picked again
-            }}
-          />
-          <label htmlFor={filesId} className="button">
-            Choose files
+        <div className="new-batch-step">
+          <h2 className="new-batch-step-title">
+            <span className="step-no">3</span> Options
+          </h2>
+          <label className="conv-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={force}
+              disabled={busy}
+              onChange={(e) => setForce(e.target.checked)}
+            />
+            <span className="conv-switch-track" aria-hidden="true" />
+            Force-load
           </label>
-          <input
-            id={folderId}
-            className="visually-hidden"
-            type="file"
-            multiple
-            disabled={busy}
-            {...{ webkitdirectory: '', directory: '' }}
-            onChange={(e) => {
-              add(
-                [...(e.target.files ?? [])]
-                  .map((file) => ({ file, path: file.webkitRelativePath || file.name }))
-                  .sort(byPath),
-              );
-              e.target.value = '';
-            }}
-          />
-          <label htmlFor={folderId} className="button">
-            Choose folder
-          </label>
-        </span>
+          <p className="muted new-batch-note">
+            Delivers every file as an explicit update, even one already loaded or a copy of another
+            file. Changes made in the target are still never overwritten.
+          </p>
+        </div>
+
+        <div className="new-batch-go">
+          {progress && (
+            <div className="conversion-progress" role="status">
+              <Meter label="Upload progress" value={(progress.at + progress.part) / progress.of} />
+              <span>
+                Uploading {progress.at + 1} of {progress.of}
+              </span>
+            </div>
+          )}
+          {error && <p role="alert">{error}</p>}
+          {started && (
+            <p role="status">
+              The batch started without the files refused.{' '}
+              <a href={`#/conversion/${encodeURIComponent(started)}`}>Open the batch</a>
+            </p>
+          )}
+          <div className="new-batch-buttons">
+            {progress ? (
+              <button
+                type="button"
+                onClick={() => {
+                  cancelled.current = true;
+                }}
+              >
+                Cancel
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="primary"
+              disabled={!ready || !target || busy}
+              onClick={() => void start()}
+            >
+              {busy ? 'Converting…' : convert}
+            </button>
+          </div>
+          {chosen && (
+            <p className="muted new-batch-to">
+              to {chosen.label} · {chosen.sinkName}
+            </p>
+          )}
+        </div>
       </div>
 
-      {leftOut > 0 && (
-        <p className="muted" role="status">
-          {plural(leftOut, 'file')} left out: only Word documents (.docx) are converted, and hidden
-          and lock files are skipped.
-        </p>
-      )}
-
-      {rows.length > 0 && (
-        <ul className="upload-list" aria-label="Files to convert">
-          {rows.map((r) => (
-            <li key={r.key} className={ROW_CLASS[r.status]}>
-              <span className="mono">{r.sourceKey}</span>
-              <span className="conversion-row-end">
-                <span>{r.message}</span>
-                {!busy && r.status !== 'uploaded' && (
-                  <button
-                    type="button"
-                    className="icon"
-                    aria-label={`Remove ${r.sourceKey}`}
-                    title="Remove"
-                    onClick={() => setRows((prev) => prev.filter((p) => p.key !== r.key))}
-                  >
-                    <Icon name="close" size={14} />
-                  </button>
-                )}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <label className="inline">
-        <input
-          type="checkbox"
-          checked={force}
-          disabled={busy}
-          onChange={(e) => setForce(e.target.checked)}
-        />
-        Force-load
-      </label>
-      <p className="muted conversion-hint">
-        Delivers every file as an explicit update, even one already loaded or a copy of another
-        file. Changes made in the target are still never overwritten.
-      </p>
-
-      {progress && (
-        <div className="conversion-progress" role="status">
-          <Meter label="Upload progress" value={(progress.at + progress.part) / progress.of} />
-          <span>
-            Uploading {progress.at + 1} of {progress.of}
+      <div className="new-batch-files">
+        <h2 className="new-batch-step-title" id={`${filesId}-heading`}>
+          <span className="step-no">2</span> Word files
+        </h2>
+        <div
+          className={over ? 'drop-zone conversion-drop over' : 'drop-zone conversion-drop'}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setOver(true);
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={onDrop}
+        >
+          <span className="drop-icon" aria-hidden="true">
+            <Icon name="upload" size={20} />
+          </span>
+          <span className="drop-text">
+            <strong>Drop Word files or a folder here</strong>
+            <small>Each .docx becomes a document of its own · folders keep their paths</small>
+          </span>
+          <span className="conversion-choose">
+            <input
+              id={filesId}
+              className="visually-hidden"
+              type="file"
+              accept={WORD_ACCEPT}
+              multiple
+              disabled={busy}
+              onChange={(e) => {
+                add([...(e.target.files ?? [])].map((file) => ({ file, path: file.name })));
+                e.target.value = ''; // the same file can be picked again
+              }}
+            />
+            <label htmlFor={filesId} className="button">
+              Choose files
+            </label>
+            <input
+              id={folderId}
+              className="visually-hidden"
+              type="file"
+              multiple
+              disabled={busy}
+              {...{ webkitdirectory: '', directory: '' }}
+              onChange={(e) => {
+                add(
+                  [...(e.target.files ?? [])]
+                    .map((file) => ({ file, path: file.webkitRelativePath || file.name }))
+                    .sort(byPath),
+                );
+                e.target.value = '';
+              }}
+            />
+            <label htmlFor={folderId} className="button">
+              Choose folder
+            </label>
           </span>
         </div>
-      )}
-      {error && <p role="alert">{error}</p>}
-      {started && (
-        <p role="status">
-          The batch started without the files refused above.{' '}
-          <a href={`#/conversion/${encodeURIComponent(started)}`}>Open the batch</a>
-        </p>
-      )}
 
-      <div className="card-actions">
-        {progress ? (
-          <button
-            type="button"
-            onClick={() => {
-              cancelled.current = true;
-            }}
-          >
-            Cancel
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="primary"
-          disabled={!ready || !target || busy}
-          onClick={() => void start()}
-        >
-          Start
-        </button>
+        {(rows.length > 0 || leftOut > 0) && (
+          <div className="file-list">
+            <div className="file-list-head">
+              <strong>{plural(rows.length, 'file')}</strong>
+              <span className="muted">
+                {' '}
+                · {ready} ready
+                {skipped > 0 && ` · ${skipped} skipped`}
+              </span>
+              {leftOut > 0 && (
+                <span
+                  className="muted"
+                  title="Only Word documents (.docx) are converted, and hidden and lock files are skipped."
+                >
+                  {' '}
+                  · {plural(leftOut, 'file')} left out (not .docx, hidden or lock files)
+                </span>
+              )}
+              {!busy && (
+                <button
+                  type="button"
+                  className="link file-list-clear"
+                  onClick={() => {
+                    setRows([]);
+                    setLeftOut(0);
+                    setStarted(null);
+                  }}
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+            {rows.length > 0 && (
+              <ul className="file-list-rows" aria-label="Files to convert">
+                {rows.map((r) => (
+                  <li key={r.key} className={ROW_CLASS[r.status]}>
+                    <span className="file-tag" aria-hidden="true">
+                      DOCX
+                    </span>
+                    <span className="mono">{r.sourceKey}</span>
+                    <span className="conversion-row-end">
+                      <span>{r.message}</span>
+                      {!busy && r.status !== 'uploaded' && (
+                        <button
+                          type="button"
+                          className="icon"
+                          aria-label={`Remove ${r.sourceKey}`}
+                          title="Remove"
+                          onClick={() => setRows((prev) => prev.filter((p) => p.key !== r.key))}
+                        >
+                          <Icon name="close" size={14} />
+                        </button>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

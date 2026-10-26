@@ -6,6 +6,7 @@ import type {
   BatchSummary,
   ConversionTarget,
   CreateBatch,
+  RetryItems,
   Item as ConversionItem,
   RetriedRuns,
   StepAttempts,
@@ -903,6 +904,10 @@ export interface Api {
   forceConversionItem(itemId: string): Promise<BatchDetail>;
   /** Updates the item's document, from the stored file or a replacement: a new batch of one. */
   redeliverConversionItem(itemId: string, file?: File): Promise<BatchDetail>;
+  /** Re-runs the chosen failed documents of a started batch, each from its stored file: a new batch. */
+  retryConversionItems(batchId: string, body: RetryItems): Promise<BatchDetail>;
+  /** The stored original file of a batch item (a download link). */
+  conversionSourceUrl(itemId: string): string;
   /** Forgets the item's document; it stays in the target untouched. */
   detachConversionItem(itemId: string): Promise<ConversionItem>;
   /**
@@ -1903,6 +1908,10 @@ export function createHttpApi(base = '/api'): Api {
       form.append('file', file);
       return apiFetch(url, { method: 'POST', body: form }).then(json<BatchDetail>);
     },
+    retryConversionItems: (batchId, body) =>
+      post<BatchDetail>(`${base}/conversions/batches/${encodeURIComponent(batchId)}/retry`, body),
+    conversionSourceUrl: (itemId) =>
+      `${base}/conversions/items/${encodeURIComponent(itemId)}/source`,
     detachConversionItem: (itemId) =>
       post<ConversionItem>(`${base}/conversions/items/${encodeURIComponent(itemId)}/detach`, {}),
     reloadConversionItem: (itemId) =>

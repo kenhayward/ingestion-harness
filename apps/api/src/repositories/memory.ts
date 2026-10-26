@@ -41,6 +41,8 @@ import {
   type RegisterAction,
   type Rerun,
   type RerunResult,
+  type Retry,
+  type RetryResult,
   RUNNING_OUTCOMES,
   isGone,
   isReloadable,
@@ -1483,6 +1485,62 @@ export class MemoryRepo implements IngestionRepo {
     this.conversionBatches.set(batchId, batch);
     this.conversionItems.set(itemId, item);
     return { ok: true, batch: structuredClone(batch), item: this.withResolution(item) };
+  }
+
+  async retryItems({
+    batchId,
+    items,
+    targetId,
+    force,
+    createdBy,
+    by,
+  }: Retry): Promise<RetryResult> {
+    const busy = items.find(({ of }) =>
+      [...this.conversionItems.values()].some(
+        (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
+      ),
+    );
+    if (busy) return { ok: false, reason: 'running', itemId: busy.of.id };
+    const now = new Date().toISOString();
+    const batch: Batch = {
+      id: batchId,
+      targetId,
+      createdBy: { ...createdBy },
+      state: 'started',
+      force,
+      createdAt: now,
+      startedAt: now,
+    };
+    this.conversionBatches.set(batchId, batch);
+    const made = items.map(({ itemId, of }) => {
+      const item: StoredItem = {
+        id: itemId,
+        batchId,
+        sourceKey: of.sourceKey,
+        filename: of.filename,
+        contentSha256: of.contentSha256,
+        sizeBytes: of.sizeBytes,
+        objectKey: of.objectKey,
+        jobId: null,
+        outcome: 'queued',
+        detail: null,
+        registerEntryId: null,
+        reportKey: null,
+        link: null,
+        redeliverOf: of.id,
+        startedAt: null,
+        finishedAt: null,
+      };
+      item.jobId = this.queueBackground(
+        'decompose',
+        { batchId, itemId, targetId, sourceKey: of.sourceKey, force },
+        by?.name ?? null,
+        by?.userId ?? null,
+      );
+      this.conversionItems.set(itemId, item);
+      return this.withResolution(item);
+    });
+    return { ok: true, batch: structuredClone(batch), items: made };
   }
 
   async registerEntry(id: string): Promise<RegisterEntry | null> {

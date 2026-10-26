@@ -1240,3 +1240,25 @@ describe("http api: a step's model log", () => {
     ]);
   });
 });
+
+describe('http api: conversion', () => {
+  it('re-runs chosen failed documents of a batch', async () => {
+    const fetchMock = vi.fn(async () => respond(201, { batch: { id: 'b2' }, items: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const detail = await createHttpApi('/api').retryConversionItems('b1', {
+      itemIds: ['i1', 'i2'],
+      force: true,
+    });
+    expect(detail.batch.id).toBe('b2');
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/conversions/batches/b1/retry');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ itemIds: ['i1', 'i2'], force: true });
+  });
+
+  it("links a document's original file", () => {
+    expect(createHttpApi('/api').conversionSourceUrl('i1')).toBe(
+      '/api/conversions/items/i1/source',
+    );
+  });
+});

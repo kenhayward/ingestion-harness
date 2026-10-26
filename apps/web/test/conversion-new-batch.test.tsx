@@ -13,6 +13,8 @@ const TARGETS = [
   { id: 'documents', label: 'Controlled documents', sinkName: 'Document sink' },
   { id: 'archive', label: 'Archive', sinkName: 'Document sink' },
 ];
+/** The batch's start button: "Convert N documents" ("Convert documents" with none ready). */
+const CONVERT = /^Convert( \d+)? documents?$/;
 const OPERATOR = { ...ADMIN_ME, role: 'operator' as const, label: 'Olu', email: 'olu@example.com' };
 
 const word = (name: string) => new File(['PK'], name); // browsers often send no type for .docx
@@ -69,7 +71,7 @@ describe('the Conversion tab: a new batch', () => {
       <ConversionPage api={conversionApi({ listConversionTargets: vi.fn(async () => []) })} />,
     );
     expect(await screen.findByText(/No target takes Word documents yet/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: CONVERT })).toBeDisabled();
   });
 
   it('a single file becomes a batch of one', async () => {
@@ -80,7 +82,7 @@ describe('the Conversion tab: a new batch', () => {
     const report = word('report.docx');
     await userEvent.upload(screen.getByLabelText('Choose files'), report);
     expect(listed()).toEqual(['report.docx']);
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalledWith(BATCH_ID));
     expect(api.createConversionBatch).toHaveBeenCalledWith({ targetId: 'archive', force: false });
     expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
@@ -97,8 +99,8 @@ describe('the Conversion tab: a new batch', () => {
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
     await userEvent.upload(screen.getByLabelText('Choose files'), word('report.docx'));
-    await userEvent.click(screen.getByRole('checkbox', { name: /Force-load/ }));
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Force-load' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() =>
       expect(api.createConversionBatch).toHaveBeenCalledWith({
         targetId: 'documents',
@@ -114,7 +116,7 @@ describe('the Conversion tab: a new batch', () => {
     const files = [inFolder('Policies/sub/b.docx'), inFolder('Policies/a.docx')];
     await userEvent.upload(screen.getByLabelText('Choose folder'), files);
     expect(listed()).toEqual(['Policies/a.docx', 'Policies/sub/b.docx']);
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
     expect(vi.mocked(api.uploadConversionItem).mock.calls.map((c) => c[2])).toEqual([
       'Policies/a.docx',
@@ -158,7 +160,7 @@ describe('the Conversion tab: a new batch', () => {
     ]);
     const bad = screen.getByText('a\\b.docx').closest('li')!;
     expect(bad).toHaveTextContent('the source key holds a backslash');
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
     expect(vi.mocked(api.uploadConversionItem).mock.calls.map((c) => c[2])).toEqual(['good.docx']);
   });
@@ -180,7 +182,7 @@ describe('the Conversion tab: a new batch', () => {
     expect(rows.map(([key]) => key)).toEqual(['a.docx', 'a.docx']);
     expect(rows[0]![1]).toContain('Ready');
     expect(rows[1]![1]).toContain('Already in the list');
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
     expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
     expect(vi.mocked(api.uploadConversionItem).mock.calls[0]![1]).toBe(first);
@@ -196,7 +198,7 @@ describe('the Conversion tab: a new batch', () => {
     await waitFor(() => expect(rowsOf()).toHaveLength(2));
     expect(rowsOf()[0]![1]).toContain('Ready');
     expect(rowsOf()[1]![1]).toContain('Already in the list');
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
     expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
   });
@@ -217,7 +219,7 @@ describe('the Conversion tab: a new batch', () => {
       ['Policies/b.docx', false],
       ['Policies/a.docx', true],
     ]);
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalled());
     expect(vi.mocked(api.uploadConversionItem).mock.calls.map((c) => c[2])).toEqual([
       'Policies/a.docx',
@@ -225,12 +227,12 @@ describe('the Conversion tab: a new batch', () => {
     ]);
   });
 
-  it('a second Start before the first renders opens no second batch', async () => {
+  it('a second Convert before the first renders opens no second batch', async () => {
     const api = conversionApi();
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
     await userEvent.upload(screen.getByLabelText('Choose files'), word('a.docx'));
-    const start = screen.getByRole('button', { name: 'Start' });
+    const start = screen.getByRole('button', { name: CONVERT });
     act(() => {
       start.click();
       start.click();
@@ -264,7 +266,7 @@ describe('the Conversion tab: a new batch', () => {
       word('old.docx'),
       word('c.docx'),
     ]);
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalledWith(BATCH_ID));
     expect(api.uploadConversionItem).toHaveBeenCalledTimes(3);
     expect(screen.getByText('old.docx').closest('li')).toHaveTextContent(
@@ -288,7 +290,7 @@ describe('the Conversion tab: a new batch', () => {
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
     await userEvent.upload(screen.getByLabelText('Choose files'), word('a.docx'));
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(api.discardConversionBatch).toHaveBeenCalledWith(BATCH_ID));
     expect(api.startConversionBatch).not.toHaveBeenCalled();
     expect(screen.getByText('a.docx').closest('li')).toHaveTextContent('tracked changes');
@@ -313,7 +315,7 @@ describe('the Conversion tab: a new batch', () => {
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
     await userEvent.upload(screen.getByLabelText('Choose files'), [word('a.docx'), word('b.docx')]);
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     expect(await screen.findByRole('img', { name: 'Upload progress: 25%' })).toBeInTheDocument();
     expect(screen.getByText('Uploading 1 of 2')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -322,15 +324,15 @@ describe('the Conversion tab: a new batch', () => {
     expect(api.uploadConversionItem).toHaveBeenCalledTimes(1);
     expect(api.startConversionBatch).not.toHaveBeenCalled();
     expect(listed()).toEqual(['a.docx', 'b.docx']);
-    expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: CONVERT })).toBeEnabled();
   });
 
-  it('start opens the batch view', async () => {
+  it('converting opens the batch view', async () => {
     const api = conversionApi();
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
     await userEvent.upload(screen.getByLabelText('Choose files'), word('report.docx'));
-    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
     await waitFor(() => expect(window.location.hash).toBe(`#/conversion/${BATCH_ID}`));
   });
 

@@ -202,6 +202,25 @@ export const CreateBatchSchema = z
   .strict();
 export type CreateBatch = z.infer<typeof CreateBatchSchema>;
 
+/** The most documents one *Re-run failed* request names. */
+export const MAX_RETRY_ITEMS = 1000;
+
+/**
+ * `POST /api/conversions/batches/{id}/retry`: the batch's failed items to run again (each once),
+ * and whether to deliver them as an explicit update (absent: as the batch was started).
+ */
+export const RetryItemsSchema = z
+  .object({
+    itemIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(MAX_RETRY_ITEMS)
+      .refine((ids) => new Set(ids).size === ids.length, 'each item once'),
+    force: z.boolean().optional(),
+  })
+  .strict();
+export type RetryItems = z.infer<typeof RetryItemsSchema>;
+
 /**
  * One component a `changed_in_target` refusal lists (bridge contract `changedInTargetDetails`):
  * its version when it was delivered, and now (null: gone from the target).

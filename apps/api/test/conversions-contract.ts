@@ -365,6 +365,115 @@ export function conversionsContract(
       expect((await repo.rerunItem(rerunOf(of))).ok).toBe(true);
     });
 
+    /** A started batch of two items that failed, and its batch. */
+    const failedPair = async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const a = item(batch.id, 'manuals/a.docx');
+      const b = item(batch.id, 'manuals/b.docx');
+      await repo.addItem(a);
+      await repo.addItem(b);
+      await repo.startBatch(batch.id, null);
+      await facts.settleItem(a.id, 'failed', null);
+      await facts.settleItem(b.id, 'failed', null);
+      return {
+        repo,
+        facts,
+        batch,
+        items: [(await repo.getItem(a.id))!, (await repo.getItem(b.id))!],
+      };
+    };
+
+    const retryOf = (items: Item[], force = false) => ({
+      batchId: randomUUID(),
+      items: items.map((of) => ({ itemId: randomUUID(), of })),
+      targetId: 'manuals',
+      force,
+      createdBy: ADA,
+      by: { name: 'Ada', userId: ADA.id },
+    });
+
+    it('re-runs failed items as one started batch, each from its stored file', async () => {
+      const { repo, facts, items } = await failedPair();
+      const asked = retryOf(items);
+
+      const done = await repo.retryItems(asked);
+
+      if (!done.ok) throw new Error(done.reason);
+      expect(BatchSchema.parse(done.batch)).toMatchObject({
+        id: asked.batchId,
+        targetId: 'manuals',
+        force: false,
+        state: 'started',
+        createdBy: ADA,
+      });
+      expect(done.batch.startedAt).not.toBeNull();
+      expect(done.items.map((i) => ItemSchema.parse(i))).toEqual(
+        items.map((of, n) => ({
+          id: asked.items[n]!.itemId,
+          batchId: asked.batchId,
+          sourceKey: of.sourceKey,
+          filename: of.filename,
+          contentSha256: of.contentSha256,
+          sizeBytes: of.sizeBytes,
+          objectKey: of.objectKey,
+          jobId: expect.any(String),
+          outcome: 'queued',
+          detail: null,
+          registerEntryId: null,
+          reportKey: null,
+          link: null,
+          redeliverOf: of.id,
+          resolution: null,
+          unversioned: false,
+          startedAt: null,
+          finishedAt: null,
+        })),
+      );
+      expect(await repo.listItems(asked.batchId)).toEqual(done.items);
+      expect(await facts.job(done.items[1]!.jobId!)).toEqual({
+        task: 'decompose',
+        priority: 0,
+        maxAttempts: 3,
+        params: {
+          batchId: asked.batchId,
+          itemId: asked.items[1]!.itemId,
+          targetId: 'manuals',
+          sourceKey: items[1]!.sourceKey,
+          force: false,
+        },
+        createdBy: 'Ada',
+        createdByUser: ADA.id,
+      });
+    });
+
+    it('re-runs forced when asked', async () => {
+      const { repo, facts, items } = await failedPair();
+      const done = await repo.retryItems(retryOf(items.slice(0, 1), true));
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.batch.force).toBe(true);
+      expect(await facts.job(done.items[0]!.jobId!)).toMatchObject({
+        params: { force: true },
+      });
+    });
+
+    it('re-runs nothing while an earlier rerun of one of them is unfinished', async () => {
+      const { repo, facts, items } = await failedPair();
+      const first = await repo.retryItems(retryOf(items.slice(1)));
+      if (!first.ok) throw new Error(first.reason);
+      const second = retryOf(items);
+
+      expect(await repo.retryItems(second)).toEqual({
+        ok: false,
+        reason: 'running',
+        itemId: items[1]!.id,
+      });
+      expect(await repo.getBatch(second.batchId)).toBeNull();
+      expect(await repo.getItem(second.items[0]!.itemId)).toBeNull();
+      await facts.settleItem(first.items[0]!.id, 'created', null);
+      expect((await repo.retryItems(retryOf(items))).ok).toBe(true);
+    });
+
     it('detaches an entry: a tombstone, recorded, and said on the item', async () => {
       const { repo, facts, batch, item: a } = await finished();
       const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
