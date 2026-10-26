@@ -39,3 +39,12 @@ def test_reads_the_bridge_settings() -> None:
 
 def test_targets_are_no_longer_worker_settings() -> None:
     assert not any(name.startswith("target_") for name in Settings.__dataclass_fields__)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, None), ("", None), ("http://layout:8000", "http://layout:8000")],
+)
+def test_layout_url_is_optional(value: str | None, expected: str | None) -> None:
+    env = dict(REQUIRED) if value is None else {**REQUIRED, "LAYOUT_URL": value}
+    assert Settings.from_env(env).layout_url == expected

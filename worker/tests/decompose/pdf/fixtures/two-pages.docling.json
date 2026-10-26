@@ -1,0 +1,704 @@
+{
+ "body": {
+  "children": [
+   {
+    "$ref": "#/pictures/0"
+   },
+   {
+    "$ref": "#/texts/1"
+   },
+   {
+    "$ref": "#/tables/0"
+   },
+   {
+    "$ref": "#/texts/2"
+   },
+   {
+    "$ref": "#/texts/3"
+   },
+   {
+    "$ref": "#/texts/4"
+   },
+   {
+    "$ref": "#/pictures/1"
+   },
+   {
+    "$ref": "#/texts/5"
+   }
+  ],
+  "content_layer": "body",
+  "label": "unspecified",
+  "name": "_root_",
+  "self_ref": "#/body"
+ },
+ "form_items": [],
+ "furniture": {
+  "children": [],
+  "content_layer": "furniture",
+  "label": "unspecified",
+  "name": "_root_",
+  "self_ref": "#/furniture"
+ },
+ "groups": [],
+ "key_value_items": [],
+ "name": "document",
+ "origin": {
+  "binary_hash": 10011710299116170041,
+  "filename": "document.pdf",
+  "mimetype": "application/pdf"
+ },
+ "pages": {
+  "1": {
+   "page_no": 1,
+   "size": {
+    "height": 842.0,
+    "width": 595.0
+   }
+  },
+  "2": {
+   "page_no": 2,
+   "size": {
+    "height": 842.0,
+    "width": 595.0
+   }
+  }
+ },
+ "pictures": [
+  {
+   "annotations": [],
+   "captions": [],
+   "children": [
+    {
+     "$ref": "#/texts/0"
+    }
+   ],
+   "content_layer": "body",
+   "footnotes": [],
+   "label": "picture",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 748.2750396728516,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 70.12714385986328,
+      "r": 238.097412109375,
+      "t": 766.8533248901367
+     },
+     "charspan": [
+      0,
+      0
+     ],
+     "page_no": 1
+    }
+   ],
+   "references": [],
+   "self_ref": "#/pictures/0"
+  },
+  {
+   "annotations": [],
+   "captions": [],
+   "children": [],
+   "content_layer": "body",
+   "footnotes": [],
+   "label": "picture",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 441.8797912597656,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 71.4207992553711,
+      "r": 372.1841125488281,
+      "t": 642.8812255859375
+     },
+     "charspan": [
+      0,
+      0
+     ],
+     "page_no": 2
+    }
+   ],
+   "references": [],
+   "self_ref": "#/pictures/1"
+  }
+ ],
+ "schema_name": "DoclingDocument",
+ "tables": [
+  {
+   "annotations": [],
+   "captions": [],
+   "children": [],
+   "content_layer": "body",
+   "data": {
+    "grid": [
+     [
+      {
+       "bbox": {
+        "b": 211.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 78.0,
+        "r": 106.116,
+        "t": 201.10199999999998
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 1,
+       "end_row_offset_idx": 1,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 0,
+       "start_row_offset_idx": 0,
+       "text": "R0C0"
+      },
+      {
+       "bbox": {
+        "b": 211.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 198.0,
+        "r": 226.11600000000004,
+        "t": 201.10199999999998
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 2,
+       "end_row_offset_idx": 1,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 1,
+       "start_row_offset_idx": 0,
+       "text": "R0C1"
+      },
+      {
+       "bbox": {
+        "b": 211.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 318.0,
+        "r": 346.116,
+        "t": 201.10199999999998
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 3,
+       "end_row_offset_idx": 1,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 2,
+       "start_row_offset_idx": 0,
+       "text": "R0C2"
+      }
+     ],
+     [
+      {
+       "bbox": {
+        "b": 241.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 78.0,
+        "r": 106.116,
+        "t": 231.10199999999998
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 1,
+       "end_row_offset_idx": 2,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 0,
+       "start_row_offset_idx": 1,
+       "text": "R1C0"
+      },
+      {
+       "bbox": {
+        "b": 241.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 198.0,
+        "r": 226.11600000000004,
+        "t": 231.10199999999998
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 2,
+       "end_row_offset_idx": 2,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 1,
+       "start_row_offset_idx": 1,
+       "text": "R1C1"
+      },
+      {
+       "bbox": {
+        "b": 241.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 318.0,
+        "r": 346.116,
+        "t": 231.10199999999998
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 3,
+       "end_row_offset_idx": 2,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 2,
+       "start_row_offset_idx": 1,
+       "text": "R1C2"
+      }
+     ],
+     [
+      {
+       "bbox": {
+        "b": 271.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 78.0,
+        "r": 106.116,
+        "t": 261.102
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 1,
+       "end_row_offset_idx": 3,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 0,
+       "start_row_offset_idx": 2,
+       "text": "R2C0"
+      },
+      {
+       "bbox": {
+        "b": 271.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 198.0,
+        "r": 226.11600000000004,
+        "t": 261.102
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 2,
+       "end_row_offset_idx": 3,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 1,
+       "start_row_offset_idx": 2,
+       "text": "R2C1"
+      },
+      {
+       "bbox": {
+        "b": 271.27700000000004,
+        "coord_origin": "TOPLEFT",
+        "l": 318.0,
+        "r": 346.116,
+        "t": 261.102
+       },
+       "col_span": 1,
+       "column_header": false,
+       "end_col_offset_idx": 3,
+       "end_row_offset_idx": 3,
+       "fillable": false,
+       "row_header": false,
+       "row_section": false,
+       "row_span": 1,
+       "start_col_offset_idx": 2,
+       "start_row_offset_idx": 2,
+       "text": "R2C2"
+      }
+     ]
+    ],
+    "num_cols": 3,
+    "num_rows": 3,
+    "orientation": "rot_0",
+    "table_cells": [
+     {
+      "bbox": {
+       "b": 211.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 78.0,
+       "r": 106.116,
+       "t": 201.10199999999998
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 1,
+      "end_row_offset_idx": 1,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 0,
+      "start_row_offset_idx": 0,
+      "text": "R0C0"
+     },
+     {
+      "bbox": {
+       "b": 211.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 198.0,
+       "r": 226.11600000000004,
+       "t": 201.10199999999998
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 2,
+      "end_row_offset_idx": 1,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 1,
+      "start_row_offset_idx": 0,
+      "text": "R0C1"
+     },
+     {
+      "bbox": {
+       "b": 211.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 318.0,
+       "r": 346.116,
+       "t": 201.10199999999998
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 3,
+      "end_row_offset_idx": 1,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 2,
+      "start_row_offset_idx": 0,
+      "text": "R0C2"
+     },
+     {
+      "bbox": {
+       "b": 241.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 78.0,
+       "r": 106.116,
+       "t": 231.10199999999998
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 1,
+      "end_row_offset_idx": 2,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 0,
+      "start_row_offset_idx": 1,
+      "text": "R1C0"
+     },
+     {
+      "bbox": {
+       "b": 241.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 198.0,
+       "r": 226.11600000000004,
+       "t": 231.10199999999998
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 2,
+      "end_row_offset_idx": 2,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 1,
+      "start_row_offset_idx": 1,
+      "text": "R1C1"
+     },
+     {
+      "bbox": {
+       "b": 241.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 318.0,
+       "r": 346.116,
+       "t": 231.10199999999998
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 3,
+      "end_row_offset_idx": 2,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 2,
+      "start_row_offset_idx": 1,
+      "text": "R1C2"
+     },
+     {
+      "bbox": {
+       "b": 271.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 78.0,
+       "r": 106.116,
+       "t": 261.102
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 1,
+      "end_row_offset_idx": 3,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 0,
+      "start_row_offset_idx": 2,
+      "text": "R2C0"
+     },
+     {
+      "bbox": {
+       "b": 271.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 198.0,
+       "r": 226.11600000000004,
+       "t": 261.102
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 2,
+      "end_row_offset_idx": 3,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 1,
+      "start_row_offset_idx": 2,
+      "text": "R2C1"
+     },
+     {
+      "bbox": {
+       "b": 271.27700000000004,
+       "coord_origin": "TOPLEFT",
+       "l": 318.0,
+       "r": 346.116,
+       "t": 261.102
+      },
+      "col_span": 1,
+      "column_header": false,
+      "end_col_offset_idx": 3,
+      "end_row_offset_idx": 3,
+      "fillable": false,
+      "row_header": false,
+      "row_section": false,
+      "row_span": 1,
+      "start_col_offset_idx": 2,
+      "start_row_offset_idx": 2,
+      "text": "R2C2"
+     }
+    ]
+   },
+   "footnotes": [],
+   "label": "table",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 561.4114990234375,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 70.78190612792969,
+      "r": 432.73516845703125,
+      "t": 653.4388427734375
+     },
+     "charspan": [
+      0,
+      0
+     ],
+     "page_no": 1
+    }
+   ],
+   "references": [],
+   "self_ref": "#/tables/0"
+  }
+ ],
+ "texts": [
+  {
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "level": 1,
+   "orig": "1 Scope of the plan",
+   "parent": {
+    "$ref": "#/pictures/0"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 748.274,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 72.0,
+      "r": 237.04199999999994,
+      "t": 764.924
+     },
+     "charspan": [
+      0,
+      19
+     ],
+     "page_no": 1
+    }
+   ],
+   "self_ref": "#/texts/0",
+   "text": "1 Scope of the plan"
+  },
+  {
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "orig": "This plan describes how the pilot line is checked before it is released. Each stage is signed off by the person who ran it, then reviewed.",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 691.723,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 72.0,
+      "r": 408.864,
+      "t": 719.898
+     },
+     "charspan": [
+      0,
+      138
+     ],
+     "page_no": 1
+    }
+   ],
+   "self_ref": "#/texts/1",
+   "text": "This plan describes how the pilot line is checked before it is released. Each stage is signed off by the person who ran it, then reviewed."
+  },
+  {
+   "children": [],
+   "content_layer": "furniture",
+   "label": "page_footer",
+   "orig": "Page 1",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 39.92999999999995,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 270.0,
+      "r": 301.69,
+      "t": 49.17999999999995
+     },
+     "charspan": [
+      0,
+      6
+     ],
+     "page_no": 1
+    }
+   ],
+   "self_ref": "#/texts/2",
+   "text": "Page 1"
+  },
+  {
+   "children": [],
+   "content_layer": "body",
+   "label": "section_header",
+   "level": 1,
+   "orig": "2 Records",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 748.274,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 72.0,
+      "r": 159.03,
+      "t": 764.924
+     },
+     "charspan": [
+      0,
+      9
+     ],
+     "page_no": 2
+    }
+   ],
+   "self_ref": "#/texts/3",
+   "text": "2 Records"
+  },
+  {
+   "children": [],
+   "content_layer": "body",
+   "label": "text",
+   "orig": "Records are kept for as long as the product is supplied. A picture of the line layout follows.",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 691.723,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 72.0,
+      "r": 341.01599999999996,
+      "t": 719.898
+     },
+     "charspan": [
+      0,
+      94
+     ],
+     "page_no": 2
+    }
+   ],
+   "self_ref": "#/texts/4",
+   "text": "Records are kept for as long as the product is supplied. A picture of the line layout follows."
+  },
+  {
+   "children": [],
+   "content_layer": "furniture",
+   "label": "page_footer",
+   "orig": "Page 2",
+   "parent": {
+    "$ref": "#/body"
+   },
+   "prov": [
+    {
+     "bbox": {
+      "b": 39.92999999999995,
+      "coord_origin": "BOTTOMLEFT",
+      "l": 270.0,
+      "r": 301.69,
+      "t": 49.17999999999995
+     },
+     "charspan": [
+      0,
+      6
+     ],
+     "page_no": 2
+    }
+   ],
+   "self_ref": "#/texts/5",
+   "text": "Page 2"
+  }
+ ],
+ "version": "1.10.0"
+}
