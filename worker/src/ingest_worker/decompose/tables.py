@@ -3,8 +3,8 @@
 The grid is Word's own. `w:tblGrid/w:gridCol` gives the columns (widened if a row is wider),
 `w:gridSpan` a cell's column span, and `w:vMerge` its row span: a `restart` cell absorbs the
 `continue` cells (`w:vMerge` with no value, or `continue`) directly below it that start in the
-same grid column with the same column span, and takes their content after its own. A continue
-cell under no merge is a cell of its own; one that overlaps a merge above without lining up
+same grid column with the same column span. Their own content is left out: Word shows only the
+restart cell's, and some generators repeat it in every continue cell. A continue cell under no merge is a cell of its own; one that overlaps a merge above without lining up
 with it is ambiguous and refused. Slots a row leaves empty (`w:gridBefore`, `w:gridAfter`, or a
 row short of the grid) become empty cells, one per slot. A row deleted by a tracked change is
 dropped; tracked cell-level changes and legacy horizontal merges are refused.
@@ -271,10 +271,7 @@ def source_grid(tbl: Element) -> list[list[GridSlot]]:
             up = above[c]
             merging = [o for o in above[c : c + span] if o is not None and o.mergeable]
             if merge == "continue" and up in merging and up.origin[1] == c and up.span == span:
-                owner = up
-                text = _plain_text(tc)
-                if text.strip():
-                    texts[owner.origin] = "\n".join(t for t in (texts[owner.origin], text) if t)
+                owner = up  # its own content is hidden, as Word shows it
             elif merge == "continue" and merging:
                 raise DecompositionFailed(_AMBIGUOUS)
             else:
@@ -395,14 +392,13 @@ def table_of(
     layouts = [_layout(tr, width) for tr in kept]
     _resolve_merges(layouts, id)
 
-    # Read every cell in document order; a continue cell's content goes after its origin's.
+    # Read every cell in document order; a continue cell's content is hidden, as Word shows it.
     ordinal = 0
     for row in layouts:
         for entry in row:
             ordinal += 1
-            if entry.tc is not None:
-                blocks = walk_blocks(entry.tc, child_id(id, "cell", ordinal))
-                (entry.head or entry).blocks.extend(blocks)
+            if entry.tc is not None and entry.head is None:
+                entry.blocks.extend(walk_blocks(entry.tc, child_id(id, "cell", ordinal)))
 
     header_rows = 0
     while header_rows < len(kept) and _is_header(kept[header_rows]):

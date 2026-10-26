@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Monday 26 October 2026: Word documents converted in batches, for a target that takes
-        decomposed documents. PRs #329 to #333, opened on Monday 26 October 2026 (UTC).
+        decomposed documents. PRs #329 to #334, opened on Monday 26 October 2026 (UTC).
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -185,6 +185,10 @@
             <span
               >— a new batch in three steps, a batch one line a document, re-run what failed</span
             >
+          </li>
+          <li>
+            <a href="#merged-cells">A cell merged down a table shows its text once</a>
+            <span>— not once for every row it covers</span>
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -447,6 +451,16 @@
           document needs attention, and is not among the failed documents to re-run.
         </li>
       </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="merged-cells">A cell merged down a table shows its text once</h3>
+      <p class="prs">PR to follow</p>
+      <p>
+        Some tools that write Word files repeat a merged cell's text in each row it covers. Word
+        hides the repeats and shows the text once, but the converted document showed it once per
+        row that repeated it: seven times in a report's table whose first cell ran down nine rows. The converted
+        document now shows only what Word shows.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
       <h2 id="other">Other updates</h2>
 

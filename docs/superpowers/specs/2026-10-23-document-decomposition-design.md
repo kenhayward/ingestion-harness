@@ -247,7 +247,9 @@ A table holds the following.
 
 The cell grid is resolved from Word's own grid (`gridCol`, `gridSpan`, `vMerge`). A table whose
 grid doesn't resolve to a rectangle, where every grid slot is covered exactly once, fails the
-fidelity check (§7). Nested tables are kept as a table inside a cell. **[call]**
+fidelity check (§7). A cell merged down rows (`vMerge`) holds only its first cell's content, as
+Word shows it: some generators repeat the text in the hidden cells below, and that copy is left
+out (found in use, 2026-10-26). Nested tables are kept as a table inside a cell. **[call]**
 
 ### 5.5 Images
 

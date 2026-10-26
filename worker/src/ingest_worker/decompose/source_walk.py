@@ -767,7 +767,8 @@ class _Walk:
             col, _ = row_gaps(rows[r])
             for tc in cells_of(rows[r]):
                 origin = origins[i][col] if col < len(origins[i]) else None
-                read.append((origin or (i, col), self.container(tc)))
+                if origin is None or origin[0] == i:  # a merge's continue cells stay hidden
+                    read.append((origin or (i, col), self.container(tc)))
                 col += cell_span(tc)
         cells: dict[tuple[int, int], list[_SBlock]] = {}
         for origin, blocks in sorted(read, key=lambda item: item[0]):
