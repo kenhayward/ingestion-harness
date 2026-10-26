@@ -259,6 +259,9 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     const single = await convert({ 'notes.docx': word('A single note') });
     expect(outcomes(single)).toEqual({ 'notes.docx': 'created' });
     expect(single['notes.docx']!.detail).toBe('document doc-1');
+    // Timed by the worker's start and the settle of its delivery.
+    const { startedAt, finishedAt } = single['notes.docx']!;
+    expect(Date.parse(finishedAt!)).toBeGreaterThanOrEqual(Date.parse(startedAt!));
     expect(bridge.documents()).toHaveLength(1);
 
     // 2. A folder of three: created ×3, one document each.
@@ -282,6 +285,8 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       'manual/b.docx': 'already_loaded',
       'manual/c.docx': 'already_loaded',
     });
+    // Decided by the worker without a delivery: the worker finishes it.
+    expect(again['manual/a.docx']!.finishedAt).not.toBeNull();
 
     // 4. One file changed: that one is updated, in place, and the target now holds its text.
     const bFirst = (await documentOf(first['manual/b.docx']!)).persistentId;

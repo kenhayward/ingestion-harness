@@ -12672,6 +12672,18 @@
                     },
                     "unversioned": {
                       "type": "boolean"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -12690,7 +12702,9 @@
                     "link",
                     "redeliverOf",
                     "resolution",
-                    "unversioned"
+                    "unversioned",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": false,
                   "description": "The item."
@@ -13750,6 +13764,18 @@
                           },
                           "unversioned": {
                             "type": "boolean"
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -13768,7 +13794,9 @@
                           "link",
                           "redeliverOf",
                           "resolution",
-                          "unversioned"
+                          "unversioned",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": false
                       }
@@ -14276,6 +14304,18 @@
                           },
                           "unversioned": {
                             "type": "boolean"
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -14294,7 +14334,9 @@
                           "link",
                           "redeliverOf",
                           "resolution",
-                          "unversioned"
+                          "unversioned",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": false
                       }
@@ -14759,6 +14801,18 @@
                           },
                           "unversioned": {
                             "type": "boolean"
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -14777,7 +14831,9 @@
                           "link",
                           "redeliverOf",
                           "resolution",
-                          "unversioned"
+                          "unversioned",
+                          "startedAt",
+                          "finishedAt"
                         ],
                         "additionalProperties": false
                       }
@@ -15248,6 +15304,18 @@
                     },
                     "unversioned": {
                       "type": "boolean"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -15266,7 +15334,9 @@
                     "link",
                     "redeliverOf",
                     "resolution",
-                    "unversioned"
+                    "unversioned",
+                    "startedAt",
+                    "finishedAt"
                   ],
                   "additionalProperties": false,
                   "description": "The item: its detail says it was detached, and its `resolution` is `detached`."
@@ -15829,6 +15899,18 @@
                         },
                         "unversioned": {
                           "type": "boolean"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "finishedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -15847,7 +15929,9 @@
                         "link",
                         "redeliverOf",
                         "resolution",
-                        "unversioned"
+                        "unversioned",
+                        "startedAt",
+                        "finishedAt"
                       ],
                       "additionalProperties": false
                     },

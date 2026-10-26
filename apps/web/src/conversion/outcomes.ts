@@ -59,3 +59,33 @@ export const RESOLUTION: Record<ItemResolution, string> = {
 export const OUTCOME_NOTE: Partial<Record<ItemOutcome, string>> = {
   in_flight: "Another batch is delivering this document: its outcome shows in that batch's view.",
 };
+
+/** A duration as a row says it: "40 s", "1 min 12 s", "2 min", "1 h 2 min". */
+export function spokenDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) {
+    const rest = s % 60;
+    return `${Math.floor(s / 60)} min${rest ? ` ${rest} s` : ''}`;
+  }
+  const minutes = Math.floor((s % 3600) / 60);
+  return `${Math.floor(s / 3600)} h${minutes ? ` ${minutes} min` : ''}`;
+}
+
+/**
+ * How long a document took to convert ("took 1 min 12 s", from `startedAt` to `finishedAt`), or
+ * how long an unfinished one has run so far ("running for 40 s"); null before it started, and
+ * for a document converted before CT Studio timed them.
+ */
+export function itemTiming(
+  item: Pick<Item, 'outcome' | 'startedAt' | 'finishedAt'>,
+  now: number,
+): string | null {
+  if (!item.startedAt) return null;
+  const start = Date.parse(item.startedAt);
+  if (item.finishedAt)
+    return `took ${spokenDuration((Date.parse(item.finishedAt) - start) / 1000)}`;
+  return UNFINISHED.includes(item.outcome)
+    ? `running for ${spokenDuration((now - start) / 1000)}`
+    : null;
+}

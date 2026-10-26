@@ -892,6 +892,8 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     redeliverOf: null,
     resolution: null,
     unversioned: false,
+    startedAt: null,
+    finishedAt: null,
     ...o,
   };
 }

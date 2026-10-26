@@ -118,6 +118,12 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             [itemId, outcome, entryId],
           );
         },
+        times: async (itemId: string, startedAt: string | null, finishedAt: string | null) => {
+          await p.query(
+            `UPDATE decomposition_items SET started_at = $2, finished_at = $3 WHERE id = $1`,
+            [itemId, startedAt, finishedAt],
+          );
+        },
         dropEntry: async (entryId: string) => {
           await p.query('DELETE FROM decomposition_register WHERE id = $1', [entryId]);
         },
@@ -368,6 +374,7 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       link: 'https://docs.test/doc-1',
       registerEntryId: t.entryId,
       detail: 'document doc-1',
+      finishedAt: expect.any(String),
     });
     expect(await t.jobStatus()).toBe('succeeded');
     // A repeated event changes nothing.
@@ -385,6 +392,7 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     expect(await t.repo.getItem(t.itemId)).toMatchObject({
       outcome: 'changed_in_target',
       detail: 'the document changed in the target',
+      finishedAt: expect.any(String),
     });
     expect(await t.jobStatus()).toBe('succeeded');
     const { rows } = await t.p.query<{ message: string }>(

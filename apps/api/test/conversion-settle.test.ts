@@ -118,6 +118,26 @@ describe('a conversion item, settled from the bridge events', () => {
     expect(t.jobStatus()).toBe('succeeded');
   });
 
+  it('records when a delivered or refused item finished', async () => {
+    const t = await delivered();
+    t.workerRecords();
+    expect(t.item().finishedAt).toBeNull();
+    await applyEvent(t.deps, event(t.deliveryId));
+    expect(Date.parse(t.item().finishedAt!)).not.toBeNaN();
+
+    const refused = await delivered({ persistentId: 'doc-1' });
+    refused.workerRecords();
+    const error = bridgeError('changed_in_target', 'the document changed in the target');
+    await applyEvent(
+      refused.deps,
+      event(refused.deliveryId, { status: 'needs_user', error, receipt: null }),
+    );
+    expect(refused.item()).toMatchObject({
+      outcome: 'changed_in_target',
+      finishedAt: expect.any(String),
+    });
+  });
+
   it('settles an update of a known document as updated', async () => {
     const t = await delivered({ persistentId: 'doc-1' });
     t.workerRecords();
