@@ -41,7 +41,13 @@ from .model import (
 from .package import DecompositionFailed, Package
 from .source_walk import IMAGE_ONLY_EQUATION, SourcePlace, read_source, source_text_units
 
-__all__ = ["IMAGE_ONLY_EQUATION", "DecompositionFailed", "check", "source_text_units"]
+__all__ = [
+    "IMAGE_ONLY_EQUATION",
+    "DecompositionFailed",
+    "check",
+    "check_references",
+    "source_text_units",
+]
 
 _MAX_SHOWN = 120
 
@@ -141,6 +147,12 @@ def _all_blocks(doc: DecomposedDocument) -> Iterator[Block]:
         yield from inner(note.blocks)
 
 
+def check_references(doc: DecomposedDocument) -> None:
+    """Refuse `doc` if two of its elements share an id, or a note reference, cross-reference,
+    image or equation it mentions (or an equation's image) is not in it."""
+    _References(doc).check(doc)
+
+
 # --- The check -------------------------------------------------------------------------------
 
 
@@ -163,7 +175,7 @@ def _section_at(place: SourcePlace, sections: Sequence[str]) -> str | None:
 def check(doc: DecomposedDocument, pkg: Package, ctx: InlineContext) -> None:
     """Refuse `doc` if a reference doesn't resolve, its text differs from the source's, or a
     table's grid differs from the source's; the error names where."""
-    _References(doc).check(doc)
+    check_references(doc)
 
     walk = read_source(pkg, ctx)
     source = walk.units
