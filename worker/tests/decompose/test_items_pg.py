@@ -71,6 +71,30 @@ def test_an_item_is_started_reported_and_decided(
     assert store.start(str(uuid.uuid4())) is None
 
 
+def test_a_delivering_item_may_be_recorded_delivering_again(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    """A retry resumes its own delivery: `delivering` again, but never a final outcome over it."""
+    store, conn, item_id = item
+    store.start(item_id)
+    entry = str(uuid.uuid4())
+    assert store.decide(item_id, "delivering", "a new source", entry)
+    assert store.decide(item_id, "delivering", "resumed", None)
+    assert not store.decide(item_id, "failed", "the job was cancelled", None)
+    assert _outcome(conn, item_id)[:3] == ("delivering", "resumed", entry)
+
+
+def test_an_item_id_that_is_not_a_uuid_is_no_item(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    """A job's params name a malformed item id: no such item (the job goes to review), not a
+    cast error that the job retries."""
+    store, _conn, _item_id = item
+    assert store.start("not-a-uuid") is None
+    store.set_report("not-a-uuid", "k")
+    assert store.decide("not-a-uuid", "failed", "x", None) is False
+
+
 def test_a_settled_item_is_never_overwritten_by_the_worker(
     item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
 ) -> None:

@@ -687,6 +687,50 @@ def test_an_item_settled_before_the_worker_records_it_ends_the_job() -> None:
     assert world.item(job).outcome == "created"
 
 
+def test_a_retried_delivering_item_settled_meanwhile_ends_the_job() -> None:
+    """A retry of an item already `delivering`, whose event settles it between the retry's
+    `start` and its `delivering` write: nothing is left to wait for."""
+
+    class SettledMeanwhile(MemoryItemStore):
+        def decide(
+            self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None
+        ) -> bool:
+            if outcome == "delivering":
+                self.items[item_id] = replace(self.items[item_id], outcome="created")
+            return super().decide(item_id, outcome, detail, entry_id)
+
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    run_decompose(job, world.deps())
+    assert world.item(job).outcome == "delivering"
+    settled = SettledMeanwhile()
+    settled.items = dict(world.items.items)
+    world.items = settled
+
+    outcome = run_decompose(job, world.deps())
+
+    assert isinstance(outcome, Complete)
+    assert world.item(job).outcome == "created"
+    assert len(world.bridge.requests) == 1
+
+
+def test_an_outcome_not_recorded_is_not_reported_as_the_items() -> None:
+    """Invalid params on a retry of an item already `delivering`: the item is left as it is, and
+    the job's events don't claim it failed."""
+    world = World()
+    job = world.upload(report_docx(), "r1.docx")
+    run_decompose(job, world.deps())
+    assert job.params is not None
+    broken = replace(job, params={**job.params, "force": "sometimes"})
+
+    outcome = run_decompose(broken, world.deps())
+
+    assert isinstance(outcome, Complete)
+    assert world.item(job).outcome == "delivering"
+    assert not [m for m in world.messages(broken) if m.startswith("failed")]
+    assert not [level for job_id, level, _ in world.queue.events if level == "warn"]
+
+
 def test_invalid_params_fail_the_item_with_the_reason() -> None:
     world = World()
     job = world.upload(report_docx(), "r1.docx")

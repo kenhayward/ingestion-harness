@@ -6,12 +6,14 @@ outcome it decided: `delivering` (the bridge took the document), or a final one 
 (`already_loaded`, `duplicate`, `in_flight`, `changed_in_target`, `unresolved`, `failed`). The
 API settles a `delivering` item from the bridge's events (apps/api/src/bridge/register.ts), and
 an event may arrive before the worker's write, so every worker write moves only an item that is
-still `queued` or `decomposing`: it never overwrites an outcome the API already settled.
+still `queued` or `decomposing` (or, for a retry resuming its delivery, records `delivering` over
+`delivering`): it never overwrites an outcome the API already settled.
 """
 
 from __future__ import annotations
 
 import threading
+import uuid
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
@@ -36,6 +38,20 @@ ItemOutcome = Literal[
 
 #: The outcomes the worker may still move an item from: nothing decided yet.
 UNDECIDED: tuple[ItemOutcome, ...] = ("queued", "decomposing")
+
+
+def _writable(current: ItemOutcome, outcome: ItemOutcome) -> bool:
+    """Whether the worker may record `outcome` over `current`: only while nothing is decided,
+    or `delivering` again over `delivering` (a retry resuming its own delivery)."""
+    return current in UNDECIDED or (current == outcome == "delivering")
+
+
+def _is_uuid(text: str) -> bool:
+    try:
+        uuid.UUID(text)
+    except ValueError:
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -65,7 +81,8 @@ class ItemStore(Protocol):
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
         """Record the worker's outcome (and the register entry it is about, when given), only
-        while the item is still `queued` or `decomposing`. False when it had moved on."""
+        while the item is still `queued` or `decomposing`, or `delivering` again over
+        `delivering`. False when it had moved on (the bridge's event settled it, say)."""
         ...
 
 
@@ -95,7 +112,7 @@ class MemoryItemStore:
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
         with self._lock:
             item = self.items.get(item_id)
-            if item is None or item.outcome not in UNDECIDED:
+            if item is None or not _writable(item.outcome, outcome):
                 return False
             self.items[item_id] = replace(
                 item,
@@ -107,12 +124,15 @@ class MemoryItemStore:
 
 
 class PgItemStore:
-    """The items on Postgres, on one autocommit connection."""
+    """The items on Postgres, on one autocommit connection. An item id that is not a UUID names
+    no item, as an unknown one does."""
 
     def __init__(self, conn: psycopg.Connection[Any]) -> None:
         self._conn = conn
 
     def start(self, item_id: str) -> ConversionItem | None:
+        if not _is_uuid(item_id):
+            return None
         with self._conn.transaction():
             row = self._conn.execute(
                 """SELECT id::text, batch_id::text, source_key, object_key, outcome, detail,
@@ -131,16 +151,22 @@ class PgItemStore:
             return item
 
     def set_report(self, item_id: str, report_key: str) -> None:
+        if not _is_uuid(item_id):
+            return
         self._conn.execute(
             "UPDATE decomposition_items SET report_key = %s WHERE id = %s", (report_key, item_id)
         )
 
     def decide(self, item_id: str, outcome: ItemOutcome, detail: str, entry_id: str | None) -> bool:
+        if not _is_uuid(item_id):
+            return False
         cur = self._conn.execute(
             """UPDATE decomposition_items
                   SET outcome = %s, detail = %s,
                       register_entry_id = COALESCE(%s::uuid, register_entry_id)
-                WHERE id = %s AND outcome IN ('queued', 'decomposing')""",
-            (outcome, detail, entry_id, item_id),
+                WHERE id = %s
+                  AND (outcome IN ('queued', 'decomposing')
+                       OR (outcome = 'delivering' AND %s = 'delivering'))""",
+            (outcome, detail, entry_id, item_id, outcome),
         )
         return cur.rowcount > 0

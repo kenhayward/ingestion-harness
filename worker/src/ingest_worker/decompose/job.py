@@ -205,9 +205,9 @@ def _convert(
         out = DeliveryOutcome("failed", None, None, str(exc))
     if out.delivery_id is None:
         return _decided(job, deps, item, out)
-    recorded = deps.items.decide(item.id, "delivering", out.detail, out.entry_id)
-    if not recorded and item.outcome != "delivering":
-        # The bridge's event settled the item first: nothing is left to wait for.
+    if not deps.items.decide(item.id, "delivering", out.detail, out.entry_id):
+        # The bridge's event settled the item first (also on a retry resuming its delivery,
+        # which records `delivering` again): nothing is left to wait for.
         return Complete(note=f"{item.source_key}: settled before it was recorded delivering")
     deps.queue.event(
         job.id,
@@ -236,9 +236,18 @@ def _decided(
     job: ClaimedJob, deps: DecomposeDeps, item: ConversionItem, out: DeliveryOutcome
 ) -> Outcome:
     """A final outcome without a delivery; the job's last event names it. A duplicate's entry is
-    another source's, so the item is not linked to it; its detail names that document."""
+    another source's, so the item is not linked to it; its detail names that document. When the
+    item had moved on (a retry of one already delivering), it is left as it is, and the event
+    says the outcome was not recorded."""
     entry_id = None if out.outcome == "duplicate" else out.entry_id
-    deps.items.decide(item.id, out.outcome, out.detail, entry_id)
+    if not deps.items.decide(item.id, out.outcome, out.detail, entry_id):
+        deps.queue.event(
+            job.id,
+            "info",
+            f"not recorded, the item had moved on: {OUTCOME_LABELS[out.outcome]}: {out.detail}",
+            {"outcome": out.outcome, "detail": out.detail, "recorded": False},
+        )
+        return Complete(note=f"{item.source_key}: had moved on; {out.outcome} not recorded")
     deps.queue.event(
         job.id,
         "warn",
