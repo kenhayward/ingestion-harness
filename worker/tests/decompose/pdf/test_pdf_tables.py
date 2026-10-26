@@ -241,6 +241,19 @@ def test_continuation_without_a_repeated_header_keeps_its_rows() -> None:
     assert owner(ledger, text, 1, "5") == [tables[0].ref]
 
 
+def test_continuation_repeating_a_data_row_keeps_it() -> None:
+    items = [
+        grid(1, simple(2, 2, header_rows=0), rows=2, cols=2, top=700),
+        grid(2, simple(2, 2, header_rows=0), rows=2, cols=2),
+    ]
+    pieces, text, ledger = build(split_pages(SECOND), items)
+    tables = tables_of(join_split_tables(pieces, text, ledger))
+    assert len(tables) == 1
+    table, _, _ = build_table(tables[0], "t-1", [], [], ledger, text.pages[0])
+    assert grid_texts(table) == [["A", "B"], ["1", "2"], ["A", "B"], ["3", "4"]]
+    assert owner(ledger, text, 1, "A") == [tables[0].ref]
+
+
 def test_no_join_across_a_blank_page() -> None:
     pages = split_pages(SECOND)
     pages.insert(1, Page())
@@ -356,9 +369,37 @@ def test_caption_in_first_row() -> None:
 # --- Notes -----------------------------------------------------------------------------------
 
 
+def sup(marker: str, r: int, c: int, top: float = 100) -> Run:
+    """A superscript note marker just after a one-character cell text."""
+    return Run(marker, COLS[c] + 10, top + ROW * r + 14, size=7, rise=3)
+
+
+def test_numbered_list_after_a_table_stays_outside() -> None:
+    texts = {(0, 0): "A", (0, 1): "B", (1, 0): "1", (1, 1): "2"}
+    runs = [*cell_runs(texts), Run("1. First step", 72, 160)]
+    items = [grid(1, simple(2, 2), rows=2, cols=2), para(1, 148, 165)]
+    pieces, text, ledger = build([Page(runs=runs)], items)
+    piece, after = pieces
+    table, consumed, _ = build_table(piece, "t-1", [after], [], ledger, text.pages[0])
+    assert table.notes == []
+    assert consumed == set()
+    assert owner(ledger, text, 0, "F") == [after.ref]
+
+
+def test_note_row_without_its_marker_stays_in_grid() -> None:
+    texts = {(0, 0): "A", (0, 1): "B", (1, 0): "1", (1, 1): "2", (2, 0): "b: below the limit"}
+    specs = [*simple(2, 2), (2, 0, 1, 2, False)]
+    pieces, text, ledger = build([Page(runs=cell_runs(texts))], [grid(1, specs, rows=3, cols=2)])
+    table, _, flags = build_table(pieces[0], "t-1", [], [], ledger, text.pages[0])
+    assert grid_texts(table) == [["A", "B"], ["1", "2"], ["b: below the limit"]]
+    assert table.notes == []
+    assert flags[0].message == "Table grid inferred from layout"
+
+
 def test_notes_after_the_table() -> None:
     texts = {(0, 0): "A", (0, 1): "B", (1, 0): "1", (1, 1): "2"}
-    runs = [*cell_runs(texts), Run("a: measured at 25 °C", 72, 160), Run("Body", 72, 200)]
+    runs = [*cell_runs(texts), sup("a", 1, 1), Run("a: measured at 25 °C", 72, 160)]
+    runs.append(Run("Body", 72, 200))
     items = [
         grid(1, simple(2, 2), rows=2, cols=2),
         docling.text("footnote", 1, bl(60, 148, 400, 165)),
@@ -377,9 +418,13 @@ def test_notes_after_the_table() -> None:
 def test_note_row_moves_out_of_grid() -> None:
     texts = {(0, 0): "A", (0, 1): "B", (1, 0): "1", (1, 1): "2", (2, 0): "b: below the limit"}
     specs = [*simple(2, 2), (2, 0, 1, 2, False)]
-    pieces, text, ledger = build([Page(runs=cell_runs(texts))], [grid(1, specs, rows=3, cols=2)])
+    runs = [*cell_runs(texts), sup("b", 1, 1)]
+    pieces, text, ledger = build([Page(runs=runs)], [grid(1, specs, rows=3, cols=2)])
     table, _, flags = build_table(pieces[0], "t-1", [], [], ledger, text.pages[0])
-    assert grid_texts(table) == [["A", "B"], ["1", "2"]]
+    assert grid_texts(table) == [
+        ["A", "B"],
+        ["1", "2 b"],
+    ]  # pdfium sees a word gap before the marker
     assert table.notes == [TableNote(marker="b", inlines=[Text(text="below the limit")])]
     assert flags[0].message == "Table grid inferred from layout; notes moved out of the grid"
     assert owner(ledger, text, 0, "l") == [pieces[0].ref]

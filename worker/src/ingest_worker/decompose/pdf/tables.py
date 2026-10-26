@@ -45,6 +45,9 @@ _RIGHT_RATIO = 1 / 3
 #: Vertical alignment needs at least this many lines (font sizes) of free height in the cell.
 _FREE_LINES = 1.5
 
+#: What separates the markers in one superscript run, as in the Word reader.
+_MARKER_SPLIT = re.compile(r"[\s,;()\[\]]+")
+
 HAlign = Literal["left", "center", "right"]
 VAlign = Literal["top", "middle", "bottom"]
 Key = tuple[int, int]
@@ -154,16 +157,30 @@ def _row_keys(piece: Piece, row: int) -> list[tuple[int, int, str]]:
     )
 
 
-def _repeated_rows(first: Piece, second: Piece) -> int:
-    """How many of `second`'s leading rows repeat `first`'s first rows."""
-    assert first.table is not None and second.table is not None
-    limit = min(_dims(first.table)[0], _dims(second.table)[0])
+def _header_rows(table: LayoutTable) -> int:
+    """The count of leading rows whose cells are all Docling column headers."""
+    origins = _origins(table)
     count = 0
-    while count < limit:
-        keys = _row_keys(second, count)
-        if not any(k for _, _, k in keys) or keys != _row_keys(first, count):
-            break
+    while True:
+        own = [c for c in origins.values() if c.row == count]
+        if not own or not all(c.header for c in own):
+            return count
         count += 1
+
+
+def _repeated_rows(first: Piece, second: Piece) -> int:
+    """How many of `second`'s leading rows repeat `first`'s header rows: all of them or none.
+
+    Only header rows are removed, so a data row that happens to equal one is never lost.
+    """
+    assert first.table is not None and second.table is not None
+    count = _header_rows(first.table)
+    if count > _dims(second.table)[0]:
+        return 0
+    for row in range(count):
+        keys = _row_keys(second, row)
+        if not any(k for _, _, k in keys) or keys != _row_keys(first, row):
+            return 0
     # A cell that spans from a repeated row into a kept one keeps its row, and those after it.
     while count and any(
         c.row < count < c.row + c.row_span for c in _origins(second.table).values()
@@ -388,8 +405,21 @@ def _notes(lines: list[Line]) -> list[TableNote]:
     return [TableNote(marker=marker, inlines=_inlines(body)) for marker, body in groups]
 
 
-def _is_note(lines: list[Line]) -> bool:
-    return bool(lines) and NOTE_PREFIX.match(lines[0].text) is not None
+def _note_markers(lines: list[Line]) -> list[str] | None:
+    """The markers of lines that read as notes (the first starts with a marker), else None."""
+    if not lines or NOTE_PREFIX.match(lines[0].text) is None:
+        return None
+    return [m.group(1) for line in lines if (m := NOTE_PREFIX.match(line.text))]
+
+
+def _superscripts(lines: Iterable[Line]) -> set[str]:
+    """The tokens of the superscript runs in `lines`: `a` and `b` from a run `a,b`."""
+    found: set[str] = set()
+    for line in lines:
+        for run in merge_runs(list(line.runs())):
+            if isinstance(run, Text) and "superscript" in run.marks:
+                found.update(t for t in _MARKER_SPLIT.split(run.text) if t)
+    return found
 
 
 def _bounds(lines: list[Line]) -> BBox:
@@ -408,6 +438,8 @@ def _alignment(cell: LayoutCell, lines: list[Line]) -> tuple[HAlign, VAlign]:
     tx0, ty0, tx1, ty1 = _bounds(lines)
     width, height = box[2] - box[0], box[3] - box[1]
     left, right = max(tx0 - box[0], 0.0), max(box[2] - tx1, 0.0)
+    # Docling's cell boxes may hug the text, leaving both gaps near 0 and every cell `center`;
+    # the twin scores on real Docling output are where that is checked.
     h: HAlign = "left"
     if width > 0 and abs(left - right) <= _CENTRE_TOLERANCE * width:
         h = "center"
@@ -481,11 +513,22 @@ def build_table(
             _owned_by(caption.lines, piece.ref, ledger)
         caption_inlines, numbered = _caption_inlines(caption, ledger)
 
-    # Note rows at the foot of the grid leave it, never its first row.
+    # Note rows at the foot of the grid leave it, never its first row, when each of their
+    # markers is a superscript in the rows above them (spec section 4.6, as for Word).
+    candidates: list[list[str]] = []
+    while rows - len(candidates) - 1 > first_row:
+        slot = _sole_cell(rows - len(candidates) - 1, cols, slots, covered)
+        markers = _note_markers(slot.lines) if slot is not None else None
+        if markers is None:
+            break
+        candidates.append(markers)
+    grid_end = rows - len(candidates)
+    found = _superscripts(
+        line for (r, _), s in slots.items() if first_row <= r < grid_end for line in s.lines
+    )
     last_row = rows
-    while last_row - 1 > first_row:
-        slot = _sole_cell(last_row - 1, cols, slots, covered)
-        if slot is None or not _is_note(slot.lines):
+    for markers in candidates:
+        if not all(m in found for m in markers):
             break
         last_row -= 1
     notes: list[TableNote] = []
@@ -496,7 +539,10 @@ def build_table(
     # Notes after the table: the marker pieces that follow it (after a caption below it).
     start = 1 if caption is not None and pieces_after and caption.ref == pieces_after[0].ref else 0
     for after in pieces_after[start:]:
-        if not (_is_text(after) and after.page == _last_page(piece) and _is_note(after.lines)):
+        markers = _note_markers(after.lines) if _is_text(after) else None
+        if after.page != _last_page(piece) or markers is None:
+            break
+        if not all(m in found for m in markers):
             break
         consumed.add(after.ref)
         _owned_by(after.lines, piece.ref, ledger)
