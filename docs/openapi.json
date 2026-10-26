@@ -14349,6 +14349,12 @@
                           "unversioned": {
                             "type": "boolean"
                           },
+                          "gone": {
+                            "type": "boolean"
+                          },
+                          "reloadable": {
+                            "type": "boolean"
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -14379,6 +14385,8 @@
                           "redeliverOf",
                           "resolution",
                           "unversioned",
+                          "gone",
+                          "reloadable",
                           "startedAt",
                           "finishedAt"
                         ],

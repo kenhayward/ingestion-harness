@@ -16,6 +16,7 @@ import {
   canDetach,
   canForce,
   canRedeliver,
+  canReload,
   canResolve,
   type ActionResult,
   type DialogKind,
@@ -598,7 +599,8 @@ function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: R
     if (p.open) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [p.open]);
   const name = `Actions for ${item.sourceKey}`;
-  const more = canForce(item) || canRedeliver(item) || canResolve(item) || canDetach(item);
+  const more =
+    canForce(item) || canRedeliver(item) || canReload(item) || canResolve(item) || canDetach(item);
   const run = (f: () => void) => () => {
     p.setOpen(false);
     f();

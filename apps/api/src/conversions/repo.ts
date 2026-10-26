@@ -137,8 +137,7 @@ export interface Retry {
 }
 
 export type RetryResult =
-  | { ok: true; batch: Batch; items: Item[] }
-  | { ok: false; reason: 'running'; itemId: string };
+  { ok: true; batch: Batch; items: Item[] } | { ok: false; reason: 'running'; itemId: string };
 
 export type DetachResult =
   | { ok: true; entry: RegisterEntry; item: Item }

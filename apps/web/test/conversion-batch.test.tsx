@@ -407,8 +407,8 @@ describe('the Conversion tab: the batch view', () => {
       reloadConversionItem: vi.fn(async () => reloaded),
     });
     view(api);
-    await screen.findByText('gone.docx');
-    const row = within(rowOf('gone.docx'));
+    await findRow('gone.docx');
+    const row = panelFor('gone.docx');
     // Detach too; an update can never go through, so nothing redelivers or accepts it.
     expect(row.getByRole('button', { name: 'Detach gone.docx' })).toBeInTheDocument();
     expect(row.queryByRole('button', { name: 'Redeliver gone.docx' })).toBeNull();
@@ -431,6 +431,78 @@ describe('the Conversion tab: the batch view', () => {
     );
   });
 
+  it("a gone row's menu offers load as a new document, whose dialog outlives the menu", async () => {
+    const gone = item('gone.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      gone: true,
+      reloadable: true,
+    });
+    const api = batchApi([gone], {
+      reloadConversionItem: vi.fn(async () => ({
+        batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
+        items: [item('gone.docx', 'queued', { redeliverOf: gone.id })],
+      })),
+    });
+    view(api);
+    await findRow('gone.docx');
+    await userEvent.click(documents().getByRole('button', { name: 'Actions for gone.docx' }));
+    const menu = within(screen.getByRole('menu', { name: 'Actions for gone.docx' }));
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
+      'View report',
+      'Download original',
+      'Load as a new document',
+      'Detach',
+    ]);
+    expect(menu.getByRole('separator')).toBeInTheDocument();
+
+    await userEvent.click(menu.getByRole('menuitem', { name: 'Load as a new document' }));
+    // The menu closes; the dialog it opened stays.
+    expect(screen.queryByRole('menu')).toBeNull();
+    const dialog = within(
+      await screen.findByRole('dialog', { name: 'Load gone.docx as a new document?' }),
+    );
+    expect(api.reloadConversionItem).not.toHaveBeenCalled();
+    await userEvent.click(dialog.getByRole('button', { name: 'Load as a new document' }));
+    expect(api.reloadConversionItem).toHaveBeenCalledWith(gone.id);
+    expect(api.reloadConversionItem).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByRole('link', { name: 'Open the new batch' })).toHaveAttribute(
+      'href',
+      `#/conversion/${NEW_BATCH_ID}`,
+    );
+  });
+
+  it('a gone row needs attention, is not failed, and stays out of re-running failures', async () => {
+    const gone = item('gone.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      gone: true,
+      reloadable: true,
+    });
+    const broke = item('broke.docx', 'failed', { detail: 'merged cells' });
+    view(batchApi([item('ok.docx', 'created'), gone, broke]));
+    await findRow('gone.docx');
+    const totals = within(screen.getByRole('group', { name: 'Totals' }));
+    expect(totals.getByText('need attention').previousSibling).toHaveTextContent('1');
+    expect(totals.getByText('failed').previousSibling).toHaveTextContent('1');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    expect(show.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('2');
+    await userEvent.click(show.getByRole('button', { name: /^Failed/ }));
+    expect(listedKeys()).toEqual(['broke.docx']);
+    await userEvent.click(show.getByRole('button', { name: /^Needs attention/ }));
+    expect(listedKeys()).toEqual(['gone.docx', 'broke.docx']);
+    await userEvent.click(show.getByRole('button', { name: /^Done/ }));
+    expect(listedKeys()).toEqual(['ok.docx']);
+
+    // Re-running takes the failed document only; the gone one is no re-run's to make.
+    await userEvent.click(show.getByRole('button', { name: /^All/ }));
+    expect(panelFor('gone.docx').queryByRole('button', { name: /^Re-run/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Re-run 1 failed' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByRole('checkbox', { name: /broke\.docx/ })).toBeChecked();
+    expect(dialog.queryByText(/gone\.docx/)).toBeNull();
+  });
+
   it('a row left detached by a reload whose rerun failed offers it again', async () => {
     const left = item('left.docx', 'unresolved', {
       registerEntryId: crypto.randomUUID(),
@@ -438,10 +510,15 @@ describe('the Conversion tab: the batch view', () => {
       reloadable: true,
     });
     view(batchApi([left]));
-    await screen.findByText('left.docx');
-    const row = within(rowOf('left.docx'));
+    await findRow('left.docx');
+    const row = panelFor('left.docx');
     expect(row.getByRole('button', { name: 'Load left.docx as a new document' })).toBeVisible();
     expect(row.queryByRole('button', { name: 'Detach left.docx' })).toBeNull();
+    await userEvent.click(documents().getByRole('button', { name: 'Actions for left.docx' }));
+    const menu = within(screen.getByRole('menu', { name: 'Actions for left.docx' }));
+    expect(menu.getByRole('menuitem', { name: 'Load as a new document' })).toBeVisible();
+    // The item's own actions sit after a line, even when reload is the only one.
+    expect(menu.getByRole('separator')).toBeInTheDocument();
   });
 
   it('a row that is not reloadable offers no load as a new document', async () => {
@@ -459,8 +536,14 @@ describe('the Conversion tab: the batch view', () => {
       }),
     ]);
     view(api);
-    await screen.findByText('changed.docx');
-    expect(screen.queryByRole('button', { name: /as a new document/ })).toBeNull();
+    await findRow('changed.docx');
+    for (const key of ['superseded.docx', 'changed.docx', 'unresolved.docx']) {
+      expect(panelFor(key).queryByRole('button', { name: /as a new document/ })).toBeNull();
+      await userEvent.click(documents().getByRole('button', { name: `Actions for ${key}` }));
+      const menu = within(screen.getByRole('menu', { name: `Actions for ${key}` }));
+      expect(menu.queryByRole('menuitem', { name: /as a new document/ })).toBeNull();
+      await userEvent.keyboard('{Escape}');
+    }
   });
 
   it('accept shows each changed component and needs the checkbox', async () => {

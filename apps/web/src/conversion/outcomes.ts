@@ -116,7 +116,8 @@ export function batchState(b: BatchSummary): { icon: StatusIcon; tone: Tone; lab
   const n = (o: ItemOutcome) => b.counts[o] ?? 0;
   if (b.state === 'discarded') return { icon: 'rejected', tone: 'neutral', label: 'Discarded' };
   if (b.state === 'open') return { icon: 'cancelled', tone: 'neutral', label: 'Never started' };
-  if (UNFINISHED.some((o) => n(o) > 0)) return { icon: 'spinner', tone: 'info', label: 'Under way' };
+  if (UNFINISHED.some((o) => n(o) > 0))
+    return { icon: 'spinner', tone: 'info', label: 'Under way' };
   if (n('failed') > 0) return { icon: 'failed', tone: 'danger', label: 'Some failed' };
   if (NEEDS_ATTENTION.some((o) => n(o) > 0))
     return { icon: 'warning', tone: 'warn', label: 'Needs attention' };

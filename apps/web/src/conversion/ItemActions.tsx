@@ -125,15 +125,14 @@ export function ItemActions({
 
   const key = item.sourceKey;
   /** A button's own name: on the panel it names its document, in a row's menu the menu does. */
-  const named = (label: string) =>
-    menu ? { role: 'menuitem' as const } : { 'aria-label': `${label} ${key}` };
+  const named = (name: string) => (menu ? { role: 'menuitem' as const } : { 'aria-label': name });
   return (
     <>
       {canForce(item) && (
         <button
           type="button"
           disabled={busy}
-          {...named('Force-load')}
+          {...named(`Force-load ${key}`)}
           onClick={() => void forceLoad()}
         >
           Force-load
@@ -143,7 +142,7 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          {...named('Redeliver')}
+          {...named(`Redeliver ${key}`)}
           onClick={() => onOpen('redeliver')}
         >
           Redeliver
@@ -153,7 +152,7 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          aria-label={`Load ${key} as a new document`}
+          {...named(`Load ${key} as a new document`)}
           onClick={() => onOpen('reload')}
         >
           Load as a new document
@@ -163,14 +162,19 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          {...named("Accept the target's state for")}
+          {...named(`Accept the target's state for ${key}`)}
           onClick={() => onOpen('accept')}
         >
           Accept the target&apos;s state
         </button>
       )}
       {canDetach(item) && (
-        <button type="button" disabled={busy} {...named('Detach')} onClick={() => onOpen('detach')}>
+        <button
+          type="button"
+          disabled={busy}
+          {...named(`Detach ${key}`)}
+          onClick={() => onOpen('detach')}
+        >
           Detach
         </button>
       )}

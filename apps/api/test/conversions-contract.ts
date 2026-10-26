@@ -426,6 +426,8 @@ export function conversionsContract(
           redeliverOf: of.id,
           resolution: null,
           unversioned: false,
+          gone: false,
+          reloadable: false,
           startedAt: null,
           finishedAt: null,
         })),
@@ -472,6 +474,25 @@ export function conversionsContract(
       expect(await repo.getItem(second.items[0]!.itemId)).toBeNull();
       await facts.settleItem(first.items[0]!.id, 'created', null);
       expect((await repo.retryItems(retryOf(items))).ok).toBe(true);
+    });
+
+    it('a re-run and a reload of one item never both start', async () => {
+      const { repo, facts, items } = await failedPair();
+      const [, of] = items as [Item, Item];
+      // The reload's rerun (unforced, a plain create) first: the re-run of that item waits.
+      const reload = await repo.rerunItem({ ...rerunOf(of), force: false });
+      if (!reload.ok) throw new Error(reload.reason);
+      const retry = retryOf(items);
+      expect(await repo.retryItems(retry)).toEqual({ ok: false, reason: 'running', itemId: of.id });
+      expect(await repo.getBatch(retry.batchId)).toBeNull();
+      await facts.settleItem(reload.item.id, 'failed', null);
+
+      // The re-run first: the reload of that item waits.
+      const first = await repo.retryItems(retryOf([of]));
+      if (!first.ok) throw new Error(first.reason);
+      const again = { ...rerunOf(of), force: false };
+      expect(await repo.rerunItem(again)).toEqual({ ok: false, reason: 'running' });
+      expect(await repo.getBatch(again.batchId)).toBeNull();
     });
 
     it('detaches an entry: a tombstone, recorded, and said on the item', async () => {
