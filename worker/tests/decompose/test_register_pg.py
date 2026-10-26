@@ -177,6 +177,37 @@ def test_new_sources_with_the_same_content_are_decided_one_at_a_time(
     assert seen == ["duplicate"]
 
 
+def test_the_same_source_with_the_same_content_at_once_is_in_flight(
+    store: tuple[PgRegisterStore, str],
+) -> None:
+    """Two first runs of one source key with the same bytes: the second read no row, waits on
+    the first's content lock, then finds the first's entry for its own source: in flight."""
+    pg, sink = store
+    seen: list[str | None] = []
+    deciding = threading.Event()
+
+    def second_run() -> None:
+        with pg.transaction() as tx:
+            by_key = tx.by_key(sink, None, "r1.docx")
+            deciding.set()
+            by_hash = tx.by_hash(sink, None, OLD_SHA)  # waits on the first run's content lock
+            seen.append(decide(by_key, by_hash, OLD_SHA, False, source_key="r1.docx").outcome)
+
+    with pg.transaction() as tx:
+        by_key = tx.by_key(sink, None, "r1.docx")
+        decision = decide(by_key, tx.by_hash(sink, None, OLD_SHA), OLD_SHA, False)
+        assert (decision.outcome, decision.create) == (None, True)
+        thread = threading.Thread(target=second_run)
+        thread.start()
+        assert deciding.wait(5)
+        thread.join(0.5)
+        assert thread.is_alive(), "the second run's by_hash should wait on the content lock"
+        _pending(tx, sink, None, OLD_SHA)
+    thread.join(10)
+
+    assert seen == ["in_flight"]
+
+
 def test_set_failed_settles_only_a_pending_entry(store: tuple[PgRegisterStore, str]) -> None:
     pg, sink = store
     with pg.transaction() as tx:

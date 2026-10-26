@@ -6,9 +6,12 @@ import base64
 import hashlib
 import importlib.util
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -28,7 +31,12 @@ from ingest_worker.bridge.models import (
 )
 from ingest_worker.decompose import DECOMPOSER_VERSION
 from ingest_worker.decompose.deliver import DeliverDeps, deliver_decomposition
-from ingest_worker.decompose.register import MemoryRegisterStore
+from ingest_worker.decompose.register import (
+    MemoryRegisterStore,
+    RegisterEntry,
+    RegisterStore,
+    RegisterTx,
+)
 from tests.decompose.docx import build_docx
 from tests.decompose.fakes import FakeRenderer
 from tests.decompose.test_media import PNG, picture
@@ -111,7 +119,7 @@ class FakeBridge:
         raise NotImplementedError
 
 
-def make_deps(bridge: FakeBridge, register: MemoryRegisterStore | None = None) -> DeliverDeps:
+def make_deps(bridge: FakeBridge, register: RegisterStore | None = None) -> DeliverDeps:
     return DeliverDeps(
         renderer=FakeRenderer(),
         register=register or MemoryRegisterStore(clock=lambda: AT),
@@ -551,6 +559,116 @@ def test_a_refusal_names_the_entry(force: bool) -> None:
 
     assert (out.outcome, out.entry_id) == ("changed_in_target", first.entry_id)
     assert len(bridge.requests) == 1
+
+
+class _StaleByKeyTx:
+    def __init__(self, tx: RegisterTx, before: RegisterEntry | None) -> None:
+        self._tx = tx
+        self._before = before
+
+    def by_key(
+        self, sink_id: str, instance_id: str | None, source_key: str
+    ) -> RegisterEntry | None:
+        return self._before
+
+    def by_hash(self, sink_id: str, instance_id: str | None, sha: str) -> list[RegisterEntry]:
+        return self._tx.by_hash(sink_id, instance_id, sha)
+
+    def put_pending(self, **kwargs: Any) -> RegisterEntry:
+        return self._tx.put_pending(**kwargs)
+
+    def set_delivery(self, entry_id: str, delivery_id: str) -> None:
+        self._tx.set_delivery(entry_id, delivery_id)
+
+    def set_failed(self, entry_id: str, error: dict[str, Any]) -> None:
+        self._tx.set_failed(entry_id, error)
+
+
+class StaleByKey:
+    """Run B's view of the register when run A wrote between B's `by_key` and its `by_hash`, as
+    on Postgres: B's `by_key` read the source before A's entry was committed (`before`: no row,
+    or the detached tombstone A then replaced), and B's `by_hash`, which waited on A's content
+    lock, reads A's entry. Only B's decision transaction is stale."""
+
+    def __init__(self, store: MemoryRegisterStore, before: RegisterEntry | None) -> None:
+        self._store = store
+        self._before = before
+        self._stale = True
+
+    @contextmanager
+    def transaction(self) -> Iterator[RegisterTx]:
+        with self._store.transaction() as tx:
+            if self._stale:
+                self._stale = False
+                yield _StaleByKeyTx(tx, self._before)
+            else:
+                yield tx
+
+
+def test_two_batches_with_the_same_file_at_once_report_in_flight() -> None:
+    """Review Focus 1's race: two batches deliver the same bytes under the same source key at
+    once. The second waits on the first's content lock and finds the first's pending entry,
+    which is its own source's: in flight, not a duplicate of itself."""
+    bridge = FakeBridge()
+    store = MemoryRegisterStore(clock=lambda: AT)
+    data = report_docx()
+    first = deliver_decomposition(
+        make_deps(bridge, store),
+        data=data,
+        source_key="manual/a.docx",
+        target_id=TARGET,
+        started_by=USER,
+        batch_id="b1",
+    )
+    assert first.outcome == "created"
+
+    second = deliver_decomposition(
+        make_deps(bridge, StaleByKey(store, None)),
+        data=data,
+        source_key="manual/a.docx",
+        target_id=TARGET,
+        started_by=USER,
+        batch_id="b2",
+    )
+
+    assert (second.outcome, second.entry_id) == ("in_flight", first.entry_id)
+    assert len(bridge.requests) == 1
+
+
+def test_two_runs_replacing_a_detached_tombstone_at_once_report_in_flight() -> None:
+    """Both runs read the tombstone; the first replaces it with a new pending entry (the row
+    the second's FOR UPDATE waited on is gone, so on Postgres it reads nothing)."""
+    bridge = FakeBridge()
+    store = MemoryRegisterStore(clock=lambda: AT)
+    data = report_docx()
+    made = deliver_decomposition(
+        make_deps(bridge, store), data=data, source_key="a.docx", target_id=TARGET, started_by=USER
+    )
+    assert made.entry_id is not None
+    store.settle(made.entry_id, state="changed", persistent_id="DOC-1")
+    store.detach(made.entry_id, action_id="detach-1")
+    [tombstone] = store.entries()
+
+    first = deliver_decomposition(
+        make_deps(bridge, store),
+        data=data,
+        source_key="a.docx",
+        target_id=TARGET,
+        started_by=USER,
+        batch_id="b1",
+    )
+    second = deliver_decomposition(
+        make_deps(bridge, StaleByKey(store, tombstone)),
+        data=data,
+        source_key="a.docx",
+        target_id=TARGET,
+        started_by=USER,
+        batch_id="b2",
+    )
+
+    assert first.outcome == "created"
+    assert (second.outcome, second.entry_id) == ("in_flight", first.entry_id)
+    assert len(bridge.requests) == 2
 
 
 # --- The CLI (scripts/deliver_decomposition.py) -----------------------------------------------

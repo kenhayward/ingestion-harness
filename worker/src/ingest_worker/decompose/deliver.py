@@ -90,7 +90,12 @@ def _refused_before_acceptance(e: RegisterEntry) -> bool:
 
 
 def decide(
-    by_key: RegisterEntry | None, by_hash: list[RegisterEntry], sha: str, force: bool
+    by_key: RegisterEntry | None,
+    by_hash: list[RegisterEntry],
+    sha: str,
+    force: bool,
+    *,
+    source_key: str | None = None,
 ) -> Decision:
     """Spec §8's two checks. A pending entry is in flight and a changed one refuses, force or
     not (force never bypasses the version check). The same content under the same key is
@@ -102,7 +107,15 @@ def decide(
     An entry with no persistent id is created again under a new key only when the bridge
     refused its last delivery outright (nothing reached the target). Otherwise that delivery may
     have made a document: the same content is created again under the entry's stored key, which
-    the sink answers with that document, if any; new content is `unresolved`, force or not."""
+    the sink answers with that document, if any; new content is `unresolved`, force or not.
+
+    `source_key`: the source's own key. When `by_key` read no entry but the content check finds
+    one under that key, another run registered the source in between (the content check waited
+    on its lock): in flight, force or not, never a duplicate of itself."""
+    if by_key is None and source_key is not None:
+        racing = next((e for e in by_hash if e.source_key == source_key), None)
+        if racing is not None:
+            return Decision("in_flight", False, racing, "a delivery of this source is in flight")
     if by_key is not None:
         if by_key.state == "pending":
             return Decision("in_flight", False, by_key, "a delivery of this source is in flight")
@@ -367,7 +380,7 @@ def deliver_decomposition(
             decision = Decision(None, own.persistent_id is None, own, _RESUMED, own.idempotency_key)
         else:
             by_hash = [e for e in tx.by_hash(sink_id, instance_id, sha) if e.state != "detached"]
-            decision = decide(by_key, by_hash, sha, force)
+            decision = decide(by_key, by_hash, sha, force, source_key=source_key)
         if decision.outcome is not None:
             return _refused(decision)
         update: Update | None = None
