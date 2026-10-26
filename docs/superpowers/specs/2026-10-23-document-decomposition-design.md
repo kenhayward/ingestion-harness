@@ -168,6 +168,11 @@ page**. **[owner]** (a mixture); **[call]** (the approach).
 Both routes produce the same decomposed document as Word. The layout-analysis library is the
 builder's choice; it must run locally, like everything else in CT Studio.
 
+The PDF reader's design, with the spike that chose Docling for layout analysis, is in
+[2026-10-26-pdf-reader-design.md](2026-10-26-pdf-reader-design.md). It takes headings from
+bookmarks first, then from typed numbering. It checks text per page, and measures structure
+against Word/PDF twins. (2026-10-26)
+
 ## 5. The decomposed document
 
 One decomposed document is a tree of sections holding ordered blocks, plus the images, the notes,
@@ -380,7 +385,9 @@ target for a person to look at. Read-back is required of any sink that takes dec
 (§9).
 
 For PDFs, text accounting compares with the PDF's own text layer on born-digital pages; scanned
-pages have no independent text to compare with, which is why they are flagged.
+pages have no independent text to compare with, which is why they are flagged. It compares each
+page's words as counts, not in order, and each table's words with the words in its region
+(PDF reader design §6).
 
 **Test corpus.** The decomposer's tests use synthetic documents built in the tests, which cover
 each construct in §5. Real sample reports stay outside this repository, in a private corpus the
@@ -627,7 +634,7 @@ model-driven extraction and no review step. **[call]**
 | 2 | **Contract version 2, the bridge, the register and the version check**, against a fake sink | The conformance suite's new checks pass against the fake sink; re-runs produce each outcome in §3 |
 | 3 | **Batches in CT Studio**: the API and the conversion tab | A single file, and then a folder, go through to the fake sink with one row per document |
 | 4 | **The first real sink** (in its own repository: its dialect capture and its writes) | A sample report reaches a sandbox, reads back equal, and updates and refuses as §8 says |
-| 5 | **PDF**, born-digital and scanned | PDF samples decompose; scanned pages are flagged |
+| 5 | **PDF**, born-digital and scanned, in steps 5a to 5d (PDF reader design §11) | PDF samples decompose; scanned pages are flagged |
 | 6 | **S3 prefix as a batch source** | A prefix runs as a folder does |
 
 Phases 1 and 4's capture work need nothing from each other and can run side by side.
