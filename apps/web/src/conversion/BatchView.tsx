@@ -10,6 +10,7 @@ import {
   OUTCOME_NOTE,
   RESOLUTION,
   isDone,
+  itemTiming,
   isUnfinished,
   needsAttention,
 } from './outcomes.js';
@@ -53,7 +54,8 @@ function progressOf(items: Item[]): string {
  * `decompose` job has no live events of its own here), and stops once none is; a first read that
  * fails is tried again on the same beat. Each time the number of unfinished documents changes, a
  * polite status says how far it has got. A started batch carries on without the page, so
- * `#/conversion/<batchId>` picks it up after a reload. A row action's dialog is kept here, so a
+ * `#/conversion/<batchId>` picks it up after a reload. Each row says how long its document took
+ * (or has run so far, as of the latest read). A row action's dialog is kept here, so a
  * refresh that moves its row (out of the filter, say) leaves it open, saying what changed.
  */
 export function BatchView({
@@ -270,6 +272,7 @@ export function BatchView({
             <tbody>
               {shown.map((item) => {
                 const link = webLink(item.link);
+                const timing = itemTiming(item, Date.now());
                 return (
                   <tr key={item.id}>
                     <td>
@@ -277,6 +280,7 @@ export function BatchView({
                     </td>
                     <td>
                       <StatusPill {...OUTCOME[item.outcome]} />
+                      {timing && <p className="muted conversion-hint-tight">{timing}</p>}
                     </td>
                     <td>
                       {item.resolution && (

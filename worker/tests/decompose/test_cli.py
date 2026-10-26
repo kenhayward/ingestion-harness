@@ -61,7 +61,7 @@ def test_writes_outputs_and_exit_codes(tmp_path: Path, capsys: pytest.CaptureFix
     text = (out / "document.json").read_text(encoding="utf-8")
     assert text == json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     report = json.loads((out / "report.json").read_text(encoding="utf-8"))
-    assert [f["code"] for f in report] == ["image_converted", "heading_empty"]
+    assert [f["code"] for f in report] == ["heading_empty", "image_converted"]  # sorted by place
 
     png, emf = expected.document.images
     names = sorted(p.name for p in (out / "images").iterdir())

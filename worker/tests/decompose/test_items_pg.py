@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
+from datetime import datetime
 
 import psycopg
 import pytest
@@ -109,3 +110,36 @@ def test_a_settled_item_is_never_overwritten_by_the_worker(
     started = store.start(item_id)  # a retry leaves it alone too
     assert started is not None and started.outcome == "created"
     assert _outcome(conn, item_id)[:3] == ("created", "doc", None)
+
+
+def _times(conn: psycopg.Connection[tuple[object, ...]], item_id: str) -> tuple[object, ...]:
+    row = conn.execute(
+        "SELECT started_at, finished_at FROM decomposition_items WHERE id = %s", (item_id,)
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def test_an_item_records_when_it_started_keeping_the_first_start(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    store, conn, item_id = item
+    assert _times(conn, item_id) == (None, None)
+    store.start(item_id)
+    started, finished = _times(conn, item_id)
+    assert started is not None and finished is None
+    store.start(item_id)  # a retry
+    assert _times(conn, item_id) == (started, None)
+    assert store.decide(item_id, "delivering", "a new source", None)
+    assert _times(conn, item_id) == (started, None)  # the API's settle finishes it
+
+
+def test_a_final_outcome_the_worker_decides_finishes_the_item(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    store, conn, item_id = item
+    store.start(item_id)
+    assert store.decide(item_id, "duplicate", "the same content as a.docx", None)
+    started, finished = _times(conn, item_id)
+    assert isinstance(started, datetime) and isinstance(finished, datetime)
+    assert finished >= started

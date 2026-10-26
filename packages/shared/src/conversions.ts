@@ -85,6 +85,13 @@ export const ItemSchema = z
      * no recorded components, and is neither pending nor detached.
      */
     unversioned: z.boolean(),
+    /**
+     * When the worker first took the item (`decomposing`; a retry keeps it), and when it reached
+     * a final outcome (the worker's decision, or the settle of its delivery); null until then,
+     * and for items converted before migration 202610261331.
+     */
+    startedAt: z.string().nullable(),
+    finishedAt: z.string().nullable(),
   })
   .strict();
 export type Item = z.infer<typeof ItemSchema>;

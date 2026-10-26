@@ -40,6 +40,8 @@ export interface ConversionFacts {
   dropEntry(entryId: string): Promise<void>;
   /** Moves an entry on, as a later run does (its state and batch, and its `updatedAt` to now). */
   moveEntry(entryId: string, to: { state: RegisterEntry['state']; batchId: string }): Promise<void>;
+  /** Records when an item started and finished, as the worker and the settle do. */
+  times(itemId: string, startedAt: string | null, finishedAt: string | null): Promise<void>;
 }
 
 const ADA = { id: '7a1f3c52-1b2e-4c3d-8e4f-5a6b7c8d9e0f', name: 'Ada' };
@@ -127,9 +129,31 @@ export function conversionsContract(
         redeliverOf: null,
         resolution: null,
         unversioned: false,
+        startedAt: null,
+        finishedAt: null,
       });
       expect(await repo.getItem(a.id)).toEqual(items[0]);
       expect(await repo.getItem(randomUUID())).toBeNull();
+    });
+
+    it('says when an item started and finished converting', async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const running = item(batch.id, 'running.docx');
+      const done = item(batch.id, 'done.docx');
+      await repo.addItem(running);
+      await repo.addItem(done);
+      await facts.times(running.id, '2026-10-26T13:00:00.000Z', null);
+      await facts.times(done.id, '2026-10-26T13:00:00.000Z', '2026-10-26T13:01:12.000Z');
+      expect(ItemSchema.parse(await repo.getItem(running.id))).toMatchObject({
+        startedAt: '2026-10-26T13:00:00.000Z',
+        finishedAt: null,
+      });
+      const listed = await repo.listItems(batch.id);
+      expect(listed.find((i) => i.id === done.id)).toMatchObject({
+        startedAt: '2026-10-26T13:00:00.000Z',
+        finishedAt: '2026-10-26T13:01:12.000Z',
+      });
     });
 
     it('refuses a repeated source key in one batch, but not in another', async () => {
@@ -304,6 +328,8 @@ export function conversionsContract(
         redeliverOf: of.id,
         resolution: null,
         unversioned: false,
+        startedAt: null,
+        finishedAt: null,
       });
       expect(await repo.listItems(batchId)).toEqual([rerun]);
       expect(await facts.job(rerun.jobId!)).toEqual({

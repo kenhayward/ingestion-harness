@@ -519,6 +519,14 @@ CORPUS: dict[str, str] = {
         run(" styled hidden", '<w:rStyle w:val="Hidden"/>'),
     ),
     "empty heading": para(style="Heading1") + para(run("after")),
+    "empty headings between headings": heading("Before")
+    + para(run("one"))
+    + para(style="Heading1")
+    + para(run("two"))
+    + para('<w:r><w:t xml:space="preserve">  </w:t></w:r>', style="Heading2")
+    + para("<w:r><w:br/></w:r>", style="Heading1")
+    + para(run("three"))
+    + heading("After"),
     "footnotes": para(run("Text"), '<w:r><w:footnoteReference w:id="3"/></w:r>'),
 }
 
@@ -531,6 +539,15 @@ def test_synthetic_corpus_passes(name: str) -> None:
     check(doc, pkg, ctx)
     located = located_text_form(doc, image_only=IMAGE_ONLY_EQUATION)
     assert [unit for unit, _ in located] == source_text_units(pkg, ctx)
+
+
+def test_empty_headings_are_left_out_on_both_sides() -> None:
+    doc, pkg, ctx = decompose(CORPUS["empty headings between headings"])
+    check(doc, pkg, ctx)
+    assert [s.id for s in doc.sections] == ["s-before", "s-after"]
+    units = source_text_units(pkg, ctx)
+    assert "[]" not in units
+    assert units == ["Before", "one", "two", "three", "After"]
 
 
 # --- Fix round 1 -----------------------------------------------------------------------------

@@ -48,13 +48,14 @@ export function ConversionHelp() {
 
       <h3>The batch</h3>
       <p>
-        A batch shows one row per document, with its outcome, a line saying more, a link to the
-        document in the target once it is there, and its <strong>Report</strong>: what converting
-        the file noticed for someone to check, such as an empty heading or a table with no caption.
-        While any document is still queued, decomposing or delivering, the rows refresh every few
-        seconds. <strong>Needs attention</strong> shows only the documents someone should look at,
-        and <strong>Done</strong> the ones that went through, were already loaded, or were detached
-        or had the target&apos;s state accepted. A refusal that a later run has moved on from is{' '}
+        A batch shows one row per document, with its outcome, how long it took to convert (or has
+        been running so far), a line saying more, a link to the document in the target once it is
+        there, and its <strong>Report</strong>: what converting the file noticed for someone to
+        check, such as an empty heading it left out or a table with no caption. While any document
+        is still queued, decomposing or delivering, the rows refresh every few seconds.{' '}
+        <strong>Needs attention</strong> shows only the documents someone should look at, and{' '}
+        <strong>Done</strong> the ones that went through, were already loaded, or were detached or
+        had the target&apos;s state accepted. A refusal that a later run has moved on from is{' '}
         <strong>Superseded by a later run</strong>, and done too: act on the document from the later
         batch. A screen reader hears how many are done each time another settles.
       </p>

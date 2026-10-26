@@ -3,6 +3,7 @@ import { bridgeError, type BridgeEvent, type Receipt } from '@ih/bridge-contract
 import type { Item } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
 import { applyEvent } from '../src/bridge/events.js';
+import { linkOf } from '../src/bridge/register.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
 
@@ -115,6 +116,26 @@ describe('a conversion item, settled from the bridge events', () => {
     });
     expect(t.item().detail).toContain('doc-1');
     expect(t.jobStatus()).toBe('succeeded');
+  });
+
+  it('records when a delivered or refused item finished', async () => {
+    const t = await delivered();
+    t.workerRecords();
+    expect(t.item().finishedAt).toBeNull();
+    await applyEvent(t.deps, event(t.deliveryId));
+    expect(Date.parse(t.item().finishedAt!)).not.toBeNaN();
+
+    const refused = await delivered({ persistentId: 'doc-1' });
+    refused.workerRecords();
+    const error = bridgeError('changed_in_target', 'the document changed in the target');
+    await applyEvent(
+      refused.deps,
+      event(refused.deliveryId, { status: 'needs_user', error, receipt: null }),
+    );
+    expect(refused.item()).toMatchObject({
+      outcome: 'changed_in_target',
+      finishedAt: expect.any(String),
+    });
   });
 
   it('settles an update of a known document as updated', async () => {
@@ -254,5 +275,55 @@ describe('a conversion item, settled from the bridge events', () => {
     ];
     await applyEvent(t.deps, event(t.deliveryId, { receipt }));
     expect(t.item()).toMatchObject({ outcome: 'created', link: null });
+  });
+
+  it("links the document's map entry, the sink's own name for the document", async () => {
+    const t = await delivered();
+    t.workerRecords();
+    const receipt = documentReceipt('doc-1');
+    const map = 'https://docs.example.test/maps/doc-1';
+    receipt.written = [
+      { kind: 'topic', id: 'doc-1/t1', label: 'Intro', url: 'https://docs.example.test/t1' },
+      { kind: 'map', id: 'doc-1/map', label: 'Results', url: map },
+    ];
+    await applyEvent(t.deps, event(t.deliveryId, { receipt }));
+    expect(t.item()).toMatchObject({ outcome: 'created', link: map });
+  });
+});
+
+describe('linkOf', () => {
+  const entry = (kind: string, id: string, url: string | null) => ({ kind, id, label: null, url });
+  const receipt = (written: Receipt['written'], mapId?: string): Receipt => ({
+    written,
+    document: {
+      persistentId: 'doc-1',
+      components: mapId ? [{ kind: 'map', id: mapId, version: '1', element: null }] : [],
+      readBack: { ok: true, at: null, detail: null },
+    },
+  });
+
+  it("takes a document or map entry's url", () => {
+    expect(linkOf(receipt([entry('map', 'm', 'https://t.test/m')]))).toBe('https://t.test/m');
+    expect(linkOf(receipt([entry('document', 'd', 'https://t.test/d')]))).toBe('https://t.test/d');
+  });
+
+  it("never takes a topic's or an image's url", () => {
+    const written = [
+      entry('topic', 't', 'https://t.test/t'),
+      entry('image', 'i', 'https://t.test/i'),
+      entry('map', 'm', null),
+    ];
+    expect(linkOf(receipt(written))).toBeNull();
+    expect(linkOf(null)).toBeNull();
+  });
+
+  it("prefers the entry that is the receipt's map component", () => {
+    const written = [
+      entry('map', 'other-map', 'https://t.test/other'),
+      entry('document', 'doc-1', 'https://t.test/doc'),
+      entry('map', 'doc-1/map', 'https://t.test/map'),
+    ];
+    expect(linkOf(receipt(written, 'doc-1/map'))).toBe('https://t.test/map');
+    expect(linkOf(receipt(written))).toBe('https://t.test/other');
   });
 });

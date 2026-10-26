@@ -60,7 +60,7 @@ class World:
 
     def __init__(self, bridge: Any = None) -> None:
         self.store = MemoryObjectStore()
-        self.items = MemoryItemStore()
+        self.items = MemoryItemStore(clock=lambda: AT)
         self.register = MemoryRegisterStore(clock=lambda: AT)
         self.bridge = bridge if bridge is not None else FakeBridge()
         self.queue = FakeQueue()
@@ -156,6 +156,62 @@ def test_decomposes_and_delivers_a_new_file_as_delivering() -> None:
     assert request.package.provenance.source_key == "reports/r1.docx"  # type: ignore[union-attr]
     # The live view moves through each stage.
     assert world.messages(job) == ["decomposing", "decomposed", "report written", "delivering"]
+
+
+def test_an_item_records_when_it_started_and_finished() -> None:
+    """How long a document took (the Conversion tab's row): started when it goes to
+    `decomposing`, finished at a final outcome the worker decides; `delivering` is not final
+    (the API's settle finishes it)."""
+    clock = iter([AT, AT.replace(minute=1), AT.replace(minute=2)])
+    items = MemoryItemStore(clock=lambda: next(clock))
+    items.add(ConversionItem("i1", BATCH_A, "r1.docx", "k1", "queued"))
+    items.add(ConversionItem("i2", BATCH_A, "r2.docx", "k2", "queued"))
+
+    items.start("i1")
+    items.start("i1")  # a retry keeps the first start
+    assert (items.items["i1"].started_at, items.items["i1"].finished_at) == (AT, None)
+    assert items.decide("i1", "delivering", "a new source", None)
+    assert items.items["i1"].finished_at is None
+
+    items.start("i2")
+    assert items.decide("i2", "duplicate", "the same content as a.docx", None)
+    assert items.items["i2"].started_at == AT.replace(minute=1)
+    assert items.items["i2"].finished_at == AT.replace(minute=2)
+
+
+def test_a_decided_job_finishes_its_item_and_a_delivery_does_not() -> None:
+    world = World()
+    data = report_docx()
+    first = world.upload(data, "r1.docx")
+    run_decompose(first, world.deps())
+    item = world.item(first)
+    assert item.started_at == AT and item.finished_at is None
+    [entry] = world.register.entries()
+    world.register.settle(entry.id, state="delivered", persistent_id="DOC-1")
+
+    again = world.upload(data, "r1.docx", batch=BATCH_B)
+    run_decompose(again, world.deps())
+    item = world.item(again)
+    assert item.outcome == "already_loaded"
+    assert (item.started_at, item.finished_at) == (AT, AT)
+
+
+def test_a_create_again_under_the_earlier_key_says_so_plainly() -> None:
+    """The earlier delivery failed without a document (the sink's 413, say): the same file is
+    sent again under its key, and the row's detail says why that is safe."""
+    world = World()
+    data = report_docx()
+    run_decompose(world.upload(data, "r1.docx"), world.deps())
+    [entry] = world.register.entries()
+    sink_failed = {"class": "permanent", "code": "sink_failed", "message": "too large"}
+    world.register.settle(entry.id, state="failed", last_error=sink_failed)
+
+    again = world.upload(data, "r1.docx", batch=BATCH_B)
+    assert isinstance(run_decompose(again, world.deps()), Delivering)
+
+    assert world.item(again).detail == (
+        "sent again with the same key as the earlier attempt, so the target can't create it twice"
+    )
 
 
 def test_the_file_is_decomposed_once(monkeypatch: pytest.MonkeyPatch) -> None:

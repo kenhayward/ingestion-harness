@@ -52,6 +52,9 @@ conversionsContract('memory', async () => {
         Object.assign(repo.conversionItems.get(itemId)!, { outcome, registerEntryId: entryId });
       },
       actions: async (entryId) => repo.registerActions.filter((a) => a.entryId === entryId),
+      times: async (itemId, startedAt, finishedAt) => {
+        Object.assign(repo.conversionItems.get(itemId)!, { startedAt, finishedAt });
+      },
       dropEntry: async (entryId) => {
         repo.register.delete(entryId);
       },

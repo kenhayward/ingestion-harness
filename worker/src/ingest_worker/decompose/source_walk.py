@@ -66,8 +66,6 @@ IMAGE_ONLY_EQUATION = equation_token("image")
 _MAIN = "word/document.xml"
 _REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
 _WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
-#: The title the decomposer gives an empty heading.
-_EMPTY_TITLE = "[]"
 #: The walk reads caption numbers and typed references with its own patterns, so a decomposer
 #: that cut a caption's number short, or matched part of a typed reference, shows as a
 #: difference. A number is a letter or not, then digits in parts joined by `.`, `-`, U+2010,
@@ -928,17 +926,17 @@ class _Walk:
             if level is None:
                 self.paragraph(el, blocks)
                 continue
+            para = self.read(el)
+            pieces = para.placed()
+            if (
+                all(isinstance(p, _T | _Br) for p in pieces)
+                and not "".join(p.text for p in pieces if isinstance(p, _T)).strip()
+            ):
+                continue  # an empty heading is no section (owner's decision, 2026-10-26)
             self.emit(self.finish(blocks), ordinal, self.units)
             blocks = []
             ordinal += 1
-            para = self.read(el)
-            pieces = para.placed()
-            blank = (
-                all(isinstance(p, _T | _Br) for p in pieces)
-                and not "".join(p.text for p in pieces if isinstance(p, _T)).strip()
-            )
-            title = _EMPTY_TITLE if blank else self.render(pieces, typed=True)
-            self.units.append((title, ordinal))
+            self.units.append((self.render(pieces, typed=True), ordinal))
         self.emit(self.finish(blocks), ordinal, self.units)
         self.fields_closed("the body")
         self.notes()

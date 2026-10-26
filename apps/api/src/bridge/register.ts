@@ -38,13 +38,21 @@ export function settlementOf(
   return { ...reported, state: 'failed', delivered: false };
 }
 
+/** The written kinds that are the document itself (a sink may name it a map). */
+const DOCUMENT_KINDS: ReadonlySet<string> = new Set(['document', 'map']);
+
 /**
- * The document's link in the target: the receipt's document entry's URL. Never another part's
- * (an image, say): without one the item has no link.
+ * The document's link in the target: the URL of the receipt's own entry for the document, a
+ * written entry of kind `document` or `map`; of several, the one that is the receipt's map
+ * component. Never another part's (a topic or an image): without one the item has no link.
+ * Migration 202610261330 applies the same rule to items settled before it.
  */
 export function linkOf(receipt: Receipt | null): string | null {
-  const written = receipt?.written ?? [];
-  return written.find((w) => w.kind === 'document' && w.url !== null)?.url ?? null;
+  const own = (receipt?.written ?? []).filter((w) => DOCUMENT_KINDS.has(w.kind) && w.url !== null);
+  const maps = new Set(
+    (receipt?.document?.components ?? []).filter((c) => c.kind === 'map').map((c) => c.id),
+  );
+  return (own.find((w) => maps.has(w.id)) ?? own[0])?.url ?? null;
 }
 
 /** How an item outcome reads in a job's events (worker `job.OUTCOME_LABELS`). */

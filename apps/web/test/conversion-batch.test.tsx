@@ -6,6 +6,7 @@ import { ITEM_OUTCOMES, type BatchSummary, type Item, type ItemOutcome } from '@
 import { App } from '../src/App.js';
 import { ApiError } from '../src/api/client.js';
 import { ConversionPage } from '../src/conversion/ConversionPage.js';
+import { spokenDuration } from '../src/conversion/outcomes.js';
 import { conversionBatch, conversionItem, fakeApi } from './fake-api.js';
 
 const BATCH_ID = '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11';
@@ -71,6 +72,41 @@ describe('the Conversion tab: the batch view', () => {
     expect(rowOf('c.docx')).toHaveTextContent('2 components changed in the target');
     expect(within(rowOf('d.docx')).getByText('Read-back mismatch')).toHaveClass('pill');
     expect(api.getConversionBatch).toHaveBeenCalledWith(BATCH_ID);
+  });
+
+  it('says how long each document took, and how long an unfinished one has run', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-26T13:00:40.000Z'));
+    try {
+      const api = batchApi([
+        item('done.docx', 'created', {
+          startedAt: '2026-10-26T12:58:00.000Z',
+          finishedAt: '2026-10-26T12:59:12.000Z',
+        }),
+        item('running.docx', 'delivering', { startedAt: '2026-10-26T13:00:00.000Z' }),
+        item('queued.docx', 'queued'),
+        item('old.docx', 'failed'),
+      ]);
+      view(api);
+      await screen.findByText('done.docx');
+      expect(rowOf('done.docx')).toHaveTextContent('took 1 min 12 s');
+      expect(rowOf('running.docx')).toHaveTextContent('running for 40 s');
+      expect(rowOf('queued.docx')).not.toHaveTextContent(/took|running for/);
+      expect(rowOf('old.docx')).not.toHaveTextContent(/took|running for/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [0, '0 s'],
+    [40, '40 s'],
+    [72, '1 min 12 s'],
+    [120, '2 min'],
+    [3725, '1 h 2 min'],
+    [7200, '2 h'],
+  ])('reads %i seconds as %s', (seconds, said) => {
+    expect(spokenDuration(seconds)).toBe(said);
   });
 
   it('rows update as items settle', async () => {

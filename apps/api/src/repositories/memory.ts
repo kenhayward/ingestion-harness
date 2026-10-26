@@ -1267,8 +1267,8 @@ export class MemoryRepo implements IngestionRepo {
         i.sourceKey === e.sourceKey &&
         SETTLEABLE_ITEM.includes(i.outcome),
     );
-    if (mine) Object.assign(mine, { ...settled, registerEntryId: e.id });
     const now = new Date().toISOString();
+    if (mine) Object.assign(mine, { ...settled, registerEntryId: e.id, finishedAt: now });
     Object.assign(e, {
       state: s.state,
       persistentId: s.persistentId ?? e.persistentId,
@@ -1382,6 +1382,8 @@ export class MemoryRepo implements IngestionRepo {
       reportKey: null,
       link: null,
       redeliverOf: null,
+      startedAt: null,
+      finishedAt: null,
     };
     this.conversionItems.set(row.id, row);
     return { ok: true, item: this.withResolution(row) };
@@ -1457,6 +1459,8 @@ export class MemoryRepo implements IngestionRepo {
       reportKey: null,
       link: null,
       redeliverOf: of.id,
+      startedAt: null,
+      finishedAt: null,
     };
     item.jobId = this.queueBackground(
       'decompose',

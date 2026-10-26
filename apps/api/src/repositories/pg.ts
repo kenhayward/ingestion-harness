@@ -272,6 +272,8 @@ interface ItemRow {
   report_key: string | null;
   link: string | null;
   redeliver_of: string | null;
+  started_at: Date | null;
+  finished_at: Date | null;
   resolution: Item['resolution'];
   unversioned: boolean;
 }
@@ -285,7 +287,8 @@ interface ItemRow {
  * it reads the statement's own register writes. Only used on the bare table (no alias).
  */
 const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
-  job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of,
+  job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of, started_at,
+  finished_at,
   CASE WHEN decomposition_items.register_entry_id IS NULL THEN NULL
        ELSE (SELECT CASE
                       WHEN count(*) = 0 THEN 'detached'
@@ -326,6 +329,8 @@ const toItem = (r: ItemRow): Item => ({
   redeliverOf: r.redeliver_of,
   resolution: r.resolution,
   unversioned: r.unversioned,
+  startedAt: r.started_at?.toISOString() ?? null,
+  finishedAt: r.finished_at?.toISOString() ?? null,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -2280,7 +2285,8 @@ export class PgRepo implements IngestionRepo {
         const settled = item(before);
         await client.query(
           `UPDATE decomposition_items
-              SET outcome = $3, detail = $4, link = $5, register_entry_id = $6::uuid
+              SET outcome = $3, detail = $4, link = $5, register_entry_id = $6::uuid,
+                  finished_at = now()
             WHERE batch_id = $1::uuid AND source_key = $2 AND outcome = ANY($7::text[])`,
           [
             before.batchId,
