@@ -86,6 +86,14 @@ export const ItemSchema = z
      */
     unversioned: z.boolean(),
     /**
+     * The item's register entry is gone from the target (§8, owner's call 2026-10-26): it has a
+     * persistent id and failed because the target refused its update as `not_found` (the
+     * document was deleted there, say). Updating it can never go through: only *Load as a new
+     * document* (`POST /api/conversions/items/{id}/reload`) or detach resolves it. Read from
+     * the entry, like `unversioned`.
+     */
+    gone: z.boolean(),
+    /**
      * When the worker first took the item (`decomposing`; a retry keeps it), and when it reached
      * a final outcome (the worker's decision, or the settle of its delivery); null until then,
      * and for items converted before migration 202610261331.
@@ -95,6 +103,14 @@ export const ItemSchema = z
   })
   .strict();
 export type Item = z.infer<typeof ItemSchema>;
+
+/**
+ * What a document gone from the target says on its row (the API's settle and the worker's
+ * `deliver.GONE`, word for word).
+ */
+export const GONE_DETAIL =
+  'The target no longer has this document (it may have been deleted). Load it as a new ' +
+  'document to create it again.';
 
 /** The longest source key a batch takes (in its NFC form). */
 export const MAX_SOURCE_KEY = 1024;

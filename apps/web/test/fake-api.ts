@@ -845,6 +845,9 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     detachConversionItem: vi.fn(async () => {
       throw new Error('detachConversionItem not stubbed');
     }),
+    reloadConversionItem: vi.fn(async () => {
+      throw new Error('reloadConversionItem not stubbed');
+    }),
     previewAccept: vi.fn(async () => {
       throw new Error('previewAccept not stubbed');
     }),
@@ -892,6 +895,7 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     redeliverOf: null,
     resolution: null,
     unversioned: false,
+    gone: false,
     startedAt: null,
     finishedAt: null,
     ...o,

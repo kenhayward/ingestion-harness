@@ -29,6 +29,7 @@ import {
   AcceptPreviewSchema,
   BatchDetailSchema,
   BatchSchema,
+  GONE_DETAIL,
   type Item,
 } from '@ih/shared';
 import pg from 'pg';
@@ -52,6 +53,7 @@ const BRIDGE_HARNESS = pathToFileURL(join(root, 'apps', 'bridge', 'test', 'conve
 interface ConversionBridge {
   url: string;
   edit(persistentId: string, componentId: string): Promise<{ version: string } | null>;
+  remove(persistentId: string): Promise<boolean>;
   documents(): string[];
   text(persistentId: string): string | null;
   settle(): Promise<void>;
@@ -246,6 +248,25 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     expect(res.statusCode, res.body).toBe(200);
   }
 
+  /**
+   * A row action that starts a new batch of one (force-load, reload), run to its end: the new
+   * batch's item.
+   */
+  async function rerunOf(item: Item, action: 'force' | 'reload'): Promise<Item> {
+    const res = await c.app.inject({
+      method: 'POST',
+      url: `/api/conversions/items/${item.id}/${action}`,
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const { batch } = BatchDetailSchema.parse(res.json());
+    await runWorker();
+    await bridge.settle();
+    const detail = BatchDetailSchema.parse(
+      (await c.app.inject(`/api/conversions/batches/${batch.id}`)).json(),
+    );
+    return detail.items[0]!;
+  }
+
   async function detach(item: Item): Promise<void> {
     const res = await c.app.inject({
       method: 'POST',
@@ -345,5 +366,32 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     ]);
     expect(new Set(rows.map((r) => r.persistent_id)).size).toBe(4);
     expect(rows.find((r) => r.source_key === 'manual/a.docx')?.persistent_id).toBe(aNew);
+  });
+
+  it('a document deleted in the target is gone, and loads again as a new document', async () => {
+    const created = (await convert({ 'gone.docx': word('Gaskets') }))['gone.docx']!;
+    expect(created.outcome).toBe('created');
+    const { persistentId: first } = await documentOf(created);
+
+    // Someone deletes it in the target: a force-load's update is refused as not found.
+    expect(await bridge.remove(first)).toBe(true);
+    const forced = await rerunOf(created, 'force');
+    expect(forced).toMatchObject({ outcome: 'unresolved', gone: true, detail: GONE_DETAIL });
+
+    // Running it again sends no update: still unresolved, still gone.
+    const again = await rerunOf(forced, 'force');
+    expect(again).toMatchObject({ outcome: 'unresolved', gone: true, detail: GONE_DETAIL });
+
+    // Load as a new document: detached, then created again under a new persistent id.
+    const reloaded = await rerunOf(again, 'reload');
+    expect(reloaded.outcome, reloaded.detail ?? '').toBe('created');
+    const { persistentId: second } = await documentOf(reloaded);
+    expect(second).not.toBe(first);
+    expect(bridge.documents()).toContain(second);
+    expect(bridge.documents()).not.toContain(first);
+    const { rows } = await pool.query<{ action: string; details: { reason?: string } }>(
+      `SELECT action, details FROM register_actions ORDER BY at DESC LIMIT 1`,
+    );
+    expect(rows[0]).toMatchObject({ action: 'detach', details: { reason: 'gone' } });
   });
 });

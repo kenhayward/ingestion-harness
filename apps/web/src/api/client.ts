@@ -905,6 +905,11 @@ export interface Api {
   redeliverConversionItem(itemId: string, file?: File): Promise<BatchDetail>;
   /** Forgets the item's document; it stays in the target untouched. */
   detachConversionItem(itemId: string): Promise<ConversionItem>;
+  /**
+   * Loads a document gone from the target as a new document: detaches it (if not yet) and
+   * creates it again from the stored file, in a new batch of one.
+   */
+  reloadConversionItem(itemId: string): Promise<BatchDetail>;
   /** What accepting the target's state would record. */
   previewAccept(itemId: string): Promise<AcceptPreview>;
   /** Accepts the target's state as previewed (`seen`: the preview's `updatedAt`). */
@@ -1900,6 +1905,8 @@ export function createHttpApi(base = '/api'): Api {
     },
     detachConversionItem: (itemId) =>
       post<ConversionItem>(`${base}/conversions/items/${encodeURIComponent(itemId)}/detach`, {}),
+    reloadConversionItem: (itemId) =>
+      post<BatchDetail>(`${base}/conversions/items/${encodeURIComponent(itemId)}/reload`, {}),
     previewAccept: (itemId) =>
       apiFetch(`${base}/conversions/items/${encodeURIComponent(itemId)}/accept`).then(
         json<AcceptPreview>,

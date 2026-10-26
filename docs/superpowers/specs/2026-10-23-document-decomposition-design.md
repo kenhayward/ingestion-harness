@@ -486,6 +486,16 @@ target*:
   target's copy, so no update is sent: the row reads *unresolved* ("detach to create a new one,
   or resolve it in the target") and offers detach only. There is nothing to accept.
 
+**[call]** (owner, 2026-10-26) **A document gone from the target.** A target may answer an update
+of a document it no longer holds (deleted there, say) with `not_found` rather than *changed in
+target*. Such an entry, with a persistent id, `failed` and `not_found` as its last error, is
+*gone*: the row reads *unresolved* ("The target no longer has this document (it may have been
+deleted). Load it as a new document to create it again.") and the item says `gone`. No run sends
+it another update, forced or not. The row offers **Load as a new document** and detach. Load as a
+new document asks for confirmation, then detaches the entry (recorded with `reason: gone`) and
+reruns the stored file as a plain create in a new batch of one. Because of the detach, that create
+makes a new document with a new persistent id. A double click makes one batch.
+
 ### Deliveries that don't finish cleanly **[call]**
 
 A create can write to the target and still not end with a clean receipt: read-back fails, the sink

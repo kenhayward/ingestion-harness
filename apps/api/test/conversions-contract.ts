@@ -129,6 +129,7 @@ export function conversionsContract(
         redeliverOf: null,
         resolution: null,
         unversioned: false,
+        gone: false,
         startedAt: null,
         finishedAt: null,
       });
@@ -328,6 +329,7 @@ export function conversionsContract(
         redeliverOf: of.id,
         resolution: null,
         unversioned: false,
+        gone: false,
         startedAt: null,
         finishedAt: null,
       });
@@ -651,6 +653,84 @@ export function conversionsContract(
           detail: () => 'x',
         }),
       ).toEqual({ ok: false, reason: 'not_refused' });
+    });
+
+    it('an entry whose update the target refused as not found is gone', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const gone = async () => (await repo.getItem(a.id))?.gone;
+      expect(await gone()).toBe(false); // no entry
+      const notFound = bridgeError('not_found', 'no map doc-1 for this update to replace');
+      const entryId = await facts.entry({
+        ...changedSeed(a.sourceKey, batch.id),
+        state: 'failed',
+        lastError: notFound,
+      });
+      await facts.settleItem(a.id, 'unresolved', entryId);
+      expect(ItemSchema.parse(await repo.getItem(a.id))).toMatchObject({
+        gone: true,
+        unversioned: false,
+        resolution: null,
+      });
+      expect((await repo.listItems(batch.id))[0]?.gone).toBe(true);
+      await facts.dropEntry(entryId);
+
+      // Not gone: another failure, a refusal as changed, or a failure with no document.
+      for (const seed of [
+        { state: 'failed', lastError: bridgeError('content_rejected', 'no') },
+        { state: 'changed', lastError: notFound },
+        { state: 'delivered', lastError: notFound },
+        { state: 'failed', lastError: notFound, persistentId: null },
+      ] as const) {
+        const other = await facts.entry({ ...changedSeed(a.sourceKey, batch.id), ...seed });
+        await facts.settleItem(a.id, 'failed', other);
+        expect(await gone(), JSON.stringify(seed)).toBe(false);
+        await facts.dropEntry(other);
+      }
+    });
+
+    it('detaches a document gone from the target, recording why', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry({
+        ...changedSeed(a.sourceKey, batch.id),
+        state: 'failed',
+        lastError: bridgeError('not_found', 'no map doc-1 for this update to replace'),
+      });
+      await facts.settleItem(a.id, 'unresolved', entryId);
+
+      const detached = await repo.detachRegisterEntry({
+        itemId: a.id,
+        entryId,
+        targetIds: ['manuals'],
+        by: ADA,
+        reason: 'gone',
+        detail: () => 'detached',
+      });
+
+      if (!detached.ok) throw new Error(detached.reason);
+      expect(detached.entry.state).toBe('detached');
+      expect(ItemSchema.parse(detached.item)).toMatchObject({
+        resolution: 'detached',
+        gone: false,
+      });
+      expect((await facts.actions(entryId))[0]?.details).toEqual({
+        persistentId: 'doc-1',
+        sourceKey: a.sourceKey,
+        reason: 'gone',
+      });
+    });
+
+    it('reruns an item unforced when asked, as a plain create', async () => {
+      const { repo, facts, item: of } = await finished();
+      const done = await repo.rerunItem({ ...rerunOf(of), force: false });
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.batch.force).toBe(false);
+      expect(done.item.redeliverOf).toBe(of.id);
+      expect((await facts.job(done.item.jobId!))?.params).toMatchObject({ force: false });
+      // The same guard: a second rerun while it is unfinished is refused.
+      expect(await repo.rerunItem({ ...rerunOf(of), force: false })).toEqual({
+        ok: false,
+        reason: 'running',
+      });
     });
 
     it('accepts nothing from a preview the entry has moved on from', async () => {

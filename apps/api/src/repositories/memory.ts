@@ -42,6 +42,7 @@ import {
   type Rerun,
   type RerunResult,
   RUNNING_OUTCOMES,
+  isGone,
   isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
@@ -87,7 +88,7 @@ import {
 } from './types.js';
 
 /** A conversion item as stored: its resolution is read from its register entry. */
-type StoredItem = Omit<Item, 'resolution' | 'unversioned'>;
+type StoredItem = Omit<Item, 'resolution' | 'unversioned' | 'gone'>;
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
@@ -1292,9 +1293,11 @@ export class MemoryRepo implements IngestionRepo {
   private withResolution(item: StoredItem): Item {
     let resolution: Item['resolution'] = null;
     let unversioned = false;
+    let gone = false;
     if (item.registerEntryId) {
       const entry = this.register.get(item.registerEntryId);
       unversioned = entry !== undefined && isUnversioned(entry);
+      gone = entry !== undefined && isGone(entry);
       const state = entry?.state;
       // Gone: a create replaced the detached tombstone (worker `register.put_pending`).
       if (state === undefined || state === 'detached') resolution = 'detached';
@@ -1311,7 +1314,7 @@ export class MemoryRepo implements IngestionRepo {
         if (!own) resolution = 'superseded';
       }
     }
-    return structuredClone({ ...item, resolution, unversioned });
+    return structuredClone({ ...item, resolution, unversioned, gone });
   }
 
   async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
@@ -1433,6 +1436,7 @@ export class MemoryRepo implements IngestionRepo {
     createdBy,
     by,
     source,
+    force = true,
   }: Rerun): Promise<RerunResult> {
     const running = [...this.conversionItems.values()].some(
       (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
@@ -1443,7 +1447,7 @@ export class MemoryRepo implements IngestionRepo {
       targetId,
       createdBy: { ...createdBy },
       state: 'started',
-      force: true,
+      force,
       createdAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
     };
@@ -1464,7 +1468,7 @@ export class MemoryRepo implements IngestionRepo {
     };
     item.jobId = this.queueBackground(
       'decompose',
-      { batchId, itemId, targetId, sourceKey: of.sourceKey, force: true },
+      { batchId, itemId, targetId, sourceKey: of.sourceKey, force },
       by?.name ?? null,
       by?.userId ?? null,
     );
@@ -1483,6 +1487,7 @@ export class MemoryRepo implements IngestionRepo {
     entryId,
     targetIds,
     by,
+    reason,
     detail,
   }: Detach): Promise<DetachResult> {
     const entry = this.register.get(entryId);
@@ -1494,9 +1499,9 @@ export class MemoryRepo implements IngestionRepo {
         targetIds.includes(this.conversionBatches.get(i.batchId)?.targetId ?? ''),
     );
     if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
-    // Only a document refused as changed in the target, or one whose versions were never
-    // recorded, is detached: never a live one.
-    if (entry.state !== 'changed' && !isUnversioned(entry)) {
+    // Only a document refused as changed in the target, one whose versions were never
+    // recorded, or one gone from the target, is detached: never a live one.
+    if (entry.state !== 'changed' && !isUnversioned(entry) && !isGone(entry)) {
       return { ok: false, reason: 'not_refused' };
     }
     const action: RegisterAction = {
@@ -1505,7 +1510,11 @@ export class MemoryRepo implements IngestionRepo {
       action: 'detach',
       by: { ...by },
       at: new Date().toISOString(),
-      details: { persistentId: entry.persistentId, sourceKey: entry.sourceKey },
+      details: {
+        persistentId: entry.persistentId,
+        sourceKey: entry.sourceKey,
+        ...(reason ? { reason } : {}),
+      },
     };
     this.registerActions.push(action);
     Object.assign(entry, {

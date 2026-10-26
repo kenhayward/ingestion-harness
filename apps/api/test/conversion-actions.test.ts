@@ -614,6 +614,154 @@ describe('detach', () => {
   });
 });
 
+/** The item's update refused because the target no longer has its document (deleted there). */
+const goneEntry = (c: Ctx, item: Item) =>
+  settle(c, item, 'unresolved', {
+    state: 'failed',
+    lastError: bridgeError('not_found', 'Repository lib has no map doc-1 for this update'),
+  });
+
+describe('a document gone from the target', () => {
+  it('detach takes a gone document', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    const entry = goneEntry(c, item);
+    const shown = BatchDetailSchema.parse(
+      (await c.app.inject(`/api/conversions/batches/${item.batchId}`)).json(),
+    ).items[0]!;
+    expect(shown).toMatchObject({ outcome: 'unresolved', gone: true, resolution: null });
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/detach`);
+
+    expect(res.statusCode).toBe(200);
+    expect(ItemSchema.parse(res.json())).toMatchObject({ resolution: 'detached', gone: false });
+    expect(c.repo.register.get(entry.id)?.state).toBe('detached');
+    expect(takeViolations()).toEqual([]);
+  });
+
+  it('reload detaches it and starts one batch that creates it again', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    const entry = goneEntry(c, item);
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/reload`);
+
+    expect(res.statusCode, res.body).toBe(201);
+    const { batch, items } = BatchDetailSchema.parse(res.json());
+    expect(batch).toMatchObject({ targetId: 'manuals', force: false, state: 'started' });
+    const [rerun] = items as [Item];
+    expect(rerun).toMatchObject({
+      sourceKey: item.sourceKey,
+      objectKey: item.objectKey,
+      redeliverOf: item.id,
+      outcome: 'queued',
+    });
+    // A plain create: after the detach, its key takes the detach's id, so a new document.
+    expect(DecomposeParamsSchema.parse(jobOf(c, rerun)!.params)).toEqual({
+      batchId: batch.id,
+      itemId: rerun.id,
+      targetId: 'manuals',
+      sourceKey: item.sourceKey,
+      force: false,
+    });
+    const [action] = c.repo.registerActions;
+    expect(c.repo.registerActions).toEqual([
+      {
+        id: expect.any(String),
+        entryId: entry.id,
+        action: 'detach',
+        by: { id: null, name: null },
+        at: expect.any(String),
+        details: { persistentId: 'doc-1', sourceKey: item.sourceKey, reason: 'gone' },
+      },
+    ]);
+    expect(c.repo.register.get(entry.id)).toMatchObject({
+      state: 'detached',
+      detachActionId: action!.id,
+    });
+    expect(ItemSchema.parse((await c.repo.getItem(item.id))!)).toMatchObject({
+      resolution: 'detached',
+      gone: false,
+    });
+    expect(c.repo.conversionBatches.size).toBe(2);
+    expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
+    expect(takeViolations()).toEqual([]);
+  });
+
+  it('a double click makes one batch', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    goneEntry(c, item);
+
+    const [first, second] = await Promise.all([
+      post(c.app, `/api/conversions/items/${item.id}/reload`),
+      post(c.app, `/api/conversions/items/${item.id}/reload`),
+    ]);
+
+    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 409]);
+    expect([first, second].find((r) => r.statusCode === 409)!.json()).toMatchObject({
+      code: 'not_finished',
+    });
+    expect(c.repo.conversionBatches.size).toBe(2);
+    expect(c.repo.backgroundJobs.filter((j) => j.task === 'decompose')).toHaveLength(2);
+    expect(c.repo.registerActions).toHaveLength(1);
+    // While that rerun runs, every further click is refused.
+    expect((await post(c.app, `/api/conversions/items/${item.id}/reload`)).statusCode).toBe(409);
+  });
+
+  it('reloads an item detached already, without detaching again', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    goneEntry(c, item);
+    expect((await post(c.app, `/api/conversions/items/${item.id}/detach`)).statusCode).toBe(200);
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/reload`);
+
+    expect(res.statusCode).toBe(201);
+    expect(BatchDetailSchema.parse(res.json()).batch.force).toBe(false);
+    expect(c.repo.registerActions).toHaveLength(1);
+  });
+
+  it('refuses a document that is not gone', async () => {
+    const c = await setup();
+    const changed = await startedItem(c, 'manuals/a.docx');
+    changedEntry(c, changed, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
+    const live = await startedItem(c, 'manuals/b.docx');
+    settle(c, live, 'created', { state: 'delivered' });
+    const never = await startedItem(c, 'manuals/c.docx');
+    c.repo.conversionItems.get(never.id)!.outcome = 'failed';
+
+    for (const item of [changed, live, never]) {
+      const res = await post(c.app, `/api/conversions/items/${item.id}/reload`);
+      expect(res.statusCode, item.sourceKey).toBe(409);
+      expect(res.json()).toMatchObject({ code: 'not_gone' });
+    }
+    expect(c.repo.registerActions).toEqual([]);
+    expect(c.repo.conversionBatches.size).toBe(3);
+    expect((await post(c.app, `/api/conversions/items/${randomUUID()}/reload`)).statusCode).toBe(
+      404,
+    );
+    expect(takeViolations()).toEqual([]);
+  });
+
+  it('an operator may load it as a new document', async () => {
+    const c = await accessApp();
+    await withTargets(c, c.adminCookie);
+    const { cookie, user } = await signInNewUser(c.app, c.access, 'Olu', 'operator');
+    const item = await startedItem(c, 'manuals/pumps.docx', docx(), cookie);
+    goneEntry(c, item);
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/reload`, undefined, cookie);
+
+    expect(res.statusCode, res.body).toBe(201);
+    expect(BatchDetailSchema.parse(res.json()).batch.createdBy).toEqual({
+      id: user.id,
+      name: 'Olu',
+    });
+    expect(c.repo.registerActions[0]?.by).toEqual({ id: user.id, name: 'Olu' });
+  });
+});
+
 describe("accepting the target's state", () => {
   it('accept preview lists each changed component', async () => {
     const c = await setup();

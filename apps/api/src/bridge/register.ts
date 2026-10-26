@@ -1,5 +1,5 @@
 import type { BridgeEvent, Receipt } from '@ih/bridge-contract';
-import type { ItemOutcome } from '@ih/shared';
+import { GONE_DETAIL, type ItemOutcome } from '@ih/shared';
 import {
   FINAL_DELIVERY,
   type IngestionRepo,
@@ -82,7 +82,9 @@ export function describeOutcome(outcome: ItemOutcome, detail: string | null): st
  *   was replaced), else `created`, with the document's link;
  * - incomplete with a failed read-back: `read_back_mismatch`, naming where it differed;
  * - incomplete without a document receipt: `failed`, since nothing shows the document arrived;
- * - changed: `changed_in_target`; failed: `failed`, each with the bridge's message.
+ * - changed: `changed_in_target`; failed: `failed`, each with the bridge's message;
+ * - failed as `not_found` when it updated a known document: `unresolved`, the document gone
+ *   from the target (deleted there, say), with `GONE_DETAIL` (owner's call, 2026-10-26).
  */
 export function itemSettlementOf(s: RegisterSettlement, before: RegisterEntry): ItemSettlement {
   const link = linkOf(s.receipt);
@@ -111,6 +113,9 @@ export function itemSettlementOf(s: RegisterSettlement, before: RegisterEntry): 
       detail: s.error?.message ?? 'the document changed in the target',
       link,
     };
+  }
+  if (s.error?.code === 'not_found' && before.persistentId !== null) {
+    return { outcome: 'unresolved', detail: GONE_DETAIL, link };
   }
   return { outcome: 'failed', detail: s.error?.message ?? 'the delivery failed', link };
 }

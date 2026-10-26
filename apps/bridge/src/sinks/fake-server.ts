@@ -21,7 +21,8 @@ const KEPT = 50;
  *
  * In `documents` mode (env `FAKE_SINK_MODE=documents`) it serves the FakeDocumentSink instead,
  * with an unsigned `POST /_edit` (`{persistentId, componentId}`, test stacks only) that changes one
- * component in the target, answering the component's new version or 404.
+ * component in the target, answering the component's new version or 404, and an unsigned
+ * `POST /_delete` (`{persistentId}`) that deletes a document in the target (204, or 404).
  */
 export async function buildFakeServer(
   key: string,
@@ -121,15 +122,15 @@ export async function buildFakeServer(
 }
 
 /**
- * The `documents` mode server: `sink` behind the signed routes, with `/_edit`. A test passes its
- * own sink to see what was delivered.
+ * The `documents` mode server: `sink` behind the signed routes, with `/_edit` and `/_delete`. A
+ * test passes its own sink to see what was delivered.
  */
 export async function buildDocumentServer(
   key: string,
   logger = false,
   sink = new FakeDocumentSink(),
 ): Promise<FastifyInstance> {
-  const app = await serveSink(sink, key, { unsigned: ['/_edit'], logger });
+  const app = await serveSink(sink, key, { unsigned: ['/_edit', '/_delete'], logger });
   app.post('/_edit', async (req, reply) => {
     const body = (req.body ?? {}) as { persistentId?: unknown; componentId?: unknown };
     const edited =
@@ -138,6 +139,13 @@ export async function buildDocumentServer(
         : null;
     if (!edited) return reply.code(404).send(bridgeError('not_found', 'no such component'));
     return edited;
+  });
+  app.post('/_delete', async (req, reply) => {
+    const { persistentId } = (req.body ?? {}) as { persistentId?: unknown };
+    if (typeof persistentId === 'string' && sink.remove(persistentId)) {
+      return reply.code(204).send();
+    }
+    return reply.code(404).send(bridgeError('not_found', 'no such document'));
   });
   return app;
 }

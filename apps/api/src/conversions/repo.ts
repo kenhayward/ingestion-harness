@@ -50,8 +50,8 @@ export interface ConversionRepo {
    * `detached` tombstone naming that action, and sets the item's detail, all at once. Refused
    * (`pending`) while a delivery for the entry is in flight, or a run of its source to a target
    * on its tenant is unfinished (a rerun queued, say); `missing` when it is gone or detached
-   * already; `not_refused` unless it is `changed` or unversioned (`isUnversioned`), so a live
-   * document is never detached.
+   * already; `not_refused` unless it is `changed`, unversioned (`isUnversioned`) or gone from
+   * the target (`isGone`), so a live document is never detached.
    */
   detachRegisterEntry(detach: Detach): Promise<DetachResult>;
   /**
@@ -73,6 +73,8 @@ export interface Detach {
    */
   targetIds: string[];
   by: Batch['createdBy'];
+  /** Why, when a row action detaches on the way (reload: `gone`), recorded in the details. */
+  reason?: 'gone';
   detail: (entry: RegisterEntry) => string;
 }
 
@@ -99,6 +101,11 @@ export interface Rerun {
   /** Who queues the job. */
   by: Creator | null;
   source: Pick<Item, 'filename' | 'contentSha256' | 'sizeBytes' | 'objectKey'>;
+  /**
+   * Whether the batch is forced (default true: force-load and redeliver). Reload reruns as a
+   * plain create (false): after its detach, that makes a new document.
+   */
+  force?: boolean;
 }
 
 export type DetachResult =
@@ -123,6 +130,16 @@ export const isUnversioned = (
   entry.state !== 'detached' &&
   !entry.lastReceipt?.document?.components.length;
 
+/**
+ * An entry gone from the target (`Item.gone`, owner's call 2026-10-26): it has a persistent id
+ * and failed because the target refused its update as `not_found` (the document was deleted
+ * there). Its updates can never go through: detach takes it, and reload loads it as new.
+ */
+export const isGone = (
+  entry: Pick<RegisterEntry, 'state' | 'persistentId' | 'lastError'>,
+): boolean =>
+  entry.persistentId !== null && entry.state === 'failed' && entry.lastError?.code === 'not_found';
+
 /** The item outcomes of a run not finished yet. */
 export const RUNNING_OUTCOMES: readonly Item['outcome'][] = ['queued', 'decomposing', 'delivering'];
 
@@ -134,7 +151,7 @@ export type RegisterAction =
       action: 'detach';
       by: Batch['createdBy'];
       at: string;
-      details: { persistentId: string | null; sourceKey: string };
+      details: { persistentId: string | null; sourceKey: string; reason?: 'gone' };
     }
   | {
       id: string;

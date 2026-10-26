@@ -76,9 +76,10 @@ export function ConversionHelp() {
         <li>
           <strong>Read-back mismatch</strong>: the target wrote the document but what it read back
           differs; the line says where. <strong>Unresolved</strong>: an earlier delivery may have
-          made the document, so it needs resolving in the target. <strong>In flight</strong>:
-          another batch is delivering the same document, so this row stays as it is; the outcome
-          shows in that batch.
+          made the document, so it needs resolving in the target, or the target no longer has the
+          document (it may have been deleted there), so no update can reach it.{' '}
+          <strong>In flight</strong>: another batch is delivering the same document, so this row
+          stays as it is; the outcome shows in that batch.
         </li>
         <li>
           <strong>Failed</strong>: the file could not be converted or delivered; the line says why.
@@ -95,15 +96,25 @@ export function ConversionHelp() {
           <strong>Redeliver</strong> updates the document, from the stored file or a replacement you
           choose. The replacement keeps the original&apos;s name, so it updates the same document.
         </li>
-        <li>Force-load and redeliver each start a new batch of one, which the row links to.</li>
+        <li>
+          <strong>Load as a new document</strong>, on a document the target no longer has (someone
+          deleted it there, say), creates it again from the stored file, after you confirm. CT
+          Studio forgets the old document and the new one is a document of its own, with a new
+          identity in the target. Running the file again, or force-loading it, would only try to
+          update the document that is gone, so it stays unresolved until you do this or detach it.
+        </li>
+        <li>
+          Force-load, redeliver and load as a new document each start a new batch of one, which the
+          row links to.
+        </li>
         <li>
           For a document changed in the target, <strong>Detach</strong> forgets it: it stays in the
           target untouched, and the next run of the file creates a new document.{' '}
           <strong>Accept the target&apos;s state</strong> shows each changed part with its version
           then and now; once you confirm, the next run updates the document,{' '}
           <strong>overwriting the edits made in the target</strong>. Either is done once, and the
-          row says which. Only a document refused as changed in the target can be detached, so a
-          document delivered since is never detached from an old row.
+          row says which. Only a document refused as changed in the target, or one it no longer has,
+          can be detached, so a document delivered since is never detached from an old row.
         </li>
       </ul>
       <p>

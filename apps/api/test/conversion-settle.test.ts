@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { bridgeError, type BridgeEvent, type Receipt } from '@ih/bridge-contract';
-import type { Item } from '@ih/shared';
+import { GONE_DETAIL, type Item } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
 import { applyEvent } from '../src/bridge/events.js';
 import { linkOf } from '../src/bridge/register.js';
@@ -57,7 +57,7 @@ async function delivered(over: { persistentId?: string | null } = {}) {
     jobId,
     deliveryId,
     entryId: entry.id,
-    item: (): Omit<Item, 'resolution' | 'unversioned'> => ({
+    item: (): Omit<Item, 'resolution' | 'unversioned' | 'gone'> => ({
       ...repo.conversionItems.get(itemId)!,
     }),
     jobStatus: () => repo.backgroundJobs.find((j) => j.id === jobId)!.status,
@@ -181,6 +181,36 @@ describe('a conversion item, settled from the bridge events', () => {
       detail: 'the sink refused the content',
     });
     expect(t.jobStatus()).toBe('succeeded');
+  });
+
+  it('an update refused as not found settles unresolved: the document is gone', async () => {
+    const t = await delivered({ persistentId: 'doc-1' });
+    t.workerRecords();
+    const error = bridgeError('not_found', 'Repository lib has no map doc-1 for this update');
+    await applyEvent(t.deps, event(t.deliveryId, { status: 'needs_user', error, receipt: null }));
+    expect(await t.repo.getItem(t.item().id)).toMatchObject({
+      outcome: 'unresolved',
+      detail: GONE_DETAIL,
+      gone: true,
+      resolution: null,
+    });
+    expect(t.repo.register.get(t.entryId)).toMatchObject({
+      state: 'failed',
+      persistentId: 'doc-1',
+    });
+    expect(t.jobStatus()).toBe('succeeded');
+  });
+
+  it('a create refused as not found is no gone document: it fails', async () => {
+    const t = await delivered();
+    t.workerRecords();
+    const error = bridgeError('not_found', 'no such space');
+    await applyEvent(t.deps, event(t.deliveryId, { status: 'needs_user', error, receipt: null }));
+    expect(await t.repo.getItem(t.item().id)).toMatchObject({
+      outcome: 'failed',
+      detail: 'no such space',
+      gone: false,
+    });
   });
 
   it('settles the item whatever the order of event and worker write', async () => {

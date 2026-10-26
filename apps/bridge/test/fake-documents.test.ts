@@ -251,6 +251,20 @@ describe('FakeDocumentSink, update', () => {
     });
   });
 
+  it('an update of a document deleted in the target is refused as not found', async () => {
+    const sink = new FakeDocumentSink();
+    const created = await receiptOf(sink, createReq(twoSections));
+    expect(sink.remove('doc-1')).toBe(true);
+    expect(sink.remove('doc-1')).toBe(false);
+    expect(sink.documents.has('doc-1')).toBe(false);
+    const error = await refusal(sink.deliver(updateReq('doc-1', created.components, twoSections)));
+    expect(error).toMatchObject({ class: 'needs_user', code: 'not_found' });
+    expect(error.message).toContain('doc-1');
+    // A create of the same file under a new key makes a new document.
+    const again = await receiptOf(sink, createReq(twoSections, 'key-again'));
+    expect(again.persistentId).toBe('doc-2');
+  });
+
   it('changed details are capped', async () => {
     const sink = new FakeDocumentSink();
     const many = withDocument({

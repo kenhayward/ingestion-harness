@@ -14,7 +14,7 @@ import { applyEvent } from '../../src/bridge/events.js';
 import { migrate } from '../../src/db/migrate.js';
 import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
 import { PgRepo } from '../../src/repositories/pg.js';
-import { DOCX_MIME } from '@ih/shared';
+import { DOCX_MIME, GONE_DETAIL } from '@ih/shared';
 import type { RegisterAction } from '../../src/conversions/repo.js';
 import type { RegisterEntry } from '../../src/repositories/types.js';
 import { conversionsContract, type EntrySeed } from '../conversions-contract.js';
@@ -400,6 +400,23 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       [t.jobId],
     );
     expect(rows[0]?.message).toBe('changed in target: the document changed in the target');
+  });
+
+  it('settles an update refused as not found as unresolved: the document is gone', async () => {
+    const t = await handedOff({ persistentId: 'doc-1' });
+    await t.p.query(`UPDATE decomposition_items SET outcome = 'delivering' WHERE id = $1`, [
+      t.itemId,
+    ]);
+    const error = bridgeError('not_found', 'Repository lib has no map doc-1 for this update');
+    await applyEvent(t.deps, t.event({ status: 'needs_user', error, receipt: null }));
+    expect(await t.repo.getItem(t.itemId)).toMatchObject({
+      outcome: 'unresolved',
+      detail: GONE_DETAIL,
+      gone: true,
+      resolution: null,
+      finishedAt: expect.any(String),
+    });
+    expect(await t.jobStatus()).toBe('succeeded');
   });
 
   it("migration 202610261330 fills a delivered item's missing link by linkOf's rule", async () => {
