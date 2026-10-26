@@ -196,6 +196,24 @@ def test_a_decided_job_finishes_its_item_and_a_delivery_does_not() -> None:
     assert (item.started_at, item.finished_at) == (AT, AT)
 
 
+def test_a_create_again_under_the_earlier_key_says_so_plainly() -> None:
+    """The earlier delivery failed without a document (the sink's 413, say): the same file is
+    sent again under its key, and the row's detail says why that is safe."""
+    world = World()
+    data = report_docx()
+    run_decompose(world.upload(data, "r1.docx"), world.deps())
+    [entry] = world.register.entries()
+    sink_failed = {"class": "permanent", "code": "sink_failed", "message": "too large"}
+    world.register.settle(entry.id, state="failed", last_error=sink_failed)
+
+    again = world.upload(data, "r1.docx", batch=BATCH_B)
+    assert isinstance(run_decompose(again, world.deps()), Delivering)
+
+    assert world.item(again).detail == (
+        "sent again with the same key as the earlier attempt, so the target can't create it twice"
+    )
+
+
 def test_the_file_is_decomposed_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """The delivery takes the job's decomposition rather than rendering everything again."""
     import ingest_worker.decompose.deliver as deliver_module

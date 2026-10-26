@@ -153,7 +153,8 @@ def decide(
                 None,
                 True,
                 by_key,
-                "created again under the last delivery's key: it may have made the document",
+                "sent again with the same key as the earlier attempt, so the target can't "
+                "create it twice",
                 by_key.idempotency_key,
             )
         return Decision("unresolved", False, by_key, _UNRESOLVED)

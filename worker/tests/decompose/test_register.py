@@ -136,6 +136,9 @@ def test_same_content_without_persistent_id_creates_again_under_the_stored_key(
     d = decide(e, [e], SHA, force=force)
     assert (d.outcome, d.create, d.entry) == (None, True, e)
     assert d.idempotency_key == e.idempotency_key
+    assert d.reason == (
+        "sent again with the same key as the earlier attempt, so the target can't create it twice"
+    )
 
 
 @pytest.mark.parametrize("name", MAYBE_REACHED)
