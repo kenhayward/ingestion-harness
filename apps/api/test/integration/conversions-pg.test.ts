@@ -219,6 +219,14 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     expect((await repo.getItem(id))?.detail).toBeNull();
   });
 
+  it("indexes items by source key for detach's running check", async () => {
+    const { p } = await make();
+    const { rows } = await p.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE tablename = 'decomposition_items'`,
+    );
+    expect(rows.map((r) => r.indexdef)).toContainEqual(expect.stringMatching(/\(source_key\)$/));
+  });
+
   it('refuses an item outcome outside the twelve', async () => {
     const { repo, p } = await make();
     const batch = await repo.createBatch({

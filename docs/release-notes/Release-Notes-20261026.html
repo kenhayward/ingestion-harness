@@ -189,6 +189,11 @@
             It also runs on its own when the API starts.
           </li>
           <li>
+            A third migration (<code>202610261200_decomposition_items_source_key</code>) indexes
+            batch items by source key, so detaching a document stays quick as batches accumulate. It
+            also runs on its own when the API starts.
+          </li>
+          <li>
             New API routes under <code>/api/conversions</code>: the targets that take documents, and
             batches to create, fill one file at a time, start, discard, list and read, with each
             item's report. Each item's row also has actions:
