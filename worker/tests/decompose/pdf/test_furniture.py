@@ -131,3 +131,99 @@ def test_flag_message_counts_lines_and_pages() -> None:
         + chr(0x2013)
         + "3"
     )
+
+
+def test_contents_run_stops_at_a_following_heading_and_caption() -> None:
+    runs = [Run(f"Item {n} ...... {n}", 72, 200 + 20 * n) for n in range(4)]
+    runs += [Run("Chapter 1", 72, 400), Run("Table 1", 72, 450)]
+    items = [
+        docling.text("text", 1, bl(60, 185, 400, 290)),
+        docling.text("section_header", 1, bl(60, 385, 300, 410), level=1),
+        docling.text("caption", 1, bl(60, 435, 300, 460)),
+    ]
+    pieces, text, ledger = build([Page(runs=runs)], items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Chapter 1", "Table 1"]
+    assert dropped.contents_pages == (0,)
+
+
+def test_leaderless_line_ends_a_run_with_leaders_in_the_majority() -> None:
+    runs = [Run(f"Item {n} ...... {n}", 72, 200 + 20 * n) for n in range(4)]
+    runs.append(Run("Appendix 1", 72, 300))
+    pieces, text, ledger = build([Page(runs=runs)])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Appendix 1"]
+    assert dropped.contents_pages == (0,)
+
+
+def test_heading_led_list_without_leaders_keeps_the_next_heading() -> None:
+    pages = [
+        Page(
+            runs=[
+                Run("Contents", 72, 200),
+                Run("Introduction 3", 72, 230),
+                Run("Method 5", 72, 250),
+            ]
+        ),
+        Page(runs=[Run("1 Introduction", 72, 200)]),
+    ]
+    items = [
+        docling.text("section_header", 1, bl(60, 185, 300, 210), level=1),
+        docling.text("text", 1, bl(60, 215, 300, 260)),
+        docling.text("section_header", 2, bl(60, 185, 300, 210), level=1),
+    ]
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["1 Introduction"]
+    assert dropped.contents_pages == (0,)
+
+
+def test_contents_table_is_dropped() -> None:
+    entries = [("Intro", "3"), ("Method", "5"), ("Results", "9")]
+    runs = [
+        Run(text, 78 + 200 * c, 219 + 30 * r)
+        for r, row in enumerate(entries)
+        for c, text in enumerate(row)
+    ]
+    runs.append(Run("Body", 72, 500))
+    table = docling.table(
+        1, bl(72, 200, 472, 300), [(r, c) for r in range(3) for c in range(2)], rows=3, cols=2
+    )
+    for cell in table["data"]["table_cells"]:
+        r, c = cell["start_row_offset_idx"], cell["start_col_offset_idx"]
+        cell["bbox"] = {
+            "l": 72 + 200 * c,
+            "t": 200 + 30 * r,
+            "r": 72 + 200 * c + 200,
+            "b": 230 + 30 * r,
+            "coord_origin": "TOPLEFT",
+        }
+    items = [table, docling.text("text", 1, bl(60, 485, 300, 510))]
+    pieces, text, ledger = build([Page(runs=runs)], items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Body"]
+    assert all(p.table is None for p in kept)
+    assert dropped.contents_pages == (0,)
+    char = next(c for c in text.pages[0].chars if c.text == "I")
+    assert ledger.entries(0)[char.index] == ["dropped:contents"]
+
+
+def test_footer_on_too_few_pages_is_kept() -> None:
+    pages = [Page(runs=[Run("Body", 72, 300), Run("Draft 7", 280, FOOT)]) for _ in range(2)]
+    pages += [Page(runs=[Run("Body", 72, 300)]) for _ in range(2)]
+    pieces, text, ledger = build(pages)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept).count("Draft 7") == 2
+    assert dropped.furniture == {}
+
+
+def test_piece_mixing_furniture_and_body_lines_keeps_the_body() -> None:
+    pages = [
+        Page(runs=[Run("Confidential", 72, TOP), Run("Opening line", 72, 90), Run("More", 72, 300)])
+        for _ in range(3)
+    ]
+    items = [docling.text("text", n, bl(60, 20, 300, 320)) for n in (1, 2, 3)]
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert [[ln.text for ln in p.lines] for p in kept] == [["Opening line", "More"]] * 3
+    assert dropped.furniture == {0: 1, 1: 1, 2: 1}

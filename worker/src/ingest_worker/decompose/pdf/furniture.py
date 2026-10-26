@@ -35,6 +35,11 @@ _CONTENTS_HEADING = re.compile(r"(?i)^(table of contents|contents|list of (table
 _HEADER_FIELD = re.compile(r"^(?P<name>[A-Z][\w /&-]{1,40}):\s*(?P<value>\S.*)$")
 _EN_DASH = chr(0x2013)
 _HEADING_LABELS = frozenset({"section_header", "title"})
+#: A piece with one of these labels is never a contents entry, and ends a run of them.
+_BOUNDARY_LABELS = frozenset({"section_header", "title", "caption"})
+_PAGE_NUMBER = re.compile(r"\d{1,4}")
+#: A contents table needs this many entry rows.
+_TABLE_ROWS = 3
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,24 @@ def _has_leader(line: Line) -> bool:
     return _LEADER.search(line.text) is not None
 
 
+def _is_contents_table(piece: Piece) -> bool:
+    """A table whose rows each read as a contents entry: text, then a page number."""
+    if piece.table is None or not piece.cells:
+        return False
+    rows: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    for (row, col), lines in piece.cells.items():
+        cell = " ".join(line.text for line in lines).strip()
+        if cell:
+            rows[row].append((col, cell))
+    if len(rows) < _TABLE_ROWS:
+        return False
+    for cells in rows.values():
+        cells.sort()
+        if len(cells) < 2 or not _PAGE_NUMBER.fullmatch(cells[-1][1]):
+            return False
+    return True
+
+
 def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], set[int]]:
     # The text lines in reading order as (piece index, line index); a table or picture is a None
     # that ends a run.
@@ -143,20 +166,32 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
     def line_at(entry: tuple[int, int]) -> Line:
         return pieces[entry[0]].lines[entry[1]]
 
+    def contents_at(entry: tuple[int, int]) -> bool:
+        return pieces[entry[0]].label not in _BOUNDARY_LABELS and _is_contents(line_at(entry))
+
     def run_from(start: int) -> int:
-        """The index after the run of contents lines that starts at `start`."""
+        """The index after the run of contents lines that starts at `start`. A run ends at a
+        heading or caption, and at a line without a leader once leaders are the majority."""
         end = start
+        leaders = 0
         while end < len(seq):
             entry = seq[end]
-            if entry is None or not _is_contents(line_at(entry)):
+            if entry is None or not contents_at(entry):
                 break
+            leader = _has_leader(line_at(entry))
+            if not leader and 2 * leaders > end - start:
+                break
+            leaders += leader
             end += 1
         return end
 
     doomed: set[tuple[int, int]] = set()
+    tables: set[int] = set()
     for i, piece in enumerate(pieces):
         if piece.label == "document_index" and _is_text(piece):
             doomed.update((i, j) for j in range(len(piece.lines)))
+        elif _is_contents_table(piece):
+            tables.add(i)
 
     # A contents heading, with the contents lines after it (if there are none, it stays).
     for k, entry in enumerate(seq):
@@ -174,7 +209,7 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
     k = 0
     while k < len(seq):
         entry = seq[k]
-        if entry is None or not _is_contents(line_at(entry)):
+        if entry is None or not contents_at(entry):
             k += 1
             continue
         end = run_from(k)
@@ -187,6 +222,12 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
     pages: set[int] = set()
     out: list[Piece] = []
     for i, piece in enumerate(pieces):
+        if i in tables:
+            for cell_lines in (piece.cells or {}).values():
+                for line in cell_lines:
+                    _drop(ledger, line, "contents")
+            pages.add(piece.page)
+            continue
         if not _is_text(piece):
             out.append(piece)
             continue
