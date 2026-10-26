@@ -18,9 +18,18 @@ RUN apt-get update \
 RUN uv pip install --index-url https://download.pytorch.org/whl/cpu torch==2.14.1 torchvision==0.29.1
 
 WORKDIR /app
-COPY pyproject.toml ./
+# Everything installs at the versions in uv.lock, so the same PDF gives the same output across
+# builds. torch, torchvision and the CUDA packages they pull on Linux are left out of the export:
+# the CPU build above stays (torch is locked at the same version, which the build checks).
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --extra docling --no-dev --no-hashes --no-emit-project -o /tmp/locked.txt \
+    && grep -E '^(torch|torchvision)==' /tmp/locked.txt | sort > /tmp/locked-torch.txt \
+    && printf 'torch==2.14.1\ntorchvision==0.29.1\n' | diff - /tmp/locked-torch.txt \
+    && grep -v -E '^(torch|torchvision|triton|nvidia-[a-z0-9-]+)==' /tmp/locked.txt > /tmp/requirements.txt \
+    && uv pip install -r /tmp/requirements.txt \
+    && rm /tmp/locked.txt /tmp/locked-torch.txt /tmp/requirements.txt
 COPY layout_service layout_service
-RUN uv pip install ".[docling]"
+RUN uv pip install --no-deps .
 
 # The weights, at exact revisions. The layout model; and TableFormer (accurate mode only, which
 # is the only mode the service uses) from the docling-models repository. The directory names are

@@ -14,6 +14,8 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMo
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.io import DocumentStream
 
+from layout_service.app import AnalysisFailed
+
 # The pins; the Dockerfile downloads exactly these revisions into MODELS_DIR.
 LAYOUT_REVISION = "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8"
 TABLES_REVISION = "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
@@ -35,16 +37,22 @@ class DoclingAnalyser:
         self._lock = threading.Lock()
 
     def page_count(self, pdf: bytes) -> int:
-        document = pypdfium2.PdfDocument(pdf)
-        try:
-            return len(document)
-        finally:
-            document.close()
+        # pdfium is not thread-safe, and Docling's PDF backend uses it inside `analyse`.
+        with self._lock:
+            document = pypdfium2.PdfDocument(pdf)
+            try:
+                return len(document)
+            finally:
+                document.close()
 
     def analyse(self, pdf: bytes, first: int, last: int) -> dict:
         source = DocumentStream(name="document.pdf", stream=BytesIO(pdf))
         with self._lock:
-            result = self._converter.convert(source, page_range=(first, last))
+            try:
+                result = self._converter.convert(source, page_range=(first, last))
+            except Exception as error:
+                reason = str(error).strip().splitlines()[0][:200] if str(error).strip() else ""
+                raise AnalysisFailed(reason or type(error).__name__) from error
         return result.document.export_to_dict()
 
     def fingerprint(self) -> str:

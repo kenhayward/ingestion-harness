@@ -9,9 +9,14 @@ from __future__ import annotations
 from typing import Annotated, Protocol
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 
 MAX_PAGES = 500
 MAX_BYTES = 256 * 2**20
+
+
+class AnalysisFailed(Exception):
+    """The analyser could not convert this PDF (corrupt, or a page range it chokes on)."""
 
 
 class Analyser(Protocol):
@@ -28,12 +33,12 @@ def create_app(
     app = FastAPI(title="layout", docs_url=None, redoc_url=None, openapi_url=None)
 
     # Plain `def` handlers run in FastAPI's thread pool, so a long analysis does not block /health.
-    @app.post("/layout")
+    @app.post("/layout", response_model=None)
     def layout(
         file: Annotated[UploadFile, File()],
         first: Annotated[int, Form()],
         last: Annotated[int, Form()],
-    ) -> dict:
+    ) -> dict | JSONResponse:
         pdf = file.file.read(max_bytes + 1)
         if len(pdf) > max_bytes:
             raise HTTPException(413, f"larger than {max_bytes} bytes")
@@ -47,7 +52,12 @@ def create_app(
             raise HTTPException(413, f"{pages} pages is more than {max_pages}")
         if not 1 <= first <= last <= pages:
             raise HTTPException(422, f"pages {first} to {last} are not within 1 to {pages}")
-        return {"pages": pages, "document": analyser.analyse(pdf, first, last)}
+        try:
+            document = analyser.analyse(pdf, first, last)
+        except AnalysisFailed as error:
+            # 422, not 5xx: the worker retries server errors, and this PDF will fail again.
+            return JSONResponse({"error": f"layout analysis failed: {error}"}, status_code=422)
+        return {"pages": pages, "document": document}
 
     @app.get("/health")
     def health() -> dict:

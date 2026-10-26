@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from layout_service.app import create_app
+from layout_service.app import AnalysisFailed, create_app
 
 
 class FakeAnalyser:
@@ -73,3 +73,34 @@ def test_health_reports_fingerprint() -> None:
     res = TestClient(create_app(FakeAnalyser())).get("/health")
     assert res.status_code == 200
     assert res.json() == {"status": "ok", "fingerprint": "fake 1"}
+
+
+def test_unreadable_pdf_is_400() -> None:
+    class Unreadable(FakeAnalyser):
+        def page_count(self, pdf: bytes) -> int:
+            raise ValueError("Failed to load document")
+
+    fake = Unreadable()
+    res = post(TestClient(create_app(fake)))
+    assert res.status_code == 400
+    assert res.json()["detail"] == "not a readable PDF"
+    assert fake.calls == []
+
+
+def test_conversion_failure_is_422_not_a_server_error() -> None:
+    class Failing(FakeAnalyser):
+        def analyse(self, pdf: bytes, first: int, last: int) -> dict:
+            raise AnalysisFailed("page 2 could not be parsed")
+
+    res = post(TestClient(create_app(Failing())))
+    assert res.status_code == 422
+    assert res.json() == {"error": "layout analysis failed: page 2 could not be parsed"}
+
+
+def test_other_analyser_errors_stay_500() -> None:
+    class Broken(FakeAnalyser):
+        def analyse(self, pdf: bytes, first: int, last: int) -> dict:
+            raise RuntimeError("out of memory")
+
+    client = TestClient(create_app(Broken()), raise_server_exceptions=False)
+    assert post(client).status_code == 500
