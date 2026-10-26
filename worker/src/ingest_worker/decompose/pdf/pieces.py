@@ -159,6 +159,10 @@ class Ledger:
         """The char stops being owned: it is accounted for by `dropped:<reason>` instead."""
         self._pages[page][char_index] = [DROPPED_PREFIX + reason]
 
+    def reassign(self, page: int, char_index: int, owner: str) -> None:
+        """The char's owners are replaced by `owner` alone (a piece was split)."""
+        self._pages[page][char_index] = [owner]
+
     def entries(self, page: int) -> dict[int, list[str]]:
         return {i: list(owners) for i, owners in self._pages.get(page, {}).items()}
 

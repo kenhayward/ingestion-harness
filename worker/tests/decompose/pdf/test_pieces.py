@@ -280,3 +280,10 @@ def test_every_visible_char_is_owned_once() -> None:
             if char.visible:
                 assert len(entries[char.index]) == 1, (page.index, char)
         assert set(entries) == {c.index for c in page.chars if c.visible}
+
+
+def test_reassign_moves_a_chars_ownership() -> None:
+    ledger = Ledger()
+    ledger.own(0, 3, "a")
+    ledger.reassign(0, 3, "b")
+    assert ledger.entries(0) == {3: ["b"]}
