@@ -396,6 +396,15 @@ One entry per delivered document, scoped to the target's sink and instance (so t
 
 The same file sent to two tenants is two documents, with two entries. **[call]**
 
+An entry is in one of these states. **[call]**
+
+- `pending`: a delivery is in flight;
+- `delivered`: the document arrived and read back equal;
+- `incomplete`: it arrived without a clean receipt;
+- `changed`: the target refused an update as *changed in target*;
+- `failed`: the delivery failed;
+- `detached` and `accepted`: someone resolved a refusal (see "Resolving a refused document").
+
 ### The two checks
 
 **[owner]** (the two checks); **[call]** (how they combine):
@@ -441,13 +450,37 @@ A document refused as *changed in target* offers its owner two actions in CT Stu
 
 - **Detach.** CT Studio forgets the register entry. The edited document stays in the target,
   untouched, and the next run of that source creates a new document with a new persistent id.
+  - **[call]** "Forgets" means the entry is kept as a `detached` marker, naming the detach.
+    Both checks ignore it, so the same file is neither *already loaded* nor a *duplicate*.
+  - The next create of that source carries the detach in its idempotency key (§9). That way the
+    target can't answer with the detached document, even when the file is the one it was first
+    made from.
+  - That create replaces the marker with a new entry.
 - **Accept the target's current state.** CT Studio reads the target's current component versions
   into the register entry, so the next run's update goes through, **overwriting the edits made in
   the target**. The confirmation shows each changed component with its versions before and now,
   and names who changed it where the target reports that. The person must confirm explicitly.
   Each acceptance is recorded with who and when.
+  - **[call]** The versions come from the refusal itself, which lists each changed component
+    with its version then and now. The target has no call that reads them. A component that is
+    gone is dropped.
+  - When more than 40 components changed, the refusal doesn't list them all. CT Studio then
+    can't accept, and offers detach instead.
+  - The target doesn't report who made a change, so the confirmation doesn't show it.
+  - The entry becomes `accepted`. The next run of that source is an update, even of the same
+    file, so it is never *already loaded*. Once that update arrives, the entry is `delivered`
+    again.
+  - The confirmation is refused if the entry changed after the person saw it, so they confirm
+    only what they saw.
 
 Both actions work on one document at a time. The batch view lists the refused ones. **[call]**
+
+**[call]** Detach and accept apply only to an entry that is currently refused as *changed in
+target*:
+
+- A row whose document a later run has since delivered or refused again shows as *superseded*,
+  with neither action. That way an old row can never detach a live document.
+- A row whose entry is in flight offers neither.
 
 ### Deliveries that don't finish cleanly **[call]**
 
@@ -516,8 +549,19 @@ so it changes deliberately, as a new contract version. **[call]**
 - **A new error code, `changed_in_target`** (class `needs_user`), whose details list each changed
   component with its expected version and its current version, or that it is gone.
 - **Idempotency.** For a decomposition, the key is derived from the source hash, the target
-  document's persistent id (empty for a create) and the decomposer version, so a retried delivery
-  is recognised as the same one. A force-load adds the batch id, so it is a new delivery.
+  document's persistent id (empty for a create), the decomposer version and a run token, so a
+  retried delivery is recognised as the same one. The run token is:
+  - **for an update:** the digest of the versions it expects, which is the SHA-256 of the sorted
+    `id@version` list. **[call]** Two updates of one document that expect different versions
+    are different writes, even of the same file. So A, then B, then A again writes A a second
+    time, rather than replaying A's first receipt. A retry expects the same versions, so it
+    keeps its key.
+  - **for a create after a detach:** the detach action's id, until the source has a document
+    again. **[call]** This includes a create the bridge refused outright. That create's key
+    differs from the detached document's, so the target can't answer with that document (§8).
+  - **for a force-load:** a new token for the batch, so it is a new delivery. A forced update
+    joins it to the digest of the versions it expects.
+  - **for any other create:** none. The same file gets the same key, so it gets the same result.
 - **The conformance suite** gains checks for the capability: create, read back, update with
   matching versions, refused update with a changed version, and a version 1 sink never receiving a
   `document` part.
@@ -559,6 +603,18 @@ model-driven extraction and no review step. **[call]**
 | 6 | **S3 prefix as a batch source** | A prefix runs as a folder does |
 
 Phases 1 and 4's capture work need nothing from each other and can run side by side.
+
+**Phase 3 status.** Phase 3 is implemented. It covers:
+
+- conversion batches in the API, as one `decompose` job per file in the worker;
+- each file's outcome settled from the bridge's events;
+- force-load, redeliver, detach and accept from a document's row;
+- the **Conversion** tab.
+
+It is tested end to end, from the API's routes through the worker and the bridge to the fake
+document sink (`apps/api/test/integration/conversion-e2e-pg.test.ts`). The test runs a single
+file, then a folder, and covers already loaded, updated, changed in target, accept and detach.
+The owner's run of the sample report against the real sink is pending (phase 4).
 
 **Phase 2 status.** Phase 2 is implemented: contract version 2 (`document` part, conditional
 update, `changed_in_target`), the bridge's version check, the register and its reconcile, and the

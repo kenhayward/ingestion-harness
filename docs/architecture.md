@@ -186,6 +186,43 @@ Phase 6 adds the drafting bundle (migration 0019 adds the `export` task). `POST 
 
 `DELETE /api/workbench/projects/:id` deletes a project whose type was never published (409 otherwise): one transaction locks the type's recipe rows (`templates`), then the project (the order publish uses, so the two cannot deadlock), and removes its jobs (queued and running ones too, an exception to ADR 0005; see its addendum) and the type's project-less test jobs, workbench rows, the type's references, its unused documents and the recipe's drafts; then, best-effort, the project's internal files go (ADR 0005's rules; the prepared text, the step cache and the OCR cache stay).
 
+## Document decomposition
+
+Decomposition rebuilds Word documents in a structured-authoring target, as sections, tables,
+images and equations, rather than extracting data from them
+([spec](superpowers/specs/2026-10-23-document-decomposition-design.md)). It has no recipe, model
+or review step.
+
+- **Batches.** The **Conversion** tab starts a batch for one target that takes documents (its
+  sink has the `decomposedDocuments` capability, contract version 2). It uploads the files one
+  per request, under their source keys (the path in the folder, or the file name), then starts
+  the batch (`/api/conversions/*`, migration `202610251200_decomposition_batches`). Operators,
+  designers and admins may all convert.
+- **The worker job.** Starting a batch queues one document-less `decompose` job per file
+  (`worker/src/ingest_worker/decompose/job.py`). The job decomposes the file and writes its report
+  beside the source in the runs bucket. It then decides through the register what to deliver, and
+  hands the package to the bridge. These jobs stay out of the Jobs page.
+- **The register.** `decomposition_register` holds one entry per document, scoped to the
+  target's sink and instance. Its two checks (content hash and source key) give *already loaded*,
+  *duplicate*, *update* or *create*. An update carries the component versions the last receipt
+  recorded, and the target refuses it as `changed_in_target` if any of them changed there.
+  - An entry's states are `pending`, `delivered`, `incomplete`, `changed`, `failed`, `detached`
+    and `accepted`.
+  - Detach and accept (`register_actions`, migration `202610252220_register_detached_accepted`)
+    act only on an entry refused as `changed`.
+- **Items settled from bridge events.** An item handed to the bridge is `delivering`. The bridge's
+  final event for that delivery settles the register entry and the item together
+  (`apps/api/src/bridge/register.ts`), whichever comes first, the event or the worker's write.
+  - The item then reads `created`, `updated`, `changed_in_target`, `read_back_mismatch` or
+    `failed`.
+  - Outcomes decided without a delivery (`already_loaded`, `duplicate`, `in_flight`,
+    `unresolved`, an early `failed`) are written by the worker at once.
+  - A `decompose` job succeeds whenever an outcome was decided, so it never goes to review.
+- **The Conversion tab** (`apps/web/src/conversion/`) shows each batch with one row per document:
+  its outcome, its link in the target and its report. Each row offers force-load, redeliver,
+  detach or accept the target's state where they apply. Earlier batches are listed newest first.
+  The view polls while anything is unfinished.
+
 ## Access
 
 Every request to the API needs a session cookie, obtained by signing in with an email address and

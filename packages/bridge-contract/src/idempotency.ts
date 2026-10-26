@@ -24,8 +24,10 @@ export function graphIdempotencyKey(graphName: string, version: number): string 
 
 /**
  * What a decomposition delivery is about: one source, the document it replaces (null: a new one),
- * the decomposer version, and the batch that forced a redelivery (null: none). The worker
- * computes the same key.
+ * the decomposer version, and the run's token (null: none). The worker computes the same key and
+ * picks the token (`decompose/deliver._run_token`, spec §9): a force-load's, a detach's for a
+ * create after a detach, or, for an update, the digest of the component versions it expects.
+ * The parameter keeps its first name, `forceBatchId`.
  */
 export function decompositionIdempotencyKey(
   sourceSha256: string,
