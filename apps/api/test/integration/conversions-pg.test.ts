@@ -15,6 +15,7 @@ import { MemoryPublishTargetRepo } from '../../src/publish-targets/repo.js';
 import { PgRepo } from '../../src/repositories/pg.js';
 import { DOCX_MIME } from '@ih/shared';
 import type { RegisterAction } from '../../src/conversions/repo.js';
+import type { RegisterEntry } from '../../src/repositories/types.js';
 import { conversionsContract, type EntrySeed } from '../conversions-contract.js';
 import { docx } from '../docx-fixtures.js';
 import { FAKE_DOCUMENT_SINK } from '../fake-sink.js';
@@ -118,6 +119,16 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
         },
         dropEntry: async (entryId: string) => {
           await p.query('DELETE FROM decomposition_register WHERE id = $1', [entryId]);
+        },
+        moveEntry: async (
+          entryId: string,
+          to: { state: RegisterEntry['state']; batchId: string },
+        ) => {
+          await p.query(
+            `UPDATE decomposition_register SET state = $2, batch_id = $3, updated_at = now()
+              WHERE id = $1`,
+            [entryId, to.state, to.batchId],
+          );
         },
         actions: async (entryId: string): Promise<RegisterAction[]> => {
           const { rows } = await p.query<{

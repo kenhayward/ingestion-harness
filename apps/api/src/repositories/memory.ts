@@ -1291,10 +1291,22 @@ export class MemoryRepo implements IngestionRepo {
   private withResolution(item: StoredItem): Item {
     let resolution: Item['resolution'] = null;
     if (item.registerEntryId) {
-      const state = this.register.get(item.registerEntryId)?.state;
+      const entry = this.register.get(item.registerEntryId);
+      const state = entry?.state;
       // Gone: a create replaced the detached tombstone (worker `register.put_pending`).
       if (state === undefined || state === 'detached') resolution = 'detached';
       else if (state === 'accepted') resolution = 'accepted';
+      else if (item.outcome === 'changed_in_target' && entry) {
+        // The refusal this item saw: its own delivery's (the entry names its batch), or one the
+        // entry already held when its batch started (the register check refused it at once).
+        const startedAt = this.conversionBatches.get(item.batchId)?.startedAt ?? null;
+        const own =
+          state === 'changed' &&
+          (entry.batchId === item.batchId ||
+            startedAt === null ||
+            Date.parse(entry.updatedAt) <= Date.parse(startedAt));
+        if (!own) resolution = 'superseded';
+      }
     }
     return structuredClone({ ...item, resolution });
   }
@@ -1475,6 +1487,8 @@ export class MemoryRepo implements IngestionRepo {
         targetIds.includes(this.conversionBatches.get(i.batchId)?.targetId ?? ''),
     );
     if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
+    // Only a document refused as changed in the target is detached: never a live one.
+    if (entry.state !== 'changed') return { ok: false, reason: 'not_refused' };
     const action: RegisterAction = {
       id: randomUUID(),
       entryId,

@@ -131,6 +131,15 @@ const refusal = (changed: Array<{ id: string; expected: string; actual: string |
     changedInTargetDetails(changed),
   );
 
+/** The item's entry refused as changed in the target again (after an accept, say). */
+function refusedAgain(c: Ctx, item: Item): void {
+  const entryId = c.repo.conversionItems.get(item.id)!.registerEntryId!;
+  Object.assign(c.repo.register.get(entryId)!, {
+    state: 'changed',
+    lastError: refusal([{ id: 'doc-1/section/s1', expected: '2', actual: '3' }]),
+  });
+}
+
 /** The entry refused as changed in the target, listing `changed`. */
 const changedEntry = (
   c: Ctx,
@@ -448,6 +457,7 @@ describe('detach', () => {
       'accepted',
     ]);
 
+    refusedAgain(c, first); // only a refused document is detached
     const res = await post(c.app, `/api/conversions/items/${second.id}/detach`);
     expect(ItemSchema.parse(res.json()).resolution).toBe('detached');
     expect([await resolutionIn(first), await resolutionIn(second)]).toEqual([
@@ -553,6 +563,37 @@ describe('detach', () => {
       (await c.app.inject(`/api/conversions/items/${item.id}/accept`)).json(),
     );
     expect(preview).toMatchObject({ acceptable: false, updatedAt: null });
+  });
+
+  it('an old row cannot detach a document a later run delivered', async () => {
+    const c = await setup();
+    const old = await startedItem(c);
+    const entry = changedEntry(c, old, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
+    // A later batch accepts nothing: its run updates the document, and the entry is live again.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const later = await startedItem(c);
+    Object.assign(entry, {
+      state: 'delivered',
+      batchId: later.batchId,
+      lastError: null,
+      updatedAt: new Date().toISOString(),
+    });
+    Object.assign(c.repo.conversionItems.get(later.id)!, {
+      outcome: 'updated',
+      registerEntryId: entry.id,
+    });
+    const shown = BatchDetailSchema.parse(
+      (await c.app.inject(`/api/conversions/batches/${old.batchId}`)).json(),
+    ).items[0]!;
+    expect(shown).toMatchObject({ outcome: 'changed_in_target', resolution: 'superseded' });
+
+    const res = await post(c.app, `/api/conversions/items/${old.id}/detach`);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'not_refused' });
+    expect(c.repo.register.get(entry.id)?.state).toBe('delivered');
+    expect(c.repo.registerActions).toEqual([]);
+    expect(takeViolations()).toEqual([]);
   });
 });
 
@@ -818,6 +859,8 @@ describe('row actions', () => {
       expect(preview.statusCode, `${role} preview`).toBe(200);
       const accept = await confirmAccept(c, item, cookie);
       expect(accept.statusCode, `${role} accept`).toBe(200);
+      // Refused again by a later run (only a refused document is detached).
+      refusedAgain(c, item);
       expect((await post(c.app, url('detach'), undefined, cookie)).statusCode, role).toBe(200);
     }
   });

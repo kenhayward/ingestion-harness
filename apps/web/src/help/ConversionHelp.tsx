@@ -54,8 +54,9 @@ export function ConversionHelp() {
         While any document is still queued, decomposing or delivering, the rows refresh every few
         seconds. <strong>Needs attention</strong> shows only the documents someone should look at,
         and <strong>Done</strong> the ones that went through, were already loaded, or were detached
-        or had the target&apos;s state accepted. A screen reader hears how many are done each time
-        another settles.
+        or had the target&apos;s state accepted. A refusal that a later run has moved on from is{' '}
+        <strong>Superseded by a later run</strong>, and done too: act on the document from the later
+        batch. A screen reader hears how many are done each time another settles.
       </p>
       <ul>
         <li>
@@ -100,7 +101,8 @@ export function ConversionHelp() {
           <strong>Accept the target&apos;s state</strong> shows each changed part with its version
           then and now; once you confirm, the next run updates the document,{' '}
           <strong>overwriting the edits made in the target</strong>. Either is done once, and the
-          row says which.
+          row says which. Only a document refused as changed in the target can be detached, so a
+          document delivered since is never detached from an old row.
         </li>
       </ul>
       <p>

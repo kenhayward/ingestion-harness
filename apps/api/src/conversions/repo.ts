@@ -101,7 +101,8 @@ export interface Rerun {
 }
 
 export type DetachResult =
-  { ok: true; entry: RegisterEntry; item: Item } | { ok: false; reason: 'missing' | 'pending' };
+  | { ok: true; entry: RegisterEntry; item: Item }
+  | { ok: false; reason: 'missing' | 'pending' | 'not_refused' };
 
 export type AcceptResult =
   | { ok: true; item: Item; changed: ChangedComponent[] }

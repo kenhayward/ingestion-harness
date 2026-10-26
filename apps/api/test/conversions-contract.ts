@@ -38,6 +38,8 @@ export interface ConversionFacts {
   actions(entryId: string): Promise<RegisterAction[]>;
   /** Removes an entry, as the worker does when a create replaces a detached tombstone. */
   dropEntry(entryId: string): Promise<void>;
+  /** Moves an entry on, as a later run does (its state and batch, and its `updatedAt` to now). */
+  moveEntry(entryId: string, to: { state: RegisterEntry['state']; batchId: string }): Promise<void>;
 }
 
 const ADA = { id: '7a1f3c52-1b2e-4c3d-8e4f-5a6b7c8d9e0f', name: 'Ada' };
@@ -446,22 +448,33 @@ export function conversionsContract(
       expect(await accept({ entryId: randomUUID() })).toEqual({ ok: false, reason: 'missing' });
     });
 
+    /** A later moment than any written so far (both repos keep times to the millisecond). */
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
+    /** Another started batch holding `sourceKey`, started now; its item. */
+    const startedAgain = async (repo: ConversionRepo, sourceKey: string) => {
+      const later = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const b = item(later.id, sourceKey);
+      await repo.addItem(b);
+      await repo.startBatch(later.id, null);
+      return b;
+    };
+
     it('every item on an entry says how it was resolved', async () => {
       const { repo, facts, batch, item: a } = await finished();
-      const later = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
-      const b = item(later.id, a.sourceKey);
-      await repo.addItem(b);
-      const unlinked = item(later.id, 'manuals/other.docx');
-      expect(await repo.addItem(unlinked)).toMatchObject({ item: { resolution: null } });
-      await repo.startBatch(later.id, null);
       const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
       await facts.settleItem(a.id, 'changed_in_target', entryId);
+      await tick();
+      // A later batch the register check refused at once, from the same refusal.
+      const b = await startedAgain(repo, a.sourceKey);
       await facts.settleItem(b.id, 'changed_in_target', entryId);
+      const unlinked = await startedAgain(repo, 'manuals/other.docx');
       const resolutions = async () => [
         (await repo.getItem(a.id))?.resolution,
-        (await repo.listItems(later.id)).map((i) => i.resolution),
+        (await repo.listItems(b.batchId)).map((i) => i.resolution),
+        (await repo.getItem(unlinked.id))?.resolution,
       ];
-      expect(await resolutions()).toEqual([null, [null, null]]);
+      expect(await resolutions()).toEqual([null, [null], null]);
 
       const seen = (await repo.registerEntry(entryId))!.updatedAt;
       const accepted = await repo.acceptTargetState({
@@ -474,22 +487,76 @@ export function conversionsContract(
       });
       if (!accepted.ok) throw new Error(accepted.reason);
       expect(ItemSchema.parse(accepted.item).resolution).toBe('accepted');
-      expect(await resolutions()).toEqual(['accepted', ['accepted', null]]);
+      expect(await resolutions()).toEqual(['accepted', ['accepted'], null]);
+    });
+
+    it('every item on a detached entry says so, and still once a create replaced it', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
+      await facts.settleItem(a.id, 'changed_in_target', entryId);
+      const created = await startedAgain(repo, 'manuals/kept.docx');
+      await facts.settleItem(created.id, 'created', entryId); // an earlier delivery's item
 
       const detached = await repo.detachRegisterEntry({
-        itemId: b.id,
+        itemId: a.id,
         entryId,
         targetIds: ['manuals'],
         by: ADA,
         detail: () => 'gone',
       });
       if (!detached.ok) throw new Error(detached.reason);
-      expect(detached.item.resolution).toBe('detached');
-      expect(await resolutions()).toEqual(['detached', ['detached', null]]);
+      expect(ItemSchema.parse(detached.item).resolution).toBe('detached');
+      expect((await repo.getItem(created.id))?.resolution).toBe('detached');
 
       // The next create of the source replaces the tombstone: the items stay detached.
       await facts.dropEntry(entryId);
-      expect(await resolutions()).toEqual(['detached', ['detached', null]]);
+      expect((await repo.getItem(a.id))?.resolution).toBe('detached');
+    });
+
+    it('a refusal a later run moved on from is superseded', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
+      await facts.settleItem(a.id, 'changed_in_target', entryId);
+      const resolution = async (id: string) => (await repo.getItem(id))?.resolution;
+      expect(await resolution(a.id)).toBeNull();
+
+      // A later run delivers (pending, then delivered): the old refusal is no longer the entry's.
+      await tick();
+      const b = await startedAgain(repo, a.sourceKey);
+      await facts.moveEntry(entryId, { state: 'pending', batchId: b.batchId });
+      expect(await resolution(a.id)).toBe('superseded');
+      await facts.moveEntry(entryId, { state: 'delivered', batchId: b.batchId });
+      expect(await resolution(a.id)).toBe('superseded');
+      await facts.settleItem(b.id, 'updated', entryId);
+      expect(await resolution(b.id)).toBeNull(); // only a refused item is superseded
+
+      // Refused again, from a newer delivery: that refusal is the newer item's, not the old one's.
+      await tick();
+      const c = await startedAgain(repo, a.sourceKey);
+      await facts.moveEntry(entryId, { state: 'changed', batchId: c.batchId });
+      await facts.settleItem(c.id, 'changed_in_target', entryId);
+      expect([await resolution(a.id), await resolution(c.id)]).toEqual(['superseded', null]);
+    });
+
+    it('detaches only a document refused as changed in the target', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      for (const state of ['delivered', 'accepted', 'incomplete', 'failed'] as const) {
+        const entryId = await facts.entry({ ...changedSeed(a.sourceKey, batch.id), state });
+        await facts.settleItem(a.id, 'changed_in_target', entryId);
+        const before = await repo.registerEntry(entryId);
+        expect(
+          await repo.detachRegisterEntry({
+            itemId: a.id,
+            entryId,
+            targetIds: ['manuals'],
+            by: ADA,
+            detail: () => 'x',
+          }),
+        ).toEqual({ ok: false, reason: 'not_refused' });
+        expect(await repo.registerEntry(entryId)).toEqual(before);
+        expect(await facts.actions(entryId)).toEqual([]);
+        await facts.dropEntry(entryId);
+      }
     });
 
     it('accepts nothing from a preview the entry has moved on from', async () => {

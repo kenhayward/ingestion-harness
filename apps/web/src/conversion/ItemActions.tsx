@@ -58,7 +58,9 @@ function changedNote(kind: DialogKind, item: Item): string | null {
       ? "the target's state was accepted"
       : item.resolution === 'detached'
         ? 'it was detached'
-        : `it is now ${OUTCOME[item.outcome].label.toLowerCase()}`;
+        : item.resolution === 'superseded'
+          ? 'a later run superseded it'
+          : `it is now ${OUTCOME[item.outcome].label.toLowerCase()}`;
   return `This document changed while this was open: ${now}.`;
 }
 

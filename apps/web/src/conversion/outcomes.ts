@@ -40,7 +40,8 @@ export const isDone = (item: Item) => !isUnfinished(item) && !needsAttention(ite
 
 /**
  * What a resolved document's row says (§8): the item's `resolution`, read by the API from its
- * register entry, so every item on that entry says it.
+ * register entry, so every item on that entry says it. A superseded refusal is done with here:
+ * a later run moved the document on, and only that run's row may act on it.
  */
 export const RESOLUTION: Record<ItemResolution, string> = {
   detached:
@@ -49,6 +50,9 @@ export const RESOLUTION: Record<ItemResolution, string> = {
   accepted:
     "The target's state accepted: the next run of this source updates the document, " +
     'overwriting the edits made in the target.',
+  superseded:
+    'Superseded by a later run: the document has moved on since this refusal, so this row no ' +
+    'longer detaches or accepts it. A later batch shows where it stands.',
 };
 
 /** What an outcome adds to its row's detail, when the outcome alone doesn't say where to look. */

@@ -51,6 +51,8 @@ const NO_ENTRY = 'the item has no register entry: it was never delivered, or was
 const IN_FLIGHT = 'a delivery of this document, or a run of its file, is in flight';
 const RERUN_RUNNING = 'a rerun of this item is still running';
 const STALE_PREVIEW = 'the document changed since the preview: look at it again';
+const NOT_REFUSED =
+  'the document is not refused as changed in the target: only a refused document is detached';
 
 const UUID = z.string().uuid();
 const BatchParams = z.object({ id: z.string().uuid().describe('The batch id.') });
@@ -628,8 +630,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           Forgets the register entry of the item's document: the entry is kept only as a record
           that it was detached. The document stays in the target, untouched, and the next run of
           the same source creates a new document, even from the same file. Refused while a
-          delivery for it, or a run of its file on the same target, is in flight. Recorded with
-          who and when; the item's detail says it was detached.
+          delivery for it, or a run of its file on the same target, is in flight, and unless the
+          document is refused as changed in the target (\`not_refused\`), so a live document is
+          never detached, from an old row or a stale page. Recorded with who and when; the item's
+          detail says it was detached.
         `,
         params: ItemParams,
         response: {
@@ -640,8 +644,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           404: error('No such item.'),
           409: res(
             'The item has no register entry (`no_register_entry`: never delivered, or detached ' +
-              'already), or a delivery for it or a run of its file is in flight (`in_flight`).',
-            ErrorBody.extend({ code: z.enum(['no_register_entry', 'in_flight']) }),
+              'already), a delivery for it or a run of its file is in flight (`in_flight`), or ' +
+              'its document is not refused as changed in the target (`not_refused`).',
+            ErrorBody.extend({ code: z.enum(['no_register_entry', 'in_flight', 'not_refused']) }),
           ),
         },
       },
@@ -664,6 +669,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       if (detached.ok) return detached.item;
       if (detached.reason === 'pending') {
         return reply.code(409).send({ error: IN_FLIGHT, code: 'in_flight' });
+      }
+      if (detached.reason === 'not_refused') {
+        return reply.code(409).send({ error: NOT_REFUSED, code: 'not_refused' });
       }
       return reply.code(409).send({ error: NO_ENTRY, code: 'no_register_entry' });
     },

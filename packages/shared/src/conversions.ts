@@ -46,11 +46,18 @@ export const BatchSchema = z
 export type Batch = z.infer<typeof BatchSchema>;
 
 /**
- * How the document an item delivered was resolved after being refused as changed in the
- * target (§8): `detached` or `accepted`, read from the item's register entry. An item whose entry
- * is gone was detached (the worker replaces a detached tombstone with a new entry). Null: neither.
+ * What became of an item's document since (§8), read from the item's register entry:
+ * - `detached`: the entry was detached, or is gone (the worker replaces a detached tombstone
+ *   with a new entry);
+ * - `accepted`: the target's state was accepted;
+ * - `superseded`: the item was refused as changed in the target, and that refusal is no longer
+ *   the entry's: a later run moved it on (pending, delivered, incomplete, failed), or refused it
+ *   again from a newer delivery (changed, from another batch, after this item's batch started).
+ *   Neither detach nor accept applies to such an item.
+ *
+ * Null: none of these.
  */
-export const ITEM_RESOLUTIONS = ['detached', 'accepted'] as const;
+export const ITEM_RESOLUTIONS = ['detached', 'accepted', 'superseded'] as const;
 export const ItemResolutionSchema = z.enum(ITEM_RESOLUTIONS);
 export type ItemResolution = z.infer<typeof ItemResolutionSchema>;
 

@@ -543,6 +543,26 @@ describe('the Conversion tab: the batch view', () => {
     ).toBeVisible();
   });
 
+  it('a superseded row is done, and can no longer detach or accept', async () => {
+    view(
+      batchApi([
+        item('old.docx', 'changed_in_target', {
+          registerEntryId: crypto.randomUUID(),
+          resolution: 'superseded',
+          detail: '2 components changed in the target',
+        }),
+      ]),
+    );
+    await screen.findByText('old.docx');
+    const filter = within(screen.getByRole('group', { name: 'Show' }));
+    expect(filter.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('0');
+    await userEvent.click(filter.getByRole('button', { name: /^Done/ }));
+    const row = within(rowOf('old.docx'));
+    expect(row.getByText(/^Superseded by a later run/)).toBeVisible();
+    expect(row.queryByRole('button', { name: /^Detach/ })).toBeNull();
+    expect(row.queryByRole('button', { name: /^Accept/ })).toBeNull();
+  });
+
   it('in flight is final, and points at the other batch', async () => {
     vi.useFakeTimers();
     try {

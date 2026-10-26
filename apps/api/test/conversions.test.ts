@@ -55,6 +55,13 @@ conversionsContract('memory', async () => {
       dropEntry: async (entryId) => {
         repo.register.delete(entryId);
       },
+      moveEntry: async (entryId, { state, batchId }) => {
+        Object.assign(repo.register.get(entryId)!, {
+          state,
+          batchId,
+          updatedAt: new Date().toISOString(),
+        });
+      },
     },
   };
 });

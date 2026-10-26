@@ -275,16 +275,28 @@ interface ItemRow {
 }
 
 /**
- * An item's columns, and its resolution read from its register entry: `detached` or `accepted`
- * from the entry's state, and `detached` when the entry is gone (the worker replaces a detached
- * tombstone with a new entry). In a RETURNING list it reads the statement's own register writes.
+ * An item's columns, and its resolution read from its register entry (`ItemResolutionSchema`):
+ * `detached` or `accepted` from the entry's state, and `detached` when the entry is gone (the
+ * worker replaces a detached tombstone with a new entry). A `changed_in_target` item is
+ * `superseded` once its refusal is no longer the entry's: the entry is in any other state, or is
+ * changed from another batch's delivery made after this item's batch started. In a RETURNING list
+ * it reads the statement's own register writes. Only used on the bare table (no alias).
  */
 const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
   job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of,
-  CASE WHEN register_entry_id IS NULL THEN NULL
-       ELSE (SELECT CASE WHEN count(*) = 0 THEN 'detached'
-                         WHEN min(r.state) IN ('detached', 'accepted') THEN min(r.state) END
-               FROM decomposition_register r WHERE r.id = register_entry_id)
+  CASE WHEN decomposition_items.register_entry_id IS NULL THEN NULL
+       ELSE (SELECT CASE
+                      WHEN count(*) = 0 THEN 'detached'
+                      WHEN min(r.state) IN ('detached', 'accepted') THEN min(r.state)
+                      WHEN decomposition_items.outcome <> 'changed_in_target' THEN NULL
+                      WHEN min(r.state) <> 'changed' THEN 'superseded'
+                      WHEN min(r.batch_id) = decomposition_items.batch_id::text THEN NULL
+                      WHEN min(r.updated_at) > (SELECT b.started_at FROM decomposition_batches b
+                                                 WHERE b.id = decomposition_items.batch_id)
+                        THEN 'superseded'
+                    END
+               FROM decomposition_register r
+              WHERE r.id = decomposition_items.register_entry_id)
   END AS resolution`;
 
 const toItem = (r: ItemRow): Item => ({
@@ -1498,6 +1510,8 @@ export class PgRepo implements IngestionRepo {
         [row.source_key, targetIds, RUNNING_OUTCOMES],
       );
       if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
+      // Only a document refused as changed in the target is detached: never a live one.
+      if (row.state !== 'changed') return { ok: false, reason: 'not_refused' };
       const action = await client.query<{ id: string }>(
         `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'detach', $2, $3)
          RETURNING id::text`,
