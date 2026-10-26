@@ -5,7 +5,7 @@
  * with `/_edit`), and its event dispatcher posting signed events to CT Studio's events route. The
  * bridge's stores are its memory ones (their Pg twins have their own tests).
  */
-import { MemoryNonceStore } from '@ih/bridge-contract';
+import { MemoryNonceStore, textForm } from '@ih/bridge-contract';
 import type { FastifyInstance } from 'fastify';
 import { buildBridge } from '../src/app.js';
 import { Credentials } from '../src/connections/credential.js';
@@ -31,6 +31,8 @@ export interface ConversionBridge {
   edit(persistentId: string, componentId: string): Promise<{ version: string } | null>;
   /** The persistent ids of the documents the fake sink holds. */
   documents(): string[];
+  /** The text the fake sink holds for a document (its comparison form), or null if none. */
+  text(persistentId: string): string | null;
   /** Runs every due delivery and sends every due event, until nothing is left to do. */
   settle(): Promise<void>;
   close(): Promise<void>;
@@ -86,6 +88,10 @@ export async function startConversionBridge(opts: {
       return res.ok ? ((await res.json()) as { version: string }) : null;
     },
     documents: () => [...documents.documents.keys()],
+    text(persistentId) {
+      const stored = documents.documents.get(persistentId);
+      return stored ? textForm(stored.document).join('\n') : null;
+    },
     async settle() {
       for (;;) {
         let worked = false;

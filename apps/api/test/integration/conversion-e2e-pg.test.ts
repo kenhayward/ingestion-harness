@@ -53,6 +53,7 @@ interface ConversionBridge {
   url: string;
   edit(persistentId: string, componentId: string): Promise<{ version: string } | null>;
   documents(): string[];
+  text(persistentId: string): string | null;
   settle(): Promise<void>;
   close(): Promise<void>;
 }
@@ -282,7 +283,10 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       'manual/c.docx': 'already_loaded',
     });
 
-    // 4. One file changed: that one is updated, in place.
+    // 4. One file changed: that one is updated, in place, and the target now holds its text.
+    const bFirst = (await documentOf(first['manual/b.docx']!)).persistentId;
+    expect(bridge.text(bFirst)).toContain('Valves');
+    expect(bridge.text(bFirst)).not.toContain('revised');
     const changed = await convert({ ...folder, 'manual/b.docx': word('Valves, revised') });
     expect(outcomes(changed)).toEqual({
       'manual/a.docx': 'already_loaded',
@@ -290,7 +294,8 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       'manual/c.docx': 'already_loaded',
     });
     const b = (await documentOf(changed['manual/b.docx']!)).persistentId;
-    expect(b).toBe((await documentOf(first['manual/b.docx']!)).persistentId);
+    expect(b).toBe(bFirst);
+    expect(bridge.text(b)).toContain('Valves, revised');
     expect(bridge.documents()).toHaveLength(4);
 
     // 5. Someone edits b in the target; the next run of a changed b is refused.
@@ -304,6 +309,7 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     const accepted = await convert(bThird);
     expect(outcomes(accepted)).toEqual({ 'manual/b.docx': 'updated' });
     expect((await documentOf(accepted['manual/b.docx']!)).persistentId).toBe(b);
+    expect(bridge.text(b)).toContain('Valves, third edition');
     expect(bridge.documents()).toHaveLength(4);
 
     // 7. Detach: a refused a is detached, and its original file then makes a NEW document. The
