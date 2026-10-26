@@ -22,6 +22,7 @@ from ingest_worker.decompose.model import (
     NoteRef,
     Paragraph,
     Property,
+    Table,
     Text,
 )
 from ingest_worker.decompose.pdf.build import Provenance, build_document, pdf_properties
@@ -35,6 +36,7 @@ from tests.decompose.pdf import docling
 from tests.decompose.pdf.fakes import FakeCropper
 from tests.decompose.pdf.make_pdf import Img, Page, Run, make_pdf
 from tests.decompose.pdf.test_build import HEIGHT, WIDTH, bl, item, owner_of, plain
+from tests.decompose.pdf.test_pdf_tables import cell_runs, grid, simple, sup
 
 Links = list[tuple[int, tuple[float, float, float, float], str]]
 
@@ -295,6 +297,95 @@ def test_unmatched_footnote_does_not_stop_a_join_across_the_page() -> None:
         "The batch was released to the market in May.",
         "a Unused.",
     ]
+
+
+SUP = frozenset({"superscript"})
+
+
+def test_footnote_taken_as_a_table_note_leaves_its_marker_as_text() -> None:
+    texts = {(0, 0): "A", (0, 1): "B", (1, 0): "1", (1, 1): "2"}
+    runs = [
+        Run("The dose", 72, 60),
+        Run("1", 118, 60, size=7, rise=3),
+        Run("was given.", 124, 60),
+        *cell_runs(texts),
+        sup("1", 1, 1),
+        Run("1 : measured at 25 °C", 72, 160),  # a table note's marker, and a footnote's
+    ]
+    items = [
+        item("text", 1, 60),
+        grid(1, simple(2, 2), rows=2, cols=2),
+        docling.text("footnote", 1, bl(60, 148, 400, 165)),
+    ]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    doc, _, _ = document(pieces, text, ledger, flags)
+    assert doc.blocks[0] == Paragraph(
+        id="s~lead#p-1",
+        inlines=[Text(text="The dose"), Text(text="1", marks=SUP), Text(text=" was given.")],
+    )
+    table = doc.blocks[1]
+    assert isinstance(table, Table)
+    assert [n.marker for n in table.notes] == ["1"]
+    assert doc.notes == []
+    assert "note_ref" not in doc.model_dump_json()
+    assert owner_of(ledger, text, 0, "1") == ["s~lead#p-1"]
+
+
+def test_a_power_after_a_unit_is_not_a_footnote_marker() -> None:
+    runs = [
+        Run("The area is 5 m", 72, 100),
+        Run("2", 148.5, 100, size=7, rise=3),
+        Run("on site.", 154, 100),
+        Run("2 Measured by laser.", 72, 800, size=9),
+    ]
+    items = [item("text", 1, 100), item("footnote", 1, 800)]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    doc, _, _ = document(pieces, text, ledger, flags)
+    assert doc.blocks[0] == Paragraph(
+        id="s~lead#p-1",
+        inlines=[Text(text="The area is 5 m"), Text(text="2", marks=SUP), Text(text=" on site.")],
+    )
+    assert doc.notes == []
+    assert owner_of(ledger, text, 0, "2") == ["s~lead#p-1"]
+    assert [(f.at, f.message) for f in doc.report] == [
+        ("s~lead#p-2", "Footnote with no marker found")
+    ]
+
+
+def test_a_footnote_takes_its_real_marker_not_a_unit_power() -> None:
+    runs = [
+        Run("The dose", 72, 100),
+        Run("2", 118, 100, size=7, rise=3),
+        Run("was given.", 124, 100),
+        Run("The area is 5 m", 72, 130),
+        Run("2", 148.5, 130, size=7, rise=3),
+        Run("on site.", 154, 130),
+        Run("2 Measured by laser.", 72, 800, size=9),
+    ]
+    items = [item("text", 1, 100), item("text", 1, 130), item("footnote", 1, 800)]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    doc, _, _ = document(pieces, text, ledger, flags)
+    first, second = doc.blocks
+    assert isinstance(first, Paragraph) and isinstance(second, Paragraph)
+    assert NoteRef(note_id="fn-1") in first.inlines
+    assert second.inlines[1] == Text(text="2", marks=SUP)
+    assert [n.id for n in doc.notes] == ["fn-1"]
+
+
+def test_a_carried_over_line_starting_with_an_article_is_no_letter_marker() -> None:
+    runs = [
+        Run("The dose", 72, 100),
+        Run("a", 118, 100, size=7, rise=3),
+        Run("was given.", 124, 100),
+        Run("a total of 12 batches.", 72, 800, size=9),
+    ]
+    items = [item("text", 1, 100), item("footnote", 1, 800)]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    doc, _, _ = document(pieces, text, ledger, flags)
+    assert doc.notes == []
+    assert plain(doc.blocks[1].inlines) == "a total of 12 batches."  # type: ignore[union-attr]
+    assert owner_of(ledger, text, 0, "a") == ["s~lead#p-1"]
+    assert [f.message for f in doc.report] == ["Footnote with no marker found"]
 
 
 # --- Links -----------------------------------------------------------------------------------

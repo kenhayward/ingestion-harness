@@ -84,6 +84,15 @@ _JOINABLE = frozenset({"text", "paragraph"})
 _MARKED = frozenset({"text", "paragraph", "list_item"})
 #: A footnote's leading marker.
 _FOOTNOTE_MARKER = re.compile(r"^(\d{1,2}|[a-z]|[*†‡§])\s")
+#: A letter marker also needs a capital or a digit after it: "a total of 12" is no footnote.
+_LETTER_NOTE = re.compile(r"^[a-z]\s+[A-Z\d]")
+#: A `2` or `3` superscript right after one of these units is a power, not a footnote marker.
+_UNITS = frozenset(
+    {"m", "cm", "mm", "km", "µm", "μm", "nm", "s", "ms", "g", "kg", "mg", "L", "mL", "ft", "in"}
+)
+_POWERS = frozenset({"2", "3"})
+#: A word as a number (perhaps empty) and what follows it: "5m" is the unit "m".
+_UNIT_WORD = re.compile(r"[\d.,]*(.+)")
 #: The marks a heading's title keeps: the rest are the publishing theme's.
 _HEADING_MARKS = frozenset({"superscript", "subscript"})
 #: A picture is an image, not a drawing, when one image object covers this fraction of its box.
@@ -281,19 +290,54 @@ def _covered(box: BBox, by: BBox) -> float:
     return w * h / area if w > 0 and h > 0 and area > 0 else 0.0
 
 
-def _superscript_runs(piece: Piece) -> list[tuple[str, list[Char]]]:
-    """The text and chars of each run of superscript chars in the piece, in reading order."""
-    found: list[tuple[str, list[Char]]] = []
+@dataclass(frozen=True)
+class _MarkerRun:
+    """A superscript run that may be a footnote's marker: where it is in reading order (piece
+    index, run index), the piece it is in, its text and its chars."""
+
+    position: tuple[int, int]
+    ref: str
+    text: str
+    chars: tuple[Char, ...]
+
+
+def _is_unit(word: str) -> bool:
+    match = _UNIT_WORD.fullmatch(word)
+    return match is not None and match.group(1) in _UNITS
+
+
+def _superscript_runs(piece: Piece) -> list[tuple[str, tuple[Char, ...]]]:
+    """The text and chars of each run of superscript chars in the piece, in reading order;
+    a power right after a unit ("m²") left out."""
+    found: list[tuple[str, tuple[Char, ...]]] = []
     for line in piece.lines:
         current: list[Char] = []
+        word = ""  # the text since the last space
+        before = ""  # the word just before the current run
         for run, c in [*line.char_runs(), (Text(text=" "), None)]:
             if c is not None and "superscript" in run.marks:
+                if not current:
+                    before = word
                 current.append(c)
                 continue
             if current:
-                found.append(("".join(x.text for x in current), current))
-            current = []
+                text = "".join(x.text for x in current)
+                if not (text in _POWERS and _is_unit(before)):
+                    found.append((text, tuple(current)))
+                current = []
+            word = "" if c is None or c.text.isspace() else word + c.text
     return found
+
+
+def _footnote_marker(text: str) -> str | None:
+    """The marker a footnote's first line starts with, if any (spec 4.8)."""
+    match = _FOOTNOTE_MARKER.match(text)
+    if match is None:
+        return None
+    marker = match.group(1)
+    if marker.isalpha() and _LETTER_NOTE.match(text) is None:
+        return None
+    return marker
 
 
 class _Builder:
@@ -324,7 +368,7 @@ class _Builder:
         self.image_bytes: dict[str, bytes] = {}
         self.equations: list[Equation] = []
         self.own_page: dict[str, int] = {}  # picture or formula block id -> its page
-        self.note_ids: dict[str, str] = {}  # matched footnote ref -> its note id
+        self.markers: dict[str, _MarkerRun] = {}  # footnote ref -> the marker paired with it
         self.notes: list[tuple[str, list[Line]]] = []  # each note's id and lines
         # the first and last piece with text on each page, for joins across a page break
         self.firsts: dict[int, str] = {}
@@ -638,41 +682,48 @@ class _Builder:
     # -- footnotes --
 
     def match_footnotes(self) -> None:
-        """Each footnote whose leading marker is the text of a superscript run on its page, in
-        a paragraph or list item, is given a note id; the first such run not yet taken becomes
-        its reference, its chars dropped as `note-marker` (spec 4.8)."""
-        runs: dict[int, list[tuple[str, list[Char]]]] = defaultdict(list)
-        for piece in self.pieces:
+        """Pairs each footnote that starts with a marker with a superscript run of that text
+        on its page, in a paragraph or list item (spec 4.8). A page's footnotes take markers in
+        increasing reading order: each takes the last unpaired run before it and after the
+        marker the footnote before it took. Only the pairing is recorded here: the note and
+        its reference are made when the footnote is placed (`footnote`)."""
+        runs: dict[int, list[_MarkerRun]] = defaultdict(list)
+        for i, piece in enumerate(self.pieces):
             if (
                 piece.label in _MARKED
                 and piece.table is None
                 and piece.picture is None
                 and piece.heading_level is None
             ):
-                runs[piece.page].extend(_superscript_runs(piece))
-        for piece in self.pieces:
+                for n, (text, chars) in enumerate(_superscript_runs(piece)):
+                    runs[piece.page].append(_MarkerRun((i, n), piece.ref, text, chars))
+        last: dict[int, tuple[int, int]] = {}  # the marker paired last on each page
+        for i, piece in enumerate(self.pieces):
             lines = _text_lines(piece)
             if piece.label != "footnote" or piece.table is not None or not lines:
                 continue
-            match = _FOOTNOTE_MARKER.match(lines[0].text)
-            if match is None:
+            marker = _footnote_marker(lines[0].text)
+            after = last.get(piece.page, (-1, -1))
+            candidates = [
+                r
+                for r in runs[piece.page]
+                if r.text == marker and after < r.position and r.position[0] < i
+            ]
+            if not candidates:
                 continue
-            hit = next((r for r in runs[piece.page] if r[0] == match.group(1)), None)
-            if hit is None:
-                continue
+            hit = candidates[-1]
             runs[piece.page].remove(hit)
-            note_id = f"fn-{len(self.note_ids) + 1}"
-            self.note_ids[piece.ref] = note_id
-            for c in hit[1]:
-                self.anchors.notes[(piece.page, c.index)] = note_id
-                self.ledger.drop(piece.page, c.index, "note-marker")
+            last[piece.page] = hit.position
+            self.markers[piece.ref] = hit
 
     def footnote(self, piece: Piece) -> None:
-        """A matched footnote is a note, without its leading marker (dropped as `note-marker`);
-        an unmatched one stays a paragraph where it is, flagged. Neither ends the flow: a
-        paragraph can continue on the next page after the footnotes of this one."""
-        note_id = self.note_ids.get(piece.ref)
-        if note_id is None:
+        """A footnote paired with a marker is a note, without its leading marker; the marker
+        becomes its reference. Both markers are dropped as `note-marker`. A footnote with no
+        marker (or whose marker's piece a table or figure took as its caption) stays a
+        paragraph where it is, flagged. Neither ends the flow: a paragraph can continue on the
+        next page after the footnotes of this one."""
+        marker = self.markers.get(piece.ref)
+        if marker is None or marker.ref in self.consumed:
             para = _Para(self.scope.take("p"), [piece])
             self.scope.blocks.append(para)
             self.placed(piece, para.id)
@@ -682,12 +733,14 @@ class _Builder:
                 )
             )
             return
+        note_id = f"fn-{len(self.notes) + 1}"
+        for c in marker.chars:
+            self.anchors.notes[(piece.page, c.index)] = note_id
+            self.ledger.drop(piece.page, c.index, "note-marker")
         lines = list(piece.lines)
         index = next(i for i, line in enumerate(lines) if line.text)
         first = lines[index]
-        match = _FOOTNOTE_MARKER.match(first.text)
-        assert match is not None
-        k = _lead(first, match.group(1))
+        k = _lead(first, marker.text)
         assert k is not None
         for c in first.chars[:k]:
             self.ledger.drop(first.page, c.index, "note-marker")
