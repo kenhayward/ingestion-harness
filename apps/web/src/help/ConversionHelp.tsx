@@ -107,8 +107,12 @@ export function ConversionHelp() {
         <strong>Keep Force-load</strong> (it starts as the batch was started). They run again from
         the files uploaded with the batch, as one new batch to the same target, which opens; this
         batch keeps its record. <strong>Re-run this document</strong> on the panel, or{' '}
-        <strong>Re-run</strong> in a line&apos;s <strong>⋯</strong> menu, does the same for one. A
-        document whose earlier re-run is still under way can&apos;t be re-run until it finishes.
+        <strong>Re-run</strong> in a line&apos;s <strong>⋯</strong> menu, does the same for one.
+      </p>
+      <p>
+        A document is re-run once from a batch. Its line then says <strong>Re-run in batch</strong>{' '}
+        and the date, which opens the batch it was re-run in, and it is no longer offered here. If
+        the re-run fails too, re-run it from that batch.
       </p>
       <p>
         <strong>Download original</strong>, on the panel and in the <strong>⋯</strong> menu, saves

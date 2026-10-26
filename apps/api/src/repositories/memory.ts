@@ -91,7 +91,10 @@ import {
 } from './types.js';
 
 /** A conversion item as stored: its resolution is read from its register entry. */
-type StoredItem = Omit<Item, 'resolution' | 'unversioned' | 'gone' | 'reloadable'>;
+type StoredItem = Omit<
+  Item,
+  'resolution' | 'unversioned' | 'gone' | 'reloadable' | 'rerunIn' | 'rerunAt'
+>;
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
@@ -1320,7 +1323,18 @@ export class MemoryRepo implements IngestionRepo {
       }
     }
     const reloadable = isReloadable(gone, detached, resolution);
-    return structuredClone({ ...item, resolution, unversioned, gone, reloadable });
+    // Its latest run again: items are kept in creation order.
+    const rerun = [...this.conversionItems.values()].findLast((i) => i.redeliverOf === item.id);
+    const rerunBatch = rerun && this.conversionBatches.get(rerun.batchId);
+    return structuredClone({
+      ...item,
+      resolution,
+      unversioned,
+      gone,
+      reloadable,
+      rerunIn: rerun?.batchId ?? null,
+      rerunAt: rerunBatch ? (rerunBatch.startedAt ?? rerunBatch.createdAt) : null,
+    });
   }
 
   async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
@@ -1501,6 +1515,10 @@ export class MemoryRepo implements IngestionRepo {
       ),
     );
     if (busy) return { ok: false, reason: 'running', itemId: busy.of.id };
+    const done = items.find(({ of }) =>
+      [...this.conversionItems.values()].some((i) => i.redeliverOf === of.id),
+    );
+    if (done) return { ok: false, reason: 'already_rerun', itemId: done.of.id };
     const now = new Date().toISOString();
     const batch: Batch = {
       id: batchId,

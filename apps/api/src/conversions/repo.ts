@@ -49,7 +49,9 @@ export interface ConversionRepo {
    * holding a new item per item asked, in order, each under its item's source key with its
    * stored file and `redeliverOf` it, a `decompose` job each, all at once. With the items locked,
    * refused (`running`, naming the first) while an earlier rerun of any of them is unfinished,
-   * so a repeated request makes one batch.
+   * so a repeated request makes one batch, and (`already_rerun`, naming the first) once any of
+   * them was run again at all (`Item.rerunIn`): an item is re-run once, and a failed re-run is
+   * re-run from its own batch.
    */
   retryItems(retry: Retry): Promise<RetryResult>;
   /** A decomposition register entry by id. */
@@ -137,7 +139,8 @@ export interface Retry {
 }
 
 export type RetryResult =
-  { ok: true; batch: Batch; items: Item[] } | { ok: false; reason: 'running'; itemId: string };
+  | { ok: true; batch: Batch; items: Item[] }
+  | { ok: false; reason: 'running' | 'already_rerun'; itemId: string };
 
 export type DetachResult =
   | { ok: true; entry: RegisterEntry; item: Item }

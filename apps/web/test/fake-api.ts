@@ -901,6 +901,8 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     unversioned: false,
     gone: false,
     reloadable: false,
+    rerunIn: null,
+    rerunAt: null,
     startedAt: null,
     finishedAt: null,
     ...o,

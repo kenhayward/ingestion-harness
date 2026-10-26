@@ -1138,11 +1138,12 @@ describe('re-running failed documents', () => {
     const same = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
       itemIds: [items[0]!.id],
     });
-    expect(BatchDetailSchema.parse(same.json()).batch.force).toBe(true);
-    c.repo.conversionItems.get(BatchDetailSchema.parse(same.json()).items[0]!.id)!.outcome =
-      'failed';
-    const plain = await post(c.app, `/api/conversions/batches/${batch.id}/retry`, {
-      itemIds: [items[0]!.id],
+    const first = BatchDetailSchema.parse(same.json());
+    expect(first.batch.force).toBe(true);
+    // A failed re-run is re-run from its own batch.
+    c.repo.conversionItems.get(first.items[0]!.id)!.outcome = 'failed';
+    const plain = await post(c.app, `/api/conversions/batches/${first.batch.id}/retry`, {
+      itemIds: [first.items[0]!.id],
       force: false,
     });
     expect(plain.statusCode).toBe(201);
@@ -1176,6 +1177,31 @@ describe('re-running failed documents', () => {
     expect(again.statusCode).toBe(409);
     expect(again.json()).toMatchObject({ code: 'not_finished' });
     expect(c.repo.conversionBatches.size).toBe(3);
+  });
+
+  it('re-runs a document once: a finished re-run refuses another, naming it', async () => {
+    const c = await setup();
+    const { batch, items } = await startedBatch(c, ['qa/a.docx']);
+    const [a] = items as [Item];
+    failed(c, a);
+    const url = `/api/conversions/batches/${batch.id}/retry`;
+    const first = BatchDetailSchema.parse((await post(c.app, url, { itemIds: [a.id] })).json());
+    for (const outcome of ['created', 'failed'] as const) {
+      c.repo.conversionItems.get(first.items[0]!.id)!.outcome = outcome;
+      const again = await post(c.app, url, { itemIds: [a.id] });
+      expect(again.statusCode, outcome).toBe(409);
+      expect(again.json()).toEqual({
+        error: 'qa/a.docx was already re-run',
+        code: 'already_rerun',
+      });
+    }
+    expect(c.repo.conversionBatches.size).toBe(2);
+    // The original says where it was re-run.
+    const read = await c.app.inject(`/api/conversions/batches/${batch.id}`);
+    expect(BatchDetailSchema.parse(read.json()).items[0]).toMatchObject({
+      rerunIn: first.batch.id,
+      rerunAt: first.batch.startedAt,
+    });
   });
 
   it('refuses a batch not found, or never started', async () => {
@@ -1224,6 +1250,8 @@ describe("a document's original file", () => {
     expect(res.headers['content-type']).toBe(DOCX_MIME);
     expect(res.headers['content-disposition']).toContain('attachment');
     expect(res.headers['content-disposition']).toContain('pumps.docx');
+    // A confidential file: never kept in a cache.
+    expect(res.headers['cache-control']).toBe('no-store');
     expect(res.rawPayload.equals(content)).toBe(true);
   });
 

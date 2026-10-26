@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BatchDetail, ConversionTarget, Item } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 import { StatusGlyph } from '../jobs/JobStatusIcon.js';
@@ -52,8 +52,12 @@ const FILTERS: Record<Filter, (item: Item) => boolean> = {
   done: isDone,
 };
 
-/** Re-run applies to a failed document of a started batch. */
-const canRetry = (started: boolean, item: Item) => started && isFailed(item);
+/**
+ * Re-run applies to a failed document of a started batch that was never run again: a document
+ * is re-run once, and a failed re-run is re-run from its own batch (`Item.rerunIn`).
+ */
+const canRetry = (started: boolean, item: Item) =>
+  started && isFailed(item) && item.rerunIn === null;
 const fileTime = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, {
     hour: '2-digit',
@@ -246,6 +250,7 @@ export function BatchView({
   /** The item of the open dialog, as last read (all items: the filter may hide its row). */
   const open = dialog ? items.find((i) => i.id === dialog.itemId) : undefined;
   const failed = items.filter(isFailed);
+  const retryable = items.filter((i) => canRetry(started, i));
   const attention = items.filter(needsAttention);
   const chips: FilterChip<Filter>[] = [
     { value: 'all', label: 'All', count: items.length },
@@ -257,8 +262,8 @@ export function BatchView({
   const startedAt = batch.startedAt ?? batch.createdAt;
   const retryAll = () =>
     setRetry({
-      title: `Re-run ${plural(failed.length, 'failed document')}`,
-      items: failed,
+      title: `Re-run ${plural(retryable.length, 'failed document')}`,
+      items: retryable,
     });
   const retryOne = (item: Item) => setRetry({ title: `Re-run ${item.sourceKey}`, items: [item] });
   const pick = (f: Filter) => {
@@ -292,9 +297,9 @@ export function BatchView({
           <a className="button" href="#/conversion">
             New batch
           </a>
-          {started && failed.length > 0 && (
+          {retryable.length > 0 && (
             <button type="button" className="primary" onClick={retryAll}>
-              <Icon name="refresh" size={14} /> Re-run {failed.length} failed
+              <Icon name="refresh" size={14} /> Re-run {retryable.length} failed
             </button>
           )}
           <HelpButton topic="conversion" />
@@ -542,7 +547,7 @@ function DocumentRow({
   const timing = itemTiming(item, Date.now());
   return (
     <tr
-      aria-selected={selected}
+      aria-current={selected ? 'true' : undefined}
       className={selected ? 'selected' : undefined}
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest('a, .popover-anchor')) onSelect();
@@ -569,6 +574,12 @@ function DocumentRow({
         )}
         {item.detail}
         {OUTCOME_NOTE[item.outcome] && <span className="muted"> {OUTCOME_NOTE[item.outcome]}</span>}
+        {item.rerunIn && (
+          <>
+            {' '}
+            <RerunLink item={item} />
+          </>
+        )}
       </td>
       <td className="took-cell" title={timing ?? undefined}>
         {timing?.replace(/^took /, '')}
@@ -591,10 +602,34 @@ function DocumentRow({
   );
 }
 
-/** A row's `⋯` menu: re-run, its report, its original, then the actions that apply to it. */
+/** Where a document was run again: the batch it was re-run in, by when that started. */
+function RerunLink({ item }: { item: Item }) {
+  if (!item.rerunIn) return null;
+  return (
+    <a className="rerun-link" href={`#/conversion/${encodeURIComponent(item.rerunIn)}`}>
+      Re-run in batch {item.rerunAt ? when(item.rerunAt) : item.rerunIn}
+    </a>
+  );
+}
+
+/**
+ * A row's `⋯` menu: re-run, its report, its original, then the actions that apply to it. Choosing
+ * an item closes it and puts focus back on its button, so a dialog it opens gives focus back
+ * there. It opens upward when the list's box has no room for it below its row.
+ */
 function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: RowProps) {
   const p = usePopover();
   const menu = useRef<HTMLDivElement>(null);
+  const [up, setUp] = useState(false);
+  useLayoutEffect(() => {
+    if (!p.open || !menu.current) {
+      setUp(false);
+      return;
+    }
+    // The rows' box clips what overflows it (it never scrolls): open upward past its bottom.
+    const bottom = menu.current.closest('.batch-list-rows')?.getBoundingClientRect().bottom;
+    setUp(bottom !== undefined && menu.current.getBoundingClientRect().bottom > bottom);
+  }, [p.open]);
   useEffect(() => {
     if (p.open) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [p.open]);
@@ -602,7 +637,7 @@ function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: R
   const more =
     canForce(item) || canRedeliver(item) || canReload(item) || canResolve(item) || canDetach(item);
   const run = (f: () => void) => () => {
-    p.setOpen(false);
+    p.close();
     f();
   };
   return (
@@ -624,11 +659,11 @@ function RowMenu({ api, item, canRerun, onRerun, onReport, onOpen, onResult }: R
           ref={menu}
           role="menu"
           aria-label={name}
-          className="menu-popover row-menu batch-row-menu"
+          className={`menu-popover row-menu batch-row-menu${up ? ' opens-up' : ''}`}
           onKeyDown={(e) => moveFocus(e, menu.current, '[role="menuitem"]')}
           onClick={(e) => {
             // An action of the item's own (force-load, redeliver, …) closes the menu too.
-            if ((e.target as HTMLElement).closest('[role="menuitem"]')) p.setOpen(false);
+            if ((e.target as HTMLElement).closest('[role="menuitem"]')) p.close();
           }}
         >
           {canRerun && (
@@ -682,6 +717,11 @@ function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResul
         item.detail && <p className="batch-panel-detail">{item.detail}</p>
       )}
       {OUTCOME_NOTE[item.outcome] && <p className="muted">{OUTCOME_NOTE[item.outcome]}</p>}
+      {item.rerunIn && (
+        <p className="batch-panel-rerun">
+          <RerunLink item={item} />
+        </p>
+      )}
       <dl className="batch-panel-facts">
         {item.startedAt && (
           <>

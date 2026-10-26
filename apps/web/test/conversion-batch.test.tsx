@@ -308,7 +308,11 @@ describe('the Conversion tab: the batch view', () => {
       panelFor('changed.docx').getByRole('button', { name: 'Redeliver changed.docx' }),
     ).toBeVisible();
     for (const key of ['failed.docx', 'queued.docx', 'duplicate.docx']) {
-      expect(within(rowOf(key)).queryByRole('button', { name: /^Redeliver/ })).toBeNull();
+      expect(panelFor(key).queryByRole('button', { name: /^Redeliver/ })).toBeNull();
+      await userEvent.click(documents().getByRole('button', { name: `Actions for ${key}` }));
+      const menu = within(screen.getByRole('menu', { name: `Actions for ${key}` }));
+      expect(menu.queryByRole('menuitem', { name: 'Redeliver' })).toBeNull();
+      await userEvent.keyboard('{Escape}');
     }
     await userEvent.click(
       panelFor('created.docx').getByRole('button', { name: 'Redeliver created.docx' }),

@@ -101,6 +101,14 @@ export const ItemSchema = z
      */
     reloadable: z.boolean(),
     /**
+     * The batch this item was last run again in (an item naming it as `redeliverOf`: a re-run,
+     * force-load, redeliver or reload), and when that batch started; null when it never was.
+     * Re-running failed documents (`POST /api/conversions/batches/{id}/retry`) takes an item
+     * only while this is null: a failed re-run is re-run from its own batch.
+     */
+    rerunIn: z.string().uuid().nullable(),
+    rerunAt: z.string().nullable(),
+    /**
      * When the worker first took the item (`decomposing`; a retry keeps it), and when it reached
      * a final outcome (the worker's decision, or the settle of its delivery); null until then,
      * and for items converted before migration 202610261331.

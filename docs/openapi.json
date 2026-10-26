@@ -12679,6 +12679,23 @@
                     "reloadable": {
                       "type": "boolean"
                     },
+                    "rerunIn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rerunAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "startedAt": {
                       "type": [
                         "string",
@@ -12711,6 +12728,8 @@
                     "unversioned",
                     "gone",
                     "reloadable",
+                    "rerunIn",
+                    "rerunAt",
                     "startedAt",
                     "finishedAt"
                   ],
@@ -13779,6 +13798,23 @@
                           "reloadable": {
                             "type": "boolean"
                           },
+                          "rerunIn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "rerunAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -13811,6 +13847,8 @@
                           "unversioned",
                           "gone",
                           "reloadable",
+                          "rerunIn",
+                          "rerunAt",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -14116,7 +14154,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Runs the batch's failed documents named in `itemIds` again, from the files uploaded\nwith it, as one new batch that starts at once (the Conversion tab's _Re-run failed_).\nEach new item keeps its document's source key and names the item it re-runs\n(`redeliverOf`); nothing is uploaded again. `force` delivers them as an explicit\nupdate (absent: as the batch was started). Only items of this batch whose outcome is\n`failed`; refused while an earlier re-run of any of them is unfinished, so a\nrepeated request makes one batch. The batch keeps its record.",
+        "description": "Runs the batch's failed documents named in `itemIds` again, from the files uploaded\nwith it, as one new batch that starts at once (the Conversion tab's _Re-run failed_).\nEach new item keeps its document's source key and names the item it re-runs\n(`redeliverOf`); nothing is uploaded again. `force` delivers them as an explicit\nupdate (absent: as the batch was started). Only items of this batch whose outcome is\n`failed`; refused while an earlier re-run of any of them is unfinished, so a\nrepeated request makes one batch, and once any of them was run again at all (its\n`rerunIn` is set): a document is re-run once, and a failed re-run is re-run from its\nown batch. The batch keeps its record.",
         "requestBody": {
           "required": true,
           "content": {
@@ -14355,6 +14393,23 @@
                           "reloadable": {
                             "type": "boolean"
                           },
+                          "rerunIn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "rerunAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -14387,6 +14442,8 @@
                           "unversioned",
                           "gone",
                           "reloadable",
+                          "rerunIn",
+                          "rerunAt",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -14531,7 +14588,7 @@
             }
           },
           "409": {
-            "description": "The batch was never started, or an earlier re-run of one of the items is still running (a repeated request).",
+            "description": "The batch was never started, or an earlier re-run of one of the items is still running (a repeated request; `not_finished`), or one of the items was already run again (`already_rerun`, naming it).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14555,7 +14612,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "not_finished"
+                        "not_finished",
+                        "already_rerun"
                       ]
                     }
                   },
@@ -14563,7 +14621,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The batch was never started, or an earlier re-run of one of the items is still running (a repeated request)."
+                  "description": "The batch was never started, or an earlier re-run of one of the items is still running (a repeated request; `not_finished`), or one of the items was already run again (`already_rerun`, naming it)."
                 }
               }
             }
@@ -15061,6 +15119,23 @@
                           "reloadable": {
                             "type": "boolean"
                           },
+                          "rerunIn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "rerunAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -15093,6 +15168,8 @@
                           "unversioned",
                           "gone",
                           "reloadable",
+                          "rerunIn",
+                          "rerunAt",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -15566,6 +15643,23 @@
                           "reloadable": {
                             "type": "boolean"
                           },
+                          "rerunIn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "rerunAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -15598,6 +15692,8 @@
                           "unversioned",
                           "gone",
                           "reloadable",
+                          "rerunIn",
+                          "rerunAt",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -16077,6 +16173,23 @@
                     "reloadable": {
                       "type": "boolean"
                     },
+                    "rerunIn": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rerunAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "startedAt": {
                       "type": [
                         "string",
@@ -16109,6 +16222,8 @@
                     "unversioned",
                     "gone",
                     "reloadable",
+                    "rerunIn",
+                    "rerunAt",
                     "startedAt",
                     "finishedAt"
                   ],
@@ -16520,6 +16635,23 @@
                           "reloadable": {
                             "type": "boolean"
                           },
+                          "rerunIn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "rerunAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -16552,6 +16684,8 @@
                           "unversioned",
                           "gone",
                           "reloadable",
+                          "rerunIn",
+                          "rerunAt",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -17169,6 +17303,23 @@
                         "reloadable": {
                           "type": "boolean"
                         },
+                        "rerunIn": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rerunAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "startedAt": {
                           "type": [
                             "string",
@@ -17201,6 +17352,8 @@
                         "unversioned",
                         "gone",
                         "reloadable",
+                        "rerunIn",
+                        "rerunAt",
                         "startedAt",
                         "finishedAt"
                       ],

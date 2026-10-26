@@ -282,6 +282,8 @@ interface ItemRow {
   unversioned: boolean;
   gone: boolean;
   entry_detached: boolean;
+  rerun_in: string | null;
+  rerun_at: Date | null;
 }
 
 /**
@@ -327,7 +329,14 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
     AS gone,
   EXISTS (SELECT 1 FROM decomposition_register r
            WHERE r.id = decomposition_items.register_entry_id AND r.state = 'detached')
-    AS entry_detached`;
+    AS entry_detached,
+  (SELECT n.batch_id FROM decomposition_items n
+    WHERE n.redeliver_of = decomposition_items.id
+    ORDER BY n.created_at DESC, n.id DESC LIMIT 1) AS rerun_in,
+  (SELECT COALESCE(b.started_at, b.created_at)
+     FROM decomposition_items n JOIN decomposition_batches b ON b.id = n.batch_id
+    WHERE n.redeliver_of = decomposition_items.id
+    ORDER BY n.created_at DESC, n.id DESC LIMIT 1) AS rerun_at`;
 
 const toItem = (r: ItemRow): Item => ({
   id: r.id,
@@ -348,6 +357,8 @@ const toItem = (r: ItemRow): Item => ({
   unversioned: r.unversioned,
   gone: r.gone,
   reloadable: isReloadable(r.gone, r.entry_detached, r.resolution),
+  rerunIn: r.rerun_in ?? null,
+  rerunAt: r.rerun_at?.toISOString() ?? null,
   startedAt: r.started_at?.toISOString() ?? null,
   finishedAt: r.finished_at?.toISOString() ?? null,
 });
@@ -1537,14 +1548,18 @@ export class PgRepo implements IngestionRepo {
         'SELECT 1 FROM decomposition_items WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
         [ids],
       );
-      const running = await client.query<{ redeliver_of: string }>(
-        `SELECT redeliver_of FROM decomposition_items
-          WHERE redeliver_of = ANY($1::uuid[]) AND outcome = ANY($2::text[])`,
+      const reruns = await client.query<{ redeliver_of: string; running: boolean }>(
+        `SELECT redeliver_of, outcome = ANY($2::text[]) AS running FROM decomposition_items
+          WHERE redeliver_of = ANY($1::uuid[])`,
         [ids, RUNNING_OUTCOMES],
       );
-      if (running.rowCount) {
-        const busy = new Set(running.rows.map((r) => r.redeliver_of));
+      const busy = new Set(reruns.rows.filter((r) => r.running).map((r) => r.redeliver_of));
+      if (busy.size) {
         return { ok: false, reason: 'running', itemId: ids.find((id) => busy.has(id))! };
+      }
+      const done = new Set(reruns.rows.map((r) => r.redeliver_of));
+      if (done.size) {
+        return { ok: false, reason: 'already_rerun', itemId: ids.find((id) => done.has(id))! };
       }
       const batch = await client.query<BatchRow>(
         `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)

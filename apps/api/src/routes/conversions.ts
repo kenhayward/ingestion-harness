@@ -508,7 +508,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           (\`redeliverOf\`); nothing is uploaded again. \`force\` delivers them as an explicit
           update (absent: as the batch was started). Only items of this batch whose outcome is
           \`failed\`; refused while an earlier re-run of any of them is unfinished, so a
-          repeated request makes one batch. The batch keeps its record.
+          repeated request makes one batch, and once any of them was run again at all (its
+          \`rerunIn\` is set): a document is re-run once, and a failed re-run is re-run from its
+          own batch. The batch keeps its record.
         `,
         params: BatchParams,
         body: RetryItemsSchema,
@@ -516,10 +518,11 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           201: res('The new batch, started, and its items in the order asked.', BatchDetailSchema),
           400: error('The body is not `{ itemIds, force? }`: one to 1,000 item ids, each once.'),
           404: NOT_FOUND,
-          409: CodedError(
+          409: res(
             'The batch was never started, or an earlier re-run of one of the items is still ' +
-              'running (a repeated request).',
-            'not_finished',
+              'running (a repeated request; `not_finished`), or one of the items was already ' +
+              'run again (`already_rerun`, naming it).',
+            ErrorBody.extend({ code: z.enum(['not_finished', 'already_rerun']) }),
           ),
           422: res(
             'An item is not a failed item of this batch (`not_failed`), or the target no ' +
@@ -562,9 +565,11 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       });
       if (!done.ok) {
         const key = items.get(done.itemId)?.sourceKey ?? done.itemId;
-        return reply
-          .code(409)
-          .send({ error: `a re-run of ${key} is still running`, code: 'not_finished' });
+        return done.reason === 'running'
+          ? reply
+              .code(409)
+              .send({ error: `a re-run of ${key} is still running`, code: 'not_finished' })
+          : reply.code(409).send({ error: `${key} was already re-run`, code: 'already_rerun' });
       }
       return reply.code(201).send({ batch: done.batch, items: done.items });
     },
@@ -604,7 +609,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         .header('content-type', DOCX_MIME)
         .header('content-disposition', contentDisposition(item.filename, 'attachment'))
         .header('x-content-type-options', 'nosniff')
-        .header('cache-control', 'private, max-age=300')
+        .header('cache-control', 'no-store')
         .send(body);
     },
   );

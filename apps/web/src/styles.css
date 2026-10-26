@@ -8279,6 +8279,15 @@ button.evidence-chip[aria-expanded='true'] {
   color: inherit;
   text-decoration: none;
 }
+/* A bottom row's menu opens upward: the rows' box clips what runs past its bottom. */
+.menu-popover.row-menu.opens-up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+.batch-panel-rerun {
+  margin: 0;
+  font-size: var(--ih-text-sm);
+}
 .menu-separator {
   margin: 4px 0;
   border-top: 1px solid var(--ih-border);

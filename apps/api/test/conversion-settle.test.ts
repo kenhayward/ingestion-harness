@@ -59,7 +59,10 @@ async function delivered(over: { persistentId?: string | null } = {}) {
     jobId,
     deliveryId,
     entryId: entry.id,
-    item: (): Omit<Item, 'resolution' | 'unversioned' | 'gone' | 'reloadable'> => ({
+    item: (): Omit<
+      Item,
+      'resolution' | 'unversioned' | 'gone' | 'reloadable' | 'rerunIn' | 'rerunAt'
+    > => ({
       ...repo.conversionItems.get(itemId)!,
     }),
     jobStatus: () => repo.backgroundJobs.find((j) => j.id === jobId)!.status,

@@ -263,6 +263,15 @@
             <code>GET /api/conversions/items/{id}/source</code> downloads a document's original Word
             file. Operators may use both.
           </li>
+          <li>
+            A document is re-run once: the retry route answers 409 <code>already_rerun</code>,
+            naming the document, for one that was already run again, even when that re-run failed
+            (re-run it from its own batch instead). Each item has two new fields,
+            <code>rerunIn</code> and <code>rerunAt</code>: the batch it was last run again in, and
+            when that batch started (null when it never was). A migration
+            (<code>202610261400_decomposition_items_redeliver_of</code>) indexes items by the item
+            they re-run, so reading them stays quick. It runs on its own when the API starts.
+          </li>
         </ul>
       </div>
 
@@ -428,7 +437,8 @@
         <li>
           <strong>Re-run N failed</strong> runs the batch's failed documents again from the files
           uploaded with it, as a new batch, with Force-load kept or not.
-          <strong>Re-run this document</strong> does it for one.
+          <strong>Re-run this document</strong> does it for one. A document is re-run once from a
+          batch: its line then links to the batch it was re-run in.
         </li>
         <li><strong>Download original</strong> saves a document's Word file as it was uploaded.</li>
         <li>

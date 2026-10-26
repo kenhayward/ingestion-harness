@@ -107,7 +107,10 @@ describe('the Conversion tab redesign: a batch', () => {
     render(<BatchView api={api} batchId={BATCH_ID} />);
     // The first document needing attention is selected to begin with.
     await waitFor(() => expect(panel().getByRole('heading', { name: 'b.docx' })).toBeVisible());
-    expect(table().getByText('QA/b.docx').closest('tr')).toHaveAttribute('aria-selected', 'true');
+    const picked = table().getByText('QA/b.docx').closest('tr')!;
+    expect(picked).toHaveAttribute('aria-current', 'true');
+    expect(picked).not.toHaveAttribute('aria-selected');
+    expect(table().getByText('QA/a.docx').closest('tr')).not.toHaveAttribute('aria-current');
     expect(panel().getByText('Why it failed').parentElement).toHaveTextContent(
       'Decompose: table 4 has merged cells',
     );
@@ -220,6 +223,118 @@ describe('the Conversion tab redesign: a batch', () => {
     expect(other.getByRole('menuitem', { name: 'Redeliver' })).toBeVisible();
     await userEvent.click(other.getByRole('menuitem', { name: 'View report' }));
     expect(await screen.findByRole('dialog', { name: 'Report: a.docx' })).toBeVisible();
+  });
+
+  it('measures the rows that fit once the batch has loaded', async () => {
+    const observed: Element[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe(el: Element) {
+          observed.push(el);
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    // Seven 36 px rows fit the rows' box; nothing else has a height.
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('batch-list-rows') ? 7 * 36 : 0;
+      });
+    try {
+      const items = Array.from({ length: 12 }, (_, n) => item(`d${n}.docx`, 'created'));
+      render(<BatchView api={batchApi(items)} batchId={BATCH_ID} />);
+      await screen.findByRole('table', { name: 'Documents' });
+      await waitFor(() => expect(listed()).toHaveLength(7));
+      const pager = within(screen.getByRole('navigation', { name: 'Pages of documents' }));
+      expect(pager.getByText(/Page/)).toHaveTextContent('Page 1 of 2');
+      expect(observed).toEqual([document.querySelector('.batch-list-rows')]);
+    } finally {
+      height.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a document already re-run is re-run no more from here, and says where', async () => {
+    const at = '2026-10-26T10:15:00.000Z';
+    const a = item('QA/a.docx', 'failed', { rerunIn: NEW_BATCH_ID, rerunAt: at });
+    const b = item('QA/b.docx', 'failed');
+    render(<BatchView api={batchApi([a, b])} batchId={BATCH_ID} />);
+    await screen.findByRole('table', { name: 'Documents' });
+    expect(screen.queryByRole('button', { name: 'Re-run 2 failed' })).toBeNull();
+    // Still failed in this batch's record.
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    expect(show.getByRole('button', { name: /^Failed/ })).toHaveTextContent('2');
+
+    const row = within(table().getByText('QA/a.docx').closest('tr')!);
+    const where = row.getByRole('link', { name: /^Re-run in batch / });
+    expect(where).toHaveAttribute('href', `#/conversion/${NEW_BATCH_ID}`);
+    expect(where.textContent).toContain(
+      new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+    );
+    await userEvent.click(table().getByRole('button', { name: 'QA/a.docx' }));
+    expect(panel().getByRole('link', { name: /^Re-run in batch / })).toHaveAttribute(
+      'href',
+      `#/conversion/${NEW_BATCH_ID}`,
+    );
+    expect(panel().queryByRole('button', { name: /Re-run this document/ })).toBeNull();
+    await userEvent.click(table().getByRole('button', { name: 'Actions for QA/a.docx' }));
+    const menu = within(screen.getByRole('menu', { name: 'Actions for QA/a.docx' }));
+    expect(menu.queryByRole('menuitem', { name: 'Re-run' })).toBeNull();
+    await userEvent.keyboard('{Escape}');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Re-run 1 failed' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByRole('checkbox', { name: /QA\/b\.docx/ })).toBeChecked();
+  });
+
+  it("a dialog opened from a row's menu gives focus back to the menu's button", async () => {
+    const a = item('a.docx', 'created', { registerEntryId: crypto.randomUUID() });
+    render(<BatchView api={batchApi([a])} batchId={BATCH_ID} />);
+    await screen.findByRole('table', { name: 'Documents' });
+    const button = table().getByRole('button', { name: 'Actions for a.docx' });
+    await userEvent.click(button);
+    const menu = within(screen.getByRole('menu', { name: 'Actions for a.docx' }));
+    await userEvent.click(menu.getByRole('menuitem', { name: 'Redeliver' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Redeliver a.docx' }));
+    await userEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(button).toHaveFocus();
+  });
+
+  it("a row's menu opens upward when the list has no room below it", async () => {
+    const rect = (top: number, bottom: number) =>
+      ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top }) as DOMRect;
+    const box = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('batch-list-rows')) return rect(0, 300);
+      if (this.classList.contains('row-menu')) {
+        // The menu sits under its row: the last row's runs past the list's bottom.
+        const last = this.closest('tr')?.querySelector('.mono')?.textContent === 'z.docx';
+        return last ? rect(280, 420) : rect(40, 180);
+      }
+      return rect(0, 0);
+    });
+    try {
+      render(
+        <BatchView
+          api={batchApi([item('a.docx', 'created'), item('z.docx', 'created')])}
+          batchId={BATCH_ID}
+        />,
+      );
+      await screen.findByRole('table', { name: 'Documents' });
+      await userEvent.click(table().getByRole('button', { name: 'Actions for a.docx' }));
+      expect(screen.getByRole('menu', { name: 'Actions for a.docx' })).not.toHaveClass('opens-up');
+      await userEvent.keyboard('{Escape}');
+      await userEvent.click(table().getByRole('button', { name: 'Actions for z.docx' }));
+      expect(screen.getByRole('menu', { name: 'Actions for z.docx' })).toHaveClass('opens-up');
+    } finally {
+      box.mockRestore();
+    }
   });
 
   it('pages the documents to fit', async () => {
