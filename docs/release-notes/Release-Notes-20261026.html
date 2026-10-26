@@ -215,7 +215,9 @@
           <li>
             An empty heading in a Word file no longer becomes a section titled <code>[]</code>, so a
             document converted again after this change may have fewer sections than before. The text
-            under an empty heading now stays in the section before it.
+            under an empty heading now stays in the section before it, and a heading that sat under
+            an empty one moves up there too: in the target, the next update removes those sections'
+            old topics and makes new ones, instead of updating them in place.
           </li>
           <li>
             New API routes under <code>/api/conversions</code>: the targets that take documents, and
