@@ -426,6 +426,37 @@ describe('detach', () => {
     expect(again.json()).toMatchObject({ code: 'no_register_entry' });
   });
 
+  it('items say how their entry was resolved, in every batch that holds them', async () => {
+    const c = await setup();
+    const first = await startedItem(c);
+    const second = await startedItem(c); // the same source, run again in a batch of its own
+    const entry = changedEntry(c, first, [{ id: 'doc-1/section/s1', expected: '1', actual: '2' }]);
+    Object.assign(c.repo.conversionItems.get(second.id)!, {
+      outcome: 'changed_in_target',
+      registerEntryId: entry.id,
+    });
+    const resolutionIn = async (item: Item) => {
+      const res = await c.app.inject({ url: `/api/conversions/batches/${item.batchId}` });
+      return BatchDetailSchema.parse(res.json()).items[0]!.resolution;
+    };
+    expect(await resolutionIn(first)).toBeNull();
+
+    const accepted = await confirmAccept(c, first);
+    expect(AcceptedTargetStateSchema.parse(accepted.json()).item.resolution).toBe('accepted');
+    expect([await resolutionIn(first), await resolutionIn(second)]).toEqual([
+      'accepted',
+      'accepted',
+    ]);
+
+    const res = await post(c.app, `/api/conversions/items/${second.id}/detach`);
+    expect(ItemSchema.parse(res.json()).resolution).toBe('detached');
+    expect([await resolutionIn(first), await resolutionIn(second)]).toEqual([
+      'detached',
+      'detached',
+    ]);
+    expect(takeViolations()).toEqual([]);
+  });
+
   it('refuses while a delivery for the entry is in flight', async () => {
     const c = await setup();
     const item = await startedItem(c);

@@ -357,7 +357,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Get a batch and its items',
         description: md`
           The batch and its items in upload order: each item's outcome and detail, its link in
-          the target once delivered, and whether its report is ready (\`reportKey\`).
+          the target once delivered, whether its report is ready (\`reportKey\`), and, for a
+          document refused as changed in the target, whether it has since been detached or its
+          target state accepted (\`resolution\`, read from its register entry).
         `,
         params: BatchParams,
         response: { 200: res('The batch.', BatchDetailSchema), 404: NOT_FOUND },
@@ -631,7 +633,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         `,
         params: ItemParams,
         response: {
-          200: res('The item, its detail saying it was detached.', ItemSchema),
+          200: res(
+            'The item: its detail says it was detached, and its `resolution` is `detached`.',
+            ItemSchema,
+          ),
           404: error('No such item.'),
           409: res(
             'The item has no register entry (`no_register_entry`: never delivered, or detached ' +

@@ -53,7 +53,9 @@ export function ConversionHelp() {
         the file noticed for someone to check, such as an empty heading or a table with no caption.
         While any document is still queued, decomposing or delivering, the rows refresh every few
         seconds. <strong>Needs attention</strong> shows only the documents someone should look at,
-        and <strong>Done</strong> the ones that went through or were already loaded.
+        and <strong>Done</strong> the ones that went through, were already loaded, or were detached
+        or had the target&apos;s state accepted. A screen reader hears how many are done each time
+        another settles.
       </p>
       <ul>
         <li>
@@ -73,7 +75,8 @@ export function ConversionHelp() {
           <strong>Read-back mismatch</strong>: the target wrote the document but what it read back
           differs; the line says where. <strong>Unresolved</strong>: an earlier delivery may have
           made the document, so it needs resolving in the target. <strong>In flight</strong>:
-          another delivery of the document is under way.
+          another batch is delivering the same document, so this row stays as it is; the outcome
+          shows in that batch.
         </li>
         <li>
           <strong>Failed</strong>: the file could not be converted or delivered; the line says why.

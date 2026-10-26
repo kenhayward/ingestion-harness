@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AcceptPreview, Item } from '@ih/shared';
 import { ApiError, type Api } from '../api/client.js';
 import { Dialog } from '../ui/Dialog.js';
@@ -11,17 +11,21 @@ const CHANGED_AGAIN = 'This document changed again since you opened this; review
  * component with its version then and now, and an explicit confirmation that the next update
  * overwrites those edits. A document that changed again while this was open refuses the
  * confirmation (`stale_preview`), and the new changes are shown to look at again. When it can't
- * be accepted here (too many changes listed, say), it says why and offers detach instead.
+ * be accepted here (too many changes listed, say), it says why and offers detach instead. A
+ * preview that can't be read (again) shows nothing to confirm. `note` says the item moved on
+ * while this was open (the batch view's refresh), and then nothing can be confirmed either.
  */
 export function AcceptDialog({
   api,
   item,
+  note = null,
   onClose,
   onAccepted,
   onDetachInstead,
 }: {
   api: Api;
   item: Item;
+  note?: string | null;
   onClose: () => void;
   onAccepted: (item: Item) => void;
   onDetachInstead: () => void;
@@ -33,6 +37,8 @@ export function AcceptDialog({
   const [reading, setReading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Set from the first click until the confirm settles, before a render can disable it. */
+  const sending = useRef(false);
 
   const load = useCallback(() => {
     setUnderstood(false);
@@ -40,14 +46,18 @@ export function AcceptDialog({
     setReading(true);
     api
       .previewAccept(item.id)
-      .then(setPreview, (err: Error) => setError(err.message))
+      .then(setPreview, (err: Error) => {
+        setPreview(null); // an old preview's versions (and `seen`) must not be confirmed
+        setError(err.message);
+      })
       .finally(() => setReading(false));
   }, [api, item.id]);
 
   useEffect(load, [load]);
 
   async function accept() {
-    if (!preview?.updatedAt) return;
+    if (!preview?.updatedAt || sending.current) return;
+    sending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -62,6 +72,7 @@ export function AcceptDialog({
         setError((err as Error).message);
       }
     }
+    sending.current = false;
     setBusy(false);
   }
 
@@ -80,7 +91,7 @@ export function AcceptDialog({
           <button
             type="button"
             className="danger"
-            disabled={!preview || !understood || busy || reading}
+            disabled={!preview?.updatedAt || !understood || busy || reading || note !== null}
             onClick={() => void accept()}
           >
             Accept and overwrite
@@ -93,6 +104,7 @@ export function AcceptDialog({
         delivered. Accepting the target&apos;s state lets the next run of this source update it:{' '}
         <strong>the edits made in the target will be overwritten.</strong>
       </p>
+      <ChangedNote note={note} />
       {notice && (
         <p role="status" className="callout tone-warn">
           {notice}
@@ -138,4 +150,13 @@ export function AcceptDialog({
       {error && <p role="alert">{error}</p>}
     </Dialog>
   );
+}
+
+/** What changed while a dialog was open: said, and its action no longer offered. */
+export function ChangedNote({ note }: { note: string | null }) {
+  return note ? (
+    <p role="status" className="callout tone-warn">
+      {note}
+    </p>
+  ) : null;
 }

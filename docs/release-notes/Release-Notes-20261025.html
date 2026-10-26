@@ -196,8 +196,9 @@
             <code>POST /api/conversions/items/{id}/redeliver</code> (optionally with a replacement
             file), <code>POST /api/conversions/items/{id}/detach</code>, and <code>GET</code> and
             <code>POST /api/conversions/items/{id}/accept</code> (accept the target's state: a
-            preview, then a confirmed accept). Operators, designers and administrators may all use
-            them.
+            preview, then a confirmed accept). Each item says whether its document has been detached
+            or its target state accepted (<code>resolution</code>). Operators, designers and
+            administrators may all use them.
           </li>
         </ul>
       </div>
@@ -236,9 +237,11 @@
         someone to check, such as an empty heading or a table with no caption. While any document is
         still under way the rows refresh every few seconds, and the refreshing stops once every
         document has settled. <strong>Needs attention</strong> narrows the rows to the documents
-        someone should look at, and <strong>Done</strong> to the ones that went through. Under a new
-        batch, <strong>Earlier batches</strong> lists the batches started before, newest first, each
-        with its documents counted by outcome.
+        someone should look at, and <strong>Done</strong> to the ones that went through or have been
+        resolved. A screen reader hears how many documents are done each time another settles. A
+        document <strong>In flight</strong> is being delivered by another batch, and its outcome
+        shows there. Under a new batch, <strong>Earlier batches</strong> lists the batches started
+        before, newest first, each with its documents counted by outcome.
       </p>
       <p>Each document's row offers the actions that apply to it, each run on that one document:</p>
       <ul>
@@ -271,7 +274,8 @@
       <p>
         Force-load is offered on a document already loaded and on a duplicate, redeliver on one
         delivered or refused, and detach and accept on one changed in the target. Once a document
-        has been detached or its target state accepted, its row says so and offers neither again.
+        has been detached or its target state accepted, its row says so and offers neither again, in
+        every batch that delivered it.
       </p>
       <p>
         Force-load and redeliver each start a new batch of one, and only one while it runs, however

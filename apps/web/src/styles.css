@@ -7727,6 +7727,10 @@ button.evidence-chip[aria-expanded='true'] {
   margin: 4px 0 0;
   font-size: var(--ih-text-sm);
 }
+.conversion-resolution {
+  margin: 0 0 4px;
+  font-weight: 500;
+}
 .conversion-report {
   display: flex;
   flex-direction: column;

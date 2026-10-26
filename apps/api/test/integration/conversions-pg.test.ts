@@ -116,6 +116,9 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
             [itemId, outcome, entryId],
           );
         },
+        dropEntry: async (entryId: string) => {
+          await p.query('DELETE FROM decomposition_register WHERE id = $1', [entryId]);
+        },
         actions: async (entryId: string): Promise<RegisterAction[]> => {
           const { rows } = await p.query<{
             id: string;

@@ -56,7 +56,7 @@ async function delivered(over: { persistentId?: string | null } = {}) {
     jobId,
     deliveryId,
     entryId: entry.id,
-    item: (): Item => ({ ...repo.conversionItems.get(itemId)! }),
+    item: (): Omit<Item, 'resolution'> => ({ ...repo.conversionItems.get(itemId)! }),
     jobStatus: () => repo.backgroundJobs.find((j) => j.id === jobId)!.status,
     /** The job's last event: how it finished. */
     lastEvent: () => repo.events.get(jobId)?.at(-1)?.message,
@@ -170,7 +170,7 @@ describe('a conversion item, settled from the bridge events', () => {
     // The worker's write comes late, and moves nothing the event settled.
     expect(eventFirst.workerRecords()).toBe(false);
 
-    const comparable = (i: Item) => ({
+    const comparable = (i: Pick<Item, 'outcome' | 'link' | 'detail'>) => ({
       outcome: i.outcome,
       link: i.link,
       detail: i.detail,

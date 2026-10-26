@@ -1,4 +1,4 @@
-import type { Item, ItemOutcome } from '@ih/shared';
+import type { Item, ItemOutcome, ItemResolution } from '@ih/shared';
 import type { Tone } from '../jobs/derive.js';
 
 /** How an item's outcome reads on its row (spec §3's wording, and phase 3's own outcomes). */
@@ -10,17 +10,20 @@ export const OUTCOME: Record<ItemOutcome, { label: string; tone: Tone }> = {
   updated: { label: 'Updated', tone: 'ok' },
   already_loaded: { label: 'Already loaded', tone: 'neutral' },
   duplicate: { label: 'Duplicate', tone: 'warn' },
-  in_flight: { label: 'In flight', tone: 'info' },
+  in_flight: { label: 'In flight', tone: 'neutral' },
   changed_in_target: { label: 'Changed in target', tone: 'alert' },
   read_back_mismatch: { label: 'Read-back mismatch', tone: 'alert' },
   unresolved: { label: 'Unresolved', tone: 'alert' },
   failed: { label: 'Failed', tone: 'danger' },
 };
 
-/** Still under way: the batch view refreshes while any item is. */
+/**
+ * Still under way: the batch view refreshes while any item is. `in_flight` is not: the item is
+ * final, because another batch's delivery owns the document's register entry.
+ */
 export const UNFINISHED: readonly ItemOutcome[] = ['queued', 'decomposing', 'delivering'];
 
-/** Outcomes a person should look at (the "Needs attention" filter). */
+/** Outcomes a person should look at (the "Needs attention" filter), until resolved. */
 export const NEEDS_ATTENTION: readonly ItemOutcome[] = [
   'duplicate',
   'changed_in_target',
@@ -30,17 +33,25 @@ export const NEEDS_ATTENTION: readonly ItemOutcome[] = [
 ];
 
 export const isUnfinished = (item: Item) => UNFINISHED.includes(item.outcome);
-export const needsAttention = (item: Item) => NEEDS_ATTENTION.includes(item.outcome);
+/** A document changed in the target and then detached or accepted no longer needs attention. */
+export const needsAttention = (item: Item) =>
+  NEEDS_ATTENTION.includes(item.outcome) && item.resolution === null;
 export const isDone = (item: Item) => !isUnfinished(item) && !needsAttention(item);
 
 /**
- * How a document refused as changed in the target was resolved, if it was. Detaching or
- * accepting leaves the item's outcome `changed_in_target` (ruling M7); only its detail says what
- * happened, in the words the API writes there (`apps/api/src/routes/conversions.ts`).
+ * What a resolved document's row says (§8): the item's `resolution`, read by the API from its
+ * register entry, so every item on that entry says it.
  */
-export function resolutionOf(item: Item): 'detached' | 'accepted' | null {
-  if (item.outcome !== 'changed_in_target' || !item.detail) return null;
-  if (item.detail.startsWith('detached')) return 'detached';
-  if (item.detail.startsWith("the target's state was accepted")) return 'accepted';
-  return null;
-}
+export const RESOLUTION: Record<ItemResolution, string> = {
+  detached:
+    'Detached: CT Studio forgot this document. It stays in the target untouched, and the next ' +
+    'run of this source creates a new document.',
+  accepted:
+    "The target's state accepted: the next run of this source updates the document, " +
+    'overwriting the edits made in the target.',
+};
+
+/** What an outcome adds to its row's detail, when the outcome alone doesn't say where to look. */
+export const OUTCOME_NOTE: Partial<Record<ItemOutcome, string>> = {
+  in_flight: "Another batch is delivering this document: its outcome shows in that batch's view.",
+};

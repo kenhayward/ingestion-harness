@@ -890,6 +890,7 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     reportKey: null,
     link: null,
     redeliverOf: null,
+    resolution: null,
     ...o,
   };
 }

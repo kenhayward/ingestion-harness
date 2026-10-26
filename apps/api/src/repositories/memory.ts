@@ -85,6 +85,9 @@ import {
   type EventFilter,
 } from './types.js';
 
+/** A conversion item as stored: its resolution is read from its register entry. */
+type StoredItem = Omit<Item, 'resolution'>;
+
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
 /** Tasks a test run moves through: listed as one run by listProjectRuns. */
@@ -1278,8 +1281,23 @@ export class MemoryRepo implements IngestionRepo {
 
   /** Conversion batches (decomposition_batches), in creation order. */
   readonly conversionBatches = new Map<string, Batch>();
-  /** Their items (decomposition_items), in upload order; tests set outcomes and reports. */
-  readonly conversionItems = new Map<string, Item>();
+  /**
+   * Their items (decomposition_items), in upload order; tests set outcomes and reports. An item's
+   * `resolution` is not stored: it is read from its register entry (`withResolution`).
+   */
+  readonly conversionItems = new Map<string, StoredItem>();
+
+  /** The item as the API shows it: its resolution read from its register entry (PgRepo's too). */
+  private withResolution(item: StoredItem): Item {
+    let resolution: Item['resolution'] = null;
+    if (item.registerEntryId) {
+      const state = this.register.get(item.registerEntryId)?.state;
+      // Gone: a create replaced the detached tombstone (worker `register.put_pending`).
+      if (state === undefined || state === 'detached') resolution = 'detached';
+      else if (state === 'accepted') resolution = 'accepted';
+    }
+    return structuredClone({ ...item, resolution });
+  }
 
   async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
     const batch: Batch = {
@@ -1316,7 +1334,7 @@ export class MemoryRepo implements IngestionRepo {
   async listItems(batchId: string): Promise<Item[]> {
     return [...this.conversionItems.values()]
       .filter((i) => i.batchId === batchId)
-      .map((i) => ({ ...i }));
+      .map((i) => this.withResolution(i));
   }
 
   async itemByDelivery(deliveryId: string): Promise<Item | null> {
@@ -1324,12 +1342,12 @@ export class MemoryRepo implements IngestionRepo {
     const item = jobId
       ? [...this.conversionItems.values()].find((i) => i.jobId === jobId)
       : undefined;
-    return item ? structuredClone(item) : null;
+    return item ? this.withResolution(item) : null;
   }
 
   async getItem(id: string): Promise<Item | null> {
     const item = this.conversionItems.get(id);
-    return item ? { ...item } : null;
+    return item ? this.withResolution(item) : null;
   }
 
   async addItem(item: NewItem): Promise<AddItemResult> {
@@ -1340,7 +1358,7 @@ export class MemoryRepo implements IngestionRepo {
     if (items.some((i) => i.batchId === item.batchId && i.sourceKey === item.sourceKey)) {
       return { ok: false, reason: 'duplicate' };
     }
-    const row: Item = {
+    const row: StoredItem = {
       ...item,
       jobId: null,
       outcome: 'queued',
@@ -1351,7 +1369,7 @@ export class MemoryRepo implements IngestionRepo {
       redeliverOf: null,
     };
     this.conversionItems.set(row.id, row);
-    return { ok: true, item: { ...row } };
+    return { ok: true, item: this.withResolution(row) };
   }
 
   async startBatch(id: string, by: Creator | null): Promise<StartBatchResult> {
@@ -1412,7 +1430,7 @@ export class MemoryRepo implements IngestionRepo {
       createdAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
     };
-    const item: Item = {
+    const item: StoredItem = {
       id: itemId,
       batchId,
       sourceKey: of.sourceKey,
@@ -1433,7 +1451,7 @@ export class MemoryRepo implements IngestionRepo {
     );
     this.conversionBatches.set(batchId, batch);
     this.conversionItems.set(itemId, item);
-    return { ok: true, batch: structuredClone(batch), item: { ...item } };
+    return { ok: true, batch: structuredClone(batch), item: this.withResolution(item) };
   }
 
   async registerEntry(id: string): Promise<RegisterEntry | null> {
@@ -1473,7 +1491,7 @@ export class MemoryRepo implements IngestionRepo {
     });
     const item = this.conversionItems.get(itemId)!;
     item.detail = detail(entry);
-    return { ok: true, entry: structuredClone(entry), item: { ...item } };
+    return { ok: true, entry: structuredClone(entry), item: this.withResolution(item) };
   }
 
   async acceptTargetState({
@@ -1507,7 +1525,7 @@ export class MemoryRepo implements IngestionRepo {
     });
     const item = this.conversionItems.get(itemId)!;
     item.detail = detail(entry);
-    return { ok: true, item: { ...item }, changed: accepted.changed };
+    return { ok: true, item: this.withResolution(item), changed: accepted.changed };
   }
 
   private update(id: string, changes: Partial<JobSummary>): JobSummary {

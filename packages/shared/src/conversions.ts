@@ -45,6 +45,15 @@ export const BatchSchema = z
   .strict();
 export type Batch = z.infer<typeof BatchSchema>;
 
+/**
+ * How the document an item delivered was resolved after being refused as changed in the
+ * target (§8): `detached` or `accepted`, read from the item's register entry. An item whose entry
+ * is gone was detached (the worker replaces a detached tombstone with a new entry). Null: neither.
+ */
+export const ITEM_RESOLUTIONS = ['detached', 'accepted'] as const;
+export const ItemResolutionSchema = z.enum(ITEM_RESOLUTIONS);
+export type ItemResolution = z.infer<typeof ItemResolutionSchema>;
+
 export const ItemSchema = z
   .object({
     id: z.string().uuid(),
@@ -61,6 +70,7 @@ export const ItemSchema = z
     reportKey: z.string().nullable(),
     link: z.string().nullable(),
     redeliverOf: z.string().uuid().nullable(),
+    resolution: ItemResolutionSchema.nullable(),
   })
   .strict();
 export type Item = z.infer<typeof ItemSchema>;

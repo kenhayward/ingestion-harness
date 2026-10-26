@@ -36,6 +36,8 @@ export interface ConversionFacts {
   settleItem(itemId: string, outcome: Item['outcome'], entryId: string | null): Promise<void>;
   /** The register actions recorded on an entry, oldest first. */
   actions(entryId: string): Promise<RegisterAction[]>;
+  /** Removes an entry, as the worker does when a create replaces a detached tombstone. */
+  dropEntry(entryId: string): Promise<void>;
 }
 
 const ADA = { id: '7a1f3c52-1b2e-4c3d-8e4f-5a6b7c8d9e0f', name: 'Ada' };
@@ -121,6 +123,7 @@ export function conversionsContract(
         reportKey: null,
         link: null,
         redeliverOf: null,
+        resolution: null,
       });
       expect(await repo.getItem(a.id)).toEqual(items[0]);
       expect(await repo.getItem(randomUUID())).toBeNull();
@@ -296,6 +299,7 @@ export function conversionsContract(
         reportKey: null,
         link: null,
         redeliverOf: of.id,
+        resolution: null,
       });
       expect(await repo.listItems(batchId)).toEqual([rerun]);
       expect(await facts.job(rerun.jobId!)).toEqual({
@@ -440,6 +444,52 @@ export function conversionsContract(
       });
       expect(await facts.actions(entryId)).toHaveLength(1);
       expect(await accept({ entryId: randomUUID() })).toEqual({ ok: false, reason: 'missing' });
+    });
+
+    it('every item on an entry says how it was resolved', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const later = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const b = item(later.id, a.sourceKey);
+      await repo.addItem(b);
+      const unlinked = item(later.id, 'manuals/other.docx');
+      expect(await repo.addItem(unlinked)).toMatchObject({ item: { resolution: null } });
+      await repo.startBatch(later.id, null);
+      const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
+      await facts.settleItem(a.id, 'changed_in_target', entryId);
+      await facts.settleItem(b.id, 'changed_in_target', entryId);
+      const resolutions = async () => [
+        (await repo.getItem(a.id))?.resolution,
+        (await repo.listItems(later.id)).map((i) => i.resolution),
+      ];
+      expect(await resolutions()).toEqual([null, [null, null]]);
+
+      const seen = (await repo.registerEntry(entryId))!.updatedAt;
+      const accepted = await repo.acceptTargetState({
+        itemId: a.id,
+        entryId,
+        seen,
+        by: ADA,
+        plan: acceptPlanOf,
+        detail: () => 'ok',
+      });
+      if (!accepted.ok) throw new Error(accepted.reason);
+      expect(ItemSchema.parse(accepted.item).resolution).toBe('accepted');
+      expect(await resolutions()).toEqual(['accepted', ['accepted', null]]);
+
+      const detached = await repo.detachRegisterEntry({
+        itemId: b.id,
+        entryId,
+        targetIds: ['manuals'],
+        by: ADA,
+        detail: () => 'gone',
+      });
+      if (!detached.ok) throw new Error(detached.reason);
+      expect(detached.item.resolution).toBe('detached');
+      expect(await resolutions()).toEqual(['detached', ['detached', null]]);
+
+      // The next create of the source replaces the tombstone: the items stay detached.
+      await facts.dropEntry(entryId);
+      expect(await resolutions()).toEqual(['detached', ['detached', null]]);
     });
 
     it('accepts nothing from a preview the entry has moved on from', async () => {

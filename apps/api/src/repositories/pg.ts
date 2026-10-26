@@ -271,10 +271,21 @@ interface ItemRow {
   report_key: string | null;
   link: string | null;
   redeliver_of: string | null;
+  resolution: Item['resolution'];
 }
 
+/**
+ * An item's columns, and its resolution read from its register entry: `detached` or `accepted`
+ * from the entry's state, and `detached` when the entry is gone (the worker replaces a detached
+ * tombstone with a new entry). In a RETURNING list it reads the statement's own register writes.
+ */
 const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
-  job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of`;
+  job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of,
+  CASE WHEN register_entry_id IS NULL THEN NULL
+       ELSE (SELECT CASE WHEN count(*) = 0 THEN 'detached'
+                         WHEN min(r.state) IN ('detached', 'accepted') THEN min(r.state) END
+               FROM decomposition_register r WHERE r.id = register_entry_id)
+  END AS resolution`;
 
 const toItem = (r: ItemRow): Item => ({
   id: r.id,
@@ -291,6 +302,7 @@ const toItem = (r: ItemRow): Item => ({
   reportKey: r.report_key,
   link: r.link,
   redeliverOf: r.redeliver_of,
+  resolution: r.resolution,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */

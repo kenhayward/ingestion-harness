@@ -4,8 +4,15 @@ import { ApiError, type Api } from '../api/client.js';
 import { navigate } from '../router.js';
 import { FilterChips, type FilterChip } from '../ui/FilterChips.js';
 import { StatusPill } from '../ui/StatusPill.js';
-import { ItemActions, type ActionResult } from './ItemActions.js';
-import { OUTCOME, isDone, isUnfinished, needsAttention } from './outcomes.js';
+import { ItemActions, ItemDialog, type ActionResult, type DialogKind } from './ItemActions.js';
+import {
+  OUTCOME,
+  OUTCOME_NOTE,
+  RESOLUTION,
+  isDone,
+  isUnfinished,
+  needsAttention,
+} from './outcomes.js';
 import { ReportPanel } from './ReportPanel.js';
 
 /** How often the view reads the batch again while anything in it is unfinished. */
@@ -25,11 +32,29 @@ const when = (iso: string) =>
 const webLink = (link: string | null) => (link && /^https?:\/\//i.test(link) ? link : null);
 
 /**
+ * The progress said to assistive technology: how many documents are done, and how many need
+ * a look.
+ */
+function progressOf(items: Item[]): string {
+  const total = items.length;
+  const left = items.filter(isUnfinished).length;
+  const attention = items.filter(needsAttention).length;
+  const done =
+    left === 0
+      ? `All ${plural(total, 'document')} done`
+      : `${total - left} of ${plural(total, 'document')} done`;
+  return attention ? `${done}; ${attention} ${attention === 1 ? 'needs' : 'need'} attention` : done;
+}
+
+/**
  * One conversion batch (decomposition phase 3): a row per document with its outcome (§3), its
  * detail, its link in the target and its report, and the row actions that apply. It reads the
  * batch again every few seconds while any document is queued, decomposing or delivering (a
- * `decompose` job has no live events of its own here), and stops once none is. A started batch
- * carries on without the page, so `#/conversion/<batchId>` picks it up after a reload.
+ * `decompose` job has no live events of its own here), and stops once none is; a first read that
+ * fails is tried again on the same beat. Each time the number of unfinished documents changes, a
+ * polite status says how far it has got. A started batch carries on without the page, so
+ * `#/conversion/<batchId>` picks it up after a reload. A row action's dialog is kept here, so a
+ * refresh that moves its row (out of the filter, say) leaves it open, saying what changed.
  */
 export function BatchView({
   api,
@@ -52,6 +77,9 @@ export function BatchView({
   const [report, setReport] = useState<Item | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{ itemId: string; kind: DialogKind } | null>(null);
+  /** The progress announced: set only when the number of unfinished documents changes. */
+  const [progress, setProgress] = useState('');
 
   useEffect(() => {
     api.listConversionTargets().then(setTargets, () => undefined); // labels only: ids will do
@@ -84,12 +112,22 @@ export function BatchView({
     detail.batch.state === 'started' &&
     detail.items.some(isUnfinished) &&
     !loadError?.missing;
+  /** Read again on the same beat: while documents are under way, or after a failed first read. */
+  const polling = running || (detail === null && loadError !== null && !loadError.missing);
+  const started = detail?.batch.state === 'started';
+  const unfinished = detail ? detail.items.filter(isUnfinished).length : -1;
 
   useEffect(() => {
-    if (!running) return;
+    if (started && detail) setProgress(progressOf(detail.items));
+    // Only a change in how many are unfinished is announced, not every refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, unfinished]);
+
+  useEffect(() => {
+    if (!polling) return;
     const timer = setTimeout(() => setReads((n) => n + 1), pollMs);
     return () => clearTimeout(timer);
-  }, [running, settled, pollMs]);
+  }, [polling, settled, pollMs]);
 
   function acted(r: ActionResult) {
     setResult(r);
@@ -124,7 +162,12 @@ export function BatchView({
     return (
       <section className="card" aria-label="Batch">
         {loadError ? (
-          <p role="alert">The batch could not be read: {loadError.message}</p>
+          <>
+            <p role="alert">The batch could not be read: {loadError.message}</p>
+            <button type="button" onClick={() => setReads((n) => n + 1)}>
+              Try again
+            </button>
+          </>
         ) : (
           <p className="muted">Reading the batch…</p>
         )}
@@ -135,6 +178,8 @@ export function BatchView({
   const { batch, items } = detail;
   const target = targets.find((t) => t.id === batch.targetId)?.label ?? batch.targetId;
   const shown = items.filter(FILTERS[filter]);
+  /** The item of the open dialog, as last read (all items: the filter may hide its row). */
+  const open = dialog ? items.find((i) => i.id === dialog.itemId) : undefined;
   const chips: FilterChip<Filter>[] = [
     { value: 'all', label: 'All', count: items.length },
     {
@@ -183,6 +228,15 @@ export function BatchView({
           Documents are under way: this list refreshes every few seconds.
         </p>
       )}
+      <p
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label="Progress"
+      >
+        {progress}
+      </p>
       {loadError && <p role="alert">The batch could not be refreshed: {loadError.message}</p>}
 
       {result && (
@@ -224,7 +278,15 @@ export function BatchView({
                     <td>
                       <StatusPill {...OUTCOME[item.outcome]} />
                     </td>
-                    <td>{item.detail}</td>
+                    <td>
+                      {item.resolution && (
+                        <p className="conversion-resolution">{RESOLUTION[item.resolution]}</p>
+                      )}
+                      {item.detail}
+                      {OUTCOME_NOTE[item.outcome] && (
+                        <p className="muted conversion-hint-tight">{OUTCOME_NOTE[item.outcome]}</p>
+                      )}
+                    </td>
                     <td>
                       <span className="conversion-actions">
                         {link && (
@@ -232,10 +294,20 @@ export function BatchView({
                             Open in the target
                           </a>
                         )}
-                        <button type="button" className="link" onClick={() => setReport(item)}>
+                        <button
+                          type="button"
+                          className="link"
+                          aria-label={`Report for ${item.sourceKey}`}
+                          onClick={() => setReport(item)}
+                        >
                           Report
                         </button>
-                        <ItemActions api={api} item={item} onResult={acted} />
+                        <ItemActions
+                          api={api}
+                          item={item}
+                          onOpen={(kind) => setDialog({ itemId: item.id, kind })}
+                          onResult={acted}
+                        />
                       </span>
                     </td>
                   </tr>
@@ -247,6 +319,16 @@ export function BatchView({
       )}
 
       {report && <ReportPanel api={api} item={report} onClose={() => setReport(null)} />}
+      {open && dialog && (
+        <ItemDialog
+          api={api}
+          item={open}
+          kind={dialog.kind}
+          onClose={() => setDialog(null)}
+          onSwitch={(kind) => setDialog({ itemId: open.id, kind })}
+          onResult={acted}
+        />
+      )}
     </section>
   );
 }

@@ -12654,6 +12654,20 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "resolution": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "detached",
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -12670,7 +12684,8 @@
                     "registerEntryId",
                     "reportKey",
                     "link",
-                    "redeliverOf"
+                    "redeliverOf",
+                    "resolution"
                   ],
                   "additionalProperties": false,
                   "description": "The item."
@@ -13526,7 +13541,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "The batch and its items in upload order: each item's outcome and detail, its link in\nthe target once delivered, and whether its report is ready (`reportKey`).",
+        "description": "The batch and its items in upload order: each item's outcome and detail, its link in\nthe target once delivered, whether its report is ready (`reportKey`), and, for a\ndocument refused as changed in the target, whether it has since been detached or its\ntarget state accepted (`resolution`, read from its register entry).",
         "parameters": [
           {
             "schema": {
@@ -13712,6 +13727,20 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "resolution": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "detached",
+                                  "accepted"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -13728,7 +13757,8 @@
                           "registerEntryId",
                           "reportKey",
                           "link",
-                          "redeliverOf"
+                          "redeliverOf",
+                          "resolution"
                         ],
                         "additionalProperties": false
                       }
@@ -14218,6 +14248,20 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "resolution": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "detached",
+                                  "accepted"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -14234,7 +14278,8 @@
                           "registerEntryId",
                           "reportKey",
                           "link",
-                          "redeliverOf"
+                          "redeliverOf",
+                          "resolution"
                         ],
                         "additionalProperties": false
                       }
@@ -14681,6 +14726,20 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "resolution": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "detached",
+                                  "accepted"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -14697,7 +14756,8 @@
                           "registerEntryId",
                           "reportKey",
                           "link",
-                          "redeliverOf"
+                          "redeliverOf",
+                          "resolution"
                         ],
                         "additionalProperties": false
                       }
@@ -15049,7 +15109,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The item, its detail saying it was detached.",
+            "description": "The item: its detail says it was detached, and its `resolution` is `detached`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15150,6 +15210,20 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "resolution": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "detached",
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -15166,10 +15240,11 @@
                     "registerEntryId",
                     "reportKey",
                     "link",
-                    "redeliverOf"
+                    "redeliverOf",
+                    "resolution"
                   ],
                   "additionalProperties": false,
-                  "description": "The item, its detail saying it was detached."
+                  "description": "The item: its detail says it was detached, and its `resolution` is `detached`."
                 }
               }
             }
@@ -15710,6 +15785,20 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "resolution": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "detached",
+                                "accepted"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -15726,7 +15815,8 @@
                         "registerEntryId",
                         "reportKey",
                         "link",
-                        "redeliverOf"
+                        "redeliverOf",
+                        "resolution"
                       ],
                       "additionalProperties": false
                     },
