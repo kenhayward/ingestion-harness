@@ -22,3 +22,7 @@ docs/design/workbench-redesign/
 docs/design/workbench-tabs/
 docs/design/home/
 apps/web/public/site.webmanifest
+
+# Claude Code's git worktrees and local analysis output
+.claude/
+.ua/
