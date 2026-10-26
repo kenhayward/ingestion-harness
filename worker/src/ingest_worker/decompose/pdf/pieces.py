@@ -132,6 +132,8 @@ class Piece:
     cells: dict[tuple[int, int], list[Line]] | None = None
     picture: LayoutPicture | None = None
     heading_level: int | None = None
+    #: Docling's content layer; only a text item can be furniture.
+    layer: Literal["body", "furniture"] = "body"
 
     def inlines(self) -> list[Text]:
         """The lines joined with single spaces, runs merged by marks."""
@@ -286,7 +288,9 @@ def _piece(index: int, item: object, owned: dict[_Target, list[Char]]) -> Piece 
         return Piece(item.ref, "picture", item.page, item.bbox, lines, None, None, picture=item)
     assert isinstance(item, LayoutText)
     lines = _lines(item.page, chars)
-    return Piece(item.ref, item.label, item.page, item.bbox, lines, item.level, item.group)
+    return Piece(
+        item.ref, item.label, item.page, item.bbox, lines, item.level, item.group, layer=item.layer
+    )
 
 
 def _chars_of(piece: Piece) -> list[Char]:

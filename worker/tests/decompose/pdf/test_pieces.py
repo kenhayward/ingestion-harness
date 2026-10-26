@@ -213,6 +213,17 @@ def test_an_item_without_chars_is_dropped_and_invisible_chars_are_ignored() -> N
     assert len(ledger.entries(0)) == 5
 
 
+def test_furniture_layer_is_kept_on_the_piece() -> None:
+    pieces, _ = attach(
+        [Run("Header", 72, 50), Run("Body", 72, 300)],
+        [
+            docling.text("page_header", 1, bl(60, 35, 200, 60), furniture=True),
+            docling.text("text", 1, bl(60, 285, 200, 310)),
+        ],
+    )
+    assert [p.layer for p in pieces] == ["furniture", "body"]
+
+
 def test_a_scanned_page_is_skipped() -> None:
     page = Page(runs=[Run("ocr", 72, 100, invisible=True)], images=[Img(0, 0, 595, 842)])
     pieces, ledger = attach_text(
