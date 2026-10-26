@@ -22,8 +22,8 @@ export const OPERATOR_REFUSED = 'operators cannot use this';
 /**
  * Every guarded route an operator may call (`METHOD /api/route-pattern`, the pattern as Fastify
  * registered it): signing in and their profile, uploads, jobs with review (but not step re-runs),
- * results and what the upload strip and job panel read. Anything else is a 403, so a route added
- * later is closed to operators until listed here.
+ * results, conversion batches and what the upload strip and job panel read. Anything else is a
+ * 403, so a route added later is closed to operators until listed here.
  */
 const OPERATOR_CALLS = new Set([
   'GET /api/auth/me',
@@ -62,18 +62,36 @@ const OPERATOR_CALLS = new Set([
   'GET /api/results',
   'GET /api/results/:jobId',
   'GET /api/results/:jobId/archive',
+  // Conversion (decomposition phase 3): every role may convert.
+  'GET /api/conversions/targets',
+  'GET /api/conversions/batches',
+  'POST /api/conversions/batches',
+  'GET /api/conversions/batches/:id',
+  'DELETE /api/conversions/batches/:id',
+  'POST /api/conversions/batches/:id/items',
+  'POST /api/conversions/batches/:id/start',
+  'GET /api/conversions/items/:id/report',
+  'POST /api/conversions/items/:id/force',
+  'POST /api/conversions/items/:id/redeliver',
+  'POST /api/conversions/items/:id/detach',
+  'GET /api/conversions/items/:id/accept',
+  'POST /api/conversions/items/:id/accept',
 ]);
 
 export const operatorMayCall = (method: string, route: string) =>
   OPERATOR_CALLS.has(`${method} ${route}`);
 
-/** The web routes an operator may open; the rest (Document types, Ontologies, Workbench) are not. */
+/**
+ * The web routes an operator may open; the rest (Document types, Ontologies, Workbench) are not.
+ * Operators convert documents too (decomposition phase 3, ruling R1).
+ */
 const OPERATOR_PAGES = new Set([
   'home',
   'jobs',
   'review',
   'results',
   'result',
+  'conversion',
   'profile',
   'password',
 ]);

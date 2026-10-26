@@ -177,6 +177,37 @@ def test_new_sources_with_the_same_content_are_decided_one_at_a_time(
     assert seen == ["duplicate"]
 
 
+def test_the_same_source_with_the_same_content_at_once_is_in_flight(
+    store: tuple[PgRegisterStore, str],
+) -> None:
+    """Two first runs of one source key with the same bytes: the second read no row, waits on
+    the first's content lock, then finds the first's entry for its own source: in flight."""
+    pg, sink = store
+    seen: list[str | None] = []
+    deciding = threading.Event()
+
+    def second_run() -> None:
+        with pg.transaction() as tx:
+            by_key = tx.by_key(sink, None, "r1.docx")
+            deciding.set()
+            by_hash = tx.by_hash(sink, None, OLD_SHA)  # waits on the first run's content lock
+            seen.append(decide(by_key, by_hash, OLD_SHA, False, source_key="r1.docx").outcome)
+
+    with pg.transaction() as tx:
+        by_key = tx.by_key(sink, None, "r1.docx")
+        decision = decide(by_key, tx.by_hash(sink, None, OLD_SHA), OLD_SHA, False)
+        assert (decision.outcome, decision.create) == (None, True)
+        thread = threading.Thread(target=second_run)
+        thread.start()
+        assert deciding.wait(5)
+        thread.join(0.5)
+        assert thread.is_alive(), "the second run's by_hash should wait on the content lock"
+        _pending(tx, sink, None, OLD_SHA)
+    thread.join(10)
+
+    assert seen == ["in_flight"]
+
+
 def test_set_failed_settles_only_a_pending_entry(store: tuple[PgRegisterStore, str]) -> None:
     pg, sink = store
     with pg.transaction() as tx:
@@ -189,3 +220,32 @@ def test_set_failed_settles_only_a_pending_entry(store: tuple[PgRegisterStore, s
         assert failed is not None and (failed.state, failed.last_error) == ("failed", error)
         tx.set_failed(first.id, {"code": "other"})
         assert tx.by_key(sink, None, "r1.docx") == failed
+
+
+def test_a_create_replaces_a_detached_tombstone(store: tuple[PgRegisterStore, str]) -> None:
+    """The API's detach leaves a tombstone naming its action; the next create of the source
+    reads it, then replaces it with a new entry (migration 202610252220)."""
+    pg, sink = store
+    with pg.transaction() as tx:
+        first = _pending(tx, sink, None, OLD_SHA)
+    _settle_delivered(sink)
+    action = str(uuid.uuid4())
+    with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn:
+        conn.execute(
+            """UPDATE decomposition_register SET state = 'detached', detach_action_id = %s
+                WHERE id = %s""",
+            (action, first.id),
+        )
+
+    with pg.transaction() as tx:
+        tombstone = tx.by_key(sink, None, "r1.docx")
+        assert tombstone is not None
+        assert (tombstone.state, tombstone.detach_action_id) == ("detached", action)
+        created = _pending(tx, sink, tombstone, OLD_SHA)
+
+    assert created.id != first.id
+    assert (created.state, created.persistent_id, created.last_receipt) == ("pending", None, None)
+    # The detach goes on with the new entry until it has a document (`deliver._run_token`).
+    assert created.detach_action_id == action
+    with pg.transaction() as tx:
+        assert tx.by_key(sink, None, "r1.docx") == created

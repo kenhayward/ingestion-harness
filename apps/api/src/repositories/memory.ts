@@ -23,7 +23,28 @@ import {
   pageOfJobs,
   type Creator,
   type JobPage,
+  type Batch,
+  type BatchSummary,
+  type Item,
 } from '@ih/shared';
+import { acceptedReceipt } from '../conversions/accept.js';
+import {
+  emptyCounts,
+  type AcceptResult,
+  type AddItemResult,
+  type DetachResult,
+  type DiscardBatchResult,
+  type NewBatch,
+  type NewItem,
+  type Accept,
+  type Detach,
+  type RegisterAction,
+  type Rerun,
+  type RerunResult,
+  RUNNING_OUTCOMES,
+  isUnversioned,
+  type StartBatchResult,
+} from '../conversions/repo.js';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -59,9 +80,14 @@ import {
   type JobDelivery,
   type JobFinish,
   type RegisterEntry,
+  type ItemSettlement,
   type RegisterSettlement,
+  SETTLEABLE_ITEM,
   type EventFilter,
 } from './types.js';
+
+/** A conversion item as stored: its resolution is read from its register entry. */
+type StoredItem = Omit<Item, 'resolution' | 'unversioned'>;
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
@@ -114,7 +140,7 @@ export class MemoryRepo implements IngestionRepo {
     string,
     { graphIri: string; version: number; jobId: string; targetId: string }
   >();
-  /** Document-less withdraw/republish jobs queued (ADR 0011 step 7). */
+  /** Document-less withdraw/republish/rebuild/decompose jobs queued (ADR 0011 step 7). */
   readonly backgroundJobs: {
     id: string;
     task: BackgroundTask;
@@ -123,6 +149,8 @@ export class MemoryRepo implements IngestionRepo {
     params: unknown;
     status: JobStatus;
     createdBy: string | null;
+    /** jobs.created_by_user: set by decompose jobs (tests pushing their own may leave it out). */
+    createdByUser?: string | null;
   }[] = [];
   /** job_events: what the API writes itself (cancellations) and what tests add for the worker. */
   readonly events = new Map<
@@ -455,7 +483,13 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async getJobParams(id: string): Promise<Record<string, unknown> | null> {
-    return this.jobParams.get(id) ?? this.exportJobs.get(id)?.params ?? null;
+    const background = this.backgroundJobs.find((j) => j.id === id)?.params;
+    return (
+      this.jobParams.get(id) ??
+      this.exportJobs.get(id)?.params ??
+      (background as Record<string, unknown> | undefined) ??
+      null
+    );
   }
 
   async getDocumentObject(jobId: string): Promise<(StoredObject & { filename: string }) | null> {
@@ -647,7 +681,12 @@ export class MemoryRepo implements IngestionRepo {
     });
   }
 
-  private queueBackground(task: BackgroundTask, params: unknown, by: string | null): string {
+  private queueBackground(
+    task: BackgroundTask,
+    params: unknown,
+    by: string | null,
+    byUser: string | null = null,
+  ): string {
     const id = randomUUID();
     const { priority, maxAttempts } = BACKGROUND_JOBS[task];
     this.backgroundJobs.push({
@@ -658,6 +697,7 @@ export class MemoryRepo implements IngestionRepo {
       params,
       status: 'queued',
       createdBy: by,
+      ...(byUser !== null ? { createdByUser: byUser } : {}),
     });
     return id;
   }
@@ -708,7 +748,10 @@ export class MemoryRepo implements IngestionRepo {
   }
 
   async withdrawalStatus(): Promise<WithdrawalStatus> {
-    const count = (s: JobStatus) => this.backgroundJobs.filter((j) => j.status === s).length;
+    const count = (s: JobStatus) =>
+      this.backgroundJobs.filter(
+        (j) => (j.task === 'withdraw' || j.task === 'republish') && j.status === s,
+      ).length;
     return {
       queued: count('queued'),
       running: count('running'),
@@ -1072,7 +1115,7 @@ export class MemoryRepo implements IngestionRepo {
   async applyDeliveryUpdate(
     deliveryId: string,
     update: DeliveryUpdate,
-    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+    finish: (deliveries: JobDelivery[], job: { task: string }) => JobFinish | null,
   ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }> {
     const d = this.deliveries.get(deliveryId);
     if (!d) return { outcome: 'unknown', finished: null };
@@ -1086,10 +1129,11 @@ export class MemoryRepo implements IngestionRepo {
       lastSequence: update.sequence,
       updatedAt: new Date().toISOString(),
     });
-    const finishedAs = finish(await this.deliveriesOf(d.jobId));
-    if (!finishedAs) return { outcome: 'applied', finished: null };
     const job = this.jobs.get(d.jobId);
     const background = this.backgroundJobs.find((j) => j.id === d.jobId);
+    const task = background?.task ?? job?.task ?? 'process';
+    const finishedAs = finish(await this.deliveriesOf(d.jobId), { task });
+    if (!finishedAs) return { outcome: 'applied', finished: null };
     const outcome = background ? backgroundFinish(finishedAs) : finishedAs;
     const status = job?.status ?? background?.status;
     if (status !== 'delivering') return { outcome: 'applied', finished: null };
@@ -1137,6 +1181,8 @@ export class MemoryRepo implements IngestionRepo {
 
   /** The decomposition register, by entry id (the worker writes it; tests seed it). */
   readonly register = new Map<string, RegisterEntry>();
+  /** What people did to register entries (register_actions), oldest first. */
+  readonly registerActions: RegisterAction[] = [];
 
   /** Test helper: an entry as the worker writes it before delivering (`pending`). */
   putRegisterEntry(
@@ -1162,6 +1208,7 @@ export class MemoryRepo implements IngestionRepo {
       createdAt: now,
       updatedAt: now,
       deliveredAt: null,
+      detachActionId: null,
     };
     this.register.set(row.id, row);
     return { ...row };
@@ -1208,10 +1255,19 @@ export class MemoryRepo implements IngestionRepo {
   async settleRegisterEntry(
     deliveryId: string,
     s: RegisterSettlement,
+    item: (before: RegisterEntry) => ItemSettlement,
   ): Promise<'applied' | 'stale' | 'unknown'> {
     const e = [...this.register.values()].find((r) => r.deliveryId === deliveryId);
     if (!e) return 'unknown';
     if (e.state !== 'pending') return 'stale';
+    const settled = item({ ...e });
+    const mine = [...this.conversionItems.values()].find(
+      (i) =>
+        i.batchId === e.batchId &&
+        i.sourceKey === e.sourceKey &&
+        SETTLEABLE_ITEM.includes(i.outcome),
+    );
+    if (mine) Object.assign(mine, { ...settled, registerEntryId: e.id });
     const now = new Date().toISOString();
     Object.assign(e, {
       state: s.state,
@@ -1224,9 +1280,282 @@ export class MemoryRepo implements IngestionRepo {
     return 'applied';
   }
 
+  /** Conversion batches (decomposition_batches), in creation order. */
+  readonly conversionBatches = new Map<string, Batch>();
+  /**
+   * Their items (decomposition_items), in upload order; tests set outcomes and reports. An item's
+   * `resolution` is not stored: it is read from its register entry (`withResolution`).
+   */
+  readonly conversionItems = new Map<string, StoredItem>();
+
+  /** The item as the API shows it: its resolution read from its register entry (PgRepo's too). */
+  private withResolution(item: StoredItem): Item {
+    let resolution: Item['resolution'] = null;
+    let unversioned = false;
+    if (item.registerEntryId) {
+      const entry = this.register.get(item.registerEntryId);
+      unversioned = entry !== undefined && isUnversioned(entry);
+      const state = entry?.state;
+      // Gone: a create replaced the detached tombstone (worker `register.put_pending`).
+      if (state === undefined || state === 'detached') resolution = 'detached';
+      else if (state === 'accepted') resolution = 'accepted';
+      else if (item.outcome === 'changed_in_target' && entry) {
+        // The refusal this item saw: its own delivery's (the entry names its batch), or one the
+        // entry already held when its batch started (the register check refused it at once).
+        const startedAt = this.conversionBatches.get(item.batchId)?.startedAt ?? null;
+        const own =
+          state === 'changed' &&
+          (entry.batchId === item.batchId ||
+            startedAt === null ||
+            Date.parse(entry.updatedAt) <= Date.parse(startedAt));
+        if (!own) resolution = 'superseded';
+      }
+    }
+    return structuredClone({ ...item, resolution, unversioned });
+  }
+
+  async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
+    const batch: Batch = {
+      id: randomUUID(),
+      targetId,
+      createdBy: { ...createdBy },
+      state: 'open',
+      force,
+      createdAt: new Date().toISOString(),
+      startedAt: null,
+    };
+    this.conversionBatches.set(batch.id, batch);
+    return structuredClone(batch);
+  }
+
+  async getBatch(id: string): Promise<Batch | null> {
+    const batch = this.conversionBatches.get(id);
+    return batch ? structuredClone(batch) : null;
+  }
+
+  async listBatches(limit: number): Promise<BatchSummary[]> {
+    return [...this.conversionBatches.values()]
+      .filter((b) => b.state !== 'discarded')
+      .reverse()
+      .slice(0, limit)
+      .map((b) => {
+        const items = [...this.conversionItems.values()].filter((i) => i.batchId === b.id);
+        const counts = emptyCounts();
+        for (const i of items) counts[i.outcome] += 1;
+        return { ...structuredClone(b), itemCount: items.length, counts };
+      });
+  }
+
+  async listItems(batchId: string): Promise<Item[]> {
+    return [...this.conversionItems.values()]
+      .filter((i) => i.batchId === batchId)
+      .map((i) => this.withResolution(i));
+  }
+
+  async itemByDelivery(deliveryId: string): Promise<Item | null> {
+    const jobId = this.deliveries.get(deliveryId)?.jobId;
+    const item = jobId
+      ? [...this.conversionItems.values()].find((i) => i.jobId === jobId)
+      : undefined;
+    return item ? this.withResolution(item) : null;
+  }
+
+  async getItem(id: string): Promise<Item | null> {
+    const item = this.conversionItems.get(id);
+    return item ? this.withResolution(item) : null;
+  }
+
+  async addItem(item: NewItem): Promise<AddItemResult> {
+    const batch = this.conversionBatches.get(item.batchId);
+    if (!batch) return { ok: false, reason: 'missing' };
+    if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+    const items = [...this.conversionItems.values()];
+    if (items.some((i) => i.batchId === item.batchId && i.sourceKey === item.sourceKey)) {
+      return { ok: false, reason: 'duplicate' };
+    }
+    const row: StoredItem = {
+      ...item,
+      jobId: null,
+      outcome: 'queued',
+      detail: null,
+      registerEntryId: null,
+      reportKey: null,
+      link: null,
+      redeliverOf: null,
+    };
+    this.conversionItems.set(row.id, row);
+    return { ok: true, item: this.withResolution(row) };
+  }
+
+  async startBatch(id: string, by: Creator | null): Promise<StartBatchResult> {
+    const batch = this.conversionBatches.get(id);
+    if (!batch) return { ok: false, reason: 'missing' };
+    if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+    const items = [...this.conversionItems.values()].filter((i) => i.batchId === id);
+    if (!items.length) return { ok: false, reason: 'empty' };
+    const jobIds = items.map((item) => {
+      item.jobId = this.queueBackground(
+        'decompose',
+        {
+          batchId: id,
+          itemId: item.id,
+          targetId: batch.targetId,
+          sourceKey: item.sourceKey,
+          force: batch.force,
+        },
+        by?.name ?? null,
+        by?.userId ?? null,
+      );
+      return item.jobId;
+    });
+    Object.assign(batch, { state: 'started', startedAt: new Date().toISOString() });
+    return { ok: true, batch: structuredClone(batch), jobIds };
+  }
+
+  async discardBatch(id: string): Promise<DiscardBatchResult> {
+    const batch = this.conversionBatches.get(id);
+    if (!batch) return { ok: false, reason: 'missing' };
+    if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+    batch.state = 'discarded';
+    const objectKeys = [...this.conversionItems.values()]
+      .filter((i) => i.batchId === id)
+      .map((i) => i.objectKey);
+    return { ok: true, objectKeys };
+  }
+
+  async rerunItem({
+    batchId,
+    itemId,
+    of,
+    targetId,
+    createdBy,
+    by,
+    source,
+  }: Rerun): Promise<RerunResult> {
+    const running = [...this.conversionItems.values()].some(
+      (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
+    );
+    if (running) return { ok: false, reason: 'running' };
+    const batch: Batch = {
+      id: batchId,
+      targetId,
+      createdBy: { ...createdBy },
+      state: 'started',
+      force: true,
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+    };
+    const item: StoredItem = {
+      id: itemId,
+      batchId,
+      sourceKey: of.sourceKey,
+      ...source,
+      jobId: null,
+      outcome: 'queued',
+      detail: null,
+      registerEntryId: null,
+      reportKey: null,
+      link: null,
+      redeliverOf: of.id,
+    };
+    item.jobId = this.queueBackground(
+      'decompose',
+      { batchId, itemId, targetId, sourceKey: of.sourceKey, force: true },
+      by?.name ?? null,
+      by?.userId ?? null,
+    );
+    this.conversionBatches.set(batchId, batch);
+    this.conversionItems.set(itemId, item);
+    return { ok: true, batch: structuredClone(batch), item: this.withResolution(item) };
+  }
+
+  async registerEntry(id: string): Promise<RegisterEntry | null> {
+    const e = this.register.get(id);
+    return e ? structuredClone(e) : null;
+  }
+
+  async detachRegisterEntry({
+    itemId,
+    entryId,
+    targetIds,
+    by,
+    detail,
+  }: Detach): Promise<DetachResult> {
+    const entry = this.register.get(entryId);
+    if (!entry || entry.state === 'detached') return { ok: false, reason: 'missing' };
+    const running = [...this.conversionItems.values()].some(
+      (i) =>
+        i.sourceKey === entry.sourceKey &&
+        RUNNING_OUTCOMES.includes(i.outcome) &&
+        targetIds.includes(this.conversionBatches.get(i.batchId)?.targetId ?? ''),
+    );
+    if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
+    // Only a document refused as changed in the target, or one whose versions were never
+    // recorded, is detached: never a live one.
+    if (entry.state !== 'changed' && !isUnversioned(entry)) {
+      return { ok: false, reason: 'not_refused' };
+    }
+    const action: RegisterAction = {
+      id: randomUUID(),
+      entryId,
+      action: 'detach',
+      by: { ...by },
+      at: new Date().toISOString(),
+      details: { persistentId: entry.persistentId, sourceKey: entry.sourceKey },
+    };
+    this.registerActions.push(action);
+    Object.assign(entry, {
+      state: 'detached',
+      detachActionId: action.id,
+      updatedAt: laterThan(entry.updatedAt),
+    });
+    const item = this.conversionItems.get(itemId)!;
+    item.detail = detail(entry);
+    return { ok: true, entry: structuredClone(entry), item: this.withResolution(item) };
+  }
+
+  async acceptTargetState({
+    itemId,
+    entryId,
+    seen,
+    by,
+    plan,
+    detail,
+  }: Accept): Promise<AcceptResult> {
+    const entry = this.register.get(entryId);
+    if (!entry) return { ok: false, reason: 'missing' };
+    if (entry.updatedAt !== seen) return { ok: false, reason: 'stale' };
+    const accepted = plan(structuredClone(entry));
+    if (accepted.reason !== null) {
+      return { ok: false, reason: 'not_acceptable', why: accepted.reason };
+    }
+    Object.assign(entry, {
+      state: 'accepted',
+      lastReceipt: acceptedReceipt(entry.lastReceipt!, accepted.components),
+      lastError: null,
+      updatedAt: laterThan(entry.updatedAt),
+    });
+    this.registerActions.push({
+      id: randomUUID(),
+      entryId,
+      action: 'accept',
+      by: { ...by },
+      at: new Date().toISOString(),
+      details: { changed: accepted.changed },
+    });
+    const item = this.conversionItems.get(itemId)!;
+    item.detail = detail(entry);
+    return { ok: true, item: this.withResolution(item), changed: accepted.changed };
+  }
+
   private update(id: string, changes: Partial<JobSummary>): JobSummary {
     const updated = { ...this.jobs.get(id)!, ...changes, updatedAt: new Date().toISOString() };
     this.jobs.set(id, updated);
     return updated;
   }
+}
+
+/** A time after `previous` (an ISO time): now, or a millisecond later when now is no later. */
+function laterThan(previous: string): string {
+  return new Date(Math.max(Date.now(), Date.parse(previous) + 1)).toISOString();
 }

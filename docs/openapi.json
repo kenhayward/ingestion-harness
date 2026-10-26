@@ -11849,6 +11849,4297 @@
         }
       }
     },
+    "/api/conversions/targets": {
+      "get": {
+        "operationId": "listConversionTargets",
+        "summary": "List the targets that take documents",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "The publishing targets whose sink takes decomposed documents, by label: what a batch\nmay deliver to. Each has its id, its label and its sink's name.",
+        "responses": {
+          "200": {
+            "description": "The targets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "sinkName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "sinkName"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "targets"
+                  ],
+                  "description": "The targets."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/batches": {
+      "post": {
+        "operationId": "createConversionBatch",
+        "summary": "Start a batch of documents to convert",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "An open batch for one target that takes documents (`GET /api/conversions/targets`).\nUpload its files with `POST /api/conversions/batches/{id}/items`, then start it.\n`force` makes every item an explicit update: an already loaded document is updated,\nand a duplicate is created (the target's version check still applies).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targetId": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "targetId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The open batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "createdBy": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "started",
+                        "discarded"
+                      ]
+                    },
+                    "force": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "targetId",
+                    "createdBy",
+                    "state",
+                    "force",
+                    "createdAt",
+                    "startedAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The open batch."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ targetId, force? }`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The body is not `{ targetId, force? }`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No such target, or its sink takes no documents.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "target_takes_no_documents"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "No such target, or its sink takes no documents."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listConversionBatches",
+        "summary": "List batches",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "The newest 100 batches, open or started (discarded ones are left out),\nnewest first, each with its number of items and how many have each outcome.",
+        "responses": {
+          "200": {
+            "description": "The batches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "targetId": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                          },
+                          "createdBy": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "name": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "started",
+                              "discarded"
+                            ]
+                          },
+                          "force": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "itemCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "counts": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string",
+                              "enum": [
+                                "queued",
+                                "decomposing",
+                                "delivering",
+                                "created",
+                                "updated",
+                                "already_loaded",
+                                "duplicate",
+                                "in_flight",
+                                "changed_in_target",
+                                "read_back_mismatch",
+                                "unresolved",
+                                "failed"
+                              ]
+                            },
+                            "additionalProperties": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "required": [
+                              "queued",
+                              "decomposing",
+                              "delivering",
+                              "created",
+                              "updated",
+                              "already_loaded",
+                              "duplicate",
+                              "in_flight",
+                              "changed_in_target",
+                              "read_back_mismatch",
+                              "unresolved",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "targetId",
+                          "createdBy",
+                          "state",
+                          "force",
+                          "createdAt",
+                          "startedAt",
+                          "itemCount",
+                          "counts"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "batches"
+                  ],
+                  "description": "The batches."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/batches/{id}/items": {
+      "post": {
+        "operationId": "uploadConversionItem",
+        "summary": "Upload one file to an open batch",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "One Word document (`.docx`) per request, so a large folder never meets the upload\nlimit in one go. `sourceKey` names the document: the file's path in its folder, or\nits name. It must be new in the batch: the same source key twice is refused (409).\nSend it **before** the file part. A source key is relative and `/`-separated\n(at most 1024 characters; no control characters, backslashes, empty,\n`.` or `..` parts, or `/` at either end) and is stored in its NFC form.\nAnother is refused (422 `bad_source_key`), as is a file name with a control\ncharacter (422 `bad_filename`).\n\nThe file's bytes decide what it is, never its name. A file that isn't a Word document\n(a PDF, a `.doc`, a damaged file) is refused (415) and one with tracked changes\n(422); the batch stays open for the others.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceKey": {
+                    "type": "string",
+                    "description": "The file's path in its folder, or its name."
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The Word document. Send it last."
+                  }
+                },
+                "required": [
+                  "sourceKey",
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The batch id."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "batchId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "sourceKey": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "filename": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "contentSha256": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "objectKey": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "jobId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "decomposing",
+                        "delivering",
+                        "created",
+                        "updated",
+                        "already_loaded",
+                        "duplicate",
+                        "in_flight",
+                        "changed_in_target",
+                        "read_back_mismatch",
+                        "unresolved",
+                        "failed"
+                      ]
+                    },
+                    "detail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "registerEntryId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reportKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "link": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "redeliverOf": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "resolution": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "detached",
+                            "accepted",
+                            "superseded"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unversioned": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "batchId",
+                    "sourceKey",
+                    "filename",
+                    "contentSha256",
+                    "sizeBytes",
+                    "objectKey",
+                    "jobId",
+                    "outcome",
+                    "detail",
+                    "registerEntryId",
+                    "reportKey",
+                    "link",
+                    "redeliverOf",
+                    "resolution",
+                    "unversioned"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The item."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A missing `file` part (the part must be named `file`) or `sourceKey`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "A missing `file` part (the part must be named `file`) or `sourceKey`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such batch."
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The request is not `multipart/form-data`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The request is not `multipart/form-data`."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The batch is not open, or the source key is already in it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The batch is not open, or the source key is already in it."
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The file is larger than the upload limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The file is larger than the upload limit."
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "`file is not a Word document (.docx)`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`file is not a Word document (.docx)`."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, `the Word document is too large to check (over 64 MiB unpacked)`, a source key the rule refuses (`code: bad_source_key`) or a file name with a control character (`code: bad_filename`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "bad_source_key",
+                        "bad_filename"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, `the Word document is too large to check (over 64 MiB unpacked)`, a source key the rule refuses (`code: bad_source_key`) or a file name with a control character (`code: bad_filename`)."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/batches/{id}/start": {
+      "post": {
+        "operationId": "startConversionBatch",
+        "summary": "Start converting a batch",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "Queues one `decompose` job per item, at the priority of an upload, and closes the\nbatch to more files. Each job decomposes its file and delivers it to the batch's\ntarget; follow the items with `GET /api/conversions/batches/{id}`. The batch carries\non without the page that started it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The batch id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The started batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "targetId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                    },
+                    "createdBy": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "name": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "started",
+                        "discarded"
+                      ]
+                    },
+                    "force": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "targetId",
+                    "createdBy",
+                    "state",
+                    "force",
+                    "createdAt",
+                    "startedAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The started batch."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such batch."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The batch was started or discarded already.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The batch was started or discarded already."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The batch has no items.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "empty_batch"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The batch has no items."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/batches/{id}": {
+      "delete": {
+        "operationId": "discardConversionBatch",
+        "summary": "Discard an open batch",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "Throws away a batch that was never started, with its uploaded files. A started batch\nhas jobs and is kept.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The batch id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Discarded."
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such batch."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The batch was started, or discarded already.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The batch was started, or discarded already."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getConversionBatch",
+        "summary": "Get a batch and its items",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "The batch and its items in upload order: each item's outcome and detail, its link in\nthe target once delivered, whether its report is ready (`reportKey`), and, for a\ndocument refused as changed in the target, whether it has since been detached or its\ntarget state accepted (`resolution`, read from its register entry).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The batch id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "targetId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "createdBy": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "started",
+                            "discarded"
+                          ]
+                        },
+                        "force": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "targetId",
+                        "createdBy",
+                        "state",
+                        "force",
+                        "createdAt",
+                        "startedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "batchId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "sourceKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "filename": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "contentSha256": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "sizeBytes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "objectKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "jobId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "decomposing",
+                              "delivering",
+                              "created",
+                              "updated",
+                              "already_loaded",
+                              "duplicate",
+                              "in_flight",
+                              "changed_in_target",
+                              "read_back_mismatch",
+                              "unresolved",
+                              "failed"
+                            ]
+                          },
+                          "detail": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "registerEntryId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reportKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "link": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "redeliverOf": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resolution": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "detached",
+                                  "accepted",
+                                  "superseded"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unversioned": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "batchId",
+                          "sourceKey",
+                          "filename",
+                          "contentSha256",
+                          "sizeBytes",
+                          "objectKey",
+                          "jobId",
+                          "outcome",
+                          "detail",
+                          "registerEntryId",
+                          "reportKey",
+                          "link",
+                          "redeliverOf",
+                          "resolution",
+                          "unversioned"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "batch",
+                    "items"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The batch."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such batch."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/items/{id}/report": {
+      "get": {
+        "operationId": "getConversionReport",
+        "summary": "Get an item's decomposition report",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "What decomposing the item's file noticed (the report's flags), as the worker stored it\nbeside the file. Not found until the item has been decomposed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The item id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {},
+                  "description": "The report."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item, or no report yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such item, or no report yet."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/items/{id}/force": {
+      "post": {
+        "operationId": "forceLoadConversionItem",
+        "summary": "Force-load an item",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "Delivers the item's stored file again as an explicit update, in a new batch of one that\nstarts at once: an already loaded document is updated (after a better decomposer, say),\nand a duplicate is created as a second document of its own. The target's version check\nstill applies. The new item keeps the source key and names the item it reruns\n(`redeliverOf`). Refused while an earlier rerun of the item is unfinished, so a\nrepeated request makes one batch.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The item id."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new batch of one, started, and its item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "targetId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "createdBy": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "started",
+                            "discarded"
+                          ]
+                        },
+                        "force": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "targetId",
+                        "createdBy",
+                        "state",
+                        "force",
+                        "createdAt",
+                        "startedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "batchId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "sourceKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "filename": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "contentSha256": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "sizeBytes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "objectKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "jobId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "decomposing",
+                              "delivering",
+                              "created",
+                              "updated",
+                              "already_loaded",
+                              "duplicate",
+                              "in_flight",
+                              "changed_in_target",
+                              "read_back_mismatch",
+                              "unresolved",
+                              "failed"
+                            ]
+                          },
+                          "detail": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "registerEntryId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reportKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "link": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "redeliverOf": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resolution": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "detached",
+                                  "accepted",
+                                  "superseded"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unversioned": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "batchId",
+                          "sourceKey",
+                          "filename",
+                          "contentSha256",
+                          "sizeBytes",
+                          "objectKey",
+                          "jobId",
+                          "outcome",
+                          "detail",
+                          "registerEntryId",
+                          "reportKey",
+                          "link",
+                          "redeliverOf",
+                          "resolution",
+                          "unversioned"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "batch",
+                    "items"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The new batch of one, started, and its item."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such item."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The item never started, is still running, or a rerun of it is still running (a repeated request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "not_finished"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The item never started, is still running, or a rerun of it is still running (a repeated request)."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The batch's target no longer takes documents.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "target_takes_no_documents"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The batch's target no longer takes documents."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/items/{id}/redeliver": {
+      "post": {
+        "operationId": "redeliverConversionItem",
+        "summary": "Redeliver an item's document",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "Updates the item's document explicitly, in a new batch of one that starts at once\n(forced; the target's version check still applies). Send no body to deliver the stored\nfile again, or a `multipart/form-data` body with one `file` part, a replacement Word\ndocument (`.docx`): it keeps the item's source key, so it updates the same document,\nwhich is how a renamed or moved file updates the right one. Only an item with a\nregister entry has a document to redeliver. Refused while an earlier rerun of the item\nis unfinished, so a repeated request makes one batch and stores one file.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The replacement Word document (optional)."
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The item id."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new batch of one, started, and its item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "targetId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "createdBy": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "started",
+                            "discarded"
+                          ]
+                        },
+                        "force": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "targetId",
+                        "createdBy",
+                        "state",
+                        "force",
+                        "createdAt",
+                        "startedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "batchId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "sourceKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "filename": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "contentSha256": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "sizeBytes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "objectKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "jobId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "decomposing",
+                              "delivering",
+                              "created",
+                              "updated",
+                              "already_loaded",
+                              "duplicate",
+                              "in_flight",
+                              "changed_in_target",
+                              "read_back_mismatch",
+                              "unresolved",
+                              "failed"
+                            ]
+                          },
+                          "detail": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "registerEntryId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reportKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "link": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "redeliverOf": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resolution": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "detached",
+                                  "accepted",
+                                  "superseded"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unversioned": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "batchId",
+                          "sourceKey",
+                          "filename",
+                          "contentSha256",
+                          "sizeBytes",
+                          "objectKey",
+                          "jobId",
+                          "outcome",
+                          "detail",
+                          "registerEntryId",
+                          "reportKey",
+                          "link",
+                          "redeliverOf",
+                          "resolution",
+                          "unversioned"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "batch",
+                    "items"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The new batch of one, started, and its item."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A multipart body whose part is not named `file`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "A multipart body whose part is not named `file`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such item."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "not_finished",
+                        "no_register_entry"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), or it has no register entry (`no_register_entry`: never delivered, or detached)."
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The replacement is larger than the upload limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The replacement is larger than the upload limit."
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "`file is not a Word document (.docx)`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`file is not a Word document (.docx)`."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, a replacement whose name holds a control character (`bad_filename`), or a target that no longer takes documents.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "bad_filename",
+                        "target_takes_no_documents"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "`the Word document has tracked changes: accept or reject them in Word, then upload again`, a replacement whose name holds a control character (`bad_filename`), or a target that no longer takes documents."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/items/{id}/detach": {
+      "post": {
+        "operationId": "detachConversionItem",
+        "summary": "Detach an item's document",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight, and unless the\ndocument is refused as changed in the target or its versions were never recorded (the\nitem's `unversioned`) (`not_refused`), so a live document is never detached, from\nan old row or a stale page. Recorded with who and when; the item's detail says it was\ndetached.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The item id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item: its detail says it was detached, and its `resolution` is `detached`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "batchId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "sourceKey": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "filename": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "contentSha256": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "objectKey": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "jobId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "decomposing",
+                        "delivering",
+                        "created",
+                        "updated",
+                        "already_loaded",
+                        "duplicate",
+                        "in_flight",
+                        "changed_in_target",
+                        "read_back_mismatch",
+                        "unresolved",
+                        "failed"
+                      ]
+                    },
+                    "detail": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "registerEntryId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reportKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "link": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "redeliverOf": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "resolution": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "detached",
+                            "accepted",
+                            "superseded"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unversioned": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "batchId",
+                    "sourceKey",
+                    "filename",
+                    "contentSha256",
+                    "sizeBytes",
+                    "objectKey",
+                    "jobId",
+                    "outcome",
+                    "detail",
+                    "registerEntryId",
+                    "reportKey",
+                    "link",
+                    "redeliverOf",
+                    "resolution",
+                    "unversioned"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The item: its detail says it was detached, and its `resolution` is `detached`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such item."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target nor unversioned (`not_refused`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "no_register_entry",
+                        "in_flight",
+                        "not_refused"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target nor unversioned (`not_refused`)."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/items/{id}/accept": {
+      "get": {
+        "operationId": "previewAcceptTargetState",
+        "summary": "Preview accepting the target's state",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "What accepting the target's current state would record for a document refused as\nchanged in the target: each component the refusal listed, with its version when it\nwas delivered (`expected`) and now (`actual`, null when it is gone). The target does\nnot say who changed it. `acceptable` is false, with the `reason`, when it can't be\naccepted here: the document is not changed in the target, the refusal lists only some\nof the changes, or the document is gone. Detach it instead. `updatedAt` says which\nstate of the register entry this is; the confirm sends it back as `seen`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The item id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "expected": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "expected",
+                          "actual"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "acceptable": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "changed",
+                    "acceptable",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The preview."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "change your one-time password first"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such item."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "acceptTargetState",
+        "summary": "Accept the target's state",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "Takes the target's current versions (as the preview lists them) into the register\nentry, so that the next run of the source is an update that goes through, even from the\nsame file, **overwriting the edits made in the target**. The body must be\n`{ \"confirm\": true, \"seen\": <the preview's updatedAt> }`: if the entry changed since\nthat preview, the confirm is refused (409 `stale_preview`) and the preview must be\nlooked at again. Recorded with who, when and the components. If the document changes\nagain before the next run, that update is refused again. Refused (422) where the\npreview says it can't be accepted.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "seen": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "confirm",
+                  "seen"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The item id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item and the components accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "item": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "batchId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "sourceKey": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "filename": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "contentSha256": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "sizeBytes": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "objectKey": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "jobId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "decomposing",
+                            "delivering",
+                            "created",
+                            "updated",
+                            "already_loaded",
+                            "duplicate",
+                            "in_flight",
+                            "changed_in_target",
+                            "read_back_mismatch",
+                            "unresolved",
+                            "failed"
+                          ]
+                        },
+                        "detail": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "registerEntryId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reportKey": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "link": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "redeliverOf": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "resolution": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "detached",
+                                "accepted",
+                                "superseded"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "unversioned": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "batchId",
+                        "sourceKey",
+                        "filename",
+                        "contentSha256",
+                        "sizeBytes",
+                        "objectKey",
+                        "jobId",
+                        "outcome",
+                        "detail",
+                        "registerEntryId",
+                        "reportKey",
+                        "link",
+                        "redeliverOf",
+                        "resolution",
+                        "unversioned"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "changed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "expected": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "expected",
+                          "actual"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "item",
+                    "changed"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The item and the components accepted."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ confirm: true, seen }`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "The body is not `{ confirm: true, seen }`."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such item."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The item has no register entry (`no_register_entry`), or the entry changed since the preview (`stale_preview`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "no_register_entry",
+                        "stale_preview"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The item has no register entry (`no_register_entry`), or the entry changed since the preview (`stale_preview`)."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "It cannot be accepted here: the error says why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "not_acceptable"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "It cannot be accepted here: the error says why."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs": {
       "get": {
         "operationId": "listJobs",
@@ -86884,6 +91175,10 @@
       "description": "Upload a PDF to process it with a document type. The API stores the file in the inbox\nbucket, records a document and queues a job; the worker does the rest."
     },
     {
+      "name": "Conversions",
+      "description": "Convert Word documents into decomposed documents for a target that takes them. A batch is\none upload of files, or of a folder, to one target; each file is an item that a\n`decompose` job decomposes and delivers. Operators, designers and admins may convert."
+    },
+    {
       "name": "Jobs",
       "description": "A job processes one document with one version of a document type. Jobs move through\n`queued`, `running` and then `succeeded`, `awaiting_review`, `needs_review`\n(a processing problem for an operator), `failed` (after retries), `rejected` or\n`cancelled`. See the [job lifecycle](https://github.com/kenhayward/ingestion-harness/blob/main/docs/architecture.md#job-lifecycle)."
     },
@@ -86993,6 +91288,7 @@
       "name": "Pipeline",
       "tags": [
         "Documents",
+        "Conversions",
         "Jobs",
         "Review & steps",
         "Results"

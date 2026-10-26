@@ -318,8 +318,9 @@ def decomposition_idempotency_key(
     force_batch_id: str | None,
 ) -> str:
     """What a decomposition delivery is about (as TypeScript's decompositionIdempotencyKey): one
-    source, the document it replaces (None: a new one), the decomposer version, and the batch
-    that forced a redelivery (None: none)."""
+    source, the document it replaces (None: a new one), the decomposer version, and the run's
+    token (None: none), which `decompose.deliver._run_token` picks (spec §9). The parameter
+    keeps its first name, `force_batch_id`."""
     parts = ["decomposition", source_sha256, persistent_id or "", str(decomposer_version)]
     parts.append(force_batch_id or "")
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()

@@ -10,6 +10,8 @@
  *   runs bucket:    {jobId}/draft-log.json   (a draft job's model log: prompts, replies, tools)
  *   runs bucket:    ontologies/{ontologyId}/sources/{sha256}.{ext}   (imported ontology files)
  *   runs bucket:    ontologies/{ontologyId}/v{version}/normalized.nt   (ontology task)
+ *   runs bucket:    decompositions/{batchId}/{itemId}.{ext}   (a batch item's uploaded file)
+ *   runs bucket:    decompositions/{batchId}/{itemId}.report.json   (decompose task)
  */
 export function inboxKey(
   specId: string,
@@ -115,4 +117,14 @@ export function ontologySourceKey(ontologyId: string, sha256: string, ext: strin
 /** A version's canonical N-Triples (runs bucket, ontology task). */
 export function ontologyNormalizedKey(ontologyId: string, version: number): string {
   return `ontologies/${ontologyId}/v${version}/normalized.nt`;
+}
+
+/** A batch item's uploaded Word file (runs bucket; phase 3 conversion batches). */
+export function decompositionSourceKey(batchId: string, itemId: string, ext: string): string {
+  return `decompositions/${batchId}/${itemId}.${ext}`;
+}
+
+/** A batch item's decomposition report flags (runs bucket, decompose task). */
+export function decompositionReportKey(batchId: string, itemId: string): string {
+  return `decompositions/${batchId}/${itemId}.report.json`;
 }

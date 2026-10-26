@@ -227,9 +227,9 @@ describe('the register, kept from bridge events', () => {
     await repo.recordDeliveries(randomUUID(), [{ targetId: 'documents', deliveryId }]);
     const settle = repo.settleRegisterEntry.bind(repo);
     let failures = 1;
-    repo.settleRegisterEntry = async (id, s) => {
+    repo.settleRegisterEntry = async (id, s, item) => {
       if (failures-- > 0) throw new Error('connection lost');
-      return settle(id, s);
+      return settle(id, s, item);
     };
     const final = event(deliveryId, { sequence: 2, receipt: documentReceipt('doc-1') });
     await expect(applyEvent(deps, final)).rejects.toThrow('connection lost');

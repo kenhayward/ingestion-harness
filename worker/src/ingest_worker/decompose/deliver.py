@@ -14,11 +14,12 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from ingest_worker.bridge.client import BridgeClient, BridgeRefused, BridgeUnavailable
 from ingest_worker.bridge.models import (
     ActingUser,
+    BridgeError,
     BridgePackage,
     CreateDeliveriesRequest,
     DecompositionProvenance,
@@ -50,7 +51,9 @@ Outcome = Literal[
 ]
 
 #: States whose content counts as on the tenant: an entry that failed without ever becoming a
-#: document (no persistent id) does not.
+#: document (no persistent id) does not. Nor does an `accepted` one: the target's state was
+#: accepted, so its next run is an update against those versions, whatever its content, until
+#: that update is delivered (spec §8).
 _SETTLED_LOADED = ("delivered", "incomplete")
 
 #: The mark in a refused entry's `last_error.details`: the bridge took nothing, so nothing under
@@ -88,7 +91,12 @@ def _refused_before_acceptance(e: RegisterEntry) -> bool:
 
 
 def decide(
-    by_key: RegisterEntry | None, by_hash: list[RegisterEntry], sha: str, force: bool
+    by_key: RegisterEntry | None,
+    by_hash: list[RegisterEntry],
+    sha: str,
+    force: bool,
+    *,
+    source_key: str | None = None,
 ) -> Decision:
     """Spec §8's two checks. A pending entry is in flight and a changed one refuses, force or
     not (force never bypasses the version check). The same content under the same key is
@@ -100,7 +108,15 @@ def decide(
     An entry with no persistent id is created again under a new key only when the bridge
     refused its last delivery outright (nothing reached the target). Otherwise that delivery may
     have made a document: the same content is created again under the entry's stored key, which
-    the sink answers with that document, if any; new content is `unresolved`, force or not."""
+    the sink answers with that document, if any; new content is `unresolved`, force or not.
+
+    `source_key`: the source's own key. When `by_key` read no entry but the content check finds
+    one under that key, another run registered the source in between (the content check waited
+    on its lock): in flight, force or not, never a duplicate of itself."""
+    if by_key is None and source_key is not None:
+        racing = next((e for e in by_hash if e.source_key == source_key), None)
+        if racing is not None:
+            return Decision("in_flight", False, racing, "a delivery of this source is in flight")
     if by_key is not None:
         if by_key.state == "pending":
             return Decision("in_flight", False, by_key, "a delivery of this source is in flight")
@@ -229,7 +245,18 @@ def build_decomposition_package(
     )
 
 
-_NO_VERSIONS = "no component versions are recorded for this document; resolve it in the target"
+_NO_VERSIONS = (
+    "the target holds this document but its versions were never recorded; "
+    "detach to create a new one, or resolve it in the target"
+)
+
+
+def _no_versions_error() -> dict[str, Any]:
+    """The last error of an entry failed for `_NO_VERSIONS` (a bridge error's shape)."""
+    error = BridgeError.model_validate(
+        {"class": "needs_user", "code": "no_versions", "message": _NO_VERSIONS}
+    )
+    return error.model_dump(by_alias=True, mode="json")
 
 
 def _force_token(batch_id: str | None) -> str:
@@ -237,6 +264,63 @@ def _force_token(batch_id: str | None) -> str:
     a key with an unforced run, another forced run, or another source of the same batch."""
     token = uuid.uuid4().hex
     return f"{batch_id}:{token}" if batch_id else token
+
+
+def _expected_digest(update: Update) -> str:
+    """What an update expects, as a digest: the SHA-256 of its components' sorted
+    `id@version` lines. Two updates of one document expecting different versions are
+    different writes, even of the same file."""
+    lines = sorted(f"{c.id}@{c.version}" for c in update.expected)
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
+def _detached_by(tombstone: RegisterEntry | None, entry: RegisterEntry | None) -> str | None:
+    """The detach a create must stay apart from: the tombstone's, or that of the entry that
+    replaced it while it has no document (its first create was refused, say), so no create of
+    the source shares a key with the detached document's."""
+    if tombstone is not None:
+        return tombstone.detach_action_id
+    if entry is not None and entry.persistent_id is None:
+        return entry.detach_action_id
+    return None
+
+
+def _run_token(
+    batch_id: str | None, force: bool, detached_by: str | None, update: Update | None
+) -> str | None:
+    """The run's part of a derived idempotency key ("the same key means the same write"):
+    - an update's: the digest of the versions it expects, so A, then B, then A again is a new
+      write rather than a replay of A's first receipt, while a retry of the same update keeps
+      its key; a forced update joins it to the force-load's token (`token:digest`);
+    - a forced create's: the force-load's new token;
+    - a create after a detach, until the source has a document again: the detach action's id,
+      so the key differs from the detached document's and the target can't answer with it
+      (spec §8);
+    - any other create: none, so the same file gets the same key ("same file, same result")."""
+    token = _force_token(batch_id) if force else None
+    if update is not None:
+        digest = _expected_digest(update)
+        return f"{token}:{digest}" if token else digest
+    return token or detached_by
+
+
+_RESUMED = "resumed: an earlier run of this batch handed it to the bridge"
+
+
+def _own_pending(
+    by_key: RegisterEntry | None, batch_id: str | None, sha: str
+) -> RegisterEntry | None:
+    """The source's pending entry when this batch's own earlier run wrote it (the same item: a
+    source key is unique in a batch), for the same content: never in flight against itself."""
+    if (
+        by_key is None
+        or batch_id is None
+        or by_key.state != "pending"
+        or by_key.batch_id != batch_id
+        or by_key.content_sha256 != sha
+    ):
+        return None
+    return by_key
 
 
 def _refused(decision: Decision) -> DeliveryOutcome:
@@ -254,6 +338,7 @@ def deliver_decomposition(
     started_by: ActingUser,
     batch_id: str | None = None,
     force: bool = False,
+    decomposed: Decomposition | None = None,
 ) -> DeliveryOutcome:
     """Decompose `data` and deliver it to `target_id` as the register decides.
 
@@ -268,9 +353,18 @@ def deliver_decomposition(
     before acceptance unless the delivery reused a key an earlier one may have created under:
     only then may a later run create under a new key. Either way the outcome is `failed`. Every
     forced run gets a new idempotency key, except one that must reuse the entry's stored key.
+
+    A pending entry this batch's own earlier run wrote (the worker stopped mid-way) is resumed,
+    never reported in flight: its recorded delivery is returned, or, when none was recorded, the
+    document is handed over again under the entry's stored key.
+
+    `decomposed`: `data`'s decomposition when the caller made it already (the `decompose` job,
+    which writes its report first), so nothing is rendered twice.
     """
     try:
-        result = decompose_docx(data, renderer=deps.renderer)
+        result = (
+            decomposed if decomposed is not None else decompose_docx(data, renderer=deps.renderer)
+        )
     except DecompositionRejected as exc:
         return DeliveryOutcome("failed", None, None, f"rejected: {exc}")
     except DecompositionFailed as exc:
@@ -280,12 +374,25 @@ def deliver_decomposition(
     sink_id, instance_id = deps.target_lookup(target_id)
 
     with deps.register.transaction() as tx:
-        decision = decide(
-            tx.by_key(sink_id, instance_id, source_key),
-            tx.by_hash(sink_id, instance_id, sha),
-            sha,
-            force,
-        )
+        by_key = tx.by_key(sink_id, instance_id, source_key)
+        # A detached entry is a tombstone (the API's detach): absent from both checks, and the
+        # next create replaces it, under a key its detach makes new.
+        tombstone = by_key if by_key is not None and by_key.state == "detached" else None
+        if tombstone is not None:
+            by_key = None
+        own = _own_pending(by_key, batch_id, sha)
+        if own is not None and own.delivery_id is not None:
+            # This batch's own earlier run handed it over (the worker stopped before recording
+            # it): wait for that delivery.
+            outcome: Outcome = "updated" if own.persistent_id else "created"
+            return DeliveryOutcome(outcome, own.delivery_id, own.id, _RESUMED)
+        if own is not None:
+            # The bridge may have taken it before `set_delivery` committed: hand it over again
+            # under the stored key, which the sink answers with the same document.
+            decision = Decision(None, own.persistent_id is None, own, _RESUMED, own.idempotency_key)
+        else:
+            by_hash = [e for e in tx.by_hash(sink_id, instance_id, sha) if e.state != "detached"]
+            decision = decide(by_key, by_hash, sha, force, source_key=source_key)
         if decision.outcome is not None:
             return _refused(decision)
         update: Update | None = None
@@ -294,18 +401,23 @@ def deliver_decomposition(
             receipt = decision.entry.last_receipt
             expected = receipt.document.components if receipt and receipt.document else []
             if not expected:
-                # Nothing to hold the target's copy to: phase 3's detach or accept resolves it.
-                return DeliveryOutcome("changed_in_target", None, decision.entry.id, _NO_VERSIONS)
+                # Nothing to hold the target's copy to, so no update is sent: unresolved, and
+                # detach applies (the API's detach takes an entry with a document and no
+                # versions). A pending entry this batch's own earlier run left has sent none
+                # either: nothing is on its way, so it is failed now, not by the reconcile.
+                if own is not None:
+                    tx.set_failed(own.id, _no_versions_error())
+                return DeliveryOutcome("unresolved", None, decision.entry.id, _NO_VERSIONS)
             update = Update(persistent_id=decision.entry.persistent_id, expected=expected)
         key = decision.idempotency_key or decomposition_idempotency_key(
             sha,
             update.persistent_id if update else None,
             DECOMPOSER_VERSION,
-            _force_token(batch_id) if force else None,
+            _run_token(batch_id, force, _detached_by(tombstone, decision.entry), update),
         )
         try:
             entry = tx.put_pending(
-                replacing=decision.entry,
+                replacing=decision.entry or tombstone,
                 sink_id=sink_id,
                 instance_id=instance_id,
                 source_key=source_key,

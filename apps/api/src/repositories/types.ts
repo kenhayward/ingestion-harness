@@ -18,8 +18,10 @@ import type {
   StatusGroup,
   JobPage,
   JobPageQuery,
+  ItemOutcome,
 } from '@ih/shared';
 import type { BridgeError, DeliveryStatus, Receipt } from '@ih/bridge-contract';
+import type { ConversionRepo } from '../conversions/repo.js';
 
 /**
  * A reference to save. `templateVersion` pins it to a version (Workbench types) together with the
@@ -45,7 +47,13 @@ export interface JobDelivery {
 
 /** How a delivering job ends once every delivery is final. */
 export type JobFinish =
-  | { status: 'succeeded'; targets: string[] }
+  | {
+      status: 'succeeded';
+      targets: string[];
+      /** The finish event's message (default `delivered`): a `decompose` job names its
+       * item's outcome. */
+      message?: string;
+    }
   | {
       status: 'awaiting_review';
       reasons: string[];
@@ -61,8 +69,13 @@ export interface DeliveryUpdate {
   sequence: number;
 }
 
-/** The states of a decomposition register entry: `pending` while its delivery is on its way. */
-export type RegisterState = 'pending' | 'delivered' | 'incomplete' | 'changed' | 'failed';
+/**
+ * The states of a decomposition register entry: `pending` while its delivery is on its way.
+ * The row actions (migration 202610252220) leave `detached`, a tombstone the worker's checks
+ * treat as absent, and `accepted`, the target's state accepted: the next run is an update.
+ */
+export type RegisterState =
+  'pending' | 'delivered' | 'incomplete' | 'changed' | 'failed' | 'detached' | 'accepted';
 
 /**
  * One delivered (or delivering) document in the decomposition register, scoped to a target's sink
@@ -85,11 +98,16 @@ export interface RegisterEntry {
   createdAt: string;
   updatedAt: string;
   deliveredAt: string | null;
+  /**
+   * The `register_actions` row that detached it (`detached`): the next create of its source
+   * takes it into the idempotency key, so the target can't answer with the detached document.
+   */
+  detachActionId: string | null;
 }
 
 /** How a final delivery event settles a pending register entry. */
 export interface RegisterSettlement {
-  state: Exclude<RegisterState, 'pending'>;
+  state: Exclude<RegisterState, 'pending' | 'detached' | 'accepted'>;
   /** The persistent id the sink reported; null keeps the entry's (a known id is never cleared). */
   persistentId: string | null;
   /** A receipt with a document; null keeps the entry's last one. */
@@ -98,6 +116,32 @@ export interface RegisterSettlement {
   /** The document was delivered: `delivered_at` becomes now. */
   delivered: boolean;
 }
+
+/**
+ * How settling a register entry settles the conversion item that delivered it (phase 3): its
+ * outcome once the bridge's event is final, the detail shown on its row and its link in the
+ * target.
+ */
+export interface ItemSettlement {
+  outcome: Extract<
+    ItemOutcome,
+    'created' | 'updated' | 'changed_in_target' | 'read_back_mismatch' | 'failed'
+  >;
+  detail: string | null;
+  link: string | null;
+}
+
+/**
+ * The item outcomes a register settlement may move: nothing final decided yet, or `failed`,
+ * which the worker's last attempt may write after the bridge took the document. The entry is
+ * pending for this very delivery, so the delivery's own outcome replaces that failure.
+ */
+export const SETTLEABLE_ITEM: readonly ItemOutcome[] = [
+  'queued',
+  'decomposing',
+  'delivering',
+  'failed',
+];
 
 /** The job event a finished delivery writes. */
 /**
@@ -110,7 +154,11 @@ export function backgroundFinish(f: JobFinish): JobFinish {
 
 export function finishEvent(f: JobFinish): { level: string; message: string; data: unknown } {
   if (f.status === 'succeeded') {
-    return { level: 'info', message: DELIVERED_EVENT, data: { targets: f.targets } };
+    return {
+      level: 'info',
+      message: f.message ?? DELIVERED_EVENT,
+      data: { targets: f.targets },
+    };
   }
   if (f.status === 'awaiting_review') {
     return { level: 'warn', message: 'delivery needs review', data: { reasons: f.reasons } };
@@ -238,12 +286,16 @@ export const REPUBLISH_JOB = { priority: -10, maxAttempts: 10 } as const;
 /** `rebuild`: a copy restore's re-mint of the graphs under this server's base (params `{mode}`). */
 export const REBUILD_JOB = { priority: -10, maxAttempts: 10 } as const;
 
+/** `decompose`: one conversion batch item (params `DecomposeParams`), at an upload's priority. */
+export const DECOMPOSE_JOB = { priority: 0, maxAttempts: 3 } as const;
+
 /** Document- and project-less jobs the API queues for the worker. */
-export type BackgroundTask = 'withdraw' | 'republish' | 'rebuild';
+export type BackgroundTask = 'withdraw' | 'republish' | 'rebuild' | 'decompose';
 export const BACKGROUND_JOBS: Record<BackgroundTask, { priority: number; maxAttempts: number }> = {
   withdraw: WITHDRAW_JOB,
   republish: REPUBLISH_JOB,
   rebuild: REBUILD_JOB,
+  decompose: DECOMPOSE_JOB,
 };
 
 /** One graph of a `withdraw` job's params: its version copies on one publishing target. */
@@ -360,7 +412,7 @@ export interface EventFilter {
 }
 
 /** Persistence port. `PgRepo` in production, `MemoryRepo` in unit tests. */
-export interface IngestionRepo {
+export interface IngestionRepo extends ConversionRepo {
   ping(): Promise<void>;
   createDocumentAndJob(
     doc: NewDocument,
@@ -591,7 +643,7 @@ export interface IngestionRepo {
   applyDeliveryUpdate(
     deliveryId: string,
     update: DeliveryUpdate,
-    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+    finish: (deliveries: JobDelivery[], job: { task: string }) => JobFinish | null,
   ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }>;
   deliveriesOf(jobId: string): Promise<JobDelivery[]>;
   /** Deliveries not final and not updated for `olderThanMinutes`, of jobs still delivering. */
@@ -616,10 +668,14 @@ export interface IngestionRepo {
   /**
    * Settles the register entry of this delivery while it is `pending` (else `stale`: a settled
    * entry is moved only by the worker's next delivery; `unknown` when no entry has this delivery).
+   * In the same transaction, the conversion item that made the delivery (the entry's batch and
+   * source key) takes `item(entry as it was)` and is linked to the entry, while its outcome is
+   * in `SETTLEABLE_ITEM`: whether or not the worker recorded it delivering yet.
    */
   settleRegisterEntry(
     deliveryId: string,
     settlement: RegisterSettlement,
+    item: (before: RegisterEntry) => ItemSettlement,
   ): Promise<'applied' | 'stale' | 'unknown'>;
 }
 

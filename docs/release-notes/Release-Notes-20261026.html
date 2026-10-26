@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 26 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">
+        Monday 26 October 2026: Word documents converted in batches, for a target that takes
+        decomposed documents. PR #329, opened on Monday 26 October 2026 (UTC).
+      </p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#conversion-batches">Word documents converted in batches</a>
+            <span>— one file, several or a whole folder, each delivered as its own document</span>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            A database migration (<code>202610251200_decomposition_batches</code>) adds conversion
+            batches, their items and a log of actions on delivered documents, and a new job task,
+            <code>decompose</code>. It runs on its own when the API starts.
+          </li>
+          <li>
+            A second migration (<code>202610252220_register_detached_accepted</code>) lets the
+            register of delivered documents record a detached document and an accepted target state.
+            It also runs on its own when the API starts.
+          </li>
+          <li>
+            A third migration (<code>202610261200_decomposition_items_source_key</code>) indexes
+            batch items by source key, so detaching a document stays quick as batches accumulate. It
+            also runs on its own when the API starts.
+          </li>
+          <li>
+            New API routes under <code>/api/conversions</code>: the targets that take documents, and
+            batches to create, fill one file at a time, start, discard, list and read, with each
+            item's report. Each item's row also has actions:
+            <code>POST /api/conversions/items/{id}/force</code> (force-load),
+            <code>POST /api/conversions/items/{id}/redeliver</code> (optionally with a replacement
+            file), <code>POST /api/conversions/items/{id}/detach</code>, and <code>GET</code> and
+            <code>POST /api/conversions/items/{id}/accept</code> (accept the target's state: a
+            preview, then a confirmed accept). Each item says whether its document has been
+            detached, its target state accepted, or its refusal superseded by a later run
+            (<code>resolution</code>), and whether its document's versions were never recorded
+            (<code>unversioned</code>). Detach refuses a document that is neither refused as changed
+            in the target nor unversioned (409 <code>not_refused</code>). Operators, designers and
+            administrators may all use them.
+          </li>
+        </ul>
+      </div>
+
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="conversion-batches">Word documents converted in batches</h3>
+      <p class="prs"><a href="https://github.com/kenhayward/ingestion-harness/pull/329">#329</a></p>
+      <p>
+        Word documents can now be converted in batches for a target that takes decomposed documents.
+        A batch is one upload, of a single file, several files or a folder, to one target. Each file
+        goes up on its own, so a large folder never meets the upload limit, and a file that isn't a
+        Word document is refused on its own while the others carry on. Starting the batch queues one
+        job per file, which decomposes the document and delivers it.
+      </p>
+      <p>
+        Batches start on the new <strong>Conversion</strong> tab, in the menu for everyone,
+        operators included. Pick a target (only those that take documents are offered), choose files
+        or a folder or drop them on the box, and choose <strong>Start</strong>. Each file is named
+        by its file name, or by its path in a folder, and the same name run again later updates the
+        same document. Hidden files and Word's lock files are skipped. A bar shows the files going
+        up, a refused file says why on its row, and <strong>Cancel</strong> throws the unfinished
+        batch away.
+      </p>
+      <p>
+        Only Word documents (<code>.docx</code>) are taken for now. The same file name or folder
+        path can't be added to a batch twice.
+      </p>
+      <p>
+        Once started, the batch opens in its own view, which can be reopened later, or after a
+        reload, from its address. It has one row per document, with the outcome: Created, Updated,
+        Already loaded, Duplicate, Changed in target, Read-back mismatch, Unresolved, In flight or
+        Failed, and Queued, Decomposing or Delivering while it runs. Beside the outcome is a line
+        saying more, such as why a file failed. A document in the target has a link to it there.
+        Every row has a <strong>Report</strong>, showing what converting the file noticed for
+        someone to check, such as an empty heading or a table with no caption. While any document is
+        still under way the rows refresh every few seconds, and the refreshing stops once every
+        document has settled. <strong>Needs attention</strong> narrows the rows to the documents
+        someone should look at, and <strong>Done</strong> to the ones that went through or have been
+        resolved. A screen reader hears how many documents are done each time another settles. A
+        document <strong>In flight</strong> is being delivered by another batch, and its outcome
+        shows there. Under a new batch, <strong>Earlier batches</strong> lists the batches started
+        before, newest first, each with its documents counted by outcome.
+      </p>
+      <p>Each document's row offers the actions that apply to it, each run on that one document:</p>
+      <ul>
+        <li>
+          <strong>Force-load</strong> delivers the stored file again as an explicit update. A
+          document that was already loaded is updated, and a duplicate is created as a second
+          document of its own.
+        </li>
+        <li>
+          <strong>Redeliver</strong> updates the document, optionally from a replacement file. The
+          replacement keeps the original's name in the batch, so a renamed or moved file updates the
+          right document.
+        </li>
+        <li>
+          <strong>Detach</strong> makes CT Studio forget the document. It stays in the target
+          untouched, and the next run of the same file creates a new document, even when the file
+          hasn't changed.
+        </li>
+        <li>
+          <strong>Accept the target's state</strong>, for a document someone changed in the target,
+          first shows each changed part with its version before and now. Once confirmed, the next
+          run of that file updates the document, even when the file hasn't changed, overwriting
+          those changes. If it changes again in the meantime, that run is refused again. If the
+          document changed again while the confirmation was open, the confirmation is refused, and
+          the changes must be looked at again. The confirmation needs a tick in
+          <strong>I understand the edits in the target will be overwritten</strong>. When too many
+          parts changed to list them all, it can't be accepted, and detach is offered instead.
+        </li>
+      </ul>
+      <p>
+        Force-load is offered on a document already loaded and on a duplicate, redeliver on one
+        delivered or refused, and detach and accept on one changed in the target. Once a document
+        has been detached or its target state accepted, its row says so and offers neither again, in
+        every batch that delivered it. A row whose refusal a later run has moved on from says
+        <strong>Superseded by a later run</strong>, counts as done, and offers neither: only a
+        document refused as changed in the target can be detached, or one the target holds whose
+        versions were never recorded. That one reads <strong>Unresolved</strong> and offers detach
+        only.
+      </p>
+      <p>
+        Force-load and redeliver each start a new batch of one, and only one while it runs, however
+        often the action is chosen. The target's version check always applies, so nothing changed in
+        the target is overwritten without being accepted first. Detaching and accepting are recorded
+        with who did it and when.
+      </p>
+      <p>
+        A single file and then a folder have been taken through every step to a stand-in for a
+        target: created, already loaded, updated, changed in the target, accepted and detached. The
+        next step is converting a sample report through the tab to the first real target.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>

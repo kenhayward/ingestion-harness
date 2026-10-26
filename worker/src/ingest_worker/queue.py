@@ -37,7 +37,9 @@ class ClaimedJob:
     attempts: int
     max_attempts: int
     #: "process" (extract), "publish" (apply review edits, deliver), "rerun" (one step) or
-    #: "prepare" (workbench: text + OCR only) or "segment" (workbench anchor preview; no document).
+    #: "prepare" (workbench: text + OCR only) or "segment" (workbench anchor preview; no document),
+    #: or a document-less background task such as "decompose" (one conversion batch item; see
+    #: main.TASKS for them all).
     task: str = "process"
     #: Test run of a (draft) template: processed and reviewable, never published.
     test: bool = False

@@ -4,7 +4,8 @@ target each source became, on one tenant (a sink and instance; plan ruling R5).
 The worker writes only `pending` entries, under a row lock over the decision (R6): it looks the
 source up with `by_key` (which locks the row), decides, and `put_pending` before delivering, then
 records the bridge's delivery with `set_delivery`. The API settles the entry from the bridge's
-events as `delivered`, `incomplete`, `changed` or `failed`; the worker never writes those.
+events as `delivered`, `incomplete`, `changed` or `failed`; the worker never writes those. The
+API's row actions leave `detached` (a tombstone) and `accepted` (the target's state accepted).
 """
 
 from __future__ import annotations
@@ -17,12 +18,17 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from ingest_worker.bridge.models import Receipt
+from ingest_worker.bridge.models import ComponentVersion, Receipt
 
 if TYPE_CHECKING:
     import psycopg
 
-RegisterState = Literal["pending", "delivered", "incomplete", "changed", "failed"]
+#: `detached`: a tombstone the API's detach leaves, which the checks treat as absent (its next
+#: create replaces it); `accepted`: the API accepted the target's state, so the next run is an
+#: update whatever its content (migration 202610252220).
+RegisterState = Literal[
+    "pending", "delivered", "incomplete", "changed", "failed", "detached", "accepted"
+]
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,10 @@ class RegisterEntry:
     created_at: datetime
     updated_at: datetime
     delivered_at: datetime | None
+    #: The `register_actions` row that detached it (state `detached`), kept by the entry that
+    #: replaces the tombstone: every create of the source takes it into its idempotency key
+    #: until the entry has a document.
+    detach_action_id: str | None = None
 
 
 class RegisterRaced(Exception):
@@ -82,8 +92,9 @@ class RegisterTx(Protocol):
     ) -> RegisterEntry:
         """The source's entry, now `pending` under `idempotency_key`. `replacing` (the entry
         `by_key` found and locked) is reset: its delivery and error cleared, its persistent id
-        and last receipt kept. Without it a new entry is inserted, and RegisterRaced raised when
-        one appeared meanwhile."""
+        and last receipt kept, unless it is a `detached` tombstone, which is replaced by a new
+        entry that keeps its `detach_action_id`. Without it a new entry is inserted, and RegisterRaced raised when one appeared
+        meanwhile."""
         ...
 
     def set_delivery(self, entry_id: str, delivery_id: str) -> None:
@@ -141,6 +152,11 @@ class _MemoryTx:
         batch_id: str | None,
     ) -> RegisterEntry:
         now = self._clock()
+        detached_by = None
+        if replacing is not None and replacing.state == "detached":
+            # A create replaces the tombstone with a new entry, which keeps the detach.
+            del self.rows[replacing.id]
+            detached_by, replacing = replacing.detach_action_id, None
         current = self.by_key(sink_id, instance_id, source_key)
         if replacing is None:
             if current is not None:
@@ -161,6 +177,7 @@ class _MemoryTx:
                 created_at=now,
                 updated_at=now,
                 delivered_at=None,
+                detach_action_id=detached_by,
             )
         else:
             base = self.rows[replacing.id]
@@ -215,6 +232,7 @@ class MemoryRegisterStore:
         state: RegisterState,
         persistent_id: str | None = None,
         last_receipt: Receipt | None = None,
+        last_error: dict[str, Any] | None = None,
     ) -> None:
         """What the API does on a delivery's final event (tests stand in for it)."""
         with self._lock:
@@ -224,6 +242,45 @@ class MemoryRegisterStore:
                 state=state,
                 persistent_id=persistent_id or entry.persistent_id,
                 last_receipt=last_receipt if last_receipt is not None else entry.last_receipt,
+                last_error=last_error,
+            )
+
+    def detach(self, entry_id: str, *, action_id: str) -> None:
+        """What the API's detach does (tests stand in for it): a tombstone naming its action."""
+        with self._lock:
+            entry = self._rows[entry_id]
+            self._rows[entry_id] = replace(entry, state="detached", detach_action_id=action_id)
+
+    def accept(self, entry_id: str) -> None:
+        """What the API's accept does (tests stand in for it; TS `acceptPlanOf`): each component
+        the refusal lists takes its actual version (dropped when gone, added when new), and the
+        entry is `accepted`."""
+        with self._lock:
+            entry = self._rows[entry_id]
+            assert entry.state == "changed" and entry.last_error is not None
+            assert entry.last_receipt is not None and entry.last_receipt.document is not None
+            document = entry.last_receipt.document
+            components = {c.id: c for c in document.components}
+            for c in entry.last_error["details"]["changed"]:
+                if c["actual"] is None:
+                    components.pop(c["id"], None)
+                elif c["id"] in components:
+                    components[c["id"]] = components[c["id"]].model_copy(
+                        update={"version": c["actual"]}
+                    )
+                else:
+                    components[c["id"]] = ComponentVersion(
+                        kind="component", id=c["id"], version=c["actual"], element=None
+                    )
+            receipt = entry.last_receipt.model_copy(
+                update={
+                    "document": document.model_copy(
+                        update={"components": list(components.values())}
+                    )
+                }
+            )
+            self._rows[entry_id] = replace(
+                entry, state="accepted", last_receipt=receipt, last_error=None
             )
 
 
@@ -231,12 +288,12 @@ class MemoryRegisterStore:
 
 _COLUMNS = """id::text, sink_id, instance_id, source_key, content_sha256, persistent_id, state,
   idempotency_key, delivery_id, last_receipt, last_error, batch_id, created_at, updated_at,
-  delivered_at"""
+  delivered_at, detach_action_id::text"""
 
 
 def _entry(row: tuple[Any, ...]) -> RegisterEntry:
     (id_, sink_id, instance_id, source_key, sha, persistent_id, state, key, delivery_id) = row[:9]
-    receipt, error, batch_id, created_at, updated_at, delivered_at = row[9:]
+    receipt, error, batch_id, created_at, updated_at, delivered_at, detach_action_id = row[9:]
     return RegisterEntry(
         id=id_,
         sink_id=sink_id,
@@ -253,6 +310,7 @@ def _entry(row: tuple[Any, ...]) -> RegisterEntry:
         created_at=created_at,
         updated_at=updated_at,
         delivered_at=delivered_at,
+        detach_action_id=detach_action_id,
     )
 
 
@@ -296,6 +354,12 @@ class _PgTx:
         idempotency_key: str,
         batch_id: str | None,
     ) -> RegisterEntry:
+        detached_by = None
+        if replacing is not None and replacing.state == "detached":
+            # A create replaces the tombstone (locked by `by_key`) with a new entry, which keeps
+            # the detach.
+            self._conn.execute("DELETE FROM decomposition_register WHERE id = %s", (replacing.id,))
+            detached_by, replacing = replacing.detach_action_id, None
         if replacing is not None:
             row = self._conn.execute(
                 f"""UPDATE decomposition_register
@@ -311,11 +375,19 @@ class _PgTx:
             row = self._conn.execute(
                 f"""INSERT INTO decomposition_register
                        (sink_id, instance_id, source_key, content_sha256, state,
-                        idempotency_key, batch_id)
-                    VALUES (%s, %s, %s, %s, 'pending', %s, %s)
+                        idempotency_key, batch_id, detach_action_id)
+                    VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s)
                     ON CONFLICT (sink_id, instance_id, source_key) DO NOTHING
                  RETURNING {_COLUMNS}""",
-                (sink_id, instance_id, source_key, content_sha256, idempotency_key, batch_id),
+                (
+                    sink_id,
+                    instance_id,
+                    source_key,
+                    content_sha256,
+                    idempotency_key,
+                    batch_id,
+                    detached_by,
+                ),
             ).fetchone()
             if row is None:
                 raise RegisterRaced(source_key)

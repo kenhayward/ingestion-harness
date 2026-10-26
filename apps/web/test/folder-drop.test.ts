@@ -40,6 +40,13 @@ describe('readDrop', () => {
     expect(scan!.skipped).toBe(2); // the lock file and the hidden file; hidden folders are not read
   });
 
+  it("gives each folder file's path in the drop, the folder's name first", async () => {
+    const folder = droppedFolder('Policies', [word('b.docx'), ['sub', [word('a.docx')]]]);
+    const [scan] = (await readDrop(droppedItems([folder]))).folders;
+    expect(scan!.paths).toEqual(['Policies/b.docx', 'Policies/sub/a.docx']);
+    expect(scan!.files.map((f) => f.name)).toEqual(['b.docx', 'a.docx']);
+  });
+
   it('reads a large folder in full (browsers hand entries over in batches)', async () => {
     const many = Array.from({ length: 250 }, (_, i) => pdf(`f${String(i).padStart(3, '0')}.pdf`));
     const [scan] = (await readDrop(droppedItems([droppedFolder('Big', many, 100)]))).folders;

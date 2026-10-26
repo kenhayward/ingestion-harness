@@ -120,8 +120,15 @@ export async function buildFakeServer(
   return app;
 }
 
-async function buildDocumentServer(key: string, logger: boolean): Promise<FastifyInstance> {
-  const sink = new FakeDocumentSink();
+/**
+ * The `documents` mode server: `sink` behind the signed routes, with `/_edit`. A test passes its
+ * own sink to see what was delivered.
+ */
+export async function buildDocumentServer(
+  key: string,
+  logger = false,
+  sink = new FakeDocumentSink(),
+): Promise<FastifyInstance> {
   const app = await serveSink(sink, key, { unsigned: ['/_edit'], logger });
   app.post('/_edit', async (req, reply) => {
     const body = (req.body ?? {}) as { persistentId?: unknown; componentId?: unknown };

@@ -24,7 +24,28 @@ import {
   statusGroup,
   type Creator,
   type JobPage,
+  type Batch,
+  type BatchSummary,
+  type Item,
+  type ItemOutcome,
 } from '@ih/shared';
+import { acceptedReceipt } from '../conversions/accept.js';
+import {
+  emptyCounts,
+  type AcceptResult,
+  type AddItemResult,
+  type DetachResult,
+  type DiscardBatchResult,
+  type NewBatch,
+  type NewItem,
+  type Accept,
+  type Detach,
+  type Rerun,
+  type RerunResult,
+  RUNNING_OUTCOMES,
+  isUnversioned,
+  type StartBatchResult,
+} from '../conversions/repo.js';
 import {
   ReferenceConflictError,
   type DeleteJobResult,
@@ -59,7 +80,9 @@ import {
   type JobFinish,
   type EventFilter,
   type RegisterEntry,
+  type ItemSettlement,
   type RegisterSettlement,
+  SETTLEABLE_ITEM,
 } from './types.js';
 
 // Inner-joins documents, so document-less jobs (segment previews) never become JobSummaries.
@@ -210,6 +233,99 @@ const toReference = (r: ReferenceRow): Reference => ({
   copiedFrom: r.copied_from,
   verifiedOutputs: r.verified_outputs ?? null,
   supersededAt: r.superseded_at?.toISOString() ?? null,
+});
+
+interface BatchRow {
+  id: string;
+  target_id: string;
+  created_by: Batch['createdBy'];
+  state: Batch['state'];
+  force: boolean;
+  created_at: Date;
+  started_at: Date | null;
+}
+
+const BATCH_COLUMNS = 'id, target_id, created_by, state, force, created_at, started_at';
+
+const toBatch = (r: BatchRow): Batch => ({
+  id: r.id,
+  targetId: r.target_id,
+  createdBy: r.created_by,
+  state: r.state,
+  force: r.force,
+  createdAt: r.created_at.toISOString(),
+  startedAt: r.started_at?.toISOString() ?? null,
+});
+
+interface ItemRow {
+  id: string;
+  batch_id: string;
+  source_key: string;
+  filename: string;
+  content_sha256: string;
+  size_bytes: string;
+  object_key: string;
+  job_id: string | null;
+  outcome: ItemOutcome;
+  detail: string | null;
+  register_entry_id: string | null;
+  report_key: string | null;
+  link: string | null;
+  redeliver_of: string | null;
+  resolution: Item['resolution'];
+  unversioned: boolean;
+}
+
+/**
+ * An item's columns, and its resolution read from its register entry (`ItemResolutionSchema`):
+ * `detached` or `accepted` from the entry's state, and `detached` when the entry is gone (the
+ * worker replaces a detached tombstone with a new entry). A `changed_in_target` item is
+ * `superseded` once its refusal is no longer the entry's: the entry is in any other state, or is
+ * changed from another batch's delivery made after this item's batch started. In a RETURNING list
+ * it reads the statement's own register writes. Only used on the bare table (no alias).
+ */
+const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
+  job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of,
+  CASE WHEN decomposition_items.register_entry_id IS NULL THEN NULL
+       ELSE (SELECT CASE
+                      WHEN count(*) = 0 THEN 'detached'
+                      WHEN min(r.state) IN ('detached', 'accepted') THEN min(r.state)
+                      WHEN decomposition_items.outcome <> 'changed_in_target' THEN NULL
+                      WHEN min(r.state) <> 'changed' THEN 'superseded'
+                      WHEN min(r.batch_id) = decomposition_items.batch_id::text THEN NULL
+                      WHEN min(r.updated_at) > (SELECT b.started_at FROM decomposition_batches b
+                                                 WHERE b.id = decomposition_items.batch_id)
+                        THEN 'superseded'
+                    END
+               FROM decomposition_register r
+              WHERE r.id = decomposition_items.register_entry_id)
+  END AS resolution,
+  EXISTS (SELECT 1 FROM decomposition_register r
+           WHERE r.id = decomposition_items.register_entry_id
+             AND r.persistent_id IS NOT NULL
+             AND r.state NOT IN ('pending', 'detached')
+             AND COALESCE(jsonb_array_length(
+                   CASE WHEN jsonb_typeof(r.last_receipt->'document'->'components') = 'array'
+                        THEN r.last_receipt->'document'->'components' END), 0) = 0)
+    AS unversioned`;
+
+const toItem = (r: ItemRow): Item => ({
+  id: r.id,
+  batchId: r.batch_id,
+  sourceKey: r.source_key,
+  filename: r.filename,
+  contentSha256: r.content_sha256,
+  sizeBytes: Number(r.size_bytes),
+  objectKey: r.object_key,
+  jobId: r.job_id,
+  outcome: r.outcome,
+  detail: r.detail,
+  registerEntryId: r.register_entry_id,
+  reportKey: r.report_key,
+  link: r.link,
+  redeliverOf: r.redeliver_of,
+  resolution: r.resolution,
+  unversioned: r.unversioned,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -1153,6 +1269,334 @@ export class PgRepo implements IngestionRepo {
     };
   }
 
+  async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
+    const { rows } = await this.pool.query<BatchRow>(
+      `INSERT INTO decomposition_batches (target_id, force, created_by) VALUES ($1, $2, $3)
+       RETURNING ${BATCH_COLUMNS}`,
+      [targetId, force, JSON.stringify(createdBy)],
+    );
+    return toBatch(rows[0]!);
+  }
+
+  async getBatch(id: string): Promise<Batch | null> {
+    const { rows } = await this.pool.query<BatchRow>(
+      `SELECT ${BATCH_COLUMNS} FROM decomposition_batches WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? toBatch(rows[0]) : null;
+  }
+
+  async listBatches(limit: number): Promise<BatchSummary[]> {
+    const { rows } = await this.pool.query<BatchRow>(
+      `SELECT ${BATCH_COLUMNS} FROM decomposition_batches WHERE state <> 'discarded'
+        ORDER BY created_at DESC, id DESC LIMIT $1`,
+      [limit],
+    );
+    const counted = await this.pool.query<{ batch_id: string; outcome: ItemOutcome; n: number }>(
+      `SELECT batch_id, outcome, count(*)::int AS n FROM decomposition_items
+        WHERE batch_id = ANY($1::uuid[]) GROUP BY batch_id, outcome`,
+      [rows.map((r) => r.id)],
+    );
+    return rows.map((r) => {
+      const counts = emptyCounts();
+      for (const c of counted.rows) if (c.batch_id === r.id) counts[c.outcome] = c.n;
+      const itemCount = Object.values(counts).reduce((a, b) => a + b, 0);
+      return { ...toBatch(r), itemCount, counts };
+    });
+  }
+
+  async listItems(batchId: string): Promise<Item[]> {
+    const { rows } = await this.pool.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM decomposition_items WHERE batch_id = $1
+        ORDER BY created_at, id`,
+      [batchId],
+    );
+    return rows.map(toItem);
+  }
+
+  async itemByDelivery(deliveryId: string): Promise<Item | null> {
+    const { rows } = await this.pool.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM decomposition_items
+        WHERE job_id = (SELECT job_id FROM job_deliveries WHERE delivery_id = $1)`,
+      [deliveryId],
+    );
+    return rows[0] ? toItem(rows[0]) : null;
+  }
+
+  async getItem(id: string): Promise<Item | null> {
+    const { rows } = await this.pool.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM decomposition_items WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? toItem(rows[0]) : null;
+  }
+
+  async addItem(item: NewItem): Promise<AddItemResult> {
+    return this.inTransaction(async (client) => {
+      // Shared: uploads go in side by side, while a start or a discard waits for them.
+      const batch = await client.query<{ state: Batch['state'] }>(
+        'SELECT state FROM decomposition_batches WHERE id = $1 FOR SHARE',
+        [item.batchId],
+      );
+      if (!batch.rows[0]) return { ok: false, reason: 'missing' };
+      if (batch.rows[0].state !== 'open') return { ok: false, reason: 'not_open' };
+      const { rows } = await client.query<ItemRow>(
+        `INSERT INTO decomposition_items
+           (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (batch_id, source_key) DO NOTHING
+         RETURNING ${ITEM_COLUMNS}`,
+        [
+          item.id,
+          item.batchId,
+          item.sourceKey,
+          item.filename,
+          item.contentSha256,
+          item.sizeBytes,
+          item.objectKey,
+        ],
+      );
+      return rows[0] ? { ok: true, item: toItem(rows[0]) } : { ok: false, reason: 'duplicate' };
+    });
+  }
+
+  async startBatch(id: string, by: Creator | null): Promise<StartBatchResult> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<BatchRow>(
+        `SELECT ${BATCH_COLUMNS} FROM decomposition_batches WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      const batch = locked.rows[0];
+      if (!batch) return { ok: false, reason: 'missing' };
+      if (batch.state !== 'open') return { ok: false, reason: 'not_open' };
+      // One statement for every item's job, and one to record them: a large folder holds the
+      // batch's lock for two round trips, not two per file.
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const queued = await client.query<{ job_id: string }>(
+        `WITH items AS (
+           SELECT id, source_key, created_at FROM decomposition_items WHERE batch_id = $1
+         ), jobs_in AS (
+           INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+           SELECT 'decompose', $2, $3,
+                  jsonb_build_object('batchId', $1::uuid, 'itemId', i.id, 'targetId', $4::text,
+                                     'sourceKey', i.source_key, 'force', $5::boolean),
+                  $6, $7
+             FROM items i
+           RETURNING id, (params->>'itemId')::uuid AS item_id
+         ), recorded AS (
+           UPDATE decomposition_items d SET job_id = j.id
+             FROM jobs_in j WHERE d.id = j.item_id
+           RETURNING d.id, d.created_at, j.id AS job_id
+         )
+         SELECT job_id FROM recorded ORDER BY created_at, id`,
+        [
+          id,
+          priority,
+          maxAttempts,
+          batch.target_id,
+          batch.force,
+          by?.name ?? null,
+          by?.userId ?? null,
+        ],
+      );
+      if (!queued.rows.length) return { ok: false, reason: 'empty' };
+      const jobIds = queued.rows.map((r) => r.job_id);
+      const { rows } = await client.query<BatchRow>(
+        `UPDATE decomposition_batches SET state = 'started', started_at = now() WHERE id = $1
+         RETURNING ${BATCH_COLUMNS}`,
+        [id],
+      );
+      return { ok: true, batch: toBatch(rows[0]!), jobIds };
+    });
+  }
+
+  async discardBatch(id: string): Promise<DiscardBatchResult> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<{ state: Batch['state'] }>(
+        'SELECT state FROM decomposition_batches WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!locked.rows[0]) return { ok: false, reason: 'missing' };
+      if (locked.rows[0].state !== 'open') return { ok: false, reason: 'not_open' };
+      await client.query(`UPDATE decomposition_batches SET state = 'discarded' WHERE id = $1`, [
+        id,
+      ]);
+      const { rows } = await client.query<{ object_key: string }>(
+        `SELECT object_key FROM decomposition_items WHERE batch_id = $1 ORDER BY created_at, id`,
+        [id],
+      );
+      return { ok: true, objectKeys: rows.map((r) => r.object_key) };
+    });
+  }
+
+  async rerunItem({
+    batchId,
+    itemId,
+    of,
+    targetId,
+    createdBy,
+    by,
+    source,
+  }: Rerun): Promise<RerunResult> {
+    return this.inTransaction(async (client) => {
+      // The item rerun, locked: a repeated request waits here, then finds the first's rerun.
+      await client.query('SELECT 1 FROM decomposition_items WHERE id = $1 FOR UPDATE', [of.id]);
+      const running = await client.query(
+        `SELECT 1 FROM decomposition_items WHERE redeliver_of = $1 AND outcome = ANY($2::text[])
+          LIMIT 1`,
+        [of.id, RUNNING_OUTCOMES],
+      );
+      if (running.rowCount) return { ok: false, reason: 'running' };
+      const batch = await client.query<BatchRow>(
+        `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
+         VALUES ($1, $2, true, $3, 'started', now())
+         RETURNING ${BATCH_COLUMNS}`,
+        [batchId, targetId, JSON.stringify(createdBy)],
+      );
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+         VALUES ('decompose', $1, $2, $3, $4, $5) RETURNING id`,
+        [
+          priority,
+          maxAttempts,
+          JSON.stringify({ batchId, itemId, targetId, sourceKey: of.sourceKey, force: true }),
+          by?.name ?? null,
+          by?.userId ?? null,
+        ],
+      );
+      const item = await client.query<ItemRow>(
+        `INSERT INTO decomposition_items
+           (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key, job_id,
+            redeliver_of)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING ${ITEM_COLUMNS}`,
+        [
+          itemId,
+          batchId,
+          of.sourceKey,
+          source.filename,
+          source.contentSha256,
+          source.sizeBytes,
+          source.objectKey,
+          job.rows[0]!.id,
+          of.id,
+        ],
+      );
+      return { ok: true, batch: toBatch(batch.rows[0]!), item: toItem(item.rows[0]!) };
+    });
+  }
+
+  async registerEntry(id: string): Promise<RegisterEntry | null> {
+    const { rows } = await this.pool.query<RegisterRow>(
+      `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE id = $1`,
+      [id],
+    );
+    return rows[0] ? toRegisterEntry(rows[0]) : null;
+  }
+
+  async detachRegisterEntry({
+    itemId,
+    entryId,
+    targetIds,
+    by,
+    detail,
+  }: Detach): Promise<DetachResult> {
+    return this.inTransaction(async (client) => {
+      // The worker holds the row while it decides and hands a delivery off: this waits for it,
+      // then sees the entry pending and leaves it.
+      const found = await client.query<RegisterRow>(
+        `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE id = $1 FOR UPDATE`,
+        [entryId],
+      );
+      const row = found.rows[0];
+      if (!row || row.state === 'detached') return { ok: false, reason: 'missing' };
+      // A run of the source not at the register yet (a queued rerun, say) would deliver to the
+      // entry this detaches.
+      const running = await client.query(
+        `SELECT 1 FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id
+          WHERE i.source_key = $1 AND b.target_id = ANY($2::text[])
+            AND i.outcome = ANY($3::text[])
+          LIMIT 1`,
+        [row.source_key, targetIds, RUNNING_OUTCOMES],
+      );
+      if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
+      // Only a document refused as changed in the target, or one whose versions were never
+      // recorded, is detached: never a live one.
+      if (row.state !== 'changed' && !isUnversioned(toRegisterEntry(row))) {
+        return { ok: false, reason: 'not_refused' };
+      }
+      const action = await client.query<{ id: string }>(
+        `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'detach', $2, $3)
+         RETURNING id::text`,
+        [
+          entryId,
+          JSON.stringify(by),
+          JSON.stringify({ persistentId: row.persistent_id, sourceKey: row.source_key }),
+        ],
+      );
+      const updated = await client.query<RegisterRow>(
+        `UPDATE decomposition_register
+            SET state = 'detached', detach_action_id = $2,
+                updated_at = GREATEST(now(), date_trunc('milliseconds', updated_at)
+                                             + interval '1 millisecond')
+          WHERE id = $1
+         RETURNING ${REGISTER_COLUMNS}`,
+        [entryId, action.rows[0]!.id],
+      );
+      const entry = toRegisterEntry(updated.rows[0]!);
+      const item = await client.query<ItemRow>(
+        `UPDATE decomposition_items SET detail = $2 WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
+        [itemId, detail(entry)],
+      );
+      return { ok: true, entry, item: toItem(item.rows[0]!) };
+    });
+  }
+
+  async acceptTargetState({
+    itemId,
+    entryId,
+    seen,
+    by,
+    plan,
+    detail,
+  }: Accept): Promise<AcceptResult> {
+    return this.inTransaction(async (client) => {
+      const found = await client.query<RegisterRow>(
+        `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE id = $1 FOR UPDATE`,
+        [entryId],
+      );
+      const row = found.rows[0];
+      if (!row) return { ok: false, reason: 'missing' };
+      const entry = toRegisterEntry(row);
+      if (entry.updatedAt !== seen) return { ok: false, reason: 'stale' };
+      const accepted = plan(entry);
+      if (accepted.reason !== null) {
+        return { ok: false, reason: 'not_acceptable', why: accepted.reason };
+      }
+      // Later than before by at least a millisecond, as `updatedAt` reads, so a preview of the
+      // entry as it was is stale now.
+      const updated = await client.query<RegisterRow>(
+        `UPDATE decomposition_register
+            SET state = 'accepted', last_receipt = $2, last_error = NULL,
+                updated_at = GREATEST(now(), date_trunc('milliseconds', updated_at)
+                                             + interval '1 millisecond')
+          WHERE id = $1
+         RETURNING ${REGISTER_COLUMNS}`,
+        [entryId, JSON.stringify(acceptedReceipt(entry.lastReceipt!, accepted.components))],
+      );
+      await client.query(
+        `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'accept', $2, $3)`,
+        [entryId, JSON.stringify(by), JSON.stringify({ changed: accepted.changed })],
+      );
+      const item = await client.query<ItemRow>(
+        `UPDATE decomposition_items SET detail = $2 WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
+        [itemId, detail(toRegisterEntry(updated.rows[0]!))],
+      );
+      return { ok: true, item: toItem(item.rows[0]!), changed: accepted.changed };
+    });
+  }
+
   private async inTransaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
     try {
@@ -1653,7 +2097,7 @@ export class PgRepo implements IngestionRepo {
   async applyDeliveryUpdate(
     deliveryId: string,
     update: DeliveryUpdate,
-    finish: (deliveries: JobDelivery[]) => JobFinish | null,
+    finish: (deliveries: JobDelivery[], job: { task: string }) => JobFinish | null,
   ): Promise<{ outcome: 'applied' | 'stale' | 'unknown'; finished: JobFinish | null }> {
     const client = await this.pool.connect();
     try {
@@ -1669,8 +2113,9 @@ export class PgRepo implements IngestionRepo {
       }
       // The job's row first: events for its other deliveries wait, so the one that makes the
       // last delivery final sees every other one final too, and finishes the job once.
-      const job = await client.query<{ status: string; background: boolean }>(
-        'SELECT status, document_id IS NULL AS background FROM jobs WHERE id = $1 FOR UPDATE',
+      const job = await client.query<{ status: string; background: boolean; task: string }>(
+        `SELECT status, document_id IS NULL AS background, task FROM jobs WHERE id = $1
+           FOR UPDATE`,
         [jobId],
       );
       const updated = await client.query(
@@ -1699,7 +2144,9 @@ export class PgRepo implements IngestionRepo {
           [deliveryId],
         );
       }
-      const finishedAs = finish(await deliveriesIn(client, jobId));
+      const finishedAs = finish(await deliveriesIn(client, jobId), {
+        task: job.rows[0]?.task ?? 'process',
+      });
       const outcome =
         finishedAs && job.rows[0]?.background ? backgroundFinish(finishedAs) : finishedAs;
       let finished: JobFinish | null = null;
@@ -1793,32 +2240,65 @@ export class PgRepo implements IngestionRepo {
   async settleRegisterEntry(
     deliveryId: string,
     s: RegisterSettlement,
+    item: (before: RegisterEntry) => ItemSettlement,
   ): Promise<'applied' | 'stale' | 'unknown'> {
-    // One statement, and only a pending entry moves. It does not wait for the worker's
-    // `set_delivery`: an event before that commits matches no row and is answered 409 (unknown),
-    // and the bridge's resend or the reconcile settles it.
-    const { rowCount } = await this.pool.query(
-      `UPDATE decomposition_register
-          SET state = $2,
-              persistent_id = COALESCE($3, persistent_id),
-              last_receipt = COALESCE($4::jsonb, last_receipt),
-              last_error = $5::jsonb,
-              delivered_at = CASE WHEN $6::boolean THEN now() ELSE delivered_at END,
-              updated_at = now()
-        WHERE delivery_id = $1 AND state = 'pending'`,
-      [
-        deliveryId,
-        s.state,
-        s.persistentId,
-        s.receipt === null ? null : JSON.stringify(s.receipt),
-        s.error === null ? null : JSON.stringify(s.error),
-        s.delivered,
-      ],
-    );
-    if (rowCount) return 'applied';
-    return (await this.registerEntryByDelivery(deliveryId)) ? 'stale' : 'unknown';
+    // Only a pending entry moves. It does not wait for the worker's `set_delivery`: until that
+    // commits the row's delivery is not this one, so an event before it matches no row and is
+    // answered 409 (unknown), and the bridge's resend or the reconcile settles it.
+    return this.inTransaction(async (client) => {
+      const found = await client.query<RegisterRow>(
+        `SELECT ${REGISTER_COLUMNS} FROM decomposition_register WHERE delivery_id = $1
+           FOR UPDATE`,
+        [deliveryId],
+      );
+      const row = found.rows[0];
+      if (!row) return 'unknown';
+      if (row.state !== 'pending') return 'stale';
+      const before = toRegisterEntry(row);
+      await client.query(
+        `UPDATE decomposition_register
+            SET state = $2,
+                persistent_id = COALESCE($3, persistent_id),
+                last_receipt = COALESCE($4::jsonb, last_receipt),
+                last_error = $5::jsonb,
+                delivered_at = CASE WHEN $6::boolean THEN now() ELSE delivered_at END,
+                updated_at = now()
+          WHERE id = $1`,
+        [
+          before.id,
+          s.state,
+          s.persistentId,
+          s.receipt === null ? null : JSON.stringify(s.receipt),
+          s.error === null ? null : JSON.stringify(s.error),
+          s.delivered,
+        ],
+      );
+      // A batch's entry names its batch by id (a uuid); a CLI delivery's may not.
+      if (before.batchId !== null && UUID_TEXT.test(before.batchId)) {
+        // The item that made this delivery: its batch and source key (unique in a batch), found
+        // whether or not the worker has recorded it delivering yet.
+        const settled = item(before);
+        await client.query(
+          `UPDATE decomposition_items
+              SET outcome = $3, detail = $4, link = $5, register_entry_id = $6::uuid
+            WHERE batch_id = $1::uuid AND source_key = $2 AND outcome = ANY($7::text[])`,
+          [
+            before.batchId,
+            before.sourceKey,
+            settled.outcome,
+            settled.detail,
+            settled.link,
+            before.id,
+            SETTLEABLE_ITEM,
+          ],
+        );
+      }
+      return 'applied';
+    });
   }
 }
+
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface RegisterRow {
   id: string;
@@ -1836,11 +2316,12 @@ interface RegisterRow {
   created_at: Date;
   updated_at: Date;
   delivered_at: Date | null;
+  detach_action_id: string | null;
 }
 
 const REGISTER_COLUMNS = `id::text, sink_id, instance_id, source_key, content_sha256, persistent_id,
   state, idempotency_key, delivery_id, last_receipt, last_error, batch_id, created_at, updated_at,
-  delivered_at`;
+  delivered_at, detach_action_id::text`;
 
 const toRegisterEntry = (r: RegisterRow): RegisterEntry => ({
   id: r.id,
@@ -1858,6 +2339,7 @@ const toRegisterEntry = (r: RegisterRow): RegisterEntry => ({
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
   deliveredAt: r.delivered_at?.toISOString() ?? null,
+  detachActionId: r.detach_action_id,
 });
 
 interface DeliveryRow {

@@ -17,13 +17,14 @@ describe('operators', () => {
     window.location.hash = '';
   });
 
-  it('see only Home, Jobs and Results in the menu, and no API docs link', async () => {
+  it('see only Home, Jobs, Results and Conversion in the menu, and no API docs link', async () => {
     render(<App api={fakeApi({ me: vi.fn(async () => OPERATOR) })} pollMs={0} />);
     const menu = await nav();
     expect(menu.getAllByRole('link').map((l) => l.textContent?.trim())).toEqual([
       'Home',
       'Jobs',
       'Results',
+      'Conversion',
     ]);
     expect(screen.queryByRole('link', { name: /API docs/ })).toBeNull();
   });
@@ -118,7 +119,7 @@ describe('Users: roles', () => {
     await userEvent.type(within(dialog).getByLabelText('Email address'), 'olu@example.com');
     await userEvent.click(within(role).getByRole('button', { name: 'Operator' }));
     expect(within(dialog).getByRole('note')).toHaveTextContent(
-      'Operators upload documents, follow and review jobs, and read results',
+      'Operators upload documents, follow and review jobs, read results and convert documents',
     );
     await userEvent.click(within(dialog).getByRole('button', { name: 'Add user' }));
     expect(onSave).toHaveBeenCalledWith({

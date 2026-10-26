@@ -2,6 +2,8 @@ import { vi } from 'vitest';
 import { pageOfJobs, type JobPageQuery } from '@ih/shared';
 import type { JobPageParams } from '../src/api/client.js';
 import type {
+  Batch,
+  Item,
   GitHubLinkBody,
   MaintenanceBody,
   MaintenanceNotice,
@@ -814,9 +816,84 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     getSegmentation: vi.fn(async () => {
       throw new Error('getSegmentation not stubbed');
     }),
+    listConversionTargets: vi.fn(async () => []),
+    listConversionBatches: vi.fn(async () => []),
+    createConversionBatch: vi.fn(async () => {
+      throw new Error('createConversionBatch not stubbed');
+    }),
+    uploadConversionItem: vi.fn(async () => {
+      throw new Error('uploadConversionItem not stubbed');
+    }),
+    startConversionBatch: vi.fn(async () => {
+      throw new Error('startConversionBatch not stubbed');
+    }),
+    discardConversionBatch: vi.fn(async () => {
+      throw new Error('discardConversionBatch not stubbed');
+    }),
+    getConversionBatch: vi.fn(async () => {
+      throw new Error('getConversionBatch not stubbed');
+    }),
+    getConversionReport: vi.fn(async () => {
+      throw new Error('getConversionReport not stubbed');
+    }),
+    forceConversionItem: vi.fn(async () => {
+      throw new Error('forceConversionItem not stubbed');
+    }),
+    redeliverConversionItem: vi.fn(async () => {
+      throw new Error('redeliverConversionItem not stubbed');
+    }),
+    detachConversionItem: vi.fn(async () => {
+      throw new Error('detachConversionItem not stubbed');
+    }),
+    previewAccept: vi.fn(async () => {
+      throw new Error('previewAccept not stubbed');
+    }),
+    acceptTargetState: vi.fn(async () => {
+      throw new Error('acceptTargetState not stubbed');
+    }),
     ...overrides,
   };
   return api;
+}
+
+/** A conversion batch, open, for the `documents` target. */
+export function conversionBatch(o: Partial<Batch> = {}): Batch {
+  return {
+    id: '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11',
+    targetId: 'documents',
+    createdBy: { id: null, name: 'Ken' },
+    state: 'open',
+    force: false,
+    createdAt: '2026-10-25T10:00:00.000Z',
+    startedAt: null,
+    ...o,
+  };
+}
+
+let nextItem = 0;
+
+/** An item of a conversion batch, queued (each call a new id). */
+export function conversionItem(o: Partial<Item> = {}): Item {
+  const n = String(++nextItem).padStart(12, '0');
+  return {
+    id: `0b7d4e2a-1c3f-4a5b-8d9e-${n}`,
+    batchId: '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11',
+    sourceKey: 'report.docx',
+    filename: 'report.docx',
+    contentSha256: 'a'.repeat(64),
+    sizeBytes: 2,
+    objectKey: `decomposition/6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11/${n}/source.docx`,
+    jobId: null,
+    outcome: 'queued',
+    detail: null,
+    registerEntryId: null,
+    reportKey: null,
+    link: null,
+    redeliverOf: null,
+    resolution: null,
+    unversioned: false,
+    ...o,
+  };
 }
 
 export function projectOverview(overrides: Partial<ProjectOverview> = {}): ProjectOverview {

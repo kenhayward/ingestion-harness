@@ -82,6 +82,16 @@ def plugin_preview_key(project_id: str, job_id: str) -> str:
     return f"plugin-previews/{project_id}/{job_id}.json"
 
 
+def decomposition_source_key(batch_id: str, item_id: str, ext: str) -> str:
+    """A batch item's uploaded Word file (runs bucket; TS decompositionSourceKey)."""
+    return f"decompositions/{batch_id}/{item_id}.{ext}"
+
+
+def decomposition_report_key(batch_id: str, item_id: str) -> str:
+    """A batch item's decomposition report flags (runs bucket; TS decompositionReportKey)."""
+    return f"decompositions/{batch_id}/{item_id}.report.json"
+
+
 def ontology_suggestions_key(project_id: str, job_id: str) -> str:
     """A survey's or refresh's ontology suggestions (runs bucket; TS ontologySuggestionsKey)."""
     return f"ontology-suggestions/{project_id}/{job_id}.json"

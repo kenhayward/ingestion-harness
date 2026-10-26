@@ -7642,3 +7642,106 @@ button.evidence-chip[aria-expanded='true'] {
     border-radius: 0;
   }
 }
+
+/* The Conversion tab: a new batch (decomposition phase 3). */
+.new-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.new-batch > .field {
+  max-width: 420px;
+}
+.conversion-drop {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  cursor: default;
+}
+.conversion-drop .drop-text {
+  flex: 1 1 220px;
+}
+.conversion-choose {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The focused chooser (its input is visually hidden just before it). */
+.conversion-choose input:focus-visible + label.button {
+  outline: 2px solid var(--ih-accent);
+}
+.conversion-row-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.conversion-hint {
+  margin: -8px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.conversion-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.conversion-progress .meter {
+  flex: 1 1 auto;
+  max-width: 420px;
+}
+
+/* The Conversion tab: one batch, and the earlier ones. */
+.conversion-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.batch-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.batch-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.batch-view-head p {
+  margin: 4px 0 0;
+}
+.batch-table-wrap {
+  overflow-x: auto;
+}
+.batch-table .mono {
+  overflow-wrap: anywhere;
+}
+.conversion-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.conversion-hint-tight {
+  margin: 4px 0 0;
+  font-size: var(--ih-text-sm);
+}
+.conversion-resolution {
+  margin: 0 0 4px;
+  font-weight: 500;
+}
+.conversion-report {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conversion-report li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}

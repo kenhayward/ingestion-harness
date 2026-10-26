@@ -41,6 +41,19 @@ describe('roles', () => {
     'GET /api/results',
     'GET /api/results/:jobId',
     'GET /api/results/:jobId/archive',
+    'GET /api/conversions/targets',
+    'GET /api/conversions/batches',
+    'POST /api/conversions/batches',
+    'GET /api/conversions/batches/:id',
+    'DELETE /api/conversions/batches/:id',
+    'POST /api/conversions/batches/:id/items',
+    'POST /api/conversions/batches/:id/start',
+    'GET /api/conversions/items/:id/report',
+    'POST /api/conversions/items/:id/force',
+    'POST /api/conversions/items/:id/redeliver',
+    'POST /api/conversions/items/:id/detach',
+    'GET /api/conversions/items/:id/accept',
+    'POST /api/conversions/items/:id/accept',
   ])('operators may call %s', (call) => {
     const [method, route] = call.split(' ') as [string, string];
     expect(operatorMayCall(method, route)).toBe(true);
@@ -67,6 +80,7 @@ describe('roles', () => {
     ['jobs', true],
     ['results', true],
     ['result', true],
+    ['conversion', true],
     ['review', true],
     ['profile', true],
     ['password', true],

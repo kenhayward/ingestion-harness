@@ -13,7 +13,7 @@ const ROLE_OPTIONS: readonly { value: Role; label: string }[] = (
 /** What each role may do, under the role buttons. */
 const ROLE_NOTES: Record<Role, string> = {
   operator:
-    'Operators upload documents, follow and review jobs, and read results. No document types, ontologies or Workbench.',
+    'Operators upload documents, follow and review jobs, read results and convert documents. No document types, ontologies or Workbench.',
   designer: 'Designers also build and test document types in the Workbench.',
   admin: 'Admins have full access, including adding and disabling users.',
 };

@@ -166,6 +166,17 @@ def test_a_failed_create_elsewhere_is_no_duplicate() -> None:
     assert decide(None, [other], SHA, force=False).outcome is None
 
 
+@pytest.mark.parametrize("force", [False, True])
+def test_the_sources_own_entry_in_by_hash_is_in_flight(force: bool) -> None:
+    """`by_key` read nothing, yet the content check finds an entry for this very source: another
+    run registered it in between (this one waited on that run's content lock): in flight."""
+    racing = entry(state="pending", persistent_id=None, delivery_id=None)
+    d = decide(None, [racing], SHA, force=force, source_key="reports/r1.docx")
+    assert (d.outcome, d.create, d.entry) == ("in_flight", False, racing)
+    other = entry(id="e2", source_key="elsewhere/r1.docx")
+    assert decide(None, [other], SHA, False, source_key="reports/r1.docx").outcome == "duplicate"
+
+
 # --- MemoryRegisterStore -----------------------------------------------------------------------
 
 

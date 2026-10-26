@@ -74,6 +74,7 @@ if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
 
     from .bridge.client import BridgeClient
+    from .decompose.job import DecompositionStores
     from .graph_registry import GraphRegistry
     from .linked_data import LinkedDataSettings
     from .mapping_memory import MappingMemoryStore
@@ -204,6 +205,8 @@ class PipelineDeps:
     #: The models' call slots, shared by every worker (call_slots); None: a model's parallel
     #: calls hold in this worker only.
     call_slots: CallSlots | None = None
+    #: The decomposition register and the conversion items (None: `decompose` jobs fail).
+    decomposition: DecompositionStores | None = None
 
 
 @dataclass(frozen=True)
