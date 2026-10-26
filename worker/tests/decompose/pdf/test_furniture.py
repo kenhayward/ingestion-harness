@@ -227,3 +227,20 @@ def test_piece_mixing_furniture_and_body_lines_keeps_the_body() -> None:
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert [[ln.text for ln in p.lines] for p in kept] == [["Opening line", "More"]] * 3
     assert dropped.furniture == {0: 1, 1: 1, 2: 1}
+
+
+def test_leader_lines_labelled_as_headings_are_contents() -> None:
+    names = ["SUMMARY", "INTRODUCTION", "METHODS", "RESULTS"]
+    runs = [Run("Table of Contents", 72, 200)] + [
+        Run(f"{name}.......{6 + 2 * n}", 72, 230 + 20 * n) for n, name in enumerate(names)
+    ]
+    items = [docling.text("section_header", 1, bl(60, 185, 300, 210), level=1)] + [
+        docling.text("section_header", 1, bl(60, 215 + 20 * n, 300, 235 + 20 * n), level=1)
+        for n in range(4)
+    ]
+    items.append(docling.text("section_header", 2, bl(60, 185, 300, 210), level=1))
+    pages = [Page(runs=runs), Page(runs=[Run("1 SUMMARY", 72, 200)])]
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["1 SUMMARY"]
+    assert dropped.contents_pages == (0,)

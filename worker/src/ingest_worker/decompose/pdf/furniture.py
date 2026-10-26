@@ -29,13 +29,15 @@ _RUN_LINES = 3
 #: ... this fraction of them with dot leaders.
 _RUN_LEADERS = 0.5
 
-_CONTENTS_LINE = re.compile(r"^(?P<title>.*\S)\s*(?:\.{2,}|…+)?\s+(?P<page>\d{1,4})$")
+#: The brief's pattern, except that a dot leader may touch the page number ("SUMMARY.....6").
+_CONTENTS_LINE = re.compile(r"^(?P<title>.*\S)\s*(?:(?:\.{2,}|…+)\s*|\s+)(?P<page>\d{1,4})$")
 _LEADER = re.compile(r"(?:\.{2,}|…)\s*\d{1,4}$")
 _CONTENTS_HEADING = re.compile(r"(?i)^(table of contents|contents|list of (tables|figures))$")
 _HEADER_FIELD = re.compile(r"^(?P<name>[A-Z][\w /&-]{1,40}):\s*(?P<value>\S.*)$")
 _EN_DASH = chr(0x2013)
 _HEADING_LABELS = frozenset({"section_header", "title"})
-#: A piece with one of these labels is never a contents entry, and ends a run of them.
+#: A line of a piece with one of these labels is a contents entry only with a dot leader;
+#: without one it ends a run.
 _BOUNDARY_LABELS = frozenset({"section_header", "title", "caption"})
 _PAGE_NUMBER = re.compile(r"\d{1,4}")
 #: A contents table needs this many entry rows.
@@ -167,7 +169,10 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
         return pieces[entry[0]].lines[entry[1]]
 
     def contents_at(entry: tuple[int, int]) -> bool:
-        return pieces[entry[0]].label not in _BOUNDARY_LABELS and _is_contents(line_at(entry))
+        line = line_at(entry)
+        if pieces[entry[0]].label in _BOUNDARY_LABELS:
+            return _has_leader(line) and _is_contents(line)  # Docling labels some contents so
+        return _is_contents(line)
 
     def run_from(start: int) -> int:
         """The index after the run of contents lines that starts at `start`. A run ends at a
