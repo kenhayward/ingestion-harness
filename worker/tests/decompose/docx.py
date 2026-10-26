@@ -24,6 +24,8 @@ NAMESPACES = (
 )
 _DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 _REL_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
+#: Every entry's time: a fixed one, so the same arguments build the same bytes (a test's sha).
+_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
 
 DEFAULT_STYLES = (
     f"<w:styles {NAMESPACES}>"
@@ -57,7 +59,8 @@ def build_docx(
     extra_parts: dict[str, bytes] | None = None,
 ) -> bytes:
     """Build a minimal valid package. `rels` entries are (id, type suffix or URI, target); a
-    target starting `http` is external. `extra_parts` adds raw parts by package path."""
+    target starting `http` is external. `extra_parts` adds raw parts by package path. The same
+    arguments always build the same bytes."""
     parts: dict[str, str | bytes] = dict(extra_parts or {})
     overrides = ['<Override PartName="/word/document.xml" ContentType="application/xml"/>']
     doc_rels: list[tuple[str, str, str]] = [("rIdStyles", "styles", "styles.xml")]
@@ -103,7 +106,9 @@ def build_docx(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, content in parts.items():
-            zf.writestr(name, content)
+            info = zipfile.ZipInfo(name, date_time=_ZIP_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(info, content)
     return buf.getvalue()
 
 

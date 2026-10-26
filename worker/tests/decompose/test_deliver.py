@@ -49,6 +49,20 @@ def report_docx(title: str = "Results") -> bytes:
     )
 
 
+def test_report_docx_is_the_same_bytes_whenever_it_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tests compare a fixture's sha with a later build's (the idempotency key derives from it),
+    so the bytes must not depend on the clock: a zip entry's time once flaked them."""
+    import time
+
+    first = report_docx("Two")
+    later = time.time() + 3600
+    monkeypatch.setattr(time, "time", lambda: later)
+
+    assert report_docx("Two") == first
+
+
 REFUSAL = BridgeError.model_validate(
     {"class": "needs_user", "code": "content_rejected", "message": "too large"}
 )
