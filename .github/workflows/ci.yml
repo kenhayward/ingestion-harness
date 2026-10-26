@@ -61,6 +61,20 @@ jobs:
       - run: uv run mypy
       - run: uv run pytest --cov=ingest_worker --cov-report=term-missing
 
+  layout:
+    name: Layout service (pytest)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: '0.10.5'
+          python-version: '3.12'
+      # No docling extra: the tests inject a fake analyser.
+      - run: uv run --frozen --project deploy/layout pytest -q
+
   stack:
     name: Images + compose smoke test
     needs: [node, worker]
