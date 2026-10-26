@@ -8,6 +8,13 @@ It parses untrusted PDFs, so in `deploy/docker-compose.yml` it sits on the inter
 network that only the worker shares (no route out, no published ports), with a read-only root,
 `/tmp` as a tmpfs and 6 GB of memory.
 
+## Running it
+
+It is opt-in (compose profile `pdf`): a plain `docker compose build` or `up` neither builds nor
+starts it. Start it with `docker compose --profile pdf up -d --build layout`, or add `pdf` to
+`COMPOSE_PROFILES` in `deploy/.env`. The worker does not wait for it; a missing layout service
+is a retryable error there.
+
 ## API
 
 | Request | Response |
