@@ -1,9 +1,12 @@
-"""A layout analyser for tests: answers each page range from a function and records the calls."""
+"""Fakes for tests: a layout analyser answering each page range from a function, and a cropper."""
 
 from __future__ import annotations
 
+import io
 from collections.abc import Callable
 from typing import Any
+
+from PIL import Image
 
 
 class FakeLayout:
@@ -20,3 +23,16 @@ class FakeLayout:
 
     def fingerprint(self) -> str:
         return self._fingerprint
+
+
+class FakeCropper:
+    """A cropper for tests: every region is a blank 10x10 PNG; the calls are recorded."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, tuple[float, float, float, float]]] = []
+
+    def crop(self, page: int, bbox: tuple[float, float, float, float]) -> bytes:
+        self.calls.append((page, bbox))
+        out = io.BytesIO()
+        Image.new("RGB", (10, 10), "white").save(out, format="PNG")
+        return out.getvalue()

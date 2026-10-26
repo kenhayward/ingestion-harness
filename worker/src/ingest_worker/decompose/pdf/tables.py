@@ -59,9 +59,18 @@ Key = tuple[int, int]
 
 @dataclass(frozen=True)
 class JoinedTable(LayoutTable):
-    """A table joined across pages: its rows are the first part's, then each continuation's."""
+    """A table joined across pages: its rows are the first part's, then each continuation's;
+    `regions` holds each part's page and box."""
 
     last_page: int = 0
+    regions: tuple[tuple[int, BBox], ...] = ()
+
+
+def table_regions(piece: Piece) -> list[tuple[int, BBox]]:
+    """The page and box of each part of a table piece: one per page for a joined table."""
+    if isinstance(piece.table, JoinedTable):
+        return list(piece.table.regions)
+    return [(piece.page, piece.bbox)]
 
 
 def _last_page(piece: Piece) -> int:
@@ -229,6 +238,7 @@ def _join(first: Piece, second: Piece, ledger: Ledger) -> Piece:
         first.table.captions + second.table.captions,
         first.table.label,
         last_page=_last_page(second),
+        regions=(*table_regions(first), *table_regions(second)),
     )
     return replace(first, table=table, cells=joined_cells)
 
