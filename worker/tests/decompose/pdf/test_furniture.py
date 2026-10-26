@@ -178,17 +178,24 @@ def test_heading_led_list_without_leaders_keeps_the_next_heading() -> None:
     assert dropped.contents_pages == (0,)
 
 
-def test_contents_table_is_dropped() -> None:
-    entries = [("Intro", "3"), ("Method", "5"), ("Results", "9")]
-    runs = [
+def _table_page(
+    rows: list[tuple[str, str]], *, label: str = "table", heading: str | None = None
+) -> tuple[list[Page], list[dict[str, Any]]]:
+    runs = [Run(heading, 72, 150)] if heading else []
+    runs += [
         Run(text, 78 + 200 * c, 219 + 30 * r)
-        for r, row in enumerate(entries)
+        for r, row in enumerate(rows)
         for c, text in enumerate(row)
     ]
     runs.append(Run("Body", 72, 500))
     table = docling.table(
-        1, bl(72, 200, 472, 300), [(r, c) for r in range(3) for c in range(2)], rows=3, cols=2
+        1,
+        bl(72, 200, 472, 200 + 30 * len(rows)),
+        [(r, c) for r in range(len(rows)) for c in range(2)],
+        rows=len(rows),
+        cols=2,
     )
+    table["label"] = label
     for cell in table["data"]["table_cells"]:
         r, c = cell["start_row_offset_idx"], cell["start_col_offset_idx"]
         cell["bbox"] = {
@@ -199,13 +206,53 @@ def test_contents_table_is_dropped() -> None:
             "coord_origin": "TOPLEFT",
         }
     items = [table, docling.text("text", 1, bl(60, 485, 300, 510))]
-    pieces, text, ledger = build([Page(runs=runs)], items)
+    if heading:
+        items.insert(0, docling.text("section_header", 1, bl(60, 135, 300, 160), level=1))
+    return [Page(runs=runs)], items
+
+
+CONTENTS_ROWS = [("Intro", "3"), ("Method", "5"), ("Results", "9")]
+
+
+def test_table_after_a_contents_heading_is_dropped() -> None:
+    pages, items = _table_page(CONTENTS_ROWS, heading="Contents")
+    pieces, text, ledger = build(pages, items)
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["Body"]
     assert all(p.table is None for p in kept)
     assert dropped.contents_pages == (0,)
     char = next(c for c in text.pages[0].chars if c.text == "I")
     assert ledger.entries(0)[char.index] == ["dropped:contents"]
+
+
+def test_document_index_table_is_dropped() -> None:
+    pages, items = _table_page(CONTENTS_ROWS, label="document_index")
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Body"]
+    assert dropped.contents_pages == (0,)
+
+
+def test_data_table_without_a_contents_heading_is_kept() -> None:
+    for rows in (
+        [("Apples", "5"), ("Pears", "7"), ("Plums", "9")],
+        [("Batch size", "321"), ("Months", "30"), ("Lots", "12")],
+    ):
+        pages, items = _table_page(rows)
+        pieces, text, ledger = build(pages, items)
+        kept, dropped, _ = drop_furniture(pieces, text, ledger)
+        assert sum(p.table is not None for p in kept) == 1
+        assert dropped.contents_pages == ()
+
+
+def test_table_after_a_contents_heading_must_read_as_entries() -> None:
+    pages, items = _table_page(
+        [("Batch", "321"), ("Months", "30"), ("Lots", "12")], heading="Contents"
+    )
+    pieces, text, ledger = build(pages, items)
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert sum(p.table is not None for p in kept) == 1
+    assert dropped.contents_pages == ()
 
 
 def test_footer_on_too_few_pages_is_kept() -> None:

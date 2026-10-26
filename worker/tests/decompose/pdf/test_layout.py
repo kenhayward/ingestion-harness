@@ -91,6 +91,15 @@ def test_table_cell_boxes_are_already_top_left() -> None:
     assert table.cells[0].header
 
 
+def test_table_keeps_its_label() -> None:
+    plain = docling.table(1, (0, 800, 100, 700), [(0, 0)], rows=1, cols=1)
+    index = docling.table(1, (0, 600, 100, 500), [(0, 0)], rows=1, cols=1)
+    index["label"] = "document_index"
+    parsed = parse_docling(docling.doc([(595, 842)], [plain, index]))
+    labels = [i.label for i in parsed.items if isinstance(i, LayoutTable)]
+    assert labels == ["table", "document_index"]
+
+
 def test_unknown_labels_parse_as_text() -> None:
     parsed = parse_docling(docling.doc([(595, 842)], [docling.text("mystery", 1, (0, 10, 5, 5))]))
     item = parsed.items[0]

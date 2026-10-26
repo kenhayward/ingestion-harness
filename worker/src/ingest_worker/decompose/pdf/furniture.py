@@ -137,8 +137,9 @@ def _has_leader(line: Line) -> bool:
     return _LEADER.search(line.text) is not None
 
 
-def _is_contents_table(piece: Piece) -> bool:
-    """A table whose rows each read as a contents entry: text, then a page number."""
+def _reads_as_entries(piece: Piece) -> bool:
+    """A table whose rows each read as a contents entry: a title with a letter, then a page
+    number, the page numbers not decreasing down the rows."""
     if piece.table is None or not piece.cells:
         return False
     rows: dict[int, list[tuple[int, str]]] = defaultdict(list)
@@ -148,11 +149,27 @@ def _is_contents_table(piece: Piece) -> bool:
             rows[row].append((col, cell))
     if len(rows) < _TABLE_ROWS:
         return False
-    for cells in rows.values():
-        cells.sort()
+    previous = 0
+    for row in sorted(rows):
+        cells = sorted(rows[row])
         if len(cells) < 2 or not _PAGE_NUMBER.fullmatch(cells[-1][1]):
             return False
+        if not any(c.isalpha() for _, cell in cells[:-1] for c in cell):
+            return False
+        number = int(cells[-1][1])
+        if number < previous:
+            return False
+        previous = number
     return True
+
+
+def _is_heading(piece: Piece) -> bool:
+    heading = " ".join(line.text for line in piece.lines).strip()
+    return (
+        piece.label in _HEADING_LABELS
+        and _is_text(piece)
+        and _CONTENTS_HEADING.match(heading) is not None
+    )
 
 
 def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], set[int]]:
@@ -195,8 +212,14 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
     for i, piece in enumerate(pieces):
         if piece.label == "document_index" and _is_text(piece):
             doomed.update((i, j) for j in range(len(piece.lines)))
-        elif _is_contents_table(piece):
-            tables.add(i)
+        elif piece.table is not None:
+            after_heading = i > 0 and _is_heading(pieces[i - 1])
+            if piece.table.label == "document_index" or (
+                after_heading and _reads_as_entries(piece)
+            ):
+                tables.add(i)
+                if after_heading:
+                    doomed.update((i - 1, j) for j in range(len(pieces[i - 1].lines)))
 
     # A contents heading, with the contents lines after it (if there are none, it stays).
     for k, entry in enumerate(seq):

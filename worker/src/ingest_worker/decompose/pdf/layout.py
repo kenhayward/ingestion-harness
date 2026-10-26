@@ -54,6 +54,8 @@ class LayoutTable:
     cols: int
     cells: tuple[LayoutCell, ...]
     captions: tuple[str, ...]
+    #: Docling's label: `table`, or `document_index` for a table of contents.
+    label: str = "table"
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,7 @@ class _Parser:
                 int(data.get("num_cols", 0)),
                 cells,
                 self._captions(node),
+                str(node.get("label") or "table"),
             )
         if kind == "pictures":
             return LayoutPicture(ref, page, bbox, self._captions(node))
