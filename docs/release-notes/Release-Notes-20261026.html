@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Monday 26 October 2026: Word documents converted in batches, for a target that takes
-        decomposed documents. PR #329, opened on Monday 26 October 2026 (UTC).
+        decomposed documents. PRs #329 to #330, opened on Monday 26 October 2026 (UTC).
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -171,6 +171,13 @@
           <li>
             <a href="#conversion-batches">Word documents converted in batches</a>
             <span>— one file, several or a whole folder, each delivered as its own document</span>
+          </li>
+        </ul>
+        <h4>Other updates</h4>
+        <ul>
+          <li>
+            <a href="#worktrees-ignored">The checks skip local worktrees</a>
+            <span>— for people working on CT Studio itself</span>
           </li>
         </ul>
       </nav>
@@ -301,6 +308,15 @@
         next step is converting a sample report through the tab to the first real target.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
+      <h2 id="other">Other updates</h2>
+
+      <h3 id="worktrees-ignored">The checks skip local worktrees</h3>
+      <p class="prs"><a href="https://github.com/kenhayward/ingestion-harness/pull/330">#330</a></p>
+      <p>
+        For people working on CT Studio itself: the lint and format checks no longer scan other
+        branches' working copies kept inside a checkout, or local analysis output, so they pass when
+        run from the main checkout.
+      </p>
     </main>
   </body>
 </html>

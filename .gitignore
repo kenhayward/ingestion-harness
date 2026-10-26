@@ -44,3 +44,6 @@ docs/samples/IMAGE process validation protocol.pdf
 
 # Understand Anything knowledge graph (local analysis output)
 .ua/
+
+# Claude Code's git worktrees: other branches' checkouts, never part of this one
+.claude/worktrees/
