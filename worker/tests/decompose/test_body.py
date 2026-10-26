@@ -232,3 +232,66 @@ def test_leading_blocks_never_share_an_id_with_a_section() -> None:
         assert [b.id for b in blocks] == ["s~lead#p-1"]
         assert [b.id for b in section.blocks] == [f"{section.id}#p-1"]
         assert section.id != "s~lead"
+
+
+def hr(level: int, *runs: str) -> str:
+    return f'<w:p><w:pPr><w:pStyle w:val="Heading{level}"/></w:pPr>{"".join(runs)}</w:p>'
+
+
+def r(text: str, props: str = "") -> str:
+    rpr = f"<w:rPr>{props}</w:rPr>" if props else ""
+    return f'<w:r>{rpr}<w:t xml:space="preserve">{text}</w:t></w:r>'
+
+
+def test_a_typed_heading_number_is_left_out_of_the_title() -> None:
+    """The target numbers headings, so a number typed at the start of one would show twice;
+    the section's id still comes from the whole heading, so ids don't change."""
+    _, sections, _ = walk(
+        h(1, "2 Basic Information")
+        + h(2, "2.1 Experiment Name")
+        + h(2, "2.2. Experimenters")
+        + hr(3, r("2.2"), r(".1"), r("\tStudy Director"))
+    )
+    (basic,) = sections
+    assert title(basic) == "Basic Information"
+    assert [title(s) for s in basic.sections] == ["Experiment Name", "Experimenters"]
+    assert title(basic.sections[1].sections[0]) == "Study Director"
+    assert basic.id == "s-2-basic-information"
+    assert basic.sections[0].id == "s-2-basic-information/s-2-1-experiment-name"
+
+
+@pytest.mark.parametrize(
+    ("level", "text"),
+    [
+        (1, "2.1 One level, two parts"),
+        (2, "3 Two levels, one part"),
+        (1, "2023 Results"),
+        (1, "7"),
+        (1, "4x4 Drives"),
+        (1, "1.5mg Dose"),
+    ],
+)
+def test_a_heading_that_only_starts_with_a_number_keeps_it(level: int, text: str) -> None:
+    _, sections, _ = walk(h(1, "Top") + h(level, text) if level > 1 else h(level, text))
+    section = sections[0].sections[0] if level > 1 else sections[0]
+    assert title(section) == text
+
+
+def test_a_heading_keeps_only_superscript_and_subscript() -> None:
+    """Bold, italic and underline in a heading are the publishing theme's (Word bolds its
+    headings); super- and subscript belong to the characters."""
+    _, sections, _ = walk(
+        hr(
+            1,
+            r("Results for H", "<w:b/><w:i/>"),
+            r("2", '<w:b/><w:vertAlign w:val="subscript"/>'),
+            r("O", '<w:u w:val="single"/>'),
+            r("x", '<w:vertAlign w:val="superscript"/>'),
+        )
+    )
+    assert [(t.text, sorted(t.marks)) for t in sections[0].title] == [  # type: ignore[union-attr]
+        ("Results for H", []),
+        ("2", ["subscript"]),
+        ("O", []),
+        ("x", ["superscript"]),
+    ]

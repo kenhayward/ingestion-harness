@@ -3,6 +3,9 @@
 A paragraph holding only display equations becomes one equation block for each. Headings (by
 outline level) open sections; ids come from the heading-title path and the ordinal
 of each kind of block within its section, so they survive edits elsewhere in the document.
+A title leaves out a heading number typed at its start (`ids.typed_number_length`), and keeps
+only superscript and subscript: the target numbers headings, and its publishing theme sets their
+bold, italic and underline. The id still comes from the whole heading text.
 
 When a scope's blocks are complete, a one-cell table of notes directly after a table becomes
 that table's notes, and a caption paragraph (`Caption` style, or holding a `SEQ` field) next to
@@ -25,7 +28,7 @@ from typing import Literal
 from xml.etree.ElementTree import Element
 
 from .equations import equation_of
-from .ids import child_id, normalise_title, section_id
+from .ids import child_id, normalise_title, section_id, typed_number_length
 from .inline import (
     EMBEDDED_DOCUMENT_TAGS,
     EMBEDDED_DOCUMENTS,
@@ -33,6 +36,7 @@ from .inline import (
     W,
     check_fields_closed,
     inlines_of,
+    merge_runs,
     move_bookmarks,
     place_bookmarks,
     plain_text,
@@ -48,6 +52,7 @@ from .model import (
     Flag,
     ImageBlock,
     Inline,
+    Link,
     ListBlock,
     ListItem,
     Paragraph,
@@ -545,7 +550,7 @@ def walk_body(pkg: Package, ctx: InlineContext) -> tuple[list[Block], list[Secti
         slug = normalise_title(title)
         parent.slugs[slug] = parent.slugs.get(slug, 0) + 1
         sid = section_id(None if parent is root else parent.id, title, parent.slugs[slug])
-        section = _Open(sid, level=level, title=inlines)
+        section = _Open(sid, level=level, title=_heading_title(inlines, level))
         place_bookmarks(ctx, sid)
         parent.sections.append(section)
         stack.append(section)
@@ -555,6 +560,36 @@ def walk_body(pkg: Package, ctx: InlineContext) -> tuple[list[Block], list[Secti
     check_fields_closed(ctx, "the body")
     ctx.pending_bookmarks.clear()  # bookmarks after the last block start in nothing
     return root.finish(ctx), [s.build(ctx) for s in root.sections]
+
+
+#: The marks a heading's title keeps: the rest are the publishing theme's.
+_HEADING_MARKS = frozenset({"superscript", "subscript"})
+
+
+def _heading_title(inlines: list[Inline], level: int) -> list[Inline]:
+    """A heading's inlines without a typed heading number, keeping only `_HEADING_MARKS`."""
+    lead: list[str] = []
+    for item in inlines:
+        if not isinstance(item, Text):
+            break
+        lead.append(item.text)
+    cut = typed_number_length("".join(lead), level)
+    out: list[Inline] = []
+    for item in inlines:
+        if cut and isinstance(item, Text):
+            taken = min(cut, len(item.text))
+            cut -= taken
+            item = Text(text=item.text[taken:], marks=item.marks)
+        out.append(_unthemed(item))
+    return merge_runs(out)
+
+
+def _unthemed(item: Inline) -> Inline:
+    if isinstance(item, Text):
+        return Text(text=item.text, marks=item.marks & _HEADING_MARKS)
+    if isinstance(item, Link):
+        return Link(href=item.href, inlines=[_unthemed(i) for i in item.inlines])
+    return item
 
 
 def _flag_heading(ctx: InlineContext, section: _Open, parent: _Open | None) -> None:
