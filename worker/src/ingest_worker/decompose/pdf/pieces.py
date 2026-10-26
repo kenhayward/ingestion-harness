@@ -26,7 +26,13 @@ from ingest_worker.decompose.pdf.layout import (
 from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer
 
 DropReason = Literal[
-    "furniture", "contents", "heading-number", "list-marker", "caption-number", "repeated-header"
+    "furniture",
+    "contents",
+    "heading-number",
+    "list-marker",
+    "caption-number",
+    "repeated-header",
+    "note-separator",
 ]
 
 #: Chars share a line when their baselines differ by at most this many times the font size.

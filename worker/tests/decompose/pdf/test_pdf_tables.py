@@ -224,6 +224,8 @@ def test_table_split_at_chunk_boundary_joins() -> None:
     table, _, flags = build_table(tables[0], "t-1", [], [], ledger, text.pages[0])
     assert grid_texts(table) == [["A", "B"], ["1", "2"], ["3", "4"]]
     assert owner(ledger, text, 1, "B") == ["dropped:repeated-header"]
+    assert owner(ledger, text, 1, "3") == [tables[0].ref]
+    assert owner(ledger, text, 1, "4") == [tables[0].ref]
     assert "joined across pages 1–2" in flags[0].message  # noqa: RUF001
 
 
@@ -252,6 +254,21 @@ def test_continuation_repeating_a_data_row_keeps_it() -> None:
     table, _, _ = build_table(tables[0], "t-1", [], [], ledger, text.pages[0])
     assert grid_texts(table) == [["A", "B"], ["1", "2"], ["A", "B"], ["3", "4"]]
     assert owner(ledger, text, 1, "A") == [tables[0].ref]
+
+
+def test_overshooting_span_stops_at_the_join() -> None:
+    specs: list[Spec] = [(0, 0, 1, 1, True), (0, 1, 1, 1, True), (1, 0, 2, 1, False)]
+    specs.append((1, 1, 1, 1, False))
+    items = [
+        grid(1, specs, rows=2, cols=2, top=700),
+        grid(2, simple(2, 2), rows=2, cols=2),
+    ]
+    pieces, text, ledger = build(split_pages(SECOND), items)
+    tables = tables_of(join_split_tables(pieces, text, ledger))
+    assert len(tables) == 1
+    table, _, _ = build_table(tables[0], "t-1", [], [], ledger, text.pages[0])
+    assert grid_texts(table) == [["A", "B"], ["1", "2"], ["3", "4"]]
+    assert table.rows[1].cells[0].row_span == 1
 
 
 def test_no_join_across_a_blank_page() -> None:
@@ -320,6 +337,38 @@ def test_caption_above_is_taken_and_numbered() -> None:
     assert owner(ledger, text, 0, "3") == ["dropped:caption-number"]
     assert owner(ledger, text, 0, "R") == [piece.ref]
     assert grid_texts(table) == [["A", "B"], ["1", "2"]]
+
+
+def test_paragraph_starting_with_table_n_is_not_a_caption() -> None:
+    texts = {(0, 0): "A", (0, 1): "B"}
+    runs = [Run("Table 3 shows the doses", 72, 90), *cell_runs(texts)]
+    items = [para(1, 78, 96), grid(1, simple(1, 2), rows=1, cols=2)]
+    pieces, text, ledger = build([Page(runs=runs)], items)
+    before, piece = pieces
+    table, consumed, _ = build_table(piece, "t-1", [], [before], ledger, text.pages[0])
+    assert table.caption == [] and consumed == set()
+    assert owner(ledger, text, 0, "T") == [before.ref]
+    assert owner(ledger, text, 0, "3") == [before.ref]
+
+
+def test_short_text_with_a_separated_number_is_a_caption() -> None:
+    texts = {(0, 0): "A", (0, 1): "B"}
+    runs = [Run("Table 4 – Doses", 72, 90), *cell_runs(texts)]  # noqa: RUF001
+    items = [para(1, 78, 96), grid(1, simple(1, 2), rows=1, cols=2)]
+    pieces, text, ledger = build([Page(runs=runs)], items)
+    before, piece = pieces
+    table, consumed, _ = build_table(piece, "t-1", [], [before], ledger, text.pages[0])
+    assert table.caption == [Text(text="Doses")] and table.numbered
+    assert consumed == {before.ref}
+
+
+def test_figure_first_row_is_not_a_table_caption() -> None:
+    texts = {(0, 0): "Figure 2: Plot", (1, 0): "1", (1, 1): "2"}
+    specs: list[Spec] = [(0, 0, 1, 2, False), (1, 0, 1, 1, False), (1, 1, 1, 1, False)]
+    pieces, text, ledger = build([Page(runs=cell_runs(texts))], [grid(1, specs, rows=2, cols=2)])
+    table, _, _ = build_table(pieces[0], "t-1", [], [], ledger, text.pages[0])
+    assert table.caption == []
+    assert grid_texts(table) == [["Figure 2: Plot"], ["1", "2"]]
 
 
 def test_caption_below_with_another_label_is_not_taken() -> None:
@@ -411,6 +460,7 @@ def test_notes_after_the_table() -> None:
     assert table.notes == [TableNote(marker="a", inlines=[Text(text="measured at 25 °C")])]
     assert consumed == {note.ref}
     assert owner(ledger, text, 0, "m") == [piece.ref]
+    assert owner(ledger, text, 0, ":") == ["dropped:note-separator"]
     assert owner(ledger, text, 0, "y") == [body.ref]
     assert flags[0].message == "Table grid inferred from layout"
 

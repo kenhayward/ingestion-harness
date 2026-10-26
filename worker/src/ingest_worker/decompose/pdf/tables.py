@@ -45,6 +45,10 @@ _RIGHT_RATIO = 1 / 3
 #: Vertical alignment needs at least this many lines (font sizes) of free height in the cell.
 _FREE_LINES = 1.5
 
+#: A caption piece found by its "Table N" prefix alone has at most this many lines ...
+_CAPTION_LINES = 2
+#: ... and this separator right after its number.
+_SEPARATOR = re.compile(r"\s*[:.–-]")  # noqa: RUF001
 #: What separates the markers in one superscript run, as in the Word reader.
 _MARKER_SPLIT = re.compile(r"[\s,;()\[\]]+")
 
@@ -71,9 +75,10 @@ def _is_body(piece: Piece) -> bool:
 
 
 def _dims(table: LayoutTable) -> tuple[int, int]:
-    """Rows and columns, enough to hold every cell."""
-    rows = max([table.rows, *(c.row + max(c.row_span, 1) for c in table.cells)])
-    cols = max([table.cols, *(c.col + max(c.col_span, 1) for c in table.cells)])
+    """Rows and columns, Docling's or enough to hold every cell's origin; a span that overshoots
+    them is clipped, not given rows of its own."""
+    rows = max([table.rows, *(c.row + 1 for c in table.cells)])
+    cols = max([table.cols, *(c.col + 1 for c in table.cells)])
     return rows, cols
 
 
@@ -302,27 +307,29 @@ def _inlines(lines: Iterable[Line]) -> list[Inline]:
     return merge_runs(runs)
 
 
-def _split_prefix(line: Line, length: int) -> tuple[list[int], Line | None]:
+def _starts(line: Line) -> list[int]:
+    """Where each char starts in `line.text`; a blank char starts where the text before it
+    ends (`line.text` trims blanks and adds the word-gap spaces)."""
+    starts: list[int] = []
+    end = 0
+    for n, c in enumerate(line.chars):
+        if c.text.isspace():
+            starts.append(end)
+            continue
+        end = len(Line(line.page, line.chars[: n + 1], line.bbox).text)
+        starts.append(end - len(c.text))
+    return starts
+
+
+def _cut(line: Line, length: int) -> tuple[list[int], Line | None]:
     """The indexes of the chars that make the first `length` characters of `line.text` (and
     the blanks after them), and the line without them, or None when nothing is left."""
-    wanted = line.text[:length].rstrip()
-    chars = line.chars
+    starts = _starts(line)
     k = 0
-    if wanted:
-        k = next(
-            (
-                n
-                for n in range(1, len(chars) + 1)
-                if Line(line.page, chars[:n], line.bbox).text == wanted
-            ),
-            0,
-        )
-        if k == 0:
-            return [], line
-    while k < len(chars) and chars[k].text.isspace():
+    while k < len(line.chars) and (starts[k] < length or line.chars[k].text.isspace()):
         k += 1
-    rest = chars[k:]
-    return [c.index for c in chars[:k]], (Line(line.page, rest, line.bbox) if rest else None)
+    rest = line.chars[k:]
+    return [c.index for c in line.chars[:k]], (Line(line.page, rest, line.bbox) if rest else None)
 
 
 def _owned_by(lines: Iterable[Line], ref: str, ledger: Ledger) -> None:
@@ -348,6 +355,24 @@ class _Caption:
     ref: str | None  # the piece it was, if not a row of the grid
 
 
+def _table_prefix(text: str) -> re.Match[str] | None:
+    """A "Table N" prefix at the start of `text`, or None (a "Figure N" one included)."""
+    match = CAPTION_PREFIX.match(text)
+    return match if match is not None and match.group(1).lower() == "table" else None
+
+
+def _reads_as_caption(piece: Piece) -> bool:
+    """A "Table N" piece is a caption when Docling labels it one, or when it is short and its
+    number has an explicit separator: "Table 3 shows the doses" is a paragraph."""
+    text = piece.lines[0].text
+    match = _table_prefix(text)
+    if match is None:
+        return False
+    if piece.label == "caption":
+        return True
+    return len(piece.lines) <= _CAPTION_LINES and bool(_SEPARATOR.match(text, match.end(2)))
+
+
 def _find_caption(piece: Piece, before: list[Piece], after: list[Piece]) -> _Caption | None:
     """Docling's caption beside the table, else a "Table N" piece just above or below it."""
     assert piece.table is not None
@@ -359,14 +384,7 @@ def _find_caption(piece: Piece, before: list[Piece], after: list[Piece]) -> _Cap
     docling = {k for k in map(_key, piece.table.captions) if k}
     chosen = next((p for p in neighbours if _cell_key(p.lines) in docling), None)
     if chosen is None:
-        chosen = next(
-            (
-                p
-                for p in neighbours
-                if (m := CAPTION_PREFIX.match(p.lines[0].text)) and m.group(1).lower() == "table"
-            ),
-            None,
-        )
+        chosen = next((p for p in neighbours if _reads_as_caption(p)), None)
     if chosen is None:
         return None
     above = (chosen.page, chosen.bbox[1]) < (piece.page, piece.bbox[1])
@@ -380,23 +398,27 @@ def _caption_inlines(caption: _Caption, ledger: Ledger) -> tuple[list[Inline], b
     match = CAPTION_PREFIX.match(lines[0].text) if lines else None
     if match is None:
         return _inlines(lines), False
-    dropped, rest = _split_prefix(lines[0], match.end())
-    if not dropped:
-        return _inlines(lines), False
+    dropped, rest = _cut(lines[0], match.end())
     for index in dropped:
         ledger.drop(lines[0].page, index, "caption-number")
     kept = ([rest] if rest is not None else []) + lines[1:]
     return _inlines(kept), True
 
 
-def _notes(lines: list[Line]) -> list[TableNote]:
+def _notes(lines: list[Line], ledger: Ledger) -> list[TableNote]:
     """One note per line that starts with a marker; a line that doesn't continues the note
-    before it."""
+    before it. The marker's chars stay (it is the note's `marker`); the separator after it is
+    dropped as `note-separator`."""
     groups: list[tuple[str, list[Line]]] = []
     for line in lines:
         match = NOTE_PREFIX.match(line.text)
         if match is not None:
-            _, rest = _split_prefix(line, match.end())
+            _, rest = _cut(line, match.end(1))
+            separator: list[int] = []
+            if rest is not None:
+                separator, rest = _cut(rest, match.end() - len(line.text) + len(rest.text))
+            for index in separator:
+                ledger.drop(line.page, index, "note-separator")
             groups.append((match.group(1), [rest] if rest is not None else []))
         elif groups:
             groups[-1][1].append(line)
@@ -502,7 +524,7 @@ def build_table(
     first_row = 0
     if caption is None and rows > 1:
         slot = _sole_cell(0, cols, slots, covered)
-        if slot is not None and slot.lines and CAPTION_PREFIX.match(slot.lines[0].text):
+        if slot is not None and slot.lines and _table_prefix(slot.lines[0].text):
             caption = _Caption(slot.lines, "above", None)
             first_row = 1
     caption_inlines: list[Inline] = []
@@ -533,7 +555,7 @@ def build_table(
         last_row -= 1
     notes: list[TableNote] = []
     for r in range(last_row, rows):
-        notes.extend(_notes(slots[(r, 0)].lines))
+        notes.extend(_notes(slots[(r, 0)].lines, ledger))
     moved = last_row < rows
 
     # Notes after the table: the marker pieces that follow it (after a caption below it).
@@ -546,7 +568,7 @@ def build_table(
             break
         consumed.add(after.ref)
         _owned_by(after.lines, piece.ref, ledger)
-        notes.extend(_notes(after.lines))
+        notes.extend(_notes(after.lines, ledger))
 
     kept = range(first_row, last_row)
     header_rows = 0
