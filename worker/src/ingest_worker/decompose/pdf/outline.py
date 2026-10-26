@@ -209,6 +209,9 @@ def _part(piece: Piece, ref: str, lines: list[Line], ledger: Ledger) -> Piece:
         for c in line.chars:
             if entries.get(c.index) == [piece.ref]:
                 ledger.reassign(line.page, c.index, ref)
+    if piece.label in ("section_header", "title"):
+        # the rest of a Docling heading that the outline does not have
+        return replace(piece, ref=ref, lines=lines, bbox=_bounds(lines), label="text", level=None)
     return replace(piece, ref=ref, lines=lines, bbox=_bounds(lines))
 
 

@@ -209,3 +209,23 @@ def test_two_bookmarks_in_one_paragraph_split_it_in_turn() -> None:
     }
     assert owners["M"] == [f"{ref}~b~a"]
     assert owners["B"] == [f"{ref}~b"]
+
+
+def test_fragments_of_a_split_docling_heading_become_text() -> None:
+    runs = [Run("Docling head", 72, 100), Run("Real heading", 72, 114), Run("Tail", 72, 128)]
+    item = docling.text("section_header", 1, bl(60, 85, 400, 135), 2)
+    pieces, ledger, marks = build(runs, [item], [(1, "Real heading", 0, 104)])
+    out, _ = assign_headings(pieces, marks, ledger)
+    assert [p.label for p in out] == ["text", "section_header", "text"]
+    assert levels(out) == [None, 1, None]
+    assert [out[0].level, out[2].level] == [None, None]
+
+
+def test_bookmark_with_a_dotted_number_matches_and_drops_it() -> None:
+    pieces, ledger, marks = build(
+        [Run("1.1 Scope", 72, 100)], [head(1, 100)], [(1, "Part", 0, 50), (2, "1.1 Scope", 0, 90)]
+    )
+    out, flags = assign_headings(pieces, marks, ledger)
+    assert levels(out) == [2]
+    assert flags[0].message == "Bookmark left out: Part"
+    assert _owners(out[0], ledger)[:3] == [["dropped:heading-number"]] * 3
