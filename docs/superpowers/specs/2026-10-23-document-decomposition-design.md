@@ -188,8 +188,10 @@ section ids must survive sections being added or removed around them. **[call]**
   sections in order. Its level is its depth in the tree; it is not stored separately.
 - Content before the first heading belongs to the document itself, as its leading blocks (their
   ids are under `s~lead`, which no section title can produce).
-- An **empty heading** is kept as a section with no blocks; it is probably a placeholder.
-  **[call]**
+- An **empty heading** (no text, or only spaces and line breaks) is no section: Word shows
+  nothing for it, so it is read as an empty paragraph and left out, and what follows stays in the
+  section before it. It is flagged `heading_empty` (info) at that section. **[call]** (owner's
+  decision, 2026-10-26: empty headings are left out; phase 1 kept one as a `[]` section.)
 - A heading level that skips (level 1, then level 3) gets no invented section in between; the level
   3 section is a child of the level 1 one, and the skip is flagged. **[call]**
 
@@ -312,8 +314,7 @@ The flag codes:
 - `changes_accepted`: tracked changes were accepted (with the count);
 - `symbol_unmapped`;
 - `heading_skipped_level`;
-- `heading_empty`: a section whose heading has no text, which a target that needs titles has to
-  fill in;
+- `heading_empty` (info): an empty heading was left out (§5.1), at the section it was in;
 - `caption_not_found`: a table or figure has no caption that could be recognised;
 - `table_notes_unrecognised`;
 - `xref_unmatched`;

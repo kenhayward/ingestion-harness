@@ -127,12 +127,15 @@ def test_sample_like_report() -> None:
             "s-introduction",
             [("s-introduction/s-results", []), ("s-introduction/s-results~2", [])],
         ),
-        ("s-untitled", []),
         ("s-stability", [("s-stability/s-results", []), ("s-stability/s-figures", [])]),
     ]
-    assert doc.sections[1].title == [Text(text="[]")]
+    under_empty = doc.sections[0].sections[1]  # the empty heading's content stays in place
+    assert [plain_text(p.inlines) for p in blocks_of(under_empty, Paragraph)] == [
+        "Second results.",
+        "Under an empty heading.",
+    ]
 
-    stability = doc.sections[2]
+    stability = doc.sections[1]
     results, figures = stability.sections
     assay, sites = blocks_of(results, Table)
     assert assay.caption == [Text(text="Assay results")] and assay.numbered

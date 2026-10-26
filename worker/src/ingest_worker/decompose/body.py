@@ -71,7 +71,6 @@ from .tables import (
 
 Position = Literal["above", "below"]
 
-_EMPTY_TITLE = "[]"
 #: The scope of the blocks before the first heading: `~` is never in a title's slug, so no
 #: section can have this id.
 _LEADING = "s~lead"
@@ -523,23 +522,34 @@ def walk_body(pkg: Package, ctx: InlineContext) -> tuple[list[Block], list[Secti
         if level is None:
             flow.paragraph(el)
             continue
+        # The heading's parent, were it a section: the innermost open one of a lower level.
+        parent = next((s for s in reversed(stack) if s.level < level), root)
+        inlines = inlines_of(el, ctx, at=f"{parent.id}/heading")
+        if all(isinstance(i, Text | Break) for i in inlines) and not plain_text(inlines).strip():
+            # Owner's decision, 2026-10-26: Word shows nothing for an empty heading, so it is
+            # an empty paragraph, which leaves no trace; what follows stays where it is.
+            current = stack[-1] if stack else root
+            ctx.flags.append(
+                Flag(
+                    code="heading_empty",
+                    severity="info",
+                    at=current.id,
+                    message="an empty heading was left out",
+                )
+            )
+            continue
         flow.end_list()
         while stack and stack[-1].level >= level:
             stack.pop()
-        parent = stack[-1] if stack else root
-        inlines = inlines_of(el, ctx, at=f"{parent.id}/heading")
-        blank = (
-            all(isinstance(i, Text | Break) for i in inlines) and not plain_text(inlines).strip()
-        )
-        title = _EMPTY_TITLE if blank else plain_text(inlines)
+        title = plain_text(inlines)
         slug = normalise_title(title)
         parent.slugs[slug] = parent.slugs.get(slug, 0) + 1
         sid = section_id(None if parent is root else parent.id, title, parent.slugs[slug])
-        section = _Open(sid, level=level, title=[Text(text=_EMPTY_TITLE)] if blank else inlines)
+        section = _Open(sid, level=level, title=inlines)
         place_bookmarks(ctx, sid)
         parent.sections.append(section)
         stack.append(section)
-        _flag_heading(ctx, section, parent if parent is not root else None, blank)
+        _flag_heading(ctx, section, parent if parent is not root else None)
         flow.switch(section)
     flow.end_list()
     check_fields_closed(ctx, "the body")
@@ -547,11 +557,7 @@ def walk_body(pkg: Package, ctx: InlineContext) -> tuple[list[Block], list[Secti
     return root.finish(ctx), [s.build(ctx) for s in root.sections]
 
 
-def _flag_heading(ctx: InlineContext, section: _Open, parent: _Open | None, blank: bool) -> None:
-    if blank:
-        ctx.flags.append(
-            Flag(code="heading_empty", severity="warning", at=section.id, message="empty heading")
-        )
+def _flag_heading(ctx: InlineContext, section: _Open, parent: _Open | None) -> None:
     # Only a jump of two or more levels below a parent heading is a skip; a document that
     # starts at level 2 is not.
     if parent is not None and section.level > parent.level + 1:

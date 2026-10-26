@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ingest_worker.decompose.body import walk_body
 from ingest_worker.decompose.inline import InlineContext, RunStyles, plain_text
 from ingest_worker.decompose.model import Block, ListBlock, Paragraph, Section
@@ -113,11 +115,51 @@ def test_ids_survive_an_inserted_section() -> None:
     assert "s-preface" in all_ids(after)
 
 
-def test_empty_heading_kept_and_flagged() -> None:
-    _, sections, ctx = walk(h(1, "") + p("body"))
-    assert [title(s) for s in sections] == ["[]"]
-    assert texts(sections[0].blocks) == ["body"]
-    assert [(f.code, f.at) for f in ctx.flags] == [("heading_empty", "s-untitled")]
+HEADING_1 = '<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>'
+EMPTY_HEADINGS = {
+    "empty": h(1, ""),
+    "whitespace": f'<w:p>{HEADING_1}<w:r><w:t xml:space="preserve">   </w:t></w:r></w:p>',
+    "break only": f"<w:p>{HEADING_1}<w:r><w:br/></w:r></w:p>",
+    "spaces and a break": (
+        f'<w:p>{HEADING_1}<w:r><w:t xml:space="preserve"> </w:t><w:br/></w:r></w:p>'
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", list(EMPTY_HEADINGS))
+def test_empty_heading_makes_no_section(kind: str) -> None:
+    """Owner's decision, 2026-10-26: Word shows nothing for an empty heading, so it is no
+    section; what follows stays in the section before it."""
+    _, sections, _ = walk(h(1, "A") + p("a") + EMPTY_HEADINGS[kind] + p("b") + h(1, "C"))
+    assert [title(s) for s in sections] == ["A", "C"]
+    assert texts(sections[0].blocks) == ["a", "b"]
+
+
+def test_content_after_an_empty_heading_stays_in_the_innermost_section() -> None:
+    _, sections, _ = walk(h(1, "A") + h(2, "B") + p("b") + h(1, "") + p("x") + h(2, "D"))
+    (a,) = sections
+    assert [title(s) for s in a.sections] == ["B", "D"]
+    assert texts(a.sections[0].blocks) == ["b", "x"]
+
+
+def test_empty_heading_is_flagged_as_left_out() -> None:
+    _, _, ctx = walk(h(1, "A") + h(2, "B") + h(1, "") + p("x"))
+    assert [(f.code, f.severity, f.at, f.message) for f in ctx.flags] == [
+        ("heading_empty", "info", "s-a/s-b", "an empty heading was left out")
+    ]
+
+
+def test_empty_heading_before_any_heading_leaves_leading_content() -> None:
+    leading, sections, ctx = walk(p("first") + h(1, "") + p("second") + h(1, "A"))
+    assert texts(leading) == ["first", "second"]
+    assert [title(s) for s in sections] == ["A"]
+    assert [f.code for f in ctx.flags] == ["heading_empty"]
+
+
+def test_empty_heading_does_not_end_a_list() -> None:
+    _, sections, _ = walk(h(1, "A") + li(1, 0, "one") + h(1, "") + li(1, 0, "two"))
+    (a,) = sections
+    assert len(a.blocks) == 1 and isinstance(a.blocks[0], ListBlock)
 
 
 def test_skipped_level_nests_and_flags() -> None:
