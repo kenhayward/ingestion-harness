@@ -115,6 +115,32 @@ def test_chars_in_a_table_but_in_no_cell_go_to_the_nearest_cell() -> None:
     assert all(len(owners) == 1 for owners in ledger.entries(0).values())
 
 
+def test_table_cells_without_boxes_keep_every_char_in_the_first_cell() -> None:
+    runs, table = _table_page()
+    for cell in table["data"]["table_cells"]:
+        cell["bbox"] = None
+    pieces, ledger = attach(runs, [table])
+    (piece,) = pieces
+    assert piece.cells is not None
+    assert [ln.text for ln in piece.cells[(0, 0)]] == ["R0C0 R0C1", "R1C0 R1C1"]
+    assert all(owners == [piece.ref] for owners in ledger.entries(0).values())
+    assert len(ledger.entries(0)) == 16
+
+
+def test_stray_chars_fall_back_to_a_real_cell_when_there_is_no_origin_cell() -> None:
+    runs, table = _table_page()
+    cells = table["data"]["table_cells"]
+    table["data"]["table_cells"] = [
+        c for c in cells if (c["start_row_offset_idx"], c["start_col_offset_idx"]) == (1, 1)
+    ]
+    table["data"]["table_cells"][0]["bbox"] = None
+    pieces, ledger = attach(runs, [table])
+    (piece,) = pieces
+    assert piece.cells is not None and list(piece.cells) == [(1, 1)]
+    assert len(piece.cells[(1, 1)]) == 2
+    assert len(ledger.entries(0)) == 16
+
+
 def test_orphan_line_is_kept_and_placed() -> None:
     pieces, ledger = attach(
         [Run("Above", 72, 100), Run("Loose line", 72, 300), Run("Below", 72, 500)],

@@ -246,7 +246,12 @@ def attach_text(layout: LayoutDoc, text: TextLayer) -> tuple[list[Piece], Ledger
                 continue
             target: _Target = best[3]
             if isinstance(items[target[0]], LayoutTable) and target[1] is None:
-                target = _nearest_cell(cell_boxes[target[0]], point) or (target[0], (0, 0))
+                table = items[target[0]]
+                assert isinstance(table, LayoutTable)
+                target = _nearest_cell(cell_boxes[target[0]], point) or (
+                    target[0],
+                    _cell_keys(table)[0],
+                )
             owned[target].append(c)
 
     pieces: list[Piece] = []
@@ -268,11 +273,15 @@ def _nearest_cell(cells: list[tuple[BBox, _Target]], point: tuple[float, float])
     return min(cells, key=lambda cell: _distance(cell[0], point))[1]
 
 
+def _cell_keys(table: LayoutTable) -> list[tuple[int, int]]:
+    """The (row, col) of each origin cell, in order; (0, 0) alone for a table with no cells."""
+    return list(dict.fromkeys((c.row, c.col) for c in table.cells)) or [(0, 0)]
+
+
 def _piece(index: int, item: object, owned: dict[_Target, list[Char]]) -> Piece | None:
     if isinstance(item, LayoutTable):
-        keys = list(dict.fromkeys((c.row, c.col) for c in item.cells)) or [(0, 0)]
         cells: dict[tuple[int, int], list[Line]] = {}
-        for key in keys:
+        for key in _cell_keys(item):
             chars = owned.get((index, key), [])
             cells[key] = _lines(item.page, chars) if chars else []
         if not any(cells.values()):
