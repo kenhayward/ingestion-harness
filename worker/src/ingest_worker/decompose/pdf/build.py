@@ -48,6 +48,8 @@ from ingest_worker.decompose.pdf.textlayer import Char, PageText, TextLayer
 _SENTENCE_END = re.compile(r"[.!?:;]\s*$")
 #: Parts on one page join when the gap between them is at most this many line heights.
 _JOIN_GAP = 1.5
+#: ... and the second starts at most this many points above the first's bottom.
+_OVERLAP = 2.0
 #: A list item indented more than this many points past the one before it is nested.
 _LIST_STEP = 6.0
 #: An ordered list's marker.
@@ -242,9 +244,24 @@ class _Builder:
     # -- headings --
 
     def heading(self, piece: Piece) -> None:
-        self.end_flow()
         level = piece.heading_level
         assert level is not None
+        title = self.title(piece)
+        if not plain_text(title).strip():
+            # As in the Word reader: an empty heading (here, one of only its typed number) is
+            # left out and what follows stays where it is; its other chars go to the block
+            # before.
+            self.flags.append(
+                Flag(
+                    code="heading_empty",
+                    severity="info",
+                    at=self.scope.id,
+                    message="an empty heading was left out",
+                )
+            )
+            self.give_away(piece)
+            return
+        self.end_flow()
         while self.stack and self.stack[-1].level >= level:
             self.stack.pop()
         parent = self.stack[-1] if self.stack else self.root
@@ -252,7 +269,7 @@ class _Builder:
         slug = normalise_title(full)
         parent.slugs[slug] = parent.slugs.get(slug, 0) + 1
         sid = section_id(None if parent is self.root else parent.id, full, parent.slugs[slug])
-        section = _Scope(sid, level=level, title=self.title(piece))
+        section = _Scope(sid, level=level, title=title)
         parent.sections.append(section)
         self.stack.append(section)
         self.scope = section
@@ -310,7 +327,9 @@ class _Builder:
             return False
         if first.page == second.page:
             height = last.bbox[3] - last.bbox[1]
-            return nxt.bbox[1] - last.bbox[3] <= _JOIN_GAP * height
+            gap = nxt.bbox[1] - last.bbox[3]
+            # a part above the one before is not its continuation: joining would reorder text
+            return -_OVERLAP <= gap <= _JOIN_GAP * height
         return (
             second.page == first.page + 1
             and self.lasts.get(first.page) == first.ref
@@ -403,8 +422,7 @@ class _Builder:
     def finish(self) -> tuple[list[Block], list[Section], Provenance]:
         for ref, before in self.blank.items():
             self.owner[ref] = self.owner[before]
-        for ref, block_id in self.owner.items():
-            self.ledger.rename(ref, block_id)
+        self.ledger.rename_all(self.owner)
         ids = set(self.owner.values())
         pages: dict[str, set[int]] = {}
         for number in self.pages:

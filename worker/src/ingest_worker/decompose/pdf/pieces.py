@@ -175,6 +175,12 @@ class Ledger:
             for owners in chars.values():
                 owners[:] = [new if o == old else o for o in owners]
 
+    def rename_all(self, mapping: dict[str, str]) -> None:
+        """Every owner in `mapping` renamed to its value, in one pass over the chars."""
+        for chars in self._pages.values():
+            for owners in chars.values():
+                owners[:] = [mapping.get(o, o) for o in owners]
+
 
 def _lines(page: int, chars: list[Char]) -> list[Line]:
     """Chars grouped by baseline into lines, top to bottom, each left to right."""

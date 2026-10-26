@@ -142,6 +142,26 @@ def test_title_has_no_typed_number_and_no_bold() -> None:
     assert section.title == [Text(text="Scope")]
 
 
+def test_heading_of_only_its_number_is_left_out() -> None:
+    runs = [Run("1 Top", 72, 100), Run("Text under it", 72, 130), Run("3", 72, 160)]
+    runs.append(Run("and more of it", 72, 174))
+    items = [item("section_header", 1, 100), item("text", 1, 130), item("section_header", 1, 160)]
+    items.append(item("text", 1, 174))
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    # a heading whose only text was its typed number (as a bookmark can leave one)
+    pieces[2].heading_level = 1
+    flags = [f for f in flags if f.at != pieces[2].ref]  # numbering inferred its level
+    for c in pieces[2].lines[0].chars:
+        ledger.drop(0, c.index, "heading-number")
+    doc, _, _ = document(pieces, text, ledger, flags)
+    assert tree(doc.sections) == [("s-1-top", "Top", [])]
+    assert texts(doc.sections[0].blocks) == ["Text under it", "and more of it"]
+    assert owner_of(ledger, text, 0, "3") == ["dropped:heading-number"]
+    assert [(f.code, f.severity, f.at, f.message) for f in doc.report] == [
+        ("heading_empty", "info", "s-1-top", "an empty heading was left out")
+    ]
+
+
 def test_inferred_heading_flag_points_at_its_section() -> None:
     runs = [Run("Background", 72, 100), Run("Some text", 72, 130)]
     items = [item("section_header", 1, 100), item("text", 1, 130)]
@@ -187,6 +207,14 @@ def test_gap_too_wide_is_not_joined() -> None:
     pieces, text, ledger, _ = build([Page(runs=runs)], items)
     doc, _, _ = document(pieces, text, ledger)
     assert texts(doc.blocks) == ["A heading-like line", "and more text"]
+
+
+def test_part_above_the_one_before_is_not_joined() -> None:
+    runs = [Run("Lower on the page and", 72, 300), Run("higher up on it", 72, 100)]
+    items = [item("text", 1, 300), item("text", 1, 100)]
+    pieces, text, ledger, _ = build([Page(runs=runs)], items)
+    doc, _, _ = document(pieces, text, ledger)
+    assert texts(doc.blocks) == ["Lower on the page and", "higher up on it"]
 
 
 def test_sentence_end_is_not_joined() -> None:

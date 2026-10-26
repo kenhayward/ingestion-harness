@@ -284,6 +284,17 @@ def test_ledger_drop_and_rename() -> None:
     assert ledger.entries(0)[2] == ["dropped:furniture"]
 
 
+def test_ledger_rename_all_in_one_pass() -> None:
+    ledger = Ledger()
+    ledger.own(0, 1, "a")
+    ledger.own(0, 2, "b")
+    ledger.own(1, 3, "c")
+    ledger.drop(1, 4, "furniture")
+    ledger.rename_all({"a": "x", "b": "x", "c": "y"})
+    assert ledger.entries(0) == {1: ["x"], 2: ["x"]}
+    assert ledger.entries(1) == {3: ["y"], 4: ["dropped:furniture"]}
+
+
 def test_every_visible_char_is_owned_once() -> None:
     raw = json.loads((FIXTURES / "two-pages.docling.json").read_text("utf-8"))
     text = read_text_layer((FIXTURES / "two-pages.pdf").read_bytes())
