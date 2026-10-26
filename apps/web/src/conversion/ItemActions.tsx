@@ -43,10 +43,20 @@ export const canRedeliver = (item: Item) =>
 /** Detach or accept: a document changed in the target that neither has been done to (M7). */
 export const canResolve = (item: Item) =>
   item.outcome === 'changed_in_target' && item.registerEntryId !== null && !item.resolution;
+/**
+ * Detach: as `canResolve`, or an unresolved document whose versions were never recorded (§8),
+ * which no update can be checked against, so there is nothing to accept.
+ */
+export const canDetach = (item: Item) =>
+  canResolve(item) ||
+  (item.outcome === 'unresolved' &&
+    item.unversioned &&
+    item.registerEntryId !== null &&
+    !item.resolution);
 
 const APPLIES: Record<DialogKind, (item: Item) => boolean> = {
   redeliver: canRedeliver,
-  detach: canResolve,
+  detach: canDetach,
   accept: canResolve,
 };
 
@@ -67,8 +77,9 @@ function changedNote(kind: DialogKind, item: Item): string | null {
 /**
  * A conversion item's row actions, each offered only where it applies: force-load, redeliver
  * (optionally from a replacement file), and for a document changed in the target, detach or
- * accept the target's state (§8, "Resolving a refused document"). Once one of those two is done
- * the item's `resolution` says so, and neither is offered again. Each button names its document.
+ * accept the target's state (§8, "Resolving a refused document"); for an unresolved document
+ * whose versions were never recorded, detach only. Once one of those is done the item's
+ * `resolution` says so, and neither is offered again. Each button names its document.
  */
 export function ItemActions({
   api,
@@ -122,24 +133,24 @@ export function ItemActions({
         </button>
       )}
       {canResolve(item) && (
-        <>
-          <button
-            type="button"
-            disabled={busy}
-            aria-label={`Accept the target's state for ${key}`}
-            onClick={() => onOpen('accept')}
-          >
-            Accept the target&apos;s state
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            aria-label={`Detach ${key}`}
-            onClick={() => onOpen('detach')}
-          >
-            Detach
-          </button>
-        </>
+        <button
+          type="button"
+          disabled={busy}
+          aria-label={`Accept the target's state for ${key}`}
+          onClick={() => onOpen('accept')}
+        >
+          Accept the target&apos;s state
+        </button>
+      )}
+      {canDetach(item) && (
+        <button
+          type="button"
+          disabled={busy}
+          aria-label={`Detach ${key}`}
+          onClick={() => onOpen('detach')}
+        >
+          Detach
+        </button>
       )}
     </>
   );

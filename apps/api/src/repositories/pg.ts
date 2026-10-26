@@ -43,6 +43,7 @@ import {
   type Rerun,
   type RerunResult,
   RUNNING_OUTCOMES,
+  isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
 import {
@@ -272,6 +273,7 @@ interface ItemRow {
   link: string | null;
   redeliver_of: string | null;
   resolution: Item['resolution'];
+  unversioned: boolean;
 }
 
 /**
@@ -297,7 +299,15 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
                     END
                FROM decomposition_register r
               WHERE r.id = decomposition_items.register_entry_id)
-  END AS resolution`;
+  END AS resolution,
+  EXISTS (SELECT 1 FROM decomposition_register r
+           WHERE r.id = decomposition_items.register_entry_id
+             AND r.persistent_id IS NOT NULL
+             AND r.state NOT IN ('pending', 'detached')
+             AND COALESCE(jsonb_array_length(
+                   CASE WHEN jsonb_typeof(r.last_receipt->'document'->'components') = 'array'
+                        THEN r.last_receipt->'document'->'components' END), 0) = 0)
+    AS unversioned`;
 
 const toItem = (r: ItemRow): Item => ({
   id: r.id,
@@ -315,6 +325,7 @@ const toItem = (r: ItemRow): Item => ({
   link: r.link,
   redeliverOf: r.redeliver_of,
   resolution: r.resolution,
+  unversioned: r.unversioned,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -1510,8 +1521,11 @@ export class PgRepo implements IngestionRepo {
         [row.source_key, targetIds, RUNNING_OUTCOMES],
       );
       if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
-      // Only a document refused as changed in the target is detached: never a live one.
-      if (row.state !== 'changed') return { ok: false, reason: 'not_refused' };
+      // Only a document refused as changed in the target, or one whose versions were never
+      // recorded, is detached: never a live one.
+      if (row.state !== 'changed' && !isUnversioned(toRegisterEntry(row))) {
+        return { ok: false, reason: 'not_refused' };
+      }
       const action = await client.query<{ id: string }>(
         `INSERT INTO register_actions (entry_id, action, by, details) VALUES ($1, 'detach', $2, $3)
          RETURNING id::text`,

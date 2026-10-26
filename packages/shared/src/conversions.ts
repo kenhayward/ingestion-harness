@@ -78,6 +78,13 @@ export const ItemSchema = z
     link: z.string().nullable(),
     redeliverOf: z.string().uuid().nullable(),
     resolution: ItemResolutionSchema.nullable(),
+    /**
+     * The item's register entry holds a document whose component versions were never recorded
+     * (the worker's `unresolved`, §8): no update can be checked against the target's copy, and
+     * only detach resolves it. Read from the entry, like `resolution`: it has a persistent id,
+     * no recorded components, and is neither pending nor detached.
+     */
+    unversioned: z.boolean(),
   })
   .strict();
 export type Item = z.infer<typeof ItemSchema>;

@@ -321,6 +321,32 @@ describe('the Conversion tab: the batch view', () => {
     expect(row.queryByRole('button', { name: 'Redeliver changed.docx' })).toBeNull();
   });
 
+  it('an unresolved document whose versions were never recorded offers detach only', async () => {
+    const unversioned = item('unversioned.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      unversioned: true,
+      detail: 'the target holds this document but its versions were never recorded',
+    });
+    const lost = item('lost.docx', 'unresolved', { registerEntryId: crypto.randomUUID() });
+    const detached = { ...unversioned, resolution: 'detached' as const, unversioned: false };
+    const api = batchApi([unversioned, lost], {
+      detachConversionItem: vi.fn(async () => detached),
+    });
+    view(api);
+    await screen.findByText('unversioned.docx');
+
+    const row = within(rowOf('unversioned.docx'));
+    expect(
+      row.queryByRole('button', { name: "Accept the target's state for unversioned.docx" }),
+    ).toBeNull();
+    // An unresolved create that may have made a document has nothing to detach.
+    expect(within(rowOf('lost.docx')).queryByRole('button', { name: /^Detach/ })).toBeNull();
+    await userEvent.click(row.getByRole('button', { name: 'Detach unversioned.docx' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Detach unversioned.docx?' }));
+    await userEvent.click(dialog.getByRole('button', { name: 'Detach' }));
+    expect(api.detachConversionItem).toHaveBeenCalledWith(unversioned.id);
+  });
+
   it('accept shows each changed component and needs the checkbox', async () => {
     const changed = item('changed.docx', 'changed_in_target', {
       registerEntryId: crypto.randomUUID(),
@@ -468,7 +494,7 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.acceptTargetState).not.toHaveBeenCalled();
   });
 
-  it('resumes an open batch after reload', async () => {
+  it('re-reads a started batch after reload', async () => {
     window.location.hash = `#/conversion/${BATCH_ID}`;
     const api = batchApi([item('a.docx', 'created'), item('b.docx', 'failed')]);
     render(<App api={api} pollMs={0} />);

@@ -50,7 +50,8 @@ export interface ConversionRepo {
    * `detached` tombstone naming that action, and sets the item's detail, all at once. Refused
    * (`pending`) while a delivery for the entry is in flight, or a run of its source to a target
    * on its tenant is unfinished (a rerun queued, say); `missing` when it is gone or detached
-   * already.
+   * already; `not_refused` unless it is `changed` or unversioned (`isUnversioned`), so a live
+   * document is never detached.
    */
   detachRegisterEntry(detach: Detach): Promise<DetachResult>;
   /**
@@ -108,6 +109,19 @@ export type AcceptResult =
   | { ok: true; item: Item; changed: ChangedComponent[] }
   | { ok: false; reason: 'missing' | 'stale' }
   | { ok: false; reason: 'not_acceptable'; why: string };
+
+/**
+ * An entry whose document's component versions were never recorded (`Item.unversioned`): it
+ * has a persistent id and no components in its last receipt, and is neither pending (a run is
+ * on its way) nor detached. Detach takes it as it takes a `changed` one.
+ */
+export const isUnversioned = (
+  entry: Pick<RegisterEntry, 'state' | 'persistentId' | 'lastReceipt'>,
+): boolean =>
+  entry.persistentId !== null &&
+  entry.state !== 'pending' &&
+  entry.state !== 'detached' &&
+  !entry.lastReceipt?.document?.components.length;
 
 /** The item outcomes of a run not finished yet. */
 export const RUNNING_OUTCOMES: readonly Item['outcome'][] = ['queued', 'decomposing', 'delivering'];

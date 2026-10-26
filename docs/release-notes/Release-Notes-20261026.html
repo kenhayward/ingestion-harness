@@ -198,9 +198,10 @@
             <code>POST /api/conversions/items/{id}/accept</code> (accept the target's state: a
             preview, then a confirmed accept). Each item says whether its document has been
             detached, its target state accepted, or its refusal superseded by a later run
-            (<code>resolution</code>). Detach refuses a document that is not refused as changed in
-            the target (409 <code>not_refused</code>). Operators, designers and administrators may
-            all use them.
+            (<code>resolution</code>), and whether its document's versions were never recorded
+            (<code>unversioned</code>). Detach refuses a document that is neither refused as changed
+            in the target nor unversioned (409 <code>not_refused</code>). Operators, designers and
+            administrators may all use them.
           </li>
         </ul>
       </div>
@@ -279,7 +280,9 @@
         has been detached or its target state accepted, its row says so and offers neither again, in
         every batch that delivered it. A row whose refusal a later run has moved on from says
         <strong>Superseded by a later run</strong>, counts as done, and offers neither: only a
-        document refused as changed in the target can be detached.
+        document refused as changed in the target can be detached, or one the target holds whose
+        versions were never recorded. That one reads <strong>Unresolved</strong> and offers detach
+        only.
       </p>
       <p>
         Force-load and redeliver each start a new batch of one, and only one while it runs, however

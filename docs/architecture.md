@@ -209,7 +209,8 @@ or review step.
   - An entry's states are `pending`, `delivered`, `incomplete`, `changed`, `failed`, `detached`
     and `accepted`.
   - Detach and accept (`register_actions`, migration `202610252220_register_detached_accepted`)
-    act only on an entry refused as `changed`.
+    act only on an entry refused as `changed`. Detach also takes an entry whose document's
+    versions were never recorded (the item's `unversioned`, reported `unresolved`).
 - **Items settled from bridge events.** An item handed to the bridge is `delivering`. The bridge's
   final event for that delivery settles the register entry and the item together
   (`apps/api/src/bridge/register.ts`), whichever comes first, the event or the worker's write.

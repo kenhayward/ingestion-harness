@@ -126,6 +126,7 @@ export function conversionsContract(
         link: null,
         redeliverOf: null,
         resolution: null,
+        unversioned: false,
       });
       expect(await repo.getItem(a.id)).toEqual(items[0]);
       expect(await repo.getItem(randomUUID())).toBeNull();
@@ -302,6 +303,7 @@ export function conversionsContract(
         link: null,
         redeliverOf: of.id,
         resolution: null,
+        unversioned: false,
       });
       expect(await repo.listItems(batchId)).toEqual([rerun]);
       expect(await facts.job(rerun.jobId!)).toEqual({
@@ -557,6 +559,72 @@ export function conversionsContract(
         expect(await facts.actions(entryId)).toEqual([]);
         await facts.dropEntry(entryId);
       }
+    });
+
+    it('detaches a document whose versions were never recorded, from any settled state', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      for (const state of ['delivered', 'incomplete', 'failed'] as const) {
+        for (const lastReceipt of [
+          null,
+          { ...RECEIPT, document: { ...RECEIPT.document!, components: [] } },
+        ]) {
+          const entryId = await facts.entry({
+            ...changedSeed(a.sourceKey, batch.id),
+            state,
+            lastReceipt,
+            lastError: null,
+          });
+          await facts.settleItem(a.id, 'unresolved', entryId);
+          expect(ItemSchema.parse(await repo.getItem(a.id))).toMatchObject({
+            unversioned: true,
+            resolution: null,
+          });
+
+          const detached = await repo.detachRegisterEntry({
+            itemId: a.id,
+            entryId,
+            targetIds: ['manuals'],
+            by: ADA,
+            detail: () => 'gone',
+          });
+
+          if (!detached.ok) throw new Error(`${state}: ${detached.reason}`);
+          expect(detached.entry.state).toBe('detached');
+          expect(ItemSchema.parse(detached.item)).toMatchObject({
+            resolution: 'detached',
+            unversioned: false,
+          });
+          await facts.dropEntry(entryId);
+        }
+      }
+    });
+
+    it('an entry with versions, or with no document, is not unversioned', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const unversioned = async () => (await repo.getItem(a.id))?.unversioned;
+      expect(await unversioned()).toBe(false); // no entry
+      const live = await facts.entry({ ...changedSeed(a.sourceKey, batch.id), state: 'delivered' });
+      await facts.settleItem(a.id, 'unresolved', live);
+      expect(await unversioned()).toBe(false);
+      await facts.dropEntry(live);
+      const never = await facts.entry({
+        ...changedSeed(a.sourceKey, batch.id),
+        state: 'failed',
+        persistentId: null,
+        lastReceipt: null,
+        lastError: null,
+      });
+      await facts.settleItem(a.id, 'unresolved', never);
+      expect(await unversioned()).toBe(false);
+      expect(
+        await repo.detachRegisterEntry({
+          itemId: a.id,
+          entryId: never,
+          targetIds: ['manuals'],
+          by: ADA,
+          detail: () => 'x',
+        }),
+      ).toEqual({ ok: false, reason: 'not_refused' });
     });
 
     it('accepts nothing from a preview the entry has moved on from', async () => {

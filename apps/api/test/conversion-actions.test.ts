@@ -565,6 +565,23 @@ describe('detach', () => {
     expect(preview).toMatchObject({ acceptable: false, updatedAt: null });
   });
 
+  it('detaches an unresolved document whose versions were never recorded', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    const entry = settle(c, item, 'unresolved', { state: 'incomplete', lastReceipt: null });
+    const shown = BatchDetailSchema.parse(
+      (await c.app.inject(`/api/conversions/batches/${item.batchId}`)).json(),
+    ).items[0]!;
+    expect(shown).toMatchObject({ outcome: 'unresolved', unversioned: true, resolution: null });
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/detach`);
+
+    expect(res.statusCode).toBe(200);
+    expect(ItemSchema.parse(res.json())).toMatchObject({ resolution: 'detached' });
+    expect(c.repo.register.get(entry.id)?.state).toBe('detached');
+    expect(takeViolations()).toEqual([]);
+  });
+
   it('an old row cannot detach a document a later run delivered', async () => {
     const c = await setup();
     const old = await startedItem(c);

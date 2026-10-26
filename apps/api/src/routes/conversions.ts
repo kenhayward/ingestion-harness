@@ -52,7 +52,8 @@ const IN_FLIGHT = 'a delivery of this document, or a run of its file, is in flig
 const RERUN_RUNNING = 'a rerun of this item is still running';
 const STALE_PREVIEW = 'the document changed since the preview: look at it again';
 const NOT_REFUSED =
-  'the document is not refused as changed in the target: only a refused document is detached';
+  'the document is not refused as changed in the target: only a refused document, or one ' +
+  'whose versions were never recorded, is detached';
 
 const UUID = z.string().uuid();
 const BatchParams = z.object({ id: z.string().uuid().describe('The batch id.') });
@@ -631,9 +632,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           that it was detached. The document stays in the target, untouched, and the next run of
           the same source creates a new document, even from the same file. Refused while a
           delivery for it, or a run of its file on the same target, is in flight, and unless the
-          document is refused as changed in the target (\`not_refused\`), so a live document is
-          never detached, from an old row or a stale page. Recorded with who and when; the item's
-          detail says it was detached.
+          document is refused as changed in the target or its versions were never recorded (the
+          item's \`unversioned\`) (\`not_refused\`), so a live document is never detached, from
+          an old row or a stale page. Recorded with who and when; the item's detail says it was
+          detached.
         `,
         params: ItemParams,
         response: {
@@ -645,7 +647,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           409: res(
             'The item has no register entry (`no_register_entry`: never delivered, or detached ' +
               'already), a delivery for it or a run of its file is in flight (`in_flight`), or ' +
-              'its document is not refused as changed in the target (`not_refused`).',
+              'its document is neither refused as changed in the target nor unversioned ' +
+              '(`not_refused`).',
             ErrorBody.extend({ code: z.enum(['no_register_entry', 'in_flight', 'not_refused']) }),
           ),
         },

@@ -14,11 +14,12 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from ingest_worker.bridge.client import BridgeClient, BridgeRefused, BridgeUnavailable
 from ingest_worker.bridge.models import (
     ActingUser,
+    BridgeError,
     BridgePackage,
     CreateDeliveriesRequest,
     DecompositionProvenance,
@@ -244,7 +245,18 @@ def build_decomposition_package(
     )
 
 
-_NO_VERSIONS = "no component versions are recorded for this document; resolve it in the target"
+_NO_VERSIONS = (
+    "the target holds this document but its versions were never recorded; "
+    "detach to create a new one, or resolve it in the target"
+)
+
+
+def _no_versions_error() -> dict[str, Any]:
+    """The last error of an entry failed for `_NO_VERSIONS` (a bridge error's shape)."""
+    error = BridgeError.model_validate(
+        {"class": "needs_user", "code": "no_versions", "message": _NO_VERSIONS}
+    )
+    return error.model_dump(by_alias=True, mode="json")
 
 
 def _force_token(batch_id: str | None) -> str:
@@ -389,8 +401,13 @@ def deliver_decomposition(
             receipt = decision.entry.last_receipt
             expected = receipt.document.components if receipt and receipt.document else []
             if not expected:
-                # Nothing to hold the target's copy to: phase 3's detach or accept resolves it.
-                return DeliveryOutcome("changed_in_target", None, decision.entry.id, _NO_VERSIONS)
+                # Nothing to hold the target's copy to, so no update is sent: unresolved, and
+                # detach applies (the API's detach takes an entry with a document and no
+                # versions). A pending entry this batch's own earlier run left has sent none
+                # either: nothing is on its way, so it is failed now, not by the reconcile.
+                if own is not None:
+                    tx.set_failed(own.id, _no_versions_error())
+                return DeliveryOutcome("unresolved", None, decision.entry.id, _NO_VERSIONS)
             update = Update(persistent_id=decision.entry.persistent_id, expected=expected)
         key = decision.idempotency_key or decomposition_idempotency_key(
             sha,

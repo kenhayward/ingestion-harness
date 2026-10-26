@@ -12669,6 +12669,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "unversioned": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -12686,7 +12689,8 @@
                     "reportKey",
                     "link",
                     "redeliverOf",
-                    "resolution"
+                    "resolution",
+                    "unversioned"
                   ],
                   "additionalProperties": false,
                   "description": "The item."
@@ -13743,6 +13747,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "unversioned": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -13760,7 +13767,8 @@
                           "reportKey",
                           "link",
                           "redeliverOf",
-                          "resolution"
+                          "resolution",
+                          "unversioned"
                         ],
                         "additionalProperties": false
                       }
@@ -14265,6 +14273,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "unversioned": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -14282,7 +14293,8 @@
                           "reportKey",
                           "link",
                           "redeliverOf",
-                          "resolution"
+                          "resolution",
+                          "unversioned"
                         ],
                         "additionalProperties": false
                       }
@@ -14744,6 +14756,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "unversioned": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -14761,7 +14776,8 @@
                           "reportKey",
                           "link",
                           "redeliverOf",
-                          "resolution"
+                          "resolution",
+                          "unversioned"
                         ],
                         "additionalProperties": false
                       }
@@ -15098,7 +15114,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight, and unless the\ndocument is refused as changed in the target (`not_refused`), so a live document is\nnever detached, from an old row or a stale page. Recorded with who and when; the item's\ndetail says it was detached.",
+        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight, and unless the\ndocument is refused as changed in the target or its versions were never recorded (the\nitem's `unversioned`) (`not_refused`), so a live document is never detached, from\nan old row or a stale page. Recorded with who and when; the item's detail says it was\ndetached.",
         "parameters": [
           {
             "schema": {
@@ -15229,6 +15245,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "unversioned": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -15246,7 +15265,8 @@
                     "reportKey",
                     "link",
                     "redeliverOf",
-                    "resolution"
+                    "resolution",
+                    "unversioned"
                   ],
                   "additionalProperties": false,
                   "description": "The item: its detail says it was detached, and its `resolution` is `detached`."
@@ -15350,7 +15370,7 @@
             }
           },
           "409": {
-            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is not refused as changed in the target (`not_refused`).",
+            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target nor unversioned (`not_refused`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15384,7 +15404,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is not refused as changed in the target (`not_refused`)."
+                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target nor unversioned (`not_refused`)."
                 }
               }
             }
@@ -15806,6 +15826,9 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "unversioned": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -15823,7 +15846,8 @@
                         "reportKey",
                         "link",
                         "redeliverOf",
-                        "resolution"
+                        "resolution",
+                        "unversioned"
                       ],
                       "additionalProperties": false
                     },

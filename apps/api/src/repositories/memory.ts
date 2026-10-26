@@ -42,6 +42,7 @@ import {
   type Rerun,
   type RerunResult,
   RUNNING_OUTCOMES,
+  isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
 import {
@@ -86,7 +87,7 @@ import {
 } from './types.js';
 
 /** A conversion item as stored: its resolution is read from its register entry. */
-type StoredItem = Omit<Item, 'resolution'>;
+type StoredItem = Omit<Item, 'resolution' | 'unversioned'>;
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
@@ -1290,8 +1291,10 @@ export class MemoryRepo implements IngestionRepo {
   /** The item as the API shows it: its resolution read from its register entry (PgRepo's too). */
   private withResolution(item: StoredItem): Item {
     let resolution: Item['resolution'] = null;
+    let unversioned = false;
     if (item.registerEntryId) {
       const entry = this.register.get(item.registerEntryId);
+      unversioned = entry !== undefined && isUnversioned(entry);
       const state = entry?.state;
       // Gone: a create replaced the detached tombstone (worker `register.put_pending`).
       if (state === undefined || state === 'detached') resolution = 'detached';
@@ -1308,7 +1311,7 @@ export class MemoryRepo implements IngestionRepo {
         if (!own) resolution = 'superseded';
       }
     }
-    return structuredClone({ ...item, resolution });
+    return structuredClone({ ...item, resolution, unversioned });
   }
 
   async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
@@ -1487,8 +1490,11 @@ export class MemoryRepo implements IngestionRepo {
         targetIds.includes(this.conversionBatches.get(i.batchId)?.targetId ?? ''),
     );
     if (entry.state === 'pending' || running) return { ok: false, reason: 'pending' };
-    // Only a document refused as changed in the target is detached: never a live one.
-    if (entry.state !== 'changed') return { ok: false, reason: 'not_refused' };
+    // Only a document refused as changed in the target, or one whose versions were never
+    // recorded, is detached: never a live one.
+    if (entry.state !== 'changed' && !isUnversioned(entry)) {
+      return { ok: false, reason: 'not_refused' };
+    }
     const action: RegisterAction = {
       id: randomUUID(),
       entryId,

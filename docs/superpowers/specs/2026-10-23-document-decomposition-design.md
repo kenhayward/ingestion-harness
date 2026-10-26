@@ -481,6 +481,9 @@ target*:
 - A row whose document a later run has since delivered or refused again shows as *superseded*,
   with neither action. That way an old row can never detach a live document.
 - A row whose entry is in flight offers neither.
+- **[call]** An entry with a document but no recorded component versions can't be held to the
+  target's copy, so no update is sent: the row reads *unresolved* ("detach to create a new one,
+  or resolve it in the target") and offers detach only. There is nothing to accept.
 
 ### Deliveries that don't finish cleanly **[call]**
 

@@ -8,6 +8,7 @@ import importlib.util
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -354,7 +355,9 @@ def test_retry_after_lost_response_keeps_one_document() -> None:
     assert (stored.state, stored.delivery_id) == ("pending", None)
 
 
-def test_an_entry_without_component_versions_is_changed_in_target() -> None:
+def test_an_entry_without_component_versions_is_unresolved() -> None:
+    """The target holds the document, but nothing says which versions an update may overwrite:
+    nothing is sent, and the item offers detach (spec §8)."""
     bridge = FakeBridge()
     store = MemoryRegisterStore(clock=lambda: AT)
     deps = make_deps(bridge, store)
@@ -368,12 +371,47 @@ def test_an_entry_without_component_versions_is_changed_in_target() -> None:
         deps, data=report_docx("Two"), source_key="r1.docx", target_id=TARGET, started_by=USER
     )
 
-    assert (out.outcome, out.entry_id) == ("changed_in_target", first.entry_id)
+    assert (out.outcome, out.entry_id) == ("unresolved", first.entry_id)
     assert out.detail == (
-        "no component versions are recorded for this document; resolve it in the target"
+        "the target holds this document but its versions were never recorded; "
+        "detach to create a new one, or resolve it in the target"
     )
     assert len(bridge.requests) == 1
     assert [e.state for e in store.entries()] == ["incomplete"]
+
+
+def test_a_resend_of_an_update_without_versions_fails_its_own_pending_entry() -> None:
+    """This batch's own earlier run left the entry pending with no delivery, and the entry has a
+    document but no recorded versions: no update can have been sent, so nothing is on its way
+    and the entry is failed now, not left pending for the reconcile."""
+    bridge = FakeBridge()
+    store = MemoryRegisterStore(clock=lambda: AT)
+    data = report_docx()
+    first = deliver_decomposition(
+        make_deps(bridge, store), data=data, source_key="r1.docx", target_id=TARGET, started_by=USER
+    )
+    assert first.entry_id is not None
+    store.settle(first.entry_id, state="incomplete", persistent_id="DOC-1")
+    with store.transaction() as tx:
+        [entry] = store.entries()
+        tx.rows[entry.id] = replace(  # type: ignore[attr-defined]
+            entry, state="pending", batch_id="b2", delivery_id=None
+        )
+
+    out = deliver_decomposition(
+        make_deps(bridge, store),
+        data=data,
+        source_key="r1.docx",
+        target_id=TARGET,
+        started_by=USER,
+        batch_id="b2",
+    )
+
+    assert (out.outcome, out.entry_id) == ("unresolved", first.entry_id)
+    assert len(bridge.requests) == 1
+    [stored] = store.entries()
+    assert (stored.state, stored.persistent_id) == ("failed", "DOC-1")
+    assert stored.last_error is not None and stored.last_error["code"] == "no_versions"
 
 
 def test_a_definite_refusal_fails_the_entry() -> None:
