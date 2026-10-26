@@ -81,3 +81,29 @@ export function changedInTargetDetails(
   }
   return detailsOf(shown);
 }
+
+/** The `details.reason` of a refusal whose update names a document the target no longer has. */
+export const DOCUMENT_MISSING = 'document_missing';
+
+/**
+ * A sink's refusal of an update because the target no longer has that document (deleted there,
+ * say): `not_found` with `details {reason: 'document_missing', persistentId}`. Only this marker
+ * makes a producer treat the document as gone; any other `not_found` (no route, no sink job, a
+ * delivery the bridge lost, a document found elsewhere) says nothing about the document.
+ */
+export function documentMissing(persistentId: string, message: string): BridgeError {
+  return bridgeError('not_found', message, { reason: DOCUMENT_MISSING, persistentId });
+}
+
+/** Whether `error` is the missing-document marker for exactly `persistentId`. */
+export function isDocumentMissing(
+  error: Pick<BridgeError, 'code' | 'details'> | null | undefined,
+  persistentId: string | null,
+): boolean {
+  return (
+    persistentId !== null &&
+    error?.code === 'not_found' &&
+    error.details?.reason === DOCUMENT_MISSING &&
+    error.details.persistentId === persistentId
+  );
+}

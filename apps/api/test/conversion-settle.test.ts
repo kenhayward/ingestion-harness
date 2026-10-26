@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { bridgeError, type BridgeEvent, type Receipt } from '@ih/bridge-contract';
+import { bridgeError, documentMissing, type BridgeEvent, type Receipt } from '@ih/bridge-contract';
 import { GONE_DETAIL, type Item } from '@ih/shared';
 import { describe, expect, it } from 'vitest';
 import { applyEvent } from '../src/bridge/events.js';
+import { reconcileOnce, STRAGGLER_MINUTES } from '../src/bridge/reconcile.js';
 import { linkOf } from '../src/bridge/register.js';
 import { MemoryPublishTargetRepo } from '../src/publish-targets/repo.js';
 import { MemoryRepo } from '../src/repositories/memory.js';
+import { FakeBridgeApi } from './fake-bridge.js';
 
 const AT = '2026-10-25T10:00:00.000Z';
 const TARGET = 'manuals';
@@ -57,7 +59,7 @@ async function delivered(over: { persistentId?: string | null } = {}) {
     jobId,
     deliveryId,
     entryId: entry.id,
-    item: (): Omit<Item, 'resolution' | 'unversioned' | 'gone'> => ({
+    item: (): Omit<Item, 'resolution' | 'unversioned' | 'gone' | 'reloadable'> => ({
       ...repo.conversionItems.get(itemId)!,
     }),
     jobStatus: () => repo.backgroundJobs.find((j) => j.id === jobId)!.status,
@@ -183,10 +185,10 @@ describe('a conversion item, settled from the bridge events', () => {
     expect(t.jobStatus()).toBe('succeeded');
   });
 
-  it('an update refused as not found settles unresolved: the document is gone', async () => {
+  it("an update refused with the target's missing-document marker settles unresolved: gone", async () => {
     const t = await delivered({ persistentId: 'doc-1' });
     t.workerRecords();
-    const error = bridgeError('not_found', 'Repository lib has no map doc-1 for this update');
+    const error = documentMissing('doc-1', 'Repository lib has no map doc-1 for this update');
     await applyEvent(t.deps, event(t.deliveryId, { status: 'needs_user', error, receipt: null }));
     expect(await t.repo.getItem(t.item().id)).toMatchObject({
       outcome: 'unresolved',
@@ -199,6 +201,42 @@ describe('a conversion item, settled from the bridge events', () => {
       persistentId: 'doc-1',
     });
     expect(t.jobStatus()).toBe('succeeded');
+  });
+
+  it('an update refused as not_found without the marker, or for another document, fails', async () => {
+    for (const error of [
+      bridgeError('not_found', 'no such route'),
+      bridgeError('not_found', 'no sink job 7'),
+      documentMissing('doc-2', 'Repository lib has no map doc-2'),
+    ]) {
+      const t = await delivered({ persistentId: 'doc-1' });
+      t.workerRecords();
+      await applyEvent(t.deps, event(t.deliveryId, { status: 'needs_user', error, receipt: null }));
+      expect(await t.repo.getItem(t.item().id), error.message).toMatchObject({
+        outcome: 'failed',
+        detail: error.message,
+        gone: false,
+        reloadable: false,
+      });
+    }
+  });
+
+  it("the reconcile's not_found for a delivery the bridge lost is no gone document", async () => {
+    const t = await delivered({ persistentId: 'doc-1' });
+    t.workerRecords();
+    t.repo.ageRegisterEntry(t.entryId, new Date(Date.now() - (STRAGGLER_MINUTES + 1) * 60_000));
+    expect(
+      await reconcileOnce({ ...t.deps, bridge: new FakeBridgeApi() }, new Date()),
+    ).toBeGreaterThan(0);
+    expect(t.repo.register.get(t.entryId)).toMatchObject({
+      state: 'failed',
+      lastError: { code: 'not_found' },
+    });
+    expect(await t.repo.getItem(t.item().id)).toMatchObject({
+      outcome: 'failed',
+      gone: false,
+      reloadable: false,
+    });
   });
 
   it('a create refused as not found is no gone document: it fails', async () => {

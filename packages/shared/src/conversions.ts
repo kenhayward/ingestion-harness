@@ -87,12 +87,19 @@ export const ItemSchema = z
     unversioned: z.boolean(),
     /**
      * The item's register entry is gone from the target (§8, owner's call 2026-10-26): it has a
-     * persistent id and failed because the target refused its update as `not_found` (the
-     * document was deleted there, say). Updating it can never go through: only *Load as a new
-     * document* (`POST /api/conversions/items/{id}/reload`) or detach resolves it. Read from
-     * the entry, like `unversioned`.
+     * persistent id and failed because the sink refused its update with the missing-document
+     * marker for that document (`not_found`, details `reason: document_missing` and its
+     * `persistentId`; deleted there, say). Any other `not_found` is not gone. Updating it can
+     * never go through: only *Load as a new document* (`POST /api/conversions/items/{id}/reload`)
+     * or detach resolves it. Read from the entry, like `unversioned`.
      */
     gone: z.boolean(),
+    /**
+     * Whether *Load as a new document* applies, exactly as the route decides: the entry is gone,
+     * or is still the detached tombstone (no later create replaced it), and the row is not
+     * `superseded`. A reload whose rerun failed after its detach can so be tried again.
+     */
+    reloadable: z.boolean(),
     /**
      * When the worker first took the item (`decomposing`; a retry keeps it), and when it reached
      * a final outcome (the worker's decision, or the settle of its delivery); null until then,

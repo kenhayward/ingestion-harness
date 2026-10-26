@@ -387,6 +387,7 @@ describe('the Conversion tab: the batch view', () => {
     const gone = item('gone.docx', 'unresolved', {
       registerEntryId: crypto.randomUUID(),
       gone: true,
+      reloadable: true,
       detail: 'The target no longer has this document (it may have been deleted).',
     });
     const reloaded = {
@@ -421,8 +422,27 @@ describe('the Conversion tab: the batch view', () => {
     );
   });
 
-  it('a row that is not gone offers no load as a new document', async () => {
+  it('a row left detached by a reload whose rerun failed offers it again', async () => {
+    const left = item('left.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      resolution: 'detached',
+      reloadable: true,
+    });
+    view(batchApi([left]));
+    await screen.findByText('left.docx');
+    const row = within(rowOf('left.docx'));
+    expect(row.getByRole('button', { name: 'Load left.docx as a new document' })).toBeVisible();
+    expect(row.queryByRole('button', { name: 'Detach left.docx' })).toBeNull();
+  });
+
+  it('a row that is not reloadable offers no load as a new document', async () => {
     const api = batchApi([
+      item('superseded.docx', 'changed_in_target', {
+        registerEntryId: crypto.randomUUID(),
+        gone: true,
+        resolution: 'superseded',
+        reloadable: false,
+      }),
       item('changed.docx', 'changed_in_target', { registerEntryId: crypto.randomUUID() }),
       item('unresolved.docx', 'unresolved', {
         registerEntryId: crypto.randomUUID(),

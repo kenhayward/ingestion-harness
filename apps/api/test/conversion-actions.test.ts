@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   bridgeError,
   changedInTargetDetails,
+  documentMissing,
   type BridgeError,
   type BridgeEvent,
   type ComponentVersion,
@@ -618,7 +619,7 @@ describe('detach', () => {
 const goneEntry = (c: Ctx, item: Item) =>
   settle(c, item, 'unresolved', {
     state: 'failed',
-    lastError: bridgeError('not_found', 'Repository lib has no map doc-1 for this update'),
+    lastError: documentMissing('doc-1', 'Repository lib has no map doc-1 for this update'),
   });
 
 describe('a document gone from the target', () => {
@@ -740,6 +741,38 @@ describe('a document gone from the target', () => {
     expect(res.json()).toMatchObject({ code: 'not_gone' });
     expect(c.repo.conversionBatches.size).toBe(batches);
     expect(takeViolations()).toEqual([]);
+  });
+
+  it('refuses a superseded row, even when its entry is gone', async () => {
+    const c = await setup();
+    const old = await startedItem(c);
+    // The row was refused as changed; a later run's update found the document gone.
+    settle(c, old, 'changed_in_target', {
+      state: 'failed',
+      lastError: documentMissing('doc-1', 'Repository lib has no map doc-1 for this update'),
+    });
+    const shown = ItemSchema.parse(await c.repo.getItem(old.id));
+    expect(shown).toMatchObject({ gone: true, resolution: 'superseded', reloadable: false });
+
+    const res = await post(c.app, `/api/conversions/items/${old.id}/reload`);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'not_gone' });
+    expect(c.repo.registerActions).toEqual([]);
+  });
+
+  it('a gone item is reloadable, and stays so if its rerun failed after the detach', async () => {
+    const c = await setup();
+    const item = await startedItem(c);
+    goneEntry(c, item);
+    expect(ItemSchema.parse(await c.repo.getItem(item.id)).reloadable).toBe(true);
+    // The detach went through; the rerun did not (the row is left detached).
+    expect((await post(c.app, `/api/conversions/items/${item.id}/detach`)).statusCode).toBe(200);
+    expect(ItemSchema.parse(await c.repo.getItem(item.id))).toMatchObject({
+      resolution: 'detached',
+      reloadable: true,
+    });
+    expect((await post(c.app, `/api/conversions/items/${item.id}/reload`)).statusCode).toBe(201);
   });
 
   it('refuses a document that is not gone', async () => {

@@ -376,7 +376,21 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     // Someone deletes it in the target: a force-load's update is refused as not found.
     expect(await bridge.remove(first)).toBe(true);
     const forced = await rerunOf(created, 'force');
-    expect(forced).toMatchObject({ outcome: 'unresolved', gone: true, detail: GONE_DETAIL });
+    expect(forced).toMatchObject({
+      outcome: 'unresolved',
+      gone: true,
+      reloadable: true,
+      detail: GONE_DETAIL,
+    });
+    // The sink's marker reached the register unchanged, through the bridge and its event.
+    const marker = await pool.query<{ last_error: { details?: unknown } }>(
+      'SELECT last_error FROM decomposition_register WHERE id = $1',
+      [forced.registerEntryId],
+    );
+    expect(marker.rows[0]?.last_error).toMatchObject({
+      code: 'not_found',
+      details: { reason: 'document_missing', persistentId: first },
+    });
 
     // Running it again sends no update: still unresolved, still gone.
     const again = await rerunOf(forced, 'force');

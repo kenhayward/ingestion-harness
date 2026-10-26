@@ -67,19 +67,34 @@ _UNRESOLVED = (
 
 
 #: What a source gone from the target says (the API's `GONE_DETAIL`, word for word): its
-#: last update was refused as `not_found` (the document was deleted there, say).
+#: last update was refused with the sink's missing-document marker (deleted there, say).
 GONE = (
     "The target no longer has this document (it may have been deleted). "
     "Load it as a new document to create it again."
 )
 
 
+#: The `details.reason` of a sink's refusal whose update names a document the target no longer
+#: has (bridge contract `DOCUMENT_MISSING`).
+DOCUMENT_MISSING = "document_missing"
+
+
 def _gone(e: RegisterEntry) -> bool:
-    """Gone from the target (owner's call, 2026-10-26): a document whose update the target
-    refused as `not_found`. No run updates it again, forced or not: only the API's reload (a
-    detach, then a create) loads the source again."""
-    code = (e.last_error or {}).get("code")
-    return e.persistent_id is not None and e.state == "failed" and code == "not_found"
+    """Gone from the target (owner's call, 2026-10-26): a failed entry whose last error is the
+    sink's missing-document marker for its own document: `not_found` with details `reason:
+    document_missing` and `persistentId` the entry's. Any other `not_found` (a delivery the
+    bridge lost, no route, no sink job) says nothing about the document. No run updates a gone
+    entry again, forced or not: only the API's reload (a detach, then a create) loads it."""
+    error = e.last_error or {}
+    details = error.get("details")
+    return (
+        e.persistent_id is not None
+        and e.state == "failed"
+        and error.get("code") == "not_found"
+        and isinstance(details, dict)
+        and details.get("reason") == DOCUMENT_MISSING
+        and details.get("persistentId") == e.persistent_id
+    )
 
 
 @dataclass(frozen=True)

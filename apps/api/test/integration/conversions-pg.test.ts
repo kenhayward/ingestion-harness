@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { bridgeError, type BridgeEvent } from '@ih/bridge-contract';
+import { bridgeError, documentMissing, type BridgeEvent } from '@ih/bridge-contract';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { applyEvent } from '../../src/bridge/events.js';
@@ -402,17 +402,29 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
     expect(rows[0]?.message).toBe('changed in target: the document changed in the target');
   });
 
-  it('settles an update refused as not found as unresolved: the document is gone', async () => {
+  it("a not_found without the sink's marker (the reconcile's lost delivery) is not gone", async () => {
+    const plain = await handedOff({ persistentId: 'doc-1' });
+    const lost = bridgeError('not_found', 'the bridge has no record of this delivery');
+    await applyEvent(plain.deps, plain.event({ status: 'failed', error: lost, receipt: null }));
+    expect(await plain.repo.getItem(plain.itemId)).toMatchObject({
+      outcome: 'failed',
+      gone: false,
+      reloadable: false,
+    });
+  });
+
+  it("settles an update refused with the sink's missing-document marker as gone", async () => {
     const t = await handedOff({ persistentId: 'doc-1' });
     await t.p.query(`UPDATE decomposition_items SET outcome = 'delivering' WHERE id = $1`, [
       t.itemId,
     ]);
-    const error = bridgeError('not_found', 'Repository lib has no map doc-1 for this update');
+    const error = documentMissing('doc-1', 'Repository lib has no map doc-1 for this update');
     await applyEvent(t.deps, t.event({ status: 'needs_user', error, receipt: null }));
     expect(await t.repo.getItem(t.itemId)).toMatchObject({
       outcome: 'unresolved',
       detail: GONE_DETAIL,
       gone: true,
+      reloadable: true,
       resolution: null,
       finishedAt: expect.any(String),
     });

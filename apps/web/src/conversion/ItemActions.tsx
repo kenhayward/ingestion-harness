@@ -45,11 +45,11 @@ export const canRedeliver = (item: Item) =>
 export const canResolve = (item: Item) =>
   item.outcome === 'changed_in_target' && item.registerEntryId !== null && !item.resolution;
 /**
- * Load as a new document: a document gone from the target (its update refused as not found,
- * deleted there, say), which no update can reach (owner's call, 2026-10-26).
+ * Load as a new document: the item's `reloadable`, as the route decides it. A document gone from
+ * the target (deleted there, say), which no update can reach, or one still detached, so a reload
+ * whose rerun failed after its detach can be tried again (owner's call, 2026-10-26).
  */
-export const canReload = (item: Item) =>
-  item.gone && item.registerEntryId !== null && !item.resolution;
+export const canReload = (item: Item) => item.reloadable;
 /**
  * Detach: as `canResolve`, an unresolved document whose versions were never recorded (§8),
  * which no update can be checked against, so there is nothing to accept, or one gone from the
@@ -57,7 +57,7 @@ export const canReload = (item: Item) =>
  */
 export const canDetach = (item: Item) =>
   canResolve(item) ||
-  canReload(item) ||
+  (item.gone && item.registerEntryId !== null && !item.resolution) ||
   (item.outcome === 'unresolved' &&
     item.unversioned &&
     item.registerEntryId !== null &&

@@ -896,6 +896,7 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     resolution: null,
     unversioned: false,
     gone: false,
+    reloadable: false,
     startedAt: null,
     finishedAt: null,
     ...o,

@@ -450,14 +450,13 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       .filter((t) => t.sinkId === entry.sinkId && t.instanceId === entry.instanceId)
       .map((t) => t.id);
 
-  /** A new batch of one, started, rerunning `of` with `source` (R6); forced unless `force` is false. */
+  /** A new batch of one, forced and started, rerunning `of` with `source` (R6). */
   const rerun = (
     req: FastifyRequest,
     ids: { batchId: string; itemId: string },
     of: Item,
     batch: Batch,
     source: Rerun['source'],
-    force = true,
   ) =>
     app.deps.repo.rerunItem({
       ...ids,
@@ -466,7 +465,6 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       createdBy: batchCreator(creatorOf(req)),
       by: creatorOf(req),
       source,
-      force,
     });
 
   /** A rerun's answer: the new batch of one, or 409 while an earlier rerun is unfinished. */
@@ -694,10 +692,12 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         operationId: 'reloadConversionItem',
         summary: 'Load an item as a new document',
         description: md`
-          For a document the target no longer has (the item's \`gone\`: its update was refused
-          as \`not_found\`, the document deleted there, say), or one whose register entry is still
-          the detached tombstone (no later create has replaced it): detaches
-          its register entry if it is not detached yet (recorded with who, when and
+          For a document the target no longer has (the item's \`gone\`: the sink refused its
+          update with the missing-document marker, \`not_found\` with details
+          \`reason: document_missing\` naming that document; deleted there, say), or one whose
+          register entry is still the detached tombstone (no later create has replaced it), and
+          only when the row is not superseded (the item's \`reloadable\`): detaches its
+          register entry if it is not detached yet (recorded with who, when and
           \`reason: gone\`), then delivers the item's stored file as a plain create (not forced),
           in a new batch of one that starts at once. After the detach, that makes a **new**
           document in the target. The new item keeps the source key and names the item it reruns
@@ -709,7 +709,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           ...RerunResponses,
           409: res(
             'The item never started, it or a rerun of it is still running (`not_finished`), its ' +
-              'document is neither gone from the target nor still detached (`not_gone`), or a ' +
+              'document is not reloadable (`not_gone`: neither gone nor still detached, or ' +
+              'superseded), or a ' +
               'delivery of it or a run of its file is in flight (`in_flight`).',
             ErrorBody.extend({ code: z.enum(['not_finished', 'not_gone', 'in_flight']) }),
           ),
@@ -722,19 +723,19 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const batch = await app.deps.repo.getBatch(item.batchId);
       const why = notFinished(item, batch);
       if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
-      // The entry as it is now: gone, or still the detached tombstone. An item that only reads
-      // `detached` because a later create replaced the tombstone has a live document again.
+      // `reloadable` (read from the entry as it is now): gone, or still the detached tombstone,
+      // and not superseded. An item that only reads `detached` because a later create replaced
+      // the tombstone has a live document again.
       const entry = item.registerEntryId
         ? await app.deps.repo.registerEntry(item.registerEntryId)
         : null;
-      const gone = entry !== null && isGone(entry);
-      if (!gone && entry?.state !== 'detached') {
+      if (!item.reloadable || !entry) {
         return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
       }
       if (!(await takesDocuments(app, batch.targetId))) {
         return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
       }
-      if (gone) {
+      if (isGone(entry)) {
         const detached = await app.deps.repo.detachRegisterEntry({
           itemId: item.id,
           entryId: entry.id,
@@ -754,7 +755,21 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         }
       }
       const ids = { batchId: randomUUID(), itemId: randomUUID() };
-      return rerunReply(reply, await rerun(req, ids, item, batch, storedSource(item), false));
+      // The tombstone is checked again with the batch insert, in one transaction.
+      const done = await app.deps.repo.rerunItem({
+        ...ids,
+        of: item,
+        targetId: batch.targetId,
+        createdBy: batchCreator(creatorOf(req)),
+        by: creatorOf(req),
+        source: storedSource(item),
+        force: false,
+        whileDetached: entry.id,
+      });
+      if (!done.ok && done.reason === 'not_detached') {
+        return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
+      }
+      return rerunReply(reply, done);
     },
   );
 

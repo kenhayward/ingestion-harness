@@ -164,7 +164,12 @@ describe('the fake external sink server, documents mode', () => {
       idempotencyKey: 'an update',
       update: { persistentId, expected: components },
     });
-    expect(refused.json()).toMatchObject({ class: 'needs_user', code: 'not_found' });
+    // The sink's missing-document marker, through the signed route unchanged.
+    expect(refused.json()).toMatchObject({
+      class: 'needs_user',
+      code: 'not_found',
+      details: { reason: 'document_missing', persistentId },
+    });
   });
 
   it('has no /_edit outside documents mode', async () => {

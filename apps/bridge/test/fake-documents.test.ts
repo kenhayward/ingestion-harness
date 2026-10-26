@@ -258,7 +258,11 @@ describe('FakeDocumentSink, update', () => {
     expect(sink.remove('doc-1')).toBe(false);
     expect(sink.documents.has('doc-1')).toBe(false);
     const error = await refusal(sink.deliver(updateReq('doc-1', created.components, twoSections)));
-    expect(error).toMatchObject({ class: 'needs_user', code: 'not_found' });
+    expect(error).toMatchObject({
+      class: 'needs_user',
+      code: 'not_found',
+      details: { reason: 'document_missing', persistentId: 'doc-1' },
+    });
     expect(error.message).toContain('doc-1');
     // A create of the same file under a new key makes a new document.
     const again = await receiptOf(sink, createReq(twoSections, 'key-again'));

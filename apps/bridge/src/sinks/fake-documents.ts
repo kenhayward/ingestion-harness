@@ -1,5 +1,6 @@
 import {
   bridgeError,
+  documentMissing,
   changedInTargetDetails,
   type BrowseResult,
   type ComponentVersion,
@@ -95,8 +96,8 @@ function compareForms(
  * each section, each image), writes idempotently by key (a replayed key gets the receipt of its
  * first write, never the current state), refuses a conditional update when any
  * component changed (`changed_in_target`), refuses an update of a document deleted in the
- * target (`not_found`, as a real target does), and reads each write back through the shared
- * comparison forms. `edit`, `remove` and `corruptNextReadBack` stand for what happens in a real
+ * target (`not_found` with the missing-document marker, `documentMissing`, as a real sink
+ * does), and reads each write back through the shared comparison forms. `edit`, `remove` and `corruptNextReadBack` stand for what happens in a real
  * target.
  */
 export class FakeDocumentSink implements SinkPort {
@@ -225,8 +226,8 @@ export class FakeDocumentSink implements SinkPort {
     const stored = this.documents.get(update.persistentId);
     if (!stored && this.deleted.has(update.persistentId)) {
       throw new SinkError(
-        bridgeError(
-          'not_found',
+        documentMissing(
+          update.persistentId,
           `the target has no document ${update.persistentId} for this update to replace`,
         ),
       );

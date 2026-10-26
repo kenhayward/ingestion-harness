@@ -43,6 +43,7 @@ import {
   type RerunResult,
   RUNNING_OUTCOMES,
   isGone,
+  isReloadable,
   isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
@@ -88,7 +89,7 @@ import {
 } from './types.js';
 
 /** A conversion item as stored: its resolution is read from its register entry. */
-type StoredItem = Omit<Item, 'resolution' | 'unversioned' | 'gone'>;
+type StoredItem = Omit<Item, 'resolution' | 'unversioned' | 'gone' | 'reloadable'>;
 
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
@@ -1294,11 +1295,13 @@ export class MemoryRepo implements IngestionRepo {
     let resolution: Item['resolution'] = null;
     let unversioned = false;
     let gone = false;
+    let detached = false;
     if (item.registerEntryId) {
       const entry = this.register.get(item.registerEntryId);
       unversioned = entry !== undefined && isUnversioned(entry);
       gone = entry !== undefined && isGone(entry);
       const state = entry?.state;
+      detached = state === 'detached';
       // Gone: a create replaced the detached tombstone (worker `register.put_pending`).
       if (state === undefined || state === 'detached') resolution = 'detached';
       else if (state === 'accepted') resolution = 'accepted';
@@ -1314,7 +1317,8 @@ export class MemoryRepo implements IngestionRepo {
         if (!own) resolution = 'superseded';
       }
     }
-    return structuredClone({ ...item, resolution, unversioned, gone });
+    const reloadable = isReloadable(gone, detached, resolution);
+    return structuredClone({ ...item, resolution, unversioned, gone, reloadable });
   }
 
   async createBatch({ targetId, force, createdBy }: NewBatch): Promise<Batch> {
@@ -1437,11 +1441,15 @@ export class MemoryRepo implements IngestionRepo {
     by,
     source,
     force = true,
+    whileDetached,
   }: Rerun): Promise<RerunResult> {
     const running = [...this.conversionItems.values()].some(
       (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
     );
     if (running) return { ok: false, reason: 'running' };
+    if (whileDetached !== undefined && this.register.get(whileDetached)?.state !== 'detached') {
+      return { ok: false, reason: 'not_detached' };
+    }
     const batch: Batch = {
       id: batchId,
       targetId,

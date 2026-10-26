@@ -1,4 +1,4 @@
-import type { BridgeEvent, Receipt } from '@ih/bridge-contract';
+import { isDocumentMissing, type BridgeEvent, type Receipt } from '@ih/bridge-contract';
 import { GONE_DETAIL, type ItemOutcome } from '@ih/shared';
 import {
   FINAL_DELIVERY,
@@ -83,8 +83,9 @@ export function describeOutcome(outcome: ItemOutcome, detail: string | null): st
  * - incomplete with a failed read-back: `read_back_mismatch`, naming where it differed;
  * - incomplete without a document receipt: `failed`, since nothing shows the document arrived;
  * - changed: `changed_in_target`; failed: `failed`, each with the bridge's message;
- * - failed as `not_found` when it updated a known document: `unresolved`, the document gone
- *   from the target (deleted there, say), with `GONE_DETAIL` (owner's call, 2026-10-26).
+ * - failed with the sink's missing-document marker for the document it updated
+ *   (`isDocumentMissing`): `unresolved`, the document gone from the target (deleted there,
+ *   say), with `GONE_DETAIL` (owner's call, 2026-10-26). Any other `not_found` fails.
  */
 export function itemSettlementOf(s: RegisterSettlement, before: RegisterEntry): ItemSettlement {
   const link = linkOf(s.receipt);
@@ -114,7 +115,7 @@ export function itemSettlementOf(s: RegisterSettlement, before: RegisterEntry): 
       link,
     };
   }
-  if (s.error?.code === 'not_found' && before.persistentId !== null) {
+  if (isDocumentMissing(s.error, before.persistentId)) {
     return { outcome: 'unresolved', detail: GONE_DETAIL, link };
   }
   return { outcome: 'failed', detail: s.error?.message ?? 'the delivery failed', link };

@@ -44,6 +44,7 @@ import {
   type RerunResult,
   RUNNING_OUTCOMES,
   isGone,
+  isReloadable,
   isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
@@ -278,6 +279,7 @@ interface ItemRow {
   resolution: Item['resolution'];
   unversioned: boolean;
   gone: boolean;
+  entry_detached: boolean;
 }
 
 /**
@@ -317,8 +319,13 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
            WHERE r.id = decomposition_items.register_entry_id
              AND r.persistent_id IS NOT NULL
              AND r.state = 'failed'
-             AND r.last_error->>'code' = 'not_found')
-    AS gone`;
+             AND r.last_error->>'code' = 'not_found'
+             AND r.last_error->'details'->>'reason' = 'document_missing'
+             AND r.last_error->'details'->>'persistentId' = r.persistent_id)
+    AS gone,
+  EXISTS (SELECT 1 FROM decomposition_register r
+           WHERE r.id = decomposition_items.register_entry_id AND r.state = 'detached')
+    AS entry_detached`;
 
 const toItem = (r: ItemRow): Item => ({
   id: r.id,
@@ -338,6 +345,7 @@ const toItem = (r: ItemRow): Item => ({
   resolution: r.resolution,
   unversioned: r.unversioned,
   gone: r.gone,
+  reloadable: isReloadable(r.gone, r.entry_detached, r.resolution),
   startedAt: r.started_at?.toISOString() ?? null,
   finishedAt: r.finished_at?.toISOString() ?? null,
 });
@@ -1452,6 +1460,7 @@ export class PgRepo implements IngestionRepo {
     by,
     source,
     force = true,
+    whileDetached,
   }: Rerun): Promise<RerunResult> {
     return this.inTransaction(async (client) => {
       // The item rerun, locked: a repeated request waits here, then finds the first's rerun.
@@ -1462,6 +1471,15 @@ export class PgRepo implements IngestionRepo {
         [of.id, RUNNING_OUTCOMES],
       );
       if (running.rowCount) return { ok: false, reason: 'running' };
+      if (whileDetached !== undefined) {
+        // Still the tombstone, held until the batch is in: the worker's create, which replaces
+        // it, waits on this row lock.
+        const tombstone = await client.query(
+          `SELECT 1 FROM decomposition_register WHERE id = $1 AND state = 'detached' FOR UPDATE`,
+          [whileDetached],
+        );
+        if (!tombstone.rowCount) return { ok: false, reason: 'not_detached' };
+      }
       const batch = await client.query<BatchRow>(
         `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
          VALUES ($1, $2, $4, $3, 'started', now())

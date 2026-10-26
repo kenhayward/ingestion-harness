@@ -93,9 +93,15 @@ def test_pending_is_in_flight() -> None:
 
 
 def test_gone_entry_is_unresolved_forced_or_not() -> None:
-    """An update the target refused as `not_found` (the document was deleted there): no run
-    sends another, forced or not; only the API's reload (a detach, then a create) loads it."""
-    not_found = {"class": "needs_user", "code": "not_found", "message": "no map DOC-1"}
+    """An update the target refused with its missing-document marker (`not_found`, details
+    `reason: document_missing` naming the entry's own document; deleted there): no run sends
+    another, forced or not; only the API's reload (a detach, then a create) loads it."""
+    not_found = {
+        "class": "needs_user",
+        "code": "not_found",
+        "message": "no map DOC-1",
+        "details": {"reason": "document_missing", "persistentId": "DOC-1"},
+    }
     e = entry(state="failed", last_error=not_found)
     for force in (False, True):
         for sha in (SHA, NEW_SHA):
@@ -106,9 +112,17 @@ def test_gone_entry_is_unresolved_forced_or_not() -> None:
         "The target no longer has this document (it may have been deleted). "
         "Load it as a new document to create it again."
     )
-    # Another failure of an update is tried again; a failure with no document is no gone one.
-    other = entry(state="failed", last_error={**not_found, "code": "content_rejected"})
-    assert decide(other, [other], SHA, force=False).outcome is None
+    # Without the marker (a lost delivery, no route, no sink job), or with it naming another
+    # document, or another failure: not gone, so the update is tried again.
+    for error in (
+        {"class": "needs_user", "code": "not_found", "message": "no route"},
+        {"class": "needs_user", "code": "not_found", "message": "the bridge has no record"},
+        {**not_found, "details": {"reason": "document_missing", "persistentId": "DOC-2"}},
+        {**not_found, "details": {"reason": "elsewhere", "persistentId": "DOC-1"}},
+        {**not_found, "code": "content_rejected"},
+    ):
+        other = entry(state="failed", last_error=error)
+        assert decide(other, [other], SHA, force=False).outcome is None, error
     never = entry(state="failed", persistent_id=None, last_error=not_found)
     assert decide(never, [], SHA, force=False).outcome is None
 

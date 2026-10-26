@@ -488,11 +488,18 @@ target*:
 
 **[call]** (owner, 2026-10-26) **A document gone from the target.** A target may answer an update
 of a document it no longer holds (deleted there, say) with `not_found` rather than *changed in
-target*. Such an entry, with a persistent id, `failed` and `not_found` as its last error, is
-*gone*: the row reads *unresolved* ("The target no longer has this document (it may have been
-deleted). Load it as a new document to create it again.") and the item says `gone`. No run sends
-it another update, forced or not. The row offers **Load as a new document** and detach. Load as a
-new document asks for confirmation, then detaches the entry (recorded with `reason: gone`) and
+target*. The sink then sends a marker, and only that refusal carries it: `not_found` with
+`details: {reason: 'document_missing', persistentId}`, naming the document the update named. An
+entry is *gone* only when it has a persistent id, is `failed`, and its last error is that marker
+with the entry's own persistent id. Any other `not_found` says nothing about the document and is
+never *gone*: a delivery the bridge has no record of (the reconcile's), no such route, a sink job
+lost after a restart, or a document found elsewhere. Reloading on one of those could duplicate a
+document that still exists. For a gone entry the row reads *unresolved* ("The target no longer has this document (it may have
+been deleted). Load it as a new document to create it again.") and the item says `gone`. No run sends
+it another update, forced or not. The row offers **Load as a new document** and detach. The item's
+`reloadable` says when it applies: the entry is gone, or is still the detached tombstone (so a
+reload whose rerun failed after its detach can be tried again), and the row isn't *superseded*.
+Load as a new document asks for confirmation, then detaches the entry (recorded with `reason: gone`) and
 reruns the stored file as a plain create in a new batch of one. Because of the detach, that create
 makes a new document with a new persistent id. A double click makes one batch.
 

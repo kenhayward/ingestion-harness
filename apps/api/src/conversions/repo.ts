@@ -7,6 +7,7 @@ import {
   type Item,
   type ItemCounts,
 } from '@ih/shared';
+import { isDocumentMissing } from '@ih/bridge-contract';
 import type { RegisterEntry } from '../repositories/types.js';
 import type { AcceptPlan } from './accept.js';
 
@@ -88,7 +89,8 @@ export interface Accept {
   detail: (entry: RegisterEntry) => string;
 }
 
-export type RerunResult = { ok: true; batch: Batch; item: Item } | { ok: false; reason: 'running' };
+export type RerunResult =
+  { ok: true; batch: Batch; item: Item } | { ok: false; reason: 'running' | 'not_detached' };
 
 export interface Rerun {
   /** The new batch's and item's ids (a replacement file is stored under them first). */
@@ -106,6 +108,11 @@ export interface Rerun {
    * plain create (false): after its detach, that makes a new document.
    */
   force?: boolean;
+  /**
+   * A register entry that must still be a detached tombstone (reload): checked with the batch
+   * insert, in one transaction, refused `not_detached` when a create replaced it meanwhile.
+   */
+  whileDetached?: string;
 }
 
 export type DetachResult =
@@ -132,13 +139,22 @@ export const isUnversioned = (
 
 /**
  * An entry gone from the target (`Item.gone`, owner's call 2026-10-26): it has a persistent id
- * and failed because the target refused its update as `not_found` (the document was deleted
- * there). Its updates can never go through: detach takes it, and reload loads it as new.
+ * and failed because the sink refused its update with the missing-document marker for that very
+ * document (`isDocumentMissing`: `not_found`, details `reason: document_missing` and
+ * `persistentId`). Any other `not_found` (a delivery the bridge lost, no route, no sink job)
+ * says nothing about the document. Its updates can never go through: detach takes it, and
+ * reload loads it as new.
  */
 export const isGone = (
   entry: Pick<RegisterEntry, 'state' | 'persistentId' | 'lastError'>,
-): boolean =>
-  entry.persistentId !== null && entry.state === 'failed' && entry.lastError?.code === 'not_found';
+): boolean => entry.state === 'failed' && isDocumentMissing(entry.lastError, entry.persistentId);
+
+/**
+ * Whether reload applies (`Item.reloadable`): the entry is gone or still the detached tombstone,
+ * and the row is not superseded.
+ */
+export const isReloadable = (gone: boolean, detached: boolean, resolution: Item['resolution']) =>
+  (gone || detached) && resolution !== 'superseded';
 
 /** The item outcomes of a run not finished yet. */
 export const RUNNING_OUTCOMES: readonly Item['outcome'][] = ['queued', 'decomposing', 'delivering'];
