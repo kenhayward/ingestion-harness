@@ -140,6 +140,25 @@ def test_chunks_cover_all_pages_and_offset() -> None:
     assert [item.page for item in result.items] == [0, 20, 40]
 
 
+def test_chunks_refs_are_distinct() -> None:
+    def respond(first: int, last: int) -> dict[str, Any]:
+        item = docling.text("list_item", 1, (0, 800, 50, 790))
+        return docling.doc(
+            [(595, 842)],
+            [docling.group([item]), docling.table(1, (0, 700, 50, 690), [(0, 0)], rows=1, cols=1)],
+        )
+
+    result = analyse_document(FakeLayout(respond), b"%PDF-", 2, chunk=1)
+    assert [item.ref for item in result.items] == [
+        "#/texts/0",
+        "#/tables/0",
+        "p2:#/texts/0",
+        "p2:#/tables/0",
+    ]
+    texts = [item for item in result.items if isinstance(item, LayoutText)]
+    assert [t.group for t in texts] == ["#/groups/0", "p2:#/groups/0"]
+
+
 Handler = Callable[[httpx.Request], httpx.Response]
 
 

@@ -185,14 +185,13 @@ def _join(first: Piece, second: Piece, ledger: Ledger) -> Piece:
     ]
     joined_cells = dict(first.cells)
     for (r, c), lines in second.cells.items():
-        for line in lines:
-            for ch in line.chars:
-                if r < repeated:
+        if r < repeated:
+            for line in lines:
+                for ch in line.chars:
                     ledger.drop(line.page, ch.index, "repeated-header")
-                else:
-                    ledger.reassign(line.page, ch.index, first.ref)
-        if r >= repeated:
+        else:
             joined_cells[(r - repeated + rows, c)] = lines
+    ledger.rename(second.ref, first.ref)
     cells += [
         replace(cell, row=cell.row - repeated + rows)
         for cell in second.table.cells

@@ -96,15 +96,19 @@ _LABELS = frozenset(
 )
 
 
-def parse_docling(doc: Mapping[str, Any], *, page_offset: int = 0) -> LayoutDoc:
-    """Docling's `export_to_dict` as `LayoutDoc`; `page_offset` shifts the 0-based pages."""
-    return _Parser(doc, page_offset).parse()
+def parse_docling(
+    doc: Mapping[str, Any], *, page_offset: int = 0, ref_prefix: str = ""
+) -> LayoutDoc:
+    """Docling's `export_to_dict` as `LayoutDoc`; `page_offset` shifts the 0-based pages and
+    `ref_prefix` is put before every item and group ref (each chunk numbers its refs from 0)."""
+    return _Parser(doc, page_offset, ref_prefix).parse()
 
 
 class _Parser:
-    def __init__(self, doc: Mapping[str, Any], page_offset: int) -> None:
+    def __init__(self, doc: Mapping[str, Any], page_offset: int, ref_prefix: str) -> None:
         self._doc = doc
         self._offset = page_offset
+        self._prefix = ref_prefix
         self._heights = {
             int(number): float(page["size"]["height"])
             for number, page in (doc.get("pages") or {}).items()
@@ -141,7 +145,7 @@ class _Parser:
                 item = self._item(ref, node, group)
                 if item is not None:
                     self._items.append(item)
-            self._walk(node.get("children") or [], ref if is_group else group)
+            self._walk(node.get("children") or [], self._prefix + ref if is_group else group)
 
     def _item(self, ref: str, node: Mapping[str, Any], group: str | None) -> LayoutItem | None:
         prov = node.get("prov") or []
@@ -151,6 +155,7 @@ class _Parser:
         page = number - 1 + self._offset
         bbox = self._box(prov[0]["bbox"], number)
         kind = ref.split("/")[1]
+        ref = self._prefix + ref
         if kind == "tables":
             data = node.get("data") or {}
             cells = tuple(self._cell(c, number) for c in data.get("table_cells") or [])
@@ -305,5 +310,8 @@ def analyse_document(
     items: list[LayoutItem] = []
     for first in range(1, page_count + 1, chunk):
         last = min(first + chunk - 1, page_count)
-        items.extend(parse_docling(analyser.analyse(pdf, first, last), page_offset=first - 1).items)
+        # Every chunk numbers its refs from 0: those after the first are prefixed to stay unique.
+        prefix = "" if first == 1 else f"p{first}:"
+        doc = analyser.analyse(pdf, first, last)
+        items.extend(parse_docling(doc, page_offset=first - 1, ref_prefix=prefix).items)
     return LayoutDoc(tuple(items))
