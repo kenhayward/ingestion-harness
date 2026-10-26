@@ -38,6 +38,8 @@ class Char:
     y1: float
     baseline: float
     visible: bool
+    #: pdfium put a generated space (or line break) just before this char: a word gap.
+    space_before: bool = False
 
 
 @dataclass(frozen=True)
@@ -124,9 +126,11 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
         origin = (ctypes.c_double(), ctypes.c_double())
         name = ctypes.create_string_buffer(_FONT_NAME_BYTES)
         flags = ctypes.c_int()
+        gap = False
         for i in range(text_page.count_chars()):
             if raw.FPDFText_IsGenerated(handle, i):
-                continue  # a space or line break pdfium inserted, not one the PDF draws
+                gap = True  # a space or line break pdfium inserted, not one the PDF draws
+                continue
             code = raw.FPDFText_GetUnicode(handle, i)
             if code == 0:
                 continue
@@ -157,8 +161,10 @@ def _read_page(page: object, number: int, unmapped: list[tuple[int, str, str]]) 
                     y1=max(ya, yb),
                     baseline=display(origin[0].value, origin[1].value)[1],
                     visible=visible,
+                    space_before=gap,
                 )
             )
+            gap = False
     finally:
         text_page.close()
     return PageText(number, width, height, tuple(chars), _image_area(page, (left, bottom, uw, uh)))

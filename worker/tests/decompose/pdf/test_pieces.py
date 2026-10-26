@@ -73,6 +73,21 @@ def test_lines_join_with_one_space_and_gaps_become_spaces() -> None:
     assert pieces[0].inlines() == [Text(text="one two three")]
 
 
+def test_numbers_and_decimals_keep_no_spaces() -> None:
+    pieces, _ = attach(
+        [Run("1.1 Scope 100.9 a.b", 72, 100)], [docling.text("text", 1, bl(60, 85, 300, 110))]
+    )
+    assert [line.text for line in pieces[0].lines] == ["1.1 Scope 100.9 a.b"]
+
+
+def test_separate_runs_get_one_space() -> None:
+    pieces, _ = attach(
+        [Run("Total", 72, 100), Run("12", 140, 100)],
+        [docling.text("text", 1, bl(60, 85, 300, 110))],
+    )
+    assert [line.text for line in pieces[0].lines] == ["Total 12"]
+
+
 def _table_page() -> tuple[list[Run], dict[str, Any]]:
     runs = [Run(f"R{r}C{c}", 78 + 100 * c, 219 + 30 * r) for r in range(2) for c in range(2)]
     table = docling.table(

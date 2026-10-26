@@ -26,6 +26,11 @@ def test_chars_carry_font_size_and_position() -> None:
     assert [c.index for c in chars] == [0, 1, 2, 3, 4]
 
 
+def test_generated_space_marks_the_next_char() -> None:
+    a, b = _chars(Run("A", 72, 100), Run("B", 120, 100))
+    assert (a.space_before, b.space_before) == (False, True)
+
+
 def test_bold_and_italic_from_font_name() -> None:
     bold, italic, plain = _chars(
         Run("B", 72, 100, font="Helvetica-Bold"),

@@ -31,8 +31,6 @@ DropReason = Literal[
 
 #: Chars share a line when their baselines differ by at most this many times the font size.
 _BASELINE_TOLERANCE = 0.5
-#: A gap wider than this many times the font size is a space.
-_SPACE_GAP = 0.25
 #: A mark needs a size at most this fraction of the line's usual size ...
 _MARK_SIZE = 0.85
 #: ... and a baseline this fraction of that size away from the line's.
@@ -70,7 +68,7 @@ class Line:
         return "".join(run.text for run in self.runs())
 
     def runs(self) -> list[Text]:
-        """The line as text runs: spaces added where chars are apart, marks from the chars."""
+        """The line as text runs: spaces added where pdfium saw a word gap, marks from the chars."""
         chars = list(self.chars)
         while chars and chars[0].text.isspace():
             chars.pop(0)
@@ -86,7 +84,7 @@ class Line:
             marks = _marks(c, size, baseline)
             if (
                 previous is not None
-                and c.x0 - previous.x1 > _SPACE_GAP * c.size
+                and c.space_before
                 and not previous.text.isspace()
                 and not c.text.isspace()
             ):
