@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { JobStatus } from '@ih/shared';
-import { statusIcon, statusLabel, statusTone, type StatusIcon } from './derive.js';
+import { statusIcon, statusLabel, statusTone, type StatusIcon, type Tone } from './derive.js';
 
 /** The glyphs, drawn on an 18 px grid in the status's tone (`currentColor`). */
 const GLYPHS: Record<StatusIcon, ReactNode> = {
@@ -61,11 +61,24 @@ const GLYPHS: Record<StatusIcon, ReactNode> = {
  * shape distinct for each status (never colour alone). Everything under way is one spinner.
  */
 export function JobStatusIcon({ status }: { status: JobStatus }) {
-  const label = statusLabel(status);
-  const icon = statusIcon(status);
+  return (
+    <StatusGlyph icon={statusIcon(status)} tone={statusTone(status)} label={statusLabel(status)} />
+  );
+}
+
+/** One of the status glyphs, named for screen readers and on hover (Conversion uses them too). */
+export function StatusGlyph({
+  icon,
+  tone,
+  label,
+}: {
+  icon: StatusIcon;
+  tone: Tone;
+  label: string;
+}) {
   return (
     <span
-      className={`status-icon tone-${statusTone(status)} status-icon-${icon}`}
+      className={`status-icon tone-${tone} status-icon-${icon}`}
       role="img"
       aria-label={label}
       title={label}

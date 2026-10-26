@@ -42,6 +42,8 @@ import {
   type Detach,
   type Rerun,
   type RerunResult,
+  type Retry,
+  type RetryResult,
   RUNNING_OUTCOMES,
   isGone,
   isReloadable,
@@ -280,6 +282,8 @@ interface ItemRow {
   unversioned: boolean;
   gone: boolean;
   entry_detached: boolean;
+  rerun_in: string | null;
+  rerun_at: Date | null;
 }
 
 /**
@@ -325,7 +329,14 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
     AS gone,
   EXISTS (SELECT 1 FROM decomposition_register r
            WHERE r.id = decomposition_items.register_entry_id AND r.state = 'detached')
-    AS entry_detached`;
+    AS entry_detached,
+  (SELECT n.batch_id FROM decomposition_items n
+    WHERE n.redeliver_of = decomposition_items.id
+    ORDER BY n.created_at DESC, n.id DESC LIMIT 1) AS rerun_in,
+  (SELECT COALESCE(b.started_at, b.created_at)
+     FROM decomposition_items n JOIN decomposition_batches b ON b.id = n.batch_id
+    WHERE n.redeliver_of = decomposition_items.id
+    ORDER BY n.created_at DESC, n.id DESC LIMIT 1) AS rerun_at`;
 
 const toItem = (r: ItemRow): Item => ({
   id: r.id,
@@ -346,6 +357,8 @@ const toItem = (r: ItemRow): Item => ({
   unversioned: r.unversioned,
   gone: r.gone,
   reloadable: isReloadable(r.gone, r.entry_detached, r.resolution),
+  rerunIn: r.rerun_in ?? null,
+  rerunAt: r.rerun_at?.toISOString() ?? null,
   startedAt: r.started_at?.toISOString() ?? null,
   finishedAt: r.finished_at?.toISOString() ?? null,
 });
@@ -1517,6 +1530,79 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       return { ok: true, batch: toBatch(batch.rows[0]!), item: toItem(item.rows[0]!) };
+    });
+  }
+
+  async retryItems({
+    batchId,
+    items,
+    targetId,
+    force,
+    createdBy,
+    by,
+  }: Retry): Promise<RetryResult> {
+    return this.inTransaction(async (client) => {
+      const ids = items.map((i) => i.of.id);
+      // The items re-run, locked in one order: a repeated request waits, then finds the reruns.
+      await client.query(
+        'SELECT 1 FROM decomposition_items WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+        [ids],
+      );
+      const reruns = await client.query<{ redeliver_of: string; running: boolean }>(
+        `SELECT redeliver_of, outcome = ANY($2::text[]) AS running FROM decomposition_items
+          WHERE redeliver_of = ANY($1::uuid[])`,
+        [ids, RUNNING_OUTCOMES],
+      );
+      const busy = new Set(reruns.rows.filter((r) => r.running).map((r) => r.redeliver_of));
+      if (busy.size) {
+        return { ok: false, reason: 'running', itemId: ids.find((id) => busy.has(id))! };
+      }
+      const done = new Set(reruns.rows.map((r) => r.redeliver_of));
+      if (done.size) {
+        return { ok: false, reason: 'already_rerun', itemId: ids.find((id) => done.has(id))! };
+      }
+      const batch = await client.query<BatchRow>(
+        `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
+         VALUES ($1, $2, $3, $4, 'started', now())
+         RETURNING ${BATCH_COLUMNS}`,
+        [batchId, targetId, force, JSON.stringify(createdBy)],
+      );
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const made: Item[] = [];
+      for (const { itemId, of } of items) {
+        const job = await client.query<{ id: string }>(
+          `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+           VALUES ('decompose', $1, $2, $3, $4, $5) RETURNING id`,
+          [
+            priority,
+            maxAttempts,
+            JSON.stringify({ batchId, itemId, targetId, sourceKey: of.sourceKey, force }),
+            by?.name ?? null,
+            by?.userId ?? null,
+          ],
+        );
+        // One after another, so the batch lists them in the order asked (created_at, id).
+        const item = await client.query<ItemRow>(
+          `INSERT INTO decomposition_items
+             (id, batch_id, source_key, filename, content_sha256, size_bytes, object_key, job_id,
+              redeliver_of, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp())
+           RETURNING ${ITEM_COLUMNS}`,
+          [
+            itemId,
+            batchId,
+            of.sourceKey,
+            of.filename,
+            of.contentSha256,
+            of.sizeBytes,
+            of.objectKey,
+            job.rows[0]!.id,
+            of.id,
+          ],
+        );
+        made.push(toItem(item.rows[0]!));
+      }
+      return { ok: true, batch: toBatch(batch.rows[0]!), items: made };
     });
   }
 

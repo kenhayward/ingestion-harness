@@ -101,6 +101,14 @@ export const ItemSchema = z
      */
     reloadable: z.boolean(),
     /**
+     * The batch this item was last run again in (an item naming it as `redeliverOf`: a re-run,
+     * force-load, redeliver or reload), and when that batch started; null when it never was.
+     * Re-running failed documents (`POST /api/conversions/batches/{id}/retry`) takes an item
+     * only while this is null: a failed re-run is re-run from its own batch.
+     */
+    rerunIn: z.string().uuid().nullable(),
+    rerunAt: z.string().nullable(),
+    /**
      * When the worker first took the item (`decomposing`; a retry keeps it), and when it reached
      * a final outcome (the worker's decision, or the settle of its delivery); null until then,
      * and for items converted before migration 202610261331.
@@ -201,6 +209,25 @@ export const CreateBatchSchema = z
   .object({ targetId: TargetIdSchema, force: z.boolean().optional() })
   .strict();
 export type CreateBatch = z.infer<typeof CreateBatchSchema>;
+
+/** The most documents one *Re-run failed* request names. */
+export const MAX_RETRY_ITEMS = 1000;
+
+/**
+ * `POST /api/conversions/batches/{id}/retry`: the batch's failed items to run again (each once),
+ * and whether to deliver them as an explicit update (absent: as the batch was started).
+ */
+export const RetryItemsSchema = z
+  .object({
+    itemIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(MAX_RETRY_ITEMS)
+      .refine((ids) => new Set(ids).size === ids.length, 'each item once'),
+    force: z.boolean().optional(),
+  })
+  .strict();
+export type RetryItems = z.infer<typeof RetryItemsSchema>;
 
 /**
  * One component a `changed_in_target` refusal lists (bridge contract `changedInTargetDetails`):

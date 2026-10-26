@@ -34,7 +34,18 @@ function batchApi(items: Item[], overrides: Parameters<typeof fakeApi>[0] = {}) 
 const view = (api: ReturnType<typeof fakeApi>) =>
   render(<ConversionPage api={api} batchId={BATCH_ID} />);
 
-const rowOf = (sourceKey: string) => screen.getByText(sourceKey).closest('tr')!;
+const documents = () => within(screen.getByRole('table', { name: 'Documents' }));
+const rowOf = (sourceKey: string) => documents().getByText(sourceKey).closest('tr')!;
+/** Waits for a document's row. */
+const findRow = async (sourceKey: string) =>
+  (
+    await within(await screen.findByRole('table', { name: 'Documents' })).findByText(sourceKey)
+  ).closest('tr')!;
+/** Picks a document's row: the panel beside the list then shows it, with its actions. */
+function panelFor(sourceKey: string) {
+  fireEvent.click(documents().getByRole('button', { name: sourceKey }));
+  return within(screen.getByRole('complementary', { name: 'Document' }));
+}
 const listedKeys = () =>
   within(screen.getByRole('table', { name: 'Documents' }))
     .getAllByRole('row')
@@ -63,7 +74,7 @@ describe('the Conversion tab: the batch view', () => {
       item('d.docx', 'read_back_mismatch'),
     ]);
     view(api);
-    await screen.findByText('reports/a.docx');
+    await findRow('reports/a.docx');
     expect(listedKeys()).toEqual(['reports/a.docx', 'reports/b.docx', 'c.docx', 'd.docx']);
     expect(within(rowOf('reports/a.docx')).getByText('Created')).toHaveClass('pill');
     expect(within(rowOf('reports/b.docx')).getByText('Failed')).toHaveClass('pill', 'tone-danger');
@@ -88,11 +99,13 @@ describe('the Conversion tab: the batch view', () => {
         item('old.docx', 'failed'),
       ]);
       view(api);
-      await screen.findByText('done.docx');
-      expect(rowOf('done.docx')).toHaveTextContent('took 1 min 12 s');
+      await findRow('done.docx');
+      // The row says the time alone; the panel says it in words.
+      expect(rowOf('done.docx')).toHaveTextContent('1 min 12 s');
+      expect(panelFor('done.docx').getByText(/took 1 min 12 s/)).toBeVisible();
       expect(rowOf('running.docx')).toHaveTextContent('running for 40 s');
-      expect(rowOf('queued.docx')).not.toHaveTextContent(/took|running for/);
-      expect(rowOf('old.docx')).not.toHaveTextContent(/took|running for/);
+      expect(rowOf('queued.docx')).not.toHaveTextContent(/\d+ (s|min)|running for/);
+      expect(rowOf('old.docx')).not.toHaveTextContent(/\d+ (s|min)|running for/);
     } finally {
       vi.useRealTimers();
     }
@@ -172,7 +185,7 @@ describe('the Conversion tab: the batch view', () => {
         item('queued.docx', 'queued'),
       ]),
     );
-    await screen.findByText('created.docx');
+    await findRow('created.docx');
     const filter = within(screen.getByRole('group', { name: 'Show' }));
     expect(filter.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('5');
     await userEvent.click(filter.getByRole('button', { name: /^Needs attention/ }));
@@ -196,7 +209,7 @@ describe('the Conversion tab: the batch view', () => {
         item('b.docx', 'failed'),
       ]),
     );
-    await screen.findByText('a.docx');
+    await findRow('a.docx');
     const link = within(rowOf('a.docx')).getByRole('link', { name: 'Open in the target' });
     expect(link).toHaveAttribute('href', 'https://target.example.com/documents/D-42');
     expect(link).toHaveAttribute('target', '_blank');
@@ -215,10 +228,8 @@ describe('the Conversion tab: the batch view', () => {
       })),
     });
     view(api);
-    await screen.findByText('a.docx');
-    await userEvent.click(
-      within(rowOf('a.docx')).getByRole('button', { name: 'Report for a.docx' }),
-    );
+    await findRow('a.docx');
+    await userEvent.click(panelFor('a.docx').getByRole('button', { name: 'Report for a.docx' }));
     const dialog = within(await screen.findByRole('dialog', { name: 'Report: a.docx' }));
     expect(api.getConversionReport).toHaveBeenCalledWith(a.id);
     expect(await dialog.findByText('empty heading')).toBeInTheDocument();
@@ -235,10 +246,8 @@ describe('the Conversion tab: the batch view', () => {
         }),
       }),
     );
-    await screen.findByText('a.docx');
-    await userEvent.click(
-      within(rowOf('a.docx')).getByRole('button', { name: 'Report for a.docx' }),
-    );
+    await findRow('a.docx');
+    await userEvent.click(panelFor('a.docx').getByRole('button', { name: 'Report for a.docx' }));
     const dialog = within(await screen.findByRole('dialog', { name: 'Report: a.docx' }));
     expect(await dialog.findByText(/No report yet/)).toBeInTheDocument();
   });
@@ -254,15 +263,15 @@ describe('the Conversion tab: the batch view', () => {
       })),
     });
     view(api);
-    await screen.findByText('loaded.docx');
+    await findRow('loaded.docx');
     expect(
-      within(rowOf('duplicate.docx')).getByRole('button', { name: 'Force-load duplicate.docx' }),
+      panelFor('duplicate.docx').getByRole('button', { name: 'Force-load duplicate.docx' }),
     ).toBeVisible();
     expect(
-      within(rowOf('created.docx')).queryByRole('button', { name: 'Force-load created.docx' }),
+      panelFor('created.docx').queryByRole('button', { name: 'Force-load created.docx' }),
     ).toBeNull();
     await userEvent.click(
-      within(rowOf('loaded.docx')).getByRole('button', { name: 'Force-load loaded.docx' }),
+      panelFor('loaded.docx').getByRole('button', { name: 'Force-load loaded.docx' }),
     );
     expect(api.forceConversionItem).toHaveBeenCalledWith(loaded.id);
     const notice = await screen.findByRole('status', { name: 'Action' });
@@ -294,15 +303,19 @@ describe('the Conversion tab: the batch view', () => {
       },
     );
     view(api);
-    await screen.findByText('created.docx');
+    await findRow('created.docx');
     expect(
-      within(rowOf('changed.docx')).getByRole('button', { name: 'Redeliver changed.docx' }),
+      panelFor('changed.docx').getByRole('button', { name: 'Redeliver changed.docx' }),
     ).toBeVisible();
     for (const key of ['failed.docx', 'queued.docx', 'duplicate.docx']) {
-      expect(within(rowOf(key)).queryByRole('button', { name: /^Redeliver/ })).toBeNull();
+      expect(panelFor(key).queryByRole('button', { name: /^Redeliver/ })).toBeNull();
+      await userEvent.click(documents().getByRole('button', { name: `Actions for ${key}` }));
+      const menu = within(screen.getByRole('menu', { name: `Actions for ${key}` }));
+      expect(menu.queryByRole('menuitem', { name: 'Redeliver' })).toBeNull();
+      await userEvent.keyboard('{Escape}');
     }
     await userEvent.click(
-      within(rowOf('created.docx')).getByRole('button', { name: 'Redeliver created.docx' }),
+      panelFor('created.docx').getByRole('button', { name: 'Redeliver created.docx' }),
     );
     const dialog = within(await screen.findByRole('dialog', { name: 'Redeliver created.docx' }));
     const replacement = new File(['PK'], 'created-v2.docx');
@@ -334,9 +347,9 @@ describe('the Conversion tab: the batch view', () => {
       detachConversionItem: vi.fn(async () => detached),
     });
     view(api);
-    await screen.findByText('changed.docx');
+    await findRow('changed.docx');
     await userEvent.click(
-      within(rowOf('changed.docx')).getByRole('button', { name: 'Detach changed.docx' }),
+      panelFor('changed.docx').getByRole('button', { name: 'Detach changed.docx' }),
     );
     const dialog = within(await screen.findByRole('dialog', { name: 'Detach changed.docx?' }));
     expect(dialog.getByText(/stays in the target, untouched/)).toBeInTheDocument();
@@ -348,7 +361,7 @@ describe('the Conversion tab: the batch view', () => {
       await within(rowOf('changed.docx')).findByText(/detached from document D-7/),
     ).toBeVisible();
     // Done with: still changed in the target, but neither action is offered again (M7).
-    const row = within(rowOf('changed.docx'));
+    const row = panelFor('changed.docx');
     expect(row.getByText('Changed in target')).toBeInTheDocument();
     expect(row.queryByRole('button', { name: 'Detach changed.docx' })).toBeNull();
     expect(
@@ -369,14 +382,14 @@ describe('the Conversion tab: the batch view', () => {
       detachConversionItem: vi.fn(async () => detached),
     });
     view(api);
-    await screen.findByText('unversioned.docx');
+    await findRow('unversioned.docx');
 
-    const row = within(rowOf('unversioned.docx'));
+    // An unresolved create that may have made a document has nothing to detach.
+    expect(panelFor('lost.docx').queryByRole('button', { name: /^Detach/ })).toBeNull();
+    const row = panelFor('unversioned.docx');
     expect(
       row.queryByRole('button', { name: "Accept the target's state for unversioned.docx" }),
     ).toBeNull();
-    // An unresolved create that may have made a document has nothing to detach.
-    expect(within(rowOf('lost.docx')).queryByRole('button', { name: /^Detach/ })).toBeNull();
     await userEvent.click(row.getByRole('button', { name: 'Detach unversioned.docx' }));
     const dialog = within(await screen.findByRole('dialog', { name: 'Detach unversioned.docx?' }));
     await userEvent.click(dialog.getByRole('button', { name: 'Detach' }));
@@ -398,8 +411,8 @@ describe('the Conversion tab: the batch view', () => {
       reloadConversionItem: vi.fn(async () => reloaded),
     });
     view(api);
-    await screen.findByText('gone.docx');
-    const row = within(rowOf('gone.docx'));
+    await findRow('gone.docx');
+    const row = panelFor('gone.docx');
     // Detach too; an update can never go through, so nothing redelivers or accepts it.
     expect(row.getByRole('button', { name: 'Detach gone.docx' })).toBeInTheDocument();
     expect(row.queryByRole('button', { name: 'Redeliver gone.docx' })).toBeNull();
@@ -422,6 +435,78 @@ describe('the Conversion tab: the batch view', () => {
     );
   });
 
+  it("a gone row's menu offers load as a new document, whose dialog outlives the menu", async () => {
+    const gone = item('gone.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      gone: true,
+      reloadable: true,
+    });
+    const api = batchApi([gone], {
+      reloadConversionItem: vi.fn(async () => ({
+        batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
+        items: [item('gone.docx', 'queued', { redeliverOf: gone.id })],
+      })),
+    });
+    view(api);
+    await findRow('gone.docx');
+    await userEvent.click(documents().getByRole('button', { name: 'Actions for gone.docx' }));
+    const menu = within(screen.getByRole('menu', { name: 'Actions for gone.docx' }));
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
+      'View report',
+      'Download original',
+      'Load as a new document',
+      'Detach',
+    ]);
+    expect(menu.getByRole('separator')).toBeInTheDocument();
+
+    await userEvent.click(menu.getByRole('menuitem', { name: 'Load as a new document' }));
+    // The menu closes; the dialog it opened stays.
+    expect(screen.queryByRole('menu')).toBeNull();
+    const dialog = within(
+      await screen.findByRole('dialog', { name: 'Load gone.docx as a new document?' }),
+    );
+    expect(api.reloadConversionItem).not.toHaveBeenCalled();
+    await userEvent.click(dialog.getByRole('button', { name: 'Load as a new document' }));
+    expect(api.reloadConversionItem).toHaveBeenCalledWith(gone.id);
+    expect(api.reloadConversionItem).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByRole('link', { name: 'Open the new batch' })).toHaveAttribute(
+      'href',
+      `#/conversion/${NEW_BATCH_ID}`,
+    );
+  });
+
+  it('a gone row needs attention, is not failed, and stays out of re-running failures', async () => {
+    const gone = item('gone.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      gone: true,
+      reloadable: true,
+    });
+    const broke = item('broke.docx', 'failed', { detail: 'merged cells' });
+    view(batchApi([item('ok.docx', 'created'), gone, broke]));
+    await findRow('gone.docx');
+    const totals = within(screen.getByRole('group', { name: 'Totals' }));
+    expect(totals.getByText('need attention').previousSibling).toHaveTextContent('1');
+    expect(totals.getByText('failed').previousSibling).toHaveTextContent('1');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    expect(show.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('2');
+    await userEvent.click(show.getByRole('button', { name: /^Failed/ }));
+    expect(listedKeys()).toEqual(['broke.docx']);
+    await userEvent.click(show.getByRole('button', { name: /^Needs attention/ }));
+    expect(listedKeys()).toEqual(['gone.docx', 'broke.docx']);
+    await userEvent.click(show.getByRole('button', { name: /^Done/ }));
+    expect(listedKeys()).toEqual(['ok.docx']);
+
+    // Re-running takes the failed document only; the gone one is no re-run's to make.
+    await userEvent.click(show.getByRole('button', { name: /^All/ }));
+    expect(panelFor('gone.docx').queryByRole('button', { name: /^Re-run/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Re-run 1 failed' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Re-run 1 failed document' }));
+    expect(dialog.getAllByRole('checkbox')).toHaveLength(1);
+    expect(dialog.getByRole('checkbox', { name: /broke\.docx/ })).toBeChecked();
+    expect(dialog.queryByText(/gone\.docx/)).toBeNull();
+  });
+
   it('a row left detached by a reload whose rerun failed offers it again', async () => {
     const left = item('left.docx', 'unresolved', {
       registerEntryId: crypto.randomUUID(),
@@ -429,10 +514,15 @@ describe('the Conversion tab: the batch view', () => {
       reloadable: true,
     });
     view(batchApi([left]));
-    await screen.findByText('left.docx');
-    const row = within(rowOf('left.docx'));
+    await findRow('left.docx');
+    const row = panelFor('left.docx');
     expect(row.getByRole('button', { name: 'Load left.docx as a new document' })).toBeVisible();
     expect(row.queryByRole('button', { name: 'Detach left.docx' })).toBeNull();
+    await userEvent.click(documents().getByRole('button', { name: 'Actions for left.docx' }));
+    const menu = within(screen.getByRole('menu', { name: 'Actions for left.docx' }));
+    expect(menu.getByRole('menuitem', { name: 'Load as a new document' })).toBeVisible();
+    // The item's own actions sit after a line, even when reload is the only one.
+    expect(menu.getByRole('separator')).toBeInTheDocument();
   });
 
   it('a row that is not reloadable offers no load as a new document', async () => {
@@ -450,8 +540,14 @@ describe('the Conversion tab: the batch view', () => {
       }),
     ]);
     view(api);
-    await screen.findByText('changed.docx');
-    expect(screen.queryByRole('button', { name: /as a new document/ })).toBeNull();
+    await findRow('changed.docx');
+    for (const key of ['superseded.docx', 'changed.docx', 'unresolved.docx']) {
+      expect(panelFor(key).queryByRole('button', { name: /as a new document/ })).toBeNull();
+      await userEvent.click(documents().getByRole('button', { name: `Actions for ${key}` }));
+      const menu = within(screen.getByRole('menu', { name: `Actions for ${key}` }));
+      expect(menu.queryByRole('menuitem', { name: /as a new document/ })).toBeNull();
+      await userEvent.keyboard('{Escape}');
+    }
   });
 
   it('accept shows each changed component and needs the checkbox', async () => {
@@ -482,9 +578,9 @@ describe('the Conversion tab: the batch view', () => {
       acceptTargetState: vi.fn(async () => ({ item: accepted, changed: [] })),
     });
     view(api);
-    await screen.findByText('changed.docx');
+    await findRow('changed.docx');
     await userEvent.click(
-      within(rowOf('changed.docx')).getByRole('button', {
+      panelFor('changed.docx').getByRole('button', {
         name: "Accept the target's state for changed.docx",
       }),
     );
@@ -512,7 +608,7 @@ describe('the Conversion tab: the batch view', () => {
     await userEvent.click(confirm);
     expect(api.acceptTargetState).toHaveBeenCalledWith(changed.id, '2026-10-25T11:00:00.000Z');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    const row = within(rowOf('changed.docx'));
+    const row = panelFor('changed.docx');
     expect(row.getByText(/the target's state was accepted/)).toBeVisible();
     expect(
       row.queryByRole('button', { name: "Accept the target's state for changed.docx" }),
@@ -547,9 +643,9 @@ describe('the Conversion tab: the batch view', () => {
       }),
     });
     view(api);
-    await screen.findByText('changed.docx');
+    await findRow('changed.docx');
     await userEvent.click(
-      within(rowOf('changed.docx')).getByRole('button', {
+      panelFor('changed.docx').getByRole('button', {
         name: "Accept the target's state for changed.docx",
       }),
     );
@@ -584,9 +680,9 @@ describe('the Conversion tab: the batch view', () => {
       })),
     });
     view(api);
-    await screen.findByText('changed.docx');
+    await findRow('changed.docx');
     await userEvent.click(
-      within(rowOf('changed.docx')).getByRole('button', {
+      panelFor('changed.docx').getByRole('button', {
         name: "Accept the target's state for changed.docx",
       }),
     );
@@ -657,22 +753,22 @@ describe('the Conversion tab: the batch view', () => {
         }),
       ]),
     );
-    await screen.findByText('open.docx');
+    await findRow('open.docx');
     const filter = within(screen.getByRole('group', { name: 'Show' }));
     expect(filter.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('2');
     await userEvent.click(filter.getByRole('button', { name: /^Done/ }));
     expect(listedKeys()).toEqual(['accepted.docx', 'detached.docx']);
-    const accepted = within(rowOf('accepted.docx'));
+    const accepted = panelFor('accepted.docx');
     expect(accepted.getByText(/target's state accepted/i)).toBeVisible();
     expect(accepted.queryByRole('button', { name: /^Accept/ })).toBeNull();
     expect(accepted.queryByRole('button', { name: /^Detach/ })).toBeNull();
     expect(accepted.getByRole('button', { name: 'Redeliver accepted.docx' })).toBeVisible();
-    const detached = within(rowOf('detached.docx'));
+    const detached = panelFor('detached.docx');
     expect(detached.getByText(/^Detached/)).toBeVisible();
     expect(detached.queryByRole('button', { name: /^Redeliver/ })).toBeNull();
     await userEvent.click(filter.getByRole('button', { name: /^Needs attention/ }));
     expect(
-      within(rowOf('worded.docx')).getByRole('button', { name: 'Detach worded.docx' }),
+      panelFor('worded.docx').getByRole('button', { name: 'Detach worded.docx' }),
     ).toBeVisible();
   });
 
@@ -686,11 +782,11 @@ describe('the Conversion tab: the batch view', () => {
         }),
       ]),
     );
-    await screen.findByText('old.docx');
+    await findRow('old.docx');
     const filter = within(screen.getByRole('group', { name: 'Show' }));
     expect(filter.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('0');
     await userEvent.click(filter.getByRole('button', { name: /^Done/ }));
-    const row = within(rowOf('old.docx'));
+    const row = panelFor('old.docx');
     expect(row.getByText(/^Superseded by a later run/)).toBeVisible();
     expect(row.queryByRole('button', { name: /^Detach/ })).toBeNull();
     expect(row.queryByRole('button', { name: /^Accept/ })).toBeNull();
@@ -759,13 +855,13 @@ describe('the Conversion tab: the batch view', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('the server is busy');
       await act(() => vi.advanceTimersByTimeAsync(3000));
       expect(getConversionBatch).toHaveBeenCalledTimes(2);
-      expect(screen.queryByText('a.docx')).toBeNull();
+      expect(screen.queryByRole('table', { name: 'Documents' })).toBeNull();
       await act(async () => {
         screen.getByRole('button', { name: 'Try again' }).click();
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(getConversionBatch).toHaveBeenCalledTimes(3);
-      expect(screen.getByText('a.docx')).toBeInTheDocument();
+      expect(rowOf('a.docx')).toBeInTheDocument();
       page.unmount();
     } finally {
       vi.useRealTimers();
@@ -793,7 +889,7 @@ describe('the Conversion tab: the batch view', () => {
 
   it('follows only a web link to the target', async () => {
     view(batchApi([item('a.docx', 'created', { link: 'javascript:alert(1)' })]));
-    await screen.findByText('a.docx');
+    await findRow('a.docx');
     expect(within(rowOf('a.docx')).queryByRole('link')).toBeNull();
   });
 
@@ -803,7 +899,7 @@ describe('the Conversion tab: the batch view', () => {
         getConversionReport: vi.fn(async () => ({ flags: [] })),
       }),
     );
-    await screen.findByText('a.docx');
+    await findRow('a.docx');
     await userEvent.click(screen.getByRole('button', { name: 'Report for a.docx' }));
     const dialog = within(await screen.findByRole('dialog', { name: 'Report: a.docx' }));
     expect(await dialog.findByText(/Nothing to flag/)).toBeVisible();
@@ -832,17 +928,19 @@ describe('the Conversion tab: the batch view', () => {
       acceptTargetState: vi.fn(() => never<AcceptedTargetState>()),
     });
     view(api);
-    await screen.findByText('loaded.docx');
+    await findRow('loaded.docx');
     const fast = (el: HTMLElement) =>
       act(() => {
         el.click();
         el.click();
       });
 
-    await fast(screen.getByRole('button', { name: 'Force-load loaded.docx' }));
+    await fast(panelFor('loaded.docx').getByRole('button', { name: 'Force-load loaded.docx' }));
     expect(api.forceConversionItem).toHaveBeenCalledTimes(1);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Redeliver changed.docx' }));
+    await userEvent.click(
+      panelFor('changed.docx').getByRole('button', { name: 'Redeliver changed.docx' }),
+    );
     let dialog = within(await screen.findByRole('dialog', { name: 'Redeliver changed.docx' }));
     await fast(dialog.getByRole('button', { name: 'Redeliver' }));
     expect(api.redeliverConversionItem).toHaveBeenCalledTimes(1);
@@ -855,7 +953,9 @@ describe('the Conversion tab: the batch view', () => {
     await userEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
 
     await userEvent.click(
-      screen.getByRole('button', { name: "Accept the target's state for other.docx" }),
+      panelFor('other.docx').getByRole('button', {
+        name: "Accept the target's state for other.docx",
+      }),
     );
     dialog = within(await screen.findByRole('dialog', { name: "Accept the target's state" }));
     await dialog.findByText('section-1');
@@ -882,7 +982,7 @@ describe('the Conversion tab: the batch view', () => {
       }),
     });
     view(api);
-    await screen.findByText('changed.docx');
+    await findRow('changed.docx');
     await userEvent.click(
       screen.getByRole('button', { name: "Accept the target's state for changed.docx" }),
     );
@@ -940,16 +1040,16 @@ describe('the Conversion tab: the batch view', () => {
       listConversionBatches: vi.fn(async () => [older, newer]),
     });
     render(<ConversionPage api={api} />);
-    const list = within(await screen.findByRole('list', { name: 'Earlier batches' }));
-    await waitFor(() => expect(list.getAllByRole('listitem')).toHaveLength(2));
+    const list = within(await screen.findByRole('table', { name: 'Earlier batches' }));
+    await waitFor(() => expect(list.getAllByRole('row')).toHaveLength(2));
     const links = list.getAllByRole('link');
     expect(links.map((a) => a.getAttribute('href'))).toEqual([
       `#/conversion/${newer.id}`,
       `#/conversion/${older.id}`,
     ]);
-    const [first, second] = list.getAllByRole('listitem');
+    const [first, second] = list.getAllByRole('row');
     expect(first).toHaveTextContent('Controlled documents');
-    expect(first).toHaveTextContent('2 documents');
+    expect(first).toHaveTextContent('2 docs');
     expect(first).toHaveTextContent('1 queued');
     expect(first).toHaveTextContent('1 changed in target');
     expect(second).toHaveTextContent('2 created');

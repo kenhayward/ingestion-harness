@@ -15,6 +15,7 @@ import {
   hasControlCharacter,
   ItemSchema,
   MAX_SOURCE_KEY,
+  RetryItemsSchema,
   sourceKeyProblem,
   type Batch,
   type Item,
@@ -31,7 +32,8 @@ import {
   type Rerun,
   type RerunResult,
 } from '../conversions/repo.js';
-import { ErrorBody, error, md, multipart, noContent, res } from '../openapi/zod.js';
+import { binary, ErrorBody, error, md, multipart, noContent, res } from '../openapi/zod.js';
+import { contentDisposition } from './jobs.js';
 import { checkSource, multipartField, TRACKED_CHANGES } from '../uploads.js';
 
 /** What an upload that isn't a Word document gets: PDFs come with decomposition phase 5. */
@@ -491,6 +493,126 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
     ),
     422: CodedError("The batch's target no longer takes documents.", 'target_takes_no_documents'),
   };
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/batches/:id/retry',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'retryConversionItems',
+        summary: "Re-run a batch's failed documents",
+        description: md`
+          Runs the batch's failed documents named in \`itemIds\` again, from the files uploaded
+          with it, as one new batch that starts at once (the Conversion tab's _Re-run failed_).
+          Each new item keeps its document's source key and names the item it re-runs
+          (\`redeliverOf\`); nothing is uploaded again. \`force\` delivers them as an explicit
+          update (absent: as the batch was started). Only items of this batch whose outcome is
+          \`failed\`; refused while an earlier re-run of any of them is unfinished, so a
+          repeated request makes one batch, and once any of them was run again at all (its
+          \`rerunIn\` is set): a document is re-run once, and a failed re-run is re-run from its
+          own batch. The batch keeps its record.
+        `,
+        params: BatchParams,
+        body: RetryItemsSchema,
+        response: {
+          201: res('The new batch, started, and its items in the order asked.', BatchDetailSchema),
+          400: error('The body is not `{ itemIds, force? }`: one to 1,000 item ids, each once.'),
+          404: NOT_FOUND,
+          409: res(
+            'The batch was never started, or an earlier re-run of one of the items is still ' +
+              'running (a repeated request; `not_finished`), or one of the items was already ' +
+              'run again (`already_rerun`, naming it).',
+            ErrorBody.extend({ code: z.enum(['not_finished', 'already_rerun']) }),
+          ),
+          422: res(
+            'An item is not a failed item of this batch (`not_failed`), or the target no ' +
+              'longer takes documents.',
+            ErrorBody.extend({ code: z.enum(['not_failed', 'target_takes_no_documents']) }),
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const { repo } = app.deps;
+      const batch = UUID.safeParse(req.params.id).success
+        ? await repo.getBatch(req.params.id)
+        : null;
+      if (!batch) return reply.code(404).send({ error: 'not found' });
+      const body = RetryItemsSchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      if (batch.state !== 'started') {
+        return reply.code(409).send({ error: 'the batch was never started', code: 'not_finished' });
+      }
+      const items = new Map((await repo.listItems(batch.id)).map((i) => [i.id, i]));
+      const asked = body.data.itemIds.map((id) => items.get(id));
+      const notFailed = body.data.itemIds.find((id, n) => asked[n]?.outcome !== 'failed');
+      if (notFailed) {
+        return reply.code(422).send({
+          error: `${notFailed} is not a failed document of this batch`,
+          code: 'not_failed',
+        });
+      }
+      if (!(await takesDocuments(app, batch.targetId))) {
+        return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
+      }
+      const done = await repo.retryItems({
+        batchId: randomUUID(),
+        items: (asked as Item[]).map((of) => ({ itemId: randomUUID(), of })),
+        targetId: batch.targetId,
+        force: body.data.force ?? batch.force,
+        createdBy: batchCreator(creatorOf(req)),
+        by: creatorOf(req),
+      });
+      if (!done.ok) {
+        const key = items.get(done.itemId)?.sourceKey ?? done.itemId;
+        return done.reason === 'running'
+          ? reply
+              .code(409)
+              .send({ error: `a re-run of ${key} is still running`, code: 'not_finished' })
+          : reply.code(409).send({ error: `${key} was already re-run`, code: 'already_rerun' });
+      }
+      return reply.code(201).send({ batch: done.batch, items: done.items });
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/conversions/items/:id/source',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'getConversionSource',
+        summary: "Download an item's Word file",
+        description: md`
+          The Word document (\`.docx\`) the item converted, as uploaded (or the replacement a
+          redeliver sent), as an attachment under its file name.
+        `,
+        params: ItemParams,
+        response: {
+          200: binary('The Word document.', DOCX_MIME),
+          404: error('No such item, or its file is gone from storage.'),
+          502: error('`storage unavailable`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const item = await findItem(req.params.id);
+      if (!item) return reply.code(404).send({ error: 'not found' });
+      let body: Buffer | null;
+      try {
+        body = await app.deps.store.get(app.deps.buckets.runs, item.objectKey);
+      } catch (err) {
+        req.log.warn({ err, item: item.id }, 'a conversion source read failed');
+        return reply.code(502).send({ error: 'storage unavailable' });
+      }
+      if (!body) return reply.code(404).send({ error: 'the file is gone from storage' });
+      return reply
+        .header('content-type', DOCX_MIME)
+        .header('content-disposition', contentDisposition(item.filename, 'attachment'))
+        .header('x-content-type-options', 'nosniff')
+        .header('cache-control', 'no-store')
+        .send(body);
+    },
+  );
 
   app.post<{ Params: { id: string } }>(
     '/conversions/items/:id/force',

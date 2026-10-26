@@ -136,6 +136,8 @@ export function conversionsContract(
         unversioned: false,
         gone: false,
         reloadable: false,
+        rerunIn: null,
+        rerunAt: null,
         startedAt: null,
         finishedAt: null,
       });
@@ -337,10 +339,16 @@ export function conversionsContract(
         unversioned: false,
         gone: false,
         reloadable: false,
+        rerunIn: null,
+        rerunAt: null,
         startedAt: null,
         finishedAt: null,
       });
       expect(await repo.listItems(batchId)).toEqual([rerun]);
+      expect(await repo.getItem(of.id)).toMatchObject({
+        rerunIn: batchId,
+        rerunAt: batch.startedAt,
+      });
       expect(await facts.job(rerun.jobId!)).toEqual({
         task: 'decompose',
         priority: 0,
@@ -363,6 +371,162 @@ export function conversionsContract(
       // Once the rerun has an outcome, the item may be rerun again.
       await facts.settleItem(first.item.id, 'updated', null);
       expect((await repo.rerunItem(rerunOf(of))).ok).toBe(true);
+    });
+
+    /** A started batch of two items that failed, and its batch. */
+    const failedPair = async () => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force: false, createdBy: ADA });
+      const a = item(batch.id, 'manuals/a.docx');
+      const b = item(batch.id, 'manuals/b.docx');
+      await repo.addItem(a);
+      await repo.addItem(b);
+      await repo.startBatch(batch.id, null);
+      await facts.settleItem(a.id, 'failed', null);
+      await facts.settleItem(b.id, 'failed', null);
+      return {
+        repo,
+        facts,
+        batch,
+        items: [(await repo.getItem(a.id))!, (await repo.getItem(b.id))!],
+      };
+    };
+
+    const retryOf = (items: Item[], force = false) => ({
+      batchId: randomUUID(),
+      items: items.map((of) => ({ itemId: randomUUID(), of })),
+      targetId: 'manuals',
+      force,
+      createdBy: ADA,
+      by: { name: 'Ada', userId: ADA.id },
+    });
+
+    it('re-runs failed items as one started batch, each from its stored file', async () => {
+      const { repo, facts, items } = await failedPair();
+      const asked = retryOf(items);
+
+      const done = await repo.retryItems(asked);
+
+      if (!done.ok) throw new Error(done.reason);
+      expect(BatchSchema.parse(done.batch)).toMatchObject({
+        id: asked.batchId,
+        targetId: 'manuals',
+        force: false,
+        state: 'started',
+        createdBy: ADA,
+      });
+      expect(done.batch.startedAt).not.toBeNull();
+      expect(done.items.map((i) => ItemSchema.parse(i))).toEqual(
+        items.map((of, n) => ({
+          id: asked.items[n]!.itemId,
+          batchId: asked.batchId,
+          sourceKey: of.sourceKey,
+          filename: of.filename,
+          contentSha256: of.contentSha256,
+          sizeBytes: of.sizeBytes,
+          objectKey: of.objectKey,
+          jobId: expect.any(String),
+          outcome: 'queued',
+          detail: null,
+          registerEntryId: null,
+          reportKey: null,
+          link: null,
+          redeliverOf: of.id,
+          resolution: null,
+          unversioned: false,
+          gone: false,
+          reloadable: false,
+          rerunIn: null,
+          rerunAt: null,
+          startedAt: null,
+          finishedAt: null,
+        })),
+      );
+      expect(await repo.listItems(asked.batchId)).toEqual(done.items);
+      // Each item re-run names the batch it was re-run in, and when that started.
+      for (const of of items) {
+        expect(await repo.getItem(of.id)).toMatchObject({
+          rerunIn: asked.batchId,
+          rerunAt: done.batch.startedAt,
+        });
+      }
+      expect(await facts.job(done.items[1]!.jobId!)).toEqual({
+        task: 'decompose',
+        priority: 0,
+        maxAttempts: 3,
+        params: {
+          batchId: asked.batchId,
+          itemId: asked.items[1]!.itemId,
+          targetId: 'manuals',
+          sourceKey: items[1]!.sourceKey,
+          force: false,
+        },
+        createdBy: 'Ada',
+        createdByUser: ADA.id,
+      });
+    });
+
+    it('re-runs forced when asked', async () => {
+      const { repo, facts, items } = await failedPair();
+      const done = await repo.retryItems(retryOf(items.slice(0, 1), true));
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.batch.force).toBe(true);
+      expect(await facts.job(done.items[0]!.jobId!)).toMatchObject({
+        params: { force: true },
+      });
+    });
+
+    it('re-runs nothing while an earlier rerun of one of them is unfinished', async () => {
+      const { repo, items } = await failedPair();
+      const first = await repo.retryItems(retryOf(items.slice(1)));
+      if (!first.ok) throw new Error(first.reason);
+      const second = retryOf(items);
+
+      expect(await repo.retryItems(second)).toEqual({
+        ok: false,
+        reason: 'running',
+        itemId: items[1]!.id,
+      });
+      expect(await repo.getBatch(second.batchId)).toBeNull();
+      expect(await repo.getItem(second.items[0]!.itemId)).toBeNull();
+    });
+
+    it('re-runs an item once: a finished re-run, even a failed one, refuses another', async () => {
+      const { repo, facts, items } = await failedPair();
+      const first = await repo.retryItems(retryOf(items.slice(1)));
+      if (!first.ok) throw new Error(first.reason);
+      for (const outcome of ['created', 'failed'] as const) {
+        await facts.settleItem(first.items[0]!.id, outcome, null);
+        const again = retryOf(items);
+        expect(await repo.retryItems(again)).toEqual({
+          ok: false,
+          reason: 'already_rerun',
+          itemId: items[1]!.id,
+        });
+        expect(await repo.getBatch(again.batchId)).toBeNull();
+      }
+      // A failed re-run is re-run from its own row; the other original still may be.
+      const own = await repo.retryItems(retryOf([(await repo.getItem(first.items[0]!.id))!]));
+      expect(own.ok).toBe(true);
+      expect((await repo.retryItems(retryOf(items.slice(0, 1)))).ok).toBe(true);
+    });
+
+    it('a re-run and a reload of one item never both start', async () => {
+      const { repo, items } = await failedPair();
+      const [, of] = items as [Item, Item];
+      // The reload's rerun (unforced, a plain create) first: the re-run of that item waits.
+      expect((await repo.rerunItem({ ...rerunOf(of), force: false })).ok).toBe(true);
+      const retry = retryOf(items);
+      expect(await repo.retryItems(retry)).toEqual({ ok: false, reason: 'running', itemId: of.id });
+      expect(await repo.getBatch(retry.batchId)).toBeNull();
+
+      // The re-run first: the reload of that item waits.
+      const [other] = items as [Item, Item];
+      const first = await repo.retryItems(retryOf([other]));
+      if (!first.ok) throw new Error(first.reason);
+      const again = { ...rerunOf(other), force: false };
+      expect(await repo.rerunItem(again)).toEqual({ ok: false, reason: 'running' });
+      expect(await repo.getBatch(again.batchId)).toBeNull();
     });
 
     it('detaches an entry: a tombstone, recorded, and said on the item', async () => {

@@ -842,6 +842,10 @@ export function fakeApi(overrides: Partial<Api> = {}): FakeApi {
     redeliverConversionItem: vi.fn(async () => {
       throw new Error('redeliverConversionItem not stubbed');
     }),
+    retryConversionItems: vi.fn(async () => {
+      throw new Error('retryConversionItems not stubbed');
+    }),
+    conversionSourceUrl: (itemId: string) => `/api/conversions/items/${itemId}/source`,
     detachConversionItem: vi.fn(async () => {
       throw new Error('detachConversionItem not stubbed');
     }),
@@ -897,6 +901,8 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     unversioned: false,
     gone: false,
     reloadable: false,
+    rerunIn: null,
+    rerunAt: null,
     startedAt: null,
     finishedAt: null,
     ...o,

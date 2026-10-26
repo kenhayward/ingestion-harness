@@ -9,37 +9,40 @@ export function ConversionHelp() {
       </p>
 
       <h3>Starting a batch</h3>
+      <p>A new batch is one card in three steps: the target, the Word files, and the options.</p>
       <ul>
         <li>
-          <strong>Target</strong> lists only the targets that take documents. If there is none, an
+          <strong>1 Target</strong> lists only the targets that take documents. If there is none, an
           administrator sets one up under Administration &gt; Publishing targets.
         </li>
         <li>
-          <strong>Choose files</strong> or <strong>Choose folder</strong>, or drop files or a folder
-          on the box. Only Word documents (<code>.docx</code>) are converted for now. Hidden files
-          are skipped, and so are the lock files Word leaves beside an open document, such as{' '}
-          <code>~$report.docx</code>.
+          <strong>2 Word files</strong>: <strong>Choose files</strong> or{' '}
+          <strong>Choose folder</strong>, or drop files or a folder on the box. Only Word documents
+          (<code>.docx</code>) are converted for now. Hidden files are skipped, and so are the lock
+          files Word leaves beside an open document, such as <code>~$report.docx</code>.
         </li>
         <li>
           Each file is listed by the name that identifies its document: its file name, or for a
           folder, its path in the folder (<code>Policies/2025/leave.docx</code>). Running the same
           file or path again later updates the same document. A name that can't be used, such as one
           with a backslash, or one already in the list, is marked and left out. <strong>×</strong>{' '}
-          removes a file from the list.
+          removes a file from the list, and <strong>Clear all</strong> empties it. The head of the
+          list counts the files, how many are ready, and how many were skipped or left out.
         </li>
         <li>
-          <strong>Force-load</strong> delivers every file as an update, even one that is already
-          loaded or a copy of another file. Changes someone made in the target are still never
-          overwritten.
+          <strong>3 Options</strong>: the <strong>Force-load</strong> switch delivers every file as
+          an update, even one that is already loaded or a copy of another file. Changes someone made
+          in the target are still never overwritten.
         </li>
       </ul>
 
-      <h3>Start</h3>
+      <h3>Converting</h3>
       <p>
-        <strong>Start</strong> sends the files one at a time, with a bar showing how far it has got,
-        then starts the batch and opens it. A file that is refused, because it isn&apos;t a Word
-        document, is damaged or has tracked changes, says why on its row, and the others carry on.
-        The batch then starts without it, and <strong>Open the batch</strong> takes you there.
+        <strong>Convert N documents</strong> sends the files one at a time, with a bar showing how
+        far it has got, then starts the batch and opens it. A file that is refused, because it
+        isn&apos;t a Word document, is damaged or has tracked changes, says why on its row, and the
+        others carry on. The batch then starts without it, and <strong>Open the batch</strong> takes
+        you there.
       </p>
       <p>
         <strong>Cancel</strong>, while the files are going up, throws the unfinished batch away.
@@ -48,16 +51,27 @@ export function ConversionHelp() {
 
       <h3>The batch</h3>
       <p>
-        A batch shows one row per document, with its outcome, how long it took to convert (or has
-        been running so far), a line saying more, a link to the document in the target once it is
-        there, and its <strong>Report</strong>: what converting the file noticed for someone to
-        check, such as an empty heading it left out or a table with no caption. While any document
-        is still queued, decomposing or delivering, the rows refresh every few seconds.{' '}
-        <strong>Needs attention</strong> shows only the documents someone should look at, and{' '}
-        <strong>Done</strong> the ones that went through, were already loaded, or were detached or
-        had the target&apos;s state accepted. A refusal that a later run has moved on from is{' '}
-        <strong>Superseded by a later run</strong>, and done too: act on the document from the later
-        batch. A screen reader hears how many are done each time another settles.
+        A batch opens with where it went, who started it, how long it took and whether it was
+        force-loaded, then its totals: documents, created or updated, already loaded, needing
+        attention and failed, with a bar of the outcomes. Below, each document is one line: its
+        state, its path, its outcome, a line saying more, how long it took (or has run so far),{' '}
+        <strong>Open</strong> for the document in the target once it is there, and a{' '}
+        <strong>⋯</strong> menu. The lines are as many as fit the window, with{' '}
+        <strong>‹ Prev</strong> and <strong>Next ›</strong> between pages. While any document is
+        still queued, decomposing or delivering, the lines refresh every few seconds.
+      </p>
+      <p>
+        Click a line to see the document beside the list: why it failed or needs attention, when it
+        started and finished, its <strong>Report</strong> (what converting the file noticed for
+        someone to check, such as an empty heading it left out or a table with no caption), the
+        document in the target, and the actions that apply to it. At first the panel shows the first
+        document needing attention. <strong>Find a document</strong> narrows the list by its path.{' '}
+        <strong>Needs attention</strong> shows only the documents someone should look at,{' '}
+        <strong>Failed</strong> the ones that failed, and <strong>Done</strong> the ones that went
+        through, were already loaded, or were detached or had the target&apos;s state accepted. A
+        refusal that a later run has moved on from is <strong>Superseded by a later run</strong>,
+        and done too: act on the document from the later batch. A screen reader hears how many are
+        done each time another settles.
       </p>
       <ul>
         <li>
@@ -86,7 +100,27 @@ export function ConversionHelp() {
         </li>
       </ul>
 
+      <h3>Re-running failed documents</h3>
+      <p>
+        <strong>Re-run N failed</strong>, at the top of a batch with failed documents, lists them,
+        each ticked, with why it failed. Untick any to leave out, and choose whether to{' '}
+        <strong>Keep Force-load</strong> (it starts as the batch was started). They run again from
+        the files uploaded with the batch, as one new batch to the same target, which opens; this
+        batch keeps its record. <strong>Re-run this document</strong> on the panel, or{' '}
+        <strong>Re-run</strong> in a line&apos;s <strong>⋯</strong> menu, does the same for one.
+      </p>
+      <p>
+        A document is re-run once from a batch. Its line then says <strong>Re-run in batch</strong>{' '}
+        and the date, which opens the batch it was re-run in, and it is no longer offered here. If
+        the re-run fails too, re-run it from that batch.
+      </p>
+      <p>
+        <strong>Download original</strong>, on the panel and in the <strong>⋯</strong> menu, saves
+        the Word file as it was uploaded.
+      </p>
+
       <h3>Acting on a document</h3>
+      <p>The panel and a line&apos;s menu offer these where they apply:</p>
       <ul>
         <li>
           <strong>Force-load</strong>, on a document already loaded or a duplicate, delivers it
@@ -105,7 +139,7 @@ export function ConversionHelp() {
         </li>
         <li>
           Force-load, redeliver and load as a new document each start a new batch of one, which the
-          row links to.
+          notice links to.
         </li>
         <li>
           For a document changed in the target, <strong>Detach</strong> forgets it: it stays in the
@@ -119,7 +153,8 @@ export function ConversionHelp() {
       </ul>
       <p>
         Under a new batch, <strong>Earlier batches</strong> lists the batches started before, newest
-        first.
+        first, ten a page: how each stands, when it started, its target, how many documents, what
+        became of them, and who started it. Click a line to open the batch.
       </p>
     </>
   );

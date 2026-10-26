@@ -97,11 +97,14 @@ export function ItemActions({
   item,
   onOpen,
   onResult,
+  menu = false,
 }: {
   api: Api;
   item: Item;
   onOpen: (kind: DialogKind) => void;
   onResult: (result: ActionResult) => void;
+  /** As items of a row's menu: named by their words alone, the first after a line. */
+  menu?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   /** Set from the first click until the request settles, before a render can disable it. */
@@ -121,13 +124,15 @@ export function ItemActions({
   }
 
   const key = item.sourceKey;
+  /** A button's own name: on the panel it names its document, in a row's menu the menu does. */
+  const named = (name: string) => (menu ? { role: 'menuitem' as const } : { 'aria-label': name });
   return (
     <>
       {canForce(item) && (
         <button
           type="button"
           disabled={busy}
-          aria-label={`Force-load ${key}`}
+          {...named(`Force-load ${key}`)}
           onClick={() => void forceLoad()}
         >
           Force-load
@@ -137,7 +142,7 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          aria-label={`Redeliver ${key}`}
+          {...named(`Redeliver ${key}`)}
           onClick={() => onOpen('redeliver')}
         >
           Redeliver
@@ -147,7 +152,7 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          aria-label={`Load ${key} as a new document`}
+          {...named(`Load ${key} as a new document`)}
           onClick={() => onOpen('reload')}
         >
           Load as a new document
@@ -157,7 +162,7 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          aria-label={`Accept the target's state for ${key}`}
+          {...named(`Accept the target's state for ${key}`)}
           onClick={() => onOpen('accept')}
         >
           Accept the target&apos;s state
@@ -167,7 +172,7 @@ export function ItemActions({
         <button
           type="button"
           disabled={busy}
-          aria-label={`Detach ${key}`}
+          {...named(`Detach ${key}`)}
           onClick={() => onOpen('detach')}
         >
           Detach
