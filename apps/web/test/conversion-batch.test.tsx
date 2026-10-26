@@ -383,6 +383,77 @@ describe('the Conversion tab: the batch view', () => {
     expect(api.detachConversionItem).toHaveBeenCalledWith(unversioned.id);
   });
 
+  it('a document gone from the target loads as a new document, after a confirmation', async () => {
+    const gone = item('gone.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      gone: true,
+      reloadable: true,
+      detail: 'The target no longer has this document (it may have been deleted).',
+    });
+    const reloaded = {
+      batch: conversionBatch({ id: NEW_BATCH_ID, ...STARTED }),
+      items: [item('gone.docx', 'queued', { redeliverOf: gone.id })],
+    };
+    const api = batchApi([gone], {
+      reloadConversionItem: vi.fn(async () => reloaded),
+    });
+    view(api);
+    await screen.findByText('gone.docx');
+    const row = within(rowOf('gone.docx'));
+    // Detach too; an update can never go through, so nothing redelivers or accepts it.
+    expect(row.getByRole('button', { name: 'Detach gone.docx' })).toBeInTheDocument();
+    expect(row.queryByRole('button', { name: 'Redeliver gone.docx' })).toBeNull();
+    expect(row.queryByRole('button', { name: /Accept the target/ })).toBeNull();
+
+    await userEvent.click(row.getByRole('button', { name: 'Load gone.docx as a new document' }));
+    const dialog = within(
+      await screen.findByRole('dialog', { name: 'Load gone.docx as a new document?' }),
+    );
+    expect(dialog.getByText(/creates a new document in the target/)).toBeInTheDocument();
+    expect(dialog.getByText(/no longer exists there/)).toBeInTheDocument();
+    expect(api.reloadConversionItem).not.toHaveBeenCalled();
+    await userEvent.click(dialog.getByRole('button', { name: 'Load as a new document' }));
+    expect(api.reloadConversionItem).toHaveBeenCalledWith(gone.id);
+    expect(api.reloadConversionItem).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByRole('link', { name: 'Open the new batch' })).toHaveAttribute(
+      'href',
+      `#/conversion/${NEW_BATCH_ID}`,
+    );
+  });
+
+  it('a row left detached by a reload whose rerun failed offers it again', async () => {
+    const left = item('left.docx', 'unresolved', {
+      registerEntryId: crypto.randomUUID(),
+      resolution: 'detached',
+      reloadable: true,
+    });
+    view(batchApi([left]));
+    await screen.findByText('left.docx');
+    const row = within(rowOf('left.docx'));
+    expect(row.getByRole('button', { name: 'Load left.docx as a new document' })).toBeVisible();
+    expect(row.queryByRole('button', { name: 'Detach left.docx' })).toBeNull();
+  });
+
+  it('a row that is not reloadable offers no load as a new document', async () => {
+    const api = batchApi([
+      item('superseded.docx', 'changed_in_target', {
+        registerEntryId: crypto.randomUUID(),
+        gone: true,
+        resolution: 'superseded',
+        reloadable: false,
+      }),
+      item('changed.docx', 'changed_in_target', { registerEntryId: crypto.randomUUID() }),
+      item('unresolved.docx', 'unresolved', {
+        registerEntryId: crypto.randomUUID(),
+        unversioned: true,
+      }),
+    ]);
+    view(api);
+    await screen.findByText('changed.docx');
+    expect(screen.queryByRole('button', { name: /as a new document/ })).toBeNull();
+  });
+
   it('accept shows each changed component and needs the checkbox', async () => {
     const changed = item('changed.docx', 'changed_in_target', {
       registerEntryId: crypto.randomUUID(),

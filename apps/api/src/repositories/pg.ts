@@ -43,6 +43,8 @@ import {
   type Rerun,
   type RerunResult,
   RUNNING_OUTCOMES,
+  isGone,
+  isReloadable,
   isUnversioned,
   type StartBatchResult,
 } from '../conversions/repo.js';
@@ -276,6 +278,8 @@ interface ItemRow {
   finished_at: Date | null;
   resolution: Item['resolution'];
   unversioned: boolean;
+  gone: boolean;
+  entry_detached: boolean;
 }
 
 /**
@@ -310,7 +314,18 @@ const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_b
              AND COALESCE(jsonb_array_length(
                    CASE WHEN jsonb_typeof(r.last_receipt->'document'->'components') = 'array'
                         THEN r.last_receipt->'document'->'components' END), 0) = 0)
-    AS unversioned`;
+    AS unversioned,
+  EXISTS (SELECT 1 FROM decomposition_register r
+           WHERE r.id = decomposition_items.register_entry_id
+             AND r.persistent_id IS NOT NULL
+             AND r.state = 'failed'
+             AND r.last_error->>'code' = 'not_found'
+             AND r.last_error->'details'->>'reason' = 'document_missing'
+             AND r.last_error->'details'->>'persistentId' = r.persistent_id)
+    AS gone,
+  EXISTS (SELECT 1 FROM decomposition_register r
+           WHERE r.id = decomposition_items.register_entry_id AND r.state = 'detached')
+    AS entry_detached`;
 
 const toItem = (r: ItemRow): Item => ({
   id: r.id,
@@ -329,6 +344,8 @@ const toItem = (r: ItemRow): Item => ({
   redeliverOf: r.redeliver_of,
   resolution: r.resolution,
   unversioned: r.unversioned,
+  gone: r.gone,
+  reloadable: isReloadable(r.gone, r.entry_detached, r.resolution),
   startedAt: r.started_at?.toISOString() ?? null,
   finishedAt: r.finished_at?.toISOString() ?? null,
 });
@@ -1442,6 +1459,8 @@ export class PgRepo implements IngestionRepo {
     createdBy,
     by,
     source,
+    force = true,
+    whileDetached,
   }: Rerun): Promise<RerunResult> {
     return this.inTransaction(async (client) => {
       // The item rerun, locked: a repeated request waits here, then finds the first's rerun.
@@ -1452,11 +1471,20 @@ export class PgRepo implements IngestionRepo {
         [of.id, RUNNING_OUTCOMES],
       );
       if (running.rowCount) return { ok: false, reason: 'running' };
+      if (whileDetached !== undefined) {
+        // Still the tombstone, held until the batch is in: the worker's create, which replaces
+        // it, waits on this row lock.
+        const tombstone = await client.query(
+          `SELECT 1 FROM decomposition_register WHERE id = $1 AND state = 'detached' FOR UPDATE`,
+          [whileDetached],
+        );
+        if (!tombstone.rowCount) return { ok: false, reason: 'not_detached' };
+      }
       const batch = await client.query<BatchRow>(
         `INSERT INTO decomposition_batches (id, target_id, force, created_by, state, started_at)
-         VALUES ($1, $2, true, $3, 'started', now())
+         VALUES ($1, $2, $4, $3, 'started', now())
          RETURNING ${BATCH_COLUMNS}`,
-        [batchId, targetId, JSON.stringify(createdBy)],
+        [batchId, targetId, JSON.stringify(createdBy), force],
       );
       const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
       const job = await client.query<{ id: string }>(
@@ -1465,7 +1493,7 @@ export class PgRepo implements IngestionRepo {
         [
           priority,
           maxAttempts,
-          JSON.stringify({ batchId, itemId, targetId, sourceKey: of.sourceKey, force: true }),
+          JSON.stringify({ batchId, itemId, targetId, sourceKey: of.sourceKey, force }),
           by?.name ?? null,
           by?.userId ?? null,
         ],
@@ -1505,6 +1533,7 @@ export class PgRepo implements IngestionRepo {
     entryId,
     targetIds,
     by,
+    reason,
     detail,
   }: Detach): Promise<DetachResult> {
     return this.inTransaction(async (client) => {
@@ -1526,9 +1555,10 @@ export class PgRepo implements IngestionRepo {
         [row.source_key, targetIds, RUNNING_OUTCOMES],
       );
       if (row.state === 'pending' || running.rowCount) return { ok: false, reason: 'pending' };
-      // Only a document refused as changed in the target, or one whose versions were never
-      // recorded, is detached: never a live one.
-      if (row.state !== 'changed' && !isUnversioned(toRegisterEntry(row))) {
+      // Only a document refused as changed in the target, one whose versions were never
+      // recorded, or one gone from the target, is detached: never a live one.
+      const entry = toRegisterEntry(row);
+      if (row.state !== 'changed' && !isUnversioned(entry) && !isGone(entry)) {
         return { ok: false, reason: 'not_refused' };
       }
       const action = await client.query<{ id: string }>(
@@ -1537,7 +1567,11 @@ export class PgRepo implements IngestionRepo {
         [
           entryId,
           JSON.stringify(by),
-          JSON.stringify({ persistentId: row.persistent_id, sourceKey: row.source_key }),
+          JSON.stringify({
+            persistentId: row.persistent_id,
+            sourceKey: row.source_key,
+            ...(reason ? { reason } : {}),
+          }),
         ],
       );
       const updated = await client.query<RegisterRow>(
@@ -1549,12 +1583,12 @@ export class PgRepo implements IngestionRepo {
          RETURNING ${REGISTER_COLUMNS}`,
         [entryId, action.rows[0]!.id],
       );
-      const entry = toRegisterEntry(updated.rows[0]!);
+      const detached = toRegisterEntry(updated.rows[0]!);
       const item = await client.query<ItemRow>(
         `UPDATE decomposition_items SET detail = $2 WHERE id = $1 RETURNING ${ITEM_COLUMNS}`,
-        [itemId, detail(entry)],
+        [itemId, detail(detached)],
       );
-      return { ok: true, entry, item: toItem(item.rows[0]!) };
+      return { ok: true, entry: detached, item: toItem(item.rows[0]!) };
     });
   }
 

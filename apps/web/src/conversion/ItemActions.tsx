@@ -10,14 +10,14 @@ export interface ActionResult {
   message: string;
   /** The item as the action left it (detach, accept). */
   item?: Item;
-  /** Force-load and redeliver start a new batch of one: its id. */
+  /** Force-load, redeliver and reload start a new batch of one: its id. */
   batchId?: string;
   /** The action was refused or failed: `message` says why. */
   failed?: boolean;
 }
 
 /** A row action that asks first, in a dialog the batch view keeps open across its refreshes. */
-export type DialogKind = 'redeliver' | 'detach' | 'accept';
+export type DialogKind = 'redeliver' | 'detach' | 'accept' | 'reload';
 
 /** Force-load (§8): an already loaded document is updated, a duplicate created on its own. */
 const FORCEABLE: readonly ItemOutcome[] = ['already_loaded', 'duplicate'];
@@ -39,16 +39,25 @@ export const canForce = (item: Item) => FORCEABLE.includes(item.outcome);
 export const canRedeliver = (item: Item) =>
   REDELIVERABLE.includes(item.outcome) &&
   item.registerEntryId !== null &&
-  item.resolution !== 'detached';
+  item.resolution !== 'detached' &&
+  !item.gone;
 /** Detach or accept: a document changed in the target that neither has been done to (M7). */
 export const canResolve = (item: Item) =>
   item.outcome === 'changed_in_target' && item.registerEntryId !== null && !item.resolution;
 /**
- * Detach: as `canResolve`, or an unresolved document whose versions were never recorded (§8),
- * which no update can be checked against, so there is nothing to accept.
+ * Load as a new document: the item's `reloadable`, as the route decides it. A document gone from
+ * the target (deleted there, say), which no update can reach, or one still detached, so a reload
+ * whose rerun failed after its detach can be tried again (owner's call, 2026-10-26).
+ */
+export const canReload = (item: Item) => item.reloadable;
+/**
+ * Detach: as `canResolve`, an unresolved document whose versions were never recorded (§8),
+ * which no update can be checked against, so there is nothing to accept, or one gone from the
+ * target.
  */
 export const canDetach = (item: Item) =>
   canResolve(item) ||
+  (item.gone && item.registerEntryId !== null && !item.resolution) ||
   (item.outcome === 'unresolved' &&
     item.unversioned &&
     item.registerEntryId !== null &&
@@ -58,6 +67,7 @@ const APPLIES: Record<DialogKind, (item: Item) => boolean> = {
   redeliver: canRedeliver,
   detach: canDetach,
   accept: canResolve,
+  reload: canReload,
 };
 
 /** How the item stands now, when a refresh moved it on while its dialog was open. */
@@ -78,7 +88,8 @@ function changedNote(kind: DialogKind, item: Item): string | null {
  * A conversion item's row actions, each offered only where it applies: force-load, redeliver
  * (optionally from a replacement file), and for a document changed in the target, detach or
  * accept the target's state (§8, "Resolving a refused document"); for an unresolved document
- * whose versions were never recorded, detach only. Once one of those is done the item's
+ * whose versions were never recorded, detach only; for one gone from the target, load as a new
+ * document, or detach. Once one of those is done the item's
  * `resolution` says so, and neither is offered again. Each button names its document.
  */
 export function ItemActions({
@@ -130,6 +141,16 @@ export function ItemActions({
           onClick={() => onOpen('redeliver')}
         >
           Redeliver
+        </button>
+      )}
+      {canReload(item) && (
+        <button
+          type="button"
+          disabled={busy}
+          aria-label={`Load ${key} as a new document`}
+          onClick={() => onOpen('reload')}
+        >
+          Load as a new document
         </button>
       )}
       {canResolve(item) && (
@@ -197,6 +218,20 @@ export function ItemDialog({
         onDone={(detail) => {
           onClose();
           rerunDone(item, onResult, 'Redeliver')(detail);
+        }}
+      />
+    );
+  }
+  if (kind === 'reload') {
+    return (
+      <ReloadDialog
+        api={api}
+        item={item}
+        note={note}
+        onClose={onClose}
+        onDone={(detail) => {
+          onClose();
+          rerunDone(item, onResult, 'Load as a new document')(detail);
         }}
       />
     );
@@ -310,6 +345,68 @@ function RedeliverDialog({
   );
 }
 
+/**
+ * Load as a new document: the target no longer has the document, so CT Studio detaches it and
+ * creates it again from the stored file, in a new batch of one.
+ */
+function ReloadDialog({
+  api,
+  item,
+  note,
+  onClose,
+  onDone,
+}: {
+  api: Api;
+  item: Item;
+  note: string | null;
+  onClose: () => void;
+  onDone: (detail: BatchDetail) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sending = useRef(false);
+
+  async function reload() {
+    if (sending.current) return;
+    sending.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await api.reloadConversionItem(item.id));
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+    sending.current = false;
+  }
+
+  return (
+    <Dialog
+      title={`Load ${item.sourceKey} as a new document?`}
+      onClose={onClose}
+      actions={
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || note !== null}
+          onClick={() => void reload()}
+        >
+          Load as a new document
+        </button>
+      }
+    >
+      <p>
+        This creates a new document in the target from the stored file of{' '}
+        <span className="mono">{item.sourceKey}</span>, in a new batch of one. The old document no
+        longer exists there: it may have been deleted, so its links and history in the target
+        don&apos;t carry over.
+      </p>
+      <ChangedNote note={note} />
+      {error && <p role="alert">{error}</p>}
+    </Dialog>
+  );
+}
+
 /** Detach (§8): CT Studio forgets the document; it stays in the target, untouched. */
 function DetachDialog({
   api,
@@ -357,11 +454,18 @@ function DetachDialog({
         </button>
       }
     >
-      <p>
-        CT Studio forgets this document. The document stays in the target, untouched, with the edits
-        made there. The next run of <span className="mono">{item.sourceKey}</span> creates a new
-        document of its own.
-      </p>
+      {item.gone ? (
+        <p>
+          CT Studio forgets this document, which the target no longer has. The next run of{' '}
+          <span className="mono">{item.sourceKey}</span> creates a new document of its own.
+        </p>
+      ) : (
+        <p>
+          CT Studio forgets this document. The document stays in the target, untouched, with the
+          edits made there. The next run of <span className="mono">{item.sourceKey}</span> creates a
+          new document of its own.
+        </p>
+      )}
       <ChangedNote note={note} />
       {error && <p role="alert">{error}</p>}
     </Dialog>

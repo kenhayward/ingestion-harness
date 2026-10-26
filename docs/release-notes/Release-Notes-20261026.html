@@ -161,7 +161,7 @@
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
         Monday 26 October 2026: Word documents converted in batches, for a target that takes
-        decomposed documents. PRs #329 to #331, opened on Monday 26 October 2026 (UTC).
+        decomposed documents. PRs #329 to #332, opened on Monday 26 October 2026 (UTC).
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -175,6 +175,10 @@
           <li>
             <a href="#conversion-fixes">Conversion: times, links and empty headings</a>
             <span>— how long each document took, its link in the target, no empty sections</span>
+          </li>
+          <li>
+            <a href="#conversion-gone">Load a deleted document again</a>
+            <span>— a document deleted in the target is created again, in one step</span>
           </li>
         </ul>
         <h4>Other updates</h4>
@@ -233,6 +237,15 @@
             (<code>unversioned</code>). Detach refuses a document that is neither refused as changed
             in the target nor unversioned (409 <code>not_refused</code>). Operators, designers and
             administrators may all use them.
+          </li>
+          <li>
+            A new route, <code>POST /api/conversions/items/{id}/reload</code>, loads a document the
+            target no longer has as a new document: it detaches it, if it isn't already, and starts
+            a batch of one that creates it again. It answers 409 <code>not_gone</code> for a
+            document that is neither gone nor detached. Each item has a new field,
+            <code>gone</code>: true when the target refused its update because it no longer has the
+            document. Such an item now reads <code>unresolved</code>, not <code>failed</code>, and
+            detach takes it too. Operators, designers and administrators may use the route.
           </li>
         </ul>
       </div>
@@ -353,6 +366,24 @@
           can't create it twice.
         </li>
       </ul>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h3 id="conversion-gone">Load a deleted document again</h3>
+      <p class="prs"><a href="https://github.com/kenhayward/ingestion-harness/pull/332">#332</a></p>
+      <p>
+        When someone deletes a delivered document in the target, running its file again could only
+        try to update the document that was gone, and was refused every time. There was no way to
+        load it again.
+      </p>
+      <p>
+        Now its row reads <strong>Unresolved</strong>, saying the target no longer has the document
+        (it may have been deleted), and running the file again or force-loading it no longer tries
+        the update. The row offers <strong>Load as a new document</strong>, and
+        <strong>Detach</strong>. Load as a new document asks first: it creates a new document in the
+        target from the stored file, because the old one no longer exists there. Once confirmed, it
+        starts a new batch of one, which the row links to, and the document is created again with a
+        new identity in the target. Choosing it twice makes one batch.
+      </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
       <h2 id="other">Other updates</h2>
 

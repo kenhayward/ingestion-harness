@@ -25,6 +25,7 @@ import { acceptPlanOf } from '../conversions/accept.js';
 import type { RegisterEntry } from '../repositories/types.js';
 import {
   batchCreator,
+  isGone,
   RUNNING_OUTCOMES,
   type AddItemResult,
   type Rerun,
@@ -52,8 +53,11 @@ const IN_FLIGHT = 'a delivery of this document, or a run of its file, is in flig
 const RERUN_RUNNING = 'a rerun of this item is still running';
 const STALE_PREVIEW = 'the document changed since the preview: look at it again';
 const NOT_REFUSED =
-  'the document is not refused as changed in the target: only a refused document, or one ' +
-  'whose versions were never recorded, is detached';
+  'the document is not refused as changed in the target: only a refused document, one whose ' +
+  'versions were never recorded, or one gone from the target, is detached';
+const NOT_GONE =
+  'the document is not gone from the target: only a document the target no longer has, or ' +
+  'one still detached that no later run has created again, is loaded as a new document';
 
 const UUID = z.string().uuid();
 const BatchParams = z.object({ id: z.string().uuid().describe('The batch id.') });
@@ -632,10 +636,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           that it was detached. The document stays in the target, untouched, and the next run of
           the same source creates a new document, even from the same file. Refused while a
           delivery for it, or a run of its file on the same target, is in flight, and unless the
-          document is refused as changed in the target or its versions were never recorded (the
-          item's \`unversioned\`) (\`not_refused\`), so a live document is never detached, from
-          an old row or a stale page. Recorded with who and when; the item's detail says it was
-          detached.
+          document is refused as changed in the target, its versions were never recorded (the
+          item's \`unversioned\`) or the target no longer has it (the item's \`gone\`)
+          (\`not_refused\`), so a live document is never detached, from an old row or a stale
+          page. Recorded with who and when; the item's detail says it was detached.
         `,
         params: ItemParams,
         response: {
@@ -647,7 +651,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           409: res(
             'The item has no register entry (`no_register_entry`: never delivered, or detached ' +
               'already), a delivery for it or a run of its file is in flight (`in_flight`), or ' +
-              'its document is neither refused as changed in the target nor unversioned ' +
+              'its document is neither refused as changed in the target, unversioned nor gone ' +
               '(`not_refused`).',
             ErrorBody.extend({ code: z.enum(['no_register_entry', 'in_flight', 'not_refused']) }),
           ),
@@ -677,6 +681,95 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(409).send({ error: NOT_REFUSED, code: 'not_refused' });
       }
       return reply.code(409).send({ error: NO_ENTRY, code: 'no_register_entry' });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/items/:id/reload',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'reloadConversionItem',
+        summary: 'Load an item as a new document',
+        description: md`
+          For a document the target no longer has (the item's \`gone\`: the sink refused its
+          update with the missing-document marker, \`not_found\` with details
+          \`reason: document_missing\` naming that document; deleted there, say), or one whose
+          register entry is still the detached tombstone (no later create has replaced it), and
+          only when the row is not superseded (the item's \`reloadable\`): detaches its
+          register entry if it is not detached yet (recorded with who, when and
+          \`reason: gone\`), then delivers the item's stored file as a plain create (not forced),
+          in a new batch of one that starts at once. After the detach, that makes a **new**
+          document in the target. The new item keeps the source key and names the item it reruns
+          (\`redeliverOf\`). Refused while an earlier rerun of the item is unfinished, so a
+          repeated request (a double click) makes one batch.
+        `,
+        params: ItemParams,
+        response: {
+          ...RerunResponses,
+          409: res(
+            'The item never started, it or a rerun of it is still running (`not_finished`), its ' +
+              'document is not reloadable (`not_gone`: neither gone nor still detached, or ' +
+              'superseded), or a ' +
+              'delivery of it or a run of its file is in flight (`in_flight`).',
+            ErrorBody.extend({ code: z.enum(['not_finished', 'not_gone', 'in_flight']) }),
+          ),
+        },
+      },
+    },
+    async (req, reply) => {
+      const item = await findItem(req.params.id);
+      if (!item) return reply.code(404).send({ error: 'not found' });
+      const batch = await app.deps.repo.getBatch(item.batchId);
+      const why = notFinished(item, batch);
+      if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
+      // `reloadable` (read from the entry as it is now): gone, or still the detached tombstone,
+      // and not superseded. An item that only reads `detached` because a later create replaced
+      // the tombstone has a live document again.
+      const entry = item.registerEntryId
+        ? await app.deps.repo.registerEntry(item.registerEntryId)
+        : null;
+      if (!item.reloadable || !entry) {
+        return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
+      }
+      if (!(await takesDocuments(app, batch.targetId))) {
+        return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
+      }
+      if (isGone(entry)) {
+        const detached = await app.deps.repo.detachRegisterEntry({
+          itemId: item.id,
+          entryId: entry.id,
+          targetIds: await tenantTargets(entry),
+          by: batchCreator(creatorOf(req)),
+          reason: 'gone',
+          detail: (e) =>
+            `detached${e.persistentId ? ` from document ${e.persistentId}` : ''}, gone from the ` +
+            'target: loading it as a new document',
+        });
+        // Detached meanwhile (a second click) is as good: the rerun's guard makes one batch.
+        if (!detached.ok && detached.reason === 'pending') {
+          return reply.code(409).send({ error: IN_FLIGHT, code: 'in_flight' });
+        }
+        if (!detached.ok && detached.reason === 'not_refused') {
+          return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
+        }
+      }
+      const ids = { batchId: randomUUID(), itemId: randomUUID() };
+      // The tombstone is checked again with the batch insert, in one transaction.
+      const done = await app.deps.repo.rerunItem({
+        ...ids,
+        of: item,
+        targetId: batch.targetId,
+        createdBy: batchCreator(creatorOf(req)),
+        by: creatorOf(req),
+        source: storedSource(item),
+        force: false,
+        whileDetached: entry.id,
+      });
+      if (!done.ok && done.reason === 'not_detached') {
+        return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
+      }
+      return rerunReply(reply, done);
     },
   );
 

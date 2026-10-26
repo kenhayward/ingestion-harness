@@ -125,7 +125,7 @@ export interface RegisterSettlement {
 export interface ItemSettlement {
   outcome: Extract<
     ItemOutcome,
-    'created' | 'updated' | 'changed_in_target' | 'read_back_mismatch' | 'failed'
+    'created' | 'updated' | 'changed_in_target' | 'read_back_mismatch' | 'unresolved' | 'failed'
   >;
   detail: string | null;
   link: string | null;

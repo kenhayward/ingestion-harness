@@ -12673,6 +12673,12 @@
                     "unversioned": {
                       "type": "boolean"
                     },
+                    "gone": {
+                      "type": "boolean"
+                    },
+                    "reloadable": {
+                      "type": "boolean"
+                    },
                     "startedAt": {
                       "type": [
                         "string",
@@ -12703,6 +12709,8 @@
                     "redeliverOf",
                     "resolution",
                     "unversioned",
+                    "gone",
+                    "reloadable",
                     "startedAt",
                     "finishedAt"
                   ],
@@ -13765,6 +13773,12 @@
                           "unversioned": {
                             "type": "boolean"
                           },
+                          "gone": {
+                            "type": "boolean"
+                          },
+                          "reloadable": {
+                            "type": "boolean"
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -13795,6 +13809,8 @@
                           "redeliverOf",
                           "resolution",
                           "unversioned",
+                          "gone",
+                          "reloadable",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -14305,6 +14321,12 @@
                           "unversioned": {
                             "type": "boolean"
                           },
+                          "gone": {
+                            "type": "boolean"
+                          },
+                          "reloadable": {
+                            "type": "boolean"
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -14335,6 +14357,8 @@
                           "redeliverOf",
                           "resolution",
                           "unversioned",
+                          "gone",
+                          "reloadable",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -14802,6 +14826,12 @@
                           "unversioned": {
                             "type": "boolean"
                           },
+                          "gone": {
+                            "type": "boolean"
+                          },
+                          "reloadable": {
+                            "type": "boolean"
+                          },
                           "startedAt": {
                             "type": [
                               "string",
@@ -14832,6 +14862,8 @@
                           "redeliverOf",
                           "resolution",
                           "unversioned",
+                          "gone",
+                          "reloadable",
                           "startedAt",
                           "finishedAt"
                         ],
@@ -15170,7 +15202,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight, and unless the\ndocument is refused as changed in the target or its versions were never recorded (the\nitem's `unversioned`) (`not_refused`), so a live document is never detached, from\nan old row or a stale page. Recorded with who and when; the item's detail says it was\ndetached.",
+        "description": "Forgets the register entry of the item's document: the entry is kept only as a record\nthat it was detached. The document stays in the target, untouched, and the next run of\nthe same source creates a new document, even from the same file. Refused while a\ndelivery for it, or a run of its file on the same target, is in flight, and unless the\ndocument is refused as changed in the target, its versions were never recorded (the\nitem's `unversioned`) or the target no longer has it (the item's `gone`)\n(`not_refused`), so a live document is never detached, from an old row or a stale\npage. Recorded with who and when; the item's detail says it was detached.",
         "parameters": [
           {
             "schema": {
@@ -15305,6 +15337,12 @@
                     "unversioned": {
                       "type": "boolean"
                     },
+                    "gone": {
+                      "type": "boolean"
+                    },
+                    "reloadable": {
+                      "type": "boolean"
+                    },
                     "startedAt": {
                       "type": [
                         "string",
@@ -15335,6 +15373,8 @@
                     "redeliverOf",
                     "resolution",
                     "unversioned",
+                    "gone",
+                    "reloadable",
                     "startedAt",
                     "finishedAt"
                   ],
@@ -15440,7 +15480,7 @@
             }
           },
           "409": {
-            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target nor unversioned (`not_refused`).",
+            "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target, unversioned nor gone (`not_refused`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15474,7 +15514,496 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target nor unversioned (`not_refused`)."
+                  "description": "The item has no register entry (`no_register_entry`: never delivered, or detached already), a delivery for it or a run of its file is in flight (`in_flight`), or its document is neither refused as changed in the target, unversioned nor gone (`not_refused`)."
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Maintenance mode is on (`GET /api/maintenance`): only admins can use the API until it is off.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "CT Studio is under maintenance"
+                      ]
+                    },
+                    "maintenance": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "message",
+                        "since"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversions/items/{id}/reload": {
+      "post": {
+        "operationId": "reloadConversionItem",
+        "summary": "Load an item as a new document",
+        "tags": [
+          "Conversions"
+        ],
+        "description": "For a document the target no longer has (the item's `gone`: the sink refused its\nupdate with the missing-document marker, `not_found` with details\n`reason: document_missing` naming that document; deleted there, say), or one whose\nregister entry is still the detached tombstone (no later create has replaced it), and\nonly when the row is not superseded (the item's `reloadable`): detaches its\nregister entry if it is not detached yet (recorded with who, when and\n`reason: gone`), then delivers the item's stored file as a plain create (not forced),\nin a new batch of one that starts at once. After the detach, that makes a **new**\ndocument in the target. The new item keeps the source key and names the item it reruns\n(`redeliverOf`). Refused while an earlier rerun of the item is unfinished, so a\nrepeated request (a double click) makes one batch.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The item id."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new batch of one, started, and its item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "targetId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+                        },
+                        "createdBy": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "started",
+                            "discarded"
+                          ]
+                        },
+                        "force": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "targetId",
+                        "createdBy",
+                        "state",
+                        "force",
+                        "createdAt",
+                        "startedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "batchId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "sourceKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "filename": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "contentSha256": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "sizeBytes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "objectKey": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "jobId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "queued",
+                              "decomposing",
+                              "delivering",
+                              "created",
+                              "updated",
+                              "already_loaded",
+                              "duplicate",
+                              "in_flight",
+                              "changed_in_target",
+                              "read_back_mismatch",
+                              "unresolved",
+                              "failed"
+                            ]
+                          },
+                          "detail": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "registerEntryId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reportKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "link": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "redeliverOf": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resolution": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "detached",
+                                  "accepted",
+                                  "superseded"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unversioned": {
+                            "type": "boolean"
+                          },
+                          "gone": {
+                            "type": "boolean"
+                          },
+                          "reloadable": {
+                            "type": "boolean"
+                          },
+                          "startedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "finishedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "batchId",
+                          "sourceKey",
+                          "filename",
+                          "contentSha256",
+                          "sizeBytes",
+                          "objectKey",
+                          "jobId",
+                          "outcome",
+                          "detail",
+                          "registerEntryId",
+                          "reportKey",
+                          "link",
+                          "redeliverOf",
+                          "resolution",
+                          "unversioned",
+                          "gone",
+                          "reloadable",
+                          "startedAt",
+                          "finishedAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "batch",
+                    "items"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The new batch of one, started, and its item."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session: sign in with `POST /api/auth/login`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "No valid session: sign in with `POST /api/auth/login`.",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "sign in required"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "A one-time password session: change the password first (`PUT /api/auth/password`). Or: Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "description": "A one-time password session: change the password first (`PUT /api/auth/password`).",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "change your one-time password first"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "description": "Sent from another site's page (`Sec-Fetch-Site: cross-site`): refused.",
+                      "properties": {
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "cross-site request refused"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "description": "No such item."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is not reloadable (`not_gone`: neither gone nor still detached, or superseded), or a delivery of it or a run of its file is in flight (`in_flight`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "not_finished",
+                        "not_gone",
+                        "in_flight"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is not reloadable (`not_gone`: neither gone nor still detached, or superseded), or a delivery of it or a run of its file is in flight (`in_flight`)."
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The batch's target no longer takes documents.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": {}
+                          }
+                        }
+                      ]
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "target_takes_no_documents"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "description": "The batch's target no longer takes documents."
                 }
               }
             }
@@ -15900,6 +16429,12 @@
                         "unversioned": {
                           "type": "boolean"
                         },
+                        "gone": {
+                          "type": "boolean"
+                        },
+                        "reloadable": {
+                          "type": "boolean"
+                        },
                         "startedAt": {
                           "type": [
                             "string",
@@ -15930,6 +16465,8 @@
                         "redeliverOf",
                         "resolution",
                         "unversioned",
+                        "gone",
+                        "reloadable",
                         "startedAt",
                         "finishedAt"
                       ],

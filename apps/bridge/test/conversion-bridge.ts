@@ -2,7 +2,7 @@
  * The bridge side of the conversion end to end (apps/api/test/integration/conversion-e2e-pg.test.ts,
  * which loads this at run time): the bridge's routes over HTTP for the worker, its runner
  * delivering through `HttpSink` to the fake document sink's own server (`FAKE_SINK_MODE=documents`,
- * with `/_edit`), and its event dispatcher posting signed events to CT Studio's events route. The
+ * with `/_edit` and `/_delete`), and its event dispatcher posting signed events to CT Studio's events route. The
  * bridge's stores are its memory ones (their Pg twins have their own tests).
  */
 import { MemoryNonceStore, textForm } from '@ih/bridge-contract';
@@ -29,6 +29,8 @@ export interface ConversionBridge {
   url: string;
   /** Someone edits one component in the target (`POST /_edit`); its new version, or null. */
   edit(persistentId: string, componentId: string): Promise<{ version: string } | null>;
+  /** Someone deletes a document in the target (`POST /_delete`); whether it was there. */
+  remove(persistentId: string): Promise<boolean>;
   /** The persistent ids of the documents the fake sink holds. */
   documents(): string[];
   /** The text the fake sink holds for a document (its comparison form), or null if none. */
@@ -86,6 +88,14 @@ export async function startConversionBridge(opts: {
         body: JSON.stringify({ persistentId, componentId }),
       });
       return res.ok ? ((await res.json()) as { version: string }) : null;
+    },
+    async remove(persistentId) {
+      const res = await fetch(`${sinkUrl}/_delete`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ persistentId }),
+      });
+      return res.status === 204;
     },
     documents: () => [...documents.documents.keys()],
     text(persistentId) {

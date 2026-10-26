@@ -134,6 +134,44 @@ describe('the fake external sink server, documents mode', () => {
     expect(refused.json()).toMatchObject({ code: 'changed_in_target' });
   });
 
+  it('documents mode serves /_delete: an update of a deleted document is not found', async () => {
+    const app = await buildFakeServer(KEY, false, 'documents');
+    open.push(app);
+    const signed = (body: unknown) => {
+      const payload = JSON.stringify(body);
+      return app.inject({
+        method: 'POST',
+        url: '/deliveries',
+        headers: {
+          ...signRequest(KEY, { method: 'POST', path: '/deliveries', body: payload }),
+          'content-type': 'application/json',
+        },
+        payload,
+      });
+    };
+    const created = await signed(
+      deliverRequest({ package: decomposedPackage, destination: { space: 's' } }),
+    );
+    const { persistentId, components } = created.json().receipt.document;
+    const remove = (body: unknown) =>
+      app.inject({ method: 'POST', url: '/_delete', payload: body as object });
+
+    expect((await remove({ persistentId })).statusCode).toBe(204);
+    expect((await remove({ persistentId })).statusCode).toBe(404);
+
+    const refused = await signed({
+      ...deliverRequest({ package: decomposedPackage, destination: { space: 's' } }),
+      idempotencyKey: 'an update',
+      update: { persistentId, expected: components },
+    });
+    // The sink's missing-document marker, through the signed route unchanged.
+    expect(refused.json()).toMatchObject({
+      class: 'needs_user',
+      code: 'not_found',
+      details: { reason: 'document_missing', persistentId },
+    });
+  });
+
   it('has no /_edit outside documents mode', async () => {
     const { app } = await server();
     const res = await app.inject({ method: 'POST', url: '/_edit', payload: {} });

@@ -74,6 +74,7 @@ const OPERATOR_CALLS = new Set([
   'POST /api/conversions/items/:id/force',
   'POST /api/conversions/items/:id/redeliver',
   'POST /api/conversions/items/:id/detach',
+  'POST /api/conversions/items/:id/reload',
   'GET /api/conversions/items/:id/accept',
   'POST /api/conversions/items/:id/accept',
 ]);

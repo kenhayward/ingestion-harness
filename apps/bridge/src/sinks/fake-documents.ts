@@ -1,5 +1,6 @@
 import {
   bridgeError,
+  documentMissing,
   changedInTargetDetails,
   type BrowseResult,
   type ComponentVersion,
@@ -94,8 +95,10 @@ function compareForms(
  * behaves. It assigns persistent ids (`doc-<n>`), versions every component (the document's map,
  * each section, each image), writes idempotently by key (a replayed key gets the receipt of its
  * first write, never the current state), refuses a conditional update when any
- * component changed (`changed_in_target`), and reads each write back through the shared
- * comparison forms. `edit` and `corruptNextReadBack` stand for what happens in a real target.
+ * component changed (`changed_in_target`), refuses an update of a document deleted in the
+ * target (`not_found` with the missing-document marker, `documentMissing`, as a real sink
+ * does), and reads each write back through the shared comparison forms. `edit`, `remove` and `corruptNextReadBack` stand for what happens in a real
+ * target.
  */
 export class FakeDocumentSink implements SinkPort {
   readonly documents = new Map<string, StoredDocument>();
@@ -104,6 +107,8 @@ export class FakeDocumentSink implements SinkPort {
   private readonly receipts = new Map<string, SinkDeliverResult>();
   private created = 0;
   private corruptNext = false;
+  /** The documents someone deleted in the target (`remove`). */
+  private readonly deleted = new Set<string>();
 
   constructor(opts: { equations?: EquationForm[] } = {}) {
     this.equations = opts.equations ?? ['mathml', 'latex', 'image'];
@@ -162,6 +167,13 @@ export class FakeDocumentSink implements SinkPort {
     };
   }
 
+  /** The test hook: someone deletes a document in the target. False if there is no such one. */
+  remove(persistentId: string): boolean {
+    if (!this.documents.delete(persistentId)) return false;
+    this.deleted.add(persistentId);
+    return true;
+  }
+
   /** The test hook: the next write's read-back finds a difference. */
   corruptNextReadBack(): void {
     this.corruptNext = true;
@@ -212,6 +224,14 @@ export class FakeDocumentSink implements SinkPort {
   /** Refuses the update unless the target holds exactly the expected components at their versions. */
   private check(update: ConditionalUpdate): void {
     const stored = this.documents.get(update.persistentId);
+    if (!stored && this.deleted.has(update.persistentId)) {
+      throw new SinkError(
+        documentMissing(
+          update.persistentId,
+          `the target has no document ${update.persistentId} for this update to replace`,
+        ),
+      );
+    }
     if (!stored) {
       const map = update.expected.find((c) => c.kind === 'map') ?? update.expected[0]!;
       throw new SinkError(

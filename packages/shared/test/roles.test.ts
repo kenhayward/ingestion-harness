@@ -52,6 +52,7 @@ describe('roles', () => {
     'POST /api/conversions/items/:id/force',
     'POST /api/conversions/items/:id/redeliver',
     'POST /api/conversions/items/:id/detach',
+    'POST /api/conversions/items/:id/reload',
     'GET /api/conversions/items/:id/accept',
     'POST /api/conversions/items/:id/accept',
   ])('operators may call %s', (call) => {
