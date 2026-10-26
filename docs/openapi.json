@@ -15555,7 +15555,7 @@
         "tags": [
           "Conversions"
         ],
-        "description": "For a document the target no longer has (the item's `gone`: its update was refused\nas `not_found`, the document deleted there, say), or one detached already: detaches\nits register entry if it is not detached yet (recorded with who, when and\n`reason: gone`), then delivers the item's stored file as a plain create (not forced),\nin a new batch of one that starts at once. After the detach, that makes a **new**\ndocument in the target. The new item keeps the source key and names the item it reruns\n(`redeliverOf`). Refused while an earlier rerun of the item is unfinished, so a\nrepeated request (a double click) makes one batch.",
+        "description": "For a document the target no longer has (the item's `gone`: its update was refused\nas `not_found`, the document deleted there, say), or one whose register entry is still\nthe detached tombstone (no later create has replaced it): detaches\nits register entry if it is not detached yet (recorded with who, when and\n`reason: gone`), then delivers the item's stored file as a plain create (not forced),\nin a new batch of one that starts at once. After the detach, that makes a **new**\ndocument in the target. The new item keeps the source key and names the item it reruns\n(`redeliverOf`). Refused while an earlier rerun of the item is unfinished, so a\nrepeated request (a double click) makes one batch.",
         "parameters": [
           {
             "schema": {
@@ -15907,7 +15907,7 @@
             }
           },
           "409": {
-            "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is neither gone from the target nor detached (`not_gone`), or a delivery of it or a run of its file is in flight (`in_flight`).",
+            "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is neither gone from the target nor still detached (`not_gone`), or a delivery of it or a run of its file is in flight (`in_flight`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15941,7 +15941,7 @@
                     "error",
                     "code"
                   ],
-                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is neither gone from the target nor detached (`not_gone`), or a delivery of it or a run of its file is in flight (`in_flight`)."
+                  "description": "The item never started, it or a rerun of it is still running (`not_finished`), its document is neither gone from the target nor still detached (`not_gone`), or a delivery of it or a run of its file is in flight (`in_flight`)."
                 }
               }
             }

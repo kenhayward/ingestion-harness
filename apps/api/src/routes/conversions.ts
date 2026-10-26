@@ -25,6 +25,7 @@ import { acceptPlanOf } from '../conversions/accept.js';
 import type { RegisterEntry } from '../repositories/types.js';
 import {
   batchCreator,
+  isGone,
   RUNNING_OUTCOMES,
   type AddItemResult,
   type Rerun,
@@ -56,7 +57,7 @@ const NOT_REFUSED =
   'versions were never recorded, or one gone from the target, is detached';
 const NOT_GONE =
   'the document is not gone from the target: only a document the target no longer has, or ' +
-  'one detached already, is loaded as a new document';
+  'one still detached that no later run has created again, is loaded as a new document';
 
 const UUID = z.string().uuid();
 const BatchParams = z.object({ id: z.string().uuid().describe('The batch id.') });
@@ -694,7 +695,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Load an item as a new document',
         description: md`
           For a document the target no longer has (the item's \`gone\`: its update was refused
-          as \`not_found\`, the document deleted there, say), or one detached already: detaches
+          as \`not_found\`, the document deleted there, say), or one whose register entry is still
+          the detached tombstone (no later create has replaced it): detaches
           its register entry if it is not detached yet (recorded with who, when and
           \`reason: gone\`), then delivers the item's stored file as a plain create (not forced),
           in a new batch of one that starts at once. After the detach, that makes a **new**
@@ -707,7 +709,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           ...RerunResponses,
           409: res(
             'The item never started, it or a rerun of it is still running (`not_finished`), its ' +
-              'document is neither gone from the target nor detached (`not_gone`), or a ' +
+              'document is neither gone from the target nor still detached (`not_gone`), or a ' +
               'delivery of it or a run of its file is in flight (`in_flight`).',
             ErrorBody.extend({ code: z.enum(['not_finished', 'not_gone', 'in_flight']) }),
           ),
@@ -720,14 +722,19 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const batch = await app.deps.repo.getBatch(item.batchId);
       const why = notFinished(item, batch);
       if (why || !batch) return reply.code(409).send({ error: why, code: 'not_finished' });
-      if (!item.gone && item.resolution !== 'detached') {
+      // The entry as it is now: gone, or still the detached tombstone. An item that only reads
+      // `detached` because a later create replaced the tombstone has a live document again.
+      const entry = item.registerEntryId
+        ? await app.deps.repo.registerEntry(item.registerEntryId)
+        : null;
+      const gone = entry !== null && isGone(entry);
+      if (!gone && entry?.state !== 'detached') {
         return reply.code(409).send({ error: NOT_GONE, code: 'not_gone' });
       }
       if (!(await takesDocuments(app, batch.targetId))) {
         return reply.code(422).send({ error: NO_DOCUMENTS, code: 'target_takes_no_documents' });
       }
-      const entry = item.gone ? await entryOf(item) : null;
-      if (entry) {
+      if (gone) {
         const detached = await app.deps.repo.detachRegisterEntry({
           itemId: item.id,
           entryId: entry.id,

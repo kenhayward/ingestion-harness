@@ -722,6 +722,26 @@ describe('a document gone from the target', () => {
     expect(c.repo.registerActions).toHaveLength(1);
   });
 
+  it('refuses an old detached row once a later create replaced the tombstone', async () => {
+    const c = await setup();
+    const old = await startedItem(c);
+    const tombstone = goneEntry(c, old);
+    expect((await post(c.app, `/api/conversions/items/${old.id}/detach`)).statusCode).toBe(200);
+    // A later run creates the source again: the worker replaces the tombstone with a new entry.
+    c.repo.register.delete(tombstone.id);
+    const later = await startedItem(c);
+    settle(c, later, 'created', { state: 'delivered', persistentId: 'doc-2' });
+    expect((await c.repo.getItem(old.id))?.resolution).toBe('detached');
+    const batches = c.repo.conversionBatches.size;
+
+    const res = await post(c.app, `/api/conversions/items/${old.id}/reload`);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'not_gone' });
+    expect(c.repo.conversionBatches.size).toBe(batches);
+    expect(takeViolations()).toEqual([]);
+  });
+
   it('refuses a document that is not gone', async () => {
     const c = await setup();
     const changed = await startedItem(c, 'manuals/a.docx');
