@@ -5,6 +5,7 @@
  * database (it applies db/migrations and deletes batches, items and decompose jobs).
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { bridgeError, type BridgeEvent } from '@ih/bridge-contract';
 import pg from 'pg';
@@ -391,6 +392,117 @@ describe.skipIf(!url)('conversion batches against Postgres', { timeout: 30_000 }
       [t.jobId],
     );
     expect(rows[0]?.message).toBe('changed in target: the document changed in the target');
+  });
+
+  it("migration 202610261330 fills a delivered item's missing link by linkOf's rule", async () => {
+    const { repo, p } = await make();
+    const batch = await repo.createBatch({
+      targetId: 'manuals',
+      force: false,
+      createdBy: { id: null, name: null },
+    });
+    const sinkId = `sink-${randomUUID()}`;
+    onTestFinished(async () => {
+      await p.query('DELETE FROM decomposition_register WHERE sink_id = $1', [sinkId]);
+    });
+    const w = (kind: string, id: string, url: string | null) => ({ kind, id, label: null, url });
+    const receipt = (written: object[], mapId?: string) => ({
+      written,
+      document: {
+        persistentId: 'doc',
+        components: mapId ? [{ kind: 'map', id: mapId, version: '1', element: null }] : [],
+        readBack: { ok: true, at: null, detail: null },
+      },
+    });
+    const cases: Record<string, { outcome: string; link?: string; receipt: object | null }> = {
+      map: {
+        outcome: 'created',
+        receipt: receipt([
+          w('topic', 't1', 'https://t.test/t1'),
+          w('map', 'm', 'https://t.test/m'),
+        ]),
+      },
+      preferred: {
+        outcome: 'updated',
+        receipt: receipt(
+          [w('map', 'other', 'https://t.test/other'), w('map', 'doc/map', 'https://t.test/map')],
+          'doc/map',
+        ),
+      },
+      firstOfSeveral: {
+        outcome: 'read_back_mismatch',
+        receipt: receipt([
+          w('document', 'd', 'https://t.test/d'),
+          w('map', 'm', 'https://t.test/m'),
+        ]),
+      },
+      imageOnly: {
+        outcome: 'created',
+        receipt: receipt([
+          w('image', 'i', 'https://t.test/i'),
+          w('topic', 't', 'https://t.test/t'),
+        ]),
+      },
+      notDelivered: { outcome: 'failed', receipt: receipt([w('map', 'm', 'https://t.test/m')]) },
+      kept: {
+        outcome: 'created',
+        link: 'https://t.test/kept',
+        receipt: receipt([w('map', 'm', 'https://t.test/m')]),
+      },
+      noReceipt: { outcome: 'created', receipt: null },
+    };
+    const ids: Record<string, string> = {};
+    for (const [name, c] of Object.entries(cases)) {
+      const itemId = randomUUID();
+      ids[name] = itemId;
+      await repo.addItem({
+        id: itemId,
+        batchId: batch.id,
+        sourceKey: `${name}.docx`,
+        filename: `${name}.docx`,
+        contentSha256: 'a'.repeat(64),
+        sizeBytes: 1,
+        objectKey: `decompositions/${batch.id}/${itemId}.docx`,
+      });
+      const entry = await p.query<{ id: string }>(
+        `INSERT INTO decomposition_register
+           (sink_id, instance_id, source_key, content_sha256, persistent_id, state,
+            idempotency_key, last_receipt, batch_id)
+         VALUES ($1, NULL, $2, $3, 'doc', 'delivered', $4, $5, $6) RETURNING id::text`,
+        [
+          sinkId,
+          `${name}.docx`,
+          'a'.repeat(64),
+          'k'.repeat(64),
+          c.receipt === null ? null : JSON.stringify(c.receipt),
+          batch.id,
+        ],
+      );
+      await p.query(
+        `UPDATE decomposition_items SET outcome = $2, register_entry_id = $3, link = $4
+          WHERE id = $1`,
+        [itemId, c.outcome, entry.rows[0]!.id, c.link ?? null],
+      );
+    }
+    const sql = readFileSync(
+      `${migrations}/202610261330_decomposition_items_link_backfill.sql`,
+      'utf8',
+    );
+    await p.query(sql);
+    const links = Object.fromEntries(
+      await Promise.all(
+        Object.entries(ids).map(async ([name, id]) => [name, (await repo.getItem(id))?.link]),
+      ),
+    );
+    expect(links).toEqual({
+      map: 'https://t.test/m',
+      preferred: 'https://t.test/map',
+      firstOfSeveral: 'https://t.test/d',
+      imageOnly: null,
+      notDelivered: null,
+      kept: 'https://t.test/kept',
+      noReceipt: null,
+    });
   });
 
   it('settles an entry whose batch id is not a batch (a command-line delivery)', async () => {
