@@ -528,6 +528,10 @@ CORPUS: dict[str, str] = {
     + para(run("three"))
     + heading("After"),
     "footnotes": para(run("Text"), '<w:r><w:footnoteReference w:id="3"/></w:r>'),
+    "typed heading numbers": heading("1 Introduction", 1, run("", "<w:b/>"))
+    + para(run("x"))
+    + para(run("1", "<w:b/>"), run(".1	"), run("Scope", "<w:i/>"), style="Heading2")
+    + heading("2023 Results"),
 }
 
 
@@ -548,6 +552,12 @@ def test_empty_headings_are_left_out_on_both_sides() -> None:
     units = source_text_units(pkg, ctx)
     assert "[]" not in units
     assert units == ["Before", "one", "two", "three", "After"]
+
+
+def test_typed_heading_numbers_are_left_out_on_both_sides() -> None:
+    doc, pkg, ctx = decompose(CORPUS["typed heading numbers"])
+    check(doc, pkg, ctx)
+    assert source_text_units(pkg, ctx) == ["Introduction", "x", "Scope", "2023 Results"]
 
 
 # --- Fix round 1 -----------------------------------------------------------------------------

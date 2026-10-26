@@ -7,6 +7,23 @@ import unicodedata
 
 _MAX_LEN = 60
 
+#: A heading number typed at the start of a heading: parts of one to three digits joined by
+#: dots, an optional trailing dot, then whitespace before the title itself.
+_TYPED_NUMBER = re.compile(r"\s*(\d{1,3}(?:\.\d{1,3})*)\.?\s+(?=\S)")
+
+
+def typed_number_length(text: str, level: int) -> int:
+    """How many leading characters of a heading's text are a typed heading number, or 0.
+
+    The target numbers headings itself, so a typed number would show twice. Only a number with
+    as many parts as the heading's 0-based `level` has, plus one, counts: `2.1 Scope` at level 1,
+    never `2023 Results` or `1.5mg Dose`.
+    """
+    match = _TYPED_NUMBER.match(text)
+    if match is None or match.group(1).count(".") != level:
+        return 0
+    return match.end()
+
 
 def normalise_title(text: str) -> str:
     """NFKC, casefolded, whitespace collapsed, non-alphanumerics to `-`; `untitled` if empty."""

@@ -123,6 +123,11 @@ existing Word-to-PDF conversion, which stays as it is for extraction jobs. **[ca
 - **Comments** are dropped. **[owner]**
 - **Headings** come from the outline level of each paragraph's style (or its direct outline level),
   so custom heading styles work. Heading numbers are not kept; the target numbers headings.
+  That includes a number typed at the start of a heading's text (`2.1 Scope` at the second
+  level): one to three digits a part, as many parts as the heading's level, then whitespace. A
+  title keeps only superscript and subscript; its bold, italic and underline are the target
+  publishing theme's (Word bolds its headings). The section's id still comes from the whole
+  heading text. **[owner]** (2026-10-26)
 - **Symbol-font characters** (`w:sym`, and text runs in Symbol or Wingdings, whether the font is
   set on the run or by its styles, read from the font slot Word draws each character in) are
   converted to their Unicode characters. One that has no mapping is flagged and kept as the replacement
@@ -331,9 +336,9 @@ The flag codes:
 
 | Kept | Dropped |
 |---|---|
-| Section hierarchy and titles | Heading numbers (the target numbers) |
+| Section hierarchy and titles | Heading numbers, Word's or typed (the target numbers) |
 | Paragraph text, in order | Fonts, styles, colours, spacing, highlighting |
-| Bold, italic, underline, superscript, subscript | All other character formatting |
+| Bold, italic, underline, superscript, subscript (in a heading, superscript and subscript only) | All other character formatting |
 | Lists and their nesting | List numbering and bullets (the target's) |
 | Tables: grid, merges, alignment, header rows, caption, notes | Borders, shading, cell padding, widths in absolute units |
 | Table and figure captions, as numbered | Literal caption numbers and number fields |

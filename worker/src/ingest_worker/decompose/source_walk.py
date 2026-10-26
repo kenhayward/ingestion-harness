@@ -40,6 +40,7 @@ from .forms import (
     note_unit,
     xref_token,
 )
+from .ids import typed_number_length
 from .inline import EMBEDDED_DOCUMENT_TAGS, EMBEDDED_DOCUMENTS, InlineContext, R, RunFonts, W
 from .media import ALTERNATE, MediaContext, choose_media, doc_pr_alt, is_media, text_alternative
 from .package import DecompositionFailed, Package, Rel
@@ -937,7 +938,7 @@ class _Walk:
             self.emit(self.finish(blocks), ordinal, self.units)
             blocks = []
             ordinal += 1
-            self.units.append((self.render(pieces, typed=True), ordinal))
+            self.units.append((self.render(_without_number(pieces, level), typed=True), ordinal))
         self.emit(self.finish(blocks), ordinal, self.units)
         self.fields_closed("the body")
         self.notes()
@@ -971,6 +972,24 @@ class _Walk:
             if rel.type == f"{_REL_BASE}{kind}s" and not rel.external:
                 return self.pkg.target(_MAIN, rel.id)
         return None
+
+
+def _without_number(pieces: Sequence[_Piece], level: int) -> list[_Piece]:
+    """A heading's pieces without a heading number typed at its start, as the title leaves it."""
+    lead: list[str] = []
+    for piece in pieces:
+        if not isinstance(piece, _T):
+            break
+        lead.append(piece.text)
+    cut = typed_number_length("".join(lead), level)
+    out: list[_Piece] = []
+    for piece in pieces:
+        if cut and isinstance(piece, _T):
+            taken = min(cut, len(piece.text))
+            cut -= taken
+            piece = _T(piece.text[taken:], piece.marks)
+        out.append(piece)
+    return out
 
 
 def _merged(pieces: Sequence[_Piece]) -> list[_Piece]:
