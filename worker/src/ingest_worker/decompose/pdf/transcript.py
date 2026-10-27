@@ -57,6 +57,9 @@ class PageTranscriber(Protocol):
 class TxHeading:
     level: int
     runs: tuple[Run, ...]
+    #: A plain line read as a heading by its typed number (olmOCR writes no `#`); its level is
+    #: the number's parts.
+    typed: bool = False
 
 
 @dataclass(frozen=True)
@@ -183,6 +186,17 @@ def _text_blocks(text: str) -> list[TxBlock]:
             flush()
             blocks.append(TxHeading(len(heading.group(1)), inline_runs(heading.group(2))))
             continue
+        if CONTENTS_ENTRY.search(stripped):
+            # a contents entry stays a line of its own, its spaced leader closed up, so the
+            # reader's contents rule sees it (spec 4.3)
+            flush()
+            blocks.append(TxParagraph(inline_runs(_SPACED_LEADER.sub(_close_leader, stripped))))
+            continue
+        level = _typed_heading(stripped) if not para else None
+        if level is not None and not _in_ordered_list(lines, i, stripped, item is not None):
+            flush()
+            blocks.append(TxHeading(level, inline_runs(stripped), typed=True))
+            continue
         listed = _ITEM.match(line)
         if listed and not _is_number_only(listed.group(3)):
             flush()
@@ -228,6 +242,43 @@ def _display_equation(lines: list[str], start: int, opener: str) -> tuple[str, i
         text = lines[k].strip()
 
 
+#: A contents entry: a dot leader (or an ellipsis), then a page number, ending the line.
+CONTENTS_ENTRY = re.compile(r"(?:\.{2,}|…|(?:\.\s+){2,}\.?)\s*\d{1,4}$")
+_SPACED_LEADER = re.compile(r"\.(?:\s+\.){2,}")
+
+
+def _close_leader(match: re.Match[str]) -> str:
+    return "." * match.group(0).count(".")
+
+
+#: A heading's typed number at the start of a line: "3.2.", "3.2" or "4", then a word.
+_TYPED = re.compile(r"^(\d{1,3}(?:\.\d{1,3})*)\.?\s+(?=[^\d\s.])")
+_ORDERED_ITEM = re.compile(r"^\d+[.)]\s")
+#: A heading is at most this many words, and doesn't end like a sentence.
+_HEADING_WORDS = 15
+_SENTENCE_END = (".", ":", ";", ",", "?", "!")
+
+
+def _typed_heading(line: str) -> int | None:
+    """The level of `line` read as a numbered heading (spec 15.3): it starts with a typed number
+    and is short, not ending like a sentence; None when it doesn't read as one."""
+    match = _TYPED.match(line)
+    if match is None or len(line.split()) > _HEADING_WORDS or line.endswith(_SENTENCE_END):
+        return None
+    return match.group(1).count(".") + 1
+
+
+def _in_ordered_list(lines: list[str], i: int, line: str, after_item: bool) -> bool:
+    """Whether `line`, a single-number line like "1. Weigh", sits in an ordered list: an item
+    just before it, or one on the next line with text."""
+    if not _ORDERED_ITEM.match(line):
+        return False
+    if after_item:
+        return True
+    following = next((n.strip() for n in lines[i:] if n.strip()), "")
+    return bool(_ORDERED_ITEM.match(following))
+
+
 def _is_number_only(text: str) -> bool:
     """ "2. 5" reads as a list item, "3.2 Scope" as a heading-like line: a marker must be
     followed by words, not by more of a number."""
@@ -245,7 +296,7 @@ def _pixel_box(name: str) -> PixelBox | None:
 # --- Inline text ---------------------------------------------------------------------------------
 
 _INLINE = re.compile(
-    r"\*\*|\*|<(/?)(b|strong|i|em|sup|sub)\s*>|\[([^\]]*)\]\(([^)\s]*)\)|\$[^$\n]+\$|<[^>]*>",
+    r"\\\(.+?\\\)|\*\*|\*|<(/?)(b|strong|i|em|sup|sub)\s*>|\[([^\]]*)\]\(([^)\s]*)\)|\$[^$\n]+\$|<[^>]*>",
     re.IGNORECASE,
 )
 _ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|<>])")
@@ -257,6 +308,39 @@ _TAG_MARK: dict[str, Mark] = {
     "sup": "superscript",
     "sub": "subscript",
 }
+
+
+#: LaTeX symbols inline math is often made of, and the characters they stand for.
+_MATH_SYMBOLS = (
+    (r"^{\circ}", "°"),
+    (r"^\circ", "°"),
+    (r"\circ", "°"),
+    (r"\degree", "°"),
+    (r"\geq", "≥"),
+    (r"\leq", "≤"),
+    (r"\ge", "≥"),
+    (r"\le", "≤"),
+    (r"\pm", "±"),
+    (r"\times", chr(0xD7)),
+    (r"\cdot", "·"),
+    (r"\approx", "≈"),
+    (r"\sim", "~"),
+    (r"\mu", "µ"),
+    (r"\%", "%"),
+    (r"\,", " "),
+    (r"\ ", " "),
+)
+
+
+def _plain_math(latex: str) -> str | None:
+    """`latex` as plain text when it is only text and the symbols of `_MATH_SYMBOLS`; else None
+    (a real formula is kept as LaTeX)."""
+    text = latex
+    for command, char in _MATH_SYMBOLS:
+        text = text.replace(command, char)
+    if any(c in text for c in "\\^_{}"):
+        return None
+    return " ".join(text.split()) or None
 
 
 def inline_runs(text: str) -> tuple[Run, ...]:
@@ -294,8 +378,12 @@ def inline_runs(text: str) -> tuple[Run, ...]:
                 marks.add(mark)
         elif match.group(3) is not None:
             add(match.group(3), match.group(4) or None)
-        elif token.startswith("$"):
-            add(token, literal=True)
+        elif token.startswith(("$", "\\(")):
+            # inline math: plain text when it is only symbols ("\\( \\geq 98\\% \\)" is
+            # "≥ 98%"), else kept as written; "$5 and $" has no command and stays as it is
+            inner = token[1:-1] if token.startswith("$") else token[2:-2]
+            plain = _plain_math(inner) if "\\" in inner else None
+            add(plain if plain is not None else token, literal=True)
         # any other tag is dropped
     add(text[at:])
     return _merged(runs)
