@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from ingest_worker.decompose.body import walk_body
@@ -78,6 +78,9 @@ class Decomposition:
     document: DecomposedDocument
     image_bytes: dict[str, bytes]
     originals: dict[str, bytes]
+    #: A PDF's: the 1-based pages each section and block came from, by id (a Word file's is
+    #: empty).
+    page_map: dict[str, list[int]] = field(default_factory=dict)
 
 
 def source_kind(data: bytes) -> SourceKind:

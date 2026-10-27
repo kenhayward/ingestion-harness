@@ -1,8 +1,11 @@
 """The `decompose` task (phase 3): one conversion batch item, decomposed and delivered.
 
-`run_decompose` reads the item's uploaded Word file from the runs bucket, decomposes it, writes
-its report beside it (plan ruling R4) and hands it to `deliver_decomposition` (phase 2), which
-decides through the register. The item records the outcome (R3):
+`run_decompose` reads the item's uploaded Word file or PDF from the runs bucket, decomposes it,
+writes its report beside it (plan ruling R4) and hands a Word file to `deliver_decomposition`
+(phase 2), which decides through the register. A PDF is held for review instead (`hold.py`,
+spec §14.2): `awaiting_review` with its held files, the job succeeding with "held for review",
+unless the register would send nothing, when that outcome is recorded at once. The item records
+the outcome (R3):
 
 - `delivering`, with its register entry, when the bridge took the document: the API settles it
   as `created`, `updated`, `changed_in_target`, `read_back_mismatch` or `failed` from the
@@ -34,7 +37,14 @@ from ingest_worker.decompose import (
 from ingest_worker.decompose import (
     decompose_source as decompose_any,
 )
-from ingest_worker.decompose.deliver import DeliverDeps, DeliveryOutcome, deliver_decomposition
+from ingest_worker.decompose.deliver import (
+    DeliverDeps,
+    DeliveryOutcome,
+    deliver_decomposition,
+    preview_decision,
+    refused,
+)
+from ingest_worker.decompose.hold import delete_held, write_held
 from ingest_worker.decompose.items import UNDECIDED, ConversionItem, ItemOutcome, ItemStore
 from ingest_worker.decompose.pdf.layout import LayoutAnalyser, LayoutUnavailable
 from ingest_worker.decompose.register import RegisterStore
@@ -216,6 +226,8 @@ def _convert(
         job.id, "info", "report written", {"reportKey": report_key, "flags": len(doc.report)}
     )
     check_cancelled(job, deps.queue)  # nothing is delivered for a cancelled job
+    if source_kind(data) == "pdf":
+        return _hold(job, deps, params, item, data, result)
     try:
         out = deliver_decomposition(
             deps.deliver,
@@ -247,6 +259,64 @@ def _convert(
         [(params.target_id, out.delivery_id)],
         note=f"handed {item.source_key} to the bridge",
     )
+
+
+def _hold(
+    job: ClaimedJob,
+    deps: DecomposeDeps,
+    params: DecomposeParams,
+    item: ConversionItem,
+    data: bytes,
+    result: Decomposition,
+) -> Outcome:
+    """A PDF is held for review when its delivery would send something (spec §14.2): the
+    register is asked without recording anything, and any other answer is the item's outcome at
+    once. The hold records the entry the register decided against, and who started the batch,
+    for the approved delivery."""
+    try:
+        decision = preview_decision(
+            deps.deliver,
+            data=data,
+            source_key=item.source_key,
+            target_id=params.target_id,
+            force=params.force,
+        )
+    except TargetMissing as exc:
+        return _decided(job, deps, item, DeliveryOutcome("failed", None, None, str(exc)))
+    if decision.outcome is not None:
+        return _decided(job, deps, item, refused(decision))
+    entry = (
+        {"id": decision.entry.id, "contentSha256": decision.entry.content_sha256}
+        if decision.entry is not None
+        else None
+    )
+    held_sha256 = write_held(
+        deps.store,
+        deps.runs_bucket,
+        item,
+        result,
+        data=data,
+        decomposer_version=decomposer_version("pdf"),
+        started_by=deps.queue.uploader(job.id) or NO_USER,
+        entry=entry,
+        render_preview=deps.render_preview,
+    )
+    if not deps.items.hold(item.id, held_sha256, entry):
+        delete_held(deps.store, deps.runs_bucket, item)
+        deps.queue.event(
+            job.id,
+            "info",
+            "not recorded, the item had moved on: held for review",
+            {"outcome": "awaiting_review", "recorded": False},
+        )
+        return Complete(note=f"{item.source_key}: had moved on; held for review not recorded")
+    deps.queue.event(
+        job.id,
+        "info",
+        "held for review",
+        {"heldSha256": held_sha256, "entryId": entry["id"] if entry is not None else None},
+    )
+    return Complete(note="held for review")
 
 
 def _write_report(deps: DecomposeDeps, item: ConversionItem, result: Decomposition) -> str:

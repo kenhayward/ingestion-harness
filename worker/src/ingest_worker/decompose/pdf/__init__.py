@@ -77,4 +77,7 @@ def decompose_pdf(
     ]
     doc = doc.model_copy(update={"report": report})
     check_pdf(doc, ledger, text, provenance)
-    return Decomposition(document=doc, image_bytes=image_bytes, originals={})
+    page_map = {
+        element: sorted(p + 1 for p in pages) for element, pages in provenance.pages.items()
+    }
+    return Decomposition(document=doc, image_bytes=image_bytes, originals={}, page_map=page_map)

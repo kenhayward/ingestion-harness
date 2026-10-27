@@ -202,6 +202,13 @@ or review step.
   (`worker/src/ingest_worker/decompose/job.py`). The job decomposes the file and writes its report
   beside the source in the runs bucket. It then decides through the register what to deliver, and
   hands the package to the bridge. These jobs stay out of the Jobs page.
+  - A PDF is held for review instead (`decompose/hold.py`). The worker asks the register what it
+    would decide, without recording anything. Only when that would send something does it store
+    the held decomposition beside the source: its images, a JPEG of every page and a manifest
+    with the document and its page map, under `decompositions/{batchId}/{itemId}.held/`. The item
+    is then `awaiting_review`, recording the manifest's sha256 and the register entry the hold
+    was decided against, and the job succeeds with "held for review". Any other answer is the
+    item's outcome at once, as for Word.
 - **The register.** `decomposition_register` holds one entry per document, scoped to the
   target's sink and instance. Its two checks (content hash and source key) give *already loaded*,
   *duplicate*, *update* or *create*. An update carries the component versions the last receipt
