@@ -579,7 +579,7 @@ fills in the rest.
 
 ### 15.2 Classification
 
-A page is **scanned** when either of these holds: **[call]**
+A page is **scanned** when either of these holds: **[owner]**
 
 - it has no visible text and images cover at least half of it (§3's rule, as the reader has
   it);
@@ -590,15 +590,16 @@ A page is **scanned** when either of these holds: **[call]**
 
 A page with no visible text and no images (a blank page) is born-digital, with nothing on it. A
 full-page figure with a short caption meets the second rule, so it is read as a scanned page
-and flagged. The reviewer sees that on the review page. **[call]**
+and flagged. The reviewer sees that on the review page. **[owner]** (2026-10-27: the trade is
+acceptable)
 
 ### 15.3 From transcription to document
 
 The model returns markdown: headings, paragraphs, lists, HTML tables with their spans, LaTeX
 equations, and a placeholder for each figure with its box. Its text comes without positions, so
 it is taken in the model's own order, and the page comes **whole, between its neighbours** in
-page order. Scanned pages' blocks don't go through the text layer's ledger. They map to their
-page directly in the provenance and the page map. **[call]**
+page order. Its blocks map to their page in the provenance and the page map, and the text check
+leaves them out (§15.4). **[call]**
 
 - **Headings**, decided per heading, by §4.4's sources in their order: **[call]**
   - a bookmark targeting the page, matched against that page's headings and lines, ignoring
