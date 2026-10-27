@@ -100,6 +100,7 @@ const OPERATOR_PAGES = new Set([
   'results',
   'result',
   'conversion',
+  'conversionReview',
   'profile',
   'password',
 ]);
