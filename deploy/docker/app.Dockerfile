@@ -10,6 +10,8 @@ COPY apps/web/package.json apps/web/
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+# The review page's types (type-only imports: nothing of it is bundled).
+COPY packages/bridge-contract packages/bridge-contract
 COPY apps/web apps/web
 # The release notes About shows (bundled by the web build: apps/web/src/about/releaseNotes.ts).
 COPY docs/release-notes docs/release-notes
