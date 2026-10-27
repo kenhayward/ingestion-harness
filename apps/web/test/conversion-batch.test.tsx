@@ -411,7 +411,9 @@ describe('the Conversion tab: the batch view', () => {
     await findRow('stuck.docx');
 
     expect(panelFor('broke.docx').queryByRole('button', { name: /^Detach/ })).toBeNull();
-    await userEvent.click(panelFor('stuck.docx').getByRole('button', { name: 'Detach stuck.docx' }));
+    await userEvent.click(
+      panelFor('stuck.docx').getByRole('button', { name: 'Detach stuck.docx' }),
+    );
     const dialog = within(await screen.findByRole('dialog', { name: 'Detach stuck.docx?' }));
     expect(dialog.getByText(/may have left a partial document in the target/)).toBeVisible();
     await userEvent.click(dialog.getByRole('button', { name: 'Detach' }));

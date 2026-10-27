@@ -469,9 +469,9 @@ function DetachDialog({
       ) : item.unconfirmed ? (
         <p>
           CT Studio forgets this document&apos;s last delivery, which failed part-way and may have
-          left a partial document in the target. Check the target and remove anything it left
-          first. The next run of <span className="mono">{item.sourceKey}</span> creates a new
-          document of its own.
+          left a partial document in the target. Check the target and remove anything it left first.
+          The next run of <span className="mono">{item.sourceKey}</span> creates a new document of
+          its own.
         </p>
       ) : (
         <p>
