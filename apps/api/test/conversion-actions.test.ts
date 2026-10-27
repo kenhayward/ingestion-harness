@@ -239,6 +239,27 @@ describe('force-load', () => {
     expect((jobOf(c, items[0]!)!.params as { force: boolean }).force).toBe(true);
   });
 
+  it('force-load decomposes a rejected item again, in a new batch of one', async () => {
+    const c = await setup();
+    const item = await startedItem(c, 'scans/audit.pdf');
+    Object.assign(c.repo.conversionItems.get(item.id)!, {
+      outcome: 'rejected',
+      reviewNote: 'wrong table',
+    });
+
+    const res = await post(c.app, `/api/conversions/items/${item.id}/force`);
+
+    expect(res.statusCode).toBe(201);
+    const { batch, items } = BatchDetailSchema.parse(res.json());
+    expect(batch).toMatchObject({ force: true, state: 'started' });
+    expect(items[0]).toMatchObject({
+      sourceKey: item.sourceKey,
+      objectKey: item.objectKey,
+      redeliverOf: item.id,
+      outcome: 'queued',
+    });
+  });
+
   it('a second force-load while the first is unfinished is refused', async () => {
     const c = await setup();
     const item = await startedItem(c);

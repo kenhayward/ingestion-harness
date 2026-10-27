@@ -70,7 +70,9 @@ describe('the Conversion tab: a new batch', () => {
     render(
       <ConversionPage api={conversionApi({ listConversionTargets: vi.fn(async () => []) })} />,
     );
-    expect(await screen.findByText(/No target takes Word documents yet/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No target takes Word or PDF documents yet/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: CONVERT })).toBeDisabled();
   });
 
@@ -128,12 +130,39 @@ describe('the Conversion tab: a new batch', () => {
     render(<ConversionPage api={conversionApi()} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
     const folder = droppedFolder('Policies', [word('a.docx'), ['sub', [word('b.docx')]]]);
-    fireEvent.drop(screen.getByText(/Drop Word files or a folder here/).closest('.drop-zone')!, {
+    fireEvent.drop(screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!, {
       dataTransfer: droppedItems([word('loose.docx'), folder]),
     });
     await waitFor(() =>
       expect(listed()).toEqual(['loose.docx', 'Policies/a.docx', 'Policies/sub/b.docx']),
     );
+  });
+
+  it('takes a PDF and a Word file, and leaves a text file out as not Word or PDF', async () => {
+    const api = conversionApi();
+    render(<ConversionPage api={api} />);
+    await screen.findByRole('option', { name: 'Archive · Document sink' });
+    const pdf = new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' });
+    fireEvent.drop(screen.getByText(/Drop Word or PDF files/).closest('.drop-zone')!, {
+      dataTransfer: droppedItems([pdf, word('report.docx'), new File(['x'], 'notes.txt')]),
+    });
+    await waitFor(() => expect(listed()).toEqual(['scan.pdf', 'report.docx']));
+    expect(screen.getByText(/1 file left out \(not Word or PDF/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: CONVERT }));
+    await waitFor(() => expect(api.startConversionBatch).toHaveBeenCalledWith(BATCH_ID));
+    expect(vi.mocked(api.uploadConversionItem).mock.calls.map((c) => c[2])).toEqual([
+      'scan.pdf',
+      'report.docx',
+    ]);
+  });
+
+  it('says Word or PDF, and the pickers accept both', async () => {
+    render(<ConversionPage api={conversionApi()} />);
+    await screen.findByRole('option', { name: 'Archive · Document sink' });
+    expect(screen.getByRole('heading', { name: /Word or PDF files/ })).toBeInTheDocument();
+    expect(screen.getByText(/takes Word or PDF documents/)).toBeInTheDocument();
+    const accept = screen.getByLabelText('Choose files').getAttribute('accept')!.split(',');
+    expect(accept).toEqual(expect.arrayContaining(['.pdf', '.docx']));
   });
 
   it('skips lock and hidden files', async () => {
@@ -144,7 +173,7 @@ describe('the Conversion tab: a new batch', () => {
       inFolder('Policies/~$a.docx'), // Word's lock file while a.docx is open
       inFolder('Policies/.hidden.docx'),
       inFolder('Policies/.git/b.docx'),
-      inFolder('Policies/notes.pdf'),
+      inFolder('Policies/notes.txt'),
     ]);
     expect(listed()).toEqual(['Policies/a.docx']);
     expect(screen.getByText(/4 files left out/)).toBeInTheDocument();
@@ -192,7 +221,7 @@ describe('the Conversion tab: a new batch', () => {
     const api = conversionApi();
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
-    fireEvent.drop(screen.getByText(/Drop Word files or a folder here/).closest('.drop-zone')!, {
+    fireEvent.drop(screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!, {
       dataTransfer: droppedItems([word('a.docx'), word('a.docx')]),
     });
     await waitFor(() => expect(rowsOf()).toHaveLength(2));
@@ -207,7 +236,7 @@ describe('the Conversion tab: a new batch', () => {
     const api = conversionApi();
     render(<ConversionPage api={api} />);
     await screen.findByRole('option', { name: 'Archive · Document sink' });
-    fireEvent.drop(screen.getByText(/Drop Word files or a folder here/).closest('.drop-zone')!, {
+    fireEvent.drop(screen.getByText(/Drop Word or PDF files or a folder here/).closest('.drop-zone')!, {
       dataTransfer: droppedItems([
         droppedFolder('Policies', [word('a.docx'), word('b.docx')]),
         droppedFolder('Policies', [word('a.docx')]),

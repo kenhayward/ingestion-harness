@@ -44,6 +44,8 @@ export type Route =
   | { name: 'workbench' }
   /** The Conversion tab: a new batch, or one batch (`#/conversion/<batchId>`). */
   | { name: 'conversion'; batchId?: string }
+  /** A held conversion item's review page (`#/conversion/items/<itemId>/review`). */
+  | { name: 'conversionReview'; itemId: string }
   /** `view`: a tab within the project tab (`#/workbench/<id>/survey/ontologies`). */
   | { name: 'project'; projectId: string; tab: ProjectTab; view?: string };
 
@@ -84,6 +86,10 @@ export function parseHash(hash: string): Route {
       ? { name: 'project', projectId, tab, view: project[3] }
       : { name: 'project', projectId, tab };
   }
+  const conversionReview = /^#\/conversion\/items\/([^/]+)\/review$/.exec(hash);
+  if (conversionReview) {
+    return { name: 'conversionReview', itemId: decodeURIComponent(conversionReview[1]!) };
+  }
   const conversion = /^#\/conversion(?:\/([^/]+))?$/.exec(hash);
   if (conversion) {
     return conversion[1]
@@ -113,7 +119,8 @@ export function parseHash(hash: string): Route {
 /**
  * Minimal hash routing: #/ (home), #/upload (home, upload strip focused), #/jobs, #/jobs/<jobId>,
  * #/review/<jobId>, #/results, #/results/<jobId>, #/templates, #/templates/<id>/<version>,
- * #/ontologies, #/ontologies/<id>, #/conversion, #/conversion/<batchId>, #/workbench,
+ * #/ontologies, #/ontologies/<id>, #/conversion, #/conversion/<batchId>,
+ * #/conversion/items/<itemId>/review, #/workbench,
  * #/workbench/<id>[/<tab>[/<view>]] (Overview by default; a view is a tab within that tab, e.g.
  * survey/ontologies).
  */

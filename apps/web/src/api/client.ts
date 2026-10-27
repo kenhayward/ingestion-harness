@@ -4,6 +4,7 @@ import type {
   Batch,
   BatchDetail,
   BatchSummary,
+  ConversionReview,
   ConversionTarget,
   CreateBatch,
   RetryItems,
@@ -915,6 +916,16 @@ export interface Api {
    * creates it again from the stored file, in a new batch of one.
    */
   reloadConversionItem(itemId: string): Promise<BatchDetail>;
+  /** A held item as the review page reads it: the document, its pages and its images. */
+  conversionReview(itemId: string): Promise<ConversionReview>;
+  /** A held item's source page as a JPEG (1-based; a link for an image). */
+  conversionPageUrl(itemId: string, page: number): string;
+  /** A held item's image by position (a link for an image). */
+  conversionImageUrl(itemId: string, index: number): string;
+  /** Approves a held item: its delivery is queued (202). Refused (409) unless awaiting review. */
+  approveConversionItem(itemId: string, note?: string): Promise<{ jobId: string }>;
+  /** Rejects a held item, saying why: final, and its held files are deleted. */
+  rejectConversionItem(itemId: string, note: string): Promise<ConversionItem>;
   /** What accepting the target's state would record. */
   previewAccept(itemId: string): Promise<AcceptPreview>;
   /** Accepts the target's state as previewed (`seen`: the preview's `updatedAt`). */
@@ -1916,6 +1927,23 @@ export function createHttpApi(base = '/api'): Api {
       post<ConversionItem>(`${base}/conversions/items/${encodeURIComponent(itemId)}/detach`, {}),
     reloadConversionItem: (itemId) =>
       post<BatchDetail>(`${base}/conversions/items/${encodeURIComponent(itemId)}/reload`, {}),
+    conversionReview: (itemId) =>
+      apiFetch(`${base}/conversions/items/${encodeURIComponent(itemId)}/review`).then(
+        json<ConversionReview>,
+      ),
+    conversionPageUrl: (itemId, page) =>
+      `${base}/conversions/items/${encodeURIComponent(itemId)}/pages/${page}`,
+    conversionImageUrl: (itemId, index) =>
+      `${base}/conversions/items/${encodeURIComponent(itemId)}/images/${index}`,
+    approveConversionItem: (itemId, note) =>
+      post<{ jobId: string }>(
+        `${base}/conversions/items/${encodeURIComponent(itemId)}/approve`,
+        note === undefined ? {} : { note },
+      ),
+    rejectConversionItem: (itemId, note) =>
+      post<ConversionItem>(`${base}/conversions/items/${encodeURIComponent(itemId)}/reject`, {
+        note,
+      }),
     previewAccept: (itemId) =>
       apiFetch(`${base}/conversions/items/${encodeURIComponent(itemId)}/accept`).then(
         json<AcceptPreview>,

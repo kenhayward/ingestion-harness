@@ -1256,6 +1256,36 @@ describe('http api: conversion', () => {
     expect(JSON.parse(String(init.body))).toEqual({ itemIds: ['i1', 'i2'], force: true });
   });
 
+  it('reads a held item for review, and links its pages and images', async () => {
+    const review = { item: { id: 'i1' }, document: {}, pageCount: 2, pageMap: {}, images: [] };
+    const fetchMock = vi.fn(async () => respond(200, review));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    expect(await api.conversionReview('i/1')).toEqual(review);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe(
+      '/api/conversions/items/i%2F1/review',
+    );
+    expect(api.conversionPageUrl('i1', 3)).toBe('/api/conversions/items/i1/pages/3');
+    expect(api.conversionImageUrl('i1', 0)).toBe('/api/conversions/items/i1/images/0');
+  });
+
+  it('approves with an optional note, and rejects with one', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/approve') ? respond(202, { jobId: 'j1' }) : respond(200, { id: 'i1' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const api = createHttpApi('/api');
+    expect(await api.approveConversionItem('i1', 'looks right')).toEqual({ jobId: 'j1' });
+    await api.approveConversionItem('i1');
+    await api.rejectConversionItem('i1', 'wrong table');
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([url, init]) => [url, init.method, JSON.parse(String(init.body))])).toEqual([
+      ['/api/conversions/items/i1/approve', 'POST', { note: 'looks right' }],
+      ['/api/conversions/items/i1/approve', 'POST', {}],
+      ['/api/conversions/items/i1/reject', 'POST', { note: 'wrong table' }],
+    ]);
+  });
+
   it("links a document's original file", () => {
     expect(createHttpApi('/api').conversionSourceUrl('i1')).toBe(
       '/api/conversions/items/i1/source',

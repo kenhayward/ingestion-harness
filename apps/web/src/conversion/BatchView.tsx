@@ -536,6 +536,28 @@ interface RowProps {
   onResult: (r: ActionResult) => void;
 }
 
+/** "12 flags" (§4.9): how many places the decomposition wants a look; null for an old item. */
+const flagsOf = (item: Item) =>
+  item.flagCount === null
+    ? null
+    : item.flagCount === 0
+      ? 'No flags'
+      : plural(item.flagCount, 'flag');
+
+/** The link to a held item's review page. */
+function ReviewLink({ item }: { item: Item }) {
+  if (item.outcome !== 'awaiting_review') return null;
+  return (
+    <a
+      className="review-link"
+      href={`#/conversion/items/${encodeURIComponent(item.id)}/review`}
+      aria-label={`Review ${item.sourceKey}`}
+    >
+      Review
+    </a>
+  );
+}
+
 /** One document on one line: a click picks it for the panel; its `⋯` menu acts on it. */
 function DocumentRow({
   item,
@@ -572,8 +594,15 @@ function DocumentRow({
         {item.resolution && (
           <span className="conversion-resolution">{RESOLUTION[item.resolution]} </span>
         )}
-        {item.detail}
+        {item.detail ?? (item.outcome === 'rejected' ? item.reviewNote : null)}
         {OUTCOME_NOTE[item.outcome] && <span className="muted"> {OUTCOME_NOTE[item.outcome]}</span>}
+        {flagsOf(item) && <span className="muted"> {flagsOf(item)}</span>}
+        {item.outcome === 'awaiting_review' && (
+          <>
+            {' '}
+            <ReviewLink item={item} />
+          </>
+        )}
         {item.rerunIn && (
           <>
             {' '}
@@ -690,11 +719,15 @@ function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResul
   const link = webLink(item.link);
   const timing = itemTiming(item, Date.now());
   const folder = folderOf(item.sourceKey);
-  const why = isFailed(item)
-    ? 'Why it failed'
-    : needsAttention(item)
-      ? 'Why it needs attention'
-      : null;
+  const rejected = item.outcome === 'rejected';
+  const why = rejected
+    ? 'Why it was rejected'
+    : isFailed(item)
+      ? 'Why it failed'
+      : needsAttention(item)
+        ? 'Why it needs attention'
+        : null;
+  const whyText = rejected ? item.reviewNote : item.detail;
   return (
     <aside className="batch-panel card" aria-label="Document">
       <p className="batch-panel-eyebrow" aria-hidden="true">
@@ -708,13 +741,18 @@ function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResul
       </p>
       <StatusPill {...OUTCOME[item.outcome]} />
       {item.resolution && <p className="conversion-resolution">{RESOLUTION[item.resolution]}</p>}
-      {why && item.detail ? (
+      {why && whyText ? (
         <div className={`batch-panel-why tone-${OUTCOME[item.outcome].tone}`}>
           <strong>{why}</strong>
-          <p>{item.detail}</p>
+          <p>{whyText}</p>
         </div>
       ) : (
         item.detail && <p className="batch-panel-detail">{item.detail}</p>
+      )}
+      {item.outcome === 'awaiting_review' && (
+        <p>
+          <ReviewLink item={item} />
+        </p>
       )}
       {OUTCOME_NOTE[item.outcome] && <p className="muted">{OUTCOME_NOTE[item.outcome]}</p>}
       {item.rerunIn && (
@@ -742,6 +780,12 @@ function DocumentPanel({ api, item, canRerun, onRerun, onReport, onOpen, onResul
           <>
             <dt>Running</dt>
             <dd>{timing}</dd>
+          </>
+        )}
+        {flagsOf(item) && (
+          <>
+            <dt>Flags</dt>
+            <dd>{flagsOf(item)}</dd>
           </>
         )}
         <dt>Report</dt>

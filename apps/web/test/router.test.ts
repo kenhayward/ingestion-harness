@@ -43,6 +43,8 @@ describe('parseHash', () => {
     ['', { name: 'home' }],
     ['#/', { name: 'home' }],
     ['#/jobs', { name: 'jobs' }],
+    ['#/conversion/items/i-1/review', { name: 'conversionReview', itemId: 'i-1' }],
+    ['#/conversion/items/a%2Fb/review', { name: 'conversionReview', itemId: 'a/b' }],
     ['#/help', { name: 'help' }],
     ['#/help/sections', { name: 'help', topic: 'sections' }],
     ['#/about', { name: 'about' }],

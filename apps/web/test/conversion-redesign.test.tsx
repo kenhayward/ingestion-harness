@@ -370,7 +370,7 @@ describe('the Conversion tab redesign: a new batch and the earlier ones', () => 
     render(<ConversionPage api={page()} />);
     await screen.findByRole('option', { name: 'Controlled documents · Document sink' });
     expect(screen.getByRole('heading', { name: '1 Target' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: '2 Word files' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '2 Word or PDF files' })).toBeVisible();
     expect(screen.getByRole('heading', { name: '3 Options' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Convert documents' })).toBeDisabled();
     await userEvent.upload(screen.getByLabelText('Choose files'), new File(['PK'], 'a.docx'));
