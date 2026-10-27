@@ -46,6 +46,8 @@ _MARK_SIZE = 0.85
 _MARK_SHIFT = 0.2
 #: Lines whose gap is under this many times the line height belong to one orphan piece.
 _ORPHAN_LINE_GAP = 1.5
+#: Orphan chars are in separate columns where no char crosses a gap this many ems wide.
+_COLUMN_GAP = 2.0
 
 #: What the ledger holds for a char that was dropped: `dropped:<reason>`.
 DROPPED_PREFIX = "dropped:"
@@ -400,18 +402,23 @@ def _chars_of(piece: Piece) -> list[Char]:
 def _orphans(
     pages: dict[int, PageText], loose: dict[int, list[Char]], ledger: Ledger
 ) -> list[Piece]:
+    """The loose chars of each page as orphan pieces: split into columns first, so lines at
+    one height in two columns are not read across, then into lines, and lines close together
+    are one piece; column by column, left to right, each top to bottom."""
     out: list[Piece] = []
     for number in sorted(loose):
-        lines = _lines(number, loose[number])
         runs: list[list[Line]] = []
-        for line in lines:
-            if runs:
-                previous = runs[-1][-1]
-                height = previous.bbox[3] - previous.bbox[1]
-                if line.bbox[1] - previous.bbox[3] < _ORPHAN_LINE_GAP * height:
-                    runs[-1].append(line)
-                    continue
-            runs.append([line])
+        for column in _columns(loose[number]):
+            column_runs: list[list[Line]] = []
+            for line in _lines(number, column):
+                if column_runs:
+                    previous = column_runs[-1][-1]
+                    height = previous.bbox[3] - previous.bbox[1]
+                    if line.bbox[1] - previous.bbox[3] < _ORPHAN_LINE_GAP * height:
+                        column_runs[-1].append(line)
+                        continue
+                column_runs.append([line])
+            runs.extend(column_runs)
         for n, run in enumerate(runs):
             piece = Piece(
                 f"orphan-{number}-{n}",
@@ -427,6 +434,21 @@ def _orphans(
                 ledger.own(number, c.index, piece.ref)
             out.append(piece)
     return out
+
+
+def _columns(chars: list[Char]) -> list[list[Char]]:
+    """The chars split where a vertical gap wider than `_COLUMN_GAP` ems has no char in it,
+    left to right."""
+    columns: list[list[Char]] = []
+    right = size = 0.0
+    for c in sorted(chars, key=lambda c: c.x0):
+        if columns and c.x0 - right <= _COLUMN_GAP * max(size, c.size):
+            columns[-1].append(c)
+            right, size = max(right, c.x1), max(size, c.size)
+        else:
+            columns.append([c])
+            right, size = c.x1, c.size
+    return columns
 
 
 def _place(pieces: list[Piece], orphans: list[Piece]) -> list[Piece]:

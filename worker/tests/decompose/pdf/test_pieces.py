@@ -250,6 +250,23 @@ def test_orphan_lines_close_together_are_one_piece() -> None:
     assert [p.ref for p in pieces] == ["orphan-0-0", "orphan-0-1"]
 
 
+def test_orphans_in_two_columns_read_column_by_column() -> None:
+    runs = [
+        Run("left one", 72, 300),
+        Run("right one", 332, 300),
+        Run("left two", 72, 314),
+        Run("right two", 332, 314),
+    ]
+    pieces, ledger = attach(runs, [])
+    assert [p.lines and [line.text for line in p.lines] for p in pieces] == [
+        ["left one", "left two"],
+        ["right one", "right two"],
+    ]
+    assert [p.ref for p in pieces] == ["orphan-0-0", "orphan-0-1"]
+    entries = ledger.entries(0)
+    assert all(entries[c.index] == [p.ref] for p in pieces for ln in p.lines for c in ln.chars)
+
+
 def test_orphan_line_stays_in_its_column() -> None:
     left, right = (60, 200), (320, 520)
 
