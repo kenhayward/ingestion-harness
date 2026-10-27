@@ -231,3 +231,13 @@ def test_rotated_cropper() -> None:
     assert turned.size == (20, 10)
     upright = Image.open(io.BytesIO(cropper.crop(1, (0, 0, 1, 1))))
     assert upright.size == (10, 20)
+
+
+def test_a_full_page_region_is_the_scan_itself() -> None:
+    """Docling may see a whole scan as one picture: it is neither a figure nor an equation."""
+    whole = (0.0, 0.0, _W, _H)
+    page = _recognise("Text.", [_picture("#/pictures/0", whole)])
+    assert [p.label for p in page.pieces] == ["text"]
+    assert [f.code for f in page.flags] == ["page_recognised"]
+    page = _recognise("$$x^2$$", [_picture("#/pictures/0", whole)])
+    assert [p.label for p in page.pieces] == ["text"]

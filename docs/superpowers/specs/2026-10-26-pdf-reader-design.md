@@ -570,9 +570,12 @@ fills in the rest.
 - Errors are handled as for extraction. A transient model error is retried. A refusal, an
   unavailable model or an exceeded context fails the document, naming the page and the model. A
   cancelled batch stops at the next page.
-- **No OCR configured.** A PDF with a scanned page fails before any layout or OCR work, saying
-  "page N is scanned and this CT Studio has no OCR model". A born-digital PDF is unaffected.
-  **[call]**
+- **No OCR configured.** A PDF with a page that has no visible text over its scan fails before
+  any layout or OCR work, saying "page N is scanned and this CT Studio has no OCR model". A page
+  that is scanned only by §15.2's second rule (a little visible text over a full-page image) is
+  then read from its visible text, as before 5c, since that rule exists only to send it to the
+  model. A born-digital PDF is unaffected. **[call]** (2026-10-27, after the final review: a
+  born-digital cover page must not fail the PDF)
 - **The seam.** The reader is given a page transcriber, which takes a page index and returns
   the model's raw markdown and the rotation it applied. In the worker, this is extraction's OCR
   loop, with its caches, gates and cancellation, refactored to hand back raw markdown. The dev

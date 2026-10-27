@@ -70,6 +70,8 @@ class PageText:
     glyphs_left_out: int = 0
     #: A scanned page's synthetic text layer, from the OCR model's transcription (scanned.py).
     recognised: bool = False
+    #: Read from its own visible text even if it looks like a stamped scan (no OCR model).
+    keep_text: bool = False
 
     @property
     def kind(self) -> Literal["born_digital", "scanned"]:
@@ -78,7 +80,7 @@ class PageText:
         words = self.visible_words
         if not words:
             return "scanned" if self.image_area >= _SCANNED_IMAGE_AREA else "born_digital"
-        if words <= _SCAN_MAX_WORDS and self.largest_image >= _SCAN_COVER:
+        if words <= _SCAN_MAX_WORDS and self.largest_image >= _SCAN_COVER and not self.keep_text:
             return "scanned"
         return "born_digital"
 

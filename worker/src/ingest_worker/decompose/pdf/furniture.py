@@ -58,7 +58,7 @@ def _key(text: str) -> str:
 
 
 def _is_text(piece: Piece) -> bool:
-    return piece.table is None and piece.picture is None
+    return piece.table is None and piece.picture is None and piece.label != "formula"
 
 
 def _centre_y(line: Line) -> float:

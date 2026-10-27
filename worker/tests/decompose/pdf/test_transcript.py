@@ -125,3 +125,33 @@ def test_sup_sub_and_links() -> None:
 def test_empty_markdown() -> None:
     assert parse_transcript("") == []
     assert parse_transcript("---\nprimary_language: null\n---\n") == []
+
+
+def test_display_closer_with_a_tail() -> None:
+    assert parse_transcript(r"\[ E = mc^2 \] (1)") == [TxEquation("E = mc^2")]
+    assert parse_transcript(r"\[x\],") == [TxEquation("x")]
+
+
+def test_a_reference_line_is_not_an_equation() -> None:
+    blocks = parse_transcript("\\[1\\] Smith wrote.\n\n# Results\n\nBody.")
+    assert [type(b) for b in blocks] == [TxParagraph, TxHeading, TxParagraph]
+    assert _text(blocks[0]) == "[1] Smith wrote."
+
+
+def test_an_unclosed_opener_is_text() -> None:
+    blocks = parse_transcript("$$ x +\n\n# Results\n\nBody.")
+    assert [type(b) for b in blocks] == [TxParagraph, TxHeading, TxParagraph]
+    assert _text(blocks[0]) == "$$ x +"
+
+
+def test_spans_set_the_width() -> None:
+    (table,) = parse_transcript(
+        '<table><tr><td rowspan="2">a</td><td colspan="2">b</td></tr>'
+        "<tr><td>c</td><td>d</td></tr></table>"
+    )
+    assert isinstance(table, TxTable)
+    assert (table.rows, table.cols) == (2, 3)
+    cells = {(c.row, c.col): c for c in table.cells}
+    assert cells[(0, 1)].col_span == 2
+    assert "".join(r[0] for r in cells[(1, 1)].lines[0]) == "c"
+    assert "".join(r[0] for r in cells[(1, 2)].lines[0]) == "d"

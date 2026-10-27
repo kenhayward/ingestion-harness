@@ -160,24 +160,12 @@ def _text_blocks(text: str) -> list[TxBlock]:
             continue
         opener = next((o for o in _DISPLAY_OPEN if stripped.startswith(o)), None)
         if opener is not None:
-            closer = _DISPLAY_OPEN[opener]
-            rest = stripped[len(opener) :]
-            if rest.rstrip().endswith(closer) and rest.strip() != "":
+            found_equation = _display_equation(lines, i - 1, opener)
+            if found_equation is not None:
+                latex, i = found_equation
                 flush()
-                blocks.append(TxEquation(rest.rstrip()[: -len(closer)].strip()))
+                blocks.append(TxEquation(latex))
                 continue
-            gathered = [rest] if rest.strip() else []
-            while i < len(lines) and not lines[i].strip().endswith(closer):
-                gathered.append(lines[i].strip())
-                i += 1
-            if i < len(lines):
-                last = lines[i].strip()[: -len(closer)].strip()
-                if last:
-                    gathered.append(last)
-                i += 1
-            flush()
-            blocks.append(TxEquation("\n".join(gathered).strip()))
-            continue
         found = [
             TxFigure(m.group(1).strip(), _pixel_box(m.group(2)))
             for m in _PLACEHOLDER.finditer(stripped)
@@ -209,6 +197,35 @@ def _text_blocks(text: str) -> list[TxBlock]:
         para.append(stripped)
     flush()
     return blocks
+
+
+#: What may follow a display equation's closer on its line: punctuation, an equation number.
+_EQUATION_TAIL = re.compile(r"[\s,.;:]*(?:\(\d+(?:\.\d+)*[a-z]?\))?[\s,.;:]*")
+
+
+def _display_equation(lines: list[str], start: int, opener: str) -> tuple[str, int] | None:
+    """The display equation opened on `lines[start]`, and the index of the line after it; or
+    None when it is not one: its closer is followed by more than punctuation or an equation
+    number (a reference "\\[1\\] Smith"), or no closer comes before a blank line or a heading.
+    """
+    closer = _DISPLAY_OPEN[opener]
+    gathered: list[str] = []
+    first = lines[start].strip()[len(opener) :]
+    k = start
+    text = first
+    while True:
+        at = text.find(closer)
+        if at >= 0:
+            if not _EQUATION_TAIL.fullmatch(text[at + len(closer) :]):
+                return None
+            gathered.append(text[:at])
+            latex = "\n".join(part.strip() for part in gathered if part.strip())
+            return (latex, k + 1) if latex else None
+        gathered.append(text)
+        k += 1
+        if k >= len(lines) or not lines[k].strip() or _HEADING.match(lines[k].strip()):
+            return None
+        text = lines[k].strip()
 
 
 def _is_number_only(text: str) -> bool:
@@ -368,6 +385,21 @@ def _span(value: str | None) -> int:
         return 1
 
 
+def _width(raw_rows: list[list[_RawCell]], rows: int) -> int:
+    held: set[tuple[int, int]] = set()
+    width = 0
+    for r, row in enumerate(raw_rows):
+        col = 0
+        for cell in row:
+            while (r, col) in held:
+                col += 1
+            for rr in range(r, min(r + cell.row_span, rows)):
+                held.add((rr, col))
+            col += 1
+        width = max(width, col, max((k + 1 for rr, k in held if rr == r), default=0))
+    return max(width, 1)
+
+
 def _parse_table(markup: str) -> TxTable | None:
     parser = _TableParser()
     parser.feed(markup)
@@ -376,7 +408,9 @@ def _parse_table(markup: str) -> TxTable | None:
     if not raw_rows:
         return None
     rows = len(raw_rows)
-    base = max(len(row) for row in raw_rows)
+    # The width: the widest row with its row spans held, a column span counted as one; spans
+    # then widen nothing past it, so a stray colspan="9" doesn't make nine columns.
+    base = _width(raw_rows, rows)
     occupied: set[tuple[int, int]] = set()
     placed: list[tuple[int, int, int, int, _RawCell]] = []
     for r, row in enumerate(raw_rows):

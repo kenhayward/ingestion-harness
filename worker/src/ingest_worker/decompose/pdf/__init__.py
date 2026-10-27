@@ -77,7 +77,16 @@ def decompose_pdf(
         raise DecompositionFailed(f"the PDF has {pages} pages; the limit is {MAX_PAGES}")
     scanned = [p for p in text.pages if p.kind == "scanned"]
     if scanned and transcriber is None:
-        raise DecompositionFailed(NO_OCR.format(page=scanned[0].index + 1))
+        # Without the OCR model, a page with some visible text over a scan keeps that text (spec
+        # 15.2's second rule needs the model); only a page with none can't be read at all.
+        if blank := next((p for p in scanned if not p.visible_words), None):
+            raise DecompositionFailed(NO_OCR.format(page=blank.index + 1))
+        keep = {p.index for p in scanned}
+        text = TextLayer(
+            tuple(replace(p, keep_text=True) if p.index in keep else p for p in text.pages),
+            text.unmapped_symbols,
+        )
+        scanned = []
     layout_doc = analyse_document(layout, data, pages, chunk=chunk)
     recognised: dict[int, RecognisedPage] = {}
     scanned_furniture: dict[int, int] = {}

@@ -114,7 +114,10 @@ def assign_headings(
             )
             for mark in missed
         ]
-        return _apply_bookmarks(pieces, matches, ledger), flags
+        pieces = _apply_bookmarks(pieces, matches, ledger)
+        # a scanned page's headings the outline doesn't have keep their own levels (spec 15.3)
+        unmatched = [p for p in pieces if p.recognised and p.heading_level is None]
+        return pieces, [*flags, *_number_headings(unmatched, ledger)]
     return pieces, _number_headings(pieces, ledger)
 
 
@@ -170,7 +173,7 @@ def _apply_bookmarks(pieces: list[Piece], matches: list[_Match], ledger: Ledger)
         if id(piece) in by_piece:
             out.extend(_split(piece, sorted(by_piece[id(piece)], key=lambda m: m.start), ledger))
             continue
-        if piece.label == "section_header":
+        if piece.label == "section_header" and not piece.recognised:
             piece.label = "text"  # Docling's heading that the outline does not have
         out.append(piece)
     return out

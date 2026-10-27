@@ -59,6 +59,9 @@ _COLUMN = 60.0
 _CELL_PAD = 2.0
 _FONT = "ocr"
 
+#: A picture region covering this much of a scanned page is the scan itself, not a figure.
+_WHOLE_PAGE = 0.8
+
 #: At least this many scanned pages before a repeated first or last line is furniture.
 _FURNITURE_PAGES = 3
 
@@ -354,7 +357,11 @@ def recognise_page(
     the reader left out (spec 15.2)."""
     number = original.index + 1
     writer = _Writer(original)
-    ordered = sorted(regions, key=_reading_order)
+    area = original.width * original.height
+    ordered = sorted(
+        (r for r in regions if area <= 0 or _overlap(r.bbox, r.bbox) < _WHOLE_PAGE * area),
+        key=_reading_order,
+    )
     figures = [b for b in blocks if isinstance(b, TxFigure)]
     matched = _match_figures(figures, ordered, original, rotation=rotation, render_px=render_px)
     used = {id(r) for r in matched.values()}

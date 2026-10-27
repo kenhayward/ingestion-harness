@@ -223,3 +223,45 @@ def test_figure_on_a_scanned_page() -> None:
     assert image.alt == "A pump"
     assert cropper.calls == [(0, (100.0, 200.0, 400.0, 500.0))]
     assert any(getattr(b, "caption", None) == [Text(text="The pump.")] for b in doc.blocks)
+
+
+def test_paired_equation_survives_the_reader() -> None:
+    data = make_pdf([scan()])
+    items = [docling.picture(1, bl(200, 300, 400, 330))]
+    result = decompose_pdf(
+        data,
+        layout=layout_of(items, 1),
+        transcriber=FakeTranscriber({0: "Text.\n\n$$x^2$$\n\nMore."}),
+        cropper=FakeCropper(),
+    )
+    doc = result.document
+    assert [e.latex for e in doc.equations] == ["x^2"]
+    assert len(doc.blocks) == 3
+
+
+def test_a_stamped_cover_without_ocr_reads_as_born_digital() -> None:
+    """With no OCR model, a page with a little visible text over a full image keeps that text
+    (spec 15.2's second rule needs the OCR model); only a page with no text at all fails."""
+    page = Page(runs=[Run("Annual Report 2026", 72, 300)], images=[Img(0, 0, WIDTH, HEIGHT)])
+    data = make_pdf([page])
+    result = decompose_pdf(data, layout=layout_of([], 1), cropper=FakeCropper())
+    texts = [plain_text(b.inlines) for b in result.document.blocks if isinstance(b, Paragraph)]
+    assert texts == ["Annual Report 2026"]
+    assert not any(f.code == "page_recognised" for f in result.document.report)
+
+
+def test_bookmarks_leave_scanned_headings_be() -> None:
+    runs = [Run("Introduction", 72, 60), Run("The plant runs all year.", 72, 80)]
+    items = [
+        docling.text("section_header", 1, bl(60, 48, 400, 64)),
+        docling.text("text", 1, bl(60, 68, 400, 84)),
+    ]
+    data = make_pdf([Page(runs=runs), scan()], outline=[(1, "Introduction", 0, 50)])
+    result = decompose_pdf(
+        data,
+        layout=layout_of(items, 2),
+        transcriber=FakeTranscriber({1: "# Appendix\n\nScanned body."}),
+        cropper=FakeCropper(),
+    )
+    titles = [plain_text(s.title) for s in walk(result.document.sections)]
+    assert titles == ["Introduction", "Appendix"]
