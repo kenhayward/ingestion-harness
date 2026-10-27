@@ -89,7 +89,7 @@ def _key(text: str) -> str:
 
 
 def _is_text(piece: Piece) -> bool:
-    return piece.table is None and piece.picture is None
+    return piece.table is None and piece.picture is None and piece.label != "formula"
 
 
 def _centre_y(line: Line) -> float:
@@ -111,8 +111,9 @@ def drop_furniture(
     """The pieces without furniture lines and contents, what was dropped, and the header fields
     found among the furniture."""
     pieces, line_numbers = _drop_line_numbers(pieces, text, ledger)
-    heights = {p.index: p.height for p in text.pages}
-    needed = max(_REPEAT_PAGES, math.ceil(len(text.pages) / 2))
+    # scanned pages have their own rule (scanned.py), and don't count here (spec 15.4)
+    heights = {p.index: p.height for p in text.pages if p.kind == "born_digital"}
+    needed = max(_REPEAT_PAGES, math.ceil(len(heights) / 2))
 
     def in_band(line: Line) -> bool:
         height = heights.get(line.page)
@@ -189,7 +190,7 @@ def _drop_pictures(
 ) -> tuple[list[Piece], dict[int, int]]:
     """Without the pictures that are only furniture text (`_furniture_picture`), and how many
     were dropped on each page."""
-    pages = {p.index: p for p in text.pages}
+    pages = {p.index: p for p in text.pages if p.kind == "born_digital"}
     dropped: dict[int, int] = defaultdict(int)
     out: list[Piece] = []
     for piece in pieces:
@@ -323,7 +324,7 @@ def _drop_line_numbers(
     lines, increasing down the page, with every other char on the page well to their right. A
     numbered list fails that last test against the body text beside it, and a table's cells are
     never looked at, so a first column of numbers stays."""
-    pages = {p.index: p for p in text.pages}
+    pages = {p.index: p for p in text.pages if p.kind == "born_digital"}
 
     def body(page: PageText, c: Char) -> bool:
         shown = c.visible and not c.text.isspace()

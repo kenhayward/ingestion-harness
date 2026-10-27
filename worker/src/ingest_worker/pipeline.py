@@ -6,7 +6,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, field, replace
@@ -20,6 +20,7 @@ from jsonschema import Draft202012Validator
 from .call_slots import CallSlots
 from .checks import run_check
 from .convert import ConversionRejected, DocumentConverter, is_docx
+from .decompose.pdf.transcript import Transcript
 from .errors import DocumentError as DocumentError
 from .extract import SYSTEM_PROMPT, ExtractionFailedError, ExtractionResult, run_extraction
 from .llm.base import (
@@ -32,7 +33,6 @@ from .llm.base import (
 )
 from .llm.registry import ModelRegistry, ModelResolutionError
 from .ocr import (
-    OcrPage,
     OcrSettings,
     PageRenderer,
     ocr_page,
@@ -68,7 +68,14 @@ from .specs import (
     SpecRegistry,
 )
 from .step_cache import CachedStep, StepCache, step_cache_key
-from .storage import ObjectStore, converted_key, ocr_cache_key, ocr_run_key, run_key
+from .storage import (
+    ObjectStore,
+    converted_key,
+    ocr_cache_key,
+    ocr_rotation_key,
+    ocr_run_key,
+    run_key,
+)
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -633,88 +640,148 @@ def ocr_pages(
     targets = pages_needing_ocr(pages, mode, deps.ocr.min_chars)
     if not targets:
         return pages
-    provider, model_id = JobModels(job, deps.models).resolve_ocr(deps.ocr.model, what="OCR model")
-
-    settings = deps.ocr
+    read = JobTranscriber(job, deps, queue, pdf, sha256=sha256, progress=progress).transcribe(
+        targets
+    )
     pages = list(pages)
-    model_ref = f"{provider.name}/{model_id}"
-    shared_key = _ocr_cache_keyer(sha256, model_ref, settings) if settings.cache else None
+    for index, transcript in read.items():
+        pages[index] = parse_olmocr(transcript.markdown)[0]
+    return pages
 
-    # Reuse transcriptions saved by an earlier attempt of this job (retries, crashed workers),
-    # then those of earlier jobs of the same PDF: OCR servers are not deterministic even at
-    # temperature 0, so re-runs and regressions would otherwise see different page text.
-    cached: list[int] = []
-    shared: list[int] = []
-    for index in targets:
-        raw = deps.store.get_optional(deps.buckets.runs, ocr_run_key(job.id, index + 1))
-        if raw is None and shared_key is not None:
-            raw = deps.store.get_optional(deps.buckets.runs, shared_key(index + 1))
-            if raw is not None:
-                # The job keeps its own copy: its audit trail must not depend on the cache.
-                deps.store.put(
-                    deps.buckets.runs, ocr_run_key(job.id, index + 1), raw, "text/markdown"
-                )
-                shared.append(index)
-        if raw is not None:
-            pages[index] = parse_olmocr(raw.decode("utf-8"))[0]
-            cached.append(index)
-    todo = [i for i in targets if i not in cached]
-    # Its parallel calls hold across every worker when set (call slots).
-    ocr_limit = deps.models.max_concurrent_calls(model_ref)
-    gate = call_gate(deps, model_ref, ocr_limit)
 
-    def run(index: int) -> OcrPage:
-        check_cancelled(job, queue)  # a long OCR pass stops at the next page
+def _document_error(message: str, page: int) -> Exception:
+    return DocumentError(message)
+
+
+class JobTranscriber:
+    """The OCR model reading a job's PDF, page by page: a `PageTranscriber`, for extraction's
+    low-text pages and the PDF reader's scanned pages alike.
+
+    A page is read from the job's own copy (a retry), then from the shared cache of the same PDF
+    and OCR settings, and only then by the model: OCR servers are not deterministic even at
+    temperature 0, so re-runs would otherwise see different text. Pages are read concurrently
+    within the model's parallel-call limit, a cancelled job stops at the next page, and each
+    transcription is saved as it finishes, with the rotation the OCR client applied beside it. A
+    page the model refuses, an unusable model or an exceeded context raises `failure(message,
+    1-based page)` (a DocumentError by default); a transient error propagates (retried).
+    """
+
+    def __init__(
+        self,
+        job: ClaimedJob,
+        deps: PipelineDeps,
+        queue: JobQueue,
+        pdf: bytes,
+        *,
+        sha256: str,
+        progress: Callable[[int, int], None] | None = None,
+        failure: Callable[[str, int], Exception] = _document_error,
+    ) -> None:
+        self.job, self.deps, self.queue, self.pdf = job, deps, queue, pdf
+        self.sha256 = sha256
+        self.progress = progress
+        self.failure = failure
+
+    def transcribe(self, pages: Sequence[int]) -> dict[int, Transcript]:
+        job, deps, queue = self.job, self.deps, self.queue
+        settings = deps.ocr
+        targets = list(pages)
+        if settings is None or not targets:
+            return {}
         try:
-            with gate(lambda: False) if gate is not None else nullcontext():
-                page = ocr_page(provider, model_id, pdf, index, settings, deps.render_page)
-        except RefusalError as exc:
-            raise DocumentError(f"OCR page {index + 1}: {exc}") from exc
-        except ModelUnavailableError as exc:  # a retry would repeat it
-            raise DocumentError(
-                model_unavailable_reason(f"OCR page {index + 1}", model_ref, exc)
-            ) from exc
-        except ContextExceededError as exc:  # a retry would repeat it
-            raise DocumentError(
-                context_exceeded_reason(
-                    f"OCR page {index + 1}",
+            provider, model_id = JobModels(job, deps.models).resolve_ocr(
+                settings.model, what="OCR model"
+            )
+        except DocumentError as exc:
+            raise self.failure(str(exc), targets[0] + 1) from exc
+        model_ref = f"{provider.name}/{model_id}"
+        shared_key = _ocr_cache_keyer(self.sha256, model_ref, settings) if settings.cache else None
+        store, bucket = deps.store, deps.buckets.runs
+
+        def rotation_of(key: str) -> int:
+            raw = store.get_optional(bucket, ocr_rotation_key(key))
+            return int(raw.decode("ascii")) if raw else 0
+
+        out: dict[int, Transcript] = {}
+        cached: list[int] = []
+        shared: list[int] = []
+        for index in targets:
+            own = ocr_run_key(job.id, index + 1)
+            raw = store.get_optional(bucket, own)
+            rotation = rotation_of(own) if raw is not None else 0
+            if raw is None and shared_key is not None:
+                raw = store.get_optional(bucket, shared_key(index + 1))
+                if raw is not None:
+                    rotation = rotation_of(shared_key(index + 1))
+                    # The job keeps its own copy: its audit trail must not depend on the cache.
+                    self._save(own, raw, rotation)
+                    shared.append(index)
+            if raw is not None:
+                out[index] = Transcript(raw.decode("utf-8"), rotation)
+                cached.append(index)
+        todo = [i for i in targets if i not in cached]
+        # Its parallel calls hold across every worker when set (call slots).
+        ocr_limit = deps.models.max_concurrent_calls(model_ref)
+        gate = call_gate(deps, model_ref, ocr_limit)
+
+        def run(index: int) -> tuple[int, Transcript]:
+            check_cancelled(job, queue)  # a long OCR pass stops at the next page
+            what = f"OCR page {index + 1}"
+            try:
+                with gate(lambda: False) if gate is not None else nullcontext():
+                    page = ocr_page(provider, model_id, self.pdf, index, settings, deps.render_page)
+            except RefusalError as exc:
+                raise self.failure(f"{what}: {exc}", index + 1) from exc
+            except ModelUnavailableError as exc:  # a retry would repeat it
+                reason = model_unavailable_reason(what, model_ref, exc)
+                raise self.failure(reason, index + 1) from exc
+            except ContextExceededError as exc:  # a retry would repeat it
+                reason = context_exceeded_reason(
+                    what,
                     model_ref,
                     "raise the model's context length on its server (e.g. LM Studio) or lower "
                     "the OCR output budget (ocr.maxTokens in config/llm-providers.yaml, now "
                     f"{settings.max_tokens})",
                     exc,
                 )
-            ) from exc
-        # Saved as each page finishes, so a later failure doesn't lose completed pages.
-        raw = page.raw[-1].encode("utf-8")
-        deps.store.put(deps.buckets.runs, ocr_run_key(job.id, index + 1), raw, "text/markdown")
-        if shared_key is not None:
-            deps.store.put(deps.buckets.runs, shared_key(index + 1), raw, "text/markdown")
-        return page
+                raise self.failure(reason, index + 1) from exc
+            # Saved as each page finishes, so a later failure doesn't lose completed pages.
+            raw = page.raw[-1].encode("utf-8")
+            self._save(ocr_run_key(job.id, index + 1), raw, page.rotation)
+            if shared_key is not None:
+                self._save(shared_key(index + 1), raw, page.rotation)
+            return index, Transcript(page.raw[-1], page.rotation)
 
-    # Pages are independent, so OCR them concurrently; results are written back in page order
-    # and the first exception (transient or DocumentError) propagates.
-    if progress is not None and todo:
-        progress(len(cached), len(targets))  # the first page can take the whole run
-    # The OCR model's parallel calls (Administration > Models), else ocr.concurrency.
-    concurrency = ocr_limit or settings.concurrency
-    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-        for done, page in enumerate(pool.map(run, todo), start=1):
-            pages[page.index] = page.text
-            if progress is not None:
-                progress(len(cached) + done, len(targets))
-    queue.event(
-        job.id,
-        "info",
-        "ocr",
-        {
-            "model": model_ref,
-            "pages": [i + 1 for i in targets],
-            "cached": [i + 1 for i in cached],
-            "shared": [i + 1 for i in shared],
-        },
-    )
-    return pages
+        # Pages are independent, so they are read concurrently; the first exception (transient
+        # or a failure) propagates.
+        if self.progress is not None and todo:
+            self.progress(len(cached), len(targets))  # the first page can take the whole run
+        # The OCR model's parallel calls (Administration > Models), else ocr.concurrency.
+        concurrency = ocr_limit or settings.concurrency
+        with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+            for done, (index, transcript) in enumerate(pool.map(run, todo), start=1):
+                out[index] = transcript
+                if self.progress is not None:
+                    self.progress(len(cached) + done, len(targets))
+        queue.event(
+            job.id,
+            "info",
+            "ocr",
+            {
+                "model": model_ref,
+                "pages": [i + 1 for i in targets],
+                "cached": [i + 1 for i in cached],
+                "shared": [i + 1 for i in shared],
+            },
+        )
+        return dict(sorted(out.items()))
+
+    def _save(self, key: str, raw: bytes, rotation: int) -> None:
+        store, bucket = self.deps.store, self.deps.buckets.runs
+        store.put(bucket, key, raw, "text/markdown")
+        if rotation % 360:
+            degrees = str(rotation % 360).encode("ascii")
+            store.put(bucket, ocr_rotation_key(key), degrees, "text/plain")
 
 
 def _ocr_cache_keyer(digest: str, model_ref: str, settings: OcrSettings) -> Callable[[int], str]:

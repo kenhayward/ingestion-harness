@@ -148,12 +148,12 @@ def plain(inlines: list[Any]) -> str:
     return "".join(i.text for i in inlines if isinstance(i, Text))
 
 
-def test_scanned_page_fails_for_now() -> None:
+def test_scanned_page_without_ocr_fails_fast() -> None:
     data = make_pdf([Page(runs=[Run("Text", 72, 100)]), Page(images=[Img(0, 0, WIDTH, HEIGHT)])])
     layout = answering([], pages=2)
     with pytest.raises(DecompositionFailed) as info:
         decompose_pdf(data, layout=layout, cropper=FakeCropper())
-    assert info.value.detail == "page 2 is scanned; scanned pages are not read yet"
+    assert info.value.detail == "page 2 is scanned and this CT Studio has no OCR model"
     assert layout.calls == []
 
 
@@ -184,7 +184,7 @@ def test_same_pdf_same_document() -> None:
 
 
 def test_reader_constants() -> None:
-    assert pdf_reader.PDF_READER_VERSION == 1
+    assert pdf_reader.PDF_READER_VERSION == 2
     assert pdf_reader.MAX_PAGES == 500
 
 

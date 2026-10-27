@@ -3,13 +3,16 @@
     uv run --directory worker python scripts/decompose.py <file.docx> <out-dir> \
         [--converter-url URL]
     uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> \
-        --layout-url URL
+        --layout-url URL [--ocr-url URL [--ocr-model provider/model] [--ocr-cache DIR]]
 
 The source is told apart by its bytes (`%PDF-` is a PDF), not its name. Drawings, equations and
 pictures that need converting are rendered through the document converter at `--converter-url`;
 without it, a document that needs rendering fails. A PDF's layout comes from the layout service
-at `--layout-url`, which a PDF needs. `out-dir` must not exist or must be empty. Image files are
-named from image ids, never package paths.
+at `--layout-url`, which a PDF needs. A PDF's scanned pages are read by the OCR model at
+`--ocr-url` (an OpenAI-compatible endpoint; its key from `OCR_API_KEY`), its transcriptions
+cached in `--ocr-cache` (default `<out-dir>/../ocr-cache`) so a second run makes no model calls;
+without it, a PDF with a scanned page fails. `out-dir` must not exist or must be empty. Image
+files are named from image ids, never package paths.
 
 Exit codes:
   0  decomposed
@@ -25,6 +28,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from collections.abc import Sequence
@@ -37,8 +41,13 @@ from ingest_worker.decompose import (
     decompose_docx,
 )
 from ingest_worker.decompose.pdf import decompose_pdf
+from ingest_worker.decompose.pdf.dev_ocr import disk_transcriber
 from ingest_worker.decompose.pdf.layout import HttpLayoutAnalyser, LayoutAnalyser, LayoutUnavailable
+from ingest_worker.decompose.pdf.transcript import PageTranscriber
 from ingest_worker.decompose.render import ConverterRenderer, Renderer, RenderFragment
+
+#: The OCR model `scripts/ocr_pdf.py` uses too.
+DEFAULT_OCR_MODEL = "local/olmocr-2-7b-1025"
 
 _UNSAFE = re.compile(r"[^a-z0-9._~-]+")
 _MAX_NAME = 100
@@ -96,6 +105,7 @@ def main(
     *,
     renderer: Renderer | None = None,
     layout: LayoutAnalyser | None = None,
+    transcriber: PageTranscriber | None = None,
 ) -> int:
     usage = __doc__ or ""
     parser = argparse.ArgumentParser(
@@ -107,6 +117,13 @@ def main(
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("--converter-url", help="the document converter's base URL")
     parser.add_argument("--layout-url", help="the PDF layout service's base URL")
+    parser.add_argument("--ocr-url", help="the OCR model's OpenAI-compatible base URL")
+    parser.add_argument(
+        "--ocr-model",
+        default=DEFAULT_OCR_MODEL,
+        help=f"provider/model (default {DEFAULT_OCR_MODEL})",
+    )
+    parser.add_argument("--ocr-cache", type=Path, help="the OCR transcriptions' cache folder")
     args = parser.parse_args(argv)
 
     out: Path = args.out_dir
@@ -125,6 +142,14 @@ def main(
             print("a PDF needs --layout-url", file=sys.stderr)
             return 2
         layout = HttpLayoutAnalyser(args.layout_url)
+    if is_pdf and transcriber is None and args.ocr_url:
+        transcriber = disk_transcriber(
+            data,
+            base_url=args.ocr_url,
+            model=args.ocr_model,
+            cache_dir=args.ocr_cache or out.resolve().parent / "ocr-cache",
+            api_key=os.environ.get("OCR_API_KEY"),
+        )
     if not is_pdf and renderer is None:
         renderer = (
             ConverterRenderer(GotenbergConverter(args.converter_url))
@@ -134,7 +159,7 @@ def main(
     try:
         if is_pdf:
             assert layout is not None
-            result = decompose_pdf(data, layout=layout)
+            result = decompose_pdf(data, layout=layout, transcriber=transcriber)
         else:
             assert renderer is not None
             result = decompose_docx(data, renderer=renderer)

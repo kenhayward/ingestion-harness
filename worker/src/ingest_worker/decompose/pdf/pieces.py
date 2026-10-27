@@ -148,6 +148,10 @@ class Piece:
     heading_level: int | None = None
     #: Docling's content layer; only a text item can be furniture.
     layer: Literal["body", "furniture"] = "body"
+    #: A scanned page's piece, made from the OCR model's transcription (scanned.py).
+    recognised: bool = False
+    #: A scanned page's display equation, as LaTeX (a `formula` piece).
+    latex: str | None = None
 
     def inlines(self) -> list[Text]:
         """The lines joined with single spaces, runs merged by marks."""

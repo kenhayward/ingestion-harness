@@ -58,12 +58,13 @@ from ingest_worker.decompose.hold import (
 )
 from ingest_worker.decompose.items import UNDECIDED, ConversionItem, ItemOutcome, ItemStore
 from ingest_worker.decompose.pdf.layout import LayoutAnalyser, LayoutUnavailable
+from ingest_worker.decompose.pdf.transcript import PageTranscriber, TranscriptionFailed
 from ingest_worker.decompose.register import RegisterStore
 from ingest_worker.decompose.render import ConverterRenderer, Renderer, RenderFragment
 from ingest_worker.errors import DocumentError
 from ingest_worker.ocr import render_preview_jpeg
 from ingest_worker.outcomes import Complete, Delivering, Outcome
-from ingest_worker.pipeline import JobCancelled, PipelineDeps, check_cancelled
+from ingest_worker.pipeline import JobCancelled, JobTranscriber, PipelineDeps, check_cancelled
 from ingest_worker.publish_targets import TargetMissing, TargetNotSynced
 from ingest_worker.queue import ClaimedJob, JobQueue
 from ingest_worker.storage import (
@@ -111,6 +112,11 @@ class DecomposeDeps:
     deliver: DeliverDeps
     #: Reads a PDF's layout (None: a PDF fails its item).
     layout: LayoutAnalyser | None = None
+    #: The OCR model reading a job's PDF, for its scanned pages (None: a PDF with a scanned
+    #: page fails its item; spec 15.1).
+    transcriber: Callable[[ClaimedJob, bytes], PageTranscriber] | None = None
+    #: The longest side, in pixels, of the page images the OCR model is sent.
+    ocr_longest_dim: int = 1288
     #: (pdf, 0-based page) -> JPEG preview for the review screen.
     render_preview: Callable[[bytes, int], bytes] = field(default=render_preview_jpeg)
 
@@ -135,12 +141,27 @@ def decompose_deps(deps: PipelineDeps, queue: JobQueue) -> DecomposeDeps:
     renderer: Renderer = (
         ConverterRenderer(deps.converter) if deps.converter is not None else NoConverter()
     )
+    transcriber: Callable[[ClaimedJob, bytes], PageTranscriber] | None = None
+    if deps.ocr is not None:
+
+        def transcriber(job: ClaimedJob, data: bytes) -> PageTranscriber:
+            return JobTranscriber(
+                job,
+                deps,
+                queue,
+                data,
+                sha256=hashlib.sha256(data).hexdigest(),
+                failure=lambda message, page: TranscriptionFailed(message, at=f"page {page}"),
+            )
+
     return DecomposeDeps(
         store=deps.store,
         runs_bucket=deps.buckets.runs,
         items=stores.items,
         queue=queue,
         layout=deps.layout,
+        transcriber=transcriber,
+        ocr_longest_dim=deps.ocr.longest_dim if deps.ocr is not None else 1288,
         render_preview=deps.render_preview,
         deliver=DeliverDeps(
             renderer=renderer,
@@ -153,9 +174,16 @@ def decompose_deps(deps: PipelineDeps, queue: JobQueue) -> DecomposeDeps:
     )
 
 
-def decompose_source(deps: DecomposeDeps, data: bytes) -> Decomposition:
-    """`data` decomposed as the Word file or PDF it is."""
-    return decompose_any(data, renderer=deps.deliver.renderer, layout=deps.layout)
+def decompose_source(deps: DecomposeDeps, data: bytes, job: ClaimedJob) -> Decomposition:
+    """`data` decomposed as the Word file or PDF it is, a PDF's scanned pages read by the OCR
+    model for `job`."""
+    return decompose_any(
+        data,
+        renderer=deps.deliver.renderer,
+        layout=deps.layout,
+        transcriber=deps.transcriber(job, data) if deps.transcriber is not None else None,
+        ocr_longest_dim=deps.ocr_longest_dim,
+    )
 
 
 def run_decompose(job: ClaimedJob, deps: DecomposeDeps) -> Outcome:
@@ -232,7 +260,7 @@ def _convert(
 ) -> Outcome:
     data = deps.store.get(deps.runs_bucket, item.object_key)
     try:
-        result = decompose_source(deps, data)
+        result = decompose_source(deps, data, job)
     except LayoutUnavailable as exc:
         if job.attempts < job.max_attempts:
             raise  # the layout service may be back: the job is retried
