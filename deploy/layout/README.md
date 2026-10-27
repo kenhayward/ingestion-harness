@@ -11,12 +11,13 @@ privileges.
 
 ## Running it
 
-It is part of the stack (PDF reader design, section 14.7): `docker compose build` and `up` build
-and start it with the rest, since the Conversion tab takes PDFs, and the worker waits for it to be
-healthy. The worker reaches it at `LAYOUT_URL` (default `http://layout:8000`); with `LAYOUT_URL`
-empty a PDF item fails at once ("this CT Studio has no layout service (LAYOUT_URL)"). A layout
-service that can't be reached is retried, as the converter is; on the job's last attempt the item
-fails.
+It is part of the stack (PDF reader design, section 14.7), in no compose profile, since the
+Conversion tab takes PDFs: `deploy/scripts/deploy.sh` (and `.ps1`) build and start it with the
+rest. The worker does not depend on it, so a stack started without it (CI's smoke test) still
+extracts and converts Word files. The worker reaches it at `LAYOUT_URL` (default
+`http://layout:8000`); with `LAYOUT_URL` empty a PDF item fails at once ("this CT Studio has no
+layout service (LAYOUT_URL)"). A layout service that can't be reached is retried, as the converter
+is; on the job's last attempt the item fails.
 
 ## API
 

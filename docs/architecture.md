@@ -12,7 +12,7 @@
 | `seaweedfs` | SeaweedFS (S3 gateway) | Buckets: `ingest-inbox`, `ingest-outputs`, `ingest-runs`, internal publishing targets' buckets, and the bridge's package staging bucket (`ingest-bridge`). |
 | `fuseki` | Apache Jena Fuseki (TDB2), opt-in (`COMPOSE_PROFILES=rdf`) | The triple store: one named graph per delivered document and document type, and the pinned ontologies as TBox graphs; only the bridge writes, as the `rdf-default` target ([ADR 0011](adr/0011-rdf-publishing-and-ontologies.md), [ADR 0017](adr/0017-delivery-bridge.md)). |
 | `converter` | Gotenberg (LibreOffice) | Converts Word (`.docx`) sources to PDF for the worker, on an internal network with no route out ([ADR 0009](adr/0009-word-documents.md)). |
-| `layout` | Docling, pinned weights ([deploy/layout/README.md](../deploy/layout/README.md)) | PDF layout analysis for the worker's PDF reader (`LAYOUT_URL`), on an internal network shared only with the worker, with no route out. It starts with the stack and the worker waits for it ([PDF reader design](superpowers/specs/2026-10-26-pdf-reader-design.md) §14.7); a worker without `LAYOUT_URL` fails a PDF item at once. |
+| `layout` | Docling, pinned weights ([deploy/layout/README.md](../deploy/layout/README.md)) | PDF layout analysis for the worker's PDF reader (`LAYOUT_URL`), on an internal network shared only with the worker, with no route out. The deploy scripts start it with the stack ([PDF reader design](superpowers/specs/2026-10-26-pdf-reader-design.md) §14.7); the worker does not depend on it, and retries a PDF while it can't be reached. A worker without `LAYOUT_URL` fails a PDF item at once. |
 
 ## Job lifecycle
 

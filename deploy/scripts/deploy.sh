@@ -61,7 +61,7 @@ compose up -d postgres seaweedfs
 compose run --rm init-buckets
 compose run --rm migrate
 compose run --rm migrate-bridge
-compose up -d --remove-orphans bridge api worker app
+compose up -d --remove-orphans layout bridge api worker app
 
 ADMIN_TOKEN="$("$DEPLOY_DIR/scripts/admin-token.sh" --env-file "$ENV_FILE" -f "$DEPLOY_DIR/docker-compose.yml")"
 export ADMIN_TOKEN

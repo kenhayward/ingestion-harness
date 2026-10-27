@@ -185,9 +185,9 @@
         <strong>Watch out for</strong>
         <ul>
           <li>
-            The layout service now starts with the stack: <code>docker compose build</code> and
-            <code>up</code> build and start it with the rest, and the worker waits for it to be
-            healthy. Its image is large (about 5.6 GB) and it may use up to 6 GB of memory. The
+            The layout service now starts with the stack: the deploy scripts build and start it with
+            the rest. The worker doesn't wait for it; a PDF that reaches it while it is down is
+            retried. Its image is large (about 5.6 GB) and it may use up to 6 GB of memory. The
             compose profile <code>pdf</code> is gone; remove it from
             <code>COMPOSE_PROFILES</code> if you added it. With <code>LAYOUT_URL</code> empty, a PDF
             fails at once: "this CT Studio has no layout service (LAYOUT_URL)".

@@ -104,7 +104,9 @@ jobs:
           sed -i "s|^BRIDGE_SINKS=.*|BRIDGE_SINKS=[{\"id\":\"fake\",\"url\":\"http://fake-sink:8080\",\"key\":\"${fake_key}\"}]|" deploy/.env.ci
           echo "FAKE_SINK_KEY=${fake_key}" >> "$GITHUB_ENV"
       - name: Build images
-        run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml build
+        # Every image the smoke test runs, by name: not the PDF layout service (about 6 GB, its
+        # weights from Hugging Face), which no step here uses and nothing here starts.
+        run: docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml build postgres fuseki api bridge worker app
       - name: Start stack
         run: |
           compose() { docker compose --env-file deploy/.env.ci -f deploy/docker-compose.yml "$@"; }
