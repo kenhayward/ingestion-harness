@@ -229,7 +229,7 @@ def test_pdf_that_would_create_is_held() -> None:
     assert world.bridge.requests == [] and world.register.entries() == []
     manifest = _manifest(world, job)
     assert manifest["pageCount"] == 2
-    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 2
+    assert manifest["decomposerVersion"] == DECOMPOSER_VERSION * 1000 + 3
     assert manifest["startedBy"] == USER.model_dump(by_alias=True)
     assert manifest["document"]["sections"]
     for page in (1, 2):
