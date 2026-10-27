@@ -1,0 +1,19 @@
+{
+  "client": {
+    "id": "c_7f3a",
+    "name": "Reporting app",
+    "prefix": "snk_7f3a",
+    "instances": ["acme"],
+    "access": "read",
+    "locked": false,
+    "createdAt": "2026-10-27T09:05:00.000Z",
+    "createdBy": {
+      "id": "u1",
+      "name": "Ada Admin"
+    },
+    "expiresAt": "2026-11-26T09:05:00.000Z",
+    "revokedAt": null,
+    "lastUsedAt": null
+  },
+  "token": "snk_7f3a0000000000000000000000000000000000000000"
+}

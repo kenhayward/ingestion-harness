@@ -2,6 +2,7 @@ import {
   bridgeError,
   type BridgeError,
   type BridgePackage,
+  packageVersionFor,
   type ContractVersion,
   type SinkJobStatus,
 } from '@ih/bridge-contract';
@@ -179,7 +180,7 @@ async function step(
     destination: row.destination ?? { ...target.destination, ...row.overrides },
     idempotencyKey: row.idempotencyKey,
     actingUser: row.actingUser,
-    package: packageFor(pkg, described.contractVersion),
+    package: packageFor(pkg, packageVersionFor(described.contractVersion)),
     ...(row.update ? { update: row.update } : {}),
   });
   if (result.status === 'succeeded') return { status: 'succeeded', receipt: result.receipt };

@@ -160,7 +160,8 @@
     <main>
       <h1>CT Studio release notes</h1>
       <p class="subtitle">
-        Tuesday 27 October 2026: PDFs read for the first time, on the command line. PR #338.
+        Tuesday 27 October 2026: PDFs read for the first time, on the command line, and a contract
+        for administering a sink from CT Studio. PRs #338 to #PRNUM.
       </p>
 
       <nav class="toc" id="contents" aria-label="Contents">
@@ -172,7 +173,26 @@
             <span>— born-digital PDFs decompose like Word files, from the command line</span>
           </li>
         </ul>
+        <h4>Other updates</h4>
+        <ul>
+          <li>
+            <a href="#contract-v3">Delivery contract version 3</a>
+            <span>— a sink's tenants and access tokens, administered through the bridge</span>
+          </li>
+        </ul>
       </nav>
+
+      <div class="warn" role="note">
+        <strong>Watch out for</strong>
+        <ul>
+          <li>
+            The delivery contract package is now <code>0.9.0</code>, contract version 3. A sink may
+            declare <code>contractVersion: 3</code>; it is still sent version 2 packages, and version
+            1 and 2 sinks are unchanged. Three new error codes: <code>locked</code>,
+            <code>forbidden</code> and <code>not_configured</code>.
+          </li>
+        </ul>
+      </div>
 
       <h2 id="minor">Minor changes</h2>
 
@@ -201,6 +221,25 @@
       <p>
         PDFs are not yet accepted on the Conversion tab. That comes in a later step, after the owner
         decides whether PDFs need review.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+
+      <h2 id="other">Other updates</h2>
+
+      <h3 id="contract-v3">Delivery contract version 3</h3>
+      <p class="prs"><a href="https://github.com/kenhayward/ingestion-harness/pull/PRNUM">#PRNUM</a></p>
+      <p>
+        The contract external sinks are built against gains an optional administration part. A sink
+        that offers it lets a CT Studio administrator list, add, rename and remove the tenants it
+        delivers to, and issue and revoke the access tokens its own callers use: each token limited
+        to some tenants (or all), read-only or read/write, and expiring after 7, 30, 90 or 365 days
+        or never. A token's secret is shown once, when it is issued. Tenants and tokens from the
+        sink's own configuration are listed as locked. Every change names the administrator who
+        made it, for the sink's audit log, which CT Studio can read back.
+      </p>
+      <p>
+        This is the contract and its conformance checks only; the administration page in CT Studio
+        comes later.
       </p>
       <p class="top"><a href="#contents">Back to contents</a></p>
     </main>

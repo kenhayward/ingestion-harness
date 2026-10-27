@@ -1,0 +1,69 @@
+{
+  "name": "Example administered sink",
+  "contractVersion": 3,
+  "connectionKind": "personal",
+  "instances": [
+    {
+      "id": "sandbox",
+      "label": "Sandbox"
+    }
+  ],
+  "credentialFields": [
+    {
+      "id": "username",
+      "label": "Username",
+      "secret": false
+    },
+    {
+      "id": "password",
+      "label": "Password",
+      "secret": true
+    }
+  ],
+  "destinationFields": [
+    {
+      "id": "repository",
+      "label": "Repository",
+      "kind": "fixed",
+      "required": true,
+      "overridable": false,
+      "browse": true
+    },
+    {
+      "id": "documentName",
+      "label": "Document name",
+      "kind": "pattern",
+      "required": false,
+      "overridable": true,
+      "browse": false
+    }
+  ],
+  "capabilities": {
+    "browse": true,
+    "replace": true,
+    "withdraw": false,
+    "readBack": true,
+    "accepts": ["document", "images"],
+    "decomposedDocuments": {
+      "equations": ["mathml", "image"]
+    },
+    "administration": {
+      "instances": true,
+      "clients": true,
+      "instanceFields": [
+        {
+          "id": "address",
+          "label": "Address",
+          "required": true,
+          "hint": "The https address of the tenant"
+        },
+        {
+          "id": "region",
+          "label": "Region",
+          "required": false,
+          "hint": null
+        }
+      ]
+    }
+  }
+}
