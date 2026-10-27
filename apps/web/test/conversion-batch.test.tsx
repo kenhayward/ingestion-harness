@@ -6,7 +6,7 @@ import { ITEM_OUTCOMES, type BatchSummary, type Item, type ItemOutcome } from '@
 import { App } from '../src/App.js';
 import { ApiError } from '../src/api/client.js';
 import { ConversionPage } from '../src/conversion/ConversionPage.js';
-import { spokenDuration } from '../src/conversion/outcomes.js';
+import { batchState, spokenDuration } from '../src/conversion/outcomes.js';
 import { conversionBatch, conversionItem, fakeApi } from './fake-api.js';
 
 const BATCH_ID = '6f1c2a10-4b7e-4c55-9d2a-0c8e7b3f5a11';
@@ -61,6 +61,15 @@ function summary(o: Partial<BatchSummary>, counts: Partial<Record<ItemOutcome, n
   return { ...conversionBatch({ ...STARTED, ...o }), itemCount, counts: all };
 }
 
+describe('a batch with documents held for review', () => {
+  it('is not finished while one awaits review, and rejected counts as failed', () => {
+    const held = batchState(summary({}, { created: 1, awaiting_review: 1 }));
+    expect(held).toMatchObject({ label: 'Needs attention', tone: 'warn' });
+    expect(batchState(summary({}, { created: 1 })).label).toBe('Done');
+    expect(batchState(summary({}, { created: 1, rejected: 1 })).label).toBe('Some failed');
+  });
+});
+
 describe('the Conversion tab: the batch view', () => {
   afterEach(() => {
     window.location.hash = '';
@@ -83,6 +92,32 @@ describe('the Conversion tab: the batch view', () => {
     expect(rowOf('c.docx')).toHaveTextContent('2 components changed in the target');
     expect(within(rowOf('d.docx')).getByText('Read-back mismatch')).toHaveClass('pill');
     expect(api.getConversionBatch).toHaveBeenCalledWith(BATCH_ID);
+  });
+
+  it('shows a held document as awaiting review, needing attention', async () => {
+    view(batchApi([item('ok.pdf', 'created'), item('held.pdf', 'awaiting_review', { held: true })]));
+    await findRow('held.pdf');
+    expect(within(rowOf('held.pdf')).getByText('Awaiting review')).toHaveClass('pill', 'tone-warn');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    expect(show.getByRole('button', { name: /^Needs attention/ })).toHaveTextContent('1');
+    await userEvent.click(show.getByRole('button', { name: /^Needs attention/ }));
+    expect(listedKeys()).toEqual(['held.pdf']);
+  });
+
+  it('counts a rejected document with the failed ones, and never re-runs it', async () => {
+    const rejected = item('no.pdf', 'rejected', { reviewNote: 'misread tables' });
+    view(batchApi([item('ok.pdf', 'created'), rejected, item('broke.docx', 'failed')]));
+    await findRow('no.pdf');
+    expect(within(rowOf('no.pdf')).getByText('Rejected')).toHaveClass('pill', 'tone-danger');
+    const show = within(screen.getByRole('group', { name: 'Show' }));
+    await userEvent.click(show.getByRole('button', { name: /^Failed/ }));
+    expect(listedKeys()).toEqual(['no.pdf', 'broke.docx']);
+    expect(
+      within(screen.getByRole('group', { name: 'Totals' })).getByText('failed').previousSibling,
+    ).toHaveTextContent('2');
+    // Re-running takes the failed document only.
+    const panel = panelFor('no.pdf');
+    expect(panel.queryByRole('button', { name: /re-run/i })).toBeNull();
   });
 
   it('says how long each document took, and how long an unfinished one has run', async () => {

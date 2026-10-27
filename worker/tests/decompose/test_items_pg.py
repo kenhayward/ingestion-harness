@@ -60,7 +60,7 @@ def test_an_item_is_started_reported_and_decided(
         "a/r1.docx",
         "decompositions/b/i.docx",
     )
-    store.set_report(item_id, "decompositions/b/i.report.json")
+    store.set_report(item_id, "decompositions/b/i.report.json", 2)
     entry = str(uuid.uuid4())
     assert store.decide(item_id, "delivering", "a new source", entry)
     assert _outcome(conn, item_id) == (
@@ -70,6 +70,54 @@ def test_an_item_is_started_reported_and_decided(
         "decompositions/b/i.report.json",
     )
     assert store.start(str(uuid.uuid4())) is None
+    flags = conn.execute(
+        "SELECT flag_count FROM decomposition_items WHERE id = %s", (item_id,)
+    ).fetchone()
+    assert flags == (2,)
+
+
+def _held(conn: psycopg.Connection[tuple[object, ...]], item_id: str) -> tuple[object, ...]:
+    row = conn.execute(
+        """SELECT outcome, held_sha256, held_entry, finished_at
+             FROM decomposition_items WHERE id = %s""",
+        (item_id,),
+    ).fetchone()
+    assert row is not None
+    return row
+
+
+def test_a_decomposing_item_is_held_for_review(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    store, conn, item_id = item
+    store.start(item_id)
+    assert store.hold(item_id, "f" * 64, {"id": "e1", "state": "pending"})
+    assert _held(conn, item_id) == (
+        "awaiting_review",
+        "f" * 64,
+        {"id": "e1", "state": "pending"},
+        None,
+    )
+    read = store.start(item_id)  # a retry leaves a held item alone
+    assert read is not None
+    assert (read.outcome, read.held_sha256, read.held_entry) == (
+        "awaiting_review",
+        "f" * 64,
+        {"id": "e1", "state": "pending"},
+    )
+    assert not store.hold(item_id, "0" * 64, None)  # held already
+    assert not store.decide(item_id, "failed", "late", None)
+    assert _held(conn, item_id)[:2] == ("awaiting_review", "f" * 64)
+
+
+def test_an_item_not_started_or_settled_is_not_held(
+    item: tuple[PgItemStore, psycopg.Connection[tuple[object, ...]], str],
+) -> None:
+    store, conn, item_id = item
+    conn.execute("UPDATE decomposition_items SET outcome = 'created' WHERE id = %s", (item_id,))
+    assert not store.hold(item_id, "f" * 64, None)
+    assert _held(conn, item_id) == ("created", None, None, None)
+    assert not store.hold("not-a-uuid", "f" * 64, None)
 
 
 def test_a_delivering_item_may_be_recorded_delivering_again(
@@ -92,7 +140,7 @@ def test_an_item_id_that_is_not_a_uuid_is_no_item(
     cast error that the job retries."""
     store, _conn, _item_id = item
     assert store.start("not-a-uuid") is None
-    store.set_report("not-a-uuid", "k")
+    store.set_report("not-a-uuid", "k", 0)
     assert store.decide("not-a-uuid", "failed", "x", None) is False
 
 

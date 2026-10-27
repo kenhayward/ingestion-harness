@@ -140,6 +140,11 @@ export function conversionsContract(
         rerunAt: null,
         startedAt: null,
         finishedAt: null,
+        flagCount: null,
+        held: false,
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
       });
       expect(await repo.getItem(a.id)).toEqual(items[0]);
       expect(await repo.getItem(randomUUID())).toBeNull();
@@ -268,7 +273,7 @@ export function conversionsContract(
       expect(listed[1]).toMatchObject({ ...first, itemCount: 2 });
       expect(listed[1]!.counts.queued).toBe(2);
       expect(listed[1]!.counts.created).toBe(0);
-      expect(Object.keys(listed[1]!.counts)).toHaveLength(12);
+      expect(Object.keys(listed[1]!.counts)).toHaveLength(14);
       expect(listed[0]).toMatchObject({ itemCount: 0 });
       expect(await repo.listBatches(1)).toHaveLength(1);
     });
@@ -343,6 +348,11 @@ export function conversionsContract(
         rerunAt: null,
         startedAt: null,
         finishedAt: null,
+        flagCount: null,
+        held: false,
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNote: null,
       });
       expect(await repo.listItems(batchId)).toEqual([rerun]);
       expect(await repo.getItem(of.id)).toMatchObject({
@@ -440,6 +450,11 @@ export function conversionsContract(
           rerunAt: null,
           startedAt: null,
           finishedAt: null,
+          flagCount: null,
+          held: false,
+          reviewedBy: null,
+          reviewedAt: null,
+          reviewNote: null,
         })),
       );
       expect(await repo.listItems(asked.batchId)).toEqual(done.items);
@@ -527,6 +542,46 @@ export function conversionsContract(
       const again = { ...rerunOf(other), force: false };
       expect(await repo.rerunItem(again)).toEqual({ ok: false, reason: 'running' });
       expect(await repo.getBatch(again.batchId)).toBeNull();
+    });
+
+    it('holds a rerun for review like one under way', async () => {
+      const { repo, facts, item: of } = await finished();
+      const first = await repo.rerunItem(rerunOf(of));
+      if (!first.ok) throw new Error(first.reason);
+      await facts.settleItem(first.item.id, 'awaiting_review', null);
+
+      const second = rerunOf(of);
+      expect(await repo.rerunItem(second)).toEqual({ ok: false, reason: 'running' });
+      expect(await repo.getBatch(second.batchId)).toBeNull();
+      expect(ItemSchema.parse(await repo.getItem(first.item.id)).outcome).toBe('awaiting_review');
+      // Rejected is final: the item may be run again.
+      await facts.settleItem(first.item.id, 'rejected', null);
+      expect((await repo.rerunItem(rerunOf(of))).ok).toBe(true);
+    });
+
+    it('detaches no entry whose source awaits review', async () => {
+      const { repo, facts, batch, item: a } = await finished();
+      const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));
+      await facts.settleItem(a.id, 'awaiting_review', entryId);
+      const detach = { itemId: a.id, entryId, targetIds: ['manuals'], by: ADA, detail: () => 'x' };
+
+      expect(await repo.detachRegisterEntry(detach)).toEqual({ ok: false, reason: 'pending' });
+      expect((await repo.registerEntry(entryId))?.state).toBe('changed');
+      expect(await facts.actions(entryId)).toEqual([]);
+    });
+
+    it('re-runs a failed item but leaves a rejected one out', async () => {
+      const { repo, facts, items } = await failedPair();
+      const [rejected, failed] = items as [Item, Item];
+      await facts.settleItem(rejected.id, 'rejected', null);
+      const asked = retryOf([(await repo.getItem(rejected.id))!, failed]);
+
+      const done = await repo.retryItems(asked);
+
+      if (!done.ok) throw new Error(done.reason);
+      expect(done.items.map((i) => i.redeliverOf)).toEqual([failed.id]);
+      expect(await repo.getItem(rejected.id)).toMatchObject({ rerunIn: null });
+      expect(await repo.getItem(failed.id)).toMatchObject({ rerunIn: asked.batchId });
     });
 
     it('detaches an entry: a tombstone, recorded, and said on the item', async () => {

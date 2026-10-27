@@ -15,6 +15,8 @@ export const OUTCOME: Record<ItemOutcome, { label: string; tone: Tone }> = {
   read_back_mismatch: { label: 'Read-back mismatch', tone: 'alert' },
   unresolved: { label: 'Unresolved', tone: 'alert' },
   failed: { label: 'Failed', tone: 'danger' },
+  awaiting_review: { label: 'Awaiting review', tone: 'warn' },
+  rejected: { label: 'Rejected', tone: 'danger' },
 };
 
 /**
@@ -23,13 +25,18 @@ export const OUTCOME: Record<ItemOutcome, { label: string; tone: Tone }> = {
  */
 export const UNFINISHED: readonly ItemOutcome[] = ['queued', 'decomposing', 'delivering'];
 
-/** Outcomes a person should look at (the "Needs attention" filter), until resolved. */
+/**
+ * Outcomes a person should look at (the "Needs attention" filter), until resolved. A rejected
+ * document is decided but counts with the failed ones.
+ */
 export const NEEDS_ATTENTION: readonly ItemOutcome[] = [
   'duplicate',
   'changed_in_target',
   'read_back_mismatch',
   'unresolved',
   'failed',
+  'awaiting_review',
+  'rejected',
 ];
 
 export const isUnfinished = (item: Item) => UNFINISHED.includes(item.outcome);
@@ -104,12 +111,16 @@ export const OUTCOME_ICON: Record<ItemOutcome, StatusIcon> = {
   read_back_mismatch: 'warning',
   unresolved: 'warning',
   failed: 'failed',
+  awaiting_review: 'review',
+  rejected: 'rejected',
 };
 
 /** Delivered as a document: created or updated. */
 export const isDelivered = (item: Pick<Item, 'outcome'>) =>
   item.outcome === 'created' || item.outcome === 'updated';
-export const isFailed = (item: Pick<Item, 'outcome'>) => item.outcome === 'failed';
+/** Failed, or rejected in review: counted and listed together. */
+export const isFailed = (item: Pick<Item, 'outcome'>) =>
+  item.outcome === 'failed' || item.outcome === 'rejected';
 
 /** How a batch stands, as one glyph on its row in Earlier batches. */
 export function batchState(b: BatchSummary): { icon: StatusIcon; tone: Tone; label: string } {
@@ -118,7 +129,7 @@ export function batchState(b: BatchSummary): { icon: StatusIcon; tone: Tone; lab
   if (b.state === 'open') return { icon: 'cancelled', tone: 'neutral', label: 'Never started' };
   if (UNFINISHED.some((o) => n(o) > 0))
     return { icon: 'spinner', tone: 'info', label: 'Under way' };
-  if (n('failed') > 0) return { icon: 'failed', tone: 'danger', label: 'Some failed' };
+  if (n('failed') + n('rejected') > 0) return { icon: 'failed', tone: 'danger', label: 'Some failed' };
   if (NEEDS_ATTENTION.some((o) => n(o) > 0))
     return { icon: 'warning', tone: 'warn', label: 'Needs attention' };
   if (b.itemCount > 0 && n('created') + n('updated') === 0)

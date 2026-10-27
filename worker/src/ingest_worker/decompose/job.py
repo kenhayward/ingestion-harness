@@ -164,6 +164,8 @@ OUTCOME_LABELS: dict[ItemOutcome, str] = {
     "read_back_mismatch": "read-back mismatch",
     "unresolved": "unresolved",
     "failed": "failed",
+    "awaiting_review": "awaiting review",
+    "rejected": "rejected",
 }
 
 
@@ -228,7 +230,7 @@ def _write_report(deps: DecomposeDeps, item: ConversionItem, result: Decompositi
     flags = [flag.model_dump(mode="json", by_alias=True) for flag in result.document.report]
     body = json.dumps({"flags": flags}, ensure_ascii=False).encode("utf-8")
     deps.store.put(deps.runs_bucket, key, body, "application/json")
-    deps.items.set_report(item.id, key)
+    deps.items.set_report(item.id, key, len(flags))
     return key
 
 

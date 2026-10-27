@@ -12367,7 +12367,9 @@
                                 "changed_in_target",
                                 "read_back_mismatch",
                                 "unresolved",
-                                "failed"
+                                "failed",
+                                "awaiting_review",
+                                "rejected"
                               ]
                             },
                             "additionalProperties": {
@@ -12386,7 +12388,9 @@
                               "changed_in_target",
                               "read_back_mismatch",
                               "unresolved",
-                              "failed"
+                              "failed",
+                              "awaiting_review",
+                              "rejected"
                             ]
                           }
                         },
@@ -12612,7 +12616,9 @@
                         "changed_in_target",
                         "read_back_mismatch",
                         "unresolved",
-                        "failed"
+                        "failed",
+                        "awaiting_review",
+                        "rejected"
                       ]
                     },
                     "detail": {
@@ -12707,6 +12713,61 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "flagCount": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "held": {
+                      "type": "boolean"
+                    },
+                    "reviewedBy": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reviewedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewNote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -12731,7 +12792,12 @@
                     "rerunIn",
                     "rerunAt",
                     "startedAt",
-                    "finishedAt"
+                    "finishedAt",
+                    "flagCount",
+                    "held",
+                    "reviewedBy",
+                    "reviewedAt",
+                    "reviewNote"
                   ],
                   "additionalProperties": false,
                   "description": "The item."
@@ -13731,7 +13797,9 @@
                               "changed_in_target",
                               "read_back_mismatch",
                               "unresolved",
-                              "failed"
+                              "failed",
+                              "awaiting_review",
+                              "rejected"
                             ]
                           },
                           "detail": {
@@ -13826,6 +13894,61 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "flagCount": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "held": {
+                            "type": "boolean"
+                          },
+                          "reviewedBy": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -13850,7 +13973,12 @@
                           "rerunIn",
                           "rerunAt",
                           "startedAt",
-                          "finishedAt"
+                          "finishedAt",
+                          "flagCount",
+                          "held",
+                          "reviewedBy",
+                          "reviewedAt",
+                          "reviewNote"
                         ],
                         "additionalProperties": false
                       }
@@ -14326,7 +14454,9 @@
                               "changed_in_target",
                               "read_back_mismatch",
                               "unresolved",
-                              "failed"
+                              "failed",
+                              "awaiting_review",
+                              "rejected"
                             ]
                           },
                           "detail": {
@@ -14421,6 +14551,61 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "flagCount": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "held": {
+                            "type": "boolean"
+                          },
+                          "reviewedBy": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -14445,7 +14630,12 @@
                           "rerunIn",
                           "rerunAt",
                           "startedAt",
-                          "finishedAt"
+                          "finishedAt",
+                          "flagCount",
+                          "held",
+                          "reviewedBy",
+                          "reviewedAt",
+                          "reviewNote"
                         ],
                         "additionalProperties": false
                       }
@@ -15052,7 +15242,9 @@
                               "changed_in_target",
                               "read_back_mismatch",
                               "unresolved",
-                              "failed"
+                              "failed",
+                              "awaiting_review",
+                              "rejected"
                             ]
                           },
                           "detail": {
@@ -15147,6 +15339,61 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "flagCount": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "held": {
+                            "type": "boolean"
+                          },
+                          "reviewedBy": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -15171,7 +15418,12 @@
                           "rerunIn",
                           "rerunAt",
                           "startedAt",
-                          "finishedAt"
+                          "finishedAt",
+                          "flagCount",
+                          "held",
+                          "reviewedBy",
+                          "reviewedAt",
+                          "reviewNote"
                         ],
                         "additionalProperties": false
                       }
@@ -15576,7 +15828,9 @@
                               "changed_in_target",
                               "read_back_mismatch",
                               "unresolved",
-                              "failed"
+                              "failed",
+                              "awaiting_review",
+                              "rejected"
                             ]
                           },
                           "detail": {
@@ -15671,6 +15925,61 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "flagCount": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "held": {
+                            "type": "boolean"
+                          },
+                          "reviewedBy": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -15695,7 +16004,12 @@
                           "rerunIn",
                           "rerunAt",
                           "startedAt",
-                          "finishedAt"
+                          "finishedAt",
+                          "flagCount",
+                          "held",
+                          "reviewedBy",
+                          "reviewedAt",
+                          "reviewNote"
                         ],
                         "additionalProperties": false
                       }
@@ -16106,7 +16420,9 @@
                         "changed_in_target",
                         "read_back_mismatch",
                         "unresolved",
-                        "failed"
+                        "failed",
+                        "awaiting_review",
+                        "rejected"
                       ]
                     },
                     "detail": {
@@ -16201,6 +16517,61 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "flagCount": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "held": {
+                      "type": "boolean"
+                    },
+                    "reviewedBy": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reviewedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reviewNote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -16225,7 +16596,12 @@
                     "rerunIn",
                     "rerunAt",
                     "startedAt",
-                    "finishedAt"
+                    "finishedAt",
+                    "flagCount",
+                    "held",
+                    "reviewedBy",
+                    "reviewedAt",
+                    "reviewNote"
                   ],
                   "additionalProperties": false,
                   "description": "The item: its detail says it was detached, and its `resolution` is `detached`."
@@ -16568,7 +16944,9 @@
                               "changed_in_target",
                               "read_back_mismatch",
                               "unresolved",
-                              "failed"
+                              "failed",
+                              "awaiting_review",
+                              "rejected"
                             ]
                           },
                           "detail": {
@@ -16663,6 +17041,61 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "flagCount": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "held": {
+                            "type": "boolean"
+                          },
+                          "reviewedBy": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reviewedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reviewNote": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -16687,7 +17120,12 @@
                           "rerunIn",
                           "rerunAt",
                           "startedAt",
-                          "finishedAt"
+                          "finishedAt",
+                          "flagCount",
+                          "held",
+                          "reviewedBy",
+                          "reviewedAt",
+                          "reviewNote"
                         ],
                         "additionalProperties": false
                       }
@@ -17236,7 +17674,9 @@
                             "changed_in_target",
                             "read_back_mismatch",
                             "unresolved",
-                            "failed"
+                            "failed",
+                            "awaiting_review",
+                            "rejected"
                           ]
                         },
                         "detail": {
@@ -17331,6 +17771,61 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "flagCount": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "held": {
+                          "type": "boolean"
+                        },
+                        "reviewedBy": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "name": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "reviewedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reviewNote": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -17355,7 +17850,12 @@
                         "rerunIn",
                         "rerunAt",
                         "startedAt",
-                        "finishedAt"
+                        "finishedAt",
+                        "flagCount",
+                        "held",
+                        "reviewedBy",
+                        "reviewedAt",
+                        "reviewNote"
                       ],
                       "additionalProperties": false
                     },

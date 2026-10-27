@@ -57,7 +57,7 @@ const FILTERS: Record<Filter, (item: Item) => boolean> = {
  * is re-run once, and a failed re-run is re-run from its own batch (`Item.rerunIn`).
  */
 const canRetry = (started: boolean, item: Item) =>
-  started && isFailed(item) && item.rerunIn === null;
+  started && item.outcome === 'failed' && item.rerunIn === null;
 const fileTime = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, {
     hour: '2-digit',

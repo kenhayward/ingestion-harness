@@ -278,6 +278,11 @@ interface ItemRow {
   redeliver_of: string | null;
   started_at: Date | null;
   finished_at: Date | null;
+  flag_count: number | null;
+  held: boolean;
+  reviewed_by: Item['reviewedBy'];
+  reviewed_at: Date | null;
+  review_note: string | null;
   resolution: Item['resolution'];
   unversioned: boolean;
   gone: boolean;
@@ -296,7 +301,7 @@ interface ItemRow {
  */
 const ITEM_COLUMNS = `id, batch_id, source_key, filename, content_sha256, size_bytes, object_key,
   job_id, outcome, detail, register_entry_id, report_key, link, redeliver_of, started_at,
-  finished_at,
+  finished_at, flag_count, held_sha256 IS NOT NULL AS held, reviewed_by, reviewed_at, review_note,
   CASE WHEN decomposition_items.register_entry_id IS NULL THEN NULL
        ELSE (SELECT CASE
                       WHEN count(*) = 0 THEN 'detached'
@@ -361,6 +366,11 @@ const toItem = (r: ItemRow): Item => ({
   rerunAt: r.rerun_at?.toISOString() ?? null,
   startedAt: r.started_at?.toISOString() ?? null,
   finishedAt: r.finished_at?.toISOString() ?? null,
+  flagCount: r.flag_count,
+  held: r.held,
+  reviewedBy: r.reviewed_by,
+  reviewedAt: r.reviewed_at?.toISOString() ?? null,
+  reviewNote: r.review_note,
 });
 
 /** Postgres-backed repo. Covered by integration tests (test/integration), not unit tests. */
@@ -1535,12 +1545,14 @@ export class PgRepo implements IngestionRepo {
 
   async retryItems({
     batchId,
-    items,
+    items: asked,
     targetId,
     force,
     createdBy,
     by,
   }: Retry): Promise<RetryResult> {
+    // A rejected document was decided on: only a failed one is run again.
+    const items = asked.filter((i) => i.of.outcome !== 'rejected');
     return this.inTransaction(async (client) => {
       const ids = items.map((i) => i.of.id);
       // The items re-run, locked in one order: a repeated request waits, then finds the reruns.

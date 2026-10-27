@@ -827,8 +827,36 @@ def test_a_source_key_unlike_the_items_fails_the_item() -> None:
 
 def test_the_memory_store_ignores_a_missing_item_like_postgres() -> None:
     items = MemoryItemStore()
-    items.set_report("nope", "k")
+    items.set_report("nope", "k", 0)
     assert items.decide("nope", "failed", "x", None) is False
+
+
+def test_the_memory_store_holds_an_undecided_item_for_review() -> None:
+    items = MemoryItemStore(clock=lambda: AT)
+    items.add(ConversionItem("i1", "b1", "a.pdf", "k", "queued"))
+    items.add(ConversionItem("i2", "b1", "b.pdf", "k", "created"))
+    items.start("i1")
+
+    assert items.hold("i1", "f" * 64, {"id": "e1"})
+    held = items.items["i1"]
+    assert (held.outcome, held.held_sha256, held.held_entry) == (
+        "awaiting_review",
+        "f" * 64,
+        {"id": "e1"},
+    )
+    assert held.finished_at is None  # waiting for a decision, not finished
+    assert not items.hold("i1", "f" * 64, None)  # held already: only an undecided item is held
+    assert not items.hold("i2", "f" * 64, None)  # settled already
+    assert not items.hold("nope", "f" * 64, None)
+    assert items.items["i2"].outcome == "created"
+
+
+def test_the_memory_store_records_the_flag_count_with_the_report() -> None:
+    items = MemoryItemStore()
+    items.add(ConversionItem("i1", "b1", "a.docx", "k", "queued"))
+    items.set_report("i1", "decompositions/b1/i1.report.json", 3)
+    assert items.items["i1"].flag_count == 3
+    assert items.items["i1"].report_key == "decompositions/b1/i1.report.json"
 
 
 def test_writes_the_report_beside_the_source() -> None:
@@ -845,6 +873,7 @@ def test_writes_the_report_beside_the_source() -> None:
     assert request.package.document is not None
     flags = [f.model_dump(mode="json", by_alias=True) for f in request.package.document.report]
     assert report == {"flags": flags}
+    assert item.flag_count == len(flags)
 
 
 def test_an_item_already_decided_is_left_alone() -> None:

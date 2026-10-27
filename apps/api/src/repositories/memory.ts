@@ -96,6 +96,15 @@ type StoredItem = Omit<
   'resolution' | 'unversioned' | 'gone' | 'reloadable' | 'rerunIn' | 'rerunAt'
 >;
 
+/** A conversion item's review columns before any report, hold or decision. */
+const NOT_REVIEWED = {
+  flagCount: null,
+  held: false,
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewNote: null,
+} as const;
+
 /** Statuses Retry accepts; succeeded = re-run (re-process) a finished job. */
 const RETRYABLE: JobSummary['status'][] = ['failed', 'needs_review', 'cancelled', 'succeeded'];
 /** Tasks a test run moves through: listed as one run by listProjectRuns. */
@@ -1407,6 +1416,7 @@ export class MemoryRepo implements IngestionRepo {
       redeliverOf: null,
       startedAt: null,
       finishedAt: null,
+      ...NOT_REVIEWED,
     };
     this.conversionItems.set(row.id, row);
     return { ok: true, item: this.withResolution(row) };
@@ -1489,6 +1499,7 @@ export class MemoryRepo implements IngestionRepo {
       redeliverOf: of.id,
       startedAt: null,
       finishedAt: null,
+      ...NOT_REVIEWED,
     };
     item.jobId = this.queueBackground(
       'decompose',
@@ -1503,12 +1514,14 @@ export class MemoryRepo implements IngestionRepo {
 
   async retryItems({
     batchId,
-    items,
+    items: asked,
     targetId,
     force,
     createdBy,
     by,
   }: Retry): Promise<RetryResult> {
+    // A rejected document was decided on: only a failed one is run again.
+    const items = asked.filter((i) => i.of.outcome !== 'rejected');
     const busy = items.find(({ of }) =>
       [...this.conversionItems.values()].some(
         (i) => i.redeliverOf === of.id && RUNNING_OUTCOMES.includes(i.outcome),
@@ -1548,6 +1561,7 @@ export class MemoryRepo implements IngestionRepo {
         redeliverOf: of.id,
         startedAt: null,
         finishedAt: null,
+        ...NOT_REVIEWED,
       };
       item.jobId = this.queueBackground(
         'decompose',

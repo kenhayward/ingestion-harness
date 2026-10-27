@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DecomposeParamsSchema,
   ITEM_OUTCOMES,
+  ItemOutcomeSchema,
+  RejectDecisionSchema,
+  ReviewDecisionSchema,
+  decompositionHeldImageKey,
+  decompositionHeldManifestKey,
+  decompositionHeldPageKey,
   decompositionReportKey,
   decompositionSourceKey,
   hasControlCharacter,
@@ -12,7 +18,7 @@ const BATCH = '0f6c1c52-3a54-4c7e-9a43-6a1d1f0e2b11';
 const ITEM = '9b2e4a7d-5c10-4f2e-8d3a-1e7c5a9b4f20';
 
 describe('item outcomes', () => {
-  it('are exactly the twelve', () => {
+  it('are exactly the fourteen', () => {
     expect([...ITEM_OUTCOMES]).toEqual([
       'queued',
       'decomposing',
@@ -26,7 +32,14 @@ describe('item outcomes', () => {
       'read_back_mismatch',
       'unresolved',
       'failed',
+      'awaiting_review',
+      'rejected',
     ]);
+  });
+
+  it('take the review outcomes', () => {
+    expect(ItemOutcomeSchema.parse('awaiting_review')).toBe('awaiting_review');
+    expect(ItemOutcomeSchema.parse('rejected')).toBe('rejected');
   });
 });
 
@@ -43,12 +56,45 @@ describe('decompose params', () => {
     expect(() => DecomposeParamsSchema.parse({ ...params, extra: 1 })).toThrow();
     expect(() => DecomposeParamsSchema.parse({ ...params, sourceKey: '' })).toThrow();
   });
+
+  it('may say the held document is approved', () => {
+    const params = {
+      batchId: BATCH,
+      itemId: ITEM,
+      targetId: 'default',
+      sourceKey: 'policies/leave.pdf',
+      force: false,
+      approved: true,
+    };
+    expect(DecomposeParamsSchema.parse(params)).toEqual(params);
+  });
+});
+
+describe('review decisions', () => {
+  it('approve with an optional note', () => {
+    expect(ReviewDecisionSchema.parse({})).toEqual({});
+    expect(ReviewDecisionSchema.parse({ note: 'ok' })).toEqual({ note: 'ok' });
+  });
+
+  it('reject with a note', () => {
+    expect(RejectDecisionSchema.parse({ note: 'scanned twice' })).toEqual({ note: 'scanned twice' });
+    expect(() => RejectDecisionSchema.parse({})).toThrow();
+    expect(() => RejectDecisionSchema.parse({ note: '' })).toThrow();
+  });
 });
 
 describe('decomposition keys', () => {
   it('name the source and the report (mirrored in worker storage.py)', () => {
     expect(decompositionSourceKey('b1', 'i1', 'docx')).toBe('decompositions/b1/i1.docx');
     expect(decompositionReportKey('b1', 'i1')).toBe('decompositions/b1/i1.report.json');
+  });
+
+  it('name the held files of a PDF (mirrored in worker storage.py)', () => {
+    expect(decompositionHeldManifestKey('b1', 'i1')).toBe(
+      'decompositions/b1/i1.held/manifest.json',
+    );
+    expect(decompositionHeldImageKey('b1', 'i1', 3)).toBe('decompositions/b1/i1.held/images/3');
+    expect(decompositionHeldPageKey('b1', 'i1', 2)).toBe('decompositions/b1/i1.held/pages/2.jpg');
   });
 });
 

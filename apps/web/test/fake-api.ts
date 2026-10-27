@@ -905,6 +905,11 @@ export function conversionItem(o: Partial<Item> = {}): Item {
     rerunAt: null,
     startedAt: null,
     finishedAt: null,
+    flagCount: null,
+    held: false,
+    reviewedBy: null,
+    reviewedAt: null,
+    reviewNote: null,
     ...o,
   };
 }

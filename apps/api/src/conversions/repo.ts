@@ -183,8 +183,13 @@ export const isGone = (
 export const isReloadable = (gone: boolean, detached: boolean, resolution: Item['resolution']) =>
   (gone || detached) && resolution !== 'superseded';
 
-/** The item outcomes of a run not finished yet. */
-export const RUNNING_OUTCOMES: readonly Item['outcome'][] = ['queued', 'decomposing', 'delivering'];
+/** The item outcomes of a run not finished yet (a held PDF waits for a person's decision). */
+export const RUNNING_OUTCOMES: readonly Item['outcome'][] = [
+  'queued',
+  'decomposing',
+  'delivering',
+  'awaiting_review',
+];
 
 /** One row of `register_actions`: what a person did to a register entry. */
 export type RegisterAction =
