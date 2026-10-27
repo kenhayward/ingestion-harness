@@ -226,3 +226,32 @@ def test_fingerprint_comes_from_health_and_is_cached() -> None:
     assert analyser.fingerprint() == "docling 2.142.1"
     assert analyser.fingerprint() == "docling 2.142.1"
     assert calls == ["/health"]
+
+
+def _malformed(kind: str) -> dict[str, Any]:
+    node = docling.text("text", 1, (0, 800, 50, 790), level=1)
+    document = docling.doc([(595, 842)], [node])
+    text = document["texts"][0]
+    if kind == "no page number":
+        del text["prov"][0]["page_no"]
+    elif kind == "a box that is no number":
+        text["prov"][0]["bbox"]["l"] = "left"
+    elif kind == "a level that is a list":
+        text["level"] = [1]
+    elif kind == "a page that is no mapping":
+        document["pages"]["1"] = None
+    return document
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "no page number",
+        "a box that is no number",
+        "a level that is a list",
+        "a page that is no mapping",
+    ],
+)
+def test_a_malformed_node_is_rejected(kind: str) -> None:
+    with pytest.raises(DecompositionRejected, match=r"^layout response malformed: "):
+        parse_docling(_malformed(kind))

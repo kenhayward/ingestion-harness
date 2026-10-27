@@ -100,8 +100,16 @@ def parse_docling(
     doc: Mapping[str, Any], *, page_offset: int = 0, ref_prefix: str = ""
 ) -> LayoutDoc:
     """Docling's `export_to_dict` as `LayoutDoc`; `page_offset` shifts the 0-based pages and
-    `ref_prefix` is put before every item and group ref (each chunk numbers its refs from 0)."""
-    return _Parser(doc, page_offset, ref_prefix).parse()
+    `ref_prefix` is put before every item and group ref (each chunk numbers its refs from 0).
+
+    Raises `DecompositionRejected` when a node lacks what the reader needs, or holds something
+    of the wrong kind."""
+    try:
+        return _Parser(doc, page_offset, ref_prefix).parse()
+    except (KeyError, ValueError, TypeError, AttributeError) as error:
+        raise DecompositionRejected(
+            f"layout response malformed: {type(error).__name__} {error}"
+        ) from error
 
 
 class _Parser:
