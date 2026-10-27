@@ -31,6 +31,7 @@ import {
   AcceptPreviewSchema,
   BatchDetailSchema,
   BatchSchema,
+  ConversionReviewSchema,
   decompositionHeldManifestKey,
   GONE_DETAIL,
   ItemSchema,
@@ -432,6 +433,18 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
     expect(heldFiles(approve)).not.toHaveLength(0);
     expect(heldFiles(reject)).not.toHaveLength(0);
 
+    // The review reads the worker's own manifest, and serves the pages it rendered.
+    const review = await c.app.inject(`/api/conversions/items/${approve.id}/review`);
+    expect(review.statusCode, review.body).toBe(200);
+    const shown = ConversionReviewSchema.parse(review.json());
+    expect(shown.item).toMatchObject({ outcome: 'awaiting_review', held: true });
+    expect(shown.pageCount).toBe(2);
+    expect(Object.keys(shown.pageMap)).not.toHaveLength(0);
+    const page = await c.app.inject(`/api/conversions/items/${approve.id}/pages/1`);
+    expect(page.statusCode, page.body).toBe(200);
+    expect(page.headers['content-type']).toBe('image/jpeg');
+    expect(page.rawPayload.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+
     // Approved: the held decomposition is delivered, under the PDF's decomposer version.
     const approved = await c.app.inject({
       method: 'POST',
@@ -458,7 +471,9 @@ describe.skipIf(!url)('conversion batches end to end', { timeout: 300_000 }, () 
       payload: { note: 'the table is misread' },
     });
     expect(rejected.statusCode, rejected.body).toBe(200);
-    expect(ItemSchema.parse(rejected.json()).outcome).toBe('rejected');
+    const rejectedItem = ItemSchema.parse(rejected.json());
+    expect(rejectedItem).toMatchObject({ outcome: 'rejected', held: false });
+    expect(rejectedItem.finishedAt).not.toBeNull();
     await runWorker();
     await bridge.settle();
     expect((await itemNow(reject)).outcome).toBe('rejected');
