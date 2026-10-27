@@ -1,0 +1,70 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [9 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Symbol >>
+endobj
+7 0 obj
+<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>
+stream
+€
+endstream
+endobj
+8 0 obj
+<< /Length 1620 >>
+stream
+0.5 w 160.0000 72.0000 m 160.0000 672.0000 l S
+0.5 w 160.0000 72.0000 m 280.0000 72.0000 l S
+0.5 w 200.0000 72.0000 m 200.0000 672.0000 l S
+0.5 w 160.0000 272.0000 m 280.0000 272.0000 l S
+0.5 w 240.0000 72.0000 m 240.0000 672.0000 l S
+0.5 w 160.0000 472.0000 m 280.0000 472.0000 l S
+0.5 w 280.0000 72.0000 m 280.0000 672.0000 l S
+0.5 w 160.0000 672.0000 m 280.0000 672.0000 l S
+BT /F1 16.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 80.0000 72.0000 Tm (Results of the run) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 120.0000 72.0000 Tm (The table below lists the checks made on the line.) Tj ET
+BT /F1 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 185.0000 78.0000 Tm (Check) Tj ET
+BT /F1 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 185.0000 278.0000 Tm (Value) Tj ET
+BT /F1 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 185.0000 478.0000 Tm (Result) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 225.0000 78.0000 Tm (Speed) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 225.0000 278.0000 Tm (12) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 225.0000 478.0000 Tm (Pass) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 265.0000 78.0000 Tm (Load) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 265.0000 278.0000 Tm (40) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 265.0000 478.0000 Tm (Fail) Tj ET
+BT /F0 11.0000 Tf 0 Tr 0.0000 Ts 0.0000 1.0000 -1.0000 0.0000 320.0000 72.0000 Tm (The line was released after these checks.) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.0000 842.0000] /Rotate 90 /Resources << /Font << /F0 3 0 R /F1 4 0 R /F2 5 0 R /F3 6 0 R >> /XObject <<  >> >> /Contents 8 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000314 00000 n 
+0000000419 00000 n 
+0000000486 00000 n 
+0000000630 00000 n 
+0000002302 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+2495
+%%EOF

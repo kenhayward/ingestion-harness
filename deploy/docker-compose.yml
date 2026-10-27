@@ -119,6 +119,38 @@ services:
       timeout: 5s
       retries: 12
 
+  layout:
+    # PDF layout analysis for the worker (docs/superpowers/specs/2026-10-26-pdf-reader-design.md,
+    # section 4.1): Docling 2.142.1 with its layout and table-structure weights baked in at pinned
+    # revisions (deploy/layout/README.md), OCR off. It parses untrusted PDFs, so it sits on an
+    # internal network shared only with the worker, publishes no ports, has a read-only root and
+    # fetches nothing at run time (HF_HUB_OFFLINE=1). Opt-in, as nothing uses it yet:
+    # `docker compose --profile pdf up -d layout` (or COMPOSE_PROFILES=pdf in deploy/.env). The
+    # worker treats a missing layout service as retryable, so it does not depend on it.
+    profiles: [pdf]
+    image: ${IMAGE_PREFIX:-ingestion-harness}/layout:${IMAGE_TAG:-dev}
+    build:
+      context: ./layout
+    restart: unless-stopped
+    networks: [layout]
+    mem_limit: 6g
+    pids_limit: 256
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=512m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
   converter:
     # Word (.docx) to PDF for the worker (docs/design/word-documents.md, ADR 0009): Gotenberg's
     # LibreOffice-only image, pinned to an exact release. It parses untrusted documents, so it
@@ -322,6 +354,8 @@ services:
       DISCOVERY_INTERVAL_S: ${DISCOVERY_INTERVAL_S:-3600}
       # Word (.docx) conversion; empty disables it (Word documents then need review).
       CONVERTER_URL: ${CONVERTER_URL-http://converter:3000}
+      # PDF layout analysis (the pdf-reader design, section 4.1); empty disables it.
+      LAYOUT_URL: ${LAYOUT_URL-http://layout:8000}
       ONTOLOGY_MAX_TRIPLES: ${ONTOLOGY_MAX_TRIPLES:-2000000}
       ONTOLOGY_FETCH_ALLOW: ${ONTOLOGY_FETCH_ALLOW:-}
       ONTOLOGY_MAX_BYTES: ${ONTOLOGY_MAX_BYTES:-104857600}
@@ -332,7 +366,7 @@ services:
       # The LangGraph trial (docs/design/langgraph-trial.md): `langgraph` checkpoints a recipe's
       # steps so a stopped job resumes where it stopped; empty: the steps run as before.
       WORKER_STEP_GRAPH: ${WORKER_STEP_GRAPH:-}
-    networks: [default, converter]
+    networks: [default, converter, layout]
     extra_hosts:
       - host.docker.internal:host-gateway # reach a local LLM server on the docker host
     depends_on:
@@ -375,6 +409,9 @@ services:
 networks:
   # Only the worker and the converter: no route out of it (ADR 0009).
   converter:
+    internal: true
+  # Only the worker and the layout service: no route out of it.
+  layout:
     internal: true
   # Only the worker, the API (backup and restore) and Fuseki (ADR 0011).
   rdf:

@@ -1,6 +1,12 @@
 # The PDF reader: decomposing PDFs
 
-**Status:** design, for review · 2026-10-26 · agreed with the owner in conversation
+**Status:** design, for review · 2026-10-26 · agreed with the owner in conversation. **5a
+implemented (2026-10-27)**; results in §13.
+
+- Start the layout service: `docker compose -f deploy/docker-compose.yml --profile pdf up -d --build layout`
+  (opt-in; see `deploy/layout/README.md`).
+- Decompose one PDF: `uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> --layout-url URL`
+- Score Word/PDF twins: `uv run --directory worker python scripts/pdf_twins.py <docx-folder> <out-dir> --converter-url URL --layout-url URL [--pdfs <pdf-folder>]`
 
 This is phase 5 of document decomposition
 ([2026-10-23-document-decomposition-design.md](2026-10-23-document-decomposition-design.md), "the
@@ -151,6 +157,9 @@ Dropping is where body text could go silently, so it is guarded: **[call]**
   A furniture label outside the margin bands is ignored.
 - A contents list is dropped only as a block: lines ending in a page number, most with dot leaders,
   under a contents heading or forming a run of them. A single such line in the body is kept.
+  A run without a contents heading starts on a line with a dot leader, and a run's page numbers
+  never go back nor past the document's last page, so body lines ending in numbers and a "Max
+  load ........ 250" line are kept. (2026-10-27)
 - What was dropped is listed in one `info` flag, by page: how many furniture lines, and which pages
   held contents or lists. A reviewer can see that nothing else was dropped.
 
@@ -184,8 +193,10 @@ were wrong. **[call]**
 - A paragraph that Docling split at a line or page break is joined again when the first part
   doesn't end a sentence and the next part continues it (no heading, list, table or figure between,
   and the same column).
-- List items keep their nesting from their indentation. Bullets and numbers are dropped, as for
-  Word.
+- List items keep their nesting from their indentation. Bullets are dropped, as for Word, and so
+  are numbers when a list's markers count from the start (1, 2, 3; a, b, c; i, ii, iii). A list
+  whose numbers don't (one continued from the page before, "4." "5.") keeps each number as text
+  in its item. **[call]** (2026-10-27)
 
 ### 4.6 Tables
 
@@ -217,7 +228,11 @@ pages, notes. **[call]**
 ### 4.8 Footnotes, links and properties
 
 - **Footnotes** at a page's foot are matched to their superscript markers in that page's body and
-  become notes. A footnote with no marker found stays a paragraph where it was, flagged.
+  become notes. A footnote with no marker found stays a paragraph where it was, flagged. A
+  superscript right after a digit, a closing bracket, a lone letter or a unit ("10²", "(a+b)²",
+  "R²", "kg/m²") is a power, never a marker. When more than one superscript could be a
+  footnote's marker, none is taken: the footnote stays a paragraph, flagged "Footnote marker
+  ambiguous". **[call]** (2026-10-27)
 - **Links** come from the PDF's link annotations over the text.
 - **Properties** come from the information dictionary and XMP metadata (`pdf-info`).
 - **Cross-references** stay plain text: a PDF has no reference fields. **[call]**
@@ -227,8 +242,10 @@ pages, notes. **[call]**
 The flag codes stay those of contract version 2, so the contract and the sink don't change.
 **[call]** Every inference is a `structure_inferred` flag at the element, and its message says
 which: an inferred heading level, a table's grid, a join across pages, notes moved out of a grid,
-text the layout analysis missed, a footnote with no marker, a bookmark left out. The dropped-text
-summary (§4.3) is a `structure_inferred` flag too, at no element, with severity `info`.
+text the layout analysis missed, a footnote with no marker or an ambiguous one, a bookmark left
+out. The dropped-text summary (§4.3) is a `structure_inferred` flag too, at no element, with
+severity `info`, and so is a count of the visible glyphs on a page that the text layer gives no
+text (or no box) and that are therefore left out. (2026-10-27)
 
 A PDF's structure flags are many by nature. The batch row and the report show their count, so a
 reviewer sees at a glance which documents have the most.
@@ -263,6 +280,12 @@ The decomposition spec's §7 checks apply, adapted to what a PDF can prove. **[c
 - **Tables, per table.** The words inside each table's region of the page must be exactly the
   words in its cells, so a cell's text can't move out of its table, or into another. The grid's
   shape and merges can't be checked against the PDF; they are flagged instead (§4.6).
+- **Dropped on purpose, as well** (added in 5a): note separators after a table note's marker, and
+  footnote markers, which become note references. **[call]** (2026-10-27)
+- **An image-only equation's text** is accounted to its image, as for Word. **[call]**
+  (2026-10-27)
+- **Ownership is checked per top-level block.** A word moved within one list or table isn't
+  caught. **[call]** (2026-10-27)
 - **References** must resolve, as for Word.
 - **Scanned pages** have no independent text to compare with, so they are flagged, not checked.
 
@@ -352,3 +375,41 @@ before release.
 - **Licences.** Docling and its packages are MIT. The layout weights are Apache-2.0, and the
   table-structure weights are CDLA-Permissive-2.0. The builder confirms these at the pinned
   revisions before the image ships, since CT Studio must be able to redistribute them.
+
+## 13. Results of step 5a (2026-10-27)
+
+The twins are scored against the Word decomposition, using a CT Studio converter's PDF. The
+documents are described generically: doc1 is a 13-page validation report; doc2 a 102-page
+stability report, with doc4 a near-duplicate; doc3 a 16-page stability report with heavy vertical
+merges. The scores are after the step's fixes.
+
+| | doc1 | doc2 (and doc4) | doc3 | total (4 twins) |
+|---|---|---|---|---|
+| Headings found, level right | 32/32, 32 | 31/31, 31 | 13/13, 13 | 107/107, 107 |
+| Tables found | 7/7 | 68/72 | 12/15 | 155/166 |
+| Table shape right | 4/7 | 50/68 | 8/12 | 112/155 |
+| Extra PDF tables | 4 | 4 | 3 | 15 |
+| Cells right | 86/144 | 6727/7779 | 1222/1550 | 14762/17252 (86%) |
+| Words recall / precision | 0.993 / 0.991 | 0.999 / 0.994 | 0.897 / 0.995 | 0.991 / 0.994 |
+
+- Both real "Print to PDF" validation reports (no bookmarks) decompose and pass the text check.
+- Every document passes the fidelity check.
+- The fidelity check caught, and drove the fix of, three real reader defects during the step: a
+  header word split across overlapping cell boxes, a space given to the cell below so two words
+  merged, and typed heading numbers kept in titles when numbered chapters sat below unnumbered top
+  entries.
+
+**What is weakest.** Table shape and cells on small, borderless or heavily merged tables (doc1,
+doc3); and extra tables.
+
+**doc3's word recall (0.897) is the PDF lacking what Word has, not the reader losing text.**
+Of its 676 missing words (of 6535), 640 are the cells of the last two columns of its three widest
+tables: Word sets them 9 inches wide on a page 8.5 inches wide, the converter's PDF draws them
+past the page's right edge and stops, and the PDF's text layer never holds those cells (the few
+characters it does hold past the edge are read). 30 are three level-1 headings whose Word style
+is all capitals: the PDF draws capitals, Word stores mixed case, and the word comparison is
+case-sensitive. The other 6 are "Table" and ":" of three captions whose Word paragraph starts
+with the heading's text, so the Word reading keeps "Table N:" in the caption, where the PDF
+reading drops it as the caption's number. (2026-10-27)
+
+The owner's decision on review (§8) waits on these scores.

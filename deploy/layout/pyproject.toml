@@ -1,0 +1,36 @@
+[project]
+name = "layout-service"
+version = "0.1.0"
+description = "Docling layout analysis for the PDF reader, behind a small HTTP API"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "python-multipart>=0.0.20",
+  "uvicorn>=0.34,<1",
+]
+
+[project.optional-dependencies]
+# Only the image installs this (the tests inject a fake analyser and never import docling).
+docling = [
+  "docling==2.142.1",
+  "huggingface_hub",
+  "pypdfium2",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28",
+  "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["layout_service"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Starlette's TestClient suggests a different client package; httpx is what we test with.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]

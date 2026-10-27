@@ -1,11 +1,15 @@
-"""Decompose one .docx into document.json, report.json and its images (a dev tool).
+"""Decompose one .docx or PDF into document.json, report.json and its images (a dev tool).
 
     uv run --directory worker python scripts/decompose.py <file.docx> <out-dir> \
         [--converter-url URL]
+    uv run --directory worker python scripts/decompose.py <file.pdf> <out-dir> \
+        --layout-url URL
 
-Drawings, equations and pictures that need converting are rendered through the document
-converter at `--converter-url`; without it, a document that needs rendering fails. `out-dir`
-must not exist or must be empty. Image files are named from image ids, never package paths.
+The source is told apart by its bytes (`%PDF-` is a PDF), not its name. Drawings, equations and
+pictures that need converting are rendered through the document converter at `--converter-url`;
+without it, a document that needs rendering fails. A PDF's layout comes from the layout service
+at `--layout-url`, which a PDF needs. `out-dir` must not exist or must be empty. Image files are
+named from image ids, never package paths.
 
 Exit codes:
   0  decomposed
@@ -13,7 +17,7 @@ Exit codes:
   2  the decomposition failed (a fidelity failure, or something that couldn't be read or
      rendered); also argparse's usage errors, by its convention
   3  the source was rejected (unreadable or unsafe)
-  4  the converter is unavailable (transient: run again later)
+  4  the converter or the layout service is unavailable (transient: run again later)
 """
 
 from __future__ import annotations
@@ -32,6 +36,8 @@ from ingest_worker.decompose import (
     DecompositionRejected,
     decompose_docx,
 )
+from ingest_worker.decompose.pdf import decompose_pdf
+from ingest_worker.decompose.pdf.layout import HttpLayoutAnalyser, LayoutAnalyser, LayoutUnavailable
 from ingest_worker.decompose.render import ConverterRenderer, Renderer, RenderFragment
 
 _UNSAFE = re.compile(r"[^a-z0-9._~-]+")
@@ -85,36 +91,53 @@ def _extension(content_type: str | None) -> str:
     return _EXTENSIONS.get(content_type or "", "bin")
 
 
-def main(argv: Sequence[str] | None = None, *, renderer: Renderer | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    renderer: Renderer | None = None,
+    layout: LayoutAnalyser | None = None,
+) -> int:
     usage = __doc__ or ""
     parser = argparse.ArgumentParser(
         description=usage.splitlines()[0],
         epilog=usage[usage.index("Exit codes:") :] if "Exit codes:" in usage else None,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("docx", type=Path)
+    parser.add_argument("source", type=Path, help="a .docx or PDF file")
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("--converter-url", help="the document converter's base URL")
+    parser.add_argument("--layout-url", help="the PDF layout service's base URL")
     args = parser.parse_args(argv)
 
     out: Path = args.out_dir
     if out.exists() and (not out.is_dir() or any(out.iterdir())):
         print(f"{out} must not exist or must be an empty directory", file=sys.stderr)
         return 1
-    if renderer is None:
+
+    try:
+        data = args.source.read_bytes()
+    except OSError as exc:
+        print(f"cannot read {args.source}: {exc}", file=sys.stderr)
+        return 1
+    is_pdf = data.startswith(b"%PDF-")
+    if is_pdf and layout is None:
+        if not args.layout_url:
+            print("a PDF needs --layout-url", file=sys.stderr)
+            return 2
+        layout = HttpLayoutAnalyser(args.layout_url)
+    if not is_pdf and renderer is None:
         renderer = (
             ConverterRenderer(GotenbergConverter(args.converter_url))
             if args.converter_url
             else _NoConverter()
         )
-
     try:
-        data = args.docx.read_bytes()
-    except OSError as exc:
-        print(f"cannot read {args.docx}: {exc}", file=sys.stderr)
-        return 1
-    try:
-        result = decompose_docx(data, renderer=renderer)
+        if is_pdf:
+            assert layout is not None
+            result = decompose_pdf(data, layout=layout)
+        else:
+            assert renderer is not None
+            result = decompose_docx(data, renderer=renderer)
     except DecompositionRejected as exc:
         print(f"rejected: {exc}", file=sys.stderr)
         return 3
@@ -123,6 +146,9 @@ def main(argv: Sequence[str] | None = None, *, renderer: Renderer | None = None)
         return 2
     except ConverterUnavailable as exc:
         print(f"converter unavailable: {exc}", file=sys.stderr)
+        return 4
+    except LayoutUnavailable as exc:
+        print(f"layout unavailable: {exc}", file=sys.stderr)
         return 4
 
     doc = result.document

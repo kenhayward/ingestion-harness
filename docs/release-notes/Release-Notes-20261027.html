@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT Studio Release Notes · 27 October 2026</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f6f7f9;
+        --text: #1d2330;
+        --muted: #5b6474;
+        --border: #dfe3ea;
+        --accent: #1f6f5c;
+        --link: #1a5fb4;
+        --warn-bg: #fff6e0;
+        --warn-border: #e8c46a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14171c;
+          --surface: #1c2027;
+          --text: #e4e7ec;
+          --muted: #9aa3b2;
+          --border: #2e343e;
+          --accent: #5cc4a6;
+          --link: #7fb2f0;
+          --warn-bg: #2d2615;
+          --warn-border: #7a6224;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 80px;
+      }
+      h1 {
+        font-size: 1.9rem;
+        line-height: 1.25;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 1.35rem;
+        margin: 44px 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--accent);
+      }
+      h3 {
+        font-size: 1.08rem;
+        margin: 28px 0 4px;
+        scroll-margin-top: 16px;
+      }
+      h2 {
+        scroll-margin-top: 16px;
+      }
+      .prs {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      ul {
+        margin: 0 0 12px;
+        padding-left: 22px;
+      }
+      li {
+        margin: 2px 0;
+      }
+      a {
+        color: var(--link);
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        overflow-wrap: anywhere;
+      }
+      nav.toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 18px 22px;
+        margin: 0 0 24px;
+      }
+      nav.toc h2 {
+        margin: 0 0 10px;
+        border: 0;
+        padding: 0;
+        font-size: 1.15rem;
+      }
+      nav.toc h4 {
+        margin: 14px 0 4px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      nav.toc ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      nav.toc li {
+        padding: 3px 0;
+      }
+      nav.toc li a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      nav.toc li a:hover {
+        text-decoration: underline;
+      }
+      nav.toc li span {
+        color: var(--muted);
+      }
+      .warn {
+        background: var(--warn-bg);
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        padding: 14px 20px;
+        margin: 0 0 8px;
+      }
+      .warn strong:first-child {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .warn ul {
+        margin: 0;
+      }
+      .top {
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CT Studio release notes</h1>
+      <p class="subtitle">
+        Tuesday 27 October 2026: PDFs read for the first time, on the command line. PR #338.
+      </p>
+
+      <nav class="toc" id="contents" aria-label="Contents">
+        <h2>Contents</h2>
+        <h4>Minor changes</h4>
+        <ul>
+          <li>
+            <a href="#pdf-reader-5a">PDF reader, step 5a</a>
+            <span>— born-digital PDFs decompose like Word files, from the command line</span>
+          </li>
+        </ul>
+      </nav>
+
+      <h2 id="minor">Minor changes</h2>
+
+      <h3 id="pdf-reader-5a">PDF reader, step 5a</h3>
+      <p class="prs"><a href="https://github.com/kenhayward/ingestion-harness/pull/338">#338</a></p>
+      <p>
+        A born-digital PDF can now be decomposed into the same document a Word file gives. A new
+        layout service finds the headings, tables and figures on each page, and the reader joins
+        that with the PDF's own text. The same fidelity check as for Word then confirms that every
+        word of the text layer ends up in the document, in the right block and the right table. Two
+        new tools go with it: one decomposes a single PDF, the other scores a folder of Word files
+        against their PDF twins.
+      </p>
+      <p>
+        The layout service is opt-in: it is not built or started unless the compose profile
+        <code>pdf</code> is on (<code>docker compose --profile pdf up -d layout</code>). It parses
+        untrusted PDFs, so it runs on an internal network with no route out.
+      </p>
+      <p>
+        Scored against the Word versions of four twin documents, headings were found with the right
+        level in all 107 cases, 155 of 166 tables were found, 112 of those had the right shape, and
+        86% of cells were right. Word recall was 0.991 and precision 0.994. The weakest results are
+        on small, borderless or heavily merged tables, and on extra tables. Two real PDFs with no
+        bookmarks also decompose and pass the text check.
+      </p>
+      <p>
+        PDFs are not yet accepted on the Conversion tab. That comes in a later step, after the owner
+        decides whether PDFs need review.
+      </p>
+      <p class="top"><a href="#contents">Back to contents</a></p>
+    </main>
+  </body>
+</html>

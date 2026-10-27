@@ -35,6 +35,8 @@ class Settings:
     example_template: Path
     #: Gotenberg converting Word (.docx) sources to PDF; None: Word documents need review.
     converter_url: str | None
+    #: The layout service reading PDF pages (`LAYOUT_URL`); None: no layout analysis.
+    layout_url: str | None
     #: Ontology imports over this many triples are refused (ADR 0011).
     ontology_max_triples: int = 2_000_000
     #: Hosts ontologies may be fetched from (ADR 0011); empty: URL imports are off.
@@ -84,6 +86,7 @@ class Settings:
                 )
             ),
             converter_url=env.get("CONVERTER_URL") or None,
+            layout_url=env.get("LAYOUT_URL") or None,
             ontology_max_triples=int(env.get("ONTOLOGY_MAX_TRIPLES", "2000000")),
             ontology_fetch_allow=tuple(
                 h.strip() for h in env.get("ONTOLOGY_FETCH_ALLOW", "").split(",") if h.strip()
