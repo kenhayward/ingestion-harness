@@ -3,8 +3,9 @@
 Furniture is decided per line: a line is furniture only if it lies in the top or bottom margin
 band of its page, and Docling put it in the furniture layer or its text repeats at the same height
 on enough pages. A furniture label in the body is ignored. Contents are a `document_index` item,
-a contents heading with the contents lines after it, or a run of contents lines with dot leaders;
-one contents-like line in the body is kept. Dropped chars are recorded in the ledger.
+a contents heading with the contents lines after it, or a run of contents lines with dot leaders
+that starts on a leader line; a run's page numbers never go back nor past the last page. One
+contents-like line in the body is kept. Dropped chars are recorded in the ledger.
 """
 
 from __future__ import annotations
@@ -124,7 +125,7 @@ def drop_furniture(
         if kept:
             remaining.append(_with(piece, kept))
 
-    remaining, contents_pages = _drop_contents(remaining, ledger)
+    remaining, contents_pages = _drop_contents(remaining, ledger, len(text.pages))
     dropped = Dropped(dict(sorted(furniture.items())), tuple(sorted(contents_pages)))
     return remaining, dropped, list(properties.values())
 
@@ -172,7 +173,9 @@ def _is_heading(piece: Piece) -> bool:
     )
 
 
-def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], set[int]]:
+def _drop_contents(
+    pieces: list[Piece], ledger: Ledger, page_count: int
+) -> tuple[list[Piece], set[int]]:
     # The text lines in reading order as (piece index, line index); a table or picture is a None
     # that ends a run.
     seq: list[tuple[int, int] | None] = []
@@ -191,18 +194,28 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
             return _has_leader(line) and _is_contents(line)  # Docling labels some contents so
         return _is_contents(line)
 
-    def run_from(start: int) -> int:
-        """The index after the run of contents lines that starts at `start`. A run ends at a
-        heading or caption, and at a line without a leader once leaders are the majority."""
+    def run_from(start: int, *, led: bool = False) -> int:
+        """The index after the run of contents lines that starts at `start`. A run starts on a
+        line with a leader, unless a contents heading leads it (`led`); it ends at a heading or
+        caption, at a line without a leader once leaders are the majority, and at a page
+        number lower than the one before it or past the document's last page."""
         end = start
         leaders = 0
+        previous = 0
         while end < len(seq):
             entry = seq[end]
             if entry is None or not contents_at(entry):
                 break
-            leader = _has_leader(line_at(entry))
-            if not leader and 2 * leaders > end - start:
+            line = line_at(entry)
+            leader = _has_leader(line)
+            if not leader and (2 * leaders > end - start or (end == start and not led)):
                 break
+            match = _CONTENTS_LINE.match(line.text)
+            assert match is not None
+            number = int(match["page"])
+            if number < previous or number > page_count:
+                break
+            previous = number
             leaders += leader
             end += 1
         return end
@@ -229,7 +242,7 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
         heading = " ".join(line.text for line in piece.lines).strip()
         if piece.label in _HEADING_LABELS and _CONTENTS_HEADING.match(heading):
             after = k + len(piece.lines)
-            end = run_from(after)
+            end = run_from(after, led=True)
             if end > after:
                 doomed.update(e for e in seq[k:end] if e is not None)
 
@@ -241,6 +254,9 @@ def _drop_contents(pieces: list[Piece], ledger: Ledger) -> tuple[list[Piece], se
             k += 1
             continue
         end = run_from(k)
+        if end == k:
+            k += 1
+            continue
         run = [e for e in seq[k:end] if e is not None]
         leaders = sum(_has_leader(line_at(e)) for e in run)
         if len(run) >= _RUN_LINES and leaders >= _RUN_LEADERS * len(run):

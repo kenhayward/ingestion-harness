@@ -15,6 +15,8 @@ from tests.decompose.pdf.make_pdf import Page, Run, make_pdf
 HEIGHT = 842.0
 TOP = 40.0
 FOOT = 800.0
+#: Blank pages, so that a contents list's page numbers are inside the document.
+PADDING = [Page() for _ in range(19)]
 
 
 def bl(x0: float, y0: float, x1: float, y1: float) -> docling.Box:
@@ -79,6 +81,7 @@ def test_contents_block_is_dropped() -> None:
         Run(f"Chapter {n} ........ {n * 3}", 72, 230 + 20 * n) for n in range(4)
     ]
     pages = [Page(runs=[Run("Cover", 72, 300)]), Page(runs=[*runs, Run("Body text", 72, 500)])]
+    pages += PADDING
     items = [
         docling.text("text", 1, bl(60, 285, 300, 310)),
         docling.text("section_header", 2, bl(60, 185, 300, 210), level=1),
@@ -101,10 +104,53 @@ def test_contents_block_is_dropped() -> None:
 
 def test_run_of_dot_leader_lines_is_dropped_without_a_heading() -> None:
     runs = [Run(f"Item {n} ...... {n}", 72, 200 + 20 * n) for n in range(3)]
-    pieces, text, ledger = build([Page(runs=[*runs, Run("Body", 72, 500)])])
+    pieces, text, ledger = build([Page(runs=[*runs, Run("Body", 72, 500)]), *PADDING])
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["Body"]
     assert dropped.contents_pages == (0,)
+
+
+def test_a_leader_line_past_the_last_page_is_kept() -> None:
+    entries = [Run(f"{t} ...... {n}", 72, 200 + 20 * k) for k, (t, n) in enumerate(ENTRIES)]
+    spec = [Run(f"{t} load ........ {n}", 72, 300 + 20 * k) for k, (t, n) in enumerate(LOADS)]
+    pieces, text, ledger = build([Page(runs=[*entries, *spec, Run("Body", 72, 500)]), *PADDING])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert len(text.pages) == 20
+    assert texts(kept) == [r.text for r in spec] + ["Body"]
+    assert dropped.contents_pages == (0,)
+
+
+def test_a_run_of_leader_lines_past_the_last_page_is_kept() -> None:
+    spec = [Run(f"{t} load ........ {n}", 72, 300 + 20 * k) for k, (t, n) in enumerate(LOADS)]
+    pieces, text, ledger = build([Page(runs=spec), *PADDING])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == [
+        "Max load ........ 250",
+        "Peak load ........ 300",
+        "Burst load ........ 400",
+    ]
+    assert dropped == Dropped({}, ())
+
+
+def test_a_page_number_going_back_ends_a_run() -> None:
+    entries = [Run(f"{t} ...... {n}", 72, 200 + 20 * k) for k, (t, n) in enumerate(ENTRIES)]
+    pieces, text, ledger = build([Page(runs=[*entries, Run("Room ...... 4", 72, 300)]), *PADDING])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Room ...... 4"]
+    assert dropped.contents_pages == (0,)
+
+
+def test_body_lines_ending_in_numbers_before_a_contents_run_are_kept() -> None:
+    body = [Run("Stored in room 1", 72, 160), Run("Moved to room 2", 72, 180)]
+    entries = [Run(f"{t} ...... {n}", 72, 200 + 20 * k) for k, (t, n) in enumerate(ENTRIES)]
+    pieces, text, ledger = build([Page(runs=[*body, *entries]), *PADDING])
+    kept, dropped, _ = drop_furniture(pieces, text, ledger)
+    assert texts(kept) == ["Stored in room 1", "Moved to room 2"]
+    assert dropped.contents_pages == (0,)
+
+
+ENTRIES = [("Scope", 3), ("Method", 5), ("Results", 9)]
+LOADS = [("Max", 250), ("Peak", 300), ("Burst", 400)]
 
 
 def test_single_contents_like_line_is_kept() -> None:
@@ -141,7 +187,7 @@ def test_contents_run_stops_at_a_following_heading_and_caption() -> None:
         docling.text("section_header", 1, bl(60, 385, 300, 410), level=1),
         docling.text("caption", 1, bl(60, 435, 300, 460)),
     ]
-    pieces, text, ledger = build([Page(runs=runs)], items)
+    pieces, text, ledger = build([Page(runs=runs), *PADDING], items)
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["Chapter 1", "Table 1"]
     assert dropped.contents_pages == (0,)
@@ -150,7 +196,7 @@ def test_contents_run_stops_at_a_following_heading_and_caption() -> None:
 def test_leaderless_line_ends_a_run_with_leaders_in_the_majority() -> None:
     runs = [Run(f"Item {n} ...... {n}", 72, 200 + 20 * n) for n in range(4)]
     runs.append(Run("Appendix 1", 72, 300))
-    pieces, text, ledger = build([Page(runs=runs)])
+    pieces, text, ledger = build([Page(runs=runs), *PADDING])
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["Appendix 1"]
     assert dropped.contents_pages == (0,)
@@ -166,6 +212,7 @@ def test_heading_led_list_without_leaders_keeps_the_next_heading() -> None:
             ]
         ),
         Page(runs=[Run("1 Introduction", 72, 200)]),
+        *PADDING,
     ]
     items = [
         docling.text("section_header", 1, bl(60, 185, 300, 210), level=1),
@@ -286,7 +333,7 @@ def test_leader_lines_labelled_as_headings_are_contents() -> None:
         for n in range(4)
     ]
     items.append(docling.text("section_header", 2, bl(60, 185, 300, 210), level=1))
-    pages = [Page(runs=runs), Page(runs=[Run("1 SUMMARY", 72, 200)])]
+    pages = [Page(runs=runs), Page(runs=[Run("1 SUMMARY", 72, 200)]), *PADDING]
     pieces, text, ledger = build(pages, items)
     kept, dropped, _ = drop_furniture(pieces, text, ledger)
     assert texts(kept) == ["1 SUMMARY"]
