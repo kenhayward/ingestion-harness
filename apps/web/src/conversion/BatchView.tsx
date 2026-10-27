@@ -26,6 +26,7 @@ import {
   OUTCOME_ICON,
   OUTCOME_NOTE,
   RESOLUTION,
+  isAwaitingReview,
   isDelivered,
   isDone,
   isFailed,
@@ -82,18 +83,22 @@ const when = (iso: string) =>
 const webLink = (link: string | null) => (link && /^https?:\/\//i.test(link) ? link : null);
 
 /**
- * The progress said to assistive technology: how many documents are done, and how many need
- * a look.
+ * The progress said to assistive technology: how many documents are done, how many await review
+ * (not done: a batch with one isn't finished, §14.6), and how many else need a look.
  */
 function progressOf(items: Item[]): string {
   const total = items.length;
-  const left = items.filter(isUnfinished).length;
-  const attention = items.filter(needsAttention).length;
-  const done =
+  const awaiting = items.filter(isAwaitingReview).length;
+  const left = items.filter(isUnfinished).length + awaiting;
+  const attention = items.filter((i) => needsAttention(i) && !isAwaitingReview(i)).length;
+  const parts = [
     left === 0
       ? `All ${plural(total, 'document')} done`
-      : `${total - left} of ${plural(total, 'document')} done`;
-  return attention ? `${done}; ${attention} ${attention === 1 ? 'needs' : 'need'} attention` : done;
+      : `${total - left} of ${plural(total, 'document')} done`,
+  ];
+  if (awaiting) parts.push(`${awaiting} awaiting review`);
+  if (attention) parts.push(`${attention} ${attention === 1 ? 'needs' : 'need'} attention`);
+  return parts.join('; ');
 }
 
 /**

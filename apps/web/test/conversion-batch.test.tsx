@@ -64,9 +64,35 @@ function summary(o: Partial<BatchSummary>, counts: Partial<Record<ItemOutcome, n
 describe('a batch with documents held for review', () => {
   it('is not finished while one awaits review, and rejected counts as failed', () => {
     const held = batchState(summary({}, { created: 1, awaiting_review: 1 }));
-    expect(held).toMatchObject({ label: 'Needs attention', tone: 'warn' });
+    expect(held).toMatchObject({ icon: 'review', label: 'Awaiting review', tone: 'warn' });
     expect(batchState(summary({}, { created: 1 })).label).toBe('Done');
     expect(batchState(summary({}, { created: 1, rejected: 1 })).label).toBe('Some failed');
+    // A failure does not hide that a document still awaits review.
+    const both = batchState(summary({}, { failed: 1, awaiting_review: 1 }));
+    expect(both).toMatchObject({ label: 'Awaiting review', tone: 'warn' });
+  });
+
+  it('counts a document awaiting review as not done, and reads the batch once', async () => {
+    vi.useFakeTimers();
+    try {
+      const getConversionBatch = vi.fn(async () =>
+        detailOf([
+          item('ok.pdf', 'created'),
+          item('bad.pdf', 'failed'),
+          item('held.pdf', 'awaiting_review', { held: true }),
+        ]),
+      );
+      const page = view(batchApi([], { getConversionBatch }));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      const text = '2 of 3 documents done; 1 awaiting review; 1 needs attention';
+      expect(screen.getByRole('status', { name: 'Progress' })).toHaveTextContent(text);
+      expect(screen.getByText(text, { selector: '.batch-bar-text' })).toBeInTheDocument();
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(getConversionBatch).toHaveBeenCalledTimes(1);
+      page.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

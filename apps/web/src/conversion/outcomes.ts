@@ -40,6 +40,8 @@ export const NEEDS_ATTENTION: readonly ItemOutcome[] = [
 ];
 
 export const isUnfinished = (item: Item) => UNFINISHED.includes(item.outcome);
+/** Held for review: not under way (nothing polls for it), but not done either. */
+export const isAwaitingReview = (item: Pick<Item, 'outcome'>) => item.outcome === 'awaiting_review';
 /** A document changed in the target and then detached or accepted no longer needs attention. */
 export const needsAttention = (item: Item) =>
   NEEDS_ATTENTION.includes(item.outcome) && item.resolution === null;
@@ -129,6 +131,8 @@ export function batchState(b: BatchSummary): { icon: StatusIcon; tone: Tone; lab
   if (b.state === 'open') return { icon: 'cancelled', tone: 'neutral', label: 'Never started' };
   if (UNFINISHED.some((o) => n(o) > 0))
     return { icon: 'spinner', tone: 'info', label: 'Under way' };
+  // Not finished while a document awaits review, whatever else failed.
+  if (n('awaiting_review') > 0) return { icon: 'review', tone: 'warn', label: 'Awaiting review' };
   if (n('failed') + n('rejected') > 0)
     return { icon: 'failed', tone: 'danger', label: 'Some failed' };
   if (NEEDS_ATTENTION.some((o) => n(o) > 0))
