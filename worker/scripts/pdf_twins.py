@@ -90,14 +90,18 @@ def _pct(n: int, d: int) -> str:
     return f"{n}/{d}"
 
 
+def _rate(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
 def _row(name: str, s: Score) -> str:
     return (
         f"{name}  headings {_pct(s.headings_found, s.headings_total)}"
         f" (level {_pct(s.levels_right, s.headings_found)})"
         f"  tables {_pct(s.tables_found, s.tables_total)}"
-        f" (shape {_pct(s.shape_right, s.tables_found)})"
+        f" (shape {_pct(s.shape_right, s.tables_found)}, extra {s.tables_extra})"
         f"  cells {_pct(s.cells_right, s.cells_total)}"
-        f"  recall {s.words_recall:.3f}  precision {s.words_precision:.3f}"
+        f"  recall {_rate(s.words_recall)}  precision {_rate(s.words_precision)}"
     )
 
 

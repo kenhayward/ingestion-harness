@@ -29,7 +29,6 @@ PAIRING_WINDOW = 4
 PAIRING_MIN_JACCARD = 0.3
 
 _TOKEN = re.compile(r"⟦[^⟧]*⟧")
-_SPACE = re.compile(r"\s+")
 
 
 @dataclass(frozen=True)
@@ -42,14 +41,22 @@ class Score:
     shape_right: int
     cells_total: int
     cells_right: int
-    words_recall: float
-    words_precision: float
+    #: None when undefined: the truth has no words (recall), or the PDF has none (precision).
+    words_recall: float | None
+    words_precision: float | None
     #: The truth's word count: the weight of the word rates in `total`.
     words_total: int = 0
+    #: PDF tables that no truth table was paired with.
+    tables_extra: int = 0
+
+
+def _squash(text: str) -> str:
+    """The text as the word comparison reads it (ligatures, U+2011), tokens and whitespace out."""
+    return "".join(words(_TOKEN.sub(" ", text)))
 
 
 def _key(text: str) -> str:
-    return _SPACE.sub("", text).lower()
+    return _squash(text).lower()
 
 
 def _headings(doc: DecomposedDocument) -> list[tuple[str, int]]:
@@ -68,7 +75,7 @@ def _headings(doc: DecomposedDocument) -> list[tuple[str, int]]:
 
 def _text(slot: str) -> str:
     """A grid slot's text, whitespace removed."""
-    return _SPACE.sub("", slot.partition("|")[2])
+    return _squash(slot.partition("|")[2])
 
 
 def _cells(grid: list[list[str]]) -> dict[tuple[int, int], str]:
@@ -102,8 +109,9 @@ def _word_list(doc: DecomposedDocument) -> list[str]:
 
 def score(truth: DecomposedDocument, pdf: DecomposedDocument) -> Score:
     """The scores of `pdf`'s reading against `truth`'s."""
-    truth_heads = _headings(truth)
-    pdf_heads = _headings(pdf)
+    # untitled sections can't be told apart, so they are not aligned
+    truth_heads = [h for h in _headings(truth) if h[0]]
+    pdf_heads = [h for h in _headings(pdf) if h[0]]
     matcher = SequenceMatcher(
         None, [k for k, _ in truth_heads], [k for k, _ in pdf_heads], autojunk=False
     )
@@ -123,11 +131,11 @@ def score(truth: DecomposedDocument, pdf: DecomposedDocument) -> Score:
     for grid in truth_grids:
         cells = _cells(grid)
         cells_total += len(cells)
-        bag = Counter(cells.values())
+        bag = Counter(t for t in cells.values() if t)
         best: tuple[float, int] | None = None
         candidates = [i for i in range(cursor, len(pdf_grids)) if i not in paired]
         for i in candidates[:PAIRING_WINDOW]:
-            similarity = _jaccard(bag, Counter(pdf_cells[i].values()))
+            similarity = _jaccard(bag, Counter(t for t in pdf_cells[i].values() if t))
             if similarity >= PAIRING_MIN_JACCARD and (best is None or similarity > best[0]):
                 best = (similarity, i)
         if best is None:
@@ -156,21 +164,23 @@ def score(truth: DecomposedDocument, pdf: DecomposedDocument) -> Score:
         shape_right=shape_right,
         cells_total=cells_total,
         cells_right=cells_right,
-        words_recall=matched / n_truth if n_truth else 1.0,
-        words_precision=matched / n_pdf if n_pdf else 1.0,
+        words_recall=matched / n_truth if n_truth else None,
+        words_precision=matched / n_pdf if n_pdf else None,
         words_total=n_truth,
+        tables_extra=len(pdf_grids) - len(paired),
     )
 
 
+def _weighted(pairs: list[tuple[float, int]]) -> float | None:
+    weight = sum(w for _, w in pairs)
+    if weight:
+        return sum(v * w for v, w in pairs) / weight
+    return sum(v for v, _ in pairs) / len(pairs) if pairs else None
+
+
 def total(scores: Sequence[Score]) -> Score:
-    """The counts summed; the word rates weighted by each truth's word count."""
-    weight = sum(s.words_total for s in scores)
-
-    def rate(values: list[float]) -> float:
-        if weight:
-            return sum(v * s.words_total for v, s in zip(values, scores, strict=True)) / weight
-        return sum(values) / len(values) if values else 1.0
-
+    """The counts summed; the word rates weighted by each truth's word count (None when no
+    document has the rate defined)."""
     return Score(
         headings_total=sum(s.headings_total for s in scores),
         headings_found=sum(s.headings_found for s in scores),
@@ -180,7 +190,12 @@ def total(scores: Sequence[Score]) -> Score:
         shape_right=sum(s.shape_right for s in scores),
         cells_total=sum(s.cells_total for s in scores),
         cells_right=sum(s.cells_right for s in scores),
-        words_recall=rate([s.words_recall for s in scores]),
-        words_precision=rate([s.words_precision for s in scores]),
-        words_total=weight,
+        words_recall=_weighted(
+            [(s.words_recall, s.words_total) for s in scores if s.words_recall is not None]
+        ),
+        words_precision=_weighted(
+            [(s.words_precision, s.words_total) for s in scores if s.words_precision is not None]
+        ),
+        words_total=sum(s.words_total for s in scores),
+        tables_extra=sum(s.tables_extra for s in scores),
     )

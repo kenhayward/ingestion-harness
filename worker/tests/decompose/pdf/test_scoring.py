@@ -7,6 +7,7 @@ import pytest
 from ingest_worker.decompose.model import (
     Cell,
     DecomposedDocument,
+    NoteRef,
     Paragraph,
     Row,
     Section,
@@ -170,3 +171,36 @@ def test_total_weights_words() -> None:
     assert t.words_recall == pytest.approx((30 * 1.0 + 10 * 0.5) / 40)
     assert t.words_precision == pytest.approx((30 * 1.0 + 10 * 0.25) / 40)
     assert t.words_total == 40
+
+
+def test_tokens_in_a_title_do_not_hide_the_heading() -> None:
+    truth = doc([section("a", "Results")])
+    truth.sections[0].title.append(NoteRef(note_id="n-word"))
+    pdf = doc([section("b", "Results")])
+    pdf.sections[0].title.append(NoteRef(note_id="n-pdf"))
+    assert score(truth, pdf).headings_found == 1
+
+
+def test_ligatures_and_untitled_sections() -> None:
+    s = score(doc([section("a", "Ofﬁce"), section("b", "")]), doc([section("c", "Office")]))
+    assert (s.headings_total, s.headings_found) == (1, 1)
+    both = score(doc([section("a", "")]), doc([section("b", "")]))
+    assert (both.headings_total, both.headings_found) == (0, 0)
+
+
+def test_blank_cells_do_not_pair_tables() -> None:
+    blank = [["", "", ""], ["", "", ""], ["x", "", ""]]
+    other = [["", "", ""], ["", "", ""], ["y", "", ""]]
+    truth = doc([section("s", "T", [table("a", blank)])])
+    pdf = doc([section("s", "T", [table("b", other)])])
+    s = score(truth, pdf)
+    assert (s.tables_found, s.tables_extra) == (0, 1)
+
+
+def test_undefined_rates_are_none() -> None:
+    assert total([]).words_recall is None
+    assert total([]).words_precision is None
+    s = score(doc(blocks=[para("p", "alpha")]), doc())
+    assert s.words_recall == 0.0
+    assert s.words_precision is None
+    assert score(doc(), doc(blocks=[para("p", "alpha")])).words_recall is None
