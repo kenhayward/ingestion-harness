@@ -18,8 +18,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from ingest_worker.decompose.forms import _Forms, grid_forms, text_form
-from ingest_worker.decompose.model import DecomposedDocument, Section
+from ingest_worker.decompose.forms import _Forms, grid_forms, tables_of, text_form
+from ingest_worker.decompose.model import DecomposedDocument, Row, Section, Table
 from ingest_worker.decompose.pdf.fidelity import words
 
 #: A truth table is paired with the best of this many next unpaired PDF tables.
@@ -91,18 +91,28 @@ def _cells(grid: list[list[str]]) -> dict[tuple[int, int], str]:
     return cells
 
 
-def _is_note_row(row: list[str]) -> bool:
-    """A row of one text across its slots (a cell spanning the width, or the rest empty) that
-    starts with a note marker, a separator after it or just whitespace."""
-    texts = {slot.partition("|")[2] for slot in row if slot.partition("|")[2]}
-    return len(row) > 1 and len(texts) == 1 and _NOTE_ROW.match(next(iter(texts))) is not None
+def _is_note_row(row: Row, slots: list[str], width: int) -> bool:
+    """A row of one cell that spans the whole width, its text starting with a note marker, then
+    a separator or just whitespace. Tables one slot wide are never stripped (conservative: their
+    last row is as likely data), and a row with other, even empty, cells is kept."""
+    if width < 2 or len(row.cells) != 1 or len(set(slots)) != 1 or not slots[0]:
+        return False
+    cell = row.cells[0]
+    return (
+        cell.col_span >= width
+        and cell.row_span == 1
+        and _NOTE_ROW.match(slots[0].partition("|")[2]) is not None
+    )
 
 
-def _without_notes(grid: list[list[str]]) -> list[list[str]]:
+def _without_notes(table: Table, grid: list[list[str]]) -> list[list[str]]:
     """The grid without its last rows that read as notes."""
     rows = list(grid)
-    while rows and _is_note_row(rows[-1]):
+    width = max(map(len, grid), default=0)
+    count = len(table.rows)
+    while rows and len(rows) == count and _is_note_row(table.rows[count - 1], rows[-1], width):
         rows.pop()
+        count -= 1
     return rows
 
 
@@ -130,7 +140,10 @@ def score(truth: DecomposedDocument, pdf: DecomposedDocument) -> Score:
             found += 1
             levels += truth_heads[block.a + n][1] == pdf_heads[block.b + n][1]
 
-    truth_grids = [_without_notes(g) for g in grid_forms(truth).values()]
+    truth_grids = [
+        _without_notes(t, g)
+        for t, g in zip(tables_of(truth), grid_forms(truth).values(), strict=True)
+    ]
     pdf_grids = list(grid_forms(pdf).values())
     pdf_cells = [_cells(g) for g in pdf_grids]
     tables_found = shape_right = cells_total = cells_right = 0

@@ -43,6 +43,12 @@ def table(tid: str, rows: list[list[str]], notes: list[TableNote] | None = None)
     )
 
 
+def with_note_row(t: Table, note: str) -> Table:
+    """The table with a last row of one cell spanning its width."""
+    cell = Cell(col_span=len(t.rows[0].cells), blocks=[para(f"{t.id}-note", note)])
+    return t.model_copy(update={"rows": [*t.rows, Row(cells=[cell])]})
+
+
 def doc(sections: list | None = None, blocks: list | None = None) -> DecomposedDocument:
     return DecomposedDocument(
         blocks=blocks or [],
@@ -129,7 +135,7 @@ def test_trailing_note_row_in_truth_is_not_a_missing_row() -> None:
             section(
                 "s1",
                 "T",
-                [table("t", [["Id", "Name"], ["1", "Alpha"], ["a. Source: survey", ""]])],
+                [with_note_row(table("t", [["Id", "Name"], ["1", "Alpha"]]), "a. Source: survey")],
             )
         ]
     )
@@ -226,6 +232,14 @@ def test_full_width_note_row_without_separator_is_stripped() -> None:
 
 def test_data_row_starting_with_a_letter_is_not_stripped() -> None:
     truth = doc([section("s", "T", [table("t", [["Id", "Name"], ["1", "Alpha"], ["a b", "Zed"]])])])
+    pdf = doc([section("s", "T", [table("p", [["Id", "Name"], ["1", "Alpha"]])])])
+    s = score(truth, pdf)
+    assert (s.tables_found, s.shape_right) == (1, 0)
+    assert s.cells_total == 6
+
+
+def test_note_like_row_with_an_empty_second_cell_is_kept() -> None:
+    truth = doc([section("s", "T", [table("t", [["Id", "Name"], ["1", "Alpha"], ["a b", ""]])])])
     pdf = doc([section("s", "T", [table("p", [["Id", "Name"], ["1", "Alpha"]])])])
     s = score(truth, pdf)
     assert (s.tables_found, s.shape_right) == (1, 0)
