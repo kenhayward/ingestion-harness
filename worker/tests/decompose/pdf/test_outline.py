@@ -229,3 +229,24 @@ def test_bookmark_with_a_dotted_number_matches_and_drops_it() -> None:
     assert levels(out) == [2]
     assert flags[0].message == "Bookmark left out: Part"
     assert _owners(out[0], ledger)[:3] == [["dropped:heading-number"]] * 3
+
+
+def test_numbered_chapter_under_an_unnumbered_entry_loses_its_number() -> None:
+    runs = [Run("Summary", 72, 100), Run("1. Introduction", 72, 200)]
+    items = [head(1, 100), head(1, 200)]
+    outline = [(1, "Summary", 0, 90), (2, "1. Introduction", 0, 190)]
+    pieces, ledger, marks = build(runs, items, outline)
+    out, _ = assign_headings(pieces, marks, ledger)
+    assert levels(out) == [1, 2]
+    owners = _owners(out[1], ledger)
+    assert owners[:2] == [["dropped:heading-number"]] * 2  # "1."
+
+
+def test_deeper_number_is_kept_unless_the_bookmark_repeats_it() -> None:
+    runs = [Run("2.1 Scope", 72, 100), Run("2.2 Aim", 72, 200)]
+    items = [head(1, 100), head(1, 200)]
+    outline = [(1, "Scope", 0, 90), (1, "2.2 Aim", 0, 190)]
+    pieces, ledger, marks = build(runs, items, outline)
+    out, _ = assign_headings(pieces, marks, ledger)
+    assert _owners(out[0], ledger)[0] == [out[0].ref]
+    assert _owners(out[1], ledger)[0] == ["dropped:heading-number"]

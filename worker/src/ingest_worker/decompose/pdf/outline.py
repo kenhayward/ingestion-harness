@@ -5,7 +5,8 @@ Bookmarks are the author's own outline, so they win when at least half of them f
 on the page. Without them, Docling's section headers are the headings and a typed number
 ("2.1 Scope") gives the level; an unnumbered one goes one below the previous numbered heading.
 The typed number of a heading is dropped from the ledger (the section numbering is rebuilt from
-the tree), except where a bookmark's level disagrees with the number (the number is then text).
+the tree), except where it has more parts than the bookmark's level and the bookmark's title
+does not repeat it (the number is then text).
 """
 
 from __future__ import annotations
@@ -193,7 +194,7 @@ def _split(piece: Piece, matches: list[_Match], ledger: Ledger) -> list[Piece]:
         current.bbox = _bounds(current.lines)
         current.label = "section_header"
         current.heading_level = match.bookmark.level
-        _drop_number(current, ledger, only_level=match.bookmark.level)
+        _drop_number(current, ledger, bookmark=match.bookmark)
         out.append(current)
         if after is None:
             return out
@@ -233,7 +234,7 @@ def _number_headings(pieces: list[Piece], ledger: Ledger) -> list[Flag]:
         number = typed_number(piece.lines[0].text)
         if number is not None:
             piece.heading_level = previous = number[0]
-            _drop_number(piece, ledger, only_level=None)
+            _drop_number(piece, ledger, bookmark=None)
             continue
         piece.heading_level = 1 if previous is None else previous + 1
         flags.append(
@@ -247,13 +248,23 @@ def _number_headings(pieces: list[Piece], ledger: Ledger) -> list[Flag]:
     return flags
 
 
-def _drop_number(piece: Piece, ledger: Ledger, *, only_level: int | None) -> None:
-    """Drop the typed number's chars from the ledger; with `only_level`, only when the number has
-    that many parts (a bookmark's level agreeing with the number, as Word's numbering does)."""
+def _number_text(text: str) -> str | None:
+    match = _NUMBER.match(text)
+    return match.group(1) if match else None
+
+
+def _drop_number(piece: Piece, ledger: Ledger, *, bookmark: Bookmark | None) -> None:
+    """Drop the typed number's chars from the ledger. With a bookmark, only when the number has
+    no more parts than the bookmark's level (unnumbered entries above push numbered chapters one
+    level deeper), or when the bookmark's own title starts with the same number."""
     first = piece.lines[0]
     number = typed_number(first.text)
-    if number is None or (only_level is not None and number[0] != only_level):
+    if number is None:
         return
+    if bookmark is not None and number[0] > bookmark.level:
+        same = _number_text(bookmark.title) == _number_text(first.text)
+        if not same:
+            return
     wanted = first.text[: number[1]].rstrip()
     for k in range(1, len(first.chars) + 1):
         if Line(first.page, first.chars[:k], first.bbox).text == wanted:
