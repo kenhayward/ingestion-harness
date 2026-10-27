@@ -1,0 +1,33 @@
+{
+  "clients": [
+    {
+      "id": "env-1",
+      "name": "Token 1 from the environment",
+      "prefix": null,
+      "instances": "all",
+      "access": "read_write",
+      "locked": true,
+      "createdAt": null,
+      "createdBy": null,
+      "expiresAt": null,
+      "revokedAt": null,
+      "lastUsedAt": "2026-10-27T08:00:00.000Z"
+    },
+    {
+      "id": "c_7f3a",
+      "name": "Reporting app",
+      "prefix": "snk_7f3a",
+      "instances": ["acme"],
+      "access": "read",
+      "locked": false,
+      "createdAt": "2026-10-27T09:05:00.000Z",
+      "createdBy": {
+        "id": "u1",
+        "name": "Ada Admin"
+      },
+      "expiresAt": "2026-11-26T09:05:00.000Z",
+      "revokedAt": null,
+      "lastUsedAt": null
+    }
+  ]
+}

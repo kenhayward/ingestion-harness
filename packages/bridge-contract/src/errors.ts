@@ -27,6 +27,12 @@ export const ERROR_CODES = Object.freeze({
   unsupported_part: 'needs_user',
   not_found: 'needs_user',
   changed_in_target: 'needs_user',
+  /** Version 3: an entry from the sink's own configuration, which administration never changes. */
+  locked: 'needs_user',
+  /** Version 3: a caller's token does not allow the call (a write with read-only access). */
+  forbidden: 'needs_user',
+  /** Version 3: the sink cannot keep administration state, so it offers none. */
+  not_configured: 'needs_user',
   instance_unavailable: 'retryable',
   sink_unavailable: 'retryable',
   timeout: 'retryable',

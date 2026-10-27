@@ -5,7 +5,9 @@ import { BridgeErrorSchema, type BridgeError } from '../errors.js';
 import { decompositionIdempotencyKey } from '../idempotency.js';
 import { isDecompositionProvenance, PackageSchema, type BridgePackage } from '../package.js';
 import { signRequest } from '../signing.js';
+import { administrationSuite } from './administration.js';
 import {
+  administrationOf,
   BrowseResultSchema,
   ConnectionTestResultSchema,
   SinkDeliverResultSchema,
@@ -28,6 +30,11 @@ export interface ConformanceOptions {
   fetchImpl?: typeof fetch;
   /** How long a pending delivery may take before the check fails (default 60 s). */
   pollTimeoutMs?: number;
+  /**
+   * Version 3: the settings of the throwaway instance the administration checks add. Without it a
+   * sink declaring administration fails the check `admin: options` (the suite cannot add one).
+   */
+  administration?: { instanceFields: Record<string, string> };
 }
 
 export interface CheckResult {
@@ -68,7 +75,7 @@ const describeIssues = (r: z.ZodSafeParseResult<unknown>) =>
   r.success ? undefined : r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
 
 /**
- * Drives a sink through contract v1 and reports each check. Plain async code (no test runner), so
+ * Drives a sink through the contract (versions 1 to 3) and reports each check. Plain async code (no test runner), so
  * the CLI and any CI can run it against a live sink.
  */
 export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckResult[]> {
@@ -300,6 +307,22 @@ export async function conformanceSuite(opts: ConformanceOptions): Promise<CheckR
 
   // 9. every error body seen is a contract error
   check('errors', badErrors.length === 0, badErrors.join(' | ') || undefined);
+
+  // 10. administration (version 3), when the sink declares it
+  if (described && administrationOf(described)) {
+    if (opts.administration) {
+      results.push(
+        ...(await administrationSuite({
+          url: opts.url,
+          key: opts.key,
+          instanceFields: opts.administration.instanceFields,
+          ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+        })),
+      );
+    } else {
+      check('admin: options', false, 'the sink declares administration: pass administration');
+    }
+  }
   return results;
 }
 

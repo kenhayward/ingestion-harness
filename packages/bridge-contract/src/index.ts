@@ -8,3 +8,5 @@ export * from './conformance/suite.js';
 export * from './naming.js';
 export * from './decomposed/model.js';
 export * from './decomposed/forms.js';
+export * from './administration.js';
+export * from './conformance/administration.js';

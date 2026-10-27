@@ -17,6 +17,14 @@ const results = await conformanceSuite({
   destination: env.SINK_DESTINATION
     ? (JSON.parse(env.SINK_DESTINATION) as Record<string, string>)
     : {},
+  // Version 3: the settings of the instance the administration checks add, e.g. {"address": ...}.
+  ...(env.SINK_ADMIN_FIELDS
+    ? {
+        administration: {
+          instanceFields: JSON.parse(env.SINK_ADMIN_FIELDS) as Record<string, string>,
+        },
+      }
+    : {}),
 });
 for (const r of results) {
   console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.detail ? ` (${r.detail})` : ''}`);

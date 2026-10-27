@@ -656,6 +656,26 @@ describe('runOnce, contract version 2', () => {
     expect(meta!.manifest).toMatchObject({ contractVersion: 2 });
   });
 
+  it('a v3 sink gets version 2 packages: version 3 changes no package', async () => {
+    const v3 = new FakeSink({
+      contractVersion: 3,
+      capabilities: caps({
+        readBack: true,
+        accepts: ['files', 'data', 'document', 'images'],
+        decomposedDocuments: { equations: ['mathml'] },
+      }),
+    });
+    const { deps, sink, submit } = await setup(v3);
+    await submit();
+    await submit({}, T0, { package: decomposedPackage });
+    await runOnce(deps, T0);
+    await runOnce(deps, T0);
+    expect(sink.delivered.map((d) => d.package)).toEqual([
+      { ...documentPackage, contractVersion: 2 },
+      decomposedPackage,
+    ]);
+  });
+
   it('a v2 sink gets a v2 package as it was', async () => {
     const { deps, sink, submit } = await setup(v2Sink());
     await submit({}, T0, { package: decomposedPackage });

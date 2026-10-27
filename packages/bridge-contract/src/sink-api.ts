@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AdministrationSchema, type Administration } from './administration.js';
 import { BridgeErrorSchema } from './errors.js';
 import { ActingUserSchema, ContractVersion, PACKAGE_PARTS, PackageSchema } from './package.js';
 
@@ -33,14 +34,28 @@ export const CapabilitiesSchema = z.strictObject({
   decomposedDocuments: z
     .strictObject({ equations: z.array(z.enum(['mathml', 'latex', 'image'])).min(1) })
     .optional(),
+  /** Version 3: the sink's instances and clients can be administered through the bridge. */
+  administration: AdministrationSchema.optional(),
 });
 export type Capabilities = z.infer<typeof CapabilitiesSchema>;
+
+/**
+ * The versions a sink may declare: the package versions, and 3 (version 2 plus administration,
+ * which changes no package). A version 3 sink is sent version 2 packages (`packageVersionFor`).
+ */
+export const DescribeContractVersion = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+export type DescribeContractVersion = z.infer<typeof DescribeContractVersion>;
+
+/** The package version a sink of `version` is sent: packages stop at version 2. */
+export function packageVersionFor(version: DescribeContractVersion): ContractVersion {
+  return version === 1 ? 1 : 2;
+}
 
 /** What a sink says about itself (`GET /describe`). */
 export const SinkDescribeSchema = z
   .strictObject({
     name: z.string(),
-    contractVersion: ContractVersion,
+    contractVersion: DescribeContractVersion,
     connectionKind: z.enum(['shared', 'personal']),
     instances: z.array(z.strictObject({ id: z.string(), label: z.string() })),
     credentialFields: z.array(CredentialFieldSchema),
@@ -50,15 +65,22 @@ export const SinkDescribeSchema = z
   .superRefine((d, ctx) => {
     const c = d.capabilities;
     const takes = (part: (typeof PACKAGE_PARTS)[number]) => c.accepts.includes(part);
-    if (takes('document') && d.contractVersion !== 2) {
+    if (takes('document') && d.contractVersion < 2) {
       ctx.addIssue({
         code: 'custom',
         path: ['capabilities', 'accepts'],
-        message: 'accepting document needs contractVersion 2',
+        message: 'accepting document needs contractVersion 2 or later',
+      });
+    }
+    if (c.administration && d.contractVersion < 3) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['capabilities', 'administration'],
+        message: 'administration needs contractVersion 3',
       });
     }
     if (!c.decomposedDocuments) return;
-    if (d.contractVersion !== 2 || !c.readBack || !takes('document') || !takes('images')) {
+    if (d.contractVersion < 2 || !c.readBack || !takes('document') || !takes('images')) {
       ctx.addIssue({
         code: 'custom',
         path: ['capabilities', 'decomposedDocuments'],
@@ -68,6 +90,13 @@ export const SinkDescribeSchema = z
     }
   });
 export type SinkDescribe = z.infer<typeof SinkDescribeSchema>;
+
+/** What a sink lets a producer administer, or null for a sink that doesn't declare it. */
+export function administrationOf(
+  d: Pick<SinkDescribe, 'contractVersion' | 'capabilities'>,
+): Administration | null {
+  return d.contractVersion >= 3 ? (d.capabilities.administration ?? null) : null;
+}
 
 /** Resolved destination values (patterns already applied). */
 export const DestinationSchema = z.record(z.string(), z.string());
