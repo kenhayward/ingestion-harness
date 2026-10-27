@@ -237,6 +237,26 @@ def test_formula_is_an_image_equation() -> None:
     ]
 
 
+def test_formula_with_latex_builds_equation() -> None:
+    """A scanned page's display equation (spec 15.3): its LaTeX and its region's crop."""
+    runs = [Run("Above.", 72, 100), Run("E = mc", 250, 300)]
+    items = [item("text", 1, 100), item("formula", 1, 300, 200, 395)]
+    pieces, text, ledger, flags = build([Page(runs=runs)], items)
+    pieces[1] = replace(pieces[1], latex="E = mc^2")
+    doc, images, _ = document(pieces, text, ledger, flags)
+    block_id = "s~lead#equation-1"
+    assert doc.equations == [
+        Equation(
+            id=f"{block_id}#eq-1",
+            mathml=None,
+            latex="E = mc^2",
+            image_id=f"{block_id}#eq-1#img-1",
+        )
+    ]
+    assert list(images) == [f"{block_id}#eq-1#img-1"]
+    assert doc.report == []
+
+
 # --- Footnotes -------------------------------------------------------------------------------
 
 

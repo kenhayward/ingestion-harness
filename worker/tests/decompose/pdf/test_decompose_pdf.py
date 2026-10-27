@@ -61,6 +61,7 @@ def test_end_to_end_small_report() -> None:
     assert doc.blocks == []
     [section] = doc.sections
     assert section.title == [Text(text="Introduction")]
+    print(section.blocks)
     paragraph, table = section.blocks
     assert isinstance(paragraph, Paragraph)
     assert paragraph.inlines == [Text(text="The study ran for two weeks.")]
@@ -147,12 +148,12 @@ def plain(inlines: list[Any]) -> str:
     return "".join(i.text for i in inlines if isinstance(i, Text))
 
 
-def test_scanned_page_fails_for_now() -> None:
+def test_scanned_page_without_ocr_fails_fast() -> None:
     data = make_pdf([Page(runs=[Run("Text", 72, 100)]), Page(images=[Img(0, 0, WIDTH, HEIGHT)])])
     layout = answering([], pages=2)
     with pytest.raises(DecompositionFailed) as info:
         decompose_pdf(data, layout=layout, cropper=FakeCropper())
-    assert info.value.detail == "page 2 is scanned; scanned pages are not read yet"
+    assert info.value.detail == "page 2 is scanned and this CT Studio has no OCR model"
     assert layout.calls == []
 
 
@@ -183,7 +184,7 @@ def test_same_pdf_same_document() -> None:
 
 
 def test_reader_constants() -> None:
-    assert pdf_reader.PDF_READER_VERSION == 1
+    assert pdf_reader.PDF_READER_VERSION == 3
     assert pdf_reader.MAX_PAGES == 500
 
 
@@ -193,4 +194,56 @@ def test_glyphs_with_no_text_are_flagged_in_the_report() -> None:
     assert [(f.code, f.severity, f.at, f.message) for f in result.document.report] == [
         ("structure_inferred", "info", None, "1 glyph on page 1 had no text and was left out"),
         ("structure_inferred", "warning", "s~lead#p-1", "Text the layout analysis missed"),
+    ]
+
+
+def test_line_numbers_and_an_annex_page_number_are_furniture() -> None:
+    texts = {(0, 0): "Test", (0, 1): "Limit", (1, 0): "Assay", (1, 1): "95%"}
+    lines = [
+        ("Annex storage", 120),
+        ("The study ran for two weeks", 134),
+        ("and was reviewed at the end", 148),
+        ("Table 1: Doses", 156),
+        ("a: Release testing", 220),
+        ("b: Shelf life testing", 234),
+    ]
+    runs = [Run(str(2190 + k), 40, y, size=8) for k, (_, y) in enumerate(lines)]
+    runs += [Run(line, 72, y) for line, y in lines]
+    runs += [*cell_runs(texts, top=160), Run("A3 8", 280, 800)]
+    runs += [Run("a", 112, 194, size=7, rise=3), Run("b", 200, 194, size=7, rise=3)]
+    items = [
+        docling.text("section_header", 1, bl(30, 108, 400, 123)),
+        docling.text("text", 1, bl(30, 125, 400, 151)),
+        docling.text("caption", 1, bl(30, 152, 400, 159)),
+        grid(1, simple(2, 2), rows=2, cols=2, top=160),
+        docling.text("text", 1, bl(30, 210, 400, 238)),
+        docling.picture(1, bl(270, 785, 330, 806)),
+        docling.text("text", 1, bl(275, 790, 320, 804)),
+    ]
+    result = decompose_pdf(
+        make_pdf([Page(runs=runs)]), layout=answering(items), cropper=FakeCropper()
+    )
+    doc = result.document
+    [section] = doc.sections
+    assert section.title == [Text(text="Annex storage")]
+    paragraph, table = section.blocks
+    assert isinstance(paragraph, Paragraph)
+    assert paragraph.inlines == [
+        Text(text="The study ran for two weeks and was reviewed at the end")
+    ]
+    assert isinstance(table, Table)
+    assert table.caption == [Text(text="Doses")]
+    assert table.notes == [
+        TableNote(marker="a", inlines=[Text(text="Release testing")]),
+        TableNote(marker="b", inlines=[Text(text="Shelf life testing")]),
+    ]
+    assert "219" not in str(doc.model_dump())
+    assert "A3" not in str(doc.model_dump())
+    assert doc.images == []
+    assert [(f.severity, f.message) for f in doc.report if f.at is None] == [
+        (
+            "info",
+            "Dropped as page furniture: 1 line and 1 picture on 1 page; 6 line numbers on 1 page",
+        ),
+        ("info", "Heading levels inferred for 1 heading"),
     ]

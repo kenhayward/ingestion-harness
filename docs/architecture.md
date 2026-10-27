@@ -123,7 +123,10 @@ straight through to the browser, once, and is never stored or logged.
    longest side + max tokens + temperature). Later jobs of the same PDF (re-runs, regressions,
    new recipe versions) reuse it: OCR servers aren't deterministic even at temperature 0, so
    without it extraction would be compared on different text. Turn off with `ocr.cache: false`;
-   changing any fingerprinted setting re-OCRs.
+   changing any fingerprinted setting re-OCRs. Beside a page the client turned, `page-N.md.rotation`
+   holds the clockwise degrees (none: upright). The loop is `pipeline.JobTranscriber`, which a
+   conversion's PDF reader also uses for its scanned pages (PDF reader spec §15), so an
+   extraction and a conversion of the same PDF share transcriptions.
 4. **Segment**: each section starts at the first match of its multiline regex anchor and runs
    to the next matched anchor. Missing required sections → `needs_review`.
 5. **Extract**: per spec extraction, render the Jinja2 prompt with the selected sections, call

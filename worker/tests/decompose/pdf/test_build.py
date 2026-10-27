@@ -153,7 +153,7 @@ def test_heading_of_only_its_number_is_left_out() -> None:
     pieces, text, ledger, flags = build([Page(runs=runs)], items)
     # a heading whose only text was its typed number (as a bookmark can leave one)
     pieces[2].heading_level = 1
-    flags = [f for f in flags if f.at != pieces[2].ref]  # numbering inferred its level
+    flags = []  # numbering inferred its level
     for c in pieces[2].lines[0].chars:
         ledger.drop(0, c.index, "heading-number")
     doc, _, _ = document(pieces, text, ledger, flags)
@@ -165,13 +165,14 @@ def test_heading_of_only_its_number_is_left_out() -> None:
     ]
 
 
-def test_inferred_heading_flag_points_at_its_section() -> None:
+def test_inferred_heading_levels_are_one_info_flag() -> None:
     runs = [Run("Background", 72, 100), Run("Some text", 72, 130)]
     items = [item("section_header", 1, 100), item("text", 1, 130)]
     pieces, text, ledger, flags = build([Page(runs=runs)], items)
-    assert [f.at for f in flags] == [pieces[0].ref]
     doc, _, _ = document(pieces, text, ledger, flags)
-    assert [(f.message, f.at) for f in doc.report] == [("Heading level inferred", "s-background")]
+    assert [(f.severity, f.at, f.message) for f in doc.report] == [
+        ("info", None, "Heading levels inferred for 1 heading")
+    ]
 
 
 # --- Paragraphs ------------------------------------------------------------------------------

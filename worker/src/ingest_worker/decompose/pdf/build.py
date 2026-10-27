@@ -564,6 +564,8 @@ class _Builder:
         """Whether `second` continues the paragraph just placed (spec section 4.5)."""
         assert self.para is not None
         first = self.para.pieces[-1]
+        if first.recognised != second.recognised:  # spec 5: not across a scan's edge
+            return False
         last, nxt = _text_lines(first)[-1], _text_lines(second)[0]
         if _SENTENCE_END.search(last.text) or not _overlaps(first.bbox, second.bbox):
             return False
@@ -743,20 +745,22 @@ class _Builder:
         self.joinable = False
 
     def formula(self, piece: Piece) -> None:
-        """An equation kept as the image of its box (spec 4.7); its chars are the block's."""
+        """An equation kept as the image of its box (spec 4.7); its chars are the block's. A
+        scanned page's display equation has its LaTeX too (spec 15.3), and is not flagged."""
         self.end_flow()
         block_id = self.scope.take("equation")
         equation_id = child_id(block_id, "eq", 1)
         image = self.crop(piece, child_id(equation_id, "img", 1), None)
-        self.equations.append(Equation(id=equation_id, image_id=image.id))
-        self.flags.append(
-            Flag(
-                code="equation_image_only",
-                severity="warning",
-                at=block_id,
-                message=f"equation {equation_id} kept as an image only",
+        self.equations.append(Equation(id=equation_id, latex=piece.latex, image_id=image.id))
+        if piece.latex is None:
+            self.flags.append(
+                Flag(
+                    code="equation_image_only",
+                    severity="warning",
+                    at=block_id,
+                    message=f"equation {equation_id} kept as an image only",
+                )
             )
-        )
         self.scope.blocks.append(EquationBlock(id=block_id, equation_id=equation_id))
         self.own_page[block_id] = piece.page
         self.placed(piece, block_id)

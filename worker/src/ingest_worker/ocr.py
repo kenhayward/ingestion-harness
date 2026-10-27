@@ -81,8 +81,8 @@ def _flatten_table(match: re.Match[str]) -> str:
     return "\n".join(rows)
 
 
-def parse_olmocr(raw: str) -> tuple[str, dict[str, Any]]:
-    """Split olmOCR output into (plain text, front-matter metadata)."""
+def split_front_matter(raw: str) -> tuple[str, dict[str, Any]]:
+    """Split olmOCR output into (markdown body, front-matter metadata)."""
     meta: dict[str, Any] = {}
     body = raw
     if match := _FRONT_MATTER.match(raw):
@@ -92,6 +92,12 @@ def parse_olmocr(raw: str) -> tuple[str, dict[str, Any]]:
         except yaml.YAMLError:
             meta = {}
         body = raw[match.end() :]
+    return body, meta
+
+
+def parse_olmocr(raw: str) -> tuple[str, dict[str, Any]]:
+    """Split olmOCR output into (plain text, front-matter metadata)."""
+    body, meta = split_front_matter(raw)
     return _TABLE.sub(_flatten_table, body).strip(), meta
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Mapping
 from typing import Protocol
 
 from ingest_worker.decompose.pdf.layout import BBox
@@ -45,3 +46,24 @@ class PdfiumCropper:
 
     def close(self) -> None:
         self._doc.close()
+
+
+class RotatedCropper:
+    """Crops through `inner`, then turns the crops of a page the OCR client read rotated by the
+    same clockwise degrees (spec 15.3): the layout's regions are in the page's own frame."""
+
+    def __init__(self, inner: PageCropper, rotations: Mapping[int, int]) -> None:
+        self._inner = inner
+        self._rotations = {page: deg % 360 for page, deg in rotations.items() if deg % 360}
+
+    def crop(self, page: int, bbox: BBox) -> bytes:
+        png = self._inner.crop(page, bbox)
+        degrees = self._rotations.get(page)
+        if degrees is None:
+            return png
+        from PIL import Image
+
+        turned = Image.open(io.BytesIO(png)).rotate(-degrees, expand=True)
+        out = io.BytesIO()
+        turned.save(out, format="PNG")
+        return out.getvalue()
