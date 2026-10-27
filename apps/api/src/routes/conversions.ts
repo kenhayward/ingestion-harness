@@ -8,14 +8,18 @@ import {
   BatchSchema,
   BatchSummarySchema,
   ConversionTargetSchema,
+  ConversionReviewSchema,
   CreateBatchSchema,
+  decompositionHeldPageKey,
   decompositionReportKey,
   decompositionSourceKey,
   DOCX_MIME,
   hasControlCharacter,
   ItemSchema,
   MAX_SOURCE_KEY,
+  RejectDecisionSchema,
   RetryItemsSchema,
+  ReviewDecisionSchema,
   sourceKeyProblem,
   type Batch,
   type Item,
@@ -23,6 +27,7 @@ import {
 import { z } from 'zod';
 import { creatorOf } from '../access/routes.js';
 import { acceptPlanOf } from '../conversions/accept.js';
+import { deleteHeld, isHeldKey, readHeld } from '../conversions/held.js';
 import type { RegisterEntry } from '../repositories/types.js';
 import {
   batchCreator,
@@ -34,10 +39,12 @@ import {
 } from '../conversions/repo.js';
 import { binary, ErrorBody, error, md, multipart, noContent, res } from '../openapi/zod.js';
 import { contentDisposition } from './jobs.js';
-import { checkSource, multipartField, TRACKED_CHANGES } from '../uploads.js';
+import { checkSource, CONTENT_TYPES, multipartField, TRACKED_CHANGES } from '../uploads.js';
 
-/** What an upload that isn't a Word document gets: PDFs come with decomposition phase 5. */
-export const NOT_A_WORD_DOCUMENT = 'file is not a Word document (.docx)';
+/** What an upload that is neither a Word document nor a PDF gets (415). */
+export const NOT_WORD_OR_PDF = 'Word or PDF files only';
+const NOT_AWAITING_REVIEW = 'the item is not awaiting review';
+const HELD_GONE = 'the held files are gone from storage';
 const NO_DOCUMENTS = 'the target takes no documents';
 const NOT_OPEN = 'the batch is not open: it was started or discarded';
 /** Why a batch is not open, from its state (the generic reason when it is unknown). */
@@ -162,8 +169,8 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
         summary: 'Upload one file to an open batch',
         consumes: ['multipart/form-data'],
         description: md`
-          One Word document (\`.docx\`) per request, so a large folder never meets the upload
-          limit in one go. \`sourceKey\` names the document: the file's path in its folder, or
+          One Word document (\`.docx\`) or PDF per request, so a large folder never meets the
+          upload limit in one go. \`sourceKey\` names the document: the file's path in its folder, or
           its name. It must be new in the batch: the same source key twice is refused (409).
           Send it **before** the file part. A source key is relative and \`/\`-separated
           (at most ${MAX_SOURCE_KEY} characters; no control characters, backslashes, empty,
@@ -171,9 +178,10 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           Another is refused (422 \`bad_source_key\`), as is a file name with a control
           character (422 \`bad_filename\`).
 
-          The file's bytes decide what it is, never its name. A file that isn't a Word document
-          (a PDF, a \`.doc\`, a damaged file) is refused (415) and one with tracked changes
-          (422); the batch stays open for the others.
+          The file's bytes decide what it is, never its name. A file that is neither a Word
+          document nor a PDF (a \`.doc\`, a damaged file) is refused (415) and a Word document
+          with tracked changes (422); the batch stays open for the others. A PDF is held for
+          review once converted (\`awaiting_review\`).
         `,
         params: BatchParams,
         body: multipart(
@@ -184,7 +192,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
             },
           },
           ['sourceKey'],
-          'The Word document. Send it last.',
+          'The Word document or PDF. Send it last.',
         ),
         response: {
           201: res('The item.', ItemSchema),
@@ -193,7 +201,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           406: error('The request is not `multipart/form-data`.'),
           409: error('The batch is not open, or the source key is already in it.'),
           413: error('The file is larger than the upload limit.'),
-          415: error(`\`${NOT_A_WORD_DOCUMENT}\`.`),
+          415: error(`\`${NOT_WORD_OR_PDF}\`.`),
           422: res(
             `\`${TRACKED_CHANGES}\`, \`the Word document is too large to check (over 64 MiB ` +
               'unpacked)`, a source key the rule refuses (`code: bad_source_key`) or a file ' +
@@ -225,13 +233,11 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
       const source = checkSource(body);
       if (!source.ok && source.code === 422) return reply.code(422).send({ error: source.error });
-      if (!source.ok || source.kind !== 'docx') {
-        return reply.code(415).send({ error: NOT_A_WORD_DOCUMENT });
-      }
+      if (!source.ok) return reply.code(415).send({ error: NOT_WORD_OR_PDF });
 
       const id = randomUUID();
-      const objectKey = decompositionSourceKey(batchId, id, 'docx');
-      await store.put(buckets.runs, objectKey, body, DOCX_MIME);
+      const objectKey = decompositionSourceKey(batchId, id, source.ext);
+      await store.put(buckets.runs, objectKey, body, source.contentType);
       // Whatever happens to the item (refused, or the database fails), no file is left behind.
       let added: AddItemResult;
       try {
@@ -581,14 +587,15 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       schema: {
         tags: ['Conversions'],
         operationId: 'getConversionSource',
-        summary: "Download an item's Word file",
+        summary: "Download an item's Word or PDF file",
         description: md`
-          The Word document (\`.docx\`) the item converted, as uploaded (or the replacement a
-          redeliver sent), as an attachment under its file name.
+          The Word document (\`.docx\`) or PDF the item converted, as uploaded (or the
+          replacement a redeliver sent), as an attachment under its file name, with its own
+          content type.
         `,
         params: ItemParams,
         response: {
-          200: binary('The Word document.', DOCX_MIME),
+          200: binary('The file.', DOCX_MIME, CONTENT_TYPES.pdf),
           404: error('No such item, or its file is gone from storage.'),
           502: error('`storage unavailable`.'),
         },
@@ -606,11 +613,269 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       }
       if (!body) return reply.code(404).send({ error: 'the file is gone from storage' });
       return reply
-        .header('content-type', DOCX_MIME)
+        .header('content-type', item.objectKey.endsWith('.pdf') ? CONTENT_TYPES.pdf : DOCX_MIME)
         .header('content-disposition', contentDisposition(item.filename, 'attachment'))
         .header('x-content-type-options', 'nosniff')
         .header('cache-control', 'no-store')
         .send(body);
+    },
+  );
+
+  // --- Review of a held PDF (spec §14.4, §14.5) -------------------------------------------------
+
+  const NotAwaiting = CodedError('The item is not awaiting review.', 'NOT_AWAITING_REVIEW');
+  const notAwaiting = (reply: FastifyReply) =>
+    reply.code(409).send({ error: NOT_AWAITING_REVIEW, code: 'NOT_AWAITING_REVIEW' });
+
+  /** The item a review route reads, awaiting review; otherwise the reply already sent (404, 409). */
+  const awaitingItem = async (id: string, reply: FastifyReply) => {
+    const item = await findItem(id);
+    if (!item) {
+      reply.code(404).send({ error: 'not found' });
+      return null;
+    }
+    if (item.outcome !== 'awaiting_review') {
+      notAwaiting(reply);
+      return null;
+    }
+    return item;
+  };
+
+  app.get<{ Params: { id: string } }>(
+    '/conversions/items/:id/review',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'getConversionReview',
+        summary: 'Get a held PDF to review',
+        description: md`
+          The decomposed document of a PDF held for review, as it would be delivered, with the
+          number of pages, the pages each section and block came from (\`pageMap\`) and the held
+          images' types (\`GET /api/conversions/items/{id}/images/{index}\` serves each; the pages
+          come from \`GET /api/conversions/items/{id}/pages/{n}\`). Read from the held manifest the
+          worker stored. Only while the item is \`awaiting_review\`.
+        `,
+        params: ItemParams,
+        response: {
+          200: res('The held document.', ConversionReviewSchema),
+          404: error('No such item, or its held files are gone from storage.'),
+          409: NotAwaiting,
+          502: error('`storage unavailable`, or the held manifest is not readable.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const item = await awaitingItem(req.params.id, reply);
+      if (!item) return reply;
+      let held: Awaited<ReturnType<typeof readHeld>>;
+      try {
+        held = await readHeld(app.deps.store, app.deps.buckets.runs, item);
+      } catch (err) {
+        req.log.warn({ err, item: item.id }, 'a held manifest read failed');
+        return reply.code(502).send({ error: 'storage unavailable' });
+      }
+      if (!held.ok && held.reason === 'gone') return reply.code(404).send({ error: HELD_GONE });
+      if (!held.ok) {
+        req.log.warn({ item: item.id }, 'a held manifest is not a valid manifest');
+        return reply.code(502).send({ error: 'the held document is not readable' });
+      }
+      const { document, pageCount, pageMap, images } = held.manifest;
+      return {
+        item,
+        document,
+        pageCount,
+        pageMap,
+        images: images.map(({ id, contentType }) => ({ id, contentType })),
+      };
+    },
+  );
+
+  app.get<{ Params: { id: string; n: string } }>(
+    '/conversions/items/:id/pages/:n',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'getConversionPage',
+        summary: 'Get a held PDF page image',
+        description: md`
+          A JPEG of one page of a PDF held for review, rendered by the worker. Pages are
+          numbered from 1. Only while the item is \`awaiting_review\`.
+        `,
+        params: ItemParams.extend({ n: z.string().describe('The 1-based page number.') }),
+        response: {
+          200: binary('The page image.', 'image/jpeg'),
+          400: error('`page must be a positive integer`.'),
+          404: error('No such item, or no such page.'),
+          409: NotAwaiting,
+          502: error('`storage unavailable`.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const page = Number(req.params.n);
+      if (!Number.isInteger(page) || page < 1 || page > 5000) {
+        return reply.code(400).send({ error: 'page must be a positive integer' });
+      }
+      const item = await awaitingItem(req.params.id, reply);
+      if (!item) return reply;
+      let body: Buffer | null;
+      try {
+        body = await app.deps.store.get(
+          app.deps.buckets.runs,
+          decompositionHeldPageKey(item.batchId, item.id, page),
+        );
+      } catch (err) {
+        req.log.warn({ err, item: item.id }, 'a held page read failed');
+        return reply.code(502).send({ error: 'storage unavailable' });
+      }
+      if (!body) return reply.code(404).send({ error: 'page not found' });
+      return reply
+        .header('content-type', 'image/jpeg')
+        .header('x-content-type-options', 'nosniff')
+        .header('cache-control', 'private, max-age=300')
+        .send(body);
+    },
+  );
+
+  app.get<{ Params: { id: string; index: string } }>(
+    '/conversions/items/:id/images/:index',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'getConversionImage',
+        summary: 'Get a held PDF image',
+        description: md`
+          One of the images extracted from a PDF held for review, by its position in the review's
+          \`images\`, with its own content type. Only while the item is \`awaiting_review\`.
+        `,
+        params: ItemParams.extend({ index: z.string().describe('The 0-based image position.') }),
+        response: {
+          200: binary('The image.', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'),
+          400: error('`index must be a non-negative integer`.'),
+          404: error('No such item, or no such image.'),
+          409: NotAwaiting,
+          502: error('`storage unavailable`, or the held manifest is not readable.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const index = Number(req.params.index);
+      if (!Number.isInteger(index) || index < 0) {
+        return reply.code(400).send({ error: 'index must be a non-negative integer' });
+      }
+      const item = await awaitingItem(req.params.id, reply);
+      if (!item) return reply;
+      let body: Buffer | null = null;
+      let contentType = '';
+      try {
+        const held = await readHeld(app.deps.store, app.deps.buckets.runs, item);
+        if (!held.ok && held.reason === 'bad') {
+          return reply.code(502).send({ error: 'the held document is not readable' });
+        }
+        const image = held.ok ? held.manifest.images[index] : undefined;
+        // Only the item's own held files are ever read, whatever the manifest names.
+        if (image && isHeldKey(item, image.key)) {
+          contentType = image.contentType;
+          body = await app.deps.store.get(app.deps.buckets.runs, image.key);
+        }
+      } catch (err) {
+        req.log.warn({ err, item: item.id }, 'a held image read failed');
+        return reply.code(502).send({ error: 'storage unavailable' });
+      }
+      if (!body) return reply.code(404).send({ error: 'image not found' });
+      return reply
+        .header('content-type', contentType)
+        .header('x-content-type-options', 'nosniff')
+        .header('cache-control', 'private, max-age=300')
+        .send(body);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/items/:id/approve',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'approveConversionItem',
+        summary: 'Approve a held PDF',
+        description: md`
+          Records who approved the held document, and when, with an optional \`note\`, and queues
+          its delivery: the worker delivers exactly the held document (it does not read the PDF
+          again) as the user who started the batch. The item is \`queued\` again, then ends like
+          any delivery. Only while the item is \`awaiting_review\`, so two reviewers cannot both
+          decide.
+        `,
+        params: ItemParams,
+        body: ReviewDecisionSchema,
+        response: {
+          202: res('Queued; the delivery job.', z.object({ jobId: z.string().uuid() })),
+          400: error('The body is not `{ note? }`.'),
+          404: error('No such item.'),
+          409: NotAwaiting,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = ReviewDecisionSchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      if (!UUID.safeParse(req.params.id).success) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const done = await app.deps.repo.approveItem({
+        id: req.params.id,
+        by: creatorOf(req),
+        note: body.data.note ?? null,
+      });
+      if (done.kind === 'approved') return reply.code(202).send({ jobId: done.jobId });
+      if (done.kind === 'not_found') return reply.code(404).send({ error: 'not found' });
+      return notAwaiting(reply);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/conversions/items/:id/reject',
+    {
+      schema: {
+        tags: ['Conversions'],
+        operationId: 'rejectConversionItem',
+        summary: 'Reject a held PDF',
+        description: md`
+          Records who rejected the held document, and when, with the \`note\` saying why (required),
+          sets the item \`rejected\` (final) and deletes the held files. A forced run of the row
+          decomposes the PDF again, and a redelivery takes a Word file or a PDF. Only while the item
+          is \`awaiting_review\`.
+        `,
+        params: ItemParams,
+        body: RejectDecisionSchema,
+        response: {
+          200: res('The rejected item.', ItemSchema),
+          400: error('The body is not `{ note }`: the note is required.'),
+          404: error('No such item.'),
+          409: NotAwaiting,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = RejectDecisionSchema.safeParse(req.body ?? {});
+      if (!body.success) return reply.code(400).send({ error: body.error.issues });
+      if (!UUID.safeParse(req.params.id).success) {
+        return reply.code(404).send({ error: 'not found' });
+      }
+      const { repo, store, buckets } = app.deps;
+      const done = await repo.rejectItem({
+        id: req.params.id,
+        by: creatorOf(req),
+        note: body.data.note,
+      });
+      if (done.kind === 'not_found') return reply.code(404).send({ error: 'not found' });
+      if (done.kind === 'not_awaiting') return notAwaiting(reply);
+      // The decision is recorded: held files that cannot be deleted now must not undo it.
+      try {
+        await deleteHeld(store, buckets.runs, done.item);
+      } catch (err) {
+        req.log.warn({ err, item: done.item.id }, 'a rejected item kept its held files');
+      }
+      return done.item;
     },
   );
 
@@ -659,13 +924,13 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
           Updates the item's document explicitly, in a new batch of one that starts at once
           (forced; the target's version check still applies). Send no body to deliver the stored
           file again, or a \`multipart/form-data\` body with one \`file\` part, a replacement Word
-          document (\`.docx\`): it keeps the item's source key, so it updates the same document,
+          document (\`.docx\`) or PDF: it keeps the item's source key, so it updates the same document,
           which is how a renamed or moved file updates the right one. Only an item with a
           register entry has a document to redeliver. Refused while an earlier rerun of the item
           is unfinished, so a repeated request makes one batch and stores one file.
         `,
         params: ItemParams,
-        body: multipart({}, [], 'The replacement Word document (optional).', {
+        body: multipart({}, [], 'The replacement Word document or PDF (optional).', {
           fileRequired: false,
         }),
         response: {
@@ -677,7 +942,7 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
             ErrorBody.extend({ code: z.enum(['not_finished', 'no_register_entry']) }),
           ),
           413: error('The replacement is larger than the upload limit.'),
-          415: error(`\`${NOT_A_WORD_DOCUMENT}\`.`),
+          415: error(`\`${NOT_WORD_OR_PDF}\`.`),
           422: res(
             `\`${TRACKED_CHANGES}\`, a replacement whose name holds a control character ` +
               '(`bad_filename`), or a target that no longer takes documents.',
@@ -716,11 +981,9 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       const body = await file.toBuffer(); // throws RequestFileTooLargeError (413) past the limit
       const source = checkSource(body);
       if (!source.ok && source.code === 422) return reply.code(422).send({ error: source.error });
-      if (!source.ok || source.kind !== 'docx') {
-        return reply.code(415).send({ error: NOT_A_WORD_DOCUMENT });
-      }
-      const objectKey = decompositionSourceKey(ids.batchId, ids.itemId, 'docx');
-      await store.put(buckets.runs, objectKey, body, DOCX_MIME);
+      if (!source.ok) return reply.code(415).send({ error: NOT_WORD_OR_PDF });
+      const objectKey = decompositionSourceKey(ids.batchId, ids.itemId, source.ext);
+      await store.put(buckets.runs, objectKey, body, source.contentType);
       // Whatever happens to the rerun (refused, or the database fails), no file is left behind.
       const unstore = async () => {
         try {

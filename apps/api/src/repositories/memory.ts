@@ -29,9 +29,11 @@ import {
 } from '@ih/shared';
 import { acceptedReceipt } from '../conversions/accept.js';
 import {
+  batchCreator,
   emptyCounts,
   type AcceptResult,
   type AddItemResult,
+  type ApproveResult,
   type DetachResult,
   type DiscardBatchResult,
   type NewBatch,
@@ -39,6 +41,8 @@ import {
   type Accept,
   type Detach,
   type RegisterAction,
+  type RejectResult,
+  type ReviewInput,
   type Rerun,
   type RerunResult,
   type Retry,
@@ -1510,6 +1514,47 @@ export class MemoryRepo implements IngestionRepo {
     this.conversionBatches.set(batchId, batch);
     this.conversionItems.set(itemId, item);
     return { ok: true, batch: structuredClone(batch), item: this.withResolution(item) };
+  }
+
+  async approveItem({ id, by, note }: ReviewInput): Promise<ApproveResult> {
+    const item = this.conversionItems.get(id);
+    if (!item) return { kind: 'not_found' };
+    if (item.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+    const batch = this.conversionBatches.get(item.batchId)!;
+    const jobId = this.queueBackground(
+      'decompose',
+      {
+        batchId: item.batchId,
+        itemId: id,
+        targetId: batch.targetId,
+        sourceKey: item.sourceKey,
+        force: batch.force,
+        approved: true,
+      },
+      by?.name ?? null,
+      by?.userId ?? null,
+    );
+    Object.assign(item, {
+      outcome: 'queued',
+      jobId,
+      reviewedBy: batchCreator(by),
+      reviewedAt: new Date().toISOString(),
+      reviewNote: note,
+    });
+    return { kind: 'approved', jobId };
+  }
+
+  async rejectItem({ id, by, note }: ReviewInput): Promise<RejectResult> {
+    const item = this.conversionItems.get(id);
+    if (!item) return { kind: 'not_found' };
+    if (item.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+    Object.assign(item, {
+      outcome: 'rejected',
+      reviewedBy: batchCreator(by),
+      reviewedAt: new Date().toISOString(),
+      reviewNote: note,
+    });
+    return { kind: 'rejected', item: this.withResolution(item) };
   }
 
   async retryItems({

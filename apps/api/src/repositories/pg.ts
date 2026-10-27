@@ -31,15 +31,19 @@ import {
 } from '@ih/shared';
 import { acceptedReceipt } from '../conversions/accept.js';
 import {
+  batchCreator,
   emptyCounts,
   type AcceptResult,
   type AddItemResult,
+  type ApproveResult,
   type DetachResult,
   type DiscardBatchResult,
   type NewBatch,
   type NewItem,
   type Accept,
   type Detach,
+  type RejectResult,
+  type ReviewInput,
   type Rerun,
   type RerunResult,
   type Retry,
@@ -1540,6 +1544,74 @@ export class PgRepo implements IngestionRepo {
         ],
       );
       return { ok: true, batch: toBatch(batch.rows[0]!), item: toItem(item.rows[0]!) };
+    });
+  }
+
+  async approveItem({ id, by, note }: ReviewInput): Promise<ApproveResult> {
+    return this.inTransaction(async (client) => {
+      // The item locked: of two reviewers, the second finds the outcome moved on.
+      const held = await client.query<{
+        batch_id: string;
+        source_key: string;
+        outcome: ItemOutcome;
+        target_id: string;
+        force: boolean;
+      }>(
+        `SELECT i.batch_id, i.source_key, i.outcome, b.target_id, b.force
+           FROM decomposition_items i JOIN decomposition_batches b ON b.id = i.batch_id
+          WHERE i.id = $1 FOR UPDATE OF i`,
+        [id],
+      );
+      const row = held.rows[0];
+      if (!row) return { kind: 'not_found' };
+      if (row.outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+      const { priority, maxAttempts } = BACKGROUND_JOBS.decompose;
+      const job = await client.query<{ id: string }>(
+        `INSERT INTO jobs (task, priority, max_attempts, params, created_by, created_by_user)
+         VALUES ('decompose', $1, $2, $3, $4, $5) RETURNING id`,
+        [
+          priority,
+          maxAttempts,
+          JSON.stringify({
+            batchId: row.batch_id,
+            itemId: id,
+            targetId: row.target_id,
+            sourceKey: row.source_key,
+            force: row.force,
+            approved: true,
+          }),
+          by?.name ?? null,
+          by?.userId ?? null,
+        ],
+      );
+      const jobId = job.rows[0]!.id;
+      await client.query(
+        `UPDATE decomposition_items
+            SET outcome = 'queued', job_id = $2, reviewed_by = $3, reviewed_at = now(),
+                review_note = $4
+          WHERE id = $1`,
+        [id, jobId, JSON.stringify(batchCreator(by)), note],
+      );
+      return { kind: 'approved', jobId };
+    });
+  }
+
+  async rejectItem({ id, by, note }: ReviewInput): Promise<RejectResult> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<{ outcome: ItemOutcome }>(
+        'SELECT outcome FROM decomposition_items WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (!locked.rows[0]) return { kind: 'not_found' };
+      if (locked.rows[0].outcome !== 'awaiting_review') return { kind: 'not_awaiting' };
+      const { rows } = await client.query<ItemRow>(
+        `UPDATE decomposition_items
+            SET outcome = 'rejected', reviewed_by = $2, reviewed_at = now(), review_note = $3
+          WHERE id = $1
+          RETURNING ${ITEM_COLUMNS}`,
+        [id, JSON.stringify(batchCreator(by)), note],
+      );
+      return { kind: 'rejected', item: toItem(rows[0]!) };
     });
   }
 

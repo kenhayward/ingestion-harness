@@ -205,6 +205,24 @@ export type ReviewDecision = z.infer<typeof ReviewDecisionSchema>;
 export const RejectDecisionSchema = z.object({ note: z.string().min(1) }).strict();
 export type RejectDecision = z.infer<typeof RejectDecisionSchema>;
 
+/**
+ * What the review page reads for a held item (`GET /api/conversions/items/:id/review`), from the
+ * worker's held manifest: the decomposed document as it would be delivered (a `DecomposedDocument`
+ * of `@ih/bridge-contract`, which the API validates and this package does not depend on), the
+ * pages it came from, and the held images by position (`/images/:index` serves each).
+ */
+export const ConversionReviewSchema = z
+  .object({
+    item: ItemSchema,
+    document: z.record(z.string(), z.unknown()),
+    pageCount: z.number().int().nonnegative(),
+    /** The 1-based pages each section and block came from, by id. */
+    pageMap: z.record(z.string(), z.array(z.number().int().positive())),
+    images: z.array(z.object({ id: z.string(), contentType: z.string() })),
+  })
+  .strict();
+export type ConversionReview = z.infer<typeof ConversionReviewSchema>;
+
 /** How many of a batch's items have each outcome (every outcome present, zero or more). */
 export const ItemCountsSchema = z.record(ItemOutcomeSchema, z.number().int().nonnegative());
 export type ItemCounts = z.infer<typeof ItemCountsSchema>;

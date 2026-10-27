@@ -584,6 +584,116 @@ export function conversionsContract(
       expect(await repo.getItem(failed.id)).toMatchObject({ rerunIn: asked.batchId });
     });
 
+    /** A started, forced batch of one item held for review. */
+    const held = async (force = true) => {
+      const { repo, facts } = await make();
+      const batch = await repo.createBatch({ targetId: 'manuals', force, createdBy: ADA });
+      const a = item(batch.id, 'manuals/a.pdf');
+      await repo.addItem(a);
+      await repo.startBatch(batch.id, null);
+      await facts.settleItem(a.id, 'awaiting_review', null);
+      return { repo, facts, batch, item: (await repo.getItem(a.id))! };
+    };
+    const REVIEWER = { name: 'Rae', userId: '5b9d2f60-7c1e-4a38-9f4d-0c6e1a2b3d44' };
+
+    it('approves a held item: reviewer recorded, queued, one decompose job approved', async () => {
+      const { repo, facts, item: a } = await held();
+
+      const done = await repo.approveItem({ id: a.id, by: REVIEWER, note: 'looks right' });
+
+      if (done.kind !== 'approved') throw new Error(done.kind);
+      const after = ItemSchema.parse(await repo.getItem(a.id));
+      expect(after).toMatchObject({
+        outcome: 'queued',
+        jobId: done.jobId,
+        reviewedBy: { id: REVIEWER.userId, name: 'Rae' },
+        reviewNote: 'looks right',
+      });
+      expect(after.reviewedAt).not.toBeNull();
+      const job = await facts.job(done.jobId);
+      expect(job).toEqual({
+        task: 'decompose',
+        priority: 0,
+        maxAttempts: 3,
+        // The held run's force (its batch's) is what the approved run delivers with.
+        params: {
+          batchId: a.batchId,
+          itemId: a.id,
+          targetId: 'manuals',
+          sourceKey: a.sourceKey,
+          force: true,
+          approved: true,
+        },
+        createdBy: 'Rae',
+        createdByUser: REVIEWER.userId,
+      });
+      DecomposeParamsSchema.parse(job!.params);
+    });
+
+    it('approves with the batch not forced as not forced, and no note as none', async () => {
+      const { repo, facts, item: a } = await held(false);
+
+      const done = await repo.approveItem({ id: a.id, by: null, note: null });
+
+      if (done.kind !== 'approved') throw new Error(done.kind);
+      expect((await facts.job(done.jobId))!.params).toMatchObject({ force: false, approved: true });
+      expect(await repo.getItem(a.id)).toMatchObject({
+        reviewedBy: { id: null, name: null },
+        reviewNote: null,
+      });
+    });
+
+    it('approves a held item once: the second is refused and queues nothing', async () => {
+      const { repo, facts, item: a } = await held();
+      const first = await repo.approveItem({ id: a.id, by: REVIEWER, note: null });
+      if (first.kind !== 'approved') throw new Error(first.kind);
+
+      expect(await repo.approveItem({ id: a.id, by: REVIEWER, note: null })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect(await repo.rejectItem({ id: a.id, by: REVIEWER, note: 'no' })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect((await repo.getItem(a.id))!.jobId).toBe(first.jobId);
+      expect(await facts.job(first.jobId)).not.toBeNull();
+    });
+
+    it('approves or rejects only an item awaiting review', async () => {
+      const { repo, item: a } = await finished();
+
+      expect(await repo.approveItem({ id: a.id, by: null, note: null })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect(await repo.rejectItem({ id: a.id, by: null, note: 'no' })).toEqual({
+        kind: 'not_awaiting',
+      });
+      expect(await repo.getItem(a.id)).toMatchObject({ outcome: 'created', reviewedBy: null });
+      const missing = randomUUID();
+      expect(await repo.approveItem({ id: missing, by: null, note: null })).toEqual({
+        kind: 'not_found',
+      });
+      expect(await repo.rejectItem({ id: missing, by: null, note: 'no' })).toEqual({
+        kind: 'not_found',
+      });
+    });
+
+    it('rejects a held item: final, with who, when and the note, and no new job', async () => {
+      const { repo, item: a } = await held();
+      const before = (await repo.getItem(a.id))!.jobId;
+
+      const done = await repo.rejectItem({ id: a.id, by: REVIEWER, note: 'a table is wrong' });
+
+      if (done.kind !== 'rejected') throw new Error(done.kind);
+      expect(ItemSchema.parse(done.item)).toMatchObject({
+        outcome: 'rejected',
+        reviewedBy: { id: REVIEWER.userId, name: 'Rae' },
+        reviewNote: 'a table is wrong',
+        jobId: before,
+      });
+      expect(done.item.reviewedAt).not.toBeNull();
+      expect(await repo.getItem(a.id)).toEqual(done.item);
+    });
+
     it('detaches an entry: a tombstone, recorded, and said on the item', async () => {
       const { repo, facts, batch, item: a } = await finished();
       const entryId = await facts.entry(changedSeed(a.sourceKey, batch.id));

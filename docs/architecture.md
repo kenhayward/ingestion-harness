@@ -216,6 +216,14 @@ or review step.
     the register's entry for the source is no longer the one the hold recorded ("the target's
     document changed after this was reviewed; run it again"). The outcome is then any delivery's,
     never `awaiting_review` again, and the held files are deleted once it is recorded.
+  - The API reviews a hold through routes under `/api/conversions/items/:id/` (any role that may
+    convert), all refused (409 `NOT_AWAITING_REVIEW`) unless the item is `awaiting_review`: `review`
+    (the held document, page count, page map and image types, read from the manifest), `pages/:n`
+    and `images/:index` (the held JPEG and image), `approve` and `reject`. Approving records the
+    reviewer, time and note, sets the item `queued` and queues the approved `decompose` job, with
+    the batch's `force`, in one transaction. Rejecting records the same and sets `rejected`
+    (final), then deletes the held files the manifest names. Uploads and redeliveries take a Word
+    file or a PDF (415 `Word or PDF files only` otherwise); a PDF is stored as `.pdf`.
 - **The register.** `decomposition_register` holds one entry per document, scoped to the
   target's sink and instance. Its two checks (content hash and source key) give *already loaded*,
   *duplicate*, *update* or *create*. An update carries the component versions the last receipt

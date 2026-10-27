@@ -194,6 +194,25 @@ describe('conversion batches', () => {
     expect(unknown.statusCode).toBe(404);
   });
 
+  it('uploads a PDF as a .pdf object of its own type', async () => {
+    const c = await setup();
+    const batch = BatchSchema.parse((await newBatch(c.app)).json());
+
+    const res = await upload(c.app, batch.id, 'Policies/leave.pdf', fakePdf);
+
+    expect(res.statusCode).toBe(201);
+    const item = ItemSchema.parse(res.json());
+    expect(item).toMatchObject({
+      sourceKey: 'Policies/leave.pdf',
+      filename: 'leave.pdf',
+      sizeBytes: fakePdf.length,
+      objectKey: `decompositions/${batch.id}/${item.id}.pdf`,
+    });
+    const stored = c.store.objects.get(`runs/${item.objectKey}`);
+    expect(stored?.body.equals(fakePdf)).toBe(true);
+    expect(stored?.contentType).toBe('application/pdf');
+  });
+
   it('refuses a repeated source key in one batch', async () => {
     const c = await setup();
     const batch = BatchSchema.parse((await newBatch(c.app)).json());
@@ -214,11 +233,11 @@ describe('conversion batches', () => {
     for (const [key, content] of [
       ['old.doc', oldWord],
       ['corrupt.docx', corrupt],
-      ['report.pdf', fakePdf],
+      ['notes.txt', Buffer.from('just some text, not a document')],
     ] as const) {
       const res = await upload(c.app, batch.id, key, content);
       expect(res.statusCode, key).toBe(415);
-      expect(res.json().error).toMatch(/Word document \(\.docx\)/);
+      expect(res.json().error).toBe('Word or PDF files only');
     }
     const tracked = docx({ body: '<w:p><w:ins w:id="1"><w:r><w:t>new</w:t></w:r></w:ins></w:p>' });
     expect((await upload(c.app, batch.id, 'tracked.docx', tracked)).statusCode).toBe(422);
